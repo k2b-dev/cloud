@@ -14,7 +14,7 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 - Select a writable Space through `spaces.space.browse`. A known Space can be listed directly with `spaces.task.list` or `spaces.event.list`. Read `spaces.space.read` only when column/tag IDs or configuration are needed.
 - List entries show at most three assignees and tags: when `assigneeCount` is larger than the number of `assignees`, state the total (for example "3 of 11") or read the item before naming everyone. `relationsTruncated` signals that a relation preview is partial.
 - Use each entry's `overdue` to call a task overdue; a completed task is never overdue, so never infer it from `deadline` alone.
-- Read a selected `spaces.item.read` before changing its content or deleting it. Use a task for work and an event only with explicit valid start and end. Select assignees from `spaces.space.assignee.list`, never inferred names or invented IDs. The list includes people and active service accounts with their own access to the Space; preserve each returned `kind` and ID. Agent claims assign the agent, and unassigned filters count service accounts too.
+- Read a selected `spaces.item.read` before changing its content or deleting it. Use a task for work and an event only with explicit valid start and end. Select assignees from `spaces.space.assignee.list`, never inferred names or invented IDs. It lists people and service accounts (`kind`); an agent's claim assigns that agent.
 
 ## Make focused changes
 

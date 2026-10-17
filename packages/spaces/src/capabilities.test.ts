@@ -448,7 +448,7 @@ test("item.read of a fully populated task keeps reaction counts within the resul
     ...task,
     title: escaped(200),
     description: escaped(5000),
-    assignees: Array.from({ length: 100 }, () => ({ id: userId, displayName: escaped(200), avatarHash: null })),
+    assignees: Array.from({ length: 100 }, () => ({ kind: "user" as const, id: userId, displayName: escaped(200), avatarHash: null })),
     tags: Array.from({ length: 100 }, () => ({ ...tag, name: escaped(100) })),
     reactions: Array.from({ length: 20 }, (_, index) => ({ emoji: String.fromCodePoint(0x1f600 + index), count: 4, own: false, people })),
   });
