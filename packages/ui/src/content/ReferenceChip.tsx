@@ -105,7 +105,7 @@ export function ReferenceChip(props: ReferenceChipProps): JSX.Element {
     class: `k2b-reference k2b-reference-chip${props.class ? ` ${props.class}` : ""}`,
     "data-kind": props.kind,
     "data-gone": gone() ? "true" : undefined,
-    "data-long": visible().length > UNBROKEN_CHARACTERS ? "true" : undefined,
+    "data-long": graphemes(visible()).length > UNBROKEN_CHARACTERS ? "true" : undefined,
     title: cut() ? full() : undefined,
     style: accent() ? { "--k2b-reference-icon": accent() } : undefined,
   });
