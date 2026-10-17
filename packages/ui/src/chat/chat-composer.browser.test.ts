@@ -687,6 +687,8 @@ const outsideClicks = (page: Page) => page.evaluate(() => window.outsideClicks);
 declare global {
   interface Window {
     outsideClicks: { native: number; onclick: number };
+    /** The hash of every popstate an application listener received. */
+    pops: string[];
   }
 }
 
@@ -854,6 +856,58 @@ describe(`slash command phone sheet in ${browserName}`, () => {
       }
     }, 30_000);
   }
+
+  test("a router sees address changes under the sheet but never its same-URL Back or Forward", async () => {
+    const page = await open({ mode: "slash", viewportHeight: true }, phones[0]!.context);
+    try {
+      await page.evaluate(() => {
+        history.replaceState({ sentinel: 1 }, "");
+        window.pops = [];
+        window.addEventListener("popstate", () => window.pops.push(location.hash));
+      });
+      const field = page.locator("textarea").first();
+      const openSheet = async () => {
+        await field.tap();
+        await page.keyboard.type("/al");
+        await finishListAnimation(page);
+        expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+      };
+      const pops = () => page.evaluate(() => window.pops);
+
+      // The application navigates while the sheet is open: Back from its page reaches the router.
+      await openSheet();
+      await page.evaluate(() => history.pushState(null, "", "#pushed"));
+      await page.evaluate(() => history.back());
+      await page.waitForFunction(() => window.pops.length === 1);
+      expect(await pops()).toEqual([""]);
+      await field.press("Escape");
+      await expectPageHistory(page);
+
+      // The application rewrites the sheet entry's address: Back to the page beneath reaches the router.
+      await field.fill("");
+      await openSheet();
+      await page.evaluate(() => history.replaceState(history.state, "", "#replaced"));
+      await page.evaluate(() => history.back());
+      await page.waitForFunction(() => window.pops.length === 2);
+      expect(await pops()).toEqual(["", ""]);
+      await page.waitForFunction(() => !document.querySelector(".k2b-chat-composer__commands"));
+
+      // Forward onto the entry a chosen command left behind, and Back again, stay with the sheet's history.
+      await field.fill("");
+      await openSheet();
+      await page.locator(".k2b-chat-composer__command").filter({ hasText: "First local command" }).tap();
+      await expectPageHistory(page);
+      await page.evaluate(() => history.forward());
+      await page.waitForFunction(() => typeof history.state?.k2bDialog === "number");
+      await page.evaluate(() => history.back());
+      await expectPageHistory(page);
+      await frames(page, 2);
+      expect(await pops()).toEqual(["", ""]);
+      expect(await page.locator(".k2b-chat-composer__commands").count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 
   test("desktop commands keep floating geometry and an outside click closes them and acts normally", async () => {
     const page = await open({ mode: "slash", viewportHeight: true }, { viewport: { width: 1440, height: 900 }, hasTouch: false });

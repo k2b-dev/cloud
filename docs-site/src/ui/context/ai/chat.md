@@ -520,8 +520,8 @@ Rows are at least 48px tall, with the name above the description. The sheet can
 grow up to the scroll container or visual viewport, minus the top safe area.
 A tap beside it closes only the list and reaches nothing beneath; the field
 keeps focus and the keyboard stays open. Back closes the list first through one
-same-URL history entry, removed on every other close path. The same-URL Back
-that closes or removes this entry does not reach application `popstate`
+same-URL history entry, removed on every other close path. A Back or Forward
+that only moves onto or off this entry does not reach application `popstate`
 listeners. With a mouse or trackpad, an outside click closes the list and then
 acts normally. Emoji suggestions keep their floating list.
 

@@ -291,9 +291,9 @@ convention still needs a check or a test.
 ### Closing a sheet triggered application navigation
 
 - **What happened:** Closing a dialog or the phone composer command sheet could reload the page, lose its draft, or reopen a message anchor or artifact.
-- **Root cause:** Same-URL dialog history traversals reached application `popstate` listeners, including synthetic Back after dismissal.
+- **Root cause:** Same-URL dialog history traversals reached application `popstate` listeners, including synthetic Back after dismissal and Forward onto an entry a closed sheet left behind. A first fix that compared only the landing address also hid real route changes the application made while a sheet was open.
 - **Error class:** State lost on navigation or reload.
-- **Guard:** `dialog-history.behavior.test.ts` checks that dialog and holder Back events stay inside the core, real route changes propagate, and replacing the URL does not hide navigation. It also checks capture listener ordering and clearing the base after the final entry leaves.
+- **Guard:** The dialog core compares where a traversal starts (the Navigation API reports it, replaced addresses included) with where it lands, and stops it only when the address stays and one of its own entries is involved. `dialog-history.behavior.test.ts` checks Back and Forward over dialogs and holders, foreign pushes and replaced addresses under a held entry, and several cores in one window. `chat-composer.browser.test.ts` checks the same in Chromium and WebKit with the phone sheet.
 
 ## Add a lesson
 

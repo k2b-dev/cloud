@@ -19,7 +19,7 @@ export type OpenDialogOptions = {
   /**
    * Add a same-URL history entry while the dialog is open, so the browser's or the phone's Back closes the dialog
    * instead of leaving the page. Closing the dialog removes the entry again; the returned promise settles after that.
-   * The same-URL Back that closes or removes the entry does not reach application popstate listeners.
+   * A same-URL Back or Forward between this core's entries and the page beneath them does not reach application popstate listeners.
    */
   history?: boolean;
 };
@@ -79,12 +79,14 @@ const DEFAULT_CONTENT_CLASS = "k2b-dialog__viewport";
 /** The frame of a dialog whose content could not render: a custom or bare surface may draw no frame of its own. */
 const RENDER_ERROR_PANEL_CLASS = "k2b-dialog k2b-dialog--small";
 let nextDialogTitleId = 0;
+let nextHistoryId = 0;
 /** The history state key that marks a dialog's same-URL entry. */
 const HISTORY_MARKER = "k2bDialog";
 
 const historyRecord = (): Record<string, unknown> =>
   typeof history.state === "object" && history.state !== null ? { ...history.state } : {};
 const historyMarker = (): unknown => historyRecord()[HISTORY_MARKER];
+const historySnapshot = () => ({ href: location.href, marker: historyMarker(), length: history.length });
 
 const resolveInitialFocusTarget = (entry: DialogStackEntry, dialog: HTMLDialogElement): HTMLElement | null => {
   const { initialFocus } = entry;
@@ -139,18 +141,15 @@ export const createDialogCore = () => {
   const state: DialogState = { stack: [] };
   /** Markers of this core's entries in the browser history, oldest first. */
   let historyIds: number[] = [];
-  /** The page beneath this core's same-URL entries, retained until any synthetic Back arrives. */
-  let historyBase: string | undefined;
+  const issued = new Set<number>();
+  const ownMarker = (marker: unknown) => typeof marker === "number" && issued.has(marker);
+  let seen = typeof window !== "undefined" ? historySnapshot() : undefined;
+  let traversalFrom: { href: string; marker: unknown } | undefined;
   const historyHolders = new Set<HistoryHolder>();
-  let nextHistoryId = 0;
   let historySyncScheduled = false;
   /** Settles when the synthetic Back that removes closed dialogs' entries has arrived. */
   let returning: Promise<void> | undefined;
   let resolveReturning: (() => void) | undefined;
-
-  const clearHistoryBase = () => {
-    if (historyIds.length === 0 && !returning) historyBase = undefined;
-  };
 
   /** Closed entries leave with one Back to the newest live dialog or holder, or to the page. */
   const syncHistory = () => {
@@ -169,17 +168,13 @@ export const createDialogCore = () => {
       steps++;
     }
     // Someone else moved the history meanwhile; leave it alone.
-    if (steps === 0 || historyMarker() !== current) {
-      clearHistoryBase();
-      return;
-    }
+    if (steps === 0 || historyMarker() !== current || location.href !== seen?.href || history.length !== seen?.length) return;
     const back = new Promise<void>((resolve) => {
       resolveReturning = resolve;
     });
     returning = back;
     void back.then(() => {
       if (returning === back) returning = undefined;
-      clearHistoryBase();
     });
     history.go(-steps);
   };
@@ -192,13 +187,19 @@ export const createDialogCore = () => {
 
   /** Back or Forward moved to another entry: close dialogs and holders opened after the one it shows. */
   const onPopState = (event: PopStateEvent) => {
-    // Decide before pruning the entries or settling the synthetic Back to the page beneath them.
-    if ((historyIds.length > 0 || returning) && location.href === historyBase) event.stopImmediatePropagation();
+    // Without the Navigation API, the fallback cannot see a foreign replaceState.
+    const from = typeof navigation !== "undefined" ? traversalFrom : history.length === seen?.length ? seen : undefined;
+    traversalFrom = undefined;
     const resolveBack = resolveReturning;
     resolveReturning = undefined;
     try {
       const marker = historyMarker();
+      if (from && from.href === location.href && from.marker !== marker && (ownMarker(from.marker) || ownMarker(marker))) {
+        event.stopImmediatePropagation();
+      }
       const index = typeof marker === "number" ? historyIds.indexOf(marker) : -1;
+      // Forward can revisit a closed entry without reviving it or closing any live entries.
+      if (ownMarker(marker) && index === -1) return;
       historyIds = historyIds.slice(0, index + 1);
       const gone = (entry: DialogStackEntry) => entry.historyId !== undefined && !historyIds.includes(entry.historyId);
       while (state.stack.some(gone)) popTop(undefined);
@@ -209,16 +210,20 @@ export const createDialogCore = () => {
         holder.onBack();
       }
     } finally {
-      clearHistoryBase();
+      seen = historySnapshot();
       resolveBack?.();
     }
   };
 
   // The shared core is created before islands mount and register application navigation listeners.
   if (typeof window !== "undefined") window.addEventListener("popstate", onPopState, { capture: true });
+  if (typeof navigation !== "undefined") {
+    navigation.addEventListener("navigate", (event) => {
+      if (event.navigationType === "traverse") traversalFrom = { href: location.href, marker: historyMarker() };
+    });
+  }
 
   const pushHistory = (entry: HistoryEntry) => {
-    if (historyIds.length === 0) historyBase = location.href;
     const previous = historyRecord();
     // A reload or Forward never brings back a dialog or its sensitive transient state.
     if (historyIds.length === 0 && previous[HISTORY_MARKER] !== undefined) {
@@ -226,8 +231,10 @@ export const createDialogCore = () => {
       history.replaceState(previous, "");
     }
     entry.historyId = ++nextHistoryId;
+    issued.add(entry.historyId);
     historyIds.push(entry.historyId);
     history.pushState({ ...previous, [HISTORY_MARKER]: entry.historyId }, "");
+    seen = historySnapshot();
   };
 
   /** Internal non-dialog participation in the same history stack. Releasing never calls onBack. */
@@ -591,7 +598,7 @@ export const dialogCore: DialogCore = publicDialogCore;
 
 /**
  * Internal: transient UI shares dialogs' Back handling without exposing another public dialog capability.
- * The same-URL Back that closes or removes its entry does not reach application popstate listeners.
+ * A same-URL Back or Forward between this core's entries and the page beneath them does not reach application popstate listeners.
  */
 export const holdDialogHistory = holdHistory;
 /** Internal: waits until entries released through `holdDialogHistory` have left the history. */

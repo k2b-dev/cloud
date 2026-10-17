@@ -94,7 +94,7 @@ describe("dialogCore popstate ownership", () => {
     expect(addresses).toEqual(["http://localhost/"]);
   });
 
-  test("a replaced address propagates even when Back lands on an own marker", async () => {
+  test("same-URL Back to an own marker is suppressed after replacing the address", async () => {
     const core = createDialogCore();
     const addresses: string[] = [];
     window.addEventListener("popstate", () => addresses.push(location.href));
@@ -104,13 +104,46 @@ describe("dialogCore popstate ownership", () => {
     history.back();
     await inner;
     expect(core.isOpen()).toBe(true);
-    expect(addresses).toEqual(["http://localhost/replaced"]);
+    expect(addresses).toEqual([]);
+    expect(document.querySelector("dialog")?.textContent).toBe("Outer");
     core.close();
     await outer;
   });
 
+  test("Back from a foreign address to a held entry propagates without releasing it", async () => {
+    const core = createDialogCore();
+    const addresses: string[] = [];
+    window.addEventListener("popstate", () => addresses.push(location.href));
+    let calls = 0;
+    const release = core.holdHistory(() => calls++);
+    const heldMarker = marker();
+    history.pushState(null, "", "/c/1");
+    const back = popped();
+    history.back();
+    await back;
+    expect(addresses).toEqual(["http://localhost/"]);
+    expect(calls).toBe(0);
+    expect(marker()).toBeNumber();
+    expect(marker()).toBe(heldMarker);
+    release();
+    await core.historySettled();
+  });
+
+  test("a second core handles its own Back without the first core swallowing it", async () => {
+    expect(typeof navigation).toBe("undefined");
+    createDialogCore();
+    const core = createDialogCore();
+    const addresses: string[] = [];
+    window.addEventListener("popstate", () => addresses.push(location.href));
+    const result = core.open(view("Sheet"), { history: true });
+    history.back();
+    await result;
+    expect(core.isOpen()).toBe(false);
+    expect(addresses).toEqual([]);
+  });
+
   for (const synthetic of [false, true]) {
-    test(`clears the base after ${synthetic ? "closing" : "Back closes"} the last entry`, async () => {
+    test(`foreign navigation propagates after ${synthetic ? "closing" : "Back closes"} the last entry`, async () => {
       const core = createDialogCore();
       const addresses: string[] = [];
       window.addEventListener("popstate", () => addresses.push(location.href));
@@ -180,6 +213,38 @@ describe("dialogCore history option", () => {
     await back;
     expect(await outer).toBeUndefined();
     expect(core.isOpen()).toBe(false);
+  });
+
+  test("Forward to a closed nested dialog and Back preserve the live outer dialog", async () => {
+    const core = createDialogCore();
+    const addresses: string[] = [];
+    window.addEventListener("popstate", () => addresses.push(location.href));
+    const outer = core.open(view("Outer"), { history: true });
+    let closeInner = () => {};
+    const inner = core.open(
+      (close) => {
+        closeInner = close;
+        return view("Inner")();
+      },
+      { history: true },
+    );
+    closeInner();
+    await inner;
+    await core.historySettled();
+    let back = popped();
+    history.forward();
+    await back;
+    expect(core.isOpen()).toBe(true);
+    expect(document.querySelector("dialog")?.textContent).toBe("Outer");
+    expect(addresses).toEqual([]);
+    back = popped();
+    history.back();
+    await back;
+    expect(core.isOpen()).toBe(true);
+    expect(document.querySelector("dialog")?.textContent).toBe("Outer");
+    expect(addresses).toEqual([]);
+    core.close();
+    await outer;
   });
 
   test("closing every dialog returns to the page in one step, and the next dialog waits for it", async () => {
@@ -268,13 +333,31 @@ describe("dialogCore internal history holders", () => {
     history.forward();
     await back;
     expect(calls).toBe(1);
-    expect(addresses).toEqual(["http://localhost/"]);
+    expect(addresses).toEqual([]);
     back = popped();
     history.back();
     await back;
     expect(calls).toBe(1);
-    expect(addresses).toEqual(["http://localhost/", "http://localhost/"]);
+    expect(addresses).toEqual([]);
   });
+
+  for (const change of ["push", "push with marker", "replace"] as const) {
+    test(`releasing a holder preserves a foreign URL ${change}`, async () => {
+      const core = createDialogCore();
+      const release = core.holdHistory(() => {});
+      if (change === "replace") history.replaceState(history.state, "", "/c/1");
+      else history.pushState(change === "push" ? null : history.state, "", "/c/1");
+      const go = spyOn(history, "go");
+      try {
+        release();
+        await core.historySettled();
+        expect(go).not.toHaveBeenCalled();
+        expect(location.href).toBe("http://localhost/c/1");
+      } finally {
+        go.mockRestore();
+      }
+    });
+  }
 
   test("releasing holders is idempotent and restores page state in one traversal", async () => {
     history.replaceState({ sentinel: 1 }, "");
