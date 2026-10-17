@@ -16,6 +16,8 @@ for (const address of [
   "fd12:3456::1",
   "::ffff:10.0.0.1",
   "::ffff:a00:1",
+  "64:ff9b::a00:1",
+  "64:ff9b:1::808:808",
   "192.0.2.1",
   "2001:db8::1",
   "224.0.0.1",
@@ -39,6 +41,9 @@ for (const [input, expected] of [
   [" 8.8.8.8 ", "8.8.8.8"],
   ["::ffff:8.8.8.8", "8.8.8.8"],
   ["::FFFF:808:808", "8.8.8.8"],
+  ["::ffff:808:0", "8.8.0.0"],
+  ["64:ff9b::808:808", "8.8.8.8"],
+  ["64:ff9b::808:0", "8.8.0.0"],
   ["2A01:04F8:0001:0002:0000:0000:0000:0001", "2a01:4f8:1:2::1"],
   ["2a01:4f8::", "2a01:4f8::"],
 ])
@@ -46,6 +51,7 @@ for (const [input, expected] of [
 test("network prefixes", () => {
   expect(addressPrefix("8.8.8.8")).toBe("8.8.8.8");
   expect(addressPrefix("::ffff:8.8.8.8")).toBe("8.8.8.8");
+  expect(addressPrefix("64:ff9b::808:808")).toBe("8.8.8.8");
   expect(addressPrefix("2A01:04F8:1:2:abcd:ef01:2345:6789")).toBe("2a01:4f8:1:2::/64");
   expect(addressPrefix("2a01:4f8::1")).toBe("2a01:4f8::/64");
   expect(addressPrefix("2000::1")).toBe("2000::/64");
