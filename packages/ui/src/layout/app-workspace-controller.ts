@@ -57,8 +57,36 @@ const LAYOUT_REGION_SELECTOR = [
   HANDLE_SELECTOR,
 ].join(",");
 const TOGGLE_SELECTOR = "[data-app-workspace-sidebar-toggle]";
-/** The width range in which the sidebar is an overlay; it matches the compact media query in the stylesheet. */
-const COMPACT_QUERY = "(min-width: 48rem) and (max-width: 63.999rem)";
+/** Touch-tablet gestures remain viewport decisions. */
+const TOUCH_DRAWER_QUERY = "(min-width: 48rem) and (max-width: 63.999rem) and (pointer: coarse)";
+const DETAIL_TOGGLE_SELECTOR = "[data-app-workspace-detail-toggle]";
+const DETAIL_DRAWER_SELECTOR = '.k2b-app-workspace__detail[data-workspace-detail-drawer="open"]';
+const cssState = (element: HTMLElement, name: string) => getComputedStyle(element).getPropertyValue(name).trim();
+const detailWaiting = (aside: HTMLElement) => cssState(aside, "--k2b-workspace-detail-waiting") === "1";
+const detailDrawer = (aside: HTMLElement) => aside.dataset.workspaceDetailDrawer === "open";
+const detailToggle = (aside: HTMLElement) => {
+  const root = workspaceRoot(aside);
+  return rootElements(root ?? aside, DETAIL_TOGGLE_SELECTOR).find((toggle) => toggle.getAttribute("aria-controls") === aside.id);
+};
+// The trail's registered property accepts a length, not the drawer's percentage
+// cap. Only a user-opened drawer needs this measurement; the first frame stays CSS-owned.
+const detailDrawerContent = (aside: HTMLElement) => aside.closest<HTMLElement>(".k2b-app-workspace__content");
+const syncDetailDrawerSpace = (aside: HTMLElement) =>
+  detailDrawerContent(aside)?.style.setProperty("--k2b-detail-space", `${aside.getBoundingClientRect().width}px`);
+const parkDetailDrawer = (aside: HTMLElement, focus = false) => {
+  if (!detailDrawer(aside)) return;
+  delete aside.dataset.workspaceDetailDrawer;
+  detailDrawerContent(aside)?.style.removeProperty("--k2b-detail-space");
+  const toggle = detailToggle(aside);
+  toggle?.setAttribute("aria-expanded", "false");
+  if (focus) toggle?.focus({ preventScroll: true });
+};
+
+/** Parks open waiting-detail drawers; focus follows only when it was inside one. */
+export const parkWorkspaceDetailDrawers = (root: ParentNode = document): void => {
+  for (const aside of root.querySelectorAll<HTMLElement>(DETAIL_DRAWER_SELECTOR))
+    parkDetailDrawer(aside, aside.contains(aside.ownerDocument.activeElement));
+};
 const FOCUSABLE_SELECTOR = [
   "a[href]",
   "button:not([disabled])",
@@ -123,8 +151,9 @@ const controlledPanel = (root: HTMLElement, handle: HTMLElement) => {
 };
 const flexibleLevel = (pane: HTMLElement) => {
   if (!pane.hasAttribute("data-workspace-level")) return false;
-  const widthClass = window.matchMedia("(min-width: 80rem)").matches ? "3" : window.matchMedia("(min-width: 48rem)").matches ? "2" : "1";
-  return pane.dataset.workspaceLevelLast?.split(" ").includes(widthClass) ?? false;
+  const root = workspaceRoot(pane);
+  const widthClass = root ? cssState(root, "--k2b-workspace-level-class") : "";
+  return Boolean(widthClass && pane.dataset.workspaceLevelLast?.split(" ").includes(widthClass));
 };
 const levelsMain = (handle: HTMLElement) => handle.closest(".k2b-app-workspace__main")?.hasAttribute("data-workspace-levels") ?? false;
 const controlsResizableRegion = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceResizeKind) => {
@@ -383,7 +412,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const ownerDocument = eventRoot.ownerDocument ?? document;
   const ownerWindow = ownerDocument.defaultView ?? window;
   let overlay: OpenOverlay | null = null;
-  const compact = typeof window.matchMedia === "function" ? window.matchMedia(COMPACT_QUERY) : null;
   // A server-rendered head names the sidebar before the sidebar renders; the button learns its real id now.
   for (const toggle of eventRoot.querySelectorAll<HTMLElement>(TOGGLE_SELECTOR)) overlayTarget(toggle);
   const openOverlay = (target: OverlaySidebar) => {
@@ -424,13 +452,29 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   };
   const onClick = (event: MouseEvent) => {
     const target = eventElement(event);
+    const detailButton = target?.closest<HTMLElement>(DETAIL_TOGGLE_SELECTOR);
+    if (detailButton) {
+      const root = workspaceRoot(detailButton);
+      const aside = root ? controlledPanel(root, detailButton) : null;
+      if (!aside || aside.hidden || !detailWaiting(aside) || claimedToggleClicks.has(event)) return;
+      claimedToggleClicks.add(event);
+      if (detailDrawer(aside)) parkDetailDrawer(aside);
+      else {
+        aside.dataset.workspaceDetailDrawer = "open";
+        detailButton.setAttribute("aria-expanded", "true");
+        syncDetailDrawerSpace(aside);
+        if (event.detail === 0) requestTitle(aside);
+        else detailButton.focus({ preventScroll: true });
+      }
+      return;
+    }
     const toggle = target?.closest<HTMLElement>(TOGGLE_SELECTOR);
     if (toggle) {
       const next = overlayTarget(toggle);
       if (!next || claimedToggleClicks.has(event)) return;
       claimedToggleClicks.add(event);
       if (overlay?.sidebar === next.sidebar) closeOverlay("button");
-      else if (compact?.matches) openOverlay(next);
+      else if (cssState(next.root, "--k2b-workspace-sidebar-form") === "overlay") openOverlay(next);
       return;
     }
     if (!overlay || !target) return;
@@ -499,12 +543,16 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       first.focus();
     }
   };
-  const onCompactChange = () => {
-    if (!compact?.matches) closeOverlay("none");
+  const syncHostState = () => {
+    if (overlay && cssState(overlay.root, "--k2b-workspace-sidebar-form") !== "overlay") closeOverlay("none");
+    for (const root of allRoots())
+      for (const aside of rootElements(root, DETAIL_DRAWER_SELECTOR))
+        if (aside.hidden || !detailWaiting(aside)) parkDetailDrawer(aside);
+        else syncDetailDrawerSpace(aside);
   };
   const phone = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 47.999rem)") : null;
   const wide = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 48rem)") : null;
-  const touchDrawer = typeof window.matchMedia === "function" ? window.matchMedia(`${COMPACT_QUERY} and (pointer: coarse)`) : null;
+  const touchDrawer = typeof window.matchMedia === "function" ? window.matchMedia(TOUCH_DRAWER_QUERY) : null;
   const detailSelector = ".k2b-app-workspace__detail";
   const grabberSelector = ".k2b-app-workspace__detail-grabber";
   type RememberedItem = {
@@ -671,7 +719,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     delete aside.dataset.workspaceDetailDragging;
   };
   const anchorItem = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem | undefined) => {
-    if (!wide?.matches || (touchDrawer?.matches && closable(aside)) || !snapshot?.item.isConnected) return;
+    if (!wide?.matches || (touchDrawer?.matches && closable(aside)) || detailDrawer(aside) || !snapshot?.item.isConnected) return;
     if (!mainElement(root)?.contains(snapshot.item) || snapshot.item.closest(ROOT_SELECTOR) !== root) return;
     const scroller = snapshot.scroller;
     if (scroller?.isConnected && scroller.scrollTop === snapshot.scrollTop)
@@ -782,6 +830,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const followedInteraction = snapshot?.fresh ?? false;
     if (snapshot) snapshot.fresh = false;
     if (aside.hidden) {
+      parkDetailDrawer(aside);
       if (pendingTitle?.aside === aside) cancelTitle();
       if (panelStep === aside) panelStep = null;
       if (root.hasAttribute("data-workspace-motion") && !prefersReducedMotion() && wide?.matches) {
@@ -812,6 +861,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       if (detailDrag?.aside === aside) finishDetailDrag(true);
       return;
     }
+    if (detailWaiting(aside) && !detailDrawer(aside)) return;
     anchorItem(root, aside, snapshot);
     if (phone?.matches) setDetent(aside, false);
     if (followedInteraction && snapshot) {
@@ -832,13 +882,19 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const root = target.closest<HTMLElement>(ROOT_SELECTOR);
     let aside = target.closest<HTMLElement>(detailSelector);
     if (aside?.hidden || (aside && (!eventRoot.contains(aside) || aside.closest(ROOT_SELECTOR) !== root))) aside = null;
-    if (!aside && root && observedRoots.has(root) && mainElement(root)?.contains(target)) aside = openDetails(root)[0] ?? null;
+    if (!aside && root && observedRoots.has(root) && (mainElement(root)?.contains(target) || target.closest(DETAIL_TOGGLE_SELECTOR)))
+      aside = openDetails(root).find(isVisible) ?? null;
     if (!aside && target === ownerDocument.body) {
-      const open = allRoots().flatMap(openDetails);
+      const open = allRoots().flatMap(openDetails).filter(isVisible);
       if (open.length === 1) aside = open[0]!;
     }
     const owningRoot = aside?.closest<HTMLElement>(ROOT_SELECTOR);
-    if (!aside || !owningRoot) return;
+    if (!aside || !owningRoot || !isVisible(aside)) return;
+    if (event.key === "Escape" && detailDrawer(aside)) {
+      parkDetailDrawer(aside, true);
+      event.preventDefault();
+      return;
+    }
     if (event.key === "Escape" && closable(aside)) requestClose(aside);
     else if (
       (event.key.toLowerCase() === "j" || event.key.toLowerCase() === "k") &&
@@ -1419,13 +1475,17 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       reconcile();
     });
   };
-  const onResize = () => scheduleReconcile();
+  const onResize = () => {
+    syncHostState();
+    scheduleReconcile();
+  };
 
   const observedRoots = new Set<HTMLElement>();
   const resizeObserver =
     typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(() => {
+          syncHostState();
           scheduleReconcile();
         });
   const syncObservedRoots = () => {
@@ -1531,7 +1591,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   eventRoot.addEventListener("touchstart", onDetailTouchStart, { passive: true });
   eventRoot.addEventListener("touchend", onDetailTouchEnd);
   eventRoot.addEventListener("touchcancel", onDetailTouchEnd);
-  compact?.addEventListener("change", onCompactChange);
+  phone?.addEventListener("change", syncHostState);
   phone?.addEventListener("change", syncPhonePages);
   eventRoot.addEventListener("keydown", onKeyDown as EventListener);
   eventRoot.addEventListener("focusin", onFocusIn as EventListener);
@@ -1594,7 +1654,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     eventRoot.removeEventListener("pointerdown", onPointerDown as EventListener);
     eventRoot.removeEventListener("click", onClick as EventListener);
     ownerDocument.removeEventListener("keydown", onOverlayKeyDown);
-    compact?.removeEventListener("change", onCompactChange);
+    phone?.removeEventListener("change", syncHostState);
     eventRoot.removeEventListener("keydown", onKeyDown as EventListener);
     eventRoot.removeEventListener("focusin", onFocusIn as EventListener);
     window.removeEventListener("resize", onResize);

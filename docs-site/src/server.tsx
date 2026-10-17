@@ -10,6 +10,7 @@ import { siteTheme } from "./site-config";
 import { html, config as ssrConfig } from "./ssr";
 import { linkedChartSnapshot, parseGroupRequest } from "./ui/chart-group-data";
 import WorkspaceLevelsDemo from "./ui/WorkspaceLevelsDemo.island";
+import WorkspaceHostDemo from "./ui/WorkspaceHostDemo.island";
 
 const fibelApp = await createFibelApp(fibelConfig);
 const app = new Hono();
@@ -110,6 +111,15 @@ app.get("/en/ui/demo/workspace-levels", (c) =>
       styles: ["/assets/generated/cloud-ui.css"],
     },
   ),
+);
+app.get("/en/ui/demo/workspace-host", (c) =>
+  html(() => <WorkspaceHostDemo host={c.req.query("host") === "860" ? 860 : c.req.query("host") === "1024" ? 1024 : 1440} />, {
+    title: "Workspace host width — Cloud UI",
+    description: "Mail in an app area beside a host panel, with a waiting contact detail.",
+    path: "/en/ui/demo/workspace-host",
+    theme: themeFromRequest(c.req.raw),
+    styles: ["/assets/generated/cloud-ui.css"],
+  }),
 );
 app.mount("/", fibelApp.fetch, { replaceRequest: false });
 app.notFound((c) => c.text("Not found", 404));
