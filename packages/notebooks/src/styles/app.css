@@ -2263,6 +2263,35 @@
   stroke-width: 1.6;
 }
 
+/* Circle: a solid band per area just inside the ring, its name just inside the band, and every chord in the colour of
+   the area it starts from. The canvas carries the highlighted note's area, so its chords, also the incoming ones from
+   other areas, take that colour. */
+.notebook-graph__svg[data-display="circle"] {
+  --notebook-graph-highlight: var(--area);
+}
+.notebook-graph__band {
+  fill: var(--area);
+  pointer-events: none;
+}
+.notebook-graph__band-label {
+  fill: var(--area-ink);
+  font-size: 12px;
+  font-weight: 600;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: var(--ui-surface);
+  stroke-linejoin: round;
+  stroke-width: 4px;
+}
+.notebook-graph__edge[data-edge-kind="chord"] {
+  stroke: var(--area);
+  stroke-opacity: 0.32;
+}
+.notebook-graph__svg[data-highlight] .notebook-graph__edge[data-edge-kind="chord"][data-near] {
+  stroke: var(--notebook-graph-highlight);
+  stroke-opacity: 0.95;
+}
+
 @media (max-width: 47.999rem) {
   .notebook-graph__desktop-default {
     display: none;

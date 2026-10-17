@@ -1,6 +1,6 @@
 import type { GraphLinksFilter } from "./model";
 
-export const GRAPH_DISPLAYS = ["network", "neighborhood"] as const;
+export const GRAPH_DISPLAYS = ["network", "circle", "neighborhood"] as const;
 export type GraphDisplay = (typeof GRAPH_DISPLAYS)[number];
 export const DEFAULT_GRAPH_DISPLAY: GraphDisplay = "network";
 export const PHONE_GRAPH_DISPLAY: GraphDisplay = "neighborhood";
