@@ -104,6 +104,12 @@ such as a run of empty days, the identity of the group it continues. Never
 key an element by content that a refresh or a load changes. A refresh that
 keeps an item keeps its element and focus.
 
+In Solid, `<For>` keys by object reference, and a refetch brings new objects.
+Iterate stable ids or keys and read the current object through an accessor,
+as the Spaces board does, or reconcile the rows into a store keyed by id, as
+the Spaces list does. Check this in a browser test with `keptThrough()` from
+`packages/ui/test/browser.ts`.
+
 When the focused item leaves, move focus to a sensible neighbor, as the
 Spaces task tray does when a task is checked off. Do not leave focus on the
 page body.

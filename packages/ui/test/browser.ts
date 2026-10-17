@@ -1,4 +1,4 @@
-import { type Browser, type BrowserContext, chromium, type LaunchOptions, webkit } from "playwright";
+import { type Browser, type BrowserContext, chromium, type LaunchOptions, type Locator, webkit } from "playwright";
 
 /**
  * The engine that Playwright tests run in, chosen with `TEST_BROWSER`:
@@ -99,4 +99,28 @@ export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browse
       return typeof value === "function" ? value.bind(current) : value;
     },
   });
+};
+
+/**
+ * Runs `change` and reports whether `locator` keeps its element and how much its height changes.
+ * A mutation's refresh must keep the elements of the items it keeps: replacement loses focus and hover,
+ * flickers, and can leave a box read detached (#1391). Waits before and after; reads boxes in the page.
+ */
+export const keptThrough = async (
+  locator: Locator,
+  change: () => Promise<unknown>,
+): Promise<{ replaced: boolean; heightChange: number }> => {
+  const original = await locator.elementHandle();
+  if (!original) throw new Error("The element to keep was not found.");
+  try {
+    const before = await original.evaluate((element) => element.getBoundingClientRect().height);
+    await change();
+    const after = await locator.evaluate(
+      (element, original) => ({ same: element === original && original.isConnected, height: element.getBoundingClientRect().height }),
+      original,
+    );
+    return { replaced: !after.same, heightChange: after.height - before };
+  } finally {
+    await original.dispose();
+  }
 };

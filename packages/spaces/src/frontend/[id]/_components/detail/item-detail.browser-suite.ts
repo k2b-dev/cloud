@@ -8,7 +8,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, keptThrough, launchBrowser } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
 // Whether a property row keeps its boxes while hovered, edited, or open, and whether the claim ring and labels line up,
@@ -444,9 +444,13 @@ describe("Spaces item detail in a browser", () => {
       const sizes = await peopleSizes(page);
       const height = await peopleListHeight(page);
       expect(sizes.map((row) => row.name)).toEqual([lena.displayName, tom.displayName]);
-      await page.getByRole("button", { name: "Ich übernehme", exact: true }).click();
       const holder = peopleRows(page).first();
-      await holder.locator('[data-ring="success"]').waitFor();
+      expect(
+        await keptThrough(peopleSection(page), async () => {
+          await page.getByRole("button", { name: "Ich übernehme", exact: true }).click();
+          await holder.locator('[data-ring="success"]').waitFor();
+        }),
+      ).toEqual({ replaced: false, heightChange: 0 });
       expect(await peopleRows(page).count()).toBe(2);
       expect(await peopleSection(page).getByText(tom.displayName, { exact: true }).count()).toBe(1);
       expect(await holder.getByText(tom.displayName, { exact: true }).count()).toBe(1);

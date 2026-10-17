@@ -30,7 +30,7 @@ cld plugins update --all
 cld plugins remove mail
 ```
 
-A command whose plugin is missing fails with `run cld plugins install <name>`: install it when the user's task needs that module. `update --all` covers every profile. `cld login` offers the Cloud's plugins after signing in (`--yes` installs them, `--no-plugins` skips).
+A command whose plugin is missing fails with `run cld plugins install <name>`: install it when the user's task needs that module. `update` covers every plugin of the current profile (or the one `--profile` names); `update --all` covers every profile, also with `--profile`. A `cld: <profile>: <reason>` line means only that profile failed, for example because it cannot sign in; the other profiles still update and the command exits with 1. Tell the user the reason instead of retrying. A release that ships the same files under a new version only refreshes the version label. `cld login` offers the Cloud's plugins after signing in (`--yes` installs them, `--no-plugins` skips).
 
 A `403` means the operator allows plugins only for full accounts; tell the user instead of retrying.
 
