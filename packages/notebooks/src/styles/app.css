@@ -637,6 +637,19 @@
   .notebook-book-content .notebook-book-mermaid > details {
     display: none;
   }
+  /* Chart controls stay on screen. A chart switched to its table prints every row: the frame grows with it. */
+  .notebook-book-chart__actions {
+    display: none;
+  }
+  .notebook-book-content .notebook-book-chart {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .notebook-book-chart[data-view="table"] .notebook-book-chart__viewport {
+    height: auto;
+  }
+  .notebook-book-content .notebook-book-chart__table {
+    flex: none;
+  }
 }
 
 .notebook-detail-panel-header {

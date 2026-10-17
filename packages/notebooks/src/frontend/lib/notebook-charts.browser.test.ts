@@ -55,6 +55,16 @@ rows:
   - [Januar, 1200]
 x: Monat
 y: Umsatz
+:::
+
+:::chart
+type: bar
+title: Lange Tabelle
+columns: [Tag, Umsatz]
+rows:
+${Array.from({ length: 40 }, (_, day) => `  - [Tag ${day + 1}, ${(day + 1) * 10}]`).join("\n")}
+x: Tag
+y: Umsatz
 :::`;
 
 let browser: Browser;
@@ -101,7 +111,7 @@ beforeAll(async () => {
   ].join("\n");
   const rendered = renderNotebookBook({ markdown, notebookId: "book01", locale: "de" });
   expect(rendered.diagnostics).toEqual([]);
-  expect(rendered.html.match(/<figure /g)).toHaveLength(4);
+  expect(rendered.html.match(/<figure /g)).toHaveLength(5);
   server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -182,10 +192,10 @@ for (const width of [390, 1200])
     const page = await open({ viewport: { width, height: 900 } });
     try {
       const before = await boxes(page);
-      expect(before).toHaveLength(21);
-      if (width === 390) expect((await figures(page).last().locator("figcaption").boundingBox())!.height).toBeGreaterThan(24);
+      expect(before).toHaveLength(26);
+      if (width === 390) expect((await figures(page).nth(3).locator("figcaption").boundingBox())!.height).toBeGreaterThan(24);
       await enhance(page);
-      expect(await page.getByRole("button", { name: "Als Tabelle", exact: true }).count()).toBe(4);
+      expect(await page.getByRole("button", { name: "Als Tabelle", exact: true }).count()).toBe(5);
       sameBoxes(before, await boxes(page));
       for (const figure of await figures(page).all()) {
         const viewport = figure.locator(".notebook-book-chart__viewport");
@@ -420,8 +430,8 @@ test(`${browserName}: repeated enhancement mounts once and cleanup restores the 
     const original = await figures(page).evaluateAll((nodes) => nodes.map((node) => node.outerHTML));
     await enhance(page);
     await enhance(page);
-    expect(await page.getByRole("button", { name: "Als Tabelle", exact: true }).count()).toBe(4);
-    expect(await page.getByRole("button", { name: "Daten kopieren", exact: true }).count()).toBe(4);
+    expect(await page.getByRole("button", { name: "Als Tabelle", exact: true }).count()).toBe(5);
+    expect(await page.getByRole("button", { name: "Daten kopieren", exact: true }).count()).toBe(5);
     for (const figure of await figures(page).all()) {
       await showFirst(figure);
       await figure.getByRole("button", { name: "Als Tabelle", exact: true }).click();
@@ -433,12 +443,56 @@ test(`${browserName}: repeated enhancement mounts once and cleanup restores the 
     ).toBe(0);
     expect(await page.locator("figure[data-enhanced], figure[data-view]").count()).toBe(0);
     await enhance(page);
-    expect(await page.getByRole("button", { name: "Als Tabelle", exact: true }).count()).toBe(4);
+    expect(await page.getByRole("button", { name: "Als Tabelle", exact: true }).count()).toBe(5);
     await page.evaluate(() => {
       window.restore();
       window.restore();
     });
     expect(await figures(page).evaluateAll((nodes) => nodes.map((node) => node.outerHTML))).toEqual(original);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test(`${browserName}: a long table scrolls by keyboard inside the chart frame`, async () => {
+  const page = await open();
+  try {
+    await enhance(page);
+    const figure = figures(page).last();
+    const toggle = figure.getByRole("button", { name: "Als Tabelle", exact: true });
+    await toggle.click();
+    const region = figure.getByRole("region", { name: "Lange Tabelle", exact: true });
+    expect(await region.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+    await toggle.focus();
+    await page.keyboard.press("Tab");
+    expect(await region.evaluate((node) => node === document.activeElement)).toBe(true);
+    await page.keyboard.press("PageDown");
+    await page.waitForFunction(() => document.activeElement!.scrollTop > 0);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test(`${browserName}: printing a chart switched to its table prints every row without overlap`, async () => {
+  const page = await open();
+  try {
+    await enhance(page);
+    const figure = figures(page).last();
+    await figure.getByRole("button", { name: "Als Tabelle", exact: true }).click();
+    const viewport = figure.locator(".notebook-book-chart__viewport");
+    const screenHeight = (await viewport.boundingBox())!.height;
+    await page.emulateMedia({ media: "print" });
+    try {
+      expect(await figure.locator(".notebook-book-chart__actions").isVisible()).toBe(false);
+      const table = (await figure.locator("table").boundingBox())!;
+      const frame = (await viewport.boundingBox())!;
+      expect(frame.height).toBeGreaterThan(screenHeight);
+      expect(frame.y + frame.height).toBeGreaterThanOrEqual(table.y + table.height - 0.5);
+      expect((await page.locator("#after").boundingBox())!.y).toBeGreaterThanOrEqual(table.y + table.height - 0.5);
+    } finally {
+      await page.emulateMedia({ media: "screen" });
+    }
+    expect(Math.abs((await viewport.boundingBox())!.height - screenHeight)).toBeLessThanOrEqual(0.5);
   } finally {
     await page.context().close();
   }

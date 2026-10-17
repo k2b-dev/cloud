@@ -82,13 +82,15 @@ function ChartControls(props: { figure: HTMLElement; viewport: HTMLElement; draw
     host = undefined;
     if (next) {
       // The note's own table markup, as the PDF prints it below the figure.
+      const label = props.figure.querySelector(".notebook-book-chart__title")?.textContent ?? "";
       const scratch = document.createElement("div");
-      scratch.innerHTML = notebookChartTableHtml(props.drawn().table, {
-        label: props.figure.querySelector(".notebook-book-chart__title")?.textContent ?? undefined,
-        className: "notebook-book-chart__table",
-      });
+      scratch.innerHTML = notebookChartTableHtml(props.drawn().table, { label, className: "notebook-book-chart__table" });
       const element = scratch.firstElementChild;
       if (!(element instanceof HTMLElement)) return;
+      // The table scrolls inside the chart's frame; as the drawing's tab stop is hidden, the scroll area takes it.
+      element.tabIndex = 0;
+      element.setAttribute("role", "region");
+      element.setAttribute("aria-label", label);
       host = element;
       props.viewport.append(host);
       props.figure.dataset.view = "table";
