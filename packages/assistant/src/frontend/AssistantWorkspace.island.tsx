@@ -246,9 +246,9 @@ export default function AssistantWorkspace(props: Props) {
     ...(workspaceContext()?.tasks.length
       ? [
           {
-            label: contextText("Scheduled tasks"),
+            label: contextText("Routines"),
             icon: "ti ti-calendar-time",
-            action: () => openContextOverview("tasks", contextText("Scheduled tasks")),
+            action: () => openContextOverview("tasks", contextText("Routines")),
           },
         ]
       : []),
@@ -1226,9 +1226,7 @@ export default function AssistantWorkspace(props: Props) {
         },
       ]);
     const instruction = contextText(
-      repair
-        ? "Please review the last run of this scheduled task with me and help me fix the problem."
-        : "Please help me adjust this scheduled task.",
+      repair ? "Please review the last run of this routine with me and help me fix the problem." : "Please help me adjust this routine.",
     );
     const existing = composerDraft(key);
     setComposerDraft(key, existing.trim() ? `${existing}\n\n${instruction}` : instruction);

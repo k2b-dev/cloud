@@ -217,9 +217,9 @@ test("hides only the current chat and the task already shown in Scheduled", () =
 });
 
 test("uses readable AI type labels and preserves authored titles", () => {
-  expect(assistantResourceTypeLabel({ type: "core.ai.task", id: "tSk234" })).toBe("Scheduled AI task");
+  expect(assistantResourceTypeLabel({ type: "core.ai.task", id: "tSk234" })).toBe("Assistant routine");
   expect(assistantResourceTypeLabel({ type: "core.ai.chat", id: "cHt234" })).toBe("AI conversation");
   const item = { ...source("resource", "task"), ref: { type: "core.ai.task", id: "tSk234" }, title: "core.ai.task tSk234" };
-  expect(assistantReferenceTitle(item, () => "Geplante KI-Aufgabe")).toBe("Geplante KI-Aufgabe");
-  expect(assistantReferenceTitle({ ...item, title: "Read my mail" }, () => "Geplante KI-Aufgabe")).toBe("Read my mail");
+  expect(assistantReferenceTitle(item, () => "Assistant-Routine")).toBe("Assistant-Routine");
+  expect(assistantReferenceTitle({ ...item, title: "Read my mail" }, () => "Assistant-Routine")).toBe("Read my mail");
 });
