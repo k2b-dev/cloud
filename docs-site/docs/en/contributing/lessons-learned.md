@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Inert server-rendered interaction | Interactive markup is rendered without an island, or browser inspection receives drawing labels instead of display labels. | Tests: Grids `page.render.test.tsx` checks display-only chart islands and SVG parity; `chart-tooltip.test.ts` checks named, formatted tooltips; `chart-tooltips.browser.test.ts` checks inspection and layout across mounting. |
 | Unreported export loss | A PDF replaces content with a label, source, or error notice without telling the caller. | Tests: Notebooks `book-renderer.test.ts` checks typed omissions against rendered diagnostics and content order; `pdf-omissions.test.ts` checks the header budget; API and gateway tests check delivery. |
 | Release notes parsed as HTML | HTML-like placeholders swallow release sections, so release-please skips a component or mixes its notes with another release. | Check: `release-body` CI job (`scripts/check-release-pr-body.ts`) parses release PR bodies with the pinned release-please parser; the `check` job reads live PR text on PR and merge queue runs and refuses markup in titles, body commit headers, BREAKING CHANGE paragraphs, and nested-commit blocks; a self-test checks that lint against the pinned commit parser ([#1298](https://github.com/k2b-dev/cloud/issues/1298)). |
 | Silent truncation by a clamped page size | A caller asks for the whole collection with a page size above the helper's maximum and exports only the first page. | Check: `page-size` rejects oversized `pagination.perPage` literals. Tests: Contacts export pagination, cancellation, stream failure, serializer bytes, and the 1,001-contact integration case ([#1241](https://github.com/k2b-dev/cloud/issues/1241)). |
@@ -63,6 +64,13 @@ convention still needs a check or a test.
 | Preference change escapes its audit transaction | A remembered approval changes without audit evidence, or global SQL inside a transaction callback commits the change despite an audit failure. | Test: `packages/cloud/src/ai/approvals.integration.test.ts` checks exact event metadata, no-op revocations, and rollback of remember, replacement, revoke, forget, and system changes when audit insertion fails. |
 
 ## Lessons
+
+### Server-rendered charts need an island for inspection
+
+- **What happened:** Grids Custom App charts displayed their plots but offered no hover, keyboard, or tap inspection on published pages. The builder preview also lost category names in tooltips.
+- **Root cause:** The page rendered the chart outside an island. The plot deliberately suppressed category labels inside SVG, so default tooltips could not recover those names or the block's value format.
+- **Error class:** Inert server-rendered interaction.
+- **Guard:** Grids `chart-tooltip.test.ts` checks category and aggregation labels and value formatting. `page.render.test.tsx` checks the chart island, SVG parity, and display-only serialized props for signed-in and anonymous pages. `chart-tooltips.browser.test.ts` covers real island mounting, hover, keyboard, tap, and server/browser layout parity at desktop and phone widths.
 
 ### release-please skipped the Cloud release 0.44.0
 
