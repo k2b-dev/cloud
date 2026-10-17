@@ -82,8 +82,13 @@ export function timelineGroupLabel(
 
 /** An arc bows left of the dots by at most `lane - 8`, so even links across the whole notebook stay inside the lane. */
 export const timelineArcWidth = (dy: number, lane: number): number => Math.min(lane - 8, 10 + Math.abs(dy) * 0.45);
-export function timelineArc(x: number, y1: number, y2: number, lane: number): string {
-  const w = timelineArcWidth(y2 - y1, lane);
+const RECIPROCAL_INSET = 5;
+/**
+ * Two notes that link to each other would get the same curve twice, so the solid outgoing arc would hide the dashed
+ * incoming one. The upward arc of such a pair bows a little less, staying inside the other.
+ */
+export function timelineArc(x: number, y1: number, y2: number, lane: number, reciprocal = false): string {
+  const w = timelineArcWidth(y2 - y1, lane) - (reciprocal && y1 > y2 ? Math.min(RECIPROCAL_INSET, timelineArcWidth(0, lane) / 2) : 0);
   const f = (n: number) => n.toFixed(1);
   return `M ${f(x)},${f(y1)} C ${f(x - w)},${f(y1)} ${f(x - w)},${f(y2)} ${f(x)},${f(y2)}`;
 }

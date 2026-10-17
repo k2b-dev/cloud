@@ -158,6 +158,7 @@ export default function TimelineDisplay(props: Props) {
                   geometry().centres.get(edge.source)!,
                   geometry().centres.get(edge.target)!,
                   geometry().dotX,
+                  props.model.byId.get(edge.target)?.out.has(edge.source),
                 )}
               />
             )}

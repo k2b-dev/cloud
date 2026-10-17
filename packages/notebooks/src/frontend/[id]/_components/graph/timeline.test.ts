@@ -136,3 +136,21 @@ test("arc widths stay inside each lane and paths start and end on the dot", () =
   }
   expect(timelineArc(64, 10, 30, 64)).toBe("M 64.0,10.0 C 45.0,10.0 45.0,30.0 64.0,30.0");
 });
+
+test("reciprocal links get two separate arcs inside the lane", () => {
+  for (const lane of [64, 166]) {
+    for (const [y1, y2] of [
+      [20, 52],
+      [20, 9000],
+    ] as const) {
+      const down = timelineArc(lane, y1, y2, lane, true);
+      const up = timelineArc(lane, y2, y1, lane, true);
+      expect(up).not.toBe(timelineArc(lane, y2, y1, lane));
+      expect(down).toBe(timelineArc(lane, y1, y2, lane));
+      const bow = (path: string) => Number(/C ([\d.-]+),/.exec(path)![1]);
+      expect(bow(up)).toBeGreaterThan(bow(down));
+      expect(bow(up)).toBeLessThan(lane);
+      expect(bow(down)).toBeGreaterThanOrEqual(8);
+    }
+  }
+});
