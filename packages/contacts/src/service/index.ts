@@ -1,6 +1,7 @@
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import { type AccessSubject, type PermissionLevel, paginate, paginateItems, type RequestActor } from "@k2b/cloud/server";
-import type { PageParams, Paginated } from "@k2b/stdlib";
+import { err, fail, ok, type PageParams, type Paginated } from "@k2b/stdlib";
+import { getActorBookPermission, isContactsAdministrator } from "./access";
 import * as apiKeys from "./api-keys";
 import * as books from "./books";
 import * as contactLookup from "./contact-lookup";
@@ -87,11 +88,24 @@ export const contactsService = {
         };
       },
       summary: async (config: { filter?: { query?: string } }) => books.adminSummary({ search: config.filter?.query }),
+      access: {
+        list: async (config: Parameters<typeof books.access.list>[0] & { actor: RequestActor }) => {
+          if (!isContactsAdministrator(config.actor)) return fail(err.forbidden("Access denied"));
+          return ok(await books.access.list(config));
+        },
+        grant: async (config: Parameters<typeof books.access.grant>[0] & { actor: RequestActor }) => {
+          if (!isContactsAdministrator(config.actor)) return fail(err.forbidden("Access denied"));
+          return wake(books.access.grant(config));
+        },
+        update: (config: Omit<Parameters<typeof books.access.update>[0], "authority">) =>
+          wake(books.access.update({ ...config, authority: "administration" })),
+        remove: (config: Omit<Parameters<typeof books.access.remove>[0], "authority">) =>
+          wake(books.access.remove({ ...config, authority: "administration" })),
+      },
     },
     permission: {
-      get: (config: { bookId: string; subject: AccessSubject }): Promise<PermissionLevel> => books.getPermission(config),
-      canAccess: (config: { bookId: string; subject: AccessSubject; requiredLevel?: PermissionLevel }): Promise<boolean> =>
-        books.canAccess(config),
+      forActor: (config: { bookId: string; actor: RequestActor; accessSubject: AccessSubject }): Promise<PermissionLevel> =>
+        getActorBookPermission(config),
     },
     access: {
       list: async (config: {
@@ -111,9 +125,9 @@ export const contactsService = {
         actor: RequestActor;
         accessSubject: AccessSubject;
         locale?: string;
-      }) => wake(books.access.update(config)),
+      }) => wake(books.access.update({ ...config, authority: "grant" })),
       remove: (config: { bookId: string; accessId: string; actor: RequestActor; accessSubject: AccessSubject; locale?: string }) =>
-        wake(books.access.remove(config)),
+        wake(books.access.remove({ ...config, authority: "grant" })),
       add: (config: { bookId: string; accessId: string }) => wake(books.access.add(config)),
       count: (config: { bookId: string }) => books.access.count(config),
       apiKeys: {
@@ -159,7 +173,6 @@ export const contactsService = {
     search: (config: {
       subject: AccessSubject;
       boundBookId?: string | null;
-      bypassAccess?: boolean;
       pagination?: PageParams;
       filter?: import("./types").ContactListFilter;
     }) => contacts.search(config),
