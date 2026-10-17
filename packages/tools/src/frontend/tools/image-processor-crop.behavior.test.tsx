@@ -97,7 +97,9 @@ describe("Image Processor crop drag", () => {
       expect(notice?.querySelectorAll("li")).toHaveLength(2);
       for (const item of notice!.querySelectorAll("li")) {
         expect(item.textContent).toContain("Apply or cancel the crop before adding images");
-        expect(item.querySelectorAll("p")).toHaveLength(1);
+        // The name line and the reason line; a crop refusal has no extra hint.
+        expect(item.querySelectorAll("p")).toHaveLength(2);
+        expect(item.querySelector(".text-dimmed")).toBeNull();
       }
       const cancel = Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Cancel");
       cancel!.click();

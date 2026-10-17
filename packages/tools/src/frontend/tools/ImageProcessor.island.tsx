@@ -1211,8 +1211,11 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                   <For each={loadFailures()}>
                     {(failure) => (
                       <li class="min-w-0">
-                        <p class="truncate text-primary">
-                          <span class="font-medium">{failure.file.name}</span> ·{" "}
+                        {/* Only the name is cut short; the reason and the hint always wrap, so the recovery stays readable. */}
+                        <p class="truncate font-medium text-primary" title={failure.file.name}>
+                          {failure.file.name}
+                        </p>
+                        <p class="text-primary">
                           {failure.reason === "crop-active" ? t().applyOrCancelCrop : intakeT()[`${failure.reason}Title`]}
                         </p>
                         <Show when={failure.reason !== "crop-active" && failure.reason}>

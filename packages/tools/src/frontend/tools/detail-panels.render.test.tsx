@@ -182,4 +182,6 @@ test("crop refusals render per file in the main area without a hint line", () =>
   expect(main).toContain("later.png");
   expect(main).toContain("Apply or cancel the crop before adding images");
   expect(main).not.toContain('<p class="text-dimmed">');
+  // A long name may be cut short, but never the reason that says how to go on.
+  expect(main).toMatch(/<p class="text-primary">(?:<!--[^>]*-->)?Apply or cancel the crop before adding images/);
 });
