@@ -336,6 +336,7 @@ export const bindDragSource = (
       held = true;
       blockTouch = true;
       source.dataset.held = "";
+      win.addEventListener("keydown", key, true);
     };
     // Android reports a long press as a context-menu event, which may come before the timer and opens a GestureMenu
     // around the source then. It counts as the hold, so the following move drags.
@@ -520,6 +521,11 @@ export const bindDragSource = (
     };
     const key = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      // A hold is not a drag yet: Escape ends it and still reaches the menu the hold opened.
+      if (!session) {
+        cancel();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       cancel();
@@ -662,11 +668,16 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
     payload,
     origin,
     cancel,
+    // Settled a frame later, so a target that a re-render replaces has registered again before none counts as left.
     targetsChanged() {
-      if (!ready || finished) return;
-      targets = choices();
-      if (!targets.length) cancel();
-      else choose(current && targets.includes(current) ? current : targets[0]!);
+      if (!ready || finished || frame) return;
+      frame = win.requestAnimationFrame(() => {
+        frame = 0;
+        if (finished) return;
+        targets = choices();
+        if (!targets.length) cancel();
+        else choose(current && targets.includes(current) ? current : targets[0]!);
+      });
     },
   };
   // The drag is active before destinations are counted, so a host can mount the ones it shows only while dragging.

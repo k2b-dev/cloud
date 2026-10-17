@@ -67,6 +67,19 @@ window.mountEditable = () => {
     return createComponent(DragSource, { class: "paragraph-source", payload: { type: "demo.row", value: "paragraph", label: "Paragraph" }, children: [handle, paragraph] });
   } }), editor);
 };
+// The only destination for "demo.swap", which a re-render replaces with another during a keyboard pickup.
+window.mountSwap = () => {
+  const host = document.createElement("div"); document.querySelector(".rail").append(host);
+  const row = document.createElement("div"); row.className = "swap-row"; row.textContent = "Swap row";
+  const [variant, setVariant] = createSignal("A");
+  window.swap = () => setVariant("B");
+  render(() => createComponent(LocaleProvider, { locale: "en", get children() {
+    const pickUp = useKeyboardDrag();
+    window.pickUpSwap = () => pickUp({ type: "demo.swap", value: "swap", label: "Swap" }, row);
+    return [row, () => { const label = "Swap " + variant(); return createComponent(DropTarget, { label, accept: ["demo.swap"], class: "swap-target",
+      onDrop: (payload) => window.drops.push({ target: label, value: payload.value }), children: label }); }];
+  } }), host);
+};
 // A modal dialog nested inside the Archive target, with its own source.
 window.openNested = () => {
   const dialog = document.createElement("dialog"); dialog.className = "nested"; dialog.style.padding = "40px";
@@ -367,6 +380,41 @@ describe(`drag and drop in ${browserName}`, () => {
     }
   });
 
+  test("Escape ends a held touch before it drags", async () => {
+    const { page, context } = await open({ viewport: { width: 834, height: 1194 }, hasTouch: true, isMobile: true });
+    try {
+      await page.evaluate("window.mountBare()");
+      const point = await center(page, ".bare-row");
+      const pointer = (type: string, x: number, y: number) =>
+        page.evaluate(
+          ({ type, x, y }) =>
+            document.querySelector(".bare-row")!.dispatchEvent(
+              new PointerEvent(type, {
+                pointerId: 7,
+                pointerType: "touch",
+                isPrimary: true,
+                button: 0,
+                bubbles: true,
+                cancelable: true,
+                clientX: x,
+                clientY: y,
+              }),
+            ),
+          { type, x, y },
+        );
+      await pointer("pointerdown", point.x, point.y);
+      await page.locator("[data-held]").waitFor();
+      await page.keyboard.press("Escape");
+      await clean(page);
+      await pointer("pointermove", point.x + 20, point.y);
+      expect(await page.locator(".k2b-drag-preview, [data-dragging]").count()).toBe(0);
+      await pointer("pointerup", point.x + 20, point.y);
+      expect(await drops(page)).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("a platform long press before the hold time counts as the hold", async () => {
     const { page, context } = await open({ viewport: { width: 834, height: 1194 }, hasTouch: true, isMobile: true });
     try {
@@ -596,6 +644,25 @@ describe(`drag and drop in ${browserName}`, () => {
       await page.keyboard.press("Enter");
       await clean(page);
       expect(await drops(page)).toEqual([{ target: "Later", value: "row-2" }]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a keyboard pickup survives a re-render that replaces its only destination", async () => {
+    const { page, context } = await open();
+    try {
+      await page.evaluate("window.mountSwap()");
+      await page.evaluate("window.pickUpSwap()");
+      await until(page, `document.querySelector('.swap-target')?.dataset.drop === 'over'`);
+      await page.evaluate("window.swap()");
+      await until(
+        page,
+        `document.querySelector('.swap-target')?.textContent === 'Swap B' && document.querySelector('.swap-target').dataset.drop === 'over'`,
+      );
+      await page.keyboard.press("Enter");
+      await clean(page);
+      expect(await drops(page)).toEqual([{ target: "Swap B", value: "swap" }]);
     } finally {
       await context.close();
     }

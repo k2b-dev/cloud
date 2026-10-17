@@ -75,9 +75,11 @@ nothing behind a modal moves or takes a drop.
 
 **Cancel.** Escape, pointer cancellation, window blur, a second pointer, or
 unmounting the source cancels without a drop. A button still held after
-Escape does not click the row when it is released. Escape is consumed so it does
-not also close an enclosing dialog. Cleanup removes preview, target states,
-held state, listeners, timers, animation frames, and the text-selection hold.
+Escape does not click the row when it is released. During a drag, Escape is
+consumed so it does not also close an enclosing dialog. Escape also ends a
+held touch that has not moved yet; there it still reaches the menu the hold
+opened. Cleanup removes preview, target states, held state, listeners,
+timers, animation frames, and the text-selection hold.
 
 ## Keyboard and menu path
 
