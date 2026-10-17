@@ -86,6 +86,12 @@ window.stackDialogs = () => {
   void prompts.confirm("Wirklich löschen?");
 };
 window.closeDialogs = () => dialogCore.close();
+/** Adds a compact area, as a file field in a form is, whose sentence wraps. */
+window.addShortArea = () => {
+  const field = html("div", { id: "short", style: "position:fixed;right:16px;bottom:16px;width:220px;height:60px" }, "Datei");
+  document.getElementById("app").append(field);
+  render(() => createComponent(FileDropTarget, { for: field, label: "Ablegen, um die Datei an diesen Datensatz anzuhängen", onDrop: record("short") }), field);
+};
 
 const files = (list) => {
   const transfer = new DataTransfer();
@@ -125,7 +131,8 @@ window.overlays = () =>
     });
 /** How the shown overlay looks: its frame, and the chip that says what dropping does. */
 window.look = () => {
-  const overlay = [...document.querySelectorAll(".k2b-file-drop")].find((element) => element.matches(":popover-open"));
+  const open = [...document.querySelectorAll(".k2b-file-drop")].filter((element) => element.matches(":popover-open"));
+  const overlay = open.find((element) => element.dataset.state !== "available") ?? open[0];
   const chip = overlay.querySelector(".k2b-file-drop__message");
   const box = chip.getBoundingClientRect();
   return {
@@ -158,6 +165,7 @@ type FixtureWindow = Window & {
   startPageDrag: (selector: string) => void;
   stackDialogs: () => void;
   closeDialogs: () => void;
+  addShortArea: () => void;
   overlays: () => Overlay[];
   box: (selector: string) => number[];
   look: () => { frame: string; message: string; chip: number[] };
@@ -364,6 +372,20 @@ describe(`FileDropTarget in ${browserName}`, () => {
     // A folder row says nothing itself; the chip names it.
     await drag(page, "dragenter", "#row");
     expect((await look(page)).message).toBe("shown");
+    await page.close();
+  });
+
+  test("in a short area the chip stays whole, centered instead of at the bottom", async () => {
+    const page = await open();
+    await page.evaluate(() => (window as unknown as FixtureWindow).addShortArea());
+    await drag(page, "dragenter", "#short");
+    const area = await box(page, "#short");
+    const { chip, message } = await look(page);
+    expect(message).toBe("shown");
+    // The sentence wraps in 220px, and the whole chip stays inside the area.
+    expect(chip[3]!).toBeGreaterThan(30);
+    expect(chip[1]!).toBeGreaterThanOrEqual(area[1]!);
+    expect(chip[1]! + chip[3]!).toBeLessThanOrEqual(area[1]! + area[3]!);
     await page.close();
   });
 

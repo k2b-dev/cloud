@@ -7588,6 +7588,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: color-mix(in srgb, var(--k2b-action) 3%, transparent);
   pointer-events: none;
   transition: background-color var(--k2b-motion-fast) ease;
+  /* The chip asks the overlay's own size: a short area, such as a compact file field, centers it instead. */
+  container-type: size;
 }
 
 .k2b-ui [popover].k2b-file-drop[data-state="over"] {
@@ -7622,6 +7624,26 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-file-drop[data-message="shown"] .k2b-file-drop__message {
   opacity: 1;
+}
+
+@container (max-height: 10rem) {
+  .k2b-ui .k2b-file-drop__message {
+    bottom: auto;
+    top: 50%;
+    padding: 0.25rem 0.625rem;
+    border-radius: var(--k2b-radius-control);
+    font-size: 0.8125rem;
+    line-height: 1.125rem;
+    transform: translate(-50%, -50%);
+  }
+
+  /* Two lines at most, so the chip fits a one-row file field. */
+  .k2b-ui .k2b-file-drop__message > span {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
 }
 
 .k2b-ui .k2b-file-drop[data-state="invalid"] .k2b-file-drop__message {

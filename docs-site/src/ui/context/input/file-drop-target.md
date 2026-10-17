@@ -45,7 +45,8 @@ It has no frame. While files are over the window, a faint accent tint marks
 every area that takes them. Over the area the tint gets stronger, and one solid
 chip at the bottom center of the area says the sentence. The chip sits below
 centered content, such as an empty state's `FileDropzone`, instead of covering
-it. While an area is on the page, a
+it. In an area at most 10rem high, such as a one-row file field, the chip is
+smaller, centered, and shows at most two lines. While an area is on the page, a
 drop outside every target is refused, so the browser does not open the file and
 leave the page.
 
