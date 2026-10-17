@@ -8,7 +8,7 @@ import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 import { BookGraphFixture, type BookGraphFixtureProps } from "./book-graph.browser-harness";
 
 const noteHref = "/app/notebooks/book01/notes/note03?mode=book";
-const graphHref = "/app/notebooks/book01?mode=graph&note=note03&from=book";
+const graphHref = `/app/notebooks/book01?mode=graph&note=note03&from=book&back=${encodeURIComponent(noteHref)}`;
 const tree = [
   { id: "note01", title: "Guide", children: [] },
   { id: "note03", title: "Glossary", children: [] },
@@ -88,6 +88,7 @@ beforeAll(async () => {
           tree,
           tags: [],
           current: isGraph ? "graph" : undefined,
+          graphBack: isGraph ? (url.searchParams.get("back") ?? undefined) : undefined,
         },
         graph: isGraph ? graph : null,
       };

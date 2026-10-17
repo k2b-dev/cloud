@@ -153,8 +153,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const ctx: NotebookContext = {
     notebook: publicNotebook,
     tree,
-    // A graph opened from a list has a focus note, but no note selected in its navigation.
-    selectedNoteId: graphBack ? null : selectedNoteId,
+    selectedNoteId,
     userId: user.id,
     settings,
     navigationHidden: parseNavigationHidden(cookieHeader),

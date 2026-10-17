@@ -26,6 +26,7 @@ export function BookGraphFixture(props: BookGraphFixtureProps) {
                 selectedNoteId: props.navigator.selectedNoteId,
                 graph: props.graph,
                 from: "book",
+                backHref: props.navigator.graphBack,
               })
             ) : (
               <article id="notebook-book-content" class="notebook-book-content">

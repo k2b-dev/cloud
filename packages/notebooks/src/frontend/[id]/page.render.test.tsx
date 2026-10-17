@@ -673,7 +673,10 @@ for (const [locale, label] of [
     expect(rows).toHaveLength(1);
     expect(rows[0]?.text.trim()).toBe(label!);
     expect(rows[0]?.attributes["aria-current"]).toBeUndefined();
-    expect(rows[0]?.attributes.href).toBe("/app/notebooks/book01?mode=graph&amp;note=note01&amp;from=book");
+    // Links carries the page it opened from, so Close returns to it.
+    expect(rows[0]?.attributes.href).toBe(
+      `/app/notebooks/book01?mode=graph&amp;note=note01&amp;from=book&amp;back=${encodeURIComponent("/app/notebooks/book01/notes/note01?mode=book")}`,
+    );
   });
 }
 
@@ -684,7 +687,9 @@ test("writer graph marks Links current in the workspace footer and phone navigat
   expect(rows.map((item) => item.text.trim())).toEqual(["Links", "Attachments", "Settings"]);
   expect(rows[0]?.attributes["aria-current"]).toBe("page");
   expect(rows[1]?.attributes["aria-current"]).toBeUndefined();
-  expect(rows[0]?.attributes.href).toBe("/app/notebooks/book01?mode=graph&amp;note=note01");
+  expect(rows[0]?.attributes.href).toBe(
+    `/app/notebooks/book01?mode=graph&amp;note=note01&amp;back=${encodeURIComponent("/app/notebooks/book01/notes/note01")}`,
+  );
   const snapshot = JSON.parse((await select(html, "script[data-cloud-workspace-navigation]"))[0]!.text);
   expect(snapshot.items.find((item: { id: string }) => item.id === "graph")).toMatchObject({ active: true });
   const close = await select(html, 'a[aria-label="Close graph"]');
@@ -704,7 +709,9 @@ test.each(["write", "readonly"] as const)("writer graph preserves %s origin over
   expect(html).not.toContain("notebook-book-workspace");
   const rows = await select(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
   expect(rows[0]?.text.trim()).toBe("Links");
-  expect(rows[0]?.attributes.href).toBe(`/app/notebooks/book01?mode=graph&amp;note=note01&amp;from=${mode}`);
+  expect(rows[0]?.attributes.href).toBe(
+    `/app/notebooks/book01?mode=graph&amp;note=note01&amp;from=${mode}&amp;back=${encodeURIComponent(`/app/notebooks/book01/notes/note01?mode=${mode}`)}`,
+  );
   expect(rows[1]?.attributes.href).toBe(`/app/notebooks/book01/attachments?mode=${mode}`);
   expect((await select(html, 'a[aria-label="Close graph"]'))[0]?.attributes.href).toBe(`/app/notebooks/book01/notes/note01?mode=${mode}`);
   expect(await select(html, `[role="tree"] a[href="/app/notebooks/book01/notes/note01?mode=${mode}"]`)).toHaveLength(1);
@@ -729,7 +736,7 @@ for (const permission of ["write", "read"] as const) {
     const html = await renderLinkedNotebook(permission, `graph&back=${encodeURIComponent(back)}`);
     expect((await select(html, 'a[aria-label="Close graph"]'))[0]?.attributes.href).toBe(back.replaceAll("&", "&amp;"));
     const rows = await select(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
-    const href = `/app/notebooks/book01?mode=graph${permission === "read" ? "&note=note01&from=book" : ""}&back=${encodeURIComponent(back)}`;
+    const href = `/app/notebooks/book01?mode=graph&note=note01${permission === "read" ? "&from=book" : ""}&back=${encodeURIComponent(back)}`;
     expect(rows[0]?.attributes.href).toBe(href.replaceAll("&", "&amp;"));
     const navigation: { items: { id: string; href?: string }[] } = JSON.parse(
       (await select(html, "script[data-cloud-workspace-navigation]"))[0]!.text,

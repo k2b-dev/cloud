@@ -114,15 +114,39 @@ describe("Notebook workspace container head", () => {
     );
   });
 
-  test.each([null, "note01"])("Links carries the return page only without a selected note (%s)", async (selectedNoteId) => {
-    const graphBack = "/app/notebooks/Book01/attachments?search=x&page=2";
-    const html = renderSidebar({ ...ctx(), selectedNoteId }, undefined, "en", graphBack);
-    const links = await selectHtml(html, ".notebook-sidebar-foot a");
-    const href = `/app/notebooks/Book01?mode=graph${selectedNoteId ? "&note=note01" : `&back=${encodeURIComponent(graphBack)}`}`;
-    expect(links[0]?.attributes.href).toBe(href.replaceAll("&", "&amp;"));
-    const navigation: { items: NavigationItem[] } = JSON.parse(
-      (await selectHtml(html, "script[data-cloud-workspace-navigation]"))[0]!.text,
-    );
-    expect(navigation.items.find((item) => item.id === "graph")?.href).toBe(href);
-  });
+  test.each([
+    // A page without a note (attachments, tag results) hands its own address.
+    [null, undefined, {}, "/app/notebooks/Book01/attachments?search=x&page=2", "/app/notebooks/Book01/attachments?search=x&page=2", ""],
+    // A note returns to itself with its view and filter, and the graph keeps the filter for its own sidebar.
+    [
+      "note01",
+      "write",
+      { view: "favorites" },
+      undefined,
+      "/app/notebooks/Book01/notes/note01?mode=write&view=favorites",
+      "&view=favorites",
+    ],
+    [
+      "note01",
+      undefined,
+      { view: "tag", tag: "garden" },
+      undefined,
+      "/app/notebooks/Book01/notes/note01?view=tag&tag=garden",
+      "&view=tag&tag=garden",
+    ],
+  ] as const)(
+    "Links returns to the page and filter it opened from (%s, %s)",
+    async (selectedNoteId, presentationMode, sidebarFilter, graphBack, back, filterQuery) => {
+      const html = renderSidebar({ ...ctx(), selectedNoteId, presentationMode, sidebarFilter }, undefined, "en", graphBack);
+      const links = await selectHtml(html, ".notebook-sidebar-foot a");
+      const note = selectedNoteId ? `&note=${selectedNoteId}` : "";
+      const from = presentationMode ? `&from=${presentationMode}` : "";
+      const href = `/app/notebooks/Book01?mode=graph${note}${from}&back=${encodeURIComponent(back)}${filterQuery}`;
+      expect(links[0]?.attributes.href).toBe(href.replaceAll("&", "&amp;"));
+      const navigation: { items: NavigationItem[] } = JSON.parse(
+        (await selectHtml(html, "script[data-cloud-workspace-navigation]"))[0]!.text,
+      );
+      expect(navigation.items.find((item) => item.id === "graph")?.href).toBe(href);
+    },
+  );
 });
