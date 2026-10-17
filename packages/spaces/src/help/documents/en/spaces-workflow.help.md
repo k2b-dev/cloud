@@ -35,7 +35,7 @@ With **Manage** access, you set up templates in the Space settings under **Templ
 
 :::reference
 - **Title:** Use a direct action or a noun phrase. Make the title readable in a list without opening the item.
-- **Assignees:** Assign people when the item needs follow-up. Leave the item unassigned when it belongs in a shared queue.
+- **Assignees:** Assign people or service accounts with their own access to the Space when the item needs follow-up. Leave the item unassigned when it belongs in a shared queue.
 - **Status:** Use the status to show the workflow state. Kanban views depend on a consistent status.
 - **Due date or event time:** Use a deadline for tasks and a schedule for events when the timing changes what people do next.
 - **Estimated duration:** Record a positive estimate in whole minutes when it helps someone size or schedule a task. Events use their start and end time instead.
@@ -109,13 +109,13 @@ While a task is claimed, other people see who works on it:
 - The **In progress** filter lists claimed tasks.
 - In the details, **Assigned** is one list. The working person's row comes first with the green ring, **working on it**, and the time they started working.
 
-A holder outside the assignees, such as a service account or an account that was deleted, still appears first as a working row. This row has no remove action.
+A holder outside the assignees, such as a personal automation key or an account that was deleted, still appears first as a working row. This row has no remove action.
 
-Claiming a task also assigns it to you. The claim shows which assignee works on it now. Releasing your own claim keeps you assigned. The column does not change. **Assigned to me** includes tasks you claimed. **Unassigned** excludes tasks a person claimed. Service accounts can claim tasks but cannot be assignees.
+Claiming a task also assigns it to you. The claim shows which assignee works on it now. Releasing your own claim keeps you assigned. The column does not change. **Assigned to me** includes tasks you claimed. **Unassigned** excludes tasks claimed by a person or an agent. Active service accounts with their own access to the Space can be assignees; Space API keys can be assigned only in their own Space. Personal automation keys cannot be assignees. **Assigned to me** stays limited to your personal assignments.
 
-**Take over** moves the claim and the assignment to you. A forced release of another person's claim also removes their assignment. If they were the only assignee, the task becomes unassigned.
+**Take over** moves the claim and the assignment to you. A forced release of another account's claim also removes their assignment. If they were the only assignee, the task becomes unassigned.
 
-Removing a working person from **Assigned** ends their claim. Removing someone else asks you to confirm once. If another session claimed the task, Spaces refuses an assignee list that omits that person. Read the task again. In the CLI, release the claim before you use `assign` or `set` to remove its holder.
+Removing a working person or service account from **Assigned** ends their claim. Removing someone else asks you to confirm once. If another session claimed the task, Spaces refuses an assignee list that omits that holder. Read the task again. In the CLI, release the claim before you use `assign` or `set` to remove its holder.
 
 Claims do not expire. They coordinate work and do not lock it: with **Edit** access, you can move a claimed task between open columns, and ordinary shared edits stay available. Completing your own claimed task, also by dragging it into a done column, releases the claim. With **Edit** access, you see **Take over** for the claim of another account. You confirm it in a dialog that names the current holder. If you complete a task that someone else claimed, for example by dragging it into a done column, Spaces asks once, such as "Claimed by Jana Berger – take over and complete?". It then takes the claim over and completes the task in one step. The assignees do not change. **Cancel** leaves the card where it was. Sending a task through a wormhole to another Space ends its claim the same way: your own claim ends without a question, and you take over someone else's claim after you confirm. The activity shows who took a claim over from whom.
 

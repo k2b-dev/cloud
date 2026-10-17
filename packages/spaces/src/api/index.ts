@@ -2350,17 +2350,17 @@ const app = new Hono<AuthContext>()
     },
   )
 
-  // List assignable users for assignee pickers
+  // List assignable principals for assignee pickers
   .get(
     "/:id/assignable-users",
     describeRoute({
       tags: ["Spaces"],
-      summary: "List assignable users",
+      summary: "List assignable people and service accounts",
       description:
-        "List concrete users that currently have effective access to this space and can be assigned to items. Requires write access, since this is the assignee picker's directory.",
+        "List people with effective access and active service accounts with their own direct access to this space that can be assigned to items. Requires write access, since this is the assignee picker's directory.",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(SpaceAssignableUserListSchema, "Assignable users"),
+        200: jsonResponse(SpaceAssignableUserListSchema, "Assignable people and service accounts"),
         400: jsonResponse(ErrorResponseSchema, "Invalid query"),
         403: jsonResponse(ErrorResponseSchema, "Write access required"),
         404: jsonResponse(ErrorResponseSchema, "Space not found"),
@@ -2724,7 +2724,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Claim task work",
-      description: "Claim an open task. Claiming as a person also assigns you to the task.",
+      description:
+        "Claim an open task. Claiming as a person or a service account other than a personal automation key also assigns you to the task.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(TaskWorkSchema, "Updated task work"),
@@ -2756,7 +2757,7 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "Release task work",
       description:
-        "Releasing your own claim keeps you assigned. A forced release of another person's claim also removes them from the assignees.",
+        "Releasing your own claim keeps you assigned. A forced release of another account's claim also removes it from the assignees.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(TaskWorkSchema, "Updated task work"),

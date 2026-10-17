@@ -387,7 +387,12 @@ test("task list fits escaped maximum previews without skipping rows", async () =
       ...task,
       title: "\u0001".repeat(200),
       description: "\u0001".repeat(1000),
-      assignees: Array.from({ length: 11 }, () => ({ id: userId, displayName: "\u0001".repeat(100), avatarHash: null })),
+      assignees: Array.from({ length: 11 }, () => ({
+        id: userId,
+        kind: "user" as const,
+        displayName: "\u0001".repeat(100),
+        avatarHash: null,
+      })),
     })),
     page: 1,
     pageSize: 100,
@@ -491,7 +496,12 @@ test.each(["task.list", "event.list"] as const)("%s reports total assignees inde
   spyOn(spacesService.item, "listFiltered").mockResolvedValue({
     items: [11, 2, 0].map((count) => ({
       ...item,
-      assignees: Array.from({ length: count }, (_, index) => ({ id: userId, displayName: `Assignee ${index}`, avatarHash: null })),
+      assignees: Array.from({ length: count }, (_, index) => ({
+        id: userId,
+        kind: index === 0 ? ("service_account" as const) : ("user" as const),
+        displayName: `Assignee ${index}`,
+        avatarHash: null,
+      })),
     })),
     page: 1,
     pageSize: 25,
@@ -502,6 +512,7 @@ test.each(["task.list", "event.list"] as const)("%s reports total assignees inde
   const result = await query.run(query.input.parse({ spaceId }), userContext);
   if (!result.ok) throw new Error("Expected item page");
   const envelope = capabilityResultSchema(query.data).parse(result.data);
+  expect(envelope.data[0]?.assignees[0]?.kind).toBe("service_account");
   expect(
     envelope.data.map(({ assignees, assigneeCount, relationsTruncated }) => ({
       assignees: assignees.length,
@@ -946,7 +957,22 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
     const listAssignable = spyOn(spacesService.item, "listAssignableUsers").mockResolvedValue([
-      { id: userId, displayName: user.displayName, avatarHash: null, uid: "spaces-user", description: "spaces-user · direct access" },
+      {
+        id: userId,
+        kind: "user",
+        displayName: user.displayName,
+        avatarHash: null,
+        uid: "spaces-user",
+        description: "spaces-user · direct access",
+      },
+      {
+        id: blockerUuid,
+        kind: "service_account",
+        displayName: "Spaces agent",
+        avatarHash: null,
+        uid: "Spaces agent",
+        description: "agent · direct access",
+      },
     ]);
 
     const result = await spacesCapabilities.queries["space.assignee.list"].run({ spaceId, query: "Spaces", limit: 5 }, userContext);
@@ -954,7 +980,12 @@ describe("spaces capabilities", () => {
     expect(listAssignable).toHaveBeenCalledWith({ spaceId: spaceUuid, search: "Spaces", limit: 5 });
     expect(result).toEqual({
       ok: true,
-      data: { data: [{ id: userId, displayName: user.displayName, description: "spaces-user · direct access" }] },
+      data: {
+        data: [
+          { id: userId, kind: "user", displayName: user.displayName, description: "spaces-user · direct access" },
+          { id: blockerUuid, kind: "service_account", displayName: "Spaces agent", description: "agent · direct access" },
+        ],
+      },
     });
   });
 
@@ -2123,7 +2154,7 @@ describe("spaces capabilities", () => {
       activeBlockerCount: 0,
       priority: "urgent" as const,
       completedAt: null,
-      assignees: Array.from({ length: 3 }, () => ({ id: userId, displayName: "a".repeat(100) })),
+      assignees: Array.from({ length: 3 }, () => ({ id: userId, kind: "user", displayName: "a".repeat(100) })),
       assigneeCount: 11,
       tags: Array.from({ length: 3 }, () => ({ id: itemId, name: "n".repeat(50), color: "c".repeat(20) })),
       relationsTruncated: true,

@@ -15,6 +15,8 @@ import {
   ReactionEmojiSchema,
   ReorderColumnsSchema,
   ReorderWormholesSchema,
+  SpaceAssignableUserSchema,
+  SpaceItemAssigneeSchema,
   SpaceItemAttachmentSchema,
   SpaceItemSchema,
   UpdateItemSchema,
@@ -205,4 +207,15 @@ describe("attachment media types", () => {
 test("reaction emoji accepts exactly one fully-qualified RGI emoji", () => {
   for (const emoji of ["👍", "👍🏽", "❤️", "👩‍💻", "🇩🇪", "1️⃣"]) expect(ReactionEmojiSchema.safeParse(emoji).success).toBe(true);
   for (const emoji of ["❤", "ab", "👍👍", "", " ", "👍\n"]) expect(ReactionEmojiSchema.safeParse(emoji).success).toBe(false);
+});
+
+test("assignee contracts distinguish people and service accounts without changing UUID inputs", () => {
+  const id = "99999999-9999-4999-8999-999999999999";
+  for (const kind of ["user", "service_account"] as const) {
+    const assignee = { id, kind, displayName: "Task worker", avatarHash: null };
+    expect(SpaceItemAssigneeSchema.parse(assignee)).toEqual(assignee);
+    expect(SpaceAssignableUserSchema.parse({ ...assignee, uid: "Task worker" }).kind).toBe(kind);
+    expect(UpdateItemSchema.parse({ assigneeIds: [id] })).toEqual({ assigneeIds: [id] });
+  }
+  expect(SpaceItemAssigneeSchema.safeParse({ id, kind: "group", displayName: "Team", avatarHash: null }).success).toBeFalse();
 });

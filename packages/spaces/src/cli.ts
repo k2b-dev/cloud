@@ -250,7 +250,7 @@ function spacesCommands(locale?: string) {
   const localTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
   const proposalText = (dates: string[]) => dates.map((date) => `${formatTemplateDate(date, locale)} (${date})`).join(", ") || "-";
 
-  /** A user: `me`, a user ID, or a username with access to the space. */
+  /** An assignee: `me`, a principal ID, a username, or a service account name with access. */
   const resolveUserId = async (ctx: CloudCliContext, spaceId: string, ref: string): Promise<string> => {
     if (ref === "me") return (await readApi<{ id: string }>(ctx, "/api/me")).id;
     if (UUID.test(ref)) return ref;
@@ -258,12 +258,14 @@ function spacesCommands(locale?: string) {
       ctx,
       withQuery(api(`/${encodeURIComponent(spaceId)}/assignable-users`), { search: ref }),
     );
-    const user = users.find((candidate) => candidate.uid === ref);
+    const user = users.find(
+      (candidate) => candidate.uid === ref || (candidate.kind === "service_account" && candidate.uid.toLowerCase() === ref.toLowerCase()),
+    );
     if (user) return user.id;
     throw new Error(
       t({
-        en: `No user named "${ref}" can be assigned in this space. Use me, a user ID, or a username with access.`,
-        de: `Niemand mit dem Benutzernamen „${ref}“ kann in diesem Space zugewiesen werden. Verwende me, eine Benutzer-ID oder einen Benutzernamen mit Zugriff.`,
+        en: `No person or service account named "${ref}" can be assigned in this space. Use me, an ID, a username, or a service account name with access.`,
+        de: `Keine Person und kein Dienstkonto mit dem Namen „${ref}“ kann in diesem Space zugewiesen werden. Verwende me, eine ID, einen Benutzernamen oder den Namen eines Dienstkontos mit Zugriff.`,
       }),
     );
   };
@@ -358,7 +360,10 @@ function spacesCommands(locale?: string) {
       description: t({ en: "Tag ID or exact name; repeatable", de: "Schlagwort-ID oder exakter Name; wiederholbar" }),
     }),
     assignee: flag.stringList({
-      description: t({ en: "me, user ID, or username; repeatable", de: "me, Benutzer-ID oder Benutzername; wiederholbar" }),
+      description: t({
+        en: "Assignee: me, user or service account ID, username, or service account name; repeatable",
+        de: "Zuständige: me, Benutzer- oder Dienstkonto-ID, Benutzername oder Dienstkontoname; wiederholbar",
+      }),
     }),
   };
 
@@ -438,7 +443,10 @@ function spacesCommands(locale?: string) {
           mine: flag.boolean({ description: t({ en: "Only items assigned to me", de: "Nur mir zugewiesene Einträge" }) }),
           unassigned: flag.boolean({ description: t({ en: "Only unassigned items", de: "Nur Einträge ohne Zuweisung" }) }),
           assignee: flag.stringList({
-            description: t({ en: "Assignee user ID; repeatable", de: "Benutzer-ID der Zuweisung; wiederholbar" }),
+            description: t({
+              en: "Assignee user or service account ID; repeatable",
+              de: "Benutzer- oder Dienstkonto-ID der Zuweisung; wiederholbar",
+            }),
           }),
           ready: flag.boolean({ description: t({ en: "Open tasks without active blockers", de: "Offene Aufgaben ohne aktive Blocker" }) }),
           blocked: flag.boolean({ description: t({ en: "Open tasks with active blockers", de: "Offene Aufgaben mit aktiven Blockern" }) }),
@@ -973,14 +981,17 @@ function spacesCommands(locale?: string) {
       ),
       command("assign", {
         summary: t({
-          en: "Assign to one person or nobody; release an active claim before removing its holder (409)",
-          de: "Einer Person oder niemandem zuweisen; vor dem Entfernen die aktive Übernahme freigeben (409)",
+          en: "Assign to one person, service account, or nobody; release an active claim before removing its holder (409)",
+          de: "Einer Person, einem Dienstkonto oder niemandem zuweisen; vor dem Entfernen die aktive Übernahme freigeben (409)",
         }),
         args: {
           ...itemArg,
           user: arg.required({
             valueLabel: "user|me|none",
-            description: t({ en: "me, none, a user ID, or a username", de: "me, none, eine Benutzer-ID oder ein Benutzername" }),
+            description: t({
+              en: "me, none, a user or service account ID, a username, or a service account name",
+              de: "me, none, eine Benutzer- oder Dienstkonto-ID, ein Benutzername oder Dienstkontoname",
+            }),
           }),
         },
         examples: ['cld spaces assign "Roadmap":"Publish release notes" me', "cld spaces assign Item01 none"],
@@ -1245,8 +1256,8 @@ function spacesCommands(locale?: string) {
       }),
       command("claim", {
         summary: t({
-          en: "Claim an open, unblocked task; claiming as a person also assigns you",
-          de: "Eine offene, unblockierte Aufgabe übernehmen; als Person wirst du auch zugewiesen",
+          en: "Claim an open, unblocked task; also assigns your person or service account, except personal automation keys",
+          de: "Eine offene, unblockierte Aufgabe übernehmen; weist dich als Person oder Dienstkonto zu, außer bei persönlichen Automatisierungsschlüsseln",
         }),
         args: itemArg,
         flags: {

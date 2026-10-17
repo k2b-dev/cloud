@@ -19,7 +19,7 @@ const columns = [
   { id: "Col002", color: null },
 ];
 const tag = (id: string, color: string): SpaceTag => ({ id, spaceId: "Space1", name: id, color });
-const person = (displayName: string): SpaceItemAssignee => ({ id: crypto.randomUUID(), displayName, avatarHash: null });
+const person = (displayName: string): SpaceItemAssignee => ({ id: crypto.randomUUID(), kind: "user", displayName, avatarHash: null });
 const item = (patch: Partial<CalendarColorSource> = {}): CalendarColorSource => ({
   tags: [],
   columnId: "Col001",
