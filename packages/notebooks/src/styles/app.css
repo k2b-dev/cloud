@@ -1757,9 +1757,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* On a narrow desktop Main, for example beside the navigation, the search gives way before the title and the switcher. */
 .notebook-graph__search {
   width: 13.75rem;
-  flex: none;
+  flex: 0 3 auto;
+}
+@media (min-width: 48rem) {
+  /* Above the shared field rule, which lets every field shrink to nothing. */
+  .k2b-ui .notebook-graph__head .notebook-graph__search {
+    min-width: 8rem;
+  }
 }
 .notebook-graph__hits {
   display: inline-block;

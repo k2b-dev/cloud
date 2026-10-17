@@ -1556,6 +1556,30 @@ test(`${browserName}: a list sorted by Changed shows the Changed column on a pho
   }
 }, 30_000);
 
+for (const display of ["network", "neighborhood", "timeline"]) {
+  test(`${browserName}: a narrow desktop Main keeps every ${display} header control inside the head`, async () => {
+    const page = await open(graphPath("hand01", `&display=${display}`), { width: 1024, height: 800 });
+    try {
+      for (const width of [664, 600]) {
+        // A 1024 px window beside the navigation leaves about 664 px for Main.
+        const box = await page.evaluate((main) => {
+          document.querySelector<HTMLElement>(".notebook-graph")!.style.width = `${main}px`;
+          const head = document.querySelector(".notebook-graph__head")!;
+          const right = Math.max(...[...head.children].map((child) => child.getBoundingClientRect().right));
+          return {
+            overflow: right - head.getBoundingClientRect().right,
+            search: document.querySelector(".notebook-graph__search")!.clientWidth,
+          };
+        }, width);
+        expect(box.overflow).toBeLessThanOrEqual(0);
+        expect(box.search).toBeGreaterThanOrEqual(128);
+      }
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
+
 test(`${browserName}: Changed sorts the list through the URL and survives reload and Back`, async () => {
   const page = await open(graphPath("hand01", "&list=1"));
   const ids = () =>
