@@ -70,8 +70,8 @@ function HeaderControls(props: { authenticated: boolean; title?: string; launchp
       </div>
       <div class="flex shrink-0 items-center gap-1">
         <div class="flex items-center gap-1 lg:hidden">
-          <LayoutHelpTrigger variant="header" />
           {props.authenticated && <GlobalSearchTrigger variant="header" />}
+          <LayoutHelpTrigger variant="header" />
           {props.launchpad && (
             <AppLaunchpadButton
               profile={

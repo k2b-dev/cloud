@@ -18,6 +18,7 @@ import { getLayoutHelp, layoutHelpFailed } from "./help";
 import LayoutFooter from "./LayoutFooter";
 import LayoutHeader from "./LayoutHeader";
 import LayoutRail, { type LayoutAppLink } from "./LayoutRail";
+import LayoutTabBar from "./LayoutTabBar";
 import type { LayoutContext } from "./layout-context";
 import { HELP_VIEW_LIMIT } from "./layout-help-start";
 import type { LayoutBreadcrumb } from "./layout-runtime";
@@ -305,6 +306,7 @@ export default function Layout(props: LayoutProps) {
             </PageTrailProvider>
             {!fullPage && !showRail && <LayoutFooter appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />}
           </div>
+          {showRail && <LayoutTabBar currentPath={requestPath(c)} />}
         </ShellDataProvider>
         <div data-print-fallback="">
           <p>{t.printFallbackTitle}</p>

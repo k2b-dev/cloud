@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
@@ -1235,4 +1235,72 @@ describe("workspace detail", () => {
       await context.close();
     }
   });
+});
+
+// Nothing changes from 1024 px: the shell's rects at the card widths match origin/main's, recorded with
+// RECORD_SHELL_BASELINE=1 before the tablet and phone shells changed (both engines, light and dark).
+describe("from 1024 px the shell keeps origin/main's geometry", () => {
+  const baselinePath = resolve(import.meta.dir, "compact-shell.baseline.json");
+  const recording = process.env.RECORD_SHELL_BASELINE === "1";
+  const engine = process.env.TEST_BROWSER?.trim() || "chromium";
+  type Rects = Record<string, Box | null>;
+  type Baselines = Record<string, Record<string, Rects>>;
+  const expected: Baselines = existsSync(baselinePath) ? JSON.parse(readFileSync(baselinePath, "utf8")) : {};
+  const recorded: Record<string, Rects> = {};
+  const paths = ["/app/mail/inbox", "/app/mail/inbox?overview=1", "/app/mail/inbox?cards=1", "/app/mail/inbox?notice=1"];
+  const rects = (page: Page): Promise<Rects> =>
+    page.evaluate(() => {
+      const selectors = {
+        canvas: ".cloud-app-canvas",
+        rail: ".layout-rail",
+        railLogo: ".layout-rail-logo",
+        railItems: ".layout-rail [data-cloud-rail-apps]",
+        avatar: ".layout-rail .layout-profile-preferences",
+        shell: ".layout-shell-content",
+        notice: ".layout-shell-content .k2b-notice-card",
+        main: ".layout-content-main",
+        workspace: ".layout-content-main .k2b-app-workspace",
+        sidebar: ".k2b-app-workspace__sidebar",
+        pane: ".k2b-app-workspace__main-pane",
+        detail: ".k2b-app-workspace__detail",
+      };
+      return Object.fromEntries(
+        Object.entries(selectors).map(([key, selector]) => {
+          const element = document.querySelector(selector);
+          if (!element || !element.checkVisibility()) return [key, null];
+          const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+          return [key, { left, top, right, bottom, width, height }];
+        }),
+      );
+    });
+  afterAll(() => {
+    if (recording) writeFileSync(baselinePath, `${JSON.stringify({ ...expected, [engine]: recorded }, null, 2)}\n`);
+  });
+  for (const device of [smallLaptop, ipadLandscape, laptop, desktop]) {
+    for (const theme of ["light", "dark"] as const) {
+      test(`${device.width}×${device.height} ${theme}: rail, card, and workspace stay where they were`, async () => {
+        for (const path of paths) {
+          const { context, page } = await open(device, path, { theme });
+          try {
+            const actual = await rects(page);
+            const key = `${device.width}x${device.height} ${theme} ${path}`;
+            if (recording) {
+              recorded[key] = actual;
+              continue;
+            }
+            const before = expected[engine]?.[key];
+            expect(before, `Missing ${engine} baseline ${key}; record origin/main with RECORD_SHELL_BASELINE=1`).toBeDefined();
+            for (const [name, box] of Object.entries(before!)) {
+              expect({ key, name, present: !!actual[name] }).toEqual({ key, name, present: !!box });
+              if (!box || !actual[name]) continue;
+              for (const edge of ["left", "top", "right", "bottom", "width", "height"] as const)
+                expect(Math.abs(actual[name]![edge] - box[edge]), `${key} ${name}.${edge}`).toBeLessThanOrEqual(0.5);
+            }
+          } finally {
+            await context.close();
+          }
+        }
+      });
+    }
+  }
 });

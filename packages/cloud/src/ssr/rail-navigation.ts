@@ -66,3 +66,14 @@ export const railLinkActive = (link: RailLink, currentPath: string): boolean => 
     (target.pathname !== "/" && current.pathname.startsWith(`${target.pathname.replace(/\/$/, "")}/`))
   );
 };
+
+/**
+ * The phone bar's apps: the rail's links in the person's order, at most `limit`. The current page's link stays in the
+ * bar; when it comes later in the rail, it takes the last place, so the bar always marks where the person is.
+ */
+export const phoneBarLinks = (navigation: { shortcuts: RailLink[]; apps: RailLink[] }, currentPath: string, limit: number): RailLink[] => {
+  const links = [...navigation.shortcuts, ...navigation.apps];
+  const current = links.findIndex((link) => railLinkActive(link, currentPath));
+  if (current < limit) return links.slice(0, limit);
+  return [...links.slice(0, limit - 1), links[current]!];
+};

@@ -94,6 +94,39 @@ html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
   );
 }
 
+/* The shell's own colored surfaces, the tablet rail's container and the
+   phone's bottom bar, carry the app color alone in a narrow shape. A white
+   middle, the canvas's default `via`, would make their edge vanish halfway,
+   so they mix the middle from the app's two colors and take a stronger tint:
+   34 % light and 22 % dark, with a 16 % and 12 % middle. A page without an app
+   color gets a neutral tint. The app declaration stays the same. */
+.cloud-app-canvas {
+  --cloud-shell-strength: 34%;
+  --cloud-shell-via-strength: 16%;
+  --cloud-shell-gradient: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--app-canvas-from, var(--color-zinc-400)) var(--cloud-shell-strength), var(--ui-canvas)),
+    color-mix(
+        in srgb,
+        color-mix(in srgb, var(--app-canvas-from, var(--color-zinc-400)) 45%, var(--app-canvas-to, var(--color-zinc-400)))
+          var(--cloud-shell-via-strength),
+        var(--ui-canvas)
+      )
+      55%,
+    color-mix(in srgb, var(--app-canvas-to, var(--color-zinc-400)) var(--cloud-shell-strength), var(--ui-canvas))
+  );
+  /* On color the open item is the surface; on the surface it is tinted. */
+  --cloud-shell-selected: var(--k2b-surface);
+  --cloud-shell-selected-text: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
+}
+
+.dark .cloud-app-canvas {
+  --cloud-shell-strength: 22%;
+  --cloud-shell-via-strength: 12%;
+  --cloud-shell-selected: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 30%, var(--k2b-surface));
+  --cloud-shell-selected-text: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 45%, white);
+}
+
 :root {
   color-scheme: light;
 }
@@ -310,31 +343,31 @@ solid-island {
 
 /* Cloud has three shell modes. Phones, below md, get the header and no rail.
    From md, signed-in people get the 56 px rail instead of the header: up to
-   1023 px the app area meets the window's top, right and bottom edges, and
-   from 1024 px it is a card beside the rail. Anonymous pages keep the header
-   and the card from md. Each query is the exact opposite of the next one, so
-   every width, also a fractional one under browser zoom, falls into exactly
-   one mode. */
+   1023 px the rail sits in a rounded container beside the app as a rounded
+   card, and from 1024 px the app is a card beside the rail. Anonymous pages
+   keep the header and the card from md. Each query is the exact opposite of
+   the next one, so every width, also a fractional one under browser zoom,
+   falls into exactly one mode. */
 @media not all and (min-width: 768px) {
   .cloud-app-canvas {
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   }
-  /* The flat surface replaces the app gradient in both themes. The dark
-     selector matches the specificity of the dark gradient above. */
-  .cloud-app-canvas,
-  .dark .cloud-app-canvas {
+  /* Anonymous pages: the flat surface replaces the app gradient in both
+     themes, and the document is the page scroller. The dark selector matches
+     the specificity of the dark gradient above. */
+  .cloud-app-canvas:not([data-layout-authenticated]),
+  .dark .cloud-app-canvas:not([data-layout-authenticated]) {
     background: var(--ui-surface);
   }
-  /* Below lg the document is the page scroller; reserve its scrollbar gutter
-     so short and long pages keep the same width. Full-page surfaces own their
-     inner scrolling. */
-  html:has(.cloud-app-canvas:not([data-layout-full-page])) { scrollbar-gutter: stable; }
+  /* Reserve the document's scrollbar gutter so short and long pages keep the
+     same width. Full-page surfaces own their inner scrolling. */
+  html:has(.cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated])) { scrollbar-gutter: stable; }
   /* A page that scrolls its content in a ScrollArea grows with it here, so
      the area does not scroll and reserves no second gutter beside the
      document's. From md, `main` bounds its height and it scrolls. */
-  .cloud-app-canvas:not([data-layout-full-page]) .layout-content-main > .k2b-scroll-area { scrollbar-gutter: auto; }
+  .cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated]) .layout-content-main > .k2b-scroll-area { scrollbar-gutter: auto; }
   .cloud-app-canvas > .layout-shell-content { gap: 0; }
-  .cloud-app-canvas .layout-header {
+  .cloud-app-canvas:not([data-layout-authenticated]) .layout-header {
     border-radius: 0; border: 0; border-bottom: 1px solid var(--ui-border);
     box-shadow: none !important;
   }
@@ -344,6 +377,81 @@ solid-island {
     --k2b-toast-offset-top: 2.875rem;
   }
 
+  /* Signed-in phones: the app gradient is the page. The title row sits on it
+     without a line, and the content is one soft card with 28 px top corners
+     that scrolls itself, so its rounded edge stays while it scrolls. The bar
+     with the person's apps floats over the card's end; the card keeps that
+     space free at its end and in its scroll padding, so the bar never covers
+     the last row or a focused control. The window never scrolls. */
+  .cloud-app-canvas[data-layout-authenticated] {
+    --cloud-tab-bar-height: 3.875rem;
+    --cloud-tab-bar-end: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+    --cloud-tab-bar-space: calc(var(--cloud-tab-bar-end) + var(--cloud-tab-bar-height) + 0.75rem);
+    height: 100dvh;
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+  .cloud-app-canvas[data-layout-authenticated] .layout-header {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none !important;
+  }
+  .cloud-app-canvas[data-layout-authenticated] .layout-header .font-semibold {
+    font-size: 1.125rem;
+  }
+  .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-bottom: var(--cloud-tab-bar-space);
+    scroll-padding-bottom: var(--cloud-tab-bar-space);
+    border-top: 1px solid transparent;
+    border-radius: 1.75rem 1.75rem 0 0;
+    background: var(--k2b-surface);
+    box-shadow: 0 -10px 30px -24px rgb(15 23 19 / 0.3);
+  }
+  /* Dark: a faint top edge keeps the card apart from the dark gradient. */
+  .dark .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
+    border-top-color: var(--k2b-border);
+  }
+  .cloud-app-canvas[data-layout-authenticated] > .cloud-tab-bar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 10;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    height: var(--cloud-tab-bar-space);
+    padding: 0 calc(env(safe-area-inset-right, 0px) + 0.75rem) var(--cloud-tab-bar-end) calc(env(safe-area-inset-left, 0px) + 0.75rem);
+    /* The list fades flat into the card under the bar; no glass, and no text
+       beside or under it. */
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--k2b-surface) 0%, transparent), var(--k2b-surface) 62%);
+    pointer-events: none;
+  }
+}
+
+/* The bar exists only on signed-in phones. Its row keeps the place of the
+   app's primary action free at its end. */
+.cloud-tab-bar {
+  display: none;
+}
+
+.cloud-tab-bar__row {
+  display: flex;
+  width: 100%;
+  max-width: 33.75rem;
+  padding-inline-end: calc(var(--cloud-tab-bar-height) + 0.625rem);
+}
+
+.cloud-tab-bar .k2b-tab-bar {
+  flex: 1;
+  min-width: 0;
+  pointer-events: auto;
+  --k2b-tab-bar-background: var(--cloud-shell-gradient);
+  --k2b-tab-bar-selected-background: var(--cloud-shell-selected);
+  --k2b-tab-bar-selected-color: var(--cloud-shell-selected-text);
 }
 
 /* Card: the outermost workspace is the app card, so it gets the card's radius
@@ -352,9 +460,7 @@ solid-island {
    child fills `main` and scrolls inside itself, so `main` neither scrolls nor
    clips: it keeps no scrollbar gutter beside the card, the card keeps the
    shell spacing on every side, and its frame shadow shows in that spacing. A
-   workspace nested in other page content leaves `main` the page scroller. For
-   signed-in people, the flush range below removes the frame again; it comes
-   later at equal specificity. */
+   workspace nested in other page content leaves `main` the page scroller. */
 @media (min-width: 768px) {
   .cloud-app-canvas .layout-content-main:has(> .k2b-app-workspace, > :is(solid-island, solid-client) > .k2b-app-workspace) {
     overflow: visible;
@@ -369,42 +475,51 @@ solid-island {
   }
 }
 
-/* Flush: the app area is one opaque surface from the rail to the window's
-   edges, without padding, radius, shadow, or border. The rail keeps the app
-   canvas, so the change of surface alone separates the two; no line does. The
-   outermost workspace and the notices above it lose their frame, so nothing
-   draws a box inside the app area.
-   The rail and the app area reach the window's edges also where the installed
-   app reports safe areas, such as the status bar and the home indicator. Their
-   own surfaces fill the insets, and their content stays inside them. */
+/* Tablet (I5): the rail sits in a rounded container filled with the app
+   color, and the app is a rounded card beside it, both 20 px round with 8 px
+   of neutral canvas on every side. The installed app's safe areas, such as
+   the status bar and the home indicator, add to that spacing, so nothing sits
+   under them. The outermost workspace is the card, as from 1024 px; a page
+   without a workspace shows its content on the canvas. On color the open app
+   is the surface color, and no separator divides the rail. */
 @media (min-width: 768px) {
   @media not all and (min-width: 1024px) {
     .cloud-app-canvas[data-layout-authenticated] {
-      padding: 0;
+      padding: calc(env(safe-area-inset-top, 0px) + 0.5rem) calc(env(safe-area-inset-right, 0px) + 0.5rem)
+        calc(env(safe-area-inset-bottom, 0px) + 0.5rem) calc(env(safe-area-inset-left, 0px) + 0.5rem);
+      background: var(--ui-canvas);
     }
     .cloud-app-canvas[data-layout-authenticated] > .layout-rail {
-      padding-top: env(safe-area-inset-top, 0px);
-      padding-bottom: calc(var(--ui-space-shell) + env(safe-area-inset-bottom, 0px));
+      width: 3.75rem;
+      margin-inline-end: 0.5rem;
+      padding: 0 0 0.5rem;
+      border-radius: 1.25rem;
+      background-image: var(--cloud-shell-gradient) !important;
+    }
+    .dark .cloud-app-canvas[data-layout-authenticated] > .layout-rail {
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent, var(--k2b-border)) 22%, var(--k2b-border));
+    }
+    .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item {
+      color: var(--k2b-text-secondary);
+    }
+    .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item:hover {
+      background: color-mix(in srgb, var(--k2b-surface) 45%, transparent);
+    }
+    .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item-active,
+    .cloud-app-canvas[data-layout-authenticated] > .layout-rail .rail-item-active:hover {
+      border-color: transparent;
+      background: var(--cloud-shell-selected);
+      color: var(--cloud-shell-selected-text);
+      box-shadow: 0 1px 2px rgb(9 9 11 / 0.06);
+    }
+    .cloud-app-canvas[data-layout-authenticated] > .layout-rail [role="separator"] {
+      display: none;
     }
     .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content {
-      gap: 0;
-      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 0;
-      background: var(--k2b-surface);
-    }
-    /* A regular page scrolls `main`, so its end clears the home indicator. A
-       workspace reaches the bottom edge and clears it inside its own surfaces. */
-    .cloud-app-canvas[data-layout-authenticated] .layout-content-main:not(:has(.k2b-app-workspace)) {
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+      gap: 0.5rem;
     }
     .cloud-app-canvas[data-layout-authenticated] .layout-content-main .k2b-app-workspace:not(.k2b-app-workspace *) {
-      --k2b-workspace-radius: 0px;
-      --k2b-workspace-inset-bottom: env(safe-area-inset-bottom, 0px);
-      border: 0;
-      box-shadow: none;
-    }
-    .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content > :not(.layout-content-main) .k2b-notice-card {
-      border: 0;
-      border-radius: 0;
+      --k2b-workspace-radius: 1.25rem;
     }
   }
 }
@@ -416,7 +531,7 @@ solid-island {
    rail starts at the window's left edge and moves down with the card. In the
    installed app the card and the rail stay below the status bar; the card keeps
    its spacing at the bottom, and its surfaces keep their content above the
-   home indicator, as in the flush range. */
+   home indicator. */
 @media (min-width: 1024px) {
   .cloud-app-canvas[data-layout-authenticated] {
     --cloud-card-inset: round(clamp(0.25rem, calc(0.25rem + (100vw - 64rem) / 104), 0.5rem), 1px);
@@ -444,7 +559,7 @@ solid-island {
    (Cmd/Ctrl+\ or the sidebar buttons). The canvas carries the state from the
    `cloud_shell_focus` cookie, so the server renders the same first frame.
    Phones ignore it. The app area takes the app bar's place and starts at the
-   card spacing, or at the window's edge where it is flush. The button that
+   card spacing. The button that
    shows them again floats at the app area's bottom start corner; on touch
    screens a drag from the 18 px strip at the left edge does the same. From
    768 to 1023 px the navigation is already an overlay behind the
@@ -485,8 +600,9 @@ solid-island {
 
 @media (min-width: 768px) {
   @media not all and (min-width: 1024px) {
-    .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-shell-content {
-      padding-left: env(safe-area-inset-left, 0px);
+    .cloud-app-canvas[data-layout-authenticated][data-shell-focus] .cloud-shell-show {
+      left: calc(env(safe-area-inset-left, 0px) + 1.25rem);
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 1.25rem);
     }
   }
 }
