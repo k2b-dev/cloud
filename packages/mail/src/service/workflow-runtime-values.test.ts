@@ -139,6 +139,23 @@ describe("Mail lazy workflow values", () => {
     }
   });
 
+  test("whole message values retain frozen plain text when HTML is unavailable", async () => {
+    const read = spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(null);
+    try {
+      const { message, resolve } = fixture({ "inputs.message.bodyText": "Frozen plain text" });
+      expect(await resolve("inputs.message", ["steps", 0, "setVariable", "value"])).toEqual({ state: "resolved", value: message });
+      expect(message).toMatchObject({
+        body: "Frozen plain text",
+        bodyText: "Frozen plain text",
+        bodyHtml: "",
+        bodyAvailable: false,
+      });
+      expect(read).toHaveBeenCalledTimes(1);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   test("old events with available bodies retain their receipt-time values", async () => {
     const { message, resolve } = fixture({ "inputs.message.bodyText": "New frozen text" });
     Object.assign(message, { body: "Old plain text", bodyText: "Old plain text", bodyHtml: "<p>Old HTML</p>", bodyAvailable: true });

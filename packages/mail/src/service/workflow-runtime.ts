@@ -2,12 +2,7 @@ import { env } from "@k2b/cloud/config";
 import { createRuntimeLifecycle } from "@k2b/cloud/services";
 import { AI_WORKFLOW_ACTIONS, createWorkflowBuiltinActionPorts, type WorkflowExecutionError } from "@k2b/cloud/workflows";
 import { startWorkflowAiRuntime, stopWorkflowAiRuntime } from "@k2b/cloud/workflows/ai";
-import type {
-  WorkflowActionStep,
-  WorkflowExecuteActionContext,
-  WorkflowExecuteActionPort,
-  WorkflowTracePort,
-} from "@k2b/cloud/workflows/runtime";
+import type { WorkflowExecuteActionPort, WorkflowTracePort } from "@k2b/cloud/workflows/runtime";
 import {
   createWorkflowActionPort,
   createWorkflowWorker,
@@ -20,8 +15,7 @@ import { sql } from "bun";
 import { authorizeMailWorkflowExecution, MAIL_WORKFLOW_ACTIONS } from "../workflows/actions";
 import { MAIL_WORKFLOW_APP_ID } from "../workflows/events";
 import { mailWorkflows } from "../workflows/module";
-import { MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS } from "../workflows/template-validation";
-import { mailLiquidTemplateVariables, renderMailLiquidTemplate } from "./template-rendering";
+import { mailWorkflowTemplateData, renderMailLiquidTemplate } from "./template-rendering";
 import { publishMailWorkflowCollaborationEventFromOutput } from "./workflow-collaboration-events";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
 import {
@@ -31,6 +25,7 @@ import {
 } from "./workflow-projected-state";
 import { createMailWorkflowValueResolver } from "./workflow-runtime-values";
 import { startMailWorkflowScheduleRuntime, stopMailWorkflowScheduleRuntime } from "./workflow-schedule-runtime";
+import { resolveMailWorkflowTemplateBodies } from "./workflow-template-values";
 
 const workerId = `mail:${env.HOSTNAME ?? "local"}:${process.pid}`;
 
@@ -59,15 +54,7 @@ const builtins = createWorkflowBuiltinActionPorts({
   renderText: ({ context, value }) => {
     const rendered = renderMailLiquidTemplate(
       value,
-      {
-        inputs: context.invocation.inputs,
-        context: {
-          ...(context.invocation.context ?? {}),
-          actor: context.invocation.actor,
-          occurredAt: context.invocation.occurredAt,
-        },
-        ...(context.variables.snapshot?.() ?? {}),
-      },
+      mailWorkflowTemplateData({ invocation: context.invocation, variableSnapshot: () => context.variables.snapshot?.() ?? {} }),
       "text",
     );
     if (!rendered.ok) throw rendered.error;
@@ -75,26 +62,6 @@ const builtins = createWorkflowBuiltinActionPorts({
   },
 });
 // Resolve before entering an action transaction: freezing locks workflows.run in its own transaction.
-const resolveTemplateBodies = async (ctx: WorkflowExecuteActionContext, step: WorkflowActionStep): Promise<void> => {
-  for (const field of MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS[step.action] ?? []) {
-    const source = step.config[field];
-    if (typeof source !== "string") continue;
-    const variables = mailLiquidTemplateVariables(source);
-    if (!variables.ok) continue; // The existing renderer reports template parse errors.
-    for (const variable of variables.data) {
-      const body = /^inputs\.([^.[]+)\.(?:bodyText|bodyHtml|body)(?=[.[]|$)/.exec(variable);
-      const reference = body?.[0] ?? (/^inputs(?:\.[^.[]+)?$/.test(variable) ? variable : undefined);
-      if (!reference) continue;
-      const value = await ctx.resolveReference(reference, [...step.sourcePath, step.action, field]);
-      // A body of a present message that Mail can no longer load fails the step instead of rendering empty text.
-      const message = body ? ctx.invocation.inputs[body[1]!] : undefined;
-      if (value === undefined && message !== null && typeof message === "object" && !Array.isArray(message)) {
-        throw new Error(`Mail workflow value unavailable: ${reference}`);
-      }
-    }
-  }
-};
-
 const actions: WorkflowExecuteActionPort = {
   get: (name) => {
     const declared = declaredActions.get(name);
@@ -104,14 +71,14 @@ const actions: WorkflowExecuteActionPort = {
       return rebindMailWorkflowRestoredOutput({
         ...builtin,
         execute: async (ctx, step) => {
-          await resolveTemplateBodies(ctx, step);
+          await resolveMailWorkflowTemplateBodies(ctx, step);
           return builtin.execute(ctx, step);
         },
       });
     }
     return {
       execute: async (ctx, step) => {
-        await resolveTemplateBodies(ctx, step);
+        await resolveMailWorkflowTemplateBodies(ctx, step);
         const outcome = await declared.execute(ctx, step);
         if (outcome.state === "completed") await publishMailWorkflowCollaborationEventFromOutput(outcome.output);
         return outcome;

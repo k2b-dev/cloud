@@ -163,7 +163,9 @@ export const createMailWorkflowValueResolver = (params: {
   };
   const hydrateWholeMessage = async (name: string): Promise<void> => {
     const message = params.claim.inputs[name];
-    if (!isObject(message) || message.bodyAvailable === true || typeof message.id !== "string") return;
+    if (!isObject(message) || message.bodyAvailable === true) return;
+    projectBody(name, message);
+    if (typeof message.id !== "string") return;
     const entries: Array<{ key: string; value: WorkflowJsonValue }> = [];
     for (const field of ["bodyText", "bodyHtml"] as const) {
       const key = `inputs.${name}.${field}`;

@@ -158,7 +158,7 @@ export const renderMailLiquidTemplate = (
   }
 };
 
-const mailWorkflowTemplateData = (
+export const mailWorkflowTemplateData = (
   context: Pick<WorkflowActionContext, "invocation" | "variableSnapshot">,
 ): Record<string, WorkflowJsonValue> => ({
   inputs: context.invocation.inputs,
