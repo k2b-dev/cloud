@@ -3229,6 +3229,45 @@ suite("incoming automations", () => {
     }, 30_000);
   }
 
+  test("terminally failed newer reply reopens automation Done", async () => {
+    const key = "automation-done-terminal-reply";
+    const automation = await createStatusAutomation(key);
+    try {
+      const first = statusEnvelope(14111, key);
+      const firstId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: first,
+        captureWorkflowTriggers: true,
+      });
+      const runId = await dispatchStatusRun(automation.workflowId);
+      await hydrateStatusMessage(firstId, first);
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
+      expect((await statusConversation(firstId)).work_status).toBe("done");
+      const second = { ...statusEnvelope(14112, key, first.messageId), sizeBytes: MAX_IMAP_LITERAL_BYTES + 1 };
+      const secondId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: second,
+        captureWorkflowTriggers: false,
+      });
+      expect((await statusConversation(secondId)).id).toBe((await statusConversation(firstId)).id);
+      await expect(hydrateStatusMessage(secondId, second)).rejects.toMatchObject({ code: "MESSAGE_TOO_LARGE" });
+      expect((await statusConversation(secondId)).work_status).toBe("needs_action");
+      const events = await sql<{ id: string }[]>`
+        SELECT id FROM mail.activity_events
+        WHERE action = 'conversation.work_state_changed' AND metadata ->> 'messageId' = ${secondId}
+      `;
+      expect(events).toHaveLength(1);
+    } finally {
+      await deleteStatusAutomation(automation.id);
+    }
+  }, 30_000);
+
   test("reopens Done when a newer permanently failed backlog message hydrates after operator repair", async () => {
     const key = "linked-backlog-newer-repaired";
     const first: ConnectorEnvelope = {
