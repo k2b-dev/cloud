@@ -186,6 +186,17 @@ WebKit then sends a `pointermove` without any mouse movement, up to about
 control by keyboard instead. See `showFirst` and the repeated enhancement case
 in `packages/notebooks/src/frontend/lib/notebook-charts.browser.test.ts`.
 
+WebKit sends no `pointerleave` when the element under the pointer leaves the
+document, as when a row drops a line while the pointer rests on it. A state
+that lasts from `pointerenter` to `pointerleave`, such as a paused timer or a
+list that holds still, then stays after the pointer went. Confirm such a state
+with the next `pointerover` on the document: when its target is outside the
+container, the pointer has left. To test it, rest the mouse on the element that
+the change removes, make the change, and move the mouse away in the next step,
+before WebKit updates the hover. See `pointAt` in
+`packages/filesv2/src/frontend/UploadPanel.browser.test.ts` and the held toasts
+in `packages/ui/src/feedback/toast.ts`.
+
 A fake server started by a test records a request when it arrives. The page
 may have changed already, as seen in WebKit on a loaded machine. Never read
 the newest recorded request after a click or key press. Note how many requests
