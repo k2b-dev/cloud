@@ -1201,8 +1201,9 @@ type SourceDownloadClient = SelectedMailboxClient &
 
 /**
  * Streams the requested sources of the selected folder in order. An absent UID or a listed message
- * that answers metadata but still has no source after one retry yields nothing for the caller's
- * missing-source budget. An unconfirmed gap fails transiently; a recovered source streams normally.
+ * whose partial-source probe answers metadata without a source yields nothing for the caller's
+ * missing-source budget. A probe with a source retries the download; an empty retry or an
+ * unanswered probe fails transiently without using that budget. A recovered source streams normally.
  * A consumer that resolves "stop" leaves the remaining sources unfetched.
  */
 export const downloadSelectedSources = async (
@@ -1216,10 +1217,11 @@ export const downloadSelectedSources = async (
       // imapflow also answers every download with an empty object once the connection has closed.
       assertSelectedMailbox(client, request.uidValidity);
       if ((await listedUids(client, [request.uid])).length === 0) continue;
-      const message = await client.fetchOne(request.uid, { uid: true }, { uid: true });
+      const message = await client.fetchOne(request.uid, { uid: true, source: { start: 0, maxLength: 1 } }, { uid: true });
       if (!message) throw unconfirmedAbsence([request.uid]);
+      if (message.source === undefined) continue;
       download = await client.download(request.uid, undefined, { uid: true });
-      if (!download.content || !download.meta) continue;
+      if (!download.content || !download.meta) throw unconfirmedAbsence([request.uid]);
     }
     const source = { ...request, expectedSize: download.meta.expectedSize ?? null, stream: download.content };
     try {

@@ -533,12 +533,13 @@ describe("IMAP reads under throttling", () => {
   const serverFor = (options: {
     throttleFetch: boolean;
     throttleFetches?: number;
+    throttleFetchWindows?: Array<[number, number]>;
     throttleSearch?: boolean;
     uids?: number[];
     phantoms?: number[];
   }) => {
     const uids = options.uids ?? [7];
-    let throttleFetches = options.throttleFetches ?? 0;
+    let fetches = 0;
     const commands: string[] = [];
     const matches = (set: string, uid: number): boolean =>
       set.split(",").some((part) => {
@@ -574,8 +575,12 @@ describe("IMAP reads under throttling", () => {
                 `* FLAGS (\\Seen)\r\n* ${Math.max(1, uids.length)} EXISTS\r\n* OK [UIDVALIDITY 10] ok\r\n* OK [UIDNEXT 10] ok\r\n${tag} OK [READ-WRITE] done\r\n`,
               );
             } else if (command === "UID FETCH") {
-              if (options.throttleFetch || throttleFetches > 0) {
-                if (throttleFetches > 0) throttleFetches -= 1;
+              fetches += 1;
+              if (
+                options.throttleFetch ||
+                fetches <= (options.throttleFetches ?? 0) ||
+                options.throttleFetchWindows?.some(([start, end]) => fetches >= start && fetches <= end)
+              ) {
                 throttle();
                 continue;
               }
@@ -633,7 +638,7 @@ describe("IMAP reads under throttling", () => {
       const result = withSharedImapSession(config, sessionFor(fixture.server.port), read);
       await expect(result).rejects.toMatchObject({ code: "ETHROTTLE", foundUids: [7] });
       await result.catch((error: unknown) => expect(isTransientProviderFailure(error)).toBe(true));
-      // Downloads exhaust four FETCH attempts, then four more for the metadata probe.
+      // Downloads exhaust four FETCH attempts, then four more for the partial-source probe.
       expect(fixture.commands.filter((command) => command.startsWith("UID FETCH "))).toHaveLength(name === "downloadSourceBatch" ? 8 : 4);
       expect(fixture.commands.filter((command) => command.startsWith("UID SEARCH UID "))).toHaveLength(1);
     } finally {
@@ -654,7 +659,8 @@ describe("IMAP reads under throttling", () => {
         }),
       );
       expect(consumed).toEqual([9]);
-      expect(fixture.commands.filter((command) => command.startsWith("UID FETCH "))).toHaveLength(4);
+      expect(fixture.commands.filter((command) => command.startsWith("UID FETCH "))).toHaveLength(3);
+      expect(fixture.commands.some((command) => command.startsWith("UID FETCH 7 ") && command.includes("BODY.PEEK[]<0.1>"))).toBe(true);
       expect(fixture.commands.filter((command) => command.startsWith("UID SEARCH UID "))).toHaveLength(1);
     } finally {
       fixture.server.stop(true);
@@ -674,6 +680,31 @@ describe("IMAP reads under throttling", () => {
       );
       expect(consumed).toEqual([{ uid: 7, source: `Message-ID: ${messageId}\r\n\r\nBody 7\r\n` }]);
       expect(fixture.commands.filter((command) => command.startsWith("UID FETCH "))).toHaveLength(6);
+      expect(fixture.commands.filter((command) => command.startsWith("UID SEARCH UID "))).toHaveLength(1);
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test("downloadSourceBatch keeps the attempt when the provider throttles the retry after a successful probe", async () => {
+    const fixture = serverFor({
+      throttleFetch: false,
+      throttleFetchWindows: [
+        [1, 4],
+        [6, 9],
+      ],
+    });
+    const consumed: number[] = [];
+    try {
+      const result = withSharedImapSession(config, sessionFor(fixture.server.port), (session) =>
+        imapSmtpConnector.downloadSourceBatch(session, "INBOX", [sourceRequest(7)], async (source) => {
+          consumed.push(source.uid);
+        }),
+      );
+      await expect(result).rejects.toMatchObject({ code: "ETHROTTLE", foundUids: [7] });
+      await result.catch((error: unknown) => expect(isTransientProviderFailure(error)).toBe(true));
+      expect(consumed).toEqual([]);
+      expect(fixture.commands.filter((command) => command.startsWith("UID FETCH "))).toHaveLength(9);
       expect(fixture.commands.filter((command) => command.startsWith("UID SEARCH UID "))).toHaveLength(1);
     } finally {
       fixture.server.stop(true);
@@ -1172,6 +1203,39 @@ describe("IMAP envelope UID batching", () => {
 describe("IMAP source downloads", () => {
   const requests = [1, 2, 3].map((uid) => ({ key: `message-${uid}`, uidValidity: "10", uid }));
   const source = (uid: number) => ({ meta: { expectedSize: 1, contentType: "message/rfc822" }, content: Readable.from([String(uid)]) });
+
+  const probeSources: Array<[string, Buffer]> = [
+    ["nonempty", Buffer.from("M")],
+    ["zero-length", Buffer.alloc(0)],
+  ];
+  test.each(probeSources)("an empty retry after a %s source probe uses no missing-source attempt", async (_label, probeSource) => {
+    let downloads = 0;
+    const consumed: string[] = [];
+    const batch = downloadSelectedSources(
+      {
+        usable: true,
+        mailbox: { path: "INBOX", delimiter: "/", flags: new Set<string>(), uidValidity: 10n, uidNext: 4, exists: 3 },
+        download: async () => {
+          downloads += 1;
+          return {};
+        },
+        search: async () => [1],
+        fetchOne: async (uid, query, options) => {
+          expect(query).toEqual({ uid: true, source: { start: 0, maxLength: 1 } });
+          expect(options).toEqual({ uid: true });
+          return { uid: Number(uid), seq: 1, source: probeSource };
+        },
+      },
+      requests,
+      async (download) => {
+        consumed.push(download.key);
+      },
+    );
+    await expect(batch).rejects.toMatchObject({ code: "ETHROTTLE", foundUids: [1] });
+    await batch.catch((error: unknown) => expect(isTransientProviderFailure(error)).toBe(true));
+    expect(downloads).toBe(2);
+    expect(consumed).toEqual([]);
+  });
 
   test("stop before requesting the next source when the consumer ends the batch", async () => {
     const consumed: string[] = [];
