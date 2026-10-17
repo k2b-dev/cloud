@@ -433,6 +433,28 @@ test("floating More participates in roving focus, restores focus on Escape, and 
   }
 });
 
+test("resizing while More is open keeps keyboard focus in the menu", async () => {
+  const page = await openFloating(340);
+  try {
+    const more = selectionToolbar(page).getByRole("button", { name: "More actions", exact: true });
+    await more.focus();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem");
+    await page.keyboard.press("End");
+    const focusedRow = await page.evaluate(() => document.activeElement?.textContent);
+    // 400px brings important actions back but keeps the least important rows, Assistant among them, in More.
+    await resizeFloating(page, 400);
+    const rows = await page.getByRole("menuitem").allTextContents();
+    expect(rows).toContain(focusedRow!);
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("menuitem");
+    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe(focusedRow!);
+    await page.keyboard.press("Escape");
+    expect(await more.evaluate((button) => button === document.activeElement)).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
 test("Toolbar.Action keeps the plain accessible label and ARIA shortcut while its tooltip names the shortcut", async () => {
   const page = await openFloating();
   try {

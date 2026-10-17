@@ -4,7 +4,7 @@ import { Kbd } from "../content/Kbd";
 import { useLocale } from "../intl/locale";
 import { formatShortcut, type KeyboardPlatform, keyboardPlatform } from "../intl/shortcut";
 import { IconButton } from "./Button";
-import { Dropdown, type DropdownItem } from "./Dropdown";
+import { Dropdown, type DropdownAction } from "./Dropdown";
 import { useToolbarMessages } from "./toolbar-messages";
 
 export type ToolbarProps = {
@@ -47,7 +47,8 @@ type ToolbarOrientation = NonNullable<ToolbarProps["orientation"]>;
 const defaultToolbarOrientation: () => ToolbarOrientation = () => "horizontal";
 const ToolbarOrientationContext = createContext(defaultToolbarOrientation);
 
-type RegisteredAction = { element: HTMLButtonElement; props: ToolbarActionProps };
+// `item` is created once per action: the More menu keys its rows by identity, so a remeasure keeps a focused row.
+type RegisteredAction = { element: HTMLButtonElement; props: ToolbarActionProps; item: DropdownAction };
 const ToolbarActionsContext = createContext<(action: RegisteredAction) => () => void>();
 const overflowAttribute = "data-overflow";
 const hide = (element: Element) => element.setAttribute(overflowAttribute, "hidden");
@@ -99,7 +100,19 @@ const ToolbarAction = (props: ToolbarActionProps): JSX.Element => {
   return (
     <IconButton
       ref={(element) => {
-        const unregister = register?.({ element, props });
+        const item: DropdownAction = {
+          get label() {
+            return props.label;
+          },
+          get icon() {
+            return props.icon;
+          },
+          get disabled() {
+            return props.disabled;
+          },
+          action: () => props.onClick?.(),
+        };
+        const unregister = register?.({ element, props, item });
         if (unregister) onCleanup(unregister);
       }}
       class="k2b-toolbar__action"
@@ -262,9 +275,14 @@ const measureOverflow = (
   // A label may shrink in an overfull pill; measure its untruncated width (up to its cap) so actions move before the
   // count or title truncates.
   const width = (child: HTMLElement) => {
-    const box = child.getBoundingClientRect().width;
+    // Separators carry inline margins, which bounding boxes leave out.
+    const childStyle = getComputedStyle(child);
+    const box =
+      child.getBoundingClientRect().width +
+      (Number.parseFloat(childStyle.marginLeft) || 0) +
+      (Number.parseFloat(childStyle.marginRight) || 0);
     if (!child.classList.contains("k2b-toolbar__label")) return box;
-    const cap = Number.parseFloat(getComputedStyle(child).maxWidth);
+    const cap = Number.parseFloat(childStyle.maxWidth);
     return Math.max(box, Math.min(child.scrollWidth, Number.isNaN(cap) ? Number.POSITIVE_INFINITY : cap));
   };
   const used = () => {
@@ -317,7 +335,8 @@ export const Toolbar = Object.assign(
       );
       root.removeAttribute("data-overflow-pending");
       navigation?.sync();
-      if (next.some((action) => action.element === focused)) trigger?.focus();
+      // A focused action that moved, or a focused menu row whose action came back, hands focus to More.
+      if (next.some((action) => action.element === focused) || (focused instanceof HTMLElement && !focused.isConnected)) trigger?.focus();
     };
     const register = (action: RegisteredAction) => {
       actions.add(action);
@@ -358,13 +377,7 @@ export const Toolbar = Object.assign(
         mutations.disconnect();
       });
     });
-    const menuItems = (): DropdownItem[] =>
-      moved().map(({ props: action }) => ({
-        label: action.label,
-        icon: action.icon,
-        disabled: action.disabled,
-        action: () => action.onClick?.(),
-      }));
+    const menuItems = (): DropdownAction[] => moved().map((action) => action.item);
     const content = (
       <ToolbarOrientationContext.Provider value={orientation}>
         <ToolbarActionsContext.Provider value={floating ? register : undefined}>
