@@ -68,6 +68,7 @@ and durable data.
   Use NATS-backed Sync for distributed coordination and Valkey for caches
   and Cloud rate limits. Commit state before retryable effects with stable keys; an effect
   that must survive a crash is an outbox row in the same transaction (`defineLive`, `createPgOutbox`).
+  A settings write over an unreadable stored value fails with `setting_unreadable`; merge only over `settings.read()` with `stored !== "unreadable"`.
 
 ## Reuse public building blocks
 
@@ -93,8 +94,6 @@ workers in lifecycle startup, and drain them before releasing dependencies.
 Shared resources need one owner and identical settings. Never declare one per
 entity: JetStream reserves each stream's bytes, so per-entity logs share one
 topic keyed by `tenantId` with watermark cursors (Topics and live events).
-
-A settings write over an unreadable stored value fails with `setting_unreadable`; merge only over `settings.read()` with `stored !== "unreadable"`.
 
 Cloud and every application are equal consumers of `@k2b/ui`. The standalone
 SolidJS library remains independent of Cloud and application domains.
