@@ -1476,6 +1476,15 @@ export default function AssistantWorkspace(props: Props) {
         // A failed save answers null for a revision conflict and for any other failure alike; a conflict also
         // shows the composer's conflict notice.
         if (!(await saveComposer(key, target, override))) throw new Error("Draft not saved");
+        // The saved draft leaves out "/…", which a cancelled opening keeps on screen: then the live draft is saved
+        // again, so a reload shows what the person sees.
+        if (override) {
+          const savedKey = key;
+          const savedTarget = target;
+          const resave = () => void saveComposer(savedKey, savedTarget);
+          if (signal.aborted) resave();
+          else signal.addEventListener("abort", resave, { once: true });
+        }
         // This composer went away meanwhile, such as for Approvals: the opening just ends.
         if (signal.aborted || opening.controller.signal.aborted) return;
         // The person moved to another chat while it saved: the app does not open over that one.

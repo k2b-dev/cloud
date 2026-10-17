@@ -456,9 +456,9 @@ test("a queued app-opening save does not mark edits made after Escape as saved",
     h.input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   release();
-  await waitFor(() => h.saves.length === 2);
+  // The queued save keeps its snapshot; the newer text follows it, and nothing marks it saved before that.
+  await waitFor(() => h.saves.length >= 3, 3_000);
   expect(h.saves[1]).toEqual({ expectedRevision: 5, content: [{ type: "text", text: "Plan" }] });
-  await waitFor(() => h.saves.length === 3, 3_000);
   expect(h.saves[2]).toEqual({ expectedRevision: 6, content: [{ type: "text", text: "Newer plan" }] });
   expect(openCommand).not.toHaveBeenCalled();
 }, 10_000);
@@ -486,4 +486,21 @@ test("opening Approvals while an app Command creates a plain chat keeps Approval
   expect(h.root.querySelector("h1") === heading).toBe(true);
   expect(h.root.querySelector("textarea")).toBeNull();
   expect(openCommand).not.toHaveBeenCalled();
+});
+
+test("Escape while the app link resolves saves the live draft again, so a reload keeps its slash", async () => {
+  openCommand.mockImplementation(
+    (_id, _input, _options, signal) =>
+      new Promise<void>((resolve) => {
+        signal?.addEventListener("abort", () => resolve(), { once: true });
+      }),
+  );
+  const h = await mount();
+  h.choose();
+  await waitFor(() => openCommand.mock.calls.length === 1);
+  expect(h.saves).toEqual([{ expectedRevision: 4, content: [{ type: "text", text: "Plan" }] }]);
+  h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await waitFor(() => h.saves.length === 2);
+  expect(h.saves[1]).toEqual({ expectedRevision: 5, content: [{ type: "text", text: "Plan /" }] });
+  expect(h.input.value).toBe("Plan /");
 });
