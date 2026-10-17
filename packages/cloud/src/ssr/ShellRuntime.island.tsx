@@ -28,6 +28,7 @@ import { LayoutHelpDocuments } from "./layout-help-registry";
 import { installPageTrailRuntime } from "./page-trail-runtime";
 import { platformMessages } from "./platform-messages";
 import { readShellData } from "./shell-data";
+import { shellShortcuts } from "./shell-shortcuts";
 import { syncTimezoneCookie } from "./timezone-cookie";
 
 export type ShellRuntimeProps = {
@@ -144,31 +145,20 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
         ),
       ),
     );
-    createEffect(() =>
-      onCleanup(
-        registerContextAwareCommand({
-          id: "cloud.search",
-          title: t().openGlobalSearch,
-          description: t().globalSearchDescription,
-          icon: "ti ti-search",
-          shortcut: "mod+k",
-          action: { search: {} },
-        }),
-      ),
-    );
-    createEffect(() =>
-      onCleanup(
-        registerContextAwareCommand({
-          id: "cloud.help",
-          title: t().openShortcutHelp,
-          description: t().shortcutHelpDescription,
-          icon: "ti ti-help-circle",
-          shortcut: "shift+/",
-          // Returning the load keeps the Command busy until the dialog is open; a second press opens no second dialog.
-          action: () => importOnDemand(() => import("./LayoutHelp")).then((help) => help?.openLayoutHelpDialog()),
-        }),
-      ),
-    );
+    createEffect(() => {
+      for (const command of shellShortcuts(t())) {
+        onCleanup(
+          registerContextAwareCommand({
+            ...command,
+            action:
+              command.id === "cloud.search"
+                ? { search: {} }
+                : // Returning the load keeps the Command busy until the dialog is open; a second press opens no second dialog.
+                  () => importOnDemand(() => import("./LayoutHelp")).then((help) => help?.openLayoutHelpDialog()),
+          }),
+        );
+      }
+    });
   }
   onMount(() => {
     if (props.push) {

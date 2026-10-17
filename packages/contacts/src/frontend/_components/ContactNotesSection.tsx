@@ -1,6 +1,7 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { dates, type Paginated } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Avatar, announce, Button, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
+import { announce, Button, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ContactNote } from "../../service";
@@ -250,16 +251,7 @@ export default function ContactNotesSection(props: Props) {
             return (
               <Discussion.Item
                 avatar={
-                  <Avatar
-                    name={note.authorDisplayName}
-                    fallback={(note.authorDisplayName.trim() || "?").slice(0, 2).toUpperCase()}
-                    src={
-                      note.authorUserId && note.authorAvatarHash
-                        ? `/api/accounts/users/${encodeURIComponent(note.authorUserId)}/avatar?rev=${encodeURIComponent(note.authorAvatarHash)}`
-                        : undefined
-                    }
-                    size="xs"
-                  />
+                  <CloudAvatar username={note.authorDisplayName} userId={note.authorUserId} avatarHash={note.authorAvatarHash} size="xs" />
                 }
                 author={note.authorDisplayName}
                 timestamp={

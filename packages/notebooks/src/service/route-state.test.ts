@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { notebooksService } from "./index";
 import { loadEditableNoteRouteData } from "./route-state";
 
 const base = {
@@ -40,4 +41,41 @@ describe("notebook route state public IDs", () => {
 
     expect(result).toEqual({ kind: "fallback", reason: "invalid-target" });
   });
+});
+
+test("the authorized route snapshot carries authors into soft-navigation detail", async () => {
+  const timestamp = "2026-10-01T10:00:00.000Z";
+  const author = { kind: "user" as const, id: base.userId, displayName: "Jana Berger", avatarHash: "avatar" };
+  const authors = { createdBy: author, lastEditedBy: author };
+  const noteId = "33333333-3333-4333-8333-333333333333";
+  const note = spyOn(notebooksService.note, "getWithContentByShortId").mockResolvedValue({
+    id: noteId,
+    shortId: "note01",
+    notebookId: base.notebookId,
+    title: "Test",
+    contentMd: "# Test",
+    yjsSnapshot: null,
+    historyIncomplete: false,
+    lockedAt: null,
+    parentId: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    createdBy: base.userId,
+    position: 0,
+    hasChildren: false,
+    yjsSnapshotAt: null,
+  });
+  const backlinks = spyOn(notebooksService.note.backlinks, "list").mockResolvedValue([]);
+  const authorsRead = spyOn(notebooksService.activity, "noteAuthors").mockResolvedValue(authors);
+  try {
+    const result = await loadEditableNoteRouteData({ ...base, href: "/app/notebooks/book01/notes/note01" });
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error("Expected editable route state");
+    expect(result.state.detail.noteAuthors).toEqual(authors);
+    expect(authorsRead).toHaveBeenCalledWith({ noteId });
+  } finally {
+    note.mockRestore();
+    backlinks.mockRestore();
+    authorsRead.mockRestore();
+  }
 });

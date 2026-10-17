@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { cloudAiChartTable } from "@k2b/cloud/ai/browser";
 import { markdown } from "@k2b/cloud/shared";
 import { renderMarkdownInfoBlock } from "@k2b/ui";
 import type { NoteQueryResult } from "../service/note-query";
 import { renderNotebookBook, sanitizeNotebookBookHtml } from "./book-renderer";
 import { bookRendererMessages } from "./book-renderer-messages";
+import { notebookChartTableHtml, parseNotebookChartBlocks, renderNotebookChartFigure } from "./chart-blocks";
 import { DOCUMENTED_IMAGE_FORMS } from "./markdown-image.fixtures";
 
 const render = (markdown: string, locale = "en", queryResults?: ReadonlyMap<number, NoteQueryResult>) =>
@@ -716,7 +718,7 @@ test("document diagnostics reuse parsed blocks in query, toc, chart order", () =
 
 test("charts survive sanitizing in the document and per-line editor preview", () => {
   const result = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "en" });
-  expect(result.html).toContain('<figure class="notebook-book-chart" data-kind="bar">');
+  expect(result.html).toContain('<figure class="notebook-book-chart" data-kind="bar" data-chart="');
   expect(result.html).toContain("<svg");
   expect(result.html).toContain("<title>Jan · Revenue: 12</title>");
   expect(result.html).not.toContain("NOTEBOOKBOOKSLOT");
@@ -754,4 +756,21 @@ test("version source previews still draw charts from their own text", () => {
   const { html } = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "en", querySource: true });
   expect(html).toContain("<svg");
   expect(html).not.toContain(":::chart");
+});
+
+test("Book and editor preserve chart payloads; print keeps only the drawing and shared data table", () => {
+  const parsed = parseNotebookChartBlocks(chartMarkdown).blocks[0]!.input;
+  const figure = renderNotebookChartFigure(parsed, "de")!;
+  const book = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "de" });
+  expect(book.html).toContain(figure);
+  expect(book.blocks[0]!.html).toBe(figure);
+  expect(figure).toContain('data-chart="');
+  expect(figure).toContain('<div class="notebook-book-chart__actions"></div>');
+  const print = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "de", print: true });
+  expect(print.html).not.toContain('data-chart="');
+  expect(print.html).not.toContain("notebook-book-chart__actions");
+  expect(print.html).toContain("<svg");
+  expect(print.html).toContain(notebookChartTableHtml(cloudAiChartTable(parsed, "de")));
+  expect(print.html).toContain(">Jan</span>");
+  expect(print.html).toContain(">12</span>");
 });

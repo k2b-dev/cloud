@@ -546,3 +546,34 @@ Before accepting a component or screen, verify:
   Chromium.
 - Light and dark modes preserve the same hierarchy.
 - Icon-only actions have accessible names and useful focus treatment.
+
+## Show Cloud account avatars
+
+Import `CloudAvatar` from `@k2b/cloud/account/ui` for Cloud account identity.
+Pass the visible `username`, `userId`, and `avatarHash`; uploaded user pictures
+use the account avatar endpoint with the hash as a revision. Without a picture,
+the avatar uses initials.
+
+`kind` defaults to `"user"` and renders a circle. `"service_account"` renders a
+square robot icon; `"system"` renders a square automation icon. These two kinds
+use their semantic icon even when an avatar hash is supplied. Cloud owns this
+mapping; callers do not pass `shape`, `icon`, `name`, or `src`.
+
+```tsx
+import { CloudAvatar } from "@k2b/cloud/account/ui";
+
+<CloudAvatar username="Jana Berger" userId={user.id} avatarHash={user.avatarHash} size="sm" />
+<CloudAvatar username="Stock bot" kind="service_account" size="sm" />
+```
+
+```ts
+type CloudAvatarKind = "user" | "service_account" | "system";
+type CloudAvatarProps = Omit<AvatarProps, "name" | "src" | "shape" | "icon"> & {
+  username: string; userId?: string | null; avatarHash?: string | null; kind?: CloudAvatarKind;
+};
+```
+
+Other presentation props follow [`Avatar`](/en/ui/surfaces/cards). For an
+[`AvatarStack`](/en/ui/surfaces/avatar-stack) person, `cloudAvatarSource(userId,
+avatarHash)` from the same account UI entry point supplies the uploaded picture
+URL, or `undefined` when either value is absent.

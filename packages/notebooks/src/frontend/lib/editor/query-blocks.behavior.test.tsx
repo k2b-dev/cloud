@@ -97,6 +97,41 @@ describe("query block previews", () => {
     }
   });
 
+  test("a drawn chart widget mounts controls and restores its DOM when replaced", async () => {
+    const markdown =
+      "# Chart\n\n:::chart\ntype: bar\ntitle: Umsatz\ncolumns: [Monat, Umsatz]\nrows:\n  - [Januar, 1200]\nx: Monat\ny: Umsatz\ntooltip:\n  label: Betrag\n  format: EUR\n:::";
+    let serverHtml = "";
+    const app = await mount(async () => {
+      const { parseNotebookChartBlocks, renderNotebookChartFigure } = await import("../../../lib/chart-blocks");
+      const parsed = parseNotebookChartBlocks(markdown);
+      expect(parsed.diagnostics).toEqual([]);
+      serverHtml = renderNotebookChartFigure(parsed.blocks[0]!.input, "de")!;
+      return { markdown, blocks: [{ line: 3, html: serverHtml }], diagnostics: [], headings: [] };
+    }, markdown);
+    try {
+      // Wait for the preview response instead of a fixed time: the widget draws once the debounced request resolves.
+      for (let wait = 0; wait < 200 && !app.dom.root.querySelector(".notebook-book-chart__actions button"); wait++) await Bun.sleep(10);
+      const widget = app.dom.root.querySelector<HTMLElement>(".cm-query-block-widget")!;
+      const preview = widget.querySelector<HTMLElement>(".cm-query-block-preview")!;
+      const original = document.createElement("div");
+      original.innerHTML = serverHtml;
+      expect(widget.querySelectorAll(".notebook-book-chart__actions button")).toHaveLength(2);
+      expect(widget.querySelector('[aria-label="Daten kopieren"]')).not.toBeNull();
+      const toggle = widget.querySelector<HTMLButtonElement>('[aria-label="Als Tabelle"]')!;
+      toggle.click();
+      expect(toggle.getAttribute("aria-pressed")).toBe("true");
+      expect(preview.querySelector(".notebook-book-chart__table table")).not.toBeNull();
+      // Entering the source replaces the decoration and calls QueryBlockWidget.destroy().
+      app.view().dispatch({ selection: { anchor: markdown.indexOf(":::chart") } });
+      expect(widget.isConnected).toBe(false);
+      expect(app.dom.root.querySelector(".notebook-book-chart__actions button")).toBeNull();
+      expect(preview.querySelector("button, .notebook-book-chart__table, [data-interactive], [tabindex]")).toBeNull();
+      expect(preview.innerHTML).toBe(original.innerHTML);
+    } finally {
+      app.cleanup();
+    }
+  });
+
   test("TOC links use server-provided heading source locations", async () => {
     const app = await mount(async () => response());
     try {

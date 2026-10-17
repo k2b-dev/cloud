@@ -4,6 +4,7 @@ title: Plan and track work
 icon: ti ti-arrow-bounce
 description: Create items, start from templates, structure tasks, and keep active work and handoffs readable.
 order: 120
+kind: task
 ---
 
 Spaces works best when each item has a clear next action. Keep item titles short, and put context in the notes. Use status or dates to make queues obvious. Use events when the work is mainly planned in the calendar.

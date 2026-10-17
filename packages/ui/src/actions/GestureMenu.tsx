@@ -1,17 +1,9 @@
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { dialogCore } from "../feedback/dialog-core";
-import { LocaleProvider, useLocale } from "../intl/locale";
-import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
+import { useLocale } from "../intl/locale";
 import { prefersReducedMotion } from "../motion";
 import { ContextMenuBase } from "./ContextMenu";
-import {
-  type DropdownAction,
-  type DropdownActionBase,
-  type DropdownChoice,
-  DropdownItems,
-  type DropdownSection,
-  focusRowSegment,
-} from "./Dropdown";
+import { type DropdownAction, type DropdownActionBase, type DropdownChoice, DropdownItems, type DropdownSection } from "./Dropdown";
+import { openMenuSheet } from "./menu-sheet";
 
 /** A finger held this long without moving opens the menu, as the platforms' own long press does. */
 const LONG_PRESS_MS = 500;
@@ -122,8 +114,6 @@ type Press = {
   direction?: SwipeDirection;
 };
 
-type Entry = GestureMenuAction | DropdownAction | DropdownChoice;
-
 const gestureAction = (items: readonly GestureMenuItem[], kind: GestureKind): GestureMenuAction | undefined => {
   for (const item of items)
     for (const entry of "items" in item ? item.items : [item])
@@ -132,57 +122,6 @@ const gestureAction = (items: readonly GestureMenuItem[], kind: GestureKind): Ge
 };
 
 const swipeKind = (direction: SwipeDirection): GestureKind => (direction === "right" ? "swipe-right" : "swipe-left");
-
-/**
- * The sheet's items hand their action to `run` instead of running it while the sheet closes: `dialogCore` settles the
- * sheet after it left the history, and only then may an action navigate or open the next dialog.
- * A choice or action that keeps the menu open runs at once.
- */
-const afterClose = (items: readonly GestureMenuItem[], run: (action: () => void) => void): GestureMenuItem[] => {
-  const entry = (item: Entry): Entry => {
-    const action = item.action;
-    if (!action || ("closeOnSelect" in item && item.closeOnSelect === false)) return item;
-    return { ...item, action: () => run(action) };
-  };
-  return items.map((item) => ("items" in item ? { ...item, items: item.items.map(entry) } : entry(item)));
-};
-
-const menuItems = (menu: HTMLElement): HTMLElement[] =>
-  Array.from(menu.querySelectorAll<HTMLElement>("[role^='menuitem']:not([aria-disabled='true'])"));
-
-/**
- * The menu inside the long-press sheet: the same items, at touch size, with arrow keys for a connected keyboard. Focus
- * starts on the sheet itself, which shows no ring on a phone; the first arrow key moves it into the menu.
- */
-function SheetMenu(props: { items: readonly GestureMenuItem[]; label: string; close: () => void; dialog: HTMLDialogElement }): JSX.Element {
-  let menu!: HTMLDivElement;
-  const focus = (index: number) => {
-    const items = menuItems(menu);
-    items[(index + items.length) % items.length]?.focus();
-  };
-  const onKeyDown = (event: KeyboardEvent) => {
-    const items = menuItems(menu);
-    const current = items.indexOf(document.activeElement as HTMLElement);
-    if (event.key === "ArrowDown") focus(current + 1);
-    else if (event.key === "ArrowUp") focus(current < 0 ? -1 : current - 1);
-    else if (event.key === "Home" || event.key === "End") focus(event.key === "Home" ? 0 : -1);
-    else if (!focusRowSegment(items, event.key)) return;
-    event.preventDefault();
-  };
-  // Keys pressed on the sheet itself, while it is the top level of the shared dialog.
-  const onSheetKeyDown = (event: KeyboardEvent) => {
-    if (event.target === props.dialog && props.dialog.lastElementChild?.contains(menu)) onKeyDown(event);
-  };
-  onMount(() => {
-    props.dialog.addEventListener("keydown", onSheetKeyDown);
-    onCleanup(() => props.dialog.removeEventListener("keydown", onSheetKeyDown));
-  });
-  return (
-    <div ref={menu} class="k2b-gesture-menu__sheet-menu" role="menu" aria-label={props.label} onKeyDown={onKeyDown}>
-      <DropdownItems items={props.items} close={() => props.close()} />
-    </div>
-  );
-}
 
 /**
  * Touch gestures for an element, each the shortcut of an entry in its menu: a horizontal swipe, a double tap, and a
@@ -237,29 +176,16 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     if (sheetOpen || !active()) return;
     sheetOpen = true;
     props.onOpen?.();
-    const current = locale();
-    let chosen: (() => void) | undefined;
-    const choose = (action: () => void) => {
-      chosen = action;
-    };
-    void dialogCore
-      .open<void>(
-        (close, context) => (
-          <LocaleProvider locale={current}>
-            <BottomSheet onDismiss={context.requestDismiss}>
-              <BottomSheet.Body>
-                {props.sheetTop?.(() => close())}
-                <SheetMenu items={afterClose(props.items, choose)} label={props.label} close={() => close()} dialog={context.dialog} />
-              </BottomSheet.Body>
-            </BottomSheet>
-          </LocaleProvider>
-        ),
-        { ...bottomSheetOptions, ariaLabel: props.label, history: true, signal: disposed.signal },
-      )
-      .then(() => chosen?.())
-      .finally(() => {
-        sheetOpen = false;
-      });
+    void openMenuSheet({
+      Items: DropdownItems,
+      items: props.items,
+      label: props.label,
+      locale: locale(),
+      top: props.sheetTop,
+      signal: disposed.signal,
+    }).finally(() => {
+      sheetOpen = false;
+    });
   };
 
   /** Another pointer that goes down anywhere while a finger presses, as in a pinch, ends the gesture. */

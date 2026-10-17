@@ -9,6 +9,9 @@ export type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
  */
 export type AvatarRing = "success" | { color: string };
 
+/** `square` marks an agent or service account; people stay round. */
+export type AvatarShape = "circle" | "square";
+
 export type AvatarProps = {
   name: string;
   src?: string | null;
@@ -18,6 +21,7 @@ export type AvatarProps = {
   size?: AvatarSize;
   /** Draws a ring with a small transparent gap inside the avatar's own box, so the avatar keeps its size and no container clips the ring. */
   ring?: AvatarRing;
+  shape?: AvatarShape;
   loading?: "eager" | "lazy";
   class?: string;
   style?: JSX.CSSProperties | string;
@@ -75,6 +79,7 @@ export function Avatar(props: AvatarProps): JSX.Element {
         <span
           class={className()}
           data-size={props.size ?? "md"}
+          data-shape={props.shape === "square" ? "square" : undefined}
           data-tint={tintFor(props.name.trim())}
           data-ring={ring()}
           style={style()}
@@ -91,6 +96,7 @@ export function Avatar(props: AvatarProps): JSX.Element {
           alt={props.alt ?? avatarMessages().avatarLabel({ name: label() })}
           class={className()}
           data-size={props.size ?? "md"}
+          data-shape={props.shape === "square" ? "square" : undefined}
           data-ring={ring()}
           style={style()}
           loading={props.loading ?? "lazy"}

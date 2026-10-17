@@ -2,6 +2,7 @@ import {
   CLOUD_AI_CHART_MAX_SERIES,
   CLOUD_AI_CHART_MAX_VALUES,
   type CloudAiChartInput,
+  type CloudAiChartTable,
   type CloudAiNumberFormat,
   chartDrawingIssue,
   cloudAiChartLegend,
@@ -422,11 +423,21 @@ export const chartBlockFrame = (body: string[]): Frame | null => {
 };
 
 /**
- * The figure around a chart: title, subtitle and a viewport whose height comes from the kind alone (app.css). The
- * editor draws the same frame with an empty viewport while a preview loads, so the drawing never moves the text.
+ * The figure around a chart: title, subtitle, a place for the chart's controls and a viewport whose height comes from
+ * the kind alone (app.css). The editor draws the same frame with an empty viewport while a preview loads, so the
+ * drawing never moves the text. `input` is the drawn chart for the browser enhancement (`notebook-charts.tsx`): it adds
+ * tooltips, the table view and Copy data in place, so the controls' box is reserved here. Print frames have no controls.
  */
-export const notebookChartFrameHtml = (frame: Frame, viewportHtml: string, options: { legend?: boolean } = {}): string =>
-  `<figure class="notebook-book-chart" data-kind="${frame.kind === "line" && frame.area ? "area" : frame.kind}"><figcaption class="notebook-book-chart__header"><span class="notebook-book-chart__title">${escape(frame.title)}</span>${frame.subtitle ? `<span class="notebook-book-chart__subtitle">${escape(frame.subtitle)}</span>` : ""}</figcaption><div class="notebook-book-chart__viewport"${options.legend ? ' data-legend="true"' : ""}>${viewportHtml}</div></figure>`;
+export const notebookChartFrameHtml = (
+  frame: Frame,
+  viewportHtml: string,
+  options: { legend?: boolean; input?: CloudAiChartInput; print?: boolean } = {},
+): string =>
+  `<figure class="notebook-book-chart" data-kind="${frame.kind === "line" && frame.area ? "area" : frame.kind}"${options.input ? ` data-chart="${escape(JSON.stringify(options.input))}"` : ""}><figcaption class="notebook-book-chart__header"><span class="notebook-book-chart__title">${escape(frame.title)}</span>${frame.subtitle ? `<span class="notebook-book-chart__subtitle">${escape(frame.subtitle)}</span>` : ""}</figcaption>${options.print ? "" : '<div class="notebook-book-chart__actions"></div>'}<div class="notebook-book-chart__viewport"${options.legend ? ' data-legend="true"' : ""}>${viewportHtml}</div></figure>`;
+
+/** A chart's data as a note table: the PDF prints it below the figure, and the table view shows it in the frame. */
+export const notebookChartTableHtml = (table: CloudAiChartTable, options: { label?: string; className?: string } = {}): string =>
+  `<div class="md-table-wrap${options.className ? ` ${options.className}` : ""}"><table class="md-table"${options.label ? ` aria-label="${escape(options.label)}"` : ""}><thead><tr>${table.columns.map((col) => `<th scope="col">${escape(col.label)}</th>`).join("")}</tr></thead><tbody>${table.rows.map((row) => `<tr>${table.columns.map((col) => `<td><span${col.numeric ? ' class="md-align-right"' : ""}>${escape(row.cells[col.id] ?? "")}</span></td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 
 /** Only the shared renderer supplies SVG. A failed drawing leaves the caller's source visible. */
 export const renderNotebookChartFigure = (input: CloudAiChartInput, locale: string, options: { print?: boolean } = {}): string | null => {
@@ -447,10 +458,9 @@ export const renderNotebookChartFigure = (input: CloudAiChartInput, locale: stri
       ? `<ul class="k2b-chart-legend" aria-label="${escape(t.chartLegend)}">${legend.map((entry) => `<li><span class="k2b-chart-legend__swatch"${entry.style && entry.style !== "solid" ? ` data-style="${entry.style}"` : ""}${entry.reference ? ' data-reference="true"' : ""} style="--k2b-chart-legend-color:var(--stdlib-chart-c${(entry.color % 8) + 1})" aria-hidden="true"></span>${escape(entry.label)}</li>`).join("")}</ul>`
       : "";
     const viewport = `<div class="k2b-chart" data-chart-kind="${snapshot.kind}"><div class="k2b-chart__svg"${snapshot.stretch ? ' data-stretch="true"' : ""} style="--k2b-chart-width:${snapshot.width}px;--k2b-chart-height:${snapshot.height}px">${snapshot.svg}</div></div>${legendHtml}`;
-    const figure = notebookChartFrameHtml(input, viewport, { legend: legend.length > 0 });
+    const figure = notebookChartFrameHtml(input, viewport, { legend: legend.length > 0, ...(options.print ? { print: true } : { input }) });
     if (!options.print) return figure;
-    const table = cloudAiChartTable(input, locale);
-    return `${figure}<div class="md-table-wrap"><table class="md-table"><thead><tr>${table.columns.map((col) => `<th scope="col">${escape(col.label)}</th>`).join("")}</tr></thead><tbody>${table.rows.map((row) => `<tr>${table.columns.map((col) => `<td><span${col.numeric ? ' class="md-align-right"' : ""}>${escape(row.cells[col.id] ?? "")}</span></td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    return `${figure}${notebookChartTableHtml(cloudAiChartTable(input, locale))}`;
   } catch {
     return null;
   }

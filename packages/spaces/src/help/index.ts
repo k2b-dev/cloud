@@ -17,3 +17,9 @@ export const spacesHelp = defineHelp({
     de: [startDe, viewsDe, workflowDe, sharingDe, troubleshootDe],
   },
 });
+
+/** Articles that fit the application's main pages, in display order. */
+export const spacesPageHelp = {
+  overview: ["spaces-start", "spaces-sharing"],
+  workspace: ["spaces-workflow", "spaces-views", "spaces-sharing"],
+} as const;

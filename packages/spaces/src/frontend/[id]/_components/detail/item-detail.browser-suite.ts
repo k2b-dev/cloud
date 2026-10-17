@@ -700,13 +700,16 @@ describe("Spaces item detail in a browser", () => {
             const left = bodyRect.left + body.clientLeft;
             const top = bodyRect.top + body.clientTop;
             const style = getComputedStyle(avatar);
+            const title = avatar.closest(".k2b-detail-panel__section")?.querySelector("h3");
+            const textEdge = title?.getBoundingClientRect().left ?? Number.NaN;
             return {
               ring: avatar.getAttribute("data-ring"),
               outline: style.outlineStyle,
               shadow: style.boxShadow,
               border: style.borderTopWidth,
-              // The holder sits flush at the body's left edge, where an outside ring would be cut off.
-              flush: Math.abs(rect.left - left) <= 0.5,
+              // The holder starts on its section's text edge, as close to the scrollport as panel content gets, where an
+              // outside ring would be the first to be cut off.
+              flush: Math.abs(rect.left - textEdge) <= 0.5,
               inside:
                 rect.left >= left - 0.5 &&
                 rect.right <= left + body.clientWidth + 0.5 &&

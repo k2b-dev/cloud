@@ -399,6 +399,14 @@ can navigate or open the next dialog right away. Dialogs closed together leave
 the history in one step. After a reload, a leftover entry never reopens a
 dialog or its transient state.
 
+Application `popstate` listeners do not receive a Back or Forward that keeps
+the address and only moves between dialog or sheet entries and the page beneath
+them when the browser supports the Navigation API. Without it, only the
+synthetic Back on close is suppressed; user Back and Forward still reach listeners.
+A Back or Forward that changes the address still reaches them, also when
+the application pushed or replaced an address while a dialog was open; closing
+such a dialog then leaves that history alone.
+
 Use the option for dialogs a person opens on purpose. Leave it off for
 confirmations inside another dialog, which Back closes together with their
 parent. Back closes the dialog directly: the dismiss guard of

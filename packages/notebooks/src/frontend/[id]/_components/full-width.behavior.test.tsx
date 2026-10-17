@@ -1,9 +1,27 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import { onMount } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import { FULL_WIDTH_PREFERENCE_EVENT } from "./detail/events";
 import { readFullWidth, setFullWidth } from "./settings/NotebookSettingsStore";
+
+const openView = (root: HTMLElement) => {
+  // happy-dom has no native top layer. Model only its open state and toggle event.
+  const menu = root.querySelector<HTMLElement>('[role="menu"]')!;
+  let open = false;
+  const matches = menu.matches.bind(menu);
+  Object.defineProperty(menu, "matches", { value: (selector: string) => (selector === ":popover-open" ? open : matches(selector)) });
+  const toggle = (next: boolean) => {
+    open = next;
+    const event = new Event("toggle");
+    Object.defineProperty(event, "newState", { value: next ? "open" : "closed" });
+    menu.dispatchEvent(event);
+  };
+  menu.showPopover = () => toggle(true);
+  menu.hidePopover = () => toggle(false);
+  delegateEvents(["click"], root.ownerDocument);
+  root.querySelector<HTMLButtonElement>(".notebook-view-menu__trigger")!.click();
+};
 
 describe("personal full-width bridge", () => {
   if (isServer) {
@@ -18,7 +36,7 @@ describe("personal full-width bridge", () => {
     const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
     const { LocaleProvider, useLocale } = await import("@k2b/ui");
     const { notebookWorkspaceMessages } = await import("../messages");
-    const { FullWidthSection } = await import("./detail/FullWidthSection");
+    const { ViewMenu } = await import("./detail/ViewMenu");
     const { followFullWidth } = await import("./full-width");
     const media = window.matchMedia("(min-width: 64rem)");
     Object.defineProperty(media, "matches", { configurable: true, value: true });
@@ -36,7 +54,7 @@ describe("personal full-width bridge", () => {
           <div class="notebook-document-surface">
             <div ref={port} />
           </div>
-          <FullWidthSection initial={false} />
+          <ViewMenu mode="edit" notebookId="book01" noteId="note01" canEdit isRich onToggleRich={() => {}} fullWidth={false} />
         </>
       );
     }
@@ -48,8 +66,9 @@ describe("personal full-width bridge", () => {
       ),
       dom.root,
     );
+    openView(dom.root);
     const surface = dom.root.querySelector<HTMLDivElement>(".notebook-document-surface");
-    const toggle = dom.root.querySelector<HTMLInputElement>('input[role="switch"]');
+    const toggle = dom.root.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]');
     if (!surface || !toggle) throw new Error("Missing full-width controls.");
     const command = () => collectContextAwareCommands().find((command) => command.id === "notebooks.view.fullWidth");
     return {
@@ -66,11 +85,11 @@ describe("personal full-width bridge", () => {
     };
   };
 
-  test("remounts from the cookie and keeps the switch and command usable", async () => {
+  test("remounts from the cookie and keeps the menu choice and command usable", async () => {
     const view = await mountReadingSurface(true);
     try {
       expect(view.surface.hasAttribute("data-full-width")).toBe(true);
-      expect(view.toggle.checked).toBe(true);
+      expect(view.toggle.getAttribute("aria-checked") === "true").toBe(true);
       expect(view.command()?.title).toBe("Volle Breite ausschalten");
       expect(view.keepPosition).toHaveBeenCalledTimes(1);
 
@@ -79,7 +98,7 @@ describe("personal full-width bridge", () => {
         if (typeof action !== "function") throw new Error("Expected a local command.");
         await action();
         expect(view.surface.hasAttribute("data-full-width")).toBe(on);
-        expect(view.toggle.checked).toBe(on);
+        expect(view.toggle.getAttribute("aria-checked") === "true").toBe(on);
         expect(readFullWidth()).toBe(on);
         expect(view.command()?.title).toBe(on ? "Volle Breite ausschalten" : "Volle Breite einschalten");
       }
@@ -95,7 +114,7 @@ describe("personal full-width bridge", () => {
     window.addEventListener(FULL_WIDTH_PREFERENCE_EVENT, notified);
     const expectWidth = (on: boolean) => {
       expect(view.surface.hasAttribute("data-full-width")).toBe(on);
-      expect(view.toggle.checked).toBe(on);
+      expect(view.toggle.getAttribute("aria-checked") === "true").toBe(on);
       expect(view.command()?.title).toBe(on ? "Volle Breite ausschalten" : "Volle Breite einschalten");
     };
     try {
@@ -131,7 +150,7 @@ describe("personal full-width bridge", () => {
       window.dispatchEvent(new Event("focus"));
       document.dispatchEvent(new Event("visibilitychange"));
       expect(view.surface.hasAttribute("data-full-width")).toBe(true);
-      expect(view.toggle.checked).toBe(true);
+      expect(view.toggle.getAttribute("aria-checked") === "true").toBe(true);
       expect(view.command()).toBeUndefined();
       expect(view.keepPosition).toHaveBeenCalledTimes(2);
       expect(notified).not.toHaveBeenCalled();
@@ -148,7 +167,7 @@ describe("personal full-width bridge", () => {
     const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
     const { LocaleProvider, useLocale } = await import("@k2b/ui");
     const { notebookWorkspaceMessages } = await import("../messages");
-    const { FullWidthSection } = await import("./detail/FullWidthSection");
+    const { ViewMenu } = await import("./detail/ViewMenu");
     const { changeFullWidth, followFullWidth } = await import("./full-width");
     const media = window.matchMedia("(min-width: 64rem)");
     let wide = true;
@@ -177,7 +196,7 @@ describe("personal full-width bridge", () => {
           <div ref={surface} class="notebook-document-surface">
             <div ref={port} />
           </div>
-          <FullWidthSection initial={false} />
+          <ViewMenu mode="edit" notebookId="book01" noteId="note01" canEdit isRich onToggleRich={() => {}} fullWidth={false} />
         </>
       );
     }
@@ -191,7 +210,8 @@ describe("personal full-width bridge", () => {
     );
     let disposed = false;
     try {
-      const toggle = dom.root.querySelector<HTMLInputElement>('input[role="switch"]')!;
+      openView(dom.root);
+      const toggle = dom.root.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!;
       const command = () => collectContextAwareCommands().find((command) => command.id === "notebooks.view.fullWidth");
       expect(matchMedia).toHaveBeenCalledWith("(min-width: 64rem)");
       expect(command()?.title).toBe("Volle Breite einschalten");
@@ -199,16 +219,17 @@ describe("personal full-width bridge", () => {
       if (typeof action !== "function") throw new Error("Expected a local command.");
       await action();
       expect(phases).toEqual([false, true]);
-      expect(toggle.checked).toBe(true);
+      expect(toggle.getAttribute("aria-checked") === "true").toBe(true);
       expect(readFullWidth()).toBe(true);
       expect(command()?.title).toBe("Volle Breite ausschalten");
 
       // A repeated notification must not capture or restore a position that already matches.
       window.dispatchEvent(new Event(FULL_WIDTH_PREFERENCE_EVENT));
       expect(phases).toEqual([false, true]);
-      changeFullWidth(false);
+      toggle.click();
+      expect(dom.root.querySelector(".notebook-view-menu__trigger")?.getAttribute("aria-expanded")).toBe("true");
       expect(phases).toEqual([false, true, true, false]);
-      expect(toggle.checked).toBe(false);
+      expect(toggle.getAttribute("aria-checked") === "true").toBe(false);
       expect(command()?.title).toBe("Volle Breite einschalten");
 
       wide = false;
@@ -224,7 +245,7 @@ describe("personal full-width bridge", () => {
       expect(removeMedia).toHaveBeenCalledWith("change", expect.any(Function));
       changeFullWidth(true);
       expect(phases).toEqual([false, true, true, false]);
-      expect(toggle.checked).toBe(false);
+      expect(toggle.getAttribute("aria-checked") === "true").toBe(false);
     } finally {
       if (!disposed) dispose();
       removeMedia.mockRestore();

@@ -304,7 +304,7 @@
    one above, so a zoomed window with a fractional width never shows a switch
    that changes nothing. */
 @media not all and (min-width: 64rem) {
-  .k2b-ui :is(.k2b-detail-panel__section, .k2b-switch-field).notebooks-full-width-option {
+  .k2b-ui .k2b-switch-field.notebooks-full-width-option {
     display: none;
   }
 }
@@ -525,8 +525,9 @@
    the same room, and a legend scrolls inside the frame instead of growing it. The SVG stretches to the column's width
    through the shared `.k2b-chart` rules, which keep its text and marks at their pixel size. */
 .notebook-book-content .notebook-book-chart {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 0.5rem;
   min-width: 0;
   margin: 1.25rem 0;
@@ -535,6 +536,25 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+/* Copy data and the table switch: two small icon buttons, as on a chart in an Assistant chat. The server reserves
+   this box empty, so the controls appear in place when the browser enhancement mounts them. */
+.notebook-book-chart__actions {
+  display: flex;
+  gap: 0.25rem;
+  width: 3.75rem;
+  height: 1.75rem;
+}
+/* The table takes the drawing's place inside the same fixed frame and scrolls there. */
+.notebook-book-chart[data-view="table"] .notebook-book-chart__viewport > :not(.notebook-book-chart__table) {
+  display: none;
+}
+/* Like every note table, it bleeds past the text on both sides so its cell text lines up with the title. */
+.notebook-book-content .notebook-book-chart__table {
+  flex: 1 1 0;
+  min-height: 0;
+  margin-block: 0;
+  overflow: auto;
 }
 .notebook-book-chart__title {
   font-size: 1rem;
@@ -547,6 +567,7 @@
   line-height: 1.25rem;
 }
 .notebook-book-chart__viewport {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -613,6 +634,19 @@
   }
   .notebook-book-content .notebook-book-mermaid > details {
     display: none;
+  }
+  /* Chart controls stay on screen. A chart switched to its table prints every row: the frame grows with it. */
+  .notebook-book-chart__actions {
+    display: none;
+  }
+  .notebook-book-content .notebook-book-chart {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .notebook-book-chart[data-view="table"] .notebook-book-chart__viewport {
+    height: auto;
+  }
+  .notebook-book-content .notebook-book-chart__table {
+    flex: none;
   }
 }
 
@@ -846,13 +880,240 @@
   color: var(--color-zinc-300);
 }
 
-.k2b-ui .notebooks-note-activity-action > .k2b-button__label {
+/* ── Note side panel ──────────────────────────────────────────────────
+   Built from the shared DetailPanel rhythm; these rules only arrange the
+   panel's own pieces: the action row, the meta line states, the offline band,
+   the outline depth, and the activity rows. */
+.k2b-ui .notebook-detail-primary {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
   gap: 0.75rem;
 }
 
-.k2b-ui .notebooks-note-activity-action .k2b-detail-panel__action-leading {
-  width: auto;
-  flex-basis: auto;
+.k2b-ui .notebook-detail-actions {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.k2b-ui .notebook-detail-actions__ai {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.k2b-ui .notebook-detail-actions > .k2b-button.notebook-detail-actions__ai,
+.k2b-ui .notebook-detail-actions__ai > .k2b-button {
+  min-height: 2.25rem;
+}
+
+.k2b-ui .notebook-detail-actions__ai > .k2b-button {
+  width: 100%;
+}
+
+/* "View" keeps one width in every mode, so the AI button never changes its size. */
+.k2b-ui .notebook-view-menu {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+}
+
+.k2b-ui .notebook-view-menu__trigger.k2b-button {
+  min-height: 2.25rem;
+  padding-inline: 0.75rem 0.5rem;
+  border-color: transparent;
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text);
+}
+
+.k2b-ui .notebook-view-menu__trigger.k2b-button:not(:disabled):hover {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .notebook-view-menu__chevron {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .notebook-meta-name {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .notebook-meta-state {
+  color: var(--k2b-text-secondary);
+  font-weight: 600;
+}
+
+.k2b-ui .notebook-meta-state[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .notebook-meta-state i {
+  font-size: 0.75rem;
+  vertical-align: -0.0625rem;
+}
+
+.k2b-ui .notebook-time time[tabindex] {
+  border-radius: 0.125rem;
+}
+
+.k2b-ui .notebook-time time[tabindex]:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 1px;
+}
+
+/* Offline: one flat band in the header with what happens and how to retry. */
+.k2b-ui .notebook-offline-band {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text);
+  background: color-mix(in srgb, var(--k2b-warning-text) 10%, transparent);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+.k2b-ui .notebook-offline-band > i {
+  margin-top: 0.125rem;
+  color: var(--k2b-warning-text);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .notebook-offline-band__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+}
+
+.k2b-ui .notebook-offline-band__copy p {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .notebook-offline-band__action.k2b-button {
+  margin: 0.25rem 0 0 -0.375rem;
+  color: var(--k2b-warning-text);
+  font-weight: 600;
+}
+
+/* Task progress in the app's color, like the current outline row. */
+.k2b-ui .notebook-tasks .k2b-progress__value {
+  background: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
+}
+
+.k2b-ui .notebook-panel-rows {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+/* Deeper headings step in; the level itself needs no label. */
+.k2b-ui .notebook-outline-row[data-depth="1"] .k2b-detail-panel__action-copy {
+  padding-inline-start: 0.875rem;
+}
+
+.k2b-ui .notebook-outline-row[data-depth="2"] .k2b-detail-panel__action-copy {
+  padding-inline-start: 1.75rem;
+}
+
+.k2b-ui .notebook-reference-name {
+  font-family: var(--k2b-font-mono, ui-monospace, monospace);
+  font-size: 0.6875rem;
+}
+
+.k2b-ui .k2b-tooltip-wrapper.notebook-activity-row {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.k2b-ui .notebook-activity-name {
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+
+.k2b-ui .notebook-activity .k2b-detail-panel__action {
+  align-items: center;
+}
+
+/* Placeholders while the log loads: the rows' own geometry, so the real rows replace them in place. */
+.k2b-ui .notebook-activity-skeleton {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.625rem;
+  margin-inline-start: -1.875rem;
+}
+
+.k2b-ui .notebook-activity-skeleton > span {
+  display: block;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .notebook-activity-skeleton > span:first-child {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: 0 0 1.25rem;
+}
+
+.k2b-ui .notebook-activity-skeleton > span:nth-child(2) {
+  width: 52%;
+}
+
+.k2b-ui .notebook-activity-skeleton[data-index="1"] > span:nth-child(2) {
+  width: 40%;
+}
+
+.k2b-ui .notebook-activity-skeleton[data-index="2"] > span:nth-child(2) {
+  width: 58%;
+}
+
+.k2b-ui .notebook-activity-skeleton > span:last-child {
+  width: 2.75rem;
+  margin-inline-start: auto;
+}
+
+.k2b-ui .notebook-activity-error {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.625rem;
+  margin-inline-start: -1.875rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .notebook-activity-error > i {
+  width: 1.25rem;
+  flex: 0 0 1.25rem;
+  color: var(--k2b-danger-text);
+  text-align: center;
+}
+
+.k2b-ui .notebook-activity-error > .k2b-button {
+  margin-inline-start: auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .k2b-ui .notebook-activity-skeleton > span {
+    animation: notebook-skeleton 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes notebook-skeleton {
+  50% {
+    opacity: 0.55;
+  }
 }
 
 @media (max-width: 47.999rem) {

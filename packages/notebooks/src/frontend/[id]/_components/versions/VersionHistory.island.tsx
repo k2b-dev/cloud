@@ -15,9 +15,10 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { diffLines } from "diff";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { renderNotebookBook } from "@/lib/book-renderer";
+import { enhanceNotebookCharts } from "../../../lib/notebook-charts";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { readErrorMessage } from "../settings/utils";
@@ -533,7 +534,17 @@ export default function VersionHistory(props: Props) {
                     }
                   >
                     <div class="mx-auto w-full max-w-4xl p-4">
-                      <article class="notebook-book-content" innerHTML={selectedContentHtml()} />
+                      <article
+                        class="notebook-book-content"
+                        innerHTML={selectedContentHtml()}
+                        ref={(element) =>
+                          // User effects run after the render effect that writes the version's HTML.
+                          createEffect(() => {
+                            selectedContentHtml();
+                            onCleanup(enhanceNotebookCharts(element, locale()));
+                          })
+                        }
+                      />
                     </div>
                   </Show>
                 </Show>

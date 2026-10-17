@@ -30,8 +30,12 @@ compact utilities such as more and close, and `primaryActions` for the small
 set of prominent commands below the identity row. On touch devices, primary
 actions keep 0.625rem from the identity row and between wrapped lines, so
 their [tap areas](/en/ui/actions/buttons#touch-targets) stay clear of a
-`meta` action or the line above. Optional
-metadata sits beside the subtitle instead of competing with the title; plain
+`meta` action or the line above.
+The title wraps to at most two lines, with the full string in its native hint.
+The subtitle stays on one line and ends with an ellipsis; `meta` sits at its
+trailing edge instead of competing with the title. The subtitle keeps at least
+6rem, so a `meta` too wide for that moves below it, still on the trailing edge,
+and wraps inside the header instead of hiding the subtitle; plain
 text in `meta` uses the subtitle's size and color, while badges and buttons keep
 their own.
 `DetailPanel.Body` is the single scrolling element and accepts a
@@ -44,7 +48,8 @@ the host inset instead, so its content has the same margin on both sides. The
 pointer only stands in for the scrollbar style: a touch device with classic
 scrollbars shows the gutter next to the inset, and a desktop with overlay
 scrollbars keeps the panel at the trailing edge. Do not add a second
-full-height scroller inside it.
+full-height scroller inside it. The panel keeps a 0.5rem horizontal gutter;
+the floating `AppWorkspace.Detail` host adds its own 0.5rem inset.
 
 Use `DetailPanel.Summary` once, directly below the header, when the selected
 item has a primary set of facts or controls. In other hosts, the summary keeps
@@ -61,15 +66,19 @@ token; `DetailPanel` does not know how the host derives it.
 spacing and a sentence-case title, not a card, divider, or decorative
 background; the group or the body frames it. Pass `icon` for a fixed section icon slot and `tone` to distinguish
 portable `accent`, `neutral`, `success`, `warning`, or `danger` roles through
-text color only. Pass `description` for short supporting context, `meta` for a
-count or state, and `actions` for a normal section. Only the description is
-muted: a field in `actions` keeps its own description and error styles. A normal section may omit
+text color only. Pass `description` for short supporting context, `count` for
+a numeric count chip, and `meta` for short state text such as “2 of 4 done”.
+Both sit immediately after the title. A zero `count` reads “None yet”,
+localized through the inherited UI locale. A stream such as activity has no
+count. Give a normal section at most one trailing control through `actions`.
+Only the description is muted: a field in `actions` keeps its own description and error styles. A normal section may omit
 its body to represent a compact, actionable empty group. Set `collapsible` for
 secondary content. Closed sections show a compact action row; open sections show
 a heading with a collapse button on the right. Both states share one geometry
 with the other section headings: the icon, title, meta, and chevron keep their
-columns and the row its height when the section opens or closes. Hover only
-colors the title and chevron, and the row gets no fill. Keyboard focus adds the
+columns and the row its height when the section opens or closes. Hover colors
+the title and chevron, and its fill bleeds 0.5rem into the panel gutter.
+Keyboard focus adds the
 shared focus ring, drawn inside the row where the panel would clip it. Their
 content stays mounted when
 closed, preserving unsaved input and child state. Collapsible sections reserve
@@ -101,7 +110,7 @@ frame stands in the body without a section frame. Loose text belongs in the
 header subtitle or a section, and a block with its own heading becomes a
 section. Give every section of a panel an `icon` so the
 titles share one column, and use `size="xs"` for text buttons in its
-`actions`, so their labels end at the same edge as a count.
+`actions`, so their label text ends at the same trailing edge as row metadata.
 
 Sections accept arbitrary content. Use `DescriptionList layout="rows"` for
 compact properties. When people edit those properties in place, make them
@@ -123,10 +132,16 @@ related record, attachment, or in-panel jump. Pass `href` for native link
 semantics; omit it for a native button. `leading`, `title`, optional
 `description`, and `trailing` keep row geometry and interaction states
 consistent. Action rows align their optional leading icon with the section
-heading and keep their default label as quiet as supporting text. Hover and
-keyboard focus change only the action text and icon to the panel's primary
-color; the row and optional Dots menu trigger stay transparent. When a
-destination has secondary actions, pass declarative
+icon column and keep their titles at the section title's text edge, even
+without `leading`. All other content of a section with an icon inside a
+`DetailPanel` starts at that same text edge: comment authors, static text,
+progress, and row titles. A section used outside a panel, such as a form
+section in an editor dialog, keeps its full width. Do not
+add a second indent around action rows. Hover fill extends 0.5rem into the
+panel gutter without moving the row. `current` marks the current destination
+in the panel accent and sets `aria-current` (`location` for links, `true` for
+buttons). `wrap` allows the title to use two lines; otherwise it ends with an
+ellipsis. When a destination has secondary actions, pass declarative
 `menuItems` together with the required accessible `menuLabel`. The primary link
 and the Dots trigger render as sibling controls, so the whole main row remains
 a native destination without nesting a button inside the link. With a mouse or
@@ -191,7 +206,7 @@ type DetailPanelGroupProps = {
 type DetailPanelTone = "accent" | "neutral" | "success" | "warning" | "danger";
 
 type DetailPanelSectionBaseProps = {
-  title: JSX.Element; icon?: string; tone?: DetailPanelTone; description?: JSX.Element; meta?: JSX.Element;
+  title: JSX.Element; icon?: string; tone?: DetailPanelTone; description?: JSX.Element; count?: number; meta?: JSX.Element;
   class?: string;
 };
 
@@ -223,7 +238,7 @@ type DetailPanelActionSecondary = {
 
 type DetailPanelActionBaseProps = {
   title: JSX.Element; description?: JSX.Element; leading?: JSX.Element; trailing?: JSX.Element;
-  secondaryAction?: DetailPanelActionSecondary; class?: string;
+  secondaryAction?: DetailPanelActionSecondary; current?: boolean; wrap?: boolean; class?: string;
 };
 
 type DetailPanelActionMenuProps =
@@ -303,7 +318,7 @@ state and remain mounted when the section closes.
       <DetailPanel.Section
         title="Notes"
         icon="ti ti-notes"
-        meta="0"
+        count={0}
         description="Keep decisions with this location"
         actions={<Button variant="ghost" size="xs">Add note</Button>}
       />
@@ -317,7 +332,7 @@ state and remain mounted when the section closes.
             trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
           />
         </DetailPanel.Section>
-        <DetailPanel.Section title="Attachments" icon="ti ti-paperclip" tone="neutral" meta="2" />
+        <DetailPanel.Section title="Attachments" icon="ti ti-paperclip" tone="neutral" count={2} />
       </DetailPanel.Group>
       <DetailPanel.Section title="History" icon="ti ti-history" collapsible>
         …

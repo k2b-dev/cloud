@@ -1,6 +1,6 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { type DateContext, dates } from "@k2b/stdlib";
 import {
-  Avatar,
   announce,
   Button,
   DetailPanel,
@@ -199,7 +199,7 @@ export default function RecordComments(props: Props) {
       <DetailPanel.Section
         title={props.title ?? t().comments}
         icon="ti ti-messages"
-        meta={comments().length}
+        count={comments().length}
         actions={
           permissions().canWrite && !composerOpen() ? (
             <Button type="button" variant="ghost" size="xs" onClick={() => setComposerOpen(true)}>
@@ -229,13 +229,10 @@ export default function RecordComments(props: Props) {
                 <Discussion.Item
                   aria-busy={comment.id.startsWith("pending-") ? "true" : undefined}
                   avatar={
-                    <Avatar
-                      name={comment.authorDisplayName}
-                      src={
-                        comment.authorUserId && comment.authorAvatarHash
-                          ? `/api/accounts/users/${encodeURIComponent(comment.authorUserId)}/avatar?rev=${encodeURIComponent(comment.authorAvatarHash)}`
-                          : undefined
-                      }
+                    <CloudAvatar
+                      username={comment.authorDisplayName}
+                      userId={comment.authorUserId}
+                      avatarHash={comment.authorAvatarHash}
                       size="xs"
                     />
                   }

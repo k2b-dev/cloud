@@ -182,7 +182,7 @@ export default function ItemLinksSection(props: Props) {
     state === "open" ? t.linkStateOpen : state === "merged" ? t.linkStateMerged : t.linkStateClosed;
 
   return (
-    <DetailPanel.Section title={t.links} icon="ti ti-link" tone="neutral" meta={props.references.length + links().length || undefined}>
+    <DetailPanel.Section title={t.links} icon="ti ti-link" tone="neutral" count={props.references.length + links().length || undefined}>
       <div class="flex flex-col gap-1">
         <For each={props.references}>
           {(reference) => {

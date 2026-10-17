@@ -1137,8 +1137,10 @@
    and a surface beside it ends one gap before it. `Main` keeps 20 rem, and
    below that the panel overlaps it. On a touch screen between 48 and 64 rem,
    a panel the person can close is a drawer over `Main` instead. */
+/* The host keeps 0.5rem and the panel's own gutter the other 0.5rem, so
+   text sits 1rem from the edge and row hover fills have room to bleed. */
 .k2b-ui .k2b-app-workspace__detail {
-  --k2b-detail-panel-scroll-inset: 1rem;
+  --k2b-detail-panel-scroll-inset: 0.5rem;
   position: fixed;
   z-index: 20;
   right: 0;
@@ -1154,7 +1156,7 @@
   flex-direction: column;
   gap: 0.75rem;
   overflow: auto;
-  padding: 0 1rem env(safe-area-inset-bottom, 0px);
+  padding: 0 0.5rem env(safe-area-inset-bottom, 0px);
   border-radius: var(--k2b-radius-dialog) var(--k2b-radius-dialog) 0 0;
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
@@ -1186,7 +1188,7 @@
   height: 1.75rem;
   flex: 0 0 auto;
   place-items: center;
-  margin: 0 -1rem -0.75rem;
+  margin: 0 -0.5rem -0.75rem;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1219,19 +1221,35 @@
     .k2b-detail-panel__body > .k2b-detail-panel__section,
     .k2b-detail-panel .k2b-discussion[data-surface="default"]
   ) {
-  padding-inline: 0;
+  padding: 0;
   background: transparent;
 }
 
-.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__group > :is(.k2b-detail-panel__section, .k2b-discussion) {
-  padding-inline: 0;
+/* One vertical rhythm: every section, discussion, and group sits the body's
+   gap apart, and a group's sections keep that gap between them too. */
+.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__group {
+  gap: 1.5rem;
+}
+
+.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__group > :is(.k2b-detail-panel__section, .k2b-discussion),
+.k2b-ui
+  .k2b-app-workspace__detail
+  .k2b-detail-panel__group
+  > :is(.k2b-detail-panel__section, .k2b-discussion)
+  + :is(.k2b-detail-panel__section, .k2b-discussion[data-surface="default"]) {
+  padding: 0;
 }
 
 /* The body's scrollbar sits on the panel's edge, and its content keeps the
    panel's inset inside the scrollport, so overlay scrollbars never leave the
    text against the rounded edge. */
+.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__header {
+  scrollbar-width: thin;
+}
+
 .k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__body {
-  padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem);
+  gap: 1.5rem;
+  padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem);
   scrollbar-width: thin;
 }
 
@@ -1246,7 +1264,7 @@
     inset: 0;
     height: auto;
     padding-top: env(safe-area-inset-top, 0px);
-    padding-inline: max(1rem, env(safe-area-inset-left, 0px)) max(1rem, env(safe-area-inset-right, 0px));
+    padding-inline: max(0.5rem, env(safe-area-inset-left, 0px)) max(0.5rem, env(safe-area-inset-right, 0px));
     border-radius: 0;
     background: var(--k2b-surface);
     box-shadow: none;

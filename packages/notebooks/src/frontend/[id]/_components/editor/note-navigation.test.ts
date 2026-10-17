@@ -93,6 +93,19 @@ describe("note navigation coordinator", () => {
     expect(state.order).toEqual([]);
   });
 
+  test("cancel drops a note still loading and keeps the committed note, without history or a heading jump", async () => {
+    const state = setup();
+    const back = state.coordinator.navigate(target("note-b"), false);
+    state.coordinator.cancel();
+    expect(await back).toEqual({ kind: "superseded" });
+    expect(state.apply("note-b")).toBe(false);
+    expect(state.sources).toEqual([target("note-b").canonicalHref, target("note-a").canonicalHref]);
+    expect(state.order).toEqual([]);
+    // Nothing loading: cancel changes nothing.
+    state.coordinator.cancel();
+    expect(state.sources).toHaveLength(2);
+  });
+
   test("rolls a failed request back without writing history", async () => {
     const state = setup();
     const pending = state.coordinator.navigate(target("note-b"), true);

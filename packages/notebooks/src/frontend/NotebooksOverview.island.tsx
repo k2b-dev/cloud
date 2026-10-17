@@ -21,7 +21,9 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { isNotebookActivityAction, type NotebookActivityAction } from "../lib/activity-actions";
 import { setPinnedNotebookIds as writePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
+import { describeOverviewActivity } from "./activity-messages";
 import { createNotebookCreation } from "./create-notebook-dialog";
 import { notebooksPageMessages } from "./messages";
 import { createNoteCommands } from "./note-commands";
@@ -85,31 +87,12 @@ const errorMessage = async (response: Pick<Response, "json">, fallback: string) 
   return fallback;
 };
 
-const activityDescription = (item: ActivityItem, t: ReturnType<(typeof notebooksPageMessages)["resolve"]>["t"]): string => {
-  const target = item.note ? `“${item.note.title}”` : item.notebook.name;
-  switch (item.action) {
-    case "note.created":
-      return t.activityCreatedNote({ target, notebook: item.notebook.name });
-    case "note.deleted":
-      return t.activityDeletedNote({ notebook: item.notebook.name });
-    case "note.restored":
-      return t.activityRestoredNote({ target, notebook: item.notebook.name });
-    case "note.edited":
-      return t.activityEditedNote({ target, notebook: item.notebook.name });
-    case "comment.created":
-      return t.activityCommentedNote({ target, notebook: item.notebook.name });
-    case "comment.updated":
-      return t.activityUpdatedComment({ target, notebook: item.notebook.name });
-    case "comment.deleted":
-      return t.activityDeletedComment({ target, notebook: item.notebook.name });
-    case "notebook.created":
-      return t.activityCreatedNotebook({ notebook: item.notebook.name });
-    case "notebook.updated":
-      return t.activityUpdatedNotebook({ notebook: item.notebook.name });
-    default:
-      return t.activityUnknown({ action: item.action.replaceAll(".", " "), notebook: item.notebook.name });
-  }
-};
+const activityDescription = (item: ActivityItem, locale: string): string =>
+  describeOverviewActivity(item.action, {
+    locale,
+    target: item.note ? `“${item.note.title}”` : item.notebook.name,
+    notebook: item.notebook.name,
+  });
 
 const activityHref = (item: ActivityItem): string =>
   item.note ? `/app/notebooks/${item.notebook.id}/notes/${item.note.id}` : `/app/notebooks/${item.notebook.id}`;
@@ -125,30 +108,16 @@ const activityAvatarIcon = (item: ActivityItem): string | undefined => {
   return undefined;
 };
 
-const activityEventIcon = (action: string): string => {
-  switch (action) {
-    case "note.created":
-      return "ti ti-plus";
-    case "note.deleted":
-      return "ti ti-trash";
-    case "note.restored":
-      return "ti ti-history";
-    case "note.edited":
-      return "ti ti-pencil";
-    case "comment.created":
-      return "ti ti-message-plus";
-    case "comment.updated":
-      return "ti ti-message-pencil";
-    case "comment.deleted":
-      return "ti ti-message-x";
-    case "notebook.created":
-      return "ti ti-notebook";
-    case "notebook.updated":
-      return "ti ti-settings";
-    default:
-      return "ti ti-activity";
-  }
-};
+const activityIcons = {
+  "notebook.created": "ti ti-notebook",
+  "note.created": "ti ti-plus",
+  "note.edited": "ti ti-pencil",
+  "note.restored": "ti ti-history",
+  "comment.created": "ti ti-message-plus",
+  "comment.updated": "ti ti-message-pencil",
+  "comment.deleted": "ti ti-message-x",
+} satisfies Record<NotebookActivityAction, string>;
+const activityEventIcon = (action: string): string => (isNotebookActivityAction(action) ? activityIcons[action] : "ti ti-activity");
 
 export default function NotebooksOverview(props: Props) {
   createNoteCommands();
@@ -301,7 +270,7 @@ export default function NotebooksOverview(props: Props) {
                       {dates.formatDateTimeRelative(item.lastOccurredAt, props.dateConfig)}
                     </time>
                   </span>
-                  <span class="notebooks-overview-activity-description">{activityDescription(item, t())}</span>
+                  <span class="notebooks-overview-activity-description">{activityDescription(item, locale())}</span>
                 </Paper>
               </li>
             )}

@@ -6,6 +6,7 @@ import { spacesService } from "@/service";
 import { loadOverviewWork, loadSpaceOverviewStats } from "@/service/overview";
 import { spacesPublicResources } from "@/service/public-resources";
 import { ssr } from "../config";
+import { spacesPageHelp } from "../help";
 import { parseLastSpaceId, parsePinnedSpaceIds } from "./[id]/_components/settings/SpaceSettingsStore";
 import { overviewMessages } from "./overview-messages";
 import SpacesOverview from "./SpacesOverview.island";
@@ -50,7 +51,7 @@ export default ssr<AuthContext>(async (c) => {
   }
 
   return () => (
-    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: "Spaces" }]}>
+    <Layout c={c} help={spacesPageHelp.overview} title={[{ title: t.start, href: "/" }, { title: "Spaces" }]}>
       <SpacesOverview
         spaces={userSpaces.map((space, index) => {
           const stats = statsBySpace.get(spacesPage.items[index]!.id);

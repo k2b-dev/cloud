@@ -2,6 +2,7 @@ import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } fro
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { ResourceShortIdSchema } from "../../contracts";
+import { spacesPageHelp } from "../../help";
 import { isMailInvitationIntegrationAvailable } from "../../service/mail-integration";
 import { spacesPublicResources } from "../../service/public-resources";
 import SpacesWorkspace from "./_components/workspace/SpacesWorkspace";
@@ -37,7 +38,7 @@ export default ssr<AuthContext>(async (c) => {
     });
 
   return () => (
-    <Layout c={c} fullWidth title={state.title}>
+    <Layout c={c} help={spacesPageHelp.workspace} fullWidth title={state.title}>
       <SpacesWorkspace userId={user.id} state={state} dateConfig={dateConfig} mailIntegrationAvailable={mailIntegrationAvailable} />
     </Layout>
   );

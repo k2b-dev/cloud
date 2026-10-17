@@ -156,6 +156,29 @@ const hosted = () =>
     }),
   )}</div>`;
 
+// The narrowest panel with a wide three-part header meta, like a read-only recurring event.
+const narrow = () =>
+  `<div class="k2b-app-workspace" style="height:20rem;--k2b-detail-size:320px;--k2b-detail-min:320px;--k2b-detail-max:640px"><div class="k2b-app-workspace__content"><div class="k2b-app-workspace__main"></div><aside id="narrow" class="k2b-app-workspace__detail" style="--k2b-workspace-panel-size:320px;--k2b-workspace-panel-min:320px;--k2b-workspace-panel-max:640px">${renderToString(
+    () =>
+      createComponent(DetailPanel, {
+        get children() {
+          return createComponent(DetailPanel.Header, {
+            title: "Weekly planning",
+            subtitle: "Event",
+            get meta() {
+              return ["Blocked by 3", "Read only", "This event only"].map((label) =>
+                createComponent(Button, { variant: "ghost", size: "xs", children: label }),
+              );
+            },
+          });
+        },
+      }),
+  )}</aside></div></div>`;
+
+// A section outside a panel, such as a form section in an editor dialog, keeps its full width.
+const loose = () =>
+  `<div id="loose" style="padding:1rem;width:20rem">${renderToString(() => section("Appearance", "ti ti-palette"))}</div>`;
+
 // Outside a detail panel the discussion keeps its own card, and `bare` stays bare.
 const standalone = () =>
   `<div id="standalone" style="padding:1rem">${renderToString(() => discussion("one", false))}</div>` +
@@ -178,10 +201,12 @@ const avatarPanel = () =>
           return createComponent(DetailPanel.Body, {
             get children() {
               return [
-                section("Working", "ti ti-user", undefined, () =>
+                // Without a section icon, so the avatar sits on the body's content edge, as close to the scrollport as
+                // panel content gets.
+                section("Working", "", undefined, () =>
                   createComponent(Avatar, { name: "Grace Hopper", size: "xs", ring: "success", alt: "Grace Hopper is working on it" }),
                 ),
-                section("Online", "ti ti-users", undefined, () =>
+                section("Online", "", undefined, () =>
                   createComponent(Avatar, {
                     name: "Ada Lovelace",
                     size: "xs",
@@ -210,6 +235,8 @@ const open = async (viewport: { width: number; height: number }, theme: "light" 
           panel("composer", "one", true) +
           nested() +
           hosted() +
+          narrow() +
+          loose() +
           standalone()) +
       `</body></html>`,
   );
@@ -234,7 +261,7 @@ const measure = () => {
     Array.from(document.querySelectorAll(`#${id} :is(.k2b-detail-panel__section-header, .k2b-discussion__header)`)).map((header) => {
       const title = header.querySelector("h3")!;
       const icon = header.querySelector(":is(.k2b-detail-panel__section-icon, .k2b-discussion__icon)")!;
-      const meta = header.querySelector(":is(.k2b-detail-panel__section-meta, .k2b-discussion__count)");
+      const meta = header.querySelector(":is(.k2b-detail-panel__section-meta, .k2b-count-chip, .k2b-detail-panel__none)");
       const titleStyle = style(title);
       return {
         title: title.textContent,
@@ -243,8 +270,8 @@ const measure = () => {
         titleLeft: box(title).left,
         height: box(header).height,
         type: [titleStyle.fontSize, titleStyle.fontWeight, titleStyle.textTransform, titleStyle.letterSpacing, titleStyle.color].join(" "),
-        metaRight: meta ? box(meta).right : null,
-        metaType: meta ? [style(meta).fontSize, style(meta).color].join(" ") : null,
+        metaGap: meta ? Math.round(box(meta).left - box(title).right) : null,
+        metaType: meta ? [style(meta).fontSize, style(meta).color, meta.className].join(" ") : null,
       };
     });
   const discussionHeader = (id: string) => box(document.querySelector(`#${id} .k2b-discussion__header`)!).top;
@@ -295,8 +322,20 @@ const measure = () => {
     headerMeta: (() => {
       const meta = document.querySelector("#one .k2b-detail-panel__meta")!;
       const subtitle = document.querySelector("#one .k2b-detail-panel__heading p")!;
-      return [style(meta).fontSize, style(subtitle).fontSize];
+      return [style(meta).fontSize, style(subtitle).fontSize, box(meta).top === box(subtitle).top ? "one line" : "wrapped"];
     })(),
+    narrowHeader: (() => {
+      const header = box(document.querySelector("#narrow .k2b-detail-panel__header")!);
+      const subtitle = box(document.querySelector("#narrow .k2b-detail-panel__supporting > p")!);
+      const meta = box(document.querySelector("#narrow .k2b-detail-panel__meta")!);
+      return {
+        subtitleWidth: subtitle.width,
+        metaInside: meta.left >= header.left && meta.right <= header.right,
+        metaBelow: meta.top >= subtitle.bottom,
+        metaBeside: meta.left >= subtitle.right - 0.5,
+      };
+    })(),
+    looseIndent: style(document.querySelector("#loose .k2b-detail-panel__section-body")!).paddingInlineStart,
     standalone: card("standalone"),
     bare: card("bare"),
     hosted: (() => {
@@ -323,6 +362,8 @@ describe("DetailPanel sections and Discussion share one frame", () => {
             const body = document.querySelector<HTMLElement>(".k2b-detail-panel__body")!;
             const bodyRect = body.getBoundingClientRect();
             const left = bodyRect.left + body.clientLeft;
+            // The body keeps a gutter for row hover fills; content starts after it.
+            const contentLeft = left + parseFloat(getComputedStyle(body).paddingLeft);
             const top = bodyRect.top + body.clientTop;
             const probe = document.createElement("span");
             probe.style.color = "var(--k2b-success-text)";
@@ -367,7 +408,7 @@ describe("DetailPanel sections and Discussion share one frame", () => {
                 shadow: style.boxShadow,
                 border: style.borderTopWidth,
                 color: style.borderTopColor,
-                flush: Math.abs(rect.left - left) <= 0.5,
+                flush: Math.abs(rect.left - contentLeft) <= 0.5,
                 inside: inside(rect),
                 paintedInside: inside(painted),
                 size: [rect.width, rect.height],
@@ -423,13 +464,13 @@ describe("DetailPanel sections and Discussion share one frame", () => {
             for (const key of ["iconLeft", "iconColor", "titleLeft", "height", "type"] as const)
               expect(new Set(headings.map((heading) => heading[key])).size, key).toBe(1);
             expect(headings[0]!.type).toContain(" none normal ");
-            // The count sits at the trailing edge of the heading like a section's meta.
-            const counted = headings.filter((heading) => heading.metaRight !== null);
-            expect(new Set(counted.map((heading) => heading.metaType)).size).toBe(1);
+            // A count sits right after its title, in one chip style, whether in a section or a discussion.
+            const counted = headings.filter((heading) => heading.metaGap !== null);
+            expect(counted.length).toBeGreaterThan(1);
+            expect(new Set(counted.map((heading) => heading.metaGap))).toEqual(new Set([8]));
+            const chips = counted.filter((heading) => heading.metaType?.includes("k2b-count-chip"));
+            expect(new Set(chips.map((heading) => heading.metaType)).size).toBeLessThanOrEqual(1);
           }
-          expect(result.headings.find((heading) => heading.title === "Attachments")!.metaRight).toBe(
-            result.composerHeadings.find((heading) => heading.title === "Comments")!.metaRight,
-          );
 
           // Loading, a first comment, a second comment, or an open composer move nothing above the comments.
           const reference = result.blocks.loading;
@@ -444,6 +485,8 @@ describe("DetailPanel sections and Discussion share one frame", () => {
 
           // Plain header meta reads like the subtitle beside it.
           expect(result.headerMeta[0]).toBe(result.headerMeta[1]);
+          // A meta that fits stays on the subtitle's line.
+          expect(result.headerMeta[2]).toBe("one line");
 
           // The comment action is text, so it keeps 4.5:1 on its frame in both themes.
           expect(result.actionContrast).toBeGreaterThanOrEqual(4.5);
@@ -451,9 +494,11 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           // In a group, the discussion's icon sits in the sections' column and the spacing between
           // neighbours matches; inside a section it adds no frame or inset of its own.
           expect(new Set(result.grouped.map((entry) => entry.iconLeft)).size).toBe(1);
-          expect(result.grouped.map((entry) => entry.headerOffset)).toEqual([8, 12, 12]);
+          // In the floating host, one gap separates every block, so no section carries padding of its own.
+          expect(result.grouped.map((entry) => entry.headerOffset)).toEqual([0, 0, 0]);
           expect(result.grouped.every((entry) => entry.background === "rgba(0, 0, 0, 0)")).toBe(true);
-          expect(result.inSection).toEqual({ left: 0, padding: "0px 0px", background: "rgba(0, 0, 0, 0)", border: "0px" });
+          // Inside a section it starts on the section's text edge, after the icon column, and adds no inset of its own.
+          expect(result.inSection).toEqual({ left: 30, padding: "0px 0px", background: "rgba(0, 0, 0, 0)", border: "0px" });
 
           // Hosted in a tinted dialog group, the lone section and the discussion are frames like a
           // group: their field wells are recessed again instead of white on the white frame.
@@ -461,6 +506,15 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           expect(result.hosted.grouped).not.toBe(result.hosted.frame);
           expect(result.hosted.lone).toBe(result.hosted.grouped);
           expect(result.hosted.composer).toBe(result.hosted.grouped);
+
+          // The subtitle keeps its text and the meta stays inside the header: beside the subtitle while
+          // both fit (font metrics differ between engines), below it once they do not.
+          expect(result.narrowHeader.subtitleWidth).toBeGreaterThanOrEqual(90);
+          expect(result.narrowHeader.metaInside).toBe(true);
+          expect(result.narrowHeader.metaBelow || result.narrowHeader.metaBeside).toBe(true);
+
+          // The one text edge belongs to panels: a section outside one keeps its full width.
+          expect(result.looseIndent).toBe("0px");
 
           // Outside a detail panel the default discussion is its own card; bare draws nothing.
           expect(result.standalone.border).toBe("1px");

@@ -76,7 +76,7 @@ Use notebooks.note.preview with the complete proposed Markdown before saving que
 
 ## Charts
 
-Type `:::` and choose **chart**. A chart reads only data from this note. Hover over a mark to see its values.
+Type `:::` and choose **chart**. A chart reads only data from this note. Readers can inspect values in tooltips, use **Show as table**, or use **Copy data** to copy tab-separated text for a spreadsheet.
 
 ```text
 @sales

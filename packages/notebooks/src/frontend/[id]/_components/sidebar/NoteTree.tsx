@@ -19,11 +19,11 @@ import type { PresentationMode } from "../../../../lib/presentation-mode";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
+import { useDuplicateNote } from "../detail/duplicate-note";
 import { readErrorMessage } from "../settings/utils";
 import { NoteRowLabel, NoteRowMenu, NoteRowsContextMenu } from "./note-rows";
-import { listAccessibleNotebooks } from "./notebooks";
 import { flattenTree, getNodeDepthLabel } from "./tree-utils";
-import type { Notebook, NoteTreeNode } from "./types";
+import type { NoteTreeNode } from "./types";
 
 type Props = {
   tree: NoteTreeNode[];
@@ -134,26 +134,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[], o
     onError: (err) => toast.error(err.message),
   });
 
-  const copyNoteMut = mutations.create<
-    { id: string; notebookId: string },
-    { noteId: string; targetNotebookId: string; targetParentId?: string | null }
-  >({
-    mutation: async (data: { noteId: string; targetNotebookId: string; targetParentId?: string | null }) => {
-      const res = await apiClient[":id"].notes[":noteId"].copy.$post({
-        param: { id: notebookId, noteId: data.noteId },
-        json: {
-          targetNotebookId: data.targetNotebookId,
-          targetParentId: data.targetParentId,
-        },
-      });
-      if (!res.ok) throw new Error(t().failedDuplicateNote);
-      return (await res.json()) as { id: string; notebookId: string };
-    },
-    onSuccess: (data) => {
-      void navigateToNotebookNote(buildNoteUrl(data.notebookId, data.id));
-    },
-    onError: (err) => toast.error(err.message),
-  });
+  const duplicateNote = useDuplicateNote(notebookId);
 
   const deleteNoteMut = mutations.create({
     mutation: async (noteId: string) => {
@@ -244,45 +225,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[], o
     }
   };
 
-  const handleCopy = async (node: NoteTreeNode) => {
-    let allNotebooks: Notebook[] = [];
-    try {
-      allNotebooks = await listAccessibleNotebooks();
-    } catch (error) {
-      prompts.error(error instanceof Error ? error.message : t().failedLoadNotebooks);
-      return;
-    }
-
-    if (allNotebooks.length === 0) {
-      await prompts.error(t().noNotebooks);
-      return;
-    }
-
-    const result = await prompts.form({
-      title: t().duplicateNote,
-      icon: "ti ti-copy",
-      fields: {
-        targetNotebookId: {
-          type: "select" as const,
-          label: t().targetNotebook,
-          required: true,
-          default: notebookId,
-          options: allNotebooks.map((nb) => ({
-            id: nb.id,
-            label: nb.name,
-            icon: `ti ${nb.icon || "ti-notebook"}`,
-          })),
-        },
-      },
-    });
-
-    if (result) {
-      copyNoteMut.mutate({
-        noteId: node.id,
-        targetNotebookId: result.targetNotebookId,
-      });
-    }
-  };
+  const handleCopy = (node: NoteTreeNode) => duplicateNote.duplicate(node.id);
 
   const handleDelete = async (node: NoteTreeNode) => {
     const hasKids = node.children.length > 0;
@@ -332,7 +275,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[], o
       moveNoteMut.loading() ||
       placeNoteMut.loading() ||
       sortAlphabeticallyMut.loading() ||
-      copyNoteMut.loading() ||
+      duplicateNote.loading() ||
       deleteNoteMut.loading() ||
       lockNoteMut.loading(),
   };

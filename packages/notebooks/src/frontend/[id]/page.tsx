@@ -195,6 +195,7 @@ export default ssr<AuthContext>(async (c) => {
                   readOnly={readonlyMode}
                   initialHref={currentHref}
                   initialDetail={{
+                    noteAuthors: selectedRouteState?.noteAuthors ?? { createdBy: null, lastEditedBy: null },
                     noteId: selectedNote.id,
                     noteTitle: selectedNote.title,
                     contentMd: selectedNote.contentMd,
@@ -229,6 +230,7 @@ export default ssr<AuthContext>(async (c) => {
           {showDetailPanel && selectedNote && (
             <NotebookDetailPanel
               presentationMode={ctx.presentationMode}
+              noteAuthors={selectedRouteState?.noteAuthors}
               mode={readonlyMode ? "read" : "edit"}
               initiallyOpen={readonlyMode ? true : detailPanelOpen}
               fullWidth={ctx.fullWidth}
