@@ -2205,7 +2205,7 @@
 }
 /* Display switcher: equal segments, so checking one never changes a width. */
 .notebook-graph__display-switcher {
-  width: 15rem;
+  width: 20rem;
   flex: none;
 }
 /* Depth: content-sized segments that never wrap; the checked one has the same width as before. */
@@ -2297,6 +2297,144 @@
   stroke-opacity: 0.95;
 }
 
+/* Timeline: the notes as rows, last change first, under date groups; links are arcs in a lane on the left. It scrolls
+   instead of zooming. The lane is a share of the row column, so the server render and the mounted page agree. */
+.notebook-graph__timeline {
+  --notebook-graph-lane: clamp(6.875rem, 17%, 12.5rem);
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.notebook-graph__timeline-wrap {
+  position: relative;
+  max-width: 61.25rem;
+  padding: 0.375rem 1.5rem 3.75rem 0;
+}
+.notebook-graph__arcs {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.notebook-graph__arc {
+  fill: none;
+  stroke: var(--area);
+  stroke-opacity: 0.38;
+  stroke-width: 1.2;
+}
+.notebook-graph__timeline[data-highlight] .notebook-graph__arc:not([data-near]) {
+  stroke-opacity: 0.06;
+}
+.notebook-graph__arc[data-near] {
+  stroke-opacity: 1;
+  stroke-width: 1.8;
+}
+.notebook-graph__arc[data-near="in"] {
+  stroke-dasharray: 4 3;
+}
+.notebook-graph__timeline-group {
+  display: flex;
+  height: 2.25rem;
+  align-items: flex-end;
+  padding: 0 0 0.375rem calc(var(--notebook-graph-lane) + 1.125rem);
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* Fixed height and weight: hover, focus, highlight and search change only colours, so no row ever moves. */
+.notebook-graph__row {
+  position: relative;
+  display: flex;
+  height: 2rem;
+  align-items: center;
+  gap: 0.625rem;
+  margin-left: calc(var(--notebook-graph-lane) - 0.75rem);
+  padding: 0 0.75rem 0 1.875rem;
+  border-radius: 0.5rem;
+  color: var(--k2b-text);
+  text-decoration: none;
+  outline: none;
+}
+.notebook-graph__row:hover,
+.notebook-graph__row[data-near] {
+  background: var(--ui-hover);
+}
+.notebook-graph__row:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+/* The dot's centre is the end of every arc: 0.75rem from the row's start, at the lane's edge. */
+.notebook-graph__row-dot {
+  position: absolute;
+  top: 50%;
+  left: 0.4375rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-top: -0.3125rem;
+  border-radius: 999px;
+  background: var(--area);
+  box-shadow: 0 0 0 2px var(--ui-surface);
+}
+.notebook-graph__row[data-orphan] .notebook-graph__row-dot {
+  background: var(--ui-surface);
+  box-shadow:
+    inset 0 0 0 1.75px var(--area),
+    0 0 0 2px var(--ui-surface);
+}
+.notebook-graph__row-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.84375rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notebook-graph__row-area {
+  flex: none;
+  color: var(--ui-text-dimmed);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.notebook-graph__row-meta {
+  display: flex;
+  flex: none;
+  gap: 0.75rem;
+  margin-left: auto;
+  color: var(--ui-text-dimmed);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.notebook-graph__row-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1875rem;
+}
+.notebook-graph__row-meta .ti {
+  font-size: 0.8125rem;
+}
+/* Only the current note takes the app accent. */
+.notebook-graph__row[data-current] {
+  background: var(--notebook-graph-current-chip);
+}
+.notebook-graph__row[data-current] .notebook-graph__row-title {
+  color: var(--notebook-graph-current-ink);
+  font-weight: 700;
+}
+/* The current note's title stays in its accent while others step back. */
+.notebook-graph__timeline[data-highlight] .notebook-graph__row:not([data-near]):not([data-current]) .notebook-graph__row-title {
+  color: var(--ui-text-dimmed);
+}
+.notebook-graph__timeline[data-query] .notebook-graph__row:not([data-match]):not([data-current]) .notebook-graph__row-title {
+  color: var(--k2b-placeholder-color);
+}
+.notebook-graph__timeline[data-query] .notebook-graph__row:not([data-match]) .notebook-graph__row-dot {
+  opacity: 0.35;
+}
+
 @media (max-width: 47.999rem) {
   .notebook-graph__desktop-default {
     display: none;
@@ -2335,5 +2473,19 @@
     border-width: 0;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  /* Phones: a narrow lane, taller rows for touch, and only the title and the link counts. */
+  .notebook-graph__timeline {
+    --notebook-graph-lane: 4rem;
+  }
+  .notebook-graph__timeline-wrap {
+    padding-right: 0.5rem;
+  }
+  .notebook-graph__row {
+    height: 2.75rem;
+  }
+  .notebook-graph__row-area,
+  .notebook-graph__row-meta > .notebook-graph__row-time {
+    display: none;
   }
 }

@@ -26,6 +26,7 @@ import { layoutNetworkInSlices, type NetPoint } from "./layout-net";
 import { buildGraphModel, type GraphArea, type GraphLinksFilter, matchesQuery, visibleEdges, visibleNotes } from "./model";
 import NeighborhoodDisplay from "./NeighborhoodDisplay";
 import NetworkDisplay, { type GraphZoomControls } from "./NetworkDisplay";
+import TimelineDisplay from "./TimelineDisplay";
 import {
   DEFAULT_GRAPH_DISPLAY,
   GRAPH_QUERY_MAX,
@@ -52,6 +53,8 @@ type Props = {
   view: GraphViewState;
   /** Server time, the base for relative dates on both sides. */
   now: string;
+  /** The viewer's timezone from the request date config, used for date groups. */
+  timeZone: string;
   navigationHidden: boolean;
 };
 
@@ -194,6 +197,7 @@ export default function NotebookGraph(props: Props) {
   const navigationLabel = () => (navigationHidden() ? t().showNavigation : t().hideNavigation);
   const showsGraph = () =>
     !state().list &&
+    display() !== "timeline" &&
     hasLinks &&
     notes().length > 0 &&
     (display() !== "neighborhood" || notes().some((note) => current()?.neighbours.has(note.id)));
@@ -368,6 +372,7 @@ export default function NotebookGraph(props: Props) {
               const first = hits()[0];
               if (!first && (state().list || !hasLinks)) return;
               if (state().list) document.querySelector<HTMLAnchorElement>(".notebook-graph__list-title")?.focus();
+              else if (display() === "timeline") focusNote?.();
               else if (!hasLinks) document.querySelector<HTMLAnchorElement>(".notebook-graph__unlinked a[data-match]")?.focus();
               else focusNote?.(first?.id);
             }}
@@ -516,6 +521,8 @@ export default function NotebookGraph(props: Props) {
           <Match when={state().list}>
             <GraphList
               model={model}
+              sort={state().sort}
+              onSortChange={(sort) => update({ sort })}
               rows={query().trim() ? hits() : notes()}
               visibleIds={visibleIds()}
               caption={t().graphNoteCount({ notes: query().trim() ? hits().length : notes().length, links: edges().length })}
@@ -523,6 +530,26 @@ export default function NotebookGraph(props: Props) {
               now={props.now}
               noteHref={noteHref}
               onOpen={open}
+            />
+          </Match>
+          <Match when={display() === "timeline"}>
+            <TimelineDisplay
+              model={model}
+              notes={notes()}
+              edges={edges()}
+              currentId={currentId()}
+              query={query()}
+              notebookName={props.notebookName}
+              now={props.now}
+              timeZone={props.timeZone}
+              noteHref={noteHref}
+              onOpen={open}
+              onClearQuery={() => update({ q: "" })}
+              controls={setControls}
+              focusRequest={(focus) => {
+                focusNote = focus;
+              }}
+              claimFocus={claimFocus}
             />
           </Match>
           <Match when={true}>

@@ -1,10 +1,14 @@
 import { DataTable, type DataTableColumn, Format, useLocale } from "@k2b/ui";
-import { For, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { notebookWorkspaceMessages } from "../../messages";
 import type { GraphModel, GraphNote } from "./model";
+import { sortByChange } from "./timeline";
+import type { GraphListSort } from "./view-state";
 
 type Props = {
   model: GraphModel;
+  sort: GraphListSort;
+  onSortChange: (sort: GraphListSort) => void;
   /** Visible notes in tree order, already narrowed by the search. */
   rows: readonly GraphNote[];
   visibleIds: ReadonlySet<string>;
@@ -21,6 +25,7 @@ const SHOWN_TITLES = 3;
 export default function GraphList(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  const rows = createMemo(() => (props.sort ? sortByChange(props.rows, props.sort === "changed" ? "desc" : "asc") : props.rows));
   const related = (ids: ReadonlySet<string>) => {
     const notes = [...ids].flatMap((id) => {
       const note = props.visibleIds.has(id) ? props.model.byId.get(id) : undefined;
@@ -52,7 +57,7 @@ export default function GraphList(props: Props) {
     { id: "area", header: t().graphColumnArea, class: "max-md:hidden" },
     { id: "out", header: t().graphLinksTo },
     { id: "in", header: t().graphLinkedFrom },
-    { id: "changed", header: t().graphColumnChanged, class: "max-md:hidden", nowrap: true },
+    { id: "changed", header: t().graphColumnChanged, sortable: true, class: "max-md:hidden", nowrap: true },
   ];
   return (
     <div class="notebook-graph__list">
@@ -65,7 +70,9 @@ export default function GraphList(props: Props) {
         fillHeight
         verticalAlign="middle"
         ariaLabel={t().graphListLabel}
-        rows={props.rows}
+        rows={rows()}
+        sort={props.sort ? { key: "changed", direction: props.sort === "changed" ? "desc" : "asc" } : null}
+        onSortChange={(next) => props.onSortChange(next.direction === "desc" ? "changed" : "changed-asc")}
         columns={columns()}
         getRowId={(note) => note.id}
         selectedRowId={props.currentId}

@@ -10,6 +10,7 @@ type Props = BookNavigatorProps & {
   graph: NoteGraph;
   graphView: GraphViewState;
   now: string;
+  timeZone: string;
   appUrl: string;
   cursor: string | null;
   backHref?: string;
@@ -49,6 +50,7 @@ export default function BookGraphSurface(props: Props) {
               backHref={props.backHref}
               view={props.graphView}
               now={props.now}
+              timeZone={props.timeZone}
               navigationHidden={props.navigationHidden}
             />
           </AppWorkspace.Main>
