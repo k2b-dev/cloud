@@ -23,6 +23,7 @@ export const helpMessages = i18n.define({
       noArticles: "No Help articles here yet",
       reload: "Reload",
       noArticlesDetail: "This app has not published Help, or it could not be loaded. Reload the page to try again.",
+      titlesOnly: "Titles only",
       searchTitlesOnly: "Full-text search is not available right now. These results match titles and descriptions only.",
       searchHelp: "Search help",
       help: "Help",
@@ -80,6 +81,7 @@ export const helpMessages = i18n.define({
       reload: "Neu laden",
       noArticlesDetail:
         "Diese App hat keine Hilfe veröffentlicht, oder sie konnte nicht geladen werden. Lade die Seite neu, um es erneut zu versuchen.",
+      titlesOnly: "Nur Titel",
       searchTitlesOnly: "Die Volltextsuche ist gerade nicht verfügbar. Diese Treffer passen nur zu Titeln und Beschreibungen.",
       searchHelp: "Hilfe durchsuchen",
       help: "Hilfe",

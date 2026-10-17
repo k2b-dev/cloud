@@ -484,18 +484,16 @@ else {
     });
   }
 
-  test("search: a failed full-text request warns above metadata matches and Try again repeats the request", async () => {
+  test("search: a failed full-text request says so in the results line and Try again repeats the request", async () => {
     const reader = await setup("page", undefined, "/app/spaces/help", html, { searchFails: true });
     try {
       type(search(reader), "second");
       await until(() => !!reader.dom.document.querySelector("[data-help-search-failed]"));
       const warning = reader.dom.document.querySelector("[data-help-search-failed]")!;
       expect(warning.textContent).toContain("Full-text search is not available right now");
-      expect(warning.getAttribute("data-tone")).toBe("warning");
       expect(topicIds(reader, "[data-help-search-results]")).toEqual(["second"]);
-      expect([...warning.parentElement!.children].indexOf(warning)).toBeLessThan(
-        [...warning.parentElement!.children].findIndex((element) => element.matches(".help-start-rows")),
-      );
+      // The warning sits in the count's line, so the results below it do not move when it arrives.
+      expect(warning.closest(".help-start-status")).not.toBeNull();
       const requests = () => reader.fetch.mock.calls.filter(([input]) => String(input).includes("/search?q=second"));
       expect(requests()).toHaveLength(1);
       reader.button("Try again").click();

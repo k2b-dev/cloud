@@ -493,6 +493,22 @@
   font-weight: 600;
 }
 
+.help-start-status-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-amber-700);
+}
+
+.dark .help-start-status-warning {
+  color: var(--color-amber-400);
+}
+
+.help-start .help-start-status-retry {
+  height: 1.5rem;
+  min-height: 0;
+}
+
 .help-start-tiles,
 .help-start-rows,
 .help-shortcut-group > ul {

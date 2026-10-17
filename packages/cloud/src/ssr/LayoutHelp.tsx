@@ -870,19 +870,28 @@ const HelpShell = (props: {
             >
               {/* The count takes the place of the first heading, so the first row stays where it was. */}
               <section class="help-start-section" data-help-search-results="">
-                <p class="help-start-status" aria-live="polite">
-                  {t().results({ count: results().length })}
+                {/* A failed full-text search says so in the same line, with a way to try again; the results do not move. */}
+                <div class="help-start-status">
+                  <span aria-live="polite">{t().results({ count: results().length })}</span>
                   <Show when={searching()}>
                     <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
                   </Show>
-                </p>
-                <Show when={searchFailed()}>
-                  <NoticeCard tone="warning" title={t().searchTitlesOnly} data-help-search-failed="">
-                    <Button size="sm" variant="secondary" onClick={() => setSearchAttempt((value) => value + 1)}>
+                  <Show when={searchFailed()}>
+                    <span class="help-start-status-warning" data-help-search-failed="" title={t().searchTitlesOnly} role="status">
+                      <i class="ti ti-alert-triangle" aria-hidden="true" />
+                      <span aria-hidden="true">{t().titlesOnly}</span>
+                      <span class="sr-only">{t().searchTitlesOnly}</span>
+                    </span>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      class="help-start-status-retry"
+                      onClick={() => setSearchAttempt((value) => value + 1)}
+                    >
                       {t().tryAgain}
                     </Button>
-                  </NoticeCard>
-                </Show>
+                  </Show>
+                </div>
                 <Show
                   when={results().length > 0}
                   fallback={
