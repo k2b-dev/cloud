@@ -1,7 +1,7 @@
 /**
  * app-weather's own settings HTTP API. Owns reads/writes for weather.* keys.
  *
- *   PUT    /api/weather/admin/settings           — bulk update, atomic
+ *   PUT    /api/weather/admin/settings           — bulk update, unreadable keys refused before any write
  *   DELETE /api/weather/admin/settings/:key{.+}  — reset to default
  *
  * No special side-effect on save — weather queries on demand and picks up
@@ -17,7 +17,7 @@ import { app } from "../config";
 import { weatherMessages } from "../messages";
 
 const WEATHER_KEYS = new Set(["weather.default_lat", "weather.default_lon", "weather.cache_minutes", "weather.geo_url"]);
-const isWeatherKey = (key: string): boolean => WEATHER_KEYS.has(key);
+const isWeatherKey = (key: string): key is Parameters<typeof app.settings.read>[0] => WEATHER_KEYS.has(key);
 
 const BulkUpdateSchema = z.union([
   z.object({ updates: z.record(z.string(), z.unknown()), replaceUnreadable: z.array(z.string()) }).strict(),
@@ -46,6 +46,9 @@ export const weatherSettingsRouter = new Hono<AuthContext>()
 
     const fieldErrors: Record<string, string> = {};
     try {
+      for (const key of keys.filter(isWeatherKey)) {
+        if (!replace.has(key) && (await app.settings.read(key)).stored === "unreadable") throw new SettingUnreadableError(key);
+      }
       await sql.begin(async () => {
         for (const [key, value] of Object.entries(updates)) {
           try {

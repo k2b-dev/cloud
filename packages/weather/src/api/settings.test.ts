@@ -18,6 +18,7 @@ const authenticate = spyOn(session, "authenticateRequest").mockResolvedValue({
   data: { userId: user.id, sid: "test", authEpoch: 0, kind: "web", expiresAt: "2026-01-03T03:04:05.000Z" },
 });
 const key = "weather.default_lat";
+const read = spyOn(app.settings, "read");
 const write = spyOn(app.settings, "set");
 const tx = Object.assign(new SQL("postgres://localhost/unused_test"), {
   savepoint: () => {
@@ -35,10 +36,31 @@ const request = (body: unknown) =>
     body: JSON.stringify(body),
   });
 
-beforeEach(() => write.mockReset().mockResolvedValue(undefined));
+beforeEach(() => {
+  read.mockReset().mockResolvedValue({ value: 0, stored: "readable" });
+  write.mockReset().mockResolvedValue(undefined);
+});
 afterAll(async () => {
-  for (const spy of [begin, write, authenticate, clock]) spy.mockRestore();
+  for (const spy of [begin, read, write, authenticate, clock]) spy.mockRestore();
   await tx.close();
+});
+
+test.each([false, true])("Weather preflights all keys before writing (replacement: %s)", async (replace) => {
+  const otherKey = "weather.default_lon";
+  // Reads follow the update order: the first key is readable, the second is not.
+  read.mockResolvedValueOnce({ value: 0, stored: "readable" }).mockResolvedValueOnce({ value: 0, stored: "unreadable" });
+  const response = await request({ updates: { [key]: 52, [otherKey]: 13 }, replaceUnreadable: replace ? [otherKey] : [] });
+  expect(read).toHaveBeenCalledWith(key);
+  if (replace) {
+    expect(response.status).toBe(204);
+    expect(read).not.toHaveBeenCalledWith(otherKey);
+    expect(write).toHaveBeenCalledWith(key, 52, { replaceUnreadable: false });
+    expect(write).toHaveBeenCalledWith(otherKey, 13, { replaceUnreadable: true });
+  } else {
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ code: "setting_unreadable", message: new SettingUnreadableError(otherKey).message });
+    expect(write).not.toHaveBeenCalled();
+  }
 });
 
 for (const explicit of [false, true]) {

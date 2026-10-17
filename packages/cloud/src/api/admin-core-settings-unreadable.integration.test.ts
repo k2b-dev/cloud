@@ -58,6 +58,7 @@ suite("bulk save unreadable settings", () => {
     const response = await save({ updates: { [key]: "https://replacement.test", [otherKey]: "after" } }, locale);
     expect(response.status).toBe(409);
     const body = await response.json();
+    expect(body.code).toBe("setting_unreadable");
     expect(body.errors[key]).toContain(locale === "de" ? "nicht gelesen" : "cannot be read");
     const [row] = await sql<{ value: string; updated_at: Date }[]>`SELECT value, updated_at FROM settings.entries WHERE key=${key}`;
     expect(row?.value).toBe(ciphertext);

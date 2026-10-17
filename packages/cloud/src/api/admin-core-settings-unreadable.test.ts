@@ -38,7 +38,9 @@ test.each(["en", "de"])("unreadable preflight rejects before any transaction (%s
   restores.push(read, write, begin);
   const response = await save({ updates: { [key]: "New name" } }, locale);
   expect(response.status).toBe(409);
-  expect((await response.json()).errors[key]).toContain(locale === "de" ? "nicht gelesen" : "cannot be read");
+  const body = await response.json();
+  expect(body.code).toBe("setting_unreadable");
+  expect(body.errors[key]).toContain(locale === "de" ? "nicht gelesen" : "cannot be read");
   expect(read).toHaveBeenCalledWith([key]);
   expect(write).not.toHaveBeenCalled();
   expect(begin).not.toHaveBeenCalled();
@@ -67,7 +69,9 @@ test("a row becoming unreadable after preflight keeps its field-level 409", asyn
   try {
     const response = await save({ updates: { [key]: "New name" } });
     expect(response.status).toBe(409);
-    expect((await response.json()).errors[key]).toContain("cannot be read");
+    const body = await response.json();
+    expect(body.code).toBe("setting_unreadable");
+    expect(body.errors[key]).toContain("cannot be read");
     expect(write).toHaveBeenCalledWith(key, "New name", tx, { replaceUnreadable: false });
   } finally {
     await tx.close();

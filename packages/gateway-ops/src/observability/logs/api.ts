@@ -235,7 +235,8 @@ const app = new Hono<AuthContext>()
     v("json", z.object({ retentionDays: z.coerce.number().int().min(1) })),
     async (c) => {
       const { retentionDays } = c.req.valid("json");
-      await set("logs.retention_days", retentionDays);
+      // The administrator supplies the complete value; nothing is merged from storage.
+      await set("logs.retention_days", retentionDays, undefined, { replaceUnreadable: true });
       return respond(c, ok({ message: gatewayOpsMessages.resolve([getLocale(c)]).t.logRetentionUpdated }));
     },
   );

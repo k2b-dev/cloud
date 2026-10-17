@@ -247,7 +247,11 @@ unregisterDriver = registerNotificationChannel(browserDriver);
 export const browserNotifications = {
   start: async (): Promise<void> => {
     unregisterDriver ??= registerNotificationChannel(browserDriver);
-    await ensureWebPushConfigured();
+    try {
+      await ensureWebPushConfigured();
+    } catch (error) {
+      if (!(error instanceof SettingUnreadableError)) throw error;
+    }
   },
   stop: (): void => {
     unregisterDriver?.();

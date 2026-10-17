@@ -93,6 +93,17 @@ in the Files notice or run `cld filesv2 admin configuration reset --yes`; both
 storage areas return to disabled defaults. This removes configuration, not
 files in Filegate.
 
+Core still starts when it cannot read its stored Web Push keys, but browser
+notifications stay off and Core logs
+`cannot read setting "notifications.web_push_…"`. Core does not create new
+keys over the stored ones. Restore the correct `APP_SECRET` to keep the
+existing browser subscriptions. To start over with new keys, an administrator
+deletes both settings with
+`DELETE /api/admin/core/settings/notifications.web_push_public_key` and
+`DELETE /api/admin/core/settings/notifications.web_push_private_key`. Core
+creates a new key pair the next time it needs one, and every person turns
+browser notifications on again.
+
 See [Runtime configuration](/en/docs/operations/runtime-configuration) and
 [Settings](/en/docs/platform/settings#access-settings-outside-a-request).
 

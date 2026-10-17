@@ -354,7 +354,7 @@ const app = new Hono<AuthContext>()
         204: { description: "Settings saved" },
         400: jsonResponse(z.object({ message: z.string(), errors: z.record(z.string(), z.string()).optional() }), "Invalid settings"),
         409: jsonResponse(
-          z.object({ message: z.string(), errors: z.record(z.string(), z.string()) }),
+          z.object({ message: z.string(), errors: z.record(z.string(), z.string()), code: z.literal("setting_unreadable").optional() }),
           "Stored setting unreadable or model access conflict",
         ),
       },
@@ -394,7 +394,7 @@ const app = new Hono<AuthContext>()
         if (states.get(key)?.stored === "unreadable" && !replace.has(key)) unreadable[key] = unreadableSettingMessage(getLocale(c));
       }
       if (Object.keys(unreadable).length > 0) {
-        return c.json({ message: settingsNotSavedMessage(getLocale(c)), errors: unreadable }, 409);
+        return c.json({ message: settingsNotSavedMessage(getLocale(c)), errors: unreadable, code: "setting_unreadable" }, 409);
       }
 
       // Strip AI provider keys before anything is validated or written, so the
@@ -516,7 +516,11 @@ const app = new Hono<AuthContext>()
       } catch (error) {
         if (error instanceof settings.SettingUnreadableError) {
           return c.json(
-            { message: settingsNotSavedMessage(getLocale(c)), errors: { [error.key]: unreadableSettingMessage(getLocale(c)) } },
+            {
+              message: settingsNotSavedMessage(getLocale(c)),
+              errors: { [error.key]: unreadableSettingMessage(getLocale(c)) },
+              code: "setting_unreadable",
+            },
             409,
           );
         }
