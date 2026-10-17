@@ -15,7 +15,7 @@ const MAX_MAIL_TEMPLATE_OUTPUT_BYTES = 3 * 1024 * 1024;
  * `markdown` is rendered straight to email HTML, so values never form Markdown, HTML, or links.
  * `editable_markdown` lands in a draft body that a person reads and edits, so values stay as typed.
  */
-type MailTemplateOutput = "identifier" | "editable_markdown" | "markdown" | "text";
+export type MailTemplateOutput = "identifier" | "editable_markdown" | "markdown" | "text";
 type MailTemplateData = Record<string, unknown>;
 
 const bytes = (value: string): number => new TextEncoder().encode(value).byteLength;

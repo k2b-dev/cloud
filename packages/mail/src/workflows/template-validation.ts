@@ -1,6 +1,6 @@
 import type { WorkflowDiagnostic, WorkflowIr, WorkflowIrStep } from "@k2b/cloud/workflows";
 import { workflowPathKey } from "@k2b/cloud/workflows";
-import { validateMailLiquidTemplate } from "../service/template-rendering";
+import { type MailTemplateOutput, validateMailLiquidTemplate } from "../service/template-rendering";
 
 const TEMPLATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
   addComment: ["body"],
@@ -16,6 +16,13 @@ const TEMPLATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
 export const MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
   ...TEMPLATE_FIELDS,
   setConversationSummary: ["summary"],
+};
+
+export const mailWorkflowTemplateOutput = (action: string, field: string, format: unknown): MailTemplateOutput => {
+  if (field !== "body") return "text";
+  if (action === "automaticReply") return format === "markdown" ? "markdown" : "text";
+  if (action === "createDraft" || action === "createReplyDraft") return format === "plain" ? "text" : "editable_markdown";
+  return "text";
 };
 
 const validateSteps = (ir: WorkflowIr, steps: readonly WorkflowIrStep[], diagnostics: WorkflowDiagnostic[]): void => {

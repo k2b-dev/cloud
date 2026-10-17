@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
+import { MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS, mailWorkflowTemplateOutput } from "../workflows/template-validation";
 import { renderMailWorkflowTemplate } from "./template-rendering";
 import { resolveMailWorkflowTemplateBodies } from "./workflow-template-values";
 
@@ -31,6 +32,7 @@ const fixture = () => {
     sourceHash: "source",
     idempotencyKey: "fixture",
   };
+  const evaluate = mock(async (value: WorkflowJsonValue, _path?: Array<string | number>) => value);
   const ctx: WorkflowExecuteActionContext = {
     mode: "execute",
     run,
@@ -59,11 +61,11 @@ const fixture = () => {
       occurredAt: "2026-10-01T08:00:00.000Z",
     },
     variables: { get: () => undefined, has: () => false, set: () => {}, snapshot: () => ({ field: "bodyText" }) },
-    evaluate: async (value) => value,
+    evaluate,
     resolveReference,
     heartbeat: async () => {},
   };
-  return { ctx, message, resolveReference };
+  return { ctx, message, evaluate, resolveReference };
 };
 
 describe("Mail workflow template body access", () => {
@@ -99,6 +101,69 @@ describe("Mail workflow template body access", () => {
     ]);
     expect(message.bodyHtml).toBe("<p>HTML</p>");
     expect(renderMailWorkflowTemplate({ invocation: ctx.invocation, variableSnapshot: () => ({}) }, source)).toBe("<p>HTML</p>");
+  });
+
+  test("replays frozen bodyText before choosing a branch without resolving unavailable HTML", async () => {
+    const { ctx, message, resolveReference } = fixture();
+    // Replay restores the frozen text when its reference is resolved, even if the original message is gone.
+    resolveReference.mockImplementation(async (reference) => {
+      if (reference !== "inputs.message.bodyText") return undefined;
+      message.body = message.bodyText = "x frozen plain";
+      return message.bodyText;
+    });
+    const source = '{% if inputs.message.bodyText contains "x" %}OK{% else %}{{ inputs.message.bodyHtml }}{% endif %}';
+    await resolveMailWorkflowTemplateBodies(ctx, step(source));
+    expect(resolveReference.mock.calls).toEqual([["inputs.message.bodyText", ["steps", 0, "succeed", "message"]]]);
+    expect(renderMailWorkflowTemplate({ invocation: ctx.invocation, variableSnapshot: () => ({}) }, source)).toBe("OK");
+  });
+
+  test("evaluates a typed config expression before probing its Liquid template", async () => {
+    const { ctx, evaluate, resolveReference } = fixture();
+    evaluate.mockImplementation(async (value) => (value === "${{ tmpl }}" ? "{{ inputs.message.bodyText }}" : value));
+    await resolveMailWorkflowTemplateBodies(ctx, {
+      kind: "action",
+      action: "setConversationSummary",
+      config: { summary: "${{ tmpl }}" },
+      sourcePath: ["steps", 1],
+    });
+    expect(evaluate).toHaveBeenCalledWith("${{ tmpl }}", ["steps", 1, "setConversationSummary", "summary"]);
+    expect(resolveReference.mock.calls).toEqual([["inputs.message.bodyText", ["steps", 1, "setConversationSummary", "summary"]]]);
+  });
+
+  test("skips config expressions that evaluate to a non-string", async () => {
+    const { ctx, evaluate, resolveReference } = fixture();
+    evaluate.mockResolvedValue(null);
+    await resolveMailWorkflowTemplateBodies(ctx, step("${{ tmpl }}"));
+    expect(resolveReference).not.toHaveBeenCalled();
+  });
+
+  test.each(["automaticReply", "createDraft", "createReplyDraft"])("probes %s with its evaluated output mode", async (action) => {
+    const { ctx, message, evaluate, resolveReference } = fixture();
+    message.id = "msg_001";
+    evaluate.mockImplementation(async (value) => (value === "${{ replyFormat }}" ? "markdown" : value));
+    // Captured output is escaped in the action's mode and then controls which branch is taken.
+    const marker = action === "automaticReply" ? "&#95;" : "\\_";
+    const body = `{% capture id %}{{ inputs.message.id }}{% endcapture %}{% if id contains '${marker}' %}{{ inputs.message.bodyText }}{% endif %}`;
+    await resolveMailWorkflowTemplateBodies(ctx, {
+      kind: "action",
+      action,
+      config: { body, format: "${{ replyFormat }}" },
+      sourcePath: ["steps", 0],
+    });
+    expect(evaluate).toHaveBeenCalledWith("${{ replyFormat }}", ["steps", 0, action, "format"]);
+    expect(resolveReference.mock.calls).toEqual([["inputs.message.bodyText", ["steps", 0, action, "body"]]]);
+  });
+
+  test("ends probing on a render error without resolving later body fields", async () => {
+    const { ctx, resolveReference } = fixture();
+    await resolveMailWorkflowTemplateBodies(ctx, step("{{ inputs.message.bodyText | pad_start: 0 }}{{ inputs.message.bodyHtml }}"));
+    expect(resolveReference.mock.calls).toEqual([["inputs.message.bodyText", ["steps", 0, "succeed", "message"]]]);
+    expect(() =>
+      renderMailWorkflowTemplate(
+        { invocation: ctx.invocation, variableSnapshot: () => ({}) },
+        "{{ inputs.message.bodyText | pad_start: 0 }}{{ inputs.message.bodyHtml }}",
+      ),
+    ).toThrow("pad_start width");
   });
 
   test("fails visibly when a present message body cannot be resolved", async () => {
@@ -145,5 +210,20 @@ describe("Mail workflow template body access", () => {
       ["inputs.message.bodyText", ["steps", 2, "automaticReply", "subject"]],
       ["inputs.message.bodyHtml", ["steps", 2, "automaticReply", "body"]],
     ]);
+  });
+});
+
+describe("Mail workflow template output modes", () => {
+  test.each(["plain", "markdown", undefined, "unexpected"])("maps every template field with format %s", (format) => {
+    expect(mailWorkflowTemplateOutput("automaticReply", "body", format)).toBe(format === "markdown" ? "markdown" : "text");
+    for (const action of ["createDraft", "createReplyDraft"]) {
+      expect(mailWorkflowTemplateOutput(action, "body", format)).toBe(format === "plain" ? "text" : "editable_markdown");
+    }
+    for (const [action, fields] of Object.entries(MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS)) {
+      for (const field of fields) {
+        if (field === "body" && ["automaticReply", "createDraft", "createReplyDraft"].includes(action)) continue;
+        expect(mailWorkflowTemplateOutput(action, field, format)).toBe("text");
+      }
+    }
   });
 });
