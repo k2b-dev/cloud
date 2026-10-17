@@ -7,13 +7,13 @@ import { CapabilityErrorSchema, type CapabilityStream, capabilityResultSchema } 
 import { CapabilityStreamStatusSchema } from "../contracts/capability-streams";
 import {
   type FileProviderContext,
-  fileProviderAcceptsContext,
   type FileProviderEntry,
   type FileProviderIssue,
   FileProviderListDataSchema,
   FileProviderReadDataSchema,
   FileProviderSaveDataSchema,
   FileProviderSaveInputSchema,
+  fileProviderAcceptsContext,
   fileProviderIssues,
 } from "../contracts/file-provider";
 import { LOCALE_HEADER } from "../shared/locale";

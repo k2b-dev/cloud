@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { delegateEvents, isServer, render } from "solid-js/web";
-import { z } from "zod";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { contactDirectory, defineCapabilities } from "@k2b/cloud/contracts";
-import { MAX_DRAFT_ATTACHMENT_BYTES } from "../../contracts";
+import { delegateEvents, isServer, render } from "solid-js/web";
+import { z } from "zod";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 import {
   composePreviewInputSchema,
   type DraftEditableContent,
   draftEditableContentInputSchema,
+  MAX_DRAFT_ATTACHMENT_BYTES,
   type MailDraft,
   type MailDraftSeed,
   materializeDraftSeedInputSchema,

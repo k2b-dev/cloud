@@ -14,9 +14,8 @@ import {
 } from "./capabilities";
 import { capabilityContractIssues } from "./capability-compatibility";
 import {
-  FileProviderContextSchema,
   FileProviderContextListInputSchema,
-  fileProviderAcceptsContext,
+  FileProviderContextSchema,
   FileProviderEntrySchema,
   FileProviderListDataSchema,
   FileProviderListInputSchema,
@@ -24,6 +23,7 @@ import {
   FileProviderSaveDataSchema,
   FileProviderSaveInputSchema,
   fileProvider,
+  fileProviderAcceptsContext,
   fileProviderIssues,
 } from "./file-provider";
 

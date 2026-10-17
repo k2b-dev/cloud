@@ -1,8 +1,8 @@
 import { listCapabilityCatalog } from "@k2b/cloud/capabilities";
 import {
   type CapabilityCatalog,
-  capabilityContractIssues,
   CloudResourceRefSchema,
+  capabilityContractIssues,
   contactDirectory,
   FILE_PROVIDER_CONTEXT_MAX_REFS,
   type FileProviderContext,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CloudResourceRefSchema, type CapabilityManifest } from "./capabilities";
+import { type CapabilityManifest, CloudResourceRefSchema } from "./capabilities";
 import { type CapabilityContract, type CapabilityContractIssue, capabilityContractIssues } from "./capability-compatibility";
 
 /**

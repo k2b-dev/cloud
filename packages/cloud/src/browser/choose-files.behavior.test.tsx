@@ -1,8 +1,8 @@
 import { expect, spyOn, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
-import type { ChooseFilesOptions } from "./FileChooser";
-import type { FileProviderContext } from "../contracts/file-provider";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import type { FileProviderContext } from "../contracts/file-provider";
+import type { ChooseFilesOptions } from "./FileChooser";
 import type { FileProviderSource } from "./file-providers";
 
 const domTest = isServer ? test.skip : test;
