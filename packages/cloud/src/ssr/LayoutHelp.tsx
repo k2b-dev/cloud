@@ -756,52 +756,57 @@ const HelpShell = (props: {
       data-surface={props.surface}
       style={appAccentStyle(props.accent)}
     >
-      {/* One head in every view: the search never moves between the start, an article, and results. */}
-      <header class="help-head" data-help-head="">
-        <div class="help-head-inner help-measure">
-          <div class="help-head-row">
-            {/* The back button takes the app tile's place in an article, so nothing beside it moves. */}
-            <Show
-              when={view() === "article"}
-              fallback={
-                <span class="help-head-tile" aria-hidden="true">
-                  <i class={app?.iconClass ?? "ti ti-help"} />
-                </span>
-              }
-            >
-              <IconButton class="help-head-back" label={t().backToTopics} title={t().back} onClick={goBack}>
-                <i class="ti ti-arrow-left" />
-              </IconButton>
+      {/* One head in every view: the search never moves between the start, an article, and results. An app's embedded
+          reader sits in the app's own chrome, which names it and picks its article, so it keeps only the search of its start. */}
+      <Show when={props.surface !== "embedded" || view() === "hub"}>
+        <header class="help-head" data-help-head="">
+          <div class="help-head-inner help-measure">
+            <Show when={props.surface !== "embedded"}>
+              <div class="help-head-row">
+                {/* The back button takes the app tile's place in an article, so nothing beside it moves. */}
+                <Show
+                  when={view() === "article"}
+                  fallback={
+                    <span class="help-head-tile" aria-hidden="true">
+                      <i class={app?.iconClass ?? "ti ti-help"} />
+                    </span>
+                  }
+                >
+                  <IconButton class="help-head-back" label={t().backToTopics} title={t().back} onClick={goBack}>
+                    <i class="ti ti-arrow-left" />
+                  </IconButton>
+                </Show>
+                <h2 id="layout-help-title" class="help-head-title">
+                  {appName ? t().helpFor({ app: appName }) : t().help}
+                </h2>
+                <div class="help-head-actions" role="group" aria-label={t().actions}>
+                  <Dropdown.Root label={t().moreActions} position="bottom-left" items={menuItems()}>
+                    <Dropdown.Trigger iconOnly label={t().moreActions} variant="ghost" data-help-menu="">
+                      <i class="ti ti-dots" aria-hidden="true" />
+                    </Dropdown.Trigger>
+                  </Dropdown.Root>
+                  <Show when={props.surface === "modal"}>
+                    <IconButton label={t().closeHelp} title={t().close} onClick={props.close}>
+                      <i class="ti ti-x" />
+                    </IconButton>
+                  </Show>
+                </div>
+              </div>
             </Show>
-            <h2 id="layout-help-title" class="help-head-title">
-              {appName ? t().helpFor({ app: appName }) : t().help}
-            </h2>
-            <div class="help-head-actions" role="group" aria-label={t().actions}>
-              <Dropdown.Root label={t().moreActions} position="bottom-left" items={menuItems()}>
-                <Dropdown.Trigger iconOnly label={t().moreActions} variant="ghost" data-help-menu="">
-                  <i class="ti ti-dots" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-              <Show when={props.surface === "modal"}>
-                <IconButton label={t().closeHelp} title={t().close} onClick={props.close}>
-                  <i class="ti ti-x" />
-                </IconButton>
-              </Show>
-            </div>
+            <TextInput
+              ref={searchInput}
+              type="search"
+              class="help-head-search"
+              icon="ti ti-search"
+              aria-label={t().searchHelp}
+              data-help-search=""
+              value={query()}
+              placeholder={t().searchPlaceholder}
+              onValueChange={changeQuery}
+            />
           </div>
-          <TextInput
-            ref={searchInput}
-            type="search"
-            class="help-head-search"
-            icon="ti ti-search"
-            aria-label={t().searchHelp}
-            data-help-search=""
-            value={query()}
-            placeholder={t().searchPlaceholder}
-            onValueChange={changeQuery}
-          />
-        </div>
-      </header>
+        </header>
+      </Show>
 
       <ReaderContent>
         <Show when={view() === "hub"}>
@@ -850,17 +855,18 @@ const HelpShell = (props: {
                       </For>
                     </div>
                   </Show>
+                  {/* An app without Help says so plainly; only a failed read of its Help offers a way to try again. */}
                   <Show when={topics().length === 0}>
-                    <Placeholder
-                      icon="ti ti-book-off"
-                      title={t().noArticles}
-                      description={t().noArticlesDetail}
-                      action={
+                    <Show
+                      when={shell?.helpFailed}
+                      fallback={<Placeholder icon="ti ti-book-off" title={t().noArticles} description={t().noArticlesDetail} />}
+                    >
+                      <NoticeCard tone="danger" title={t().helpUnavailable} detail={t().helpUnavailableDetail} data-help-unavailable="">
                         <Button size="sm" variant="secondary" onClick={() => location.reload()}>
                           {t().reload}
                         </Button>
-                      }
-                    />
+                      </NoticeCard>
+                    </Show>
                   </Show>
                   <Show when={props.includeShortcuts !== false}>
                     <StartShortcuts appName={appName} />

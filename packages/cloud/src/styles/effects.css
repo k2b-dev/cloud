@@ -646,7 +646,8 @@
   gap: 1.25rem 2rem;
 }
 
-/* From two columns each group has a fixed cell, so a group that arrives late never pushes another one along. */
+/* From two columns each group keeps a fixed cell, so a group that arrives late does not take another one's column.
+   The dialog reads the commands when it opens; only commands that change while Help is open can arrive late. */
 @container help-shell (min-width: 34rem) {
   .help-shortcut-groups {
     min-height: 17rem;

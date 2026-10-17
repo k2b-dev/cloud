@@ -278,6 +278,8 @@ for (const host of ["grids", "pulse"] as const)
       const page = await open(`?host=${host}`, viewport, ".help-document #section-0");
       try {
         expect(await page.locator("article h3").textContent()).toBe("Topic 0");
+        // The host's window names the reader and picks its article; Help adds no head of its own.
+        expect(await page.locator("[data-help-head]").count()).toBe(0);
         expect(await page.locator(".help-article-toc-icon, .help-section-icon, [data-help-icon]").count()).toBe(0);
         const phone = viewport.width < 768;
         expect(await page.locator(".help-article-aside").isVisible()).toBe(!phone);

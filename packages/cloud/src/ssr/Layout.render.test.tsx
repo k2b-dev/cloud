@@ -398,6 +398,21 @@ for (const focusMode of [false, true]) {
 }
 
 describe("Layout page Help payload", () => {
+  for (const failed of [false, true]) {
+    test(`shell data ${failed ? "reports a Help metadata failure" : "omits helpFailed without a Help metadata failure"}`, async () => {
+      const spies = [spyOn(help, "getLayoutHelp").mockReturnValue(null), spyOn(help, "layoutHelpFailed").mockReturnValue(failed)];
+      try {
+        const html = await (await server.request("/layout")).text();
+        const data = JSON.parse(html.match(/<script id="cloud-shell-data" type="application\/json">([^<]*)<\/script>/)?.[1] ?? "null");
+        expect(data).not.toBeNull();
+        if (failed) expect(data.helpFailed).toBe(true);
+        else expect(data).not.toHaveProperty("helpFailed");
+      } finally {
+        for (const spy of spies) spy.mockRestore();
+      }
+    });
+  }
+
   const documents = ["first", "second", "third", "fourth"].map((id) => ({
     id,
     title: id,

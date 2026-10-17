@@ -421,6 +421,10 @@ manifest, and keeps at most three. Without a manifest, no page articles are
 shown. These articles also keep their place in the task tiles or kind groups,
 so the app's start stays consistent across pages.
 
+An app without Help articles shows a short note above the shortcuts. When
+Cloud could not read the app's Help metadata for the page, Help says so and
+offers **Reload**.
+
 Full-page Help renders in the owning application's frame. The rail marks that
 app, its canvas and accent apply, and the title row leads back to the app.
 Third-party applications use the same frame.
@@ -576,6 +580,9 @@ manifest.
 Use the automatic Layout and full-page surfaces for ordinary application Help.
 Add a specialized consumer only when its surrounding workflow needs a distinct
 presentation.
+
+`Layout.HelpPage` with `embedded` renders no Help head: the host's own window
+names the reader and chooses its article. Its start keeps only the search.
 
 For server-rendered embedded readers, `preloadLayoutHelp(c, appId)` from
 `@k2b/cloud/ssr/help` loads the published, request-localized metadata. Reuse its

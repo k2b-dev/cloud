@@ -27,7 +27,7 @@ else {
     initialTopic?: string,
     path = "/help/apps/spaces/first",
     articleHtml = html,
-    options: { documents?: HelpDocumentManifest[]; help?: string[]; searchFails?: boolean } = {},
+    options: { documents?: HelpDocumentManifest[]; help?: string[]; searchFails?: boolean; helpFailed?: boolean } = {},
   ) => {
     const dom = createDomTestHarness();
     Object.assign(dom.window.happyDOM.settings.navigation, {
@@ -84,6 +84,7 @@ else {
             appId: "spaces",
             accent: "#16a34a",
             help: options.help,
+            ...(options.helpFailed ? { helpFailed: true as const } : {}),
           }}
         >
           {surface === "modal" ? (
@@ -534,4 +535,34 @@ else {
       await reader.cleanup();
     }
   });
+
+  test("embedded: the host's chrome names the reader, so an article has no Help head and the start keeps only its search", async () => {
+    const reader = await setup("embedded", "first");
+    try {
+      await until(() => !!reader.dom.document.querySelector(".help-document a"));
+      expect(reader.dom.document.querySelector("[data-help-head]")).toBeNull();
+      expect(reader.clickLink("Hub").defaultPrevented).toBe(true);
+      await until(() => !!reader.dom.document.querySelector("[data-help-results]"));
+      expect(reader.dom.document.querySelector("[data-help-search]")).not.toBeNull();
+      expect(reader.dom.document.querySelector(".help-head-title, .help-head-tile, [data-help-menu]")).toBeNull();
+    } finally {
+      await reader.cleanup();
+    }
+  });
+
+  for (const helpFailed of [false, true]) {
+    test(`modal: an app without articles ${helpFailed ? "offers a reload after a failed Help read" : "says so without a reload"}`, async () => {
+      const reader = await setup("modal", undefined, "/app/spaces", html, { documents: [], helpFailed });
+      try {
+        await until(() => !!reader.dom.document.querySelector("[data-help-shortcuts]"));
+        const text = reader.dom.document.body.textContent ?? "";
+        const reload = [...reader.dom.document.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Reload");
+        expect(reload).toBe(helpFailed);
+        expect(!!reader.dom.document.querySelector("[data-help-unavailable]")).toBe(helpFailed);
+        expect(text.includes("This app has not published Help yet.")).toBe(!helpFailed);
+      } finally {
+        await reader.cleanup();
+      }
+    });
+  }
 }

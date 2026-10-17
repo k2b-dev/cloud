@@ -25,6 +25,8 @@ export type ShellData = {
   platform?: KeyboardPlatform;
   /** "For this view" article ids, already filtered for the reader. */
   help?: string[];
+  /** The current app's Help metadata could not be read for this request; Help offers a reload. */
+  helpFailed?: true;
 };
 
 const ShellDataContext = createContext<() => ShellData>();

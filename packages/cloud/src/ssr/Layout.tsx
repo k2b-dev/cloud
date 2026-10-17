@@ -14,7 +14,7 @@ import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import AnnouncementBanners from "./AnnouncementBanners";
 import { appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
 import { resolveRuntimeRoute, visibleNavigationApps } from "./app-navigation";
-import { getLayoutHelp } from "./help";
+import { getLayoutHelp, layoutHelpFailed } from "./help";
 import LayoutFooter from "./LayoutFooter";
 import LayoutHeader from "./LayoutHeader";
 import LayoutRail, { type LayoutAppLink } from "./LayoutRail";
@@ -216,6 +216,7 @@ export default function Layout(props: LayoutProps) {
   const shellData: ShellData = {
     platform: keyboardPlatform(c.req.raw.headers.get("User-Agent") ?? ""),
     ...(viewHelp.length ? { help: viewHelp } : {}),
+    ...(layoutHelpFailed(c) ? { helpFailed: true as const } : {}),
     apps: allApps,
     ...(user
       ? { rail: c.get("railPreferences") ?? defaultRailPreferences(), profile: { name: profileName, avatarSrc: profileAvatarSrc, appHref } }
