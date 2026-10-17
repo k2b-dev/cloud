@@ -2,6 +2,7 @@ import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import { MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS, mailWorkflowTemplateOutput } from "../workflows/template-validation";
 import { mailWorkflowTemplateData, renderMailLiquidTemplate } from "./template-rendering";
+import { mailWorkflowBodyFieldLoaded } from "./workflow-runtime-values";
 
 const BODY_FIELDS = ["body", "bodyText", "bodyHtml"] as const;
 
@@ -44,8 +45,7 @@ export const resolveMailWorkflowTemplateBodies = async (ctx: WorkflowExecuteActi
               enumerable: true,
               configurable: true,
               get: () => {
-                // A non-empty field came from this run's frozen hydration (new snapshots carry ""), also under an aliased input name.
-                if (resolved.has(reference) || message.bodyAvailable === true || (typeof value === "string" && value !== "")) return value;
+                if (resolved.has(reference) || mailWorkflowBodyFieldLoaded(message, field)) return value;
                 pendingReference = reference;
                 throw unresolvedBody;
               },

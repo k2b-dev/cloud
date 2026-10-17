@@ -3,6 +3,7 @@ import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import { MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS, mailWorkflowTemplateOutput } from "../workflows/template-validation";
 import { renderMailWorkflowTemplate } from "./template-rendering";
+import { projectMailWorkflowFrozenBody } from "./workflow-runtime-values";
 import { resolveMailWorkflowTemplateBodies } from "./workflow-template-values";
 
 const step = (message: string): WorkflowActionStep => ({
@@ -125,11 +126,11 @@ describe("Mail workflow template body access", () => {
     expect(resolveReference).not.toHaveBeenCalled();
   });
 
-  test("uses a frozen body projected through an aliased input without resolving it again", async () => {
+  test("uses a frozen empty body projected through an aliased input without resolving it again", async () => {
     const { ctx, message, resolveReference } = fixture();
     ctx.plan.inputs.push({ name: "second", type: "mailMessage", config: {} });
     ctx.invocation.inputs.second = message;
-    Object.assign(message, { body: "frozen plain", bodyText: "frozen plain" });
+    projectMailWorkflowFrozenBody("second", message, { "inputs.second.bodyText": "" });
 
     await resolveMailWorkflowTemplateBodies(ctx, step("{{ inputs.second.bodyText }}"));
 

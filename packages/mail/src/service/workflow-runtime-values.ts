@@ -139,14 +139,30 @@ export const normalizeMailWorkflowFrozenHydration = (frozen: JsonObject): void =
   }
 };
 
+type MailBodyField = "body" | "bodyText" | "bodyHtml";
+// Body fields this run has loaded into a projected message. Aliased inputs share the object, so the
+// marks hold for every input name; a loaded body may be "".
+const loadedBodyFields = new WeakMap<JsonObject, Set<MailBodyField>>();
+
+export const mailWorkflowBodyFieldLoaded = (message: JsonObject, field: MailBodyField): boolean =>
+  message.bodyAvailable === true || (loadedBodyFields.get(message)?.has(field) ?? false);
+
 export const projectMailWorkflowFrozenBody = (name: string, message: WorkflowJsonValue | undefined, frozen: JsonObject): void => {
   if (!isObject(message) || message.bodyAvailable === true) return;
   const plainKey = `inputs.${name}.bodyText`;
   const htmlKey = `inputs.${name}.bodyHtml`;
+  const loaded = loadedBodyFields.get(message) ?? new Set<MailBodyField>();
+  loadedBodyFields.set(message, loaded);
   // Mutate the shared projection so action contexts and restored aliases see the same body.
-  if (Object.hasOwn(frozen, plainKey)) message.body = message.bodyText = frozen[plainKey]!;
-  if (Object.hasOwn(frozen, htmlKey)) message.bodyHtml = frozen[htmlKey]!;
-  if (Object.hasOwn(frozen, plainKey) && Object.hasOwn(frozen, htmlKey)) message.bodyAvailable = true;
+  if (Object.hasOwn(frozen, plainKey)) {
+    message.body = message.bodyText = frozen[plainKey]!;
+    loaded.add("body").add("bodyText");
+  }
+  if (Object.hasOwn(frozen, htmlKey)) {
+    message.bodyHtml = frozen[htmlKey]!;
+    loaded.add("bodyHtml");
+  }
+  if (loaded.size === 3) message.bodyAvailable = true;
 };
 
 export const createMailWorkflowValueResolver = (params: {
