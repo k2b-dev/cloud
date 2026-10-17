@@ -10,7 +10,7 @@ const entry = resolve(import.meta.dir, "drag-and-drop.fixture.ts");
 const source = `
 import { createSignal } from "solid-js";
 import { createComponent, insert, render } from "solid-js/web";
-import { DragSource, DropTarget, GestureMenu, LocaleProvider, useKeyboardDrag, activeDrag } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { DragSource, DropTarget, GestureMenu, LocaleProvider, useKeyboardDrag, activeDrag, dialogCore, bottomSheetOptions } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 window.drops = []; window.clicks = 0; window.announcements = []; window.shift = 0;
 // WebKit decides at touchstart whether a touch can be kept from scrolling, so record which touchmove listeners exist.
 window.touchListeners = [];
@@ -79,6 +79,14 @@ window.mountSwap = () => {
     return [row, () => { const label = "Swap " + variant(); return createComponent(DropTarget, { label, accept: ["demo.swap"], class: "swap-target",
       onDrop: (payload) => window.drops.push({ target: label, value: payload.value }), children: label }); }];
   } }), host);
+};
+// A second sheet level whose DropTarget is the first one in the open modal, so it creates the announcer there.
+window.openSheets = () => {
+  dialogCore.open(() => { const text = document.createElement("p"); text.textContent = "First"; return text; }, { ...bottomSheetOptions, ariaLabel: "First" });
+  requestAnimationFrame(() => dialogCore.open(() => createComponent(LocaleProvider, { locale: "en", get children() {
+    const input = document.createElement("input"); input.className = "sheet-input"; input.setAttribute("aria-label", "Name");
+    return [input, createComponent(DropTarget, { label: "Sheet target", accept: ["demo.row"], class: "sheet-target", onDrop: () => {}, children: "Sheet target" })];
+  } }), { ...bottomSheetOptions, ariaLabel: "Second" }));
 };
 // A modal dialog nested inside the Archive target, with its own source.
 window.openNested = () => {
@@ -827,6 +835,26 @@ describe(`drag and drop in ${browserName}`, () => {
       await page.mouse.up();
       await clean(page);
       expect(await drops(page)).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("the announcer leaves a sheet stack's top level last, so the sheet focuses its input", async () => {
+    const { page, context } = await open();
+    try {
+      await page.evaluate("window.openSheets()");
+      await page.locator(".sheet-target").waitFor();
+      await until(page, `document.activeElement?.classList.contains('sheet-input')`);
+      expect(
+        await page.evaluate(() => {
+          const dialog = document.querySelector("dialog[open]")!;
+          return {
+            announcer: dialog.querySelector(".k2b-drag-announcer") !== null,
+            last: dialog.lastElementChild?.querySelector(".sheet-input") !== null,
+          };
+        }),
+      ).toEqual({ announcer: true, last: true });
     } finally {
       await context.close();
     }

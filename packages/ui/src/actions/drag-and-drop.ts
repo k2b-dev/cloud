@@ -119,7 +119,9 @@ const announcerFor = (origin: HTMLElement): Announcer => {
       overflow: "hidden",
       whiteSpace: "nowrap",
     });
-    parent.append(region);
+    // First in a dialog: a dialog stack keeps its top level as the dialog's last child, and finds it there.
+    if (parent === origin.ownerDocument.body) parent.append(region);
+    else parent.prepend(region);
     announcer = { region, ready: performance.now() + ANNOUNCE_DELAY_MS, queue: [] };
     announcers.set(parent, announcer);
   }
