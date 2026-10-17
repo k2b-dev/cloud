@@ -12,6 +12,10 @@ let commitStatus = 200;
 let startCode = "";
 let openSession = false;
 let startKey = "";
+let rateLimitPhase: "start" | "commit" = "start";
+let rateLimitAt = 0;
+let retryAfter = "1";
+const rateLimitResponse = () => Response.json({ message: "Rate limit exceeded" }, { status: 429, headers: { "Retry-After": retryAfter } });
 mock.module("../src/frontend/public-client", () => ({
   publicClient: {
     inbox: {
@@ -21,6 +25,7 @@ mock.module("../src/frontend/public-client", () => ({
             $post: async (input: { json: { idempotencyKey: string } }) => {
               creates++;
               startKey = input.json.idempotencyKey;
+              if (rateLimitPhase === "start" && creates === rateLimitAt) return rateLimitResponse();
               if (startCode) return Response.json({ code: startCode, message: "Upload changed" }, { status: 409 });
               return Response.json({
                 id: "s1",
@@ -36,6 +41,7 @@ mock.module("../src/frontend/public-client", () => ({
               commit: {
                 $post: async () => {
                   commits++;
+                  if (rateLimitPhase === "commit" && commits === rateLimitAt) return rateLimitResponse();
                   if (commitStatus !== 200) return Response.json({ message: "unavailable" }, { status: commitStatus });
                   if (commitFails) throw new Error("lost commit response");
                   return Response.json({ name: "file.txt" });
@@ -94,11 +100,18 @@ afterEach(() => {
   aborts = 0;
   startKey = "";
   commitFails = false;
+  rateLimitPhase = "start";
+  rateLimitAt = 0;
+  retryAfter = "1";
   if (storageDescriptor) Object.defineProperty(globalThis, "localStorage", storageDescriptor);
   else Reflect.deleteProperty(globalThis, "localStorage");
 });
 const flush = async () => {
   for (let i = 0; i < 30; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+};
+const settle = async (condition: () => boolean) => {
+  for (let i = 0; i < 500 && !condition(); i++) await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(condition()).toBe(true);
 };
 
 test("public inbox terminal replay requests its Cloud receipt without a direct lease", async () => {
@@ -185,10 +198,6 @@ test("public inbox keeps an open session after transient commit failure and drop
     dom.cleanup();
   };
   jest.useFakeTimers();
-  const settle = async (condition: () => boolean) => {
-    for (let i = 0; i < 500 && !condition(); i++) await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(condition()).toBe(true);
-  };
   openSession = true;
   commitStatus = 503;
   const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]')!;
@@ -207,4 +216,64 @@ test("public inbox keeps an open session after transient commit failure and drop
   expect(localStorage.length).toBe(0);
   expect(aborts).toBe(0);
   expect(dom.document.querySelector(".filesv2-upload-row__reason")?.textContent).toBe("Upload changed");
+});
+
+test.each(["start", "commit"] as const)("public inbox waits for Retry-After midway through 15 files (%s)", async (phase) => {
+  const dom = createDomTestHarness();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+  const { default: PublicInbox } = await import("../src/frontend/PublicInbox.island");
+  const dispose = render(() => <PublicInbox token="public-secret" share={share} />, dom.root);
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  jest.useFakeTimers();
+  rateLimitPhase = phase;
+  rateLimitAt = 8;
+  const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]')!;
+  Object.defineProperty(input, "files", {
+    configurable: true,
+    value: Array.from({ length: 15 }, (_, i) => new File([], `file-${i}.txt`, { lastModified: 123 })),
+  });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(() => !!dom.document.querySelector('[data-wait="rate_limited"]'));
+  expect(dom.document.querySelector('[data-wait="rate_limited"] .filesv2-upload-row__reason')?.textContent).toBe(
+    "Short pause after many uploads",
+  );
+  jest.advanceTimersByTime(999);
+  expect(dom.document.querySelector('[data-wait="rate_limited"]')).not.toBeNull();
+  jest.advanceTimersByTime(1);
+  await settle(() => !!dom.document.querySelector('.filesv2-upload[data-phase="done"]'));
+  // The panel virtualizes its rows; the batch summary counts all 15 files.
+  expect(dom.document.querySelector(".filesv2-upload__count")?.textContent).toBe("15 of 15 files");
+  expect(dom.document.querySelectorAll('[data-status="success"]').length).toBeGreaterThan(0);
+  expect(dom.document.querySelectorAll('[data-status="failed"]')).toHaveLength(0);
+  expect(creates).toBe(16);
+  expect(commits).toBe(phase === "start" ? 15 : 16);
+  expect(aborts).toBe(0);
+  expect(localStorage.length).toBe(0);
+});
+
+test("public inbox shows its own rate-limit reason when Retry-After exceeds five minutes", async () => {
+  const dom = createDomTestHarness();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+  const { default: PublicInbox } = await import("../src/frontend/PublicInbox.island");
+  const dispose = render(() => <PublicInbox token="public-secret" share={share} />, dom.root);
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  jest.useFakeTimers();
+  rateLimitAt = 1;
+  retryAfter = "301";
+  const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]')!;
+  Object.defineProperty(input, "files", { configurable: true, value: [new File([], "file.txt", { lastModified: 123 })] });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(() => !!dom.document.querySelector('[data-status="failed"]'));
+  expect(dom.document.querySelector('[data-status="failed"] .filesv2-upload-row__reason')?.textContent).toBe(
+    "Too many uploads in a short time",
+  );
+  expect(dom.document.querySelector('[data-wait="rate_limited"]')).toBeNull();
+  expect(creates).toBe(1);
+  expect(commits).toBe(0);
 });

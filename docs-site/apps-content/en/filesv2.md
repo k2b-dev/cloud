@@ -259,6 +259,11 @@ in Postgres. Neither the password nor the verifier appears in share responses.
 Unlock attempts are rate-limited. The browser receives an encrypted, share-scoped
 HttpOnly cookie; transfers retain their existing short lease lifetime.
 
+Inbox upload requests (start, lease, commit and abort) are limited to 120 per
+minute per link and client address. The uploader waits automatically when the
+limit is reached. Each file needs about two requests, allowing roughly 60 files
+per minute per visitor. Other public page requests keep their existing limit
+of 10 per minute per client address.
 
 A share is either a download bundle of entries or an upload inbox for one
 folder, always inside one base. Download shares show the current contents,
