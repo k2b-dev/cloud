@@ -20,4 +20,4 @@ Load only the needed capabilities and reuse returned typed IDs unchanged.
 - The runtime Chat ID identifies the current conversation. Use `core.ai.chat.search` for earlier content in it. For another conversation, use `core.ai.chats.search`, then `core.ai.chat.read` or `core.ai.chat.search` with the returned ID.
 - Use `core.ai.chat.resources` for resources from one known conversation and `core.ai.chats.resources` to search across conversations. Read a returned resource through its owning app rather than guessing its contents.
 - Before `core.ai.chat.message`, identify the exact target and message. Report queued or delivered status accurately and do not claim the target completed the requested work.
-- For one-time reminders, recurring background work, or changing and repairing a scheduled task, load the `scheduled-tasks` Skill.
+- For one-time reminders, recurring background work, or changing and repairing a routine, load the `scheduled-tasks` Skill.

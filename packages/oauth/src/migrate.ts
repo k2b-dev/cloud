@@ -349,6 +349,10 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_oauth_device_authorizations_client
     ON oauth.device_authorizations(client_id)
   `.simple();
+  await sql`
+    ALTER TABLE oauth.device_authorizations
+    ADD COLUMN IF NOT EXISTS login_lifetime_seconds INTEGER
+  `.simple();
   console.log("  ✓ oauth.device_authorizations table");
 
   await sql`

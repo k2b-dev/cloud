@@ -112,7 +112,6 @@ export function PermissionsSection(props: { notebook: Notebook }) {
       <Show when={!accessEntries.loading()} fallback={<Placeholder state="loading" variant="panel" title={t().loadingAccess} />}>
         <Show
           when={accessEntries.data()}
-          keyed
           fallback={
             <Placeholder
               state="error"
@@ -126,7 +125,7 @@ export function PermissionsSection(props: { notebook: Notebook }) {
           {(entries) => (
             <PermissionEditor
               // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
-              initialEntries={entries.filter((entry) => entry.serviceAccountKind !== "resource_bound")}
+              initialEntries={entries().filter((entry) => entry.serviceAccountKind !== "resource_bound")}
               canEdit
               grantAccess={async (principal, permission) => {
                 const response = await apiClient[":id"].access.$post({

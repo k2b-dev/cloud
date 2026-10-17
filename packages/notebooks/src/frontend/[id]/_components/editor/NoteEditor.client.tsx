@@ -566,7 +566,7 @@ function EditorInstance(
     return isDark() ? editor.rawDarkInit() : editor.rawLightInit();
   });
 
-  addExtension(editor.noteScrollerTheme);
+  addExtension(editor.noteScroller);
 
   addExtension(() => (richMode() ? [] : lineNumbers()));
 

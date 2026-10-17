@@ -196,6 +196,11 @@ appearance: {
 Colors use six-digit hex values. `accent` and `background.from` are required
 when their containing object is present.
 
+`accent` drives the app's identity text and selection color. Cloud automatically
+derives readable text with at least 4.5:1 contrast (WCAG AA) and soft selection
+fills for light and dark mode. Any six-digit hex accent is accepted. A light
+accent such as yellow is darkened only as far as needed.
+
 | Background field | Default | Accepted range |
 | --- | --- | --- |
 | `to` | `from` | Six-digit hex color |

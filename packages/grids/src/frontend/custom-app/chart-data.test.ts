@@ -222,16 +222,36 @@ const renderInput = (w: ChartWidget, aggs: AggregationSpec[], buckets: typeof sl
 });
 
 describe("buildChartRenderData", () => {
+  test("missing aggregations keep the empty donut fallback", () => {
+    expect(buildChartRenderData(renderInput(widget("bar"), [], sliceBuckets))).toEqual({ kind: "donut", data: [], valueLabel: "" });
+  });
+
+  test("bar and donut value labels follow the aggregation label precedence", () => {
+    for (const kind of ["bar", "donut"] as const) {
+      for (const [agg, expected] of [
+        [sumAmount, "Total amount"],
+        [avgScore, "avg(Score)"],
+      ] as const) {
+        const out = buildChartRenderData(renderInput(widget(kind), [agg], []));
+        if (out.kind === "line") throw new Error("Expected bar or donut");
+        expect(out.valueLabel).toBe(expected);
+      }
+    }
+  });
+
   test("donut → SliceItem[] (first agg only)", () => {
     const out = buildChartRenderData(renderInput(widget("donut"), [countStar], sliceBuckets));
     expect(out.kind).toBe("donut");
     if (out.kind !== "donut") throw new Error("unreachable");
     expect(out.data).toHaveLength(3);
+    expect(out.valueLabel).toBe("count(*)");
   });
 
   test("bar → BarItem[]", () => {
     const out = buildChartRenderData(renderInput(widget("bar"), [countStar], sliceBuckets));
     expect(out.kind).toBe("bar");
+    if (out.kind !== "bar") throw new Error("unreachable");
+    expect(out.valueLabel).toBe("count(*)");
   });
 
   test("line → series + one category per bucket", () => {

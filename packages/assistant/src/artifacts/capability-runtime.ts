@@ -285,8 +285,12 @@ async function resolveCapability(
   const updated = await claimExecution(row, decision, identity, currentReview, automatic);
   if (!updated) throw new ArtifactError("CONFLICT");
   if (!decision.approved) return { status: "denied" as const };
+  // The capability call ID is the request ID of the execution that follows, so both audit trails join.
   if (decision.remember && prepared.scope)
-    await rememberAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: prepared.scope });
+    await rememberAiToolApproval(
+      { actorUserId: actor.id, actor: identity.actor, requestId: id },
+      { toolName: request.name, approvalScope: prepared.scope },
+    );
   const result = await invokeCapability(
     {
       appId: prepared.appId,

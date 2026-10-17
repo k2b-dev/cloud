@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
 import { renderToString } from "solid-js/web";
 import type { Contact, ContactNote, ContactTree } from "../../service";
 import "./ssr-test-plugin";
@@ -145,6 +145,58 @@ const legacyDetailClasses = [
   'class="detail-facts',
 ];
 
+describe("Contact birthday calendar dates (#1232)", () => {
+  const previousTZ = process.env.TZ;
+
+  beforeAll(() => {
+    process.env.TZ = "America/New_York";
+    setSystemTime(new Date("2026-08-09T10:00:00.000Z"));
+  });
+
+  afterAll(() => {
+    if (previousTZ === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTZ;
+    setSystemTime();
+  });
+
+  const renderBirthday = (birthday: string, locale: string) => {
+    const birthdayContact = { ...contact, birthday };
+    return renderToString(() => (
+      <LocaleProvider locale={locale}>
+        <ContactDetailPanel
+          initialContact={birthdayContact}
+          initialContactId={birthdayContact.id}
+          initialBookId={birthdayContact.bookId}
+          initialNotesPage={{ items: [], page: 1, perPage: 30, total: 0, hasNext: false }}
+          contacts={[birthdayContact]}
+          bookNames={{ team: "Team contacts" }}
+          writableBooks={[]}
+          adminBookIds={[]}
+          currentUserId="user-1"
+          showEmpty={false}
+          initialFavoriteKeys={[]}
+        />
+      </LocaleProvider>
+    ));
+  };
+
+  test.each([
+    ["en", "May 12, 1990"],
+    ["de", "12. Mai 1990"],
+  ])("preserves the birthday west of UTC in %s", (locale, expected) => {
+    const html = renderBirthday("1990-05-12", locale);
+    expect(html).toContain(expected);
+    for (const shifted of ["5/11/1990", "May 11", "11. Mai"]) expect(html).not.toContain(shifted);
+  });
+
+  test("preserves invalid stored birthday text in its row", () => {
+    const html = renderBirthday("not-a-date", "en");
+    const birthdayRow = html.match(/<dt>Birthday<\/dt><dd>([\s\S]*?)<\/dd>/)?.[1];
+    expect(birthdayRow).toContain("not-a-date");
+    expect(birthdayRow).not.toContain("—");
+  });
+});
+
 describe("Contacts detail panels", () => {
   test("composes contact details from the shared grouped panel contract", () => {
     const html = renderToString(() => (
@@ -265,7 +317,18 @@ describe("Contacts detail panels", () => {
             companyName: "US Navy",
             jobTitle: "Rear admiral",
             parentContactId: "ada",
-            children: [],
+            children: [
+              {
+                id: "katherine",
+                label: null,
+                firstName: "Katherine",
+                lastName: "Johnson",
+                companyName: "NASA",
+                jobTitle: "Mathematician",
+                parentContactId: "grace",
+                children: [],
+              },
+            ],
           },
         ],
       },
@@ -279,6 +342,14 @@ describe("Contacts detail panels", () => {
     expect(html).toContain('class="k2b-detail-panel__header-icon"');
     expect(html).toContain('aria-label="Organization context"');
     expect(html).toContain("Grace Hopper");
+    expect(html).toContain("Katherine Johnson");
+    expect(html).not.toMatch(/(?<![\w-])border-[lt](?![\w-])/);
+    expect(html.match(/aria-current="true"/g)).toHaveLength(1);
+    const selectedButton = html.match(/<button\b[^>]*aria-current="true"[^>]*>([\s\S]*?)<\/button>/)?.[1];
+    expect(selectedButton).toContain("Grace Hopper");
+    expect(html.match(/<ul\b/g)).toHaveLength(3);
+    expect(html.match(/<ul class="[^"]*\bpl-9\b[^"]*"/g)).toHaveLength(2);
+    expect(html).toMatch(/<ul\b[^>]*>[\s\S]*<ul\b[^>]*>[\s\S]*<ul\b[^>]*>[\s\S]*<\/ul>[\s\S]*<\/ul>[\s\S]*<\/ul>/);
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
     for (const className of legacyDetailClasses) expect(html).not.toContain(className);
   });

@@ -389,7 +389,8 @@ see [What CI runs](/en/docs/contributing/testing#what-ci-runs).
 
 `bun run check` runs the repository rules under `scripts/checks/` (dependencies,
 import boundaries, package cycles, service API contracts, localization,
-capability presentation, CSS architecture, the application set, Help writing,
+capability presentation, CSS architecture, access editor mounting
+(`access-editor-mounts`), the application set, Help writing,
 formatting) and every package typecheck.
 A new rule is one module under `scripts/checks/`.
 

@@ -15,7 +15,16 @@
   --ui-hover: rgb(239 240 239 / 0.9);
   --ui-active: rgb(229 231 230 / 0.94);
   --ui-selected: color-mix(in srgb, var(--color-blue-500) 7%, var(--ui-surface));
-  --ui-app-accent-text: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
+  /* app-color.ts computes these defaults from --color-blue-500; app-color.test.ts pins them. */
+  --app-ink-light: #2264c9;
+  --app-ink-dark: #589aff;
+  --app-selected-light: #f0f6ff;
+  --app-selected-dark: #15243b;
+  --app-selected-nav-light: #e0e8f6;
+  --app-selected-nav-dark: #22334e;
+  --ui-app-accent-text: var(--app-ink-light);
+  --ui-app-selected: var(--app-selected-light);
+  --ui-app-selected-nav: var(--app-selected-nav-light);
   --ui-app-accent-border: var(--app-accent, var(--color-blue-500));
   --ui-focus: inset 0 0 0 2px color-mix(in srgb, var(--color-blue-500) 45%, transparent);
   --ui-action-primary-surface: var(--color-zinc-900);
@@ -143,7 +152,9 @@
   --ui-hover: #252c35;
   --ui-active: color-mix(in srgb, var(--ui-hover) 72%, var(--ui-border-strong));
   --ui-selected: color-mix(in srgb, var(--color-blue-400) 12%, var(--ui-surface));
-  --ui-app-accent-text: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
+  --ui-app-accent-text: var(--app-ink-dark);
+  --ui-app-selected: var(--app-selected-dark);
+  --ui-app-selected-nav: var(--app-selected-nav-dark);
   --ui-app-accent-border: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
   --ui-focus: inset 0 0 0 2px color-mix(in srgb, var(--color-blue-400) 55%, transparent);
   --ui-action-primary-surface: var(--color-zinc-100);
@@ -186,11 +197,13 @@
   --ui-shadow-workspace-edge: -3px 0 6px -5px rgb(0 0 0 / 0.28), 3px 0 6px -5px rgb(0 0 0 / 0.28);
 }
 
-/* App appearance is applied on the canvas rather than :root. Recompute the
-   derived accent roles here so an app never inherits the platform fallback. */
+/* Custom properties resolve where declared. Each app scope must re-read its
+   inline per-app values instead of inheriting the resolved platform defaults. */
 .cloud-app-canvas,
 .app-accent-scope {
-  --ui-app-accent-text: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
+  --ui-app-accent-text: var(--app-ink-light);
+  --ui-app-selected: var(--app-selected-light);
+  --ui-app-selected-nav: var(--app-selected-nav-light);
   --ui-app-accent-border: var(--app-accent, var(--color-blue-500));
   /* Portable UI components consume their own optional hook; Cloud alone maps
      it to the active app appearance. */
@@ -200,7 +213,9 @@
 }
 
 .dark :is(.cloud-app-canvas, .app-accent-scope) {
-  --ui-app-accent-text: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
+  --ui-app-accent-text: var(--app-ink-dark);
+  --ui-app-selected: var(--app-selected-dark);
+  --ui-app-selected-nav: var(--app-selected-nav-dark);
   --ui-app-accent-border: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
   --k2b-app-workspace-active: var(--ui-app-accent-text);
   --k2b-detail-panel-accent: var(--ui-app-accent-text);

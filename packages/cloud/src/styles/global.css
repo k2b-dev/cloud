@@ -243,6 +243,21 @@ body {
   color: rgb(244 244 245); /* zinc-100 */
 }
 
+/* The root paints the screen's page color as well. @k2b/ui makes it the
+   default `k2b-app-area` container, and containment stops a body background
+   from reaching the canvas that overscroll and short pages show. Zero
+   specificity, so the PWA canvas style and syncThemeColor still win; screen
+   only, so paper stays white. */
+@media screen {
+  :where(html) {
+    background-color: rgb(250 250 250); /* zinc-50 */
+  }
+
+  :where(html.dark) {
+    background-color: rgb(9 9 11); /* zinc-950 */
+  }
+}
+
 /* Pages of the mobile app paint the shell canvas, which their theme-color and
    html background repeat for the status bar. */
 html:has(.k2b-mobile-shell) body {

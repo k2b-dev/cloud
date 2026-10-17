@@ -1,0 +1,140 @@
+feat(cli)!: package plugins ship skill references in the same verified bundle as served plugins (#1227)
+
+## Summary
+
+Package plugins (`cld plugins install <dir|.tgz|npm:…>`) now use the
+same verified bundle as plugins a Cloud serves, so they ship skill
+references, and users do not have to do anything to keep the agent skill
+current.
+
+- **One format, one packer.** `bun run
+node_modules/@k2b/cloud/scripts/cli-pack.ts <module.ts> --references
+<dir> --out <dir>` reuses the application plugin builder
+(`buildCliPlugin`/`writeCliPlugin`, no second bundler). It writes
+`cli.js`, `references/`, `manifest.json` (SHA-512 per file plus digest),
+and a `package.json` with `"cld": { "manifest": "manifest.json" }`. It
+refuses an `--out` that holds the sources or anything other than an
+earlier pack output.
+- **Same verification as served plugins.** Install checks the manifest
+digest, each file's exact size and SHA-512, API version, Markdown-only
+references with `index.md`, no symlinks anywhere in the bundle, no
+unlisted reference files, and that `package.json` and the manifest are
+regular files (no FIFOs or devices). The bundle goes through the shared
+`storePlugin` path into the content-addressed store. Records live in
+`plugins/packages.json` and apply to every profile.
+- **One resolver.** `installedModule`/`installedModules` serve help,
+loading, `cld <module> reference [file]`, short names, `cld plugins run
+<name> reference`, and the skill rows. A profile lock wins over a
+package record. Package modules show profile `*`, and only active
+modules get a row.
+- **Skill table.** The table in SKILL.md now has Profile | Module |
+Version | Summary | Start (`references/<module>/<version>/index.md`).
+Two different bundles with the same module and version each get a
+digest-suffixed folder. The skill re-syncs after every install, update,
+and removal.
+- **Install confirmation** shows package, version, source, module, and
+the number of reference files.
+- **Old format refused.** Packages with `cld.apiVersion`/`cld.entry` are
+refused with one line telling the author to re-pack with `cli-pack.ts`.
+Old `plugins/<id>/` directories are listed as `incompatible` and never
+loaded, and `cld plugins remove <id>` removes them.
+- **Mail:** `reference` is reserved for every module, so `cld mail
+reference …` moved to `cld mail reference-number …`.
+`defineCliCommands()` now refuses a top-level `reference` command.
+- `plugins/packages.json` is written atomically under a packages lock
+inside the config lock, and every store sweep also takes that lock. An
+unreadable or corrupt records file stops with one clear line instead of
+being read as empty, which would let a later sweep delete package
+bundles.
+
+Closes #1137
+
+BREAKING CHANGE: `cld plugins install` refuses package plugins in the
+old `cld.apiVersion`/`cld.entry` format, and already installed
+old-format directories are listed as `incompatible` and no longer load.
+Authors re-pack with `bun run
+node_modules/@k2b/cloud/scripts/cli-pack.ts <module.ts> --references
+<dir> --out <dir>` and republish. Users reinstall with `cld plugins
+install <source>` and remove old directories with `cld plugins remove
+<id>`. `cld mail reference …` is now `cld mail reference-number …` with
+unchanged flags and output.
+
+### Changed paths (happy paths)
+
+- `cld plugins install <dir|.tgz|npm:>`: now requires a packed bundle
+(old format refused with a re-pack hint).
+- `cld plugins remove <id>`: removes package records and old-format
+directories.
+- `cld plugins update <package module>`: tells the user to reinstall
+from the unpinned source.
+- `cld <module> reference [file]` and `cld plugins run <name>
+reference`: now also work for package plugins.
+- `cld mail reference …` → `cld mail reference-number …`.
+
+### Docs
+
+- Fibel `docs-site/docs/en/platform/cli-modules.md`: Ship a module as a
+plugin (pack command, output, rules), Install a package plugin
+(verification, store, records, update, removal, old format), Write the
+skill for agents (table columns, `*`, shadowing, digest-suffixed
+folders), status table.
+- `docs-site/docs/en/reference/deprecations-and-migrations.md`: package
+plugin migration and the Mail command move (operations note for the
+breaking change).
+- `skills/cloud-cli/SKILL.md` and
+`skills/cloud-cli/references/plugins.md`,
+`packages/cloud-cli/README.md`, `packages/cloud/scripts/README.md`.
+- cloud-dev skill: unchanged, because its plugin wording only covers
+served plugins and is still accurate.
+
+## How do we prevent this next time? (guard: check/test/convention, or
+why none)
+
+- `packages/cloud/scripts/cli-pack.test.ts`: the pack output follows the
+shared bundle contract (nested references, stale output removed) and
+unsafe `--out` directories are refused.
+- `packages/cloud-cli/src/plugins.test.ts`: install from a directory,
+`.tgz`, and npm (mock registry) leads to a `*` table row, `cld <m>
+reference`, and a nested file. Refusal cases: a tampered file, a
+symlink, a non-Markdown or unlisted reference, a FIFO or `/dev/zero`
+metadata file, malicious tar members, the old format (incompatible with
+the re-pack line), a corrupt records file, and shadowing between package
+and served plugins. The skill re-syncs on removal, and GC waits for the
+packages lock.
+- `skills.test.ts` (columns, escaping, digest-suffixed folders),
+`plugin-store.test.ts` (exact size, rehash repair, cancel on first
+failure).
+- `defineCliCommands` refuses the reserved `reference` command
+(`commands.test.ts`), so no module can shadow it again.
+
+Follow-up for a pre-existing store property this PR does not change:
+#1224 (sweeps keep only the current `CLD_CONFIG`'s digests while all
+configs share one store).
+
+## Checklist
+
+- [x] The title is a Conventional Commit: `type(scope): outcome` (`!`
+approved by the maintainer for #1137, pre-1.0 breaking change)
+- [x] Each touched package's typecheck and `bun run test --filter
+<package>` pass
+- [x] Documentation updated under `docs-site/docs/en`
+
+### Verification
+
+- `bun run test --filter packages/cloud-cli`: 201 pass, 0 fail (after
+merging main at df01d6199; main did not touch the changed files)
+- `bun test packages/cloud/scripts/cli-pack.test.ts
+packages/cloud/src/cli/commands.test.ts packages/mail/src/cli.test.ts`:
+135 pass
+- `bun run --cwd packages/{cloud-cli,cloud,mail} typecheck`: pass (after
+the merge)
+- An earlier CI run (38889591485) was cancelled when WebKit shard 3 hit
+its job timeout in unrelated UI browser tests (PermissionEditor,
+Approvals, Files overview, Spaces calendar); the run after the main
+merge passed every job
+- Biome on changed files, `git diff --check`: clean
+- Codex reviews (gpt-6.1-sol high and gpt-6-astra high) over several
+rounds, and an independent review; all confirmed findings are fixed
+- Not run: a full `.tgz` install from the real npm registry (covered
+with a mock registry), and macOS bsdtar extraction (bundle verification
+rejects symlinks after extraction in any case)

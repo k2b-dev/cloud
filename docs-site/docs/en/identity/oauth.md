@@ -5,7 +5,7 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code, device authorization, or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-10-03
+updated: 2026-10-17
 ---
 
 # OAuth clients and flows
@@ -100,13 +100,15 @@ refresh-token family to it. This is required by the
 Confidential clients can send credentials through HTTP Basic or the form.
 
 The resulting access token resolves to a user actor. `offline_access` can
-produce a refresh token.
+produce a refresh token. The exchange accepts the optional `ttl` form
+parameter described under [Login lifetime](#login-lifetime).
 
-Refresh tokens rotate on every successful use. A refresh request can reduce
-its scopes, but cannot add scopes; the reduced set remains in effect for later
-rotations. Resource-bound grants must repeat the exact `resource` on every
-refresh. Cloud also rechecks the account, client scopes and audiences, profile
-or explicit client access, and client existence before issuing a replacement.
+Refresh tokens rotate on every successful use. Rotation keeps the family's
+absolute expiry. A refresh request can reduce its scopes, but cannot add
+scopes; the reduced set remains in effect for later rotations. Resource-bound
+grants must repeat the exact `resource` on every refresh. Cloud also rechecks
+the account, client scopes and audiences, profile or explicit client access,
+and client existence before issuing a replacement.
 If any check fails, the grant cannot mint another access token.
 
 Authorization codes capture their granted audiences when created. Both the
@@ -127,6 +129,38 @@ Local accounts can exist without one when the operator
 [allows it](/en/docs/accounts/registration#allow-local-accounts-without-email);
 their ID tokens and UserInfo responses omit `email` even with the `email` scope.
 Clients should identify users by `sub`.
+
+## Login lifetime
+
+Authorization-code and device logins have an absolute end. Without `ttl`, the
+refresh-token family lasts 90 days. Access and ID tokens last at most one hour
+and never outlive the login.
+
+The Cloud extension `ttl` requests a shorter login lifetime in integer seconds.
+Send it on `POST /oauth/token` with `grant_type=authorization_code`, or on
+`POST /oauth/device_authorization`. For example, `ttl=600` requests ten minutes.
+Use decimal digits only, without a leading zero, from 1 to 15 digits. Zero,
+negative values, fractions, and empty values return `invalid_request`.
+Sending `ttl` with any other token grant also returns `invalid_request`.
+A refresh request cannot set or extend the login lifetime.
+
+Cloud caps `ttl` at the session length setting `user.session.expiry_hours`
+(converted to whole seconds) and the 90-day default, whichever is shorter.
+For device requests, Cloud stores the capped lifetime when authorization
+starts and checks the current cap again when issuing tokens. Lowering the
+setting does not shorten logins that already exist. Without `ttl`, this
+setting does not change the 90-day OAuth lifetime.
+
+Every token response that carries `refresh_token` also includes
+`refresh_token_expires_in`: the whole seconds remaining until the family's
+absolute expiry. This applies to authorization-code exchanges, approved device
+polls, and refreshes. `expires_in` gives the access token's lifetime, which can
+be shorter than one hour when the login ends sooner. Rotation never moves the
+family expiry.
+
+Both discovery documents, `/.well-known/openid-configuration` and
+`/.well-known/oauth-authorization-server`, advertise
+`cloud_login_ttl_supported: true`. Clients can check it before sending `ttl`.
 
 ## Device authorization flow
 
@@ -167,11 +201,12 @@ client_id=<client-id>&scope=openid%20offline_access%20read
 }
 ```
 
-The requested scopes must be allowed for the client. Without `scope`, Cloud
-requests `openid`. The user code has eight characters from an alphabet
-without `0`, `O`, `1`, and `I`. It is displayed as `XXXX-XXXX` and accepted
-without the dash or in lowercase. Both codes expire after ten minutes. Cloud
-stores only SHA-256 hashes of both codes.
+The request also accepts the optional `ttl` form parameter described under
+[Login lifetime](#login-lifetime). The requested scopes must be allowed for the
+client. Without `scope`, Cloud requests `openid`. The user code has eight
+characters from an alphabet without `0`, `O`, `1`, and `I`. It is displayed as
+`XXXX-XXXX` and accepted without the dash or in lowercase. Both codes expire
+after ten minutes. Cloud stores only SHA-256 hashes of both codes.
 
 The person opens the verification URI, enters the code, and sees the client
 name, client ID, the code again, the requested scopes, and a warning to approve
@@ -360,12 +395,12 @@ Applications do not import `oauthTokens` or verify JWTs. Apply
 `auth.requireRole("authenticated")`, then read `actor` and `accessSubject` from
 the request context.
 
-Access tokens expire after one hour. Core owns signing-key rotation and publishes
-public keys for their verification lifetime. Revoking a refresh grant or
-signing out an OAuth client prevents future refreshes but does not revoke an
-already issued access token. That token can remain valid until its one-hour
-expiry. Current-client validation and domain authorization still apply on each
-request.
+Access tokens expire after at most one hour, and never after the login ends.
+Core owns signing-key rotation and publishes public keys for their verification
+lifetime. Revoking a refresh grant or signing out an OAuth client prevents future
+refreshes but does not revoke an already issued access token. That token can
+remain valid until its expiry. Current-client validation and domain
+authorization still apply on each request.
 
 Core signs OAuth tokens. The OAuth application owns the public protocol,
 clients, consent, authorization codes, refresh grants and discovery. Core and

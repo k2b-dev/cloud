@@ -1,13 +1,13 @@
 import { type NetPoint, nodeRadius } from "./layout-net";
 
-export type GraphView = { k: number; tx: number; ty: number };
+export type GraphView = { k: number; ay?: number; tx: number; ty: number };
 export type Rect = { x0: number; y0: number; x1: number; y1: number };
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 export function toScreen(view: GraphView, p: NetPoint): NetPoint {
-  return { x: p.x * view.k + view.tx, y: p.y * view.k + view.ty };
+  return { x: p.x * view.k + view.tx, y: p.y * view.k * (view.ay ?? 1) + view.ty };
 }
 export function toWorld(view: GraphView, p: NetPoint): NetPoint {
-  return { x: (p.x - view.tx) / view.k, y: (p.y - view.ty) / view.k };
+  return { x: (p.x - view.tx) / view.k, y: (p.y - view.ty) / (view.k * (view.ay ?? 1)) };
 }
 export function fitView(points: Iterable<NetPoint>, width: number, height: number, compact: boolean): GraphView {
   let x0 = Infinity,
@@ -28,7 +28,7 @@ export function fitView(points: Iterable<NetPoint>, width: number, height: numbe
 export function zoomView(view: GraphView, factor: number, cx: number, cy: number, fitK: number): GraphView {
   const k = clamp(view.k * factor, fitK * 0.4, fitK * 6);
   const ratio = k / view.k;
-  return { k, tx: cx - (cx - view.tx) * ratio, ty: cy - (cy - view.ty) * ratio };
+  return { ...view, k, tx: cx - (cx - view.tx) * ratio, ty: cy - (cy - view.ty) * ratio };
 }
 export function screenRadius(deg: number, k: number): number {
   return nodeRadius(deg) * clamp(Math.sqrt(k), 0.75, 1.5);

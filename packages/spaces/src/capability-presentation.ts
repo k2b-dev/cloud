@@ -15,6 +15,18 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
       rejected: "Did not create the event {input.title}",
       notRun: "Event {input.title} not created",
     },
+    "reaction.add": {
+      approval: "React with {input.emoji}",
+      done: "Reacted with {input.emoji}",
+      rejected: "Did not react",
+      notRun: "Reaction not added",
+    },
+    "reaction.remove": {
+      approval: "Remove your {input.emoji} reaction",
+      done: "Removed your {input.emoji} reaction",
+      rejected: "Did not remove the reaction",
+      notRun: "Reaction not removed",
+    },
     "comment.create": {
       approval: "Add a comment",
       rejected: "Did not add the comment",
@@ -187,7 +199,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             priority: "Optionaler Prioritätsfilter.",
             columnIds: "Optionale Spalte IDs, zurückgegeben vom Lesebereich.",
             tagIds: "Optionales Tag IDs, das vom Lesebereich zurückgegeben wird.",
-            assigneeIds: "Optionaler Benutzer UUIDs, zurückgegeben von Liste zuweisbarer Space-Mitglieder.",
+            assigneeIds: "Optionale UUIDs von Personen oder Dienstkonten aus der Liste zuweisbarer Space-Mitglieder.",
             assignedTo: "Zuweisungsstatusfilter; me verwendet den Benutzer, der den aktuellen Akteur unterstützt.",
             sort: "Sortierschlüssel für stabile Elemente.",
             sortDesc: "Wenn wahr, absteigend sortieren.",
@@ -265,7 +277,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "space.assignee.list": {
           title: "Zuweisbare Space-Mitglieder auflisten",
           description:
-            "Listen Sie Personen, die für die Aufgaben- oder Ereigniszuweisung in Frage kommen, in einem beschreibbaren Space auf. Rufen Sie die SpaceId von space.list oder space.search ab und übergeben Sie einen zurückgegebenen Benutzer ID an ein Element Action.",
+            "Liste Personen und Dienstkonten auf, die in einem beschreibbaren Space Aufgaben oder Terminen zugewiesen werden können. Dienstkonten brauchen eigenen direkten Zugriff. Nutze eine Space-ID aus space.list oder space.search und übergib eine zurückgegebene ID an eine Eintragsaktion.",
           input: {
             spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
             query: "Optionale Textsuche.",
@@ -342,7 +354,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             priority: "Optionaler Prioritätsfilter.",
             columnIds: "Optionale Spalte IDs, zurückgegeben vom Lesebereich.",
             tagIds: "Optionales Tag IDs, das vom Lesebereich zurückgegeben wird.",
-            assigneeIds: "Optionaler Benutzer UUIDs, zurückgegeben von Liste zuweisbarer Space-Mitglieder.",
+            assigneeIds: "Optionale UUIDs von Personen oder Dienstkonten aus der Liste zuweisbarer Space-Mitglieder.",
             assignedTo: "Zuweisungsstatusfilter; me verwendet den Benutzer, der den aktuellen Akteur unterstützt.",
             sort: "Sortierschlüssel für stabile Elemente.",
             sortDesc: "Wenn wahr, absteigend sortieren.",
@@ -364,7 +376,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             description: "Vorgabebeschreibung (Markdown); darf dieselben Platzhalter enthalten.",
             priority: "Vorgabepriorität.",
             tagIds: "IDs der Vorgabe-Schlagwörter aus diesem Space.",
-            assigneeIds: "Benutzer-UUIDs der Vorgabe-Zuständigen mit Zugriff auf den Space.",
+            assigneeIds: "UUIDs von Personen oder Dienstkonten als Vorgabe-Zuständige mit Zugriff auf den Space.",
             assignCreator: "Auch die Person zuweisen, die den Eintrag anlegt.",
             checklist: "Checkliste einer neuen Aufgabe (nur Aufgaben).",
             estimatedDurationMinutes: "Schätzung einer Aufgabe in Minuten (nur Aufgaben).",
@@ -389,7 +401,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             description: "Vorgabebeschreibung (Markdown); darf dieselben Platzhalter enthalten.",
             priority: "Vorgabepriorität.",
             tagIds: "IDs der Vorgabe-Schlagwörter aus diesem Space.",
-            assigneeIds: "Benutzer-UUIDs der Vorgabe-Zuständigen mit Zugriff auf den Space.",
+            assigneeIds: "UUIDs von Personen oder Dienstkonten als Vorgabe-Zuständige mit Zugriff auf den Space.",
             assignCreator: "Auch die Person zuweisen, die den Eintrag anlegt.",
             checklist: "Checkliste einer neuen Aufgabe (nur Aufgaben).",
             estimatedDurationMinutes: "Schätzung einer Aufgabe in Minuten (nur Aufgaben).",
@@ -414,7 +426,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "task.claim": {
           title: "Aufgabe übernehmen",
           description:
-            "Offene, unblockierte Aufgabe mit einer selbst erzeugten UUID für eine Sitzung übernehmen. Als Person wirst du dabei auch zugewiesen. Konkurrierende Übernahmen werden abgewiesen. Übernahmen koordinieren die Arbeit und sperren sie nicht: Alle mit Schreibzugriff können sie übernehmen; der nächste Aufruf mit der beendeten Kennung wird dann abgewiesen.",
+            "Offene, unblockierte Aufgabe mit einer selbst erzeugten UUID für eine Sitzung übernehmen. Als Person oder Dienstkonto außer einem persönlichen Automatisierungsschlüssel wirst du dabei auch zugewiesen. Konkurrierende Übernahmen werden abgewiesen. Übernahmen koordinieren die Arbeit und sperren sie nicht: Alle mit Schreibzugriff können sie übernehmen; der nächste Aufruf mit der beendeten Kennung wird dann abgewiesen.",
           input: {
             claimId: "ID der aktuellen Aufgabenübernahme.",
             itemId: "Öffentliche ID der Aufgabe.",
@@ -423,7 +435,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "task.release": {
           title: "Aufgabe freigeben",
           description:
-            "Aktuelle Übernahme anhand ihrer genauen Kennung freigeben. Du bleibst zugewiesen. Mit force die genaue Übernahme eines anderen Kontos freigeben; bei einer Person wird auch ihre Zuweisung entfernt. Das dürfen alle mit Schreibzugriff. Die Aktivität hält fest, wer die Übernahme beendet hat.",
+            "Aktuelle Übernahme anhand ihrer genauen Kennung freigeben. Du bleibst zugewiesen. Mit force die genaue Übernahme eines anderen Kontos freigeben; dabei wird auch dessen Zuweisung entfernt. Das dürfen alle mit Schreibzugriff. Die Aktivität hält fest, wer die Übernahme beendet hat.",
           input: {
             claimId: "ID der aktuellen Aufgabenübernahme.",
             force: "Die genau beobachtete Übernahme einer anderen Person übernehmen und beenden.",
@@ -494,6 +506,36 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             draftId: "Mail-Entwurf ID erstellt aus der vorbereiteten Antwort.",
           },
         },
+        "reaction.add": {
+          title: "Reaktion hinzufügen",
+          sentences: {
+            approval: "Mit {input.emoji} reagieren",
+            done: "Mit {input.emoji} reagiert",
+            rejected: "Nicht reagiert",
+            notRun: "Reaktion nicht hinzugefügt",
+          },
+          description:
+            "Die eigene Emoji-Reaktion zu einem Eintrag in einem beschreibbaren Space hinzufügen. Ohne Benachrichtigung und Aktivität.",
+          input: {
+            itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
+            emoji: "Genau ein vollständig qualifiziertes Emoji, auch mit Hautton.",
+          },
+        },
+        "reaction.remove": {
+          title: "Reaktion entfernen",
+          sentences: {
+            approval: "Eigene {input.emoji}-Reaktion entfernen",
+            done: "Eigene {input.emoji}-Reaktion entfernt",
+            rejected: "Reaktion nicht entfernt",
+            notRun: "Reaktion nicht entfernt",
+          },
+          description:
+            "Die eigene Emoji-Reaktion von einem Eintrag in einem beschreibbaren Space entfernen. Ohne Benachrichtigung und Aktivität.",
+          input: {
+            itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
+            emoji: "Genau ein vollständig qualifiziertes Emoji, auch mit Hautton.",
+          },
+        },
         "comment.create": {
           title: "Kommentar erstellen",
           sentences: {
@@ -549,7 +591,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             "recurrence.rrule": "RFC 5545 Wiederholungsregel ohne die RRULE prefix.",
             "recurrence.dtstart": "Optionaler Zeitstempel des Wiederholungsankers.",
             "recurrence.exdate": "Ausgeschlossene Wiederholungszeitstempel.",
-            assigneeIds: "Optionaler zugewiesener Benutzer UUIDs von diesem Space.",
+            assigneeIds: "Optionale UUIDs zugewiesener Personen oder Dienstkonten dieses Spaces.",
             tagIds: "Optionales Tag IDs von diesem Space.",
             references: "Cloud-Ressourcen, die mit dem neuen Ereignis verknüpft sind.",
             "references[].ref": "Stabile Cloud-Ressource reference",
@@ -592,7 +634,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           input: {
             itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
             assigneeIds:
-              "Vollständige Liste der Benutzer-UUIDs aus der Liste zuweisbarer Space-Mitglieder. Die arbeitende Person kann erst nach Freigabe ihrer aktiven Übernahme mit task.release entfernt werden.",
+              "Vollständige Liste der Personen- oder Dienstkonto-UUIDs aus der Liste zuweisbarer Space-Mitglieder. Das arbeitende Konto kann erst nach Freigabe seiner aktiven Übernahme mit task.release entfernt werden.",
             tagIds: "Kompletter Ersatzsatz des Tags IDs, zurückgegeben von Read Space.",
             title: "Optionaler Veranstaltungstitel.",
             description: "Optionale Ereignisbeschreibung; null löscht es.",
@@ -677,7 +719,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             deadline: "Optionaler Aufgabentermin.",
             estimatedDurationMinutes: "Optionaler Kostenvoranschlag in Minuten.",
             priority: "Optionale Aufgabenpriorität.",
-            assigneeIds: "Optionaler zugewiesener Benutzer UUIDs von diesem Space.",
+            assigneeIds: "Optionale UUIDs zugewiesener Personen oder Dienstkonten dieses Spaces.",
             tagIds: "Optionales Tag IDs von diesem Space.",
             references: "Cloud Ressourcen, die mit der neuen Aufgabe verknüpft sind.",
             "references[].ref": "Stabile Cloud-Ressource reference",
@@ -709,7 +751,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           input: {
             itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
             assigneeIds:
-              "Vollständige Liste der Benutzer-UUIDs aus der Liste zuweisbarer Space-Mitglieder. Die arbeitende Person kann erst nach Freigabe ihrer aktiven Übernahme mit task.release entfernt werden.",
+              "Vollständige Liste der Personen- oder Dienstkonto-UUIDs aus der Liste zuweisbarer Space-Mitglieder. Das arbeitende Konto kann erst nach Freigabe seiner aktiven Übernahme mit task.release entfernt werden.",
             tagIds: "Kompletter Ersatzsatz des Tags IDs, zurückgegeben von Read Space.",
             title: "Optionaler Aufgabentitel.",
             description: "Optionale Aufgabenbeschreibung; null löscht es.",

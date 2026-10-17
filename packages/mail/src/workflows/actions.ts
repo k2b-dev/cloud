@@ -387,10 +387,8 @@ const messageAction = (
           const turn = PLACEMENT_ACTIONS.has(kind)
             ? await resolveIncomingAutomationPlacementTurn(turnParams)
             : await resolveIncomingAutomationMessageStateTurn(turnParams);
-          // An older automation already moved this message, or is the one that
-          // decides where it goes. Ordering a move out of a folder the message
-          // has left is not this automation's failure to report. An incoming
-          // automation's flag or keyword step yields the same way.
+          // Only incoming automations yield when the message has left, another
+          // run is moving it, or an older automation decides its placement.
           if (turn.state === "skip") return skipped(turn.reason);
         }
         const [target] = await tx<{ remote_message_ref_id: string }[]>`

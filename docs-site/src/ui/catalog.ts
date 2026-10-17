@@ -115,6 +115,12 @@ const portableSections = [
       page("copy-remove", "Copy and remove", "ti ti-copy", "Focused clipboard feedback and destructive icon actions."),
       page("menus", "Menus", "ti ti-menu-2", "Dropdown and context menus with keyboard and viewport behavior."),
       page("gestures", "GestureMenu", "ti ti-hand-finger", "Swipe, double-tap, and long-press shortcuts into an element's menu."),
+      page(
+        "drag-and-drop",
+        "Drag and drop",
+        "ti ti-drag-drop-2",
+        "Drag rows, tasks, and paragraphs onto targets, with hold-then-drag on touch and a keyboard path.",
+      ),
       page("filters", "Filters", "ti ti-filter", "Section-aware single and multi-select filtering."),
       page("segmented-control", "SegmentedControl", "ti ti-layout-grid", "A controlled radio-group toolbar with roving focus."),
       page("tabs", "Tabs", "ti ti-folders", "Accessible controlled peer views with compositional or data-driven items."),
@@ -377,7 +383,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 141;
+export const portableUiComponentCount = 144;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -417,6 +423,8 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  truncateMiddle: "Documented ReferenceChip helper for shortening titles by whole graphemes.",
+  REFERENCE_CHIP_MAX_CHARACTERS: "Documented ReferenceChip maximum visible title length.",
   prefersReducedMotion: "Documented OS and host preference helper in the Motion guide (/en/ui/motion).",
   formatShortcut: "Documented Kbd formatter for plain text labels and spoken names.",
   keyboardPlatform: "Documented Kbd platform detection for browser and server hosts.",
@@ -468,6 +476,7 @@ export const documentedOnlyUiCatalogExports = {
   formatFileViewSize: "Documented FileView metadata formatter.",
   getFileViewPreviewKind: "Documented FileView preview classifier.",
   isStructuredDataValue: "Documented StructuredDataPreview boundary validator.",
+  parkWorkspaceDetailDrawers: "Documented host helper for parking AppWorkspace detail drawers.",
   installAppWorkspaceController: "Documented AppWorkspace resize-controller installer.",
   installationPlatform: "Documented InstallGuide platform classifier.",
   isPointInsideToast: "Documented toast interaction helper.",

@@ -78,7 +78,7 @@ describe("Assistant frontend contracts", () => {
     expect(context).not.toContain("AssistantChatDetailPanel");
     expect(context).not.toContain("IconButton");
     expect(tasks).toContain('text("Adjust in chat")');
-    expect(tasks).toContain('text("Plan new tasks and make changes in the chat.")');
+    expect(tasks).toContain('text("Set up new routines and make changes in the chat.")');
     expect(tasks).not.toContain("<form");
     expect(tasks).not.toContain("DateTimePicker");
     expect(tasks).not.toContain("<select");

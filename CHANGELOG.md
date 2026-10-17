@@ -3,6 +3,55 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.45.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.44.0...cloud-v0.45.0) (2026-10-17)
+
+
+### Features
+
+* **ai:** delete finished scheduled task runs and their transcripts after 90 days ([#1347](https://github.com/k2b-dev/cloud/issues/1347)) ([9e5c53d](https://github.com/k2b-dev/cloud/commit/9e5c53d10d134a75d9596ff340f0dcaab460a268))
+* **ai:** let charts name and format the value their tooltips show ([#1300](https://github.com/k2b-dev/cloud/issues/1300)) ([6047e6f](https://github.com/k2b-dev/cloud/commit/6047e6f309773dbe4e4197cca44dbe2aa9c76af3))
+* **ai:** save a readable Markdown copy next to each web page fetch_file downloads ([#1286](https://github.com/k2b-dev/cloud/issues/1286)) ([7c9ca08](https://github.com/k2b-dev/cloud/commit/7c9ca08195edd3bde25f302e0a8c96139f88d6d8))
+* **assistant:** choose the model, search the chat, and run scheduled tasks from the slash menu ([#1305](https://github.com/k2b-dev/cloud/issues/1305)) ([8f63bf4](https://github.com/k2b-dev/cloud/commit/8f63bf4560aa24fb03d034b5b1d6fed1fb0fffea))
+* **assistant:** Studio charts print their values as a table ([#1343](https://github.com/k2b-dev/cloud/issues/1343)) ([6c72058](https://github.com/k2b-dev/cloud/commit/6c7205814c51a932a1c0f5a1ac09318986699729))
+* **assistant:** Studio charts show tooltips by default ([#1329](https://github.com/k2b-dev/cloud/issues/1329)) ([6cbfff0](https://github.com/k2b-dev/cloud/commit/6cbfff0ba065b9d21dfc941c6c8417b9927eaffb))
+* **cloud:** pass the caller's context to file providers so they can offer only matching files ([#1302](https://github.com/k2b-dev/cloud/issues/1302)) ([4ec47b8](https://github.com/k2b-dev/cloud/commit/4ec47b8b7e69dc47342bfc6662a3d3e518c0a6ee))
+* **cloud:** send administrator-chosen outbound endpoints through the network guard ([#1325](https://github.com/k2b-dev/cloud/issues/1325)) ([97928d0](https://github.com/k2b-dev/cloud/commit/97928d05fe32a5475adeb3a8ecf33859a1b5130a))
+* **cloud:** start app Help with tasks, then Get started, Look up, Solve problems and shortcuts ([#1345](https://github.com/k2b-dev/cloud/issues/1345)) ([5a93645](https://github.com/k2b-dev/cloud/commit/5a93645dbf76772c3fcb309a99ae11ac873a9484))
+* **cloud:** write Help with task kinds, needs, next steps, key caps and details ([#1324](https://github.com/k2b-dev/cloud/issues/1324)) ([48560d3](https://github.com/k2b-dev/cloud/commit/48560d3c861dd4f0d61c03899a583b2928a4379f))
+* **contacts:** keep a person, group, or agent managing every contact book ([#1333](https://github.com/k2b-dev/cloud/issues/1333)) ([4e59c2c](https://github.com/k2b-dev/cloud/commit/4e59c2c961595185543c3f8161d2bfb9ce4be4f9))
+* **mail:** mark many conversations Done or reopen them with one command ([#1328](https://github.com/k2b-dev/cloud/issues/1328)) ([3c03583](https://github.com/k2b-dev/cloud/commit/3c035839d17a686c605bb96f14da0f08891cebc2))
+* **notebooks:** a calm note side panel with one action row, clear sections and translated activity ([#1339](https://github.com/k2b-dev/cloud/issues/1339)) ([c1682b4](https://github.com/k2b-dev/cloud/commit/c1682b4bbc0b3e7dd9fe4791697e992f3ec2cc71))
+* **notebooks:** draw charts from a note's own tables, lists and data blocks with :::chart ([#1322](https://github.com/k2b-dev/cloud/issues/1322)) ([9ecc090](https://github.com/k2b-dev/cloud/commit/9ecc090bdf095a42a5c86fe457d1e6cd6a9f54df))
+* **notebooks:** open Links from the sidebar, also for people who may only read ([#1323](https://github.com/k2b-dev/cloud/issues/1323)) ([8363a90](https://github.com/k2b-dev/cloud/commit/8363a90e0b6d188773d37aeb324dc36bd67c62fb))
+* **notebooks:** read chart values by pointer, tap and keyboard, as a table, or copy them ([#1344](https://github.com/k2b-dev/cloud/issues/1344)) ([3d423e7](https://github.com/k2b-dev/cloud/commit/3d423e7c2114d0674079125943e71288eb26f573))
+* **notebooks:** show links as a calm network with areas, filters, search and a full-width list ([#1358](https://github.com/k2b-dev/cloud/issues/1358)) ([52b5112](https://github.com/k2b-dev/cloud/commit/52b51120677ba61c2c164463c3d3582d22a82baa))
+* **notebooks:** the link graph returns each note's parent page, position, and last change ([#1301](https://github.com/k2b-dev/cloud/issues/1301)) ([0ef79d8](https://github.com/k2b-dev/cloud/commit/0ef79d8a1e692b98780112676e85e7dbe93e88aa))
+* **spaces:** claiming a task makes you responsible for it, and removing a working person ends their claim ([#1334](https://github.com/k2b-dev/cloud/issues/1334)) ([2d55a8a](https://github.com/k2b-dev/cloud/commit/2d55a8a433445c66cb3e7b9d90fd70e4121f8aa6))
+* **spaces:** show 'working on it' as a state of the assigned person in one Assigned list ([#1350](https://github.com/k2b-dev/cloud/issues/1350)) ([e588f91](https://github.com/k2b-dev/cloud/commit/e588f91af01614d8db58d939246f2311967193ac))
+* **ui:** a floating bottom toolbar that keeps its most important actions and shows key hints ([#1318](https://github.com/k2b-dev/cloud/issues/1318)) ([efdc555](https://github.com/k2b-dev/cloud/commit/efdc5557d69160830306ab0199d2b4ff98cca31f))
+* **ui:** draw an avatar's status ring inside the avatar so panels never cut it off ([#1320](https://github.com/k2b-dev/cloud/issues/1320)) ([0d675c0](https://github.com/k2b-dev/cloud/commit/0d675c066d7df8dbcee592a2448deef7bcf26aa5))
+* **ui:** know whether a person uses touch, a trackpad or a keyboard without moving anything ([#1291](https://github.com/k2b-dev/cloud/issues/1291)) ([558cb3f](https://github.com/k2b-dev/cloud/commit/558cb3fefaceb22d70c3316aece6658e31b51252))
+* **ui:** offer chart inspection without Solid for sandboxed hosts ([#1316](https://github.com/k2b-dev/cloud/issues/1316)) ([6c7d65d](https://github.com/k2b-dev/cloud/commit/6c7d65d4197a16663f67d04a198ce4b18be3e9aa))
+* **ui:** open the hold menu at the finger on tablets ([#1335](https://github.com/k2b-dev/cloud/issues/1335)) ([7278cf7](https://github.com/k2b-dev/cloud/commit/7278cf76c497cc303fbd4fcf159153419206a0a6))
+* **ui:** print page content without the app chrome, starting with Notebooks ([#1321](https://github.com/k2b-dev/cloud/issues/1321)) ([e1b2b21](https://github.com/k2b-dev/cloud/commit/e1b2b2188d08c9426af13261969a6db12ed03485)), closes [#1281](https://github.com/k2b-dev/cloud/issues/1281)
+* **ui:** share the message reaction chips as ReactionBar, with names on hover, focus and a long press ([#1337](https://github.com/k2b-dev/cloud/issues/1337)) ([14e5055](https://github.com/k2b-dev/cloud/commit/14e50552a25d1300f38e801fbe3253e0fd61ec50))
+* **ui:** show the slash menu as a sheet above the phone keyboard ([#1336](https://github.com/k2b-dev/cloud/issues/1336)) ([3b4dff1](https://github.com/k2b-dev/cloud/commit/3b4dff10ef1db29409d54a38091510cb5c6dd46e))
+* **workflows:** cap workflow event payloads at 16 MiB and expire them after 30 days ([#1327](https://github.com/k2b-dev/cloud/issues/1327)) ([51d1da7](https://github.com/k2b-dev/cloud/commit/51d1da756cc8c1259a38576de12ec9f0fe09d274))
+
+
+### Bug Fixes
+
+* **cloud:** never overwrite a settings row that this app cannot decrypt ([#1295](https://github.com/k2b-dev/cloud/issues/1295)) ([#1304](https://github.com/k2b-dev/cloud/issues/1304)) ([6fe064e](https://github.com/k2b-dev/cloud/commit/6fe064e227b8283d7dd0a0ec9e3b3d90c566c0b4))
+* **contacts:** export every contact of a book and stop when the download is cancelled ([#1352](https://github.com/k2b-dev/cloud/issues/1352)) ([9f214d8](https://github.com/k2b-dev/cloud/commit/9f214d83dd6986557bd6b3c2a4bdc6b920fa080a))
+* **filesv2:** finish committing large uploads instead of cutting them off after 10 s ([#1314](https://github.com/k2b-dev/cloud/issues/1314)) ([7d01ff8](https://github.com/k2b-dev/cloud/commit/7d01ff89fe007e9b8ee8307c30590a8682165693))
+* **filesv2:** keep uploads going through network drops and busy file servers ([#1285](https://github.com/k2b-dev/cloud/issues/1285)) ([5e42e7d](https://github.com/k2b-dev/cloud/commit/5e42e7d22776b04eaed9ff90f451b85b8ac40742))
+* **filesv2:** let parallel upload commits wait their turn instead of failing with 503 ([#1331](https://github.com/k2b-dev/cloud/issues/1331)) ([d8efe19](https://github.com/k2b-dev/cloud/commit/d8efe19a757f36664b797087c16592017e7d0788))
+* **mail:** follow the Reduce motion choice for Jump to newest and the quoted-text chevron ([#1294](https://github.com/k2b-dev/cloud/issues/1294)) ([eba34c1](https://github.com/k2b-dev/cloud/commit/eba34c1a2486510a602cfd71cc857fd063315bf4)), closes [#1230](https://github.com/k2b-dev/cloud/issues/1230)
+* **mail:** settle a whole move set at once so folder syncs keep their turn ([#1315](https://github.com/k2b-dev/cloud/issues/1315)) ([12eb7a4](https://github.com/k2b-dev/cloud/commit/12eb7a4694559eece502ec8071df1b9203f330c1))
+* **notebooks:** let people who may edit leave Book view from the sidebar with Write ([#1297](https://github.com/k2b-dev/cloud/issues/1297)) ([6cb1836](https://github.com/k2b-dev/cloud/commit/6cb1836f7b1c5ca8a7b721640a8be9c7d62552cf))
+* **notebooks:** show images with a size suffix in the editor ([#1307](https://github.com/k2b-dev/cloud/issues/1307)) ([5f3016c](https://github.com/k2b-dev/cloud/commit/5f3016cfb5e8443201d3a2bee3c6a79752e05f4d)), closes [#1278](https://github.com/k2b-dev/cloud/issues/1278)
+* **tools:** convert iPhone HEIC photos and show one calm drop state ([#1284](https://github.com/k2b-dev/cloud/issues/1284)) ([#1330](https://github.com/k2b-dev/cloud/issues/1330)) ([da468f4](https://github.com/k2b-dev/cloud/commit/da468f4d99650caef34578e0802f475017d706ea))
+
 ## [0.44.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.43.0...cloud-v0.44.0) (2026-10-16)
 
 

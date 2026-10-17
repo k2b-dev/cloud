@@ -189,9 +189,9 @@ export const bucketsToLineSeries = (buckets: ChartBucket[], aggs: AggregationSpe
  * here keeps the renderer dumb (one switch on chartType) and the
  * transforms unit-testable in isolation.
  */
-type ChartRenderData =
-  | { kind: "donut"; data: SliceItem[] }
-  | { kind: "bar"; data: BarItem[] }
+export type ChartRenderData =
+  | { kind: "donut"; data: SliceItem[]; valueLabel: string }
+  | { kind: "bar"; data: BarItem[]; valueLabel: string }
   | {
       kind: "line";
       series: Series[];
@@ -230,18 +230,20 @@ export const buildChartRenderData = (input: ChartRenderInput): ChartRenderData =
     // Empty aggs is a misconfigured view (charts need at least 1 agg).
     // Returning a donut with no slices lets the renderer fall through
     // to the empty-state placeholder instead of crashing.
-    return { kind: "donut", data: [] };
+    return { kind: "donut", data: [], valueLabel: "" };
   }
   switch (input.widget.chartType) {
     case "donut":
       return {
         kind: "donut",
         data: bucketsToSlices(input.buckets, primary, groupBy, relLabels, input.categoryFormat),
+        valueLabel: aggLabel(primary, input.fieldsById),
       };
     case "bar":
       return {
         kind: "bar",
         data: bucketsToBars(input.buckets, primary, groupBy, relLabels, input.categoryFormat),
+        valueLabel: aggLabel(primary, input.fieldsById),
       };
     case "line":
       return {

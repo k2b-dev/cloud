@@ -49,7 +49,7 @@ describe("Cloud tokens", () => {
         declarations.filter(({ value }) => value.includes("color-mix(")).map((declaration) => ({ selector, ...declaration })),
       );
     expect(mixed.map(({ selector, property }) => `${selector} ${property}`)).toEqual(
-      expect.arrayContaining([".dark --ui-selected", ".dark --ui-app-accent-border", ":root --ui-app-accent-text"]),
+      expect.arrayContaining([".dark --ui-selected", ".dark --ui-app-accent-border", ":root --ui-selected"]),
     );
 
     const compiled = ruleBlocks(await compileGlobal());
@@ -63,6 +63,36 @@ describe("Cloud tokens", () => {
         ),
     );
     expect(lost).toEqual([]);
+  });
+
+  test("app scopes re-read inline app ink and selection fills in both compiled themes", async () => {
+    const compiled = ruleBlocks(await compileGlobal());
+    for (const theme of ["light", "dark"]) {
+      const hasDark = theme === "dark";
+      const mappings = [
+        { property: "--ui-app-accent-text", value: `var(--app-ink-${theme})` },
+        { property: "--ui-app-selected", value: `var(--app-selected-${theme})` },
+        { property: "--ui-app-selected-nav", value: `var(--app-selected-nav-${theme})` },
+      ];
+      expect(
+        compiled.some(
+          ({ selector, declarations }) =>
+            selector.includes(".cloud-app-canvas") &&
+            selector.includes(".app-accent-scope") &&
+            selector.includes(".dark") === hasDark &&
+            mappings.every(({ property, value }) => declarations.some((item) => item.property === property && item.value === value)),
+        ),
+        `${theme} app scope mappings`,
+      ).toBe(true);
+      expect(
+        compiled.some(
+          ({ selector, declarations }) =>
+            selector === (hasDark ? ".dark" : ":root") &&
+            mappings.every(({ property, value }) => declarations.some((item) => item.property === property && item.value === value)),
+        ),
+        `${theme} platform mappings`,
+      ).toBe(true);
+    }
   });
 
   // Pins the bun-plugin-tailwind patch, which every stylesheet build shares

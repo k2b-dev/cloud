@@ -16,6 +16,8 @@ import * as itemResourceReferences from "./item-resource-references";
 import * as itemTemplates from "./item-templates";
 import * as items from "./items";
 import { resolveLinkPreviews } from "./link-previews";
+import type { ReactionViewer } from "./reactions";
+import * as reactions from "./reactions";
 import * as spaces from "./spaces";
 import * as tags from "./tags";
 import * as work from "./task-work";
@@ -159,15 +161,18 @@ export const spacesService = {
   },
   item: {
     work,
+    reactions,
     list: async (config: {
       spaceId: string;
       includeCompleted?: boolean;
+      viewer?: ReactionViewer;
       pagination?: PageParams;
       filter?: { query?: string };
     }): Promise<Paginated<SpaceItem>> => {
       const entries = await items.list({
         spaceId: config.spaceId,
         includeCompleted: config.includeCompleted,
+        viewer: config.viewer,
       });
       const query = config.filter?.query?.trim().toLowerCase();
       const filtered =

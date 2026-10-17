@@ -1,4 +1,5 @@
 import { describe, expect, setSystemTime, test } from "bun:test";
+import { createSignal, Show } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
@@ -1026,6 +1027,244 @@ describe("PermissionEditor pending controls", () => {
         expect(view.rows[index]!.querySelector("button.k2b-select-chip") === view.triggers[index]!).toBe(true);
         expect(view.triggers[index]!.disabled).toBe(false);
       }
+    } finally {
+      view.done();
+    }
+  });
+});
+
+describe("PermissionEditor caller refreshes", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  const setup = async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    setSystemTime(new Date("2026-10-17T12:00:00.000Z"));
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    const { prompts } = await import("@k2b/ui");
+    const originalConfirm = prompts.confirm;
+    prompts.confirm = async () => true;
+    const initial = [
+      grant("lea", { type: "user", userId: "lea" }, "read", "Lea Sommer"),
+      grant("jonas", { type: "user", userId: "jonas" }, "read", "Jonas Weber"),
+    ];
+    const [data, setData] = createSignal(initial);
+    let finishUpdate!: () => void;
+    let finishRevoke!: () => void;
+    delegateEvents(["click"], dom.document);
+    const dispose = render(
+      () => (
+        <Show when={data()}>
+          {(entries) => (
+            <PermissionEditor
+              initialEntries={entries().filter(() => true)}
+              grantAccess={async () => {
+                throw new Error("Not used");
+              }}
+              updateAccess={() =>
+                new Promise<void>((resolve) => {
+                  finishUpdate = resolve;
+                })
+              }
+              revokeAccess={() =>
+                new Promise<void>((resolve) => {
+                  finishRevoke = resolve;
+                })
+              }
+            />
+          )}
+        </Show>
+      ),
+      dom.root,
+    );
+    const chips = () => Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button.k2b-select-chip"));
+    const chooseEdit = (index = 0) => {
+      const row = chips()[index]!.closest(".group\\/access-row")!;
+      Array.from(row.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+        .find((item) => item.textContent?.startsWith("Edit"))!
+        .click();
+    };
+    return {
+      initial,
+      data,
+      setData,
+      chips,
+      chooseEdit,
+      finishUpdate: () => finishUpdate(),
+      revokeFirst: () => dom.root.querySelector<HTMLButtonElement>('button[aria-label="Remove Lea Sommer"]')!.click(),
+      revokeStarted: () => typeof finishRevoke === "function",
+      finishRevoke: () => finishRevoke(),
+      done: () => {
+        dispose();
+        prompts.confirm = originalConfirm;
+        setSystemTime();
+        dom.cleanup();
+      },
+    };
+  };
+
+  test("fresh caller objects merge changed and added entries without replacing existing chips", async () => {
+    const view = await setup();
+    try {
+      const originals = view.chips();
+      view.setData([
+        ...view.initial.map((entry, index) => ({ ...entry, permission: index === 1 ? ("write" as const) : entry.permission })),
+        grant("mara", { type: "user", userId: "mara" }, "admin", "Mara Lind"),
+      ]);
+      await waitFor(() => view.chips().length === 3, "the refetched entries");
+      originals.forEach((chip, index) => expect(view.chips()[index] === chip).toBe(true));
+      expect(view.chips().map((chip) => chip.textContent)).toEqual(["View", "Edit", "Manage"]);
+    } finally {
+      view.done();
+    }
+  });
+
+  test("defers the latest caller list until an update finishes without undoing the saved level", async () => {
+    const view = await setup();
+    try {
+      const originals = view.chips();
+      view.chooseEdit();
+      const refetched = view.initial.map((entry) => ({ ...entry, permission: "write" as const }));
+      view.setData(refetched);
+      await Promise.resolve();
+      expect(view.chips()[0]!.disabled).toBe(true);
+      expect(view.chips()[1]!.textContent).toBe("View");
+      view.setData([...refetched, grant("mara", { type: "user", userId: "mara" }, "read", "Mara Lind")]);
+      expect(view.chips()).toHaveLength(2);
+      view.finishUpdate();
+      await waitFor(() => view.chips().length === 3 && !view.chips()[0]!.disabled, "the idle merge");
+      originals.forEach((chip, index) => expect(view.chips()[index] === chip).toBe(true));
+      expect(view.chips().map((chip) => chip.textContent)).toEqual(["Edit", "Edit", "View"]);
+      expect(refetched.map((entry) => entry.permission)).toEqual(["write", "write"]);
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a caller refresh during an update wins over the requested level and keeps the same chip", async () => {
+    const view = await setup();
+    try {
+      const original = view.chips()[0]!;
+      view.chooseEdit();
+      expect(original.textContent).toBe("Edit");
+      expect(original.disabled).toBe(true);
+      const refetched = view.initial.map((entry, index) => ({ ...entry, permission: index === 0 ? ("admin" as const) : entry.permission }));
+      view.setData(refetched);
+      expect(view.chips()[0]).toBe(original);
+      expect(original.textContent).toBe("Edit");
+      view.finishUpdate();
+      await waitFor(() => !original.disabled, "the update callbacks to finish");
+      expect(view.chips()[0]).toBe(original);
+      expect(original.textContent).toBe("Manage");
+      view.setData(refetched.map((entry) => ({ ...entry })));
+      expect(original.textContent).toBe("Manage");
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a caller refresh during a revoke wins over local filtering and keeps unaffected chips", async () => {
+    const view = await setup();
+    try {
+      const survivor = view.chips()[1]!;
+      view.revokeFirst();
+      await waitFor(view.revokeStarted, "the confirmed revoke");
+      // The later snapshot includes renewed access and another person's changed permission.
+      view.setData(view.initial.map((entry, index) => ({ ...entry, permission: index === 0 ? ("admin" as const) : ("write" as const) })));
+      expect(view.chips().map((chip) => chip.textContent)).toEqual(["View", "View"]);
+      expect(survivor.disabled).toBe(true);
+      view.finishRevoke();
+      await waitFor(() => !survivor.disabled, "the revoke callbacks to finish");
+      expect(view.chips().map((chip) => chip.textContent)).toEqual(["Manage", "Edit"]);
+      expect(view.chips()[1]).toBe(survivor);
+    } finally {
+      view.done();
+    }
+  });
+
+  test("re-evaluating an unchanged caller list does not revert a successful local update", async () => {
+    const view = await setup();
+    try {
+      view.chooseEdit();
+      view.finishUpdate();
+      await waitFor(() => !view.chips()[0]!.disabled, "the saved local update");
+      view.setData(view.initial.map((entry) => ({ ...entry })));
+      await Promise.resolve();
+      expect(view.chips()[0]!.textContent).toBe("Edit");
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a stale caller list acknowledging one saved update preserves another saved update and both chips", async () => {
+    const view = await setup();
+    try {
+      const originals = view.chips();
+      view.chooseEdit(1);
+      view.finishUpdate();
+      await waitFor(() => !originals[1]!.disabled, "the first saved update");
+      // This refetch started before the next update and only saw the first one.
+      const stale = view.initial.map((entry, index) => ({ ...entry, permission: index === 1 ? ("write" as const) : entry.permission }));
+      view.chooseEdit();
+      view.finishUpdate();
+      await waitFor(() => !originals[0]!.disabled, "the second saved update");
+      view.setData(stale);
+      await Promise.resolve();
+      expect(view.chips().map((chip) => chip.textContent)).toEqual(["Edit", "Edit"]);
+      originals.forEach((chip, index) => expect(view.chips()[index]).toBe(chip));
+      expect(stale.map((entry) => entry.permission)).toEqual(["read", "write"]);
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a stale caller list with another changed row does not restore a confirmed local revoke", async () => {
+    const view = await setup();
+    try {
+      const survivor = view.chips()[1]!;
+      view.revokeFirst();
+      await waitFor(view.revokeStarted, "the confirmed revoke");
+      view.finishRevoke();
+      await waitFor(() => view.chips().length === 1 && !survivor.disabled, "the saved revoke");
+      view.setData(view.initial.map((entry, index) => ({ ...entry, permission: index === 1 ? ("write" as const) : entry.permission })));
+      await Promise.resolve();
+      expect(view.chips()).toHaveLength(1);
+      expect(view.chips()[0]).toBe(survivor);
+      expect(survivor.textContent).toBe("Edit");
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a caller list removes a row present in the base and keeps the surviving chip", async () => {
+    const view = await setup();
+    try {
+      const originals = view.chips();
+      view.setData([{ ...view.initial[1]! }]);
+      await waitFor(() => view.chips().length === 1, "the caller removal");
+      expect(originals[0]!.isConnected).toBe(false);
+      expect(view.chips()[0]).toBe(originals[1]!);
+    } finally {
+      view.done();
+    }
+  });
+
+  test("never writes local changes into mount or subsequently applied caller objects", async () => {
+    const view = await setup();
+    try {
+      const initialSnapshot = JSON.stringify(view.initial);
+      const refetched = view.initial.map((entry) => ({ ...entry, displayName: `${entry.displayName} refreshed` }));
+      const refetchedSnapshot = JSON.stringify(refetched);
+      view.setData(refetched);
+      view.chooseEdit();
+      view.finishUpdate();
+      await waitFor(() => !view.chips()[0]!.disabled, "the saved update after a merge");
+      expect(view.chips()[0]!.textContent).toBe("Edit");
+      expect(JSON.stringify(view.initial)).toBe(initialSnapshot);
+      expect(JSON.stringify(refetched)).toBe(refetchedSnapshot);
     } finally {
       view.done();
     }

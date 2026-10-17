@@ -24,6 +24,34 @@ type UndoOriginal = StoredCommandAuthorization & {
 
 type UndoFilter = { mailboxId?: string; commandIds?: string[] };
 
+/** Exported so tests can inspect its plan. */
+export const undoMoveCopyQuery = (
+  db: typeof sql,
+  params: { mailboxId: string; commandId: string; messageId: string | null; destinationFolderId: string; createdAt: Date | string },
+) =>
+  db<{ id: string }[]>`
+    SELECT ref.id
+    FROM mail.remote_message_refs ref
+    JOIN mail.message_placements placement ON placement.remote_message_ref_id = ref.id
+    WHERE ref.message_id = ${params.messageId}::uuid AND ref.folder_id = ${params.destinationFolderId}::uuid
+      AND ref.stale_at IS NULL AND placement.deleted_at IS NULL
+      AND (ref.connector_ref ->> 'commandId' IS NULL OR ref.connector_ref ->> 'commandId' = ${params.commandId})
+      AND ((ref.connector_ref ->> 'source' = 'command' AND ref.connector_ref ->> 'commandId' = ${params.commandId}) IS TRUE
+        OR ref.first_seen_at >= ${params.createdAt}::timestamptz)
+      AND NOT EXISTS (
+        SELECT 1 FROM mail.commands other
+        WHERE other.mailbox_id = ${params.mailboxId}::uuid AND other.kind = 'move' AND other.id <> ${params.commandId}::uuid
+          -- The predicate lets Postgres use commands_message_target_idx.
+          AND other.target ? 'remoteMessageRefId'
+          AND other.target ->> 'remoteMessageRefId' = ref.id::text
+          AND (other.state NOT IN ('confirmed', 'reconciled', 'failed', 'cancelled', 'needs_attention')
+            OR other.idempotency_key LIKE 'undo:%')
+      )
+    ORDER BY (ref.connector_ref ->> 'source' = 'command' AND ref.connector_ref ->> 'commandId' = ${params.commandId}) IS TRUE DESC,
+      placement.updated_at DESC, ref.id
+    LIMIT 1
+  `;
+
 const log = logger("mail:commands");
 
 export const recordUndoRequests = async (tx: typeof sql, commandIds: string[], context: MailRequestContext): Promise<void> => {
@@ -131,26 +159,13 @@ const resolveUndoRequest = async (commandId: string, mailboxId: string): Promise
       return null;
     };
 
-    const [copy] = await tx<{ id: string }[]>`
-      SELECT ref.id
-      FROM mail.remote_message_refs ref
-      JOIN mail.message_placements placement ON placement.remote_message_ref_id = ref.id
-      WHERE ref.message_id = ${original.message_id}::uuid AND ref.folder_id = ${original.destination_folder_id}::uuid
-        AND ref.stale_at IS NULL AND placement.deleted_at IS NULL
-        AND (ref.connector_ref ->> 'commandId' IS NULL OR ref.connector_ref ->> 'commandId' = ${commandId})
-        AND ((ref.connector_ref ->> 'source' = 'command' AND ref.connector_ref ->> 'commandId' = ${commandId}) IS TRUE
-          OR ref.first_seen_at >= ${original.created_at}::timestamptz)
-        AND NOT EXISTS (
-          SELECT 1 FROM mail.commands other
-          WHERE other.mailbox_id = ${mailboxId}::uuid AND other.kind = 'move' AND other.id <> ${commandId}::uuid
-            AND other.target ->> 'remoteMessageRefId' = ref.id::text
-            AND (other.state NOT IN ('confirmed', 'reconciled', 'failed', 'cancelled', 'needs_attention')
-              OR other.idempotency_key LIKE 'undo:%')
-        )
-      ORDER BY (ref.connector_ref ->> 'source' = 'command' AND ref.connector_ref ->> 'commandId' = ${commandId}) IS TRUE DESC,
-        placement.updated_at DESC, ref.id
-      LIMIT 1
-    `;
+    const [copy] = await undoMoveCopyQuery(tx, {
+      mailboxId,
+      commandId,
+      messageId: original.message_id,
+      destinationFolderId: original.destination_folder_id,
+      createdAt: original.created_at,
+    });
     if (!copy) return pending();
     const target = {
       remoteMessageRefId: copy.id,

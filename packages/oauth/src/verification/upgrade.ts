@@ -88,10 +88,16 @@ const stableClaims = (claims: JWTPayload) => {
   if (claims.token_use === "access") assert.equal(typeof jti, "string");
   return { fields: Object.keys(claims).sort(), values: stable };
 };
+// Exclude only the additive login-lifetime fields from upgrade snapshots.
+const tokenFields = (tokens: client.Tokens) =>
+  Object.keys(tokens)
+    .filter((field) => field !== "refresh_token_expires_in")
+    .sort();
 const discovery = async () => {
   const configuration = await client.json(await client.request("/.well-known/openid-configuration"));
   assert.deepEqual(await client.json(await client.request("/.well-known/oauth-authorization-server")), configuration);
-  return configuration;
+  assert(configuration && typeof configuration === "object");
+  return Object.fromEntries(Object.entries(configuration).filter(([field]) => field !== "cloud_login_ttl_supported"));
 };
 const actor = async (token: string, status = 200) =>
   client.json(
@@ -124,7 +130,7 @@ const exercise = async (
     snapshot[name] = {
       access: stableClaims(access),
       id: stableClaims(id),
-      fields: Object.keys(issued).sort(),
+      fields: tokenFields(issued),
       userinfo: await client.userinfo(issued.access_token),
       actor: await actor(issued.access_token),
     };
@@ -145,7 +151,7 @@ const exercise = async (
   const serviceClaims = await client.verify(service.access_token, "cloud");
   assert.equal(serviceClaims.principal_type, "service_account");
   assert.equal(serviceClaims.resource_id, "reference");
-  snapshot.service = { claims: stableClaims(serviceClaims), fields: Object.keys(service).sort(), actor: await actor(service.access_token) };
+  snapshot.service = { claims: stableClaims(serviceClaims), fields: tokenFields(service), actor: await actor(service.access_token) };
   snapshot.invalidSecret = await client.error(
     await client.tokenRequest(
       { ...clients.service, clientSecret: "incorrect" },
@@ -190,7 +196,7 @@ const exercise = async (
   const dynamicId = await client.verify(dynamic.id_token, clients.dynamic.clientId);
   assert.equal(dynamicId.nonce, dynamicGrant.nonce);
   assert.deepEqual(dynamicClaims.aud, [client.resource]);
-  snapshot.dynamic = { access: stableClaims(dynamicClaims), id: stableClaims(dynamicId), fields: Object.keys(dynamic).sort() };
+  snapshot.dynamic = { access: stableClaims(dynamicClaims), id: stableClaims(dynamicId), fields: tokenFields(dynamic) };
   assert.equal((await client.request("/oauth/userinfo", { headers: { authorization: `Bearer ${dynamic.access_token}` } })).status, 401);
   await actor(dynamic.access_token, 401);
   await client.tokens(await client.refresh(clients.dynamic, dynamic.refresh_token, undefined, client.resource));

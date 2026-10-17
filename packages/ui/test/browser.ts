@@ -1,4 +1,4 @@
-import { type Browser, chromium, type LaunchOptions, webkit } from "playwright";
+import { type Browser, type BrowserContext, chromium, type LaunchOptions, type Locator, webkit } from "playwright";
 
 /**
  * The engine that Playwright tests run in, chosen with `TEST_BROWSER`:
@@ -18,6 +18,19 @@ const start = (options: LaunchOptions): Promise<Browser> => {
   return type.connect(endpoint, { timeout: options.timeout, headers: { "x-playwright-launch-options": JSON.stringify(options) } });
 };
 
+const tolerateKilledBrowserOnClose = (context: BrowserContext): BrowserContext => {
+  const close = context.close.bind(context);
+  context.close = async (options) => {
+    try {
+      await close(options);
+    } catch (error) {
+      if (context.browser()?.isConnected() === false) return;
+      throw error;
+    }
+  };
+  return context;
+};
+
 /**
  * Starts the browser in the engine `TEST_BROWSER` selects, or connects to
  * `TEST_BROWSER_ENDPOINT`, the WebSocket address of a `playwright run-server`.
@@ -25,6 +38,8 @@ const start = (options: LaunchOptions): Promise<Browser> => {
  * newPage() or newContext() so one failing test fails only itself (#1254).
  * Pages or contexts kept across tests die with their browser; open them per
  * test, not in beforeAll.
+ * Closing a page or context of a killed browser succeeds, so the late error of
+ * a timed-out test names the step that hung, not its cleanup (#1355).
  */
 export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browser> => {
   let current = await start(options);
@@ -62,8 +77,13 @@ export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browse
       return call(await replace(browser));
     }
   };
-  const newPage: Browser["newPage"] = (pageOptions) => open((browser) => browser.newPage(pageOptions));
-  const newContext: Browser["newContext"] = (contextOptions) => open((browser) => browser.newContext(contextOptions));
+  const newPage: Browser["newPage"] = async (pageOptions) => {
+    const page = await open((browser) => browser.newPage(pageOptions));
+    tolerateKilledBrowserOnClose(page.context());
+    return page;
+  };
+  const newContext: Browser["newContext"] = async (contextOptions) =>
+    tolerateKilledBrowserOnClose(await open((browser) => browser.newContext(contextOptions)));
 
   const close: Browser["close"] = async (closeOptions) => {
     closed = true;
@@ -79,4 +99,28 @@ export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browse
       return typeof value === "function" ? value.bind(current) : value;
     },
   });
+};
+
+/**
+ * Runs `change` and reports whether `locator` keeps its element and how much its height changes.
+ * A mutation's refresh must keep the elements of the items it keeps: replacement loses focus and hover,
+ * flickers, and can leave a box read detached (#1391). Waits before and after; reads boxes in the page.
+ */
+export const keptThrough = async (
+  locator: Locator,
+  change: () => Promise<unknown>,
+): Promise<{ replaced: boolean; heightChange: number }> => {
+  const original = await locator.elementHandle();
+  if (!original) throw new Error("The element to keep was not found.");
+  try {
+    const before = await original.evaluate((element) => element.getBoundingClientRect().height);
+    await change();
+    const after = await locator.evaluate(
+      (element, original) => ({ same: element === original && original.isConnected, height: element.getBoundingClientRect().height }),
+      original,
+    );
+    return { replaced: !after.same, heightChange: after.height - before };
+  } finally {
+    await original.dispose();
+  }
 };
