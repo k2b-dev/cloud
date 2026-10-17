@@ -1365,7 +1365,50 @@ one. Object rows keep their title on one line with an ellipsis.
 
 Set `mobile="stacked"` on `Sidebar` when the sidebar is the primary object
 list of an overview and the host's mobile navigation does not carry it. Below
-64 rem the sidebar then stays visible as a block above the content, capped at
-half the viewport height with its own scrolling body, and the footer wraps
-its items into a row; the head shows no button for it. Leave the default `"hidden"` for workspaces whose
-sidebar is view navigation inside one resource.
+64 rem, its items become one row of chips above the content. The row scrolls
+sideways with fades at cut edges and keeps the current chip in view when the
+page loads. From 64 rem, it is the regular sidebar column. The sidebar is a
+`nav` landmark at every width; give it a `label` that names the objects.
+
+A chip shows the icon, a label on one line with an ellipsis, and metadata
+such as a count or dot. Selection changes only its fill and color; its box
+and font weight stay the same. Section titles, descriptions, row actions,
+collapsible sections, the footer, and other content stay out of the row.
+
+**All** at the end of the row opens the complete sidebar, including everything
+the chips leave out. Below 48 rem it opens a bottom sheet; from 48 rem it
+opens a centered dialog. Links close it. Escape and Close return focus to
+All. Write the sidebar's children as JSX inside `AppWorkspace.Sidebar`:
+
+```tsx
+<AppWorkspace.Sidebar label="Notebooks" mobile="stacked">
+  <AppWorkspace.SidebarDesktop>
+    <AppWorkspace.SidebarBody>
+      <AppWorkspace.SidebarItem variant="object" href="/app/notebooks/team" active>
+        <AppWorkspace.SidebarItemLabel>Team</AppWorkspace.SidebarItemLabel>
+        <AppWorkspace.SidebarItemMeta>4</AppWorkspace.SidebarItemMeta>
+      </AppWorkspace.SidebarItem>
+    </AppWorkspace.SidebarBody>
+  </AppWorkspace.SidebarDesktop>
+</AppWorkspace.Sidebar>
+```
+
+The children render a second time in the sheet and share the application's
+signals. Markup built ahead of time and passed as a value would move into
+the sheet instead of rendering there again.
+
+Hosts can set `--k2b-workspace-chip-inset` for the row's content inset
+(default `clamp(1rem, 3vw, 2.5rem)`, `1rem` below a 40 rem viewport),
+`--k2b-workspace-chip-background` for chip fill (default
+`--k2b-surface-muted`), and `--k2b-app-workspace-selected` for selected fill
+(default `--k2b-selected`). Cloud maps selected fill to `--ui-app-selected-nav`.
+
+Leave the default `mobile="hidden"` for workspaces whose sidebar is view
+navigation inside one resource.
+
+### Cloud phone title menu
+
+On Cloud pages with `WorkspaceNavigation`, the phone header shows **Name ⌄**
+in place of the plain title. It opens the same app menu sheet as the app-menu
+button, so a hidden sidebar's navigation stays reachable. Pages without
+workspace navigation keep the plain title. Nothing changes from 48 rem.

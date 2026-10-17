@@ -442,7 +442,7 @@ solid-island {
 .layout-header-title-menu {
   display: none;
   min-width: 0;
-  min-height: 2.25rem;
+  min-height: 2rem;
   align-items: center;
   gap: 0.25rem;
   margin-inline-start: -0.5rem;

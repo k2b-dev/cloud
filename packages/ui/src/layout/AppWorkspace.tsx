@@ -977,6 +977,12 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
         .map((name) => [name, computed.getPropertyValue(name).trim()])
         .filter(([, value]) => value),
     );
+    // The sheet belongs to the chip row: when the workspace widens into the sidebar column, All disappears and the sheet closes.
+    const leave = new AbortController();
+    const watch = new ResizeObserver(() => {
+      if (button.getClientRects().length === 0) leave.abort();
+    });
+    watch.observe(button);
     void dialogCore
       .open<void>(
         (close, context) => {
@@ -993,13 +999,25 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
                     style={accent}
                     onClick={(event) => {
                       const link = (event.target as Element | null)?.closest?.("a[href]");
-                      if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+                      if (
+                        !link ||
+                        event.defaultPrevented ||
+                        event.button !== 0 ||
+                        event.metaKey ||
+                        event.ctrlKey ||
+                        event.shiftKey ||
+                        event.altKey
+                      )
                         return;
                       // After the link's own handlers: an enhanced navigation has started, a document one is leaving.
                       queueMicrotask(() => close());
                     }}
                   >
-                    {flatten(props.hidden ? undefined : props.children).filter(sidebarChildSlot).find((slot) => slot.kind === SIDEBAR_DESKTOP)?.children}
+                    {
+                      flatten(props.hidden ? undefined : props.children)
+                        .filter(sidebarChildSlot)
+                        .find((slot) => slot.kind === SIDEBAR_DESKTOP)?.children
+                    }
                   </nav>
                 </BottomSheet.Body>
               </BottomSheet>
@@ -1008,9 +1026,10 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
           onCleanup(() => dispose?.());
           return view;
         },
-        { ...bottomSheetAdaptiveOptions, ariaLabel: props.label },
+        { ...bottomSheetAdaptiveOptions, ariaLabel: props.label, signal: leave.signal },
       )
       .finally(() => {
+        watch.disconnect();
         setSheetOpen(false);
         if (button.isConnected && !aside?.contains(document.activeElement)) button.focus({ preventScroll: true });
       });
@@ -1039,18 +1058,19 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
             {desktop()?.children}
           </div>
           <Show when={stacked()}>
-            <script innerHTML={CHIP_ROW_SCRIPT} />
             <button
-                type="button"
-                class="k2b-app-workspace__sidebar-all"
-                aria-haspopup="dialog"
-                aria-expanded={sheetOpen()}
-                aria-label={props.label ? workspaceMessages().sidebarAllLabel({ label: props.label }) : undefined}
-                onClick={(event) => openAll(event.currentTarget)}
-              >
-                <span>{workspaceMessages().sidebarAll}</span>
-                <i class="ti ti-chevron-down" aria-hidden="true" />
-              </button>
+              type="button"
+              class="k2b-app-workspace__sidebar-all"
+              aria-haspopup="dialog"
+              aria-expanded={sheetOpen()}
+              aria-label={props.label ? workspaceMessages().sidebarAllLabel({ label: props.label }) : undefined}
+              onClick={(event) => openAll(event.currentTarget)}
+            >
+              <span>{workspaceMessages().sidebarAll}</span>
+              <i class="ti ti-chevron-down" aria-hidden="true" />
+            </button>
+            {/* After All, which takes its room in the row first. */}
+            <script innerHTML={CHIP_ROW_SCRIPT} />
           </Show>
         </Show>
       </Dynamic>
@@ -1070,8 +1090,8 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
 }
 
 /**
- * A chip row that overflows shows the current object, centered, and fades its
- * cut edges. Self-contained, because the inline script after server markup
+ * A chip row that overflows shows the current object, centered when it is
+ * not in view from the row's start, and fades its cut edges. Self-contained, because the inline script after server markup
  * embeds its source and runs it before the first paint; at 64 rem the column
  * does not overflow sideways and nothing changes.
  */
@@ -1080,6 +1100,9 @@ function settleChipRow(row: Element | null, edges: (element: HTMLElement) => str
   const current = row.querySelector(".k2b-app-workspace__sidebar-item.is-active, [aria-current]");
   const chip = current && (current.closest(".k2b-app-workspace__sidebar-item") || current);
   if (chip) {
+    // From the row's start, whatever scrolled it before (a body's own restore
+    // runs first on the client, last on the server), so both paths agree.
+    row.scrollLeft = 0;
     const bounds = row.getBoundingClientRect();
     const item = chip.getBoundingClientRect();
     if (item.left < bounds.left || item.right > bounds.right) row.scrollLeft += item.left - bounds.left - (bounds.width - item.width) / 2;
@@ -1087,7 +1110,7 @@ function settleChipRow(row: Element | null, edges: (element: HTMLElement) => str
   const fade = edges(row);
   if (fade) row.setAttribute("data-scroll-fade", fade);
 }
-const CHIP_ROW_SCRIPT = `(${settleChipRow})(document.currentScript&&document.currentScript.previousElementSibling,${scrollFadeEdges})`;
+const CHIP_ROW_SCRIPT = `(${settleChipRow})(document.currentScript&&document.currentScript.parentElement.querySelector(":scope>.k2b-app-workspace__sidebar-desktop"),${scrollFadeEdges})`;
 
 const AppWorkspaceSidebarDesktop = (props: { children: JSX.Element }): JSX.Element =>
   ({ kind: SIDEBAR_DESKTOP, children: props.children }) as unknown as JSX.Element;
