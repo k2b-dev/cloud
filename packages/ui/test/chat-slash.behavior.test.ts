@@ -1871,8 +1871,12 @@ test("a pending last section ends with three placeholders in the overview, one w
 test("an open row keeps the token and the list while it runs, then removes the token in one undo step", async () => {
   let resolve!: () => void;
   const drafts: { value: string; mentions: readonly ChatMention[] }[] = [];
+  let pasted = 0;
   const h = await slash({
     value: "Price /tas",
+    onPaste: () => {
+      pasted++;
+    },
     commands: [
       {
         name: "task",
@@ -1907,8 +1911,10 @@ test("an open row keeps the token and the list while it runs, then removes the t
   // Choosing again or undoing while it runs does nothing, so the saved draft stays the visible one.
   h.key("Enter");
   h.key("z", { ctrlKey: true });
+  h.input.dispatchEvent(new Event("paste", { bubbles: true, cancelable: true }));
   await flush();
   expect(drafts).toHaveLength(1);
+  expect(pasted).toBe(0);
   expect(h.value()).toBe("Price /task");
   resolve();
   await flush();

@@ -1724,6 +1724,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           if (input.inputType === "insertText" && input.data === ":") queueMicrotask(completeShortcode);
         }}
         onPaste={(event) => {
+          // Read-only while an `open` row runs: nothing may join the draft after it was saved.
+          if (editBlocked()) {
+            event.preventDefault();
+            return;
+          }
           const clipboardData = event.clipboardData;
           if (canSelectFiles() && clipboardData?.files.length) {
             event.preventDefault();

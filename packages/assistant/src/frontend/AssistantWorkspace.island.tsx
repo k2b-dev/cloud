@@ -1417,8 +1417,9 @@ export default function AssistantWorkspace(props: Props) {
     // Saves the draft without its "/…" before an app opens, through the revisioned path, with references and
     // attachments. A chat that does not exist yet is created first, as "Assign project" and dictation do.
     const beforeCommand = async (draft: { value: string; mentions: readonly ChatMention[] }) => {
-      const conflict = new Error(commandCopy().commandDraftConflict);
       let key = sessionKey();
+      // A draft already in conflict says so; the conflict notice offers the way out.
+      if (session(key).conflict) throw new Error(commandCopy().commandDraftConflict);
       const projectId = composerProps.projectId;
       let target = projectId ? pendingProjectChats()[projectId]?.id : chat.activeConversationId();
       try {
@@ -1427,7 +1428,7 @@ export default function AssistantWorkspace(props: Props) {
             attachments = composerAttachmentsFor(key),
             mentions = mentionsFor(key);
           const created = await createConversation(false, projectId, !projectId);
-          if (!created) throw new Error(commandCopy().commandDraftNotSaved);
+          if (!created) throw new Error("Chat not created");
           target = created.id;
           if (projectId) {
             session(key).baseRevision = created.draft.revision;
@@ -1440,13 +1441,14 @@ export default function AssistantWorkspace(props: Props) {
             session(key).baseRevision = created.draft.revision;
           }
         }
-        const saved = await saveComposer(key, target, { text: draft.value, mentions: draft.mentions });
-        if (!saved) throw conflict;
+        // A failed save answers null for a revision conflict and for any other failure alike; a conflict also
+        // shows the composer's conflict notice.
+        if (!(await saveComposer(key, target, { text: draft.value, mentions: draft.mentions }))) throw new Error("Draft not saved");
         commandTarget = target;
-      } catch (error) {
-        // The composer's status line names the reason once.
+      } catch {
+        // The composer's status line names the failure once.
         chat.setError(null);
-        throw error === conflict ? error : new Error(commandCopy().commandDraftNotSaved);
+        throw new Error(commandCopy().commandDraftNotSaved);
       }
     };
     const appCommands = createMemo(() =>

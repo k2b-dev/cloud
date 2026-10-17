@@ -258,9 +258,22 @@ test("a save conflict opens nothing and reports why in the composer status line"
   const h = await mount({ conflict: true });
   h.choose();
   await waitFor(() => Boolean(h.status()?.includes("Nichts wurde geöffnet")));
-  expect(h.status()).toContain("Der Entwurf wurde inzwischen woanders geändert.");
+  expect(h.status()).toContain("Der Entwurf konnte nicht gespeichert werden.");
   expect(openCommand).not.toHaveBeenCalled();
   expect(h.input.value).toBe("Plan /");
+  // The draft is now known to conflict: choosing again names the conflict without another request.
+  const saves = h.saves.length;
+  batch(() => {
+    h.input.value = "Plan / /";
+    h.input.setSelectionRange(h.input.value.length, h.input.value.length);
+    h.input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  h.input.click();
+  await waitFor(() => Boolean(h.row()));
+  h.choose();
+  await waitFor(() => Boolean(h.status()?.includes("woanders geändert")));
+  expect(h.saves).toHaveLength(saves);
+  expect(openCommand).not.toHaveBeenCalled();
 });
 
 test("an unreachable app leaves the row, slash list, and original value available for retry", async () => {
