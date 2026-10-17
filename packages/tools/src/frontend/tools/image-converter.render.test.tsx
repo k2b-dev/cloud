@@ -46,7 +46,8 @@ describe("Image Converter", () => {
 
     expect(html).toContain("team-photo.png");
     expect(html).not.toMatch(/id="k2b-workspace-detail-image-converter-settings"[^>]* hidden/);
-    expect(html.replace(/<!--.*?-->/g, "")).toContain("800 × 1200 px");
+    // Solid may mark each inserted value with an empty `<!--!$-->` comment.
+    expect(html).toMatch(/800(?:<!--!\$-->)? × (?:<!--!\$-->)?1200(?:<!--!\$-->)? px/);
     expect(html).toContain('aria-label="Select team-photo.png"');
     expect(html).toContain('aria-label="Rotate team-photo.png clockwise"');
     expect(html).toContain('aria-label="Remove team-photo.png"');
