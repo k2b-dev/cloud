@@ -52,7 +52,8 @@ export const openGeoIpDatabase = (kind: "city" | "asn", bytes: Uint8Array, sourc
     // This Buffer is a view: Buffer.from(bytes) would copy the entire mmap.
     const reader = new Reader(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
     const metadata = reader.metadata;
-    if ((metadata.ipVersion !== 4 && metadata.ipVersion !== 6) || !metadata.databaseType.toLowerCase().includes(kind)) return null;
+    // An IPv4-only tree answers IPv6 lookups with unrelated IPv4 records, so only IPv6 databases qualify.
+    if (metadata.ipVersion !== 6 || !metadata.databaseType.toLowerCase().includes(kind)) return null;
     const info: GeoIpDatabaseInfo = { databaseType: metadata.databaseType, buildDate: metadata.buildEpoch, source };
     if (!Number.isFinite(info.buildDate.getTime())) return null;
     return { reader, info };

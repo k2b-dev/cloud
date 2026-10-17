@@ -115,6 +115,7 @@ describe("GeoIP", () => {
         Buffer.from([1, 2, 3, 4]),
         mmdbFixture("city").subarray(0, 100),
         mmdbFixture("city", { databaseType: "Wrong" }),
+        mmdbFixture("city", { ipVersion: 4 }),
         mmdbFixture("city", { ipVersion: 5 }),
       ]) {
         const before = logs.warn.mock.calls.length;
