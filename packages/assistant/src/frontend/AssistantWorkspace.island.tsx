@@ -46,7 +46,6 @@ import {
   Chat,
   type ChatMention,
   dialogCore,
-  type ChatCommandDraft,
   IconButton,
   LocaleProvider,
   openSpotlightSearch,
@@ -1417,7 +1416,7 @@ export default function AssistantWorkspace(props: Props) {
     let commandTarget: string | undefined;
     // Saves the draft without its "/…" before an app opens, through the revisioned path, with references and
     // attachments. A chat that does not exist yet is created first, as "Assign project" and dictation do.
-    const beforeCommand = async (draft: ChatCommandDraft) => {
+    const beforeCommand = async (draft: { value: string; mentions: readonly ChatMention[] }) => {
       const conflict = new Error(commandCopy().commandDraftConflict);
       let key = sessionKey();
       const projectId = composerProps.projectId;
