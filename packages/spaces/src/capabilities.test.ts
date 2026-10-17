@@ -434,6 +434,29 @@ test("item.read and reaction actions bound reactor names within the result budge
   if (read.ok) expect(read.data.data).toMatchObject({ relationsTruncated: true });
 });
 
+test("item.read of a fully populated task keeps reaction counts within the result budget", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  const escaped = (length: number) => "\u0001".repeat(length);
+  const people = Array.from({ length: 3 }, () => ({ kind: "user" as const, id: userId, displayName: escaped(200) }));
+  spyOn(spacesService.item, "get").mockResolvedValue({
+    ...task,
+    title: escaped(200),
+    description: escaped(5000),
+    assignees: Array.from({ length: 100 }, () => ({ id: userId, displayName: escaped(200), avatarHash: null })),
+    tags: Array.from({ length: 100 }, () => ({ ...tag, name: escaped(100) })),
+    reactions: Array.from({ length: 20 }, (_, index) => ({ emoji: String.fromCodePoint(0x1f600 + index), count: 4, own: false, people })),
+  });
+  spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+  const read = await spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext);
+  if (!read.ok) throw new Error("Expected a bounded item");
+  expect(Buffer.byteLength(JSON.stringify(read.data))).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+  expect(read.data.data).toMatchObject({
+    relationsTruncated: true,
+    reactions: expect.arrayContaining([{ emoji: "😀", count: 4, own: false, people: [] }]),
+  });
+});
+
 test.each(["task.list", "event.list"] as const)("%s keeps a full page of maximum reactions within the result budget", async (id) => {
   spyOn(spacesService.space, "get").mockResolvedValue(space);
   spyOn(spacesService.space.permission, "get").mockResolvedValue("read");

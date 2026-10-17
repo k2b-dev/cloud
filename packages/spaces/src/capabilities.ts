@@ -959,7 +959,7 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
           mapAttachment(resolved.data.item, attachment),
         ),
       };
-  return ok({
+  const result = {
     data,
     summary: boundedCapabilitySummary(
       spacesMessages(context.locale).readItem({
@@ -969,7 +969,13 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
     ),
     refs: [itemRef(data, data.kind)],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
-  });
+  };
+  // Reactor names are the one relation added after the other bounds were sized; a full item drops them, keeping the counts.
+  if (data.reactions && Buffer.byteLength(JSON.stringify(result), "utf8") > CAPABILITY_MAX_RESULT_BYTES) {
+    data.reactions = data.reactions.map((reaction) => ({ ...reaction, people: [] }));
+    data.relationsTruncated = true;
+  }
+  return ok(result);
 };
 
 const runCommentList = async (input: z.infer<typeof CommentListInputSchema>, context: CapabilityExecutionContext) => {
