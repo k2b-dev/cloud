@@ -1,7 +1,7 @@
 import type { AccessEntry } from "@k2b/cloud/contracts";
-import { type AccessSubject, type PermissionLevel, paginate, paginateItems, type RequestActor } from "@k2b/cloud/server";
-import { err, fail, ok, type PageParams, type Paginated } from "@k2b/stdlib";
-import { getActorBookPermission, isContactsAdministrator } from "./access";
+import { type AccessSubject, hasPermission, type PermissionLevel, paginate, paginateItems, type RequestActor } from "@k2b/cloud/server";
+import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
+import { getActorBookPermission, isContactsAdministrator, readableBookScope } from "./access";
 import * as apiKeys from "./api-keys";
 import * as books from "./books";
 import * as contactLookup from "./contact-lookup";
@@ -24,6 +24,19 @@ import type {
   UpdateContactTagInput,
 } from "./types";
 
+export type BookCaller = { actor: RequestActor; accessSubject: AccessSubject };
+
+const authorizeBook = async (
+  bookId: string,
+  caller: BookCaller,
+  level: PermissionLevel,
+): Promise<Result<{ book: ContactBook; permission: PermissionLevel }>> => {
+  const book = await books.get({ id: bookId });
+  if (!book) return fail(err.notFound("Book"));
+  const permission = await getActorBookPermission({ bookId, actor: caller.actor, accessSubject: caller.accessSubject });
+  return hasPermission(permission, level) ? ok({ book, permission }) : fail(err.forbidden("Access denied"));
+};
+
 /** Domain writes publish their live update in their own transaction; this only skips the dispatcher's next poll. */
 const wake = async <T>(operation: Promise<T>): Promise<T> => {
   const result = await operation;
@@ -37,23 +50,30 @@ const wake = async <T>(operation: Promise<T>): Promise<T> => {
  * The service is stateless and grouped by domain (`book`, `contact`).
  */
 export const contactsService = {
-  lookup: contactLookup,
+  lookup: {
+    resolveContactsByEmail: async (config: BookCaller & { input: Parameters<typeof contactLookup.resolveContactsByEmail>[0]["input"] }) => {
+      const scope = readableBookScope(config);
+      if (!scope.ok) return scope;
+      return contactLookup.resolveContactsByEmail({ input: config.input, subject: config.accessSubject, ...scope.data });
+    },
+  },
   favorite: favorites,
   book: {
-    readableIds: async (config: { subject: AccessSubject; boundBookId?: string | null }): Promise<string[]> =>
-      (await books.list(config)).map((book) => book.id),
-    list: async (config: {
-      subject: AccessSubject;
-      boundBookId?: string | null;
-      pagination?: PageParams;
-      filter?: { query?: string };
-    }): Promise<Paginated<ContactBook>> => {
-      const booksForSubject = await books.list({
-        subject: config.subject,
-        boundBookId: config.boundBookId,
-      });
-
-      const allBooks = booksForSubject;
+    authorize: (config: BookCaller & { bookId: string; level: PermissionLevel }) => authorizeBook(config.bookId, config, config.level),
+    readableIds: async (caller: BookCaller): Promise<Result<string[]>> => {
+      const scope = readableBookScope(caller);
+      if (!scope.ok) return scope;
+      return ok((await books.list({ subject: caller.accessSubject, ...scope.data })).map((book) => book.id));
+    },
+    list: async (
+      config: BookCaller & {
+        pagination?: PageParams;
+        filter?: { query?: string };
+      },
+    ): Promise<Result<Paginated<ContactBook>>> => {
+      const scope = readableBookScope(config);
+      if (!scope.ok) return scope;
+      const allBooks = await books.list({ subject: config.accessSubject, ...scope.data });
       const query = config.filter?.query?.trim().toLowerCase();
       const filtered =
         query && query.length > 0
@@ -63,16 +83,36 @@ export const contactsService = {
               return name.includes(query) || description.includes(query);
             })
           : allBooks;
-
-      return paginateItems(filtered, config.pagination);
+      return ok(paginateItems(filtered, config.pagination));
     },
-    listPage: books.listPage,
-    findReadableByName: books.findReadableByName,
-    get: (config: { id: string }): Promise<ContactBook | null> => books.get({ id: config.id }),
+    listPage: async (config: BookCaller & Omit<Parameters<typeof books.listPage>[0], "subject" | "boundBookId">) => {
+      const scope = readableBookScope(config);
+      if (!scope.ok) return scope;
+      return ok(await books.listPage({ ...config, subject: config.accessSubject, ...scope.data }));
+    },
+    findReadableByName: async (config: BookCaller & { name: string; limit: number }) => {
+      const scope = readableBookScope(config);
+      if (!scope.ok) return scope;
+      return ok(await books.findReadableByName({ ...config, subject: config.accessSubject, ...scope.data }));
+    },
+    get: (config: BookCaller & { id: string }) => authorizeBook(config.id, config, "read"),
     create: (config: { data: CreateBookInput; creatorId: string }) => wake(books.create(config)),
-    update: (config: { id: string; data: UpdateBookInput }) => wake(books.update(config)),
-    remove: (config: { id: string }) => wake(books.remove(config)),
+    update: async (config: BookCaller & { id: string; data: UpdateBookInput }) => {
+      const access = await authorizeBook(config.id, config, "admin");
+      if (!access.ok) return access;
+      return wake(books.update(config));
+    },
+    remove: async (config: BookCaller & { id: string }) => {
+      const access = await authorizeBook(config.id, config, "admin");
+      if (!access.ok) return access;
+      return wake(books.remove(config));
+    },
     admin: {
+      get: async (config: { id: string; actor: RequestActor }): Promise<Result<ContactBook>> => {
+        if (!isContactsAdministrator(config.actor)) return fail(err.forbidden("Access denied"));
+        const book = await books.get({ id: config.id });
+        return book ? ok(book) : fail(err.notFound("Book"));
+      },
       list: async (config: { pagination?: PageParams; filter?: { query?: string } }): Promise<Paginated<ContactBookAdminListItem>> => {
         const { page, perPage, offset } = paginate(config.pagination);
         const result = await books.listAdmin({
@@ -148,34 +188,96 @@ export const contactsService = {
     changeAssignments: (config: Parameters<typeof tags.changeAssignments>[0]) => wake(tags.changeAssignments(config)),
   },
   contact: {
-    exportPages: (config: { bookId: string; signal: AbortSignal }) => contacts.exportPages(config),
-    list: (config: { bookId: string; pagination?: PageParams; filter?: import("./types").ContactListFilter }) => contacts.list(config),
-    get: (config: { bookId: string; id: string }) => contacts.get(config),
+    exportPages: async (config: BookCaller & { bookId: string }) => {
+      const access = await authorizeBook(config.bookId, config, "admin");
+      if (!access.ok) return access;
+      return ok({ book: access.data.book, pages: (signal: AbortSignal) => contacts.exportPages({ bookId: config.bookId, signal }) });
+    },
+    list: async (config: BookCaller & Parameters<typeof contacts.list>[0]) => {
+      const access = await authorizeBook(config.bookId, config, "read");
+      if (!access.ok) return access;
+      return ok(await contacts.list(config));
+    },
+    get: async (config: BookCaller & Parameters<typeof contacts.get>[0]) => {
+      const access = await authorizeBook(config.bookId, config, "read");
+      if (!access.ok) return access;
+      return ok(await contacts.get({ bookId: config.bookId, id: config.id }));
+    },
+    getMany: async (config: BookCaller & Parameters<typeof contacts.getMany>[0]) => {
+      const access = await authorizeBook(config.bookId, config, "read");
+      if (!access.ok) return access;
+      return contacts.getMany(config);
+    },
+    tree: async (config: BookCaller & Parameters<typeof contacts.tree>[0]) => {
+      const access = await authorizeBook(config.bookId, config, "read");
+      if (!access.ok) return access;
+      return ok(await contacts.tree(config));
+    },
+    create: async (config: BookCaller & { bookId: string; data: CreateContactInput }) => {
+      const access = await authorizeBook(config.bookId, config, "write");
+      if (!access.ok) return access;
+      return wake(contacts.create(config));
+    },
+    createIdempotent: async (config: BookCaller & Parameters<typeof contacts.createIdempotent>[0]) => {
+      const access = await authorizeBook(config.bookId, config, "write");
+      if (!access.ok) return access;
+      return wake(contacts.createIdempotent(config));
+    },
+    update: async (config: BookCaller & { bookId: string; id: string; data: UpdateContactInput; expectedUpdatedAt?: string }) => {
+      const access = await authorizeBook(config.bookId, config, "write");
+      if (!access.ok) return access;
+      return wake(contacts.update(config));
+    },
+    move: async (config: BookCaller & Parameters<typeof contacts.move>[0]) => {
+      const access = await authorizeBook(config.sourceBookId, config, "write");
+      if (!access.ok) return access;
+      const target = await authorizeBook(config.targetBookId, config, "write");
+      if (!target.ok) return target;
+      return wake(contacts.move(config));
+    },
+    remove: async (config: BookCaller & Parameters<typeof contacts.remove>[0]) => {
+      const access = await authorizeBook(config.bookId, config, "write");
+      if (!access.ok) return access;
+      return wake(contacts.remove(config));
+    },
     findBookId: contacts.findBookId,
     findByDisplayName: contacts.findByDisplayName,
-    getMany: (config: { bookId: string; ids: string[] }) => contacts.getMany(config),
-    tree: (config: { bookId: string; id: string }) => contacts.tree(config),
-    create: (config: { bookId: string; data: CreateContactInput }) => wake(contacts.create(config)),
-    createIdempotent: (config: Parameters<typeof contacts.createIdempotent>[0]) => wake(contacts.createIdempotent(config)),
-    update: (config: { bookId: string; id: string; data: UpdateContactInput; expectedUpdatedAt?: string }) => wake(contacts.update(config)),
-    move: (config: { sourceBookId: string; targetBookId: string; id: string; expectedUpdatedAt?: string }) => wake(contacts.move(config)),
-    remove: (config: { bookId: string; id: string; expectedUpdatedAt?: string }) => wake(contacts.remove(config)),
     bulk: {
-      addTags: (config: { bookId: string; ids: string[]; tagIds: string[] }) => wake(contacts.addTags(config)),
-      remove: (config: { bookId: string; ids: string[] }) => wake(contacts.removeMany(config)),
-      move: (config: { sourceBookId: string; targetBookId: string; ids: string[] }) => wake(contacts.moveMany(config)),
+      addTags: async (config: BookCaller & Parameters<typeof contacts.addTags>[0]) => {
+        const access = await authorizeBook(config.bookId, config, "write");
+        if (!access.ok) return access;
+        return wake(contacts.addTags(config));
+      },
+      remove: async (config: BookCaller & Parameters<typeof contacts.removeMany>[0]) => {
+        const access = await authorizeBook(config.bookId, config, "write");
+        if (!access.ok) return access;
+        return wake(contacts.removeMany(config));
+      },
+      move: async (config: BookCaller & Parameters<typeof contacts.moveMany>[0]) => {
+        const access = await authorizeBook(config.sourceBookId, config, "write");
+        if (!access.ok) return access;
+        const target = await authorizeBook(config.targetBookId, config, "write");
+        if (!target.ok) return target;
+        return wake(contacts.moveMany(config));
+      },
     },
     duplicates: {
-      list: (config: { bookId: string; limit?: number }) => contacts.findDuplicates(config),
-      merge: (config: { bookId: string; keepId: string; removeId: string; keepUpdatedAt: string; removeUpdatedAt: string }) =>
-        wake(contacts.mergeDuplicate(config)),
+      list: async (config: BookCaller & Parameters<typeof contacts.findDuplicates>[0]) => {
+        const access = await authorizeBook(config.bookId, config, "write");
+        if (!access.ok) return access;
+        return ok(await contacts.findDuplicates(config));
+      },
+      merge: async (config: BookCaller & Parameters<typeof contacts.mergeDuplicate>[0]) => {
+        const access = await authorizeBook(config.bookId, config, "write");
+        if (!access.ok) return access;
+        return wake(contacts.mergeDuplicate(config));
+      },
     },
-    search: (config: {
-      subject: AccessSubject;
-      boundBookId?: string | null;
-      pagination?: PageParams;
-      filter?: import("./types").ContactListFilter;
-    }) => contacts.search(config),
+    search: async (config: BookCaller & Omit<Parameters<typeof contacts.search>[0], "subject" | "boundBookId">) => {
+      const scope = readableBookScope(config);
+      if (!scope.ok) return scope;
+      return ok(await contacts.search({ ...config, subject: config.accessSubject, ...scope.data }));
+    },
     notes: {
       list: (config: { bookId: string; contactId: string; viewerUserId?: string | null }) => notes.list(config),
       get: notes.get,

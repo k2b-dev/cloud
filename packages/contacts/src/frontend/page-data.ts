@@ -56,12 +56,11 @@ export const resolveSelectedContact = async (config: {
   const selectedFromPage = config.contacts.find((contact) => contact.id === internalContactId && contact.bookId === internalBookId) ?? null;
   if (selectedFromPage) return selectedFromPage;
 
-  const permission = await contactsService.book.permission.forActor({
+  const result = await contactsService.contact.get({
     bookId: internalBookId,
+    id: internalContactId,
     actor: config.actor,
     accessSubject: config.accessSubject,
   });
-  if (!hasPermission(permission, "read")) return null;
-
-  return contactsService.contact.get({ bookId: internalBookId, id: internalContactId });
+  return result.ok ? result.data : null;
 };
