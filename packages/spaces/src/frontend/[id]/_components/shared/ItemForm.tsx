@@ -98,6 +98,16 @@ export default function ItemForm(props: ItemFormProps) {
   const [recurrenceCount, setRecurrenceCount] = createSignal<number | null>(initialRecurrence.count);
   const [priority, setPriority] = createSignal(props.item?.priority ?? props.defaults?.priority ?? "");
   const [assignees, setAssignees] = createSignal<SpaceItemAssignee[]>(props.item?.assignees ?? []);
+  /**
+   * An edit sends the assignees only when the person changed them, so a title edit never replaces a list that changed
+   * meanwhile, such as by someone claiming the task.
+   */
+  const assigneeChange = () => {
+    const ids = assignees().map((assignee) => assignee.id);
+    if (!isEditMode()) return ids.length > 0 ? ids : undefined;
+    const before = props.item?.assignees?.map((assignee) => assignee.id) ?? [];
+    return ids.length === before.length && ids.every((id) => before.includes(id)) ? undefined : ids;
+  };
   const [selectedTags, setSelectedTags] = createSignal<string[]>(props.item?.tags?.map((t) => t.id) ?? props.defaults?.tagIds ?? []);
   const [error, setError] = createSignal("");
   const [submitting, setSubmitting] = createSignal(false);
@@ -410,7 +420,7 @@ export default function ItemForm(props: ItemFormProps) {
       deadline: !isEvent() && deadline() ? new Date(deadline()).toISOString() : undefined,
       estimatedDurationMinutes: !isEvent() ? (estimatedDurationMinutes() ?? (isEditMode() ? null : undefined)) : undefined,
       priority: (priority() || (isEditMode() ? null : undefined)) as Priority | null | undefined,
-      assigneeIds: isEditMode() || assignees().length > 0 ? assignees().map((assignee) => assignee.id) : undefined,
+      assigneeIds: assigneeChange(),
       tagIds: isEditMode() || selectedTags().length > 0 ? selectedTags() : undefined,
       ...(!isEditMode() && !isEvent() && checklist().length ? { checklist: checklist() } : {}),
       ...(!isEditMode() && assignCreator() ? { assignCreator: true } : {}),

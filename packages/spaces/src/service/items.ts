@@ -324,8 +324,8 @@ const replaceItemTags = async (db: SqlExecutor, itemId: string, tagIds: string[]
   }
 };
 
-const listSpaceAccessIds = async (spaceId: string): Promise<string[]> => {
-  const rows = await sql<{ access_id: string }[]>`
+const listSpaceAccessIds = async (spaceId: string, db: SqlExecutor = sql): Promise<string[]> => {
+  const rows = await db<{ access_id: string }[]>`
     SELECT access_id
     FROM spaces.space_access
     WHERE space_id = ${spaceId}::uuid
@@ -372,15 +372,20 @@ export const filterAssigneeIdsWithAccess = async (spaceId: string, assigneeIds: 
   return ids.filter((id) => valid.has(id));
 };
 
-export const validateAssigneeIdsInSpace = async (spaceId: string, assigneeIds: string[] | undefined): Promise<MutationResult<void>> => {
+export const validateAssigneeIdsInSpace = async (
+  spaceId: string,
+  assigneeIds: string[] | undefined,
+  db: SqlExecutor = sql,
+): Promise<MutationResult<void>> => {
   const ids = uniqueIds(assigneeIds);
   if (ids.length === 0) return { ok: true, data: undefined };
 
-  const accessIds = await listSpaceAccessIds(spaceId);
+  const accessIds = await listSpaceAccessIds(spaceId, db);
   const users = await listUsersWithAccess({
     accessIds,
     userIds: ids,
     limit: ids.length,
+    db,
   });
   const validIds = new Set(users.map((user) => user.id));
   const invalidCount = ids.filter((id) => !validIds.has(id)).length;
@@ -393,6 +398,25 @@ export const validateAssigneeIdsInSpace = async (spaceId: string, assigneeIds: s
     };
   }
   return { ok: true, data: undefined };
+};
+
+/** Caller holds the item row lock; existing concrete assignees can stay without re-validation. */
+const validateAssigneeReplacementInSpace = async (
+  spaceId: string,
+  itemId: string,
+  assigneeIds: string[] | undefined,
+  db: SqlExecutor,
+): Promise<MutationResult<void>> => {
+  if (assigneeIds === undefined) return { ok: true, data: undefined };
+  const current = await db<{ user_id: string }[]>`
+    SELECT user_id FROM spaces.item_assignees WHERE item_id = ${itemId}::uuid
+  `;
+  const keepIds = new Set(current.map((row) => row.user_id));
+  return validateAssigneeIdsInSpace(
+    spaceId,
+    assigneeIds.filter((id) => !keepIds.has(id)),
+    db,
+  );
 };
 
 const validateRecurrenceInput = async (
@@ -1638,8 +1662,6 @@ export const update = async (params: {
   }
   const tagCheck = await validateTagIdsInSpace(existing.spaceId, data.tagIds);
   if (!tagCheck.ok) return tagCheck;
-  const assigneeCheck = await validateAssigneeIdsInSpace(existing.spaceId, data.assigneeIds);
-  if (!assigneeCheck.ok) return assigneeCheck;
 
   const result = await sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
     const [locked] = await tx<DbItem[]>`
@@ -1651,6 +1673,17 @@ export const update = async (params: {
       FOR UPDATE
     `;
     if (!locked) return { ok: false, error: "Item not found", status: 404 };
+    const assigneeCheck = await validateAssigneeReplacementInSpace(locked.space_id, id, data.assigneeIds, tx);
+    if (!assigneeCheck.ok) return assigneeCheck;
+
+    // Claim writes also hold this row lock. Refuse stale assignee replacements before any write.
+    const { claim } = await taskWork.read(id, tx);
+    const dropsClaimHolder = claim?.actor.kind === "user" && data.assigneeIds !== undefined && !data.assigneeIds.includes(claim.actor.id);
+    let takenOver: Awaited<ReturnType<typeof taskWork.checkClaim>> | null = null;
+    if (dropsClaimHolder) {
+      takenOver = await taskWork.checkClaim(id, params.actor ?? systemActor, data.claimId, tx, data.force);
+      if (!takenOver.ok) return takenOver;
+    }
 
     const current = mapToItem(locked);
     const columnId = data.columnId ?? current.columnId;
@@ -1681,7 +1714,7 @@ export const update = async (params: {
         exdate: recurrence.exdate.map((value) => shiftIsoInstant(value, seriesShiftMilliseconds)),
       };
     }
-    if (!current.startsAt && !current.endsAt && (startsAt || endsAt) && (await taskWork.read(id, tx)).claim)
+    if (!current.startsAt && !current.endsAt && (startsAt || endsAt) && claim)
       return { ok: false, error: "Release the task claim before converting it to an event", status: 409 };
     if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
       return { ok: false, error: "End time must be after start time", status: 400 };
@@ -1767,7 +1800,13 @@ export const update = async (params: {
     if (!updated) return { ok: false, error: "Item not found", status: 404 };
 
     if (data.assigneeIds !== undefined) {
+      if (dropsClaimHolder) await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
       await replaceItemAssignees(tx, id, data.assigneeIds);
+      if (takenOver?.ok && takenOver.data)
+        await taskWork.recordTakeOver(
+          { spaceId: current.spaceId, itemId: id, itemTitle: current.title, actor: params.actor ?? systemActor, claim: takenOver.data },
+          tx,
+        );
     }
 
     if (data.tagIds !== undefined) {
@@ -2382,6 +2421,8 @@ export const setAssignees = async (params: {
   id: string;
   userIds: string[];
   actor?: SpaceActivityIdentity;
+  claimId?: string;
+  force?: boolean;
 }): Promise<MutationResult<void>> => {
   const { id, userIds } = params;
 
@@ -2391,14 +2432,24 @@ export const setAssignees = async (params: {
     return { ok: false, error: "Item not found", status: 404 };
   }
 
-  const assigneeCheck = await validateAssigneeIdsInSpace(existing.spaceId, userIds);
-  if (!assigneeCheck.ok) return assigneeCheck;
-
   const result = await sql.begin(async (tx): Promise<MutationResult<void>> => {
     const [current] = await tx<{ space_id: string; title: string }[]>`
       SELECT space_id, title FROM spaces.items WHERE id = ${id} FOR UPDATE
     `;
     if (!current) return { ok: false, error: "Item not found", status: 404 };
+    const assigneeCheck = await validateAssigneeReplacementInSpace(current.space_id, id, userIds, tx);
+    if (!assigneeCheck.ok) return assigneeCheck;
+    const { claim } = await taskWork.read(id, tx);
+    if (claim?.actor.kind === "user" && !userIds.includes(claim.actor.id)) {
+      const check = await taskWork.checkClaim(id, params.actor ?? systemActor, params.claimId, tx, params.force);
+      if (!check.ok) return check;
+      await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
+      if (check.data)
+        await taskWork.recordTakeOver(
+          { spaceId: current.space_id, itemId: id, itemTitle: current.title, actor: params.actor ?? systemActor, claim: check.data },
+          tx,
+        );
+    }
     await replaceItemAssignees(tx, id, userIds);
     await activity.record(
       {

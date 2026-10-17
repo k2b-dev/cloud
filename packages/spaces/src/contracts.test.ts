@@ -35,6 +35,12 @@ test("filtered item responses require overdue without changing the shared item s
   expect("overdue" in SpaceItemSchema.shape).toBeFalse();
 });
 
+test("item updates accept an exact claim UUID and force for assignee changes", () => {
+  const claimId = "99999999-9999-4999-8999-999999999999";
+  expect(UpdateItemSchema.parse({ assigneeIds: [], claimId, force: true })).toEqual({ assigneeIds: [], claimId, force: true });
+  expect(UpdateItemSchema.safeParse({ assigneeIds: [], claimId: "not-a-uuid", force: true }).success).toBeFalse();
+});
+
 describe("Spaces contract time ranges", () => {
   test("accepts valid create, update, calendar, and overlap ranges", () => {
     expect(CreateItemSchema.safeParse({ columnId, title: "Event", startsAt: START, endsAt: END }).success).toBe(true);

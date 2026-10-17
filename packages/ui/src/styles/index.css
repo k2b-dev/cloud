@@ -8612,39 +8612,61 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 1 auto;
 }
 
-/* Reactions take one line of fixed height: chips never wrap, the list scrolls sideways behind a fade, and "Add
-   reaction" stays at its end. While a reserved bar is empty, the button shows only like the actions do. */
-.k2b-ui .k2b-message-row__reactions {
+/* ReactionBar: emoji chips with counts, an optional "+n", and "Add reaction". `--k2b-reaction-height` is the height of
+   every chip and of the button: 26 px by default, 24 px compact. Nothing in the bar changes size on hover, focus,
+   busy, or while the names hint is open. */
+.k2b-ui .k2b-reaction-bar {
+  --k2b-reaction-height: 1.625rem;
   display: flex;
   max-width: 100%;
   min-width: 0;
-  flex: 0 1 auto;
-  height: 1.625rem;
   align-items: center;
   gap: 0.25rem;
 }
 
-/* Squeezed by a long send state, the chips give up their room first; "Add reaction" keeps its own. */
-.k2b-ui .k2b-message-row__reactions:has(> .k2b-message-row__react) {
+.k2b-ui .k2b-reaction-bar[data-density="compact"] {
+  --k2b-reaction-height: 1.5rem;
+}
+
+/* One line of fixed height: chips never wrap, they scroll sideways behind a fade, and "Add reaction" stays at the end. */
+.k2b-ui .k2b-reaction-bar[data-overflow="scroll"] {
+  height: var(--k2b-reaction-height);
+}
+
+/* Squeezed by its neighbours, the chips give up their room first; "Add reaction" keeps its own. */
+.k2b-ui .k2b-reaction-bar[data-overflow="scroll"]:has(> .k2b-reaction-bar__add) {
   min-width: 2rem;
 }
 
-.k2b-ui .k2b-message-row__reaction-list {
+.k2b-ui .k2b-reaction-bar[data-overflow="wrap"] {
+  flex-wrap: wrap;
+}
+
+/* Without scrolling, chips, "+n", and the button are items of the bar itself, so they wrap together. */
+.k2b-ui .k2b-reaction-bar__list {
+  display: contents;
+}
+
+/* The scrolling list keeps 3 px around its chips for their focus rings, and gives the room back with a negative
+   margin, so the ring is never clipped and nothing moves. */
+.k2b-ui .k2b-reaction-bar__scroll {
   --scroll-fade-size: 1.5rem;
   display: flex;
   min-width: 0;
+  margin: -0.1875rem;
+  padding: 0.1875rem;
   gap: 0.25rem;
   overflow-x: auto;
   scrollbar-width: none;
 }
 
-.k2b-ui .k2b-message-row__reaction-list::-webkit-scrollbar {
+.k2b-ui .k2b-reaction-bar__scroll::-webkit-scrollbar {
   display: none;
 }
 
-.k2b-ui .k2b-message-row__reaction {
+.k2b-ui .k2b-reaction-bar__chip {
   display: inline-flex;
-  height: 1.625rem;
+  height: var(--k2b-reaction-height);
   flex: none;
   align-items: center;
   gap: 0.25rem;
@@ -8658,28 +8680,74 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   line-height: 1;
+  /* A held finger shows the names, not the system's callout or a text selection. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-.k2b-ui .k2b-message-row__reaction > span:first-child {
+.k2b-ui .k2b-reaction-bar__chip > span:first-child {
   font-size: 0.9375rem;
 }
 
-.k2b-ui button.k2b-message-row__reaction {
+.k2b-ui .k2b-reaction-bar[data-density="compact"] .k2b-reaction-bar__chip {
+  gap: 0.1875rem;
+  padding: 0 0.4375rem;
+  font-size: 0.6875rem;
+}
+
+.k2b-ui .k2b-reaction-bar[data-density="compact"] .k2b-reaction-bar__chip > span:first-child {
+  font-size: 0.8125rem;
+}
+
+.k2b-ui button.k2b-reaction-bar__chip {
   cursor: pointer;
 }
 
-.k2b-ui button.k2b-message-row__reaction:hover {
+.k2b-ui button.k2b-reaction-bar__chip:hover {
   background: var(--k2b-hover);
 }
 
-.k2b-ui .k2b-message-row__reaction[data-own] {
+.k2b-ui .k2b-reaction-bar__chip[data-own] {
   color: var(--k2b-action);
   background: var(--k2b-selected);
 }
 
-.k2b-ui .k2b-icon-button.k2b-message-row__react {
+.k2b-ui .k2b-reaction-bar__chip[aria-busy="true"] {
+  cursor: progress;
+}
+
+/* The ring sits 1 px outside the chip, inside the 3 px the scrolling list keeps around its chips. */
+.k2b-ui .k2b-reaction-bar__chip:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(var(--k2b-focus-width) / 2);
+}
+
+/* "+n" counts the emoji that are not shown. It is text, not a control: a pointer passes through to what lies beneath,
+   such as the link of a card. */
+.k2b-ui .k2b-reaction-bar__more {
+  flex: none;
+  padding: 0 0.25rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  line-height: var(--k2b-reaction-height);
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-reaction-bar[data-density="compact"] .k2b-reaction-bar__more {
+  font-size: 0.6875rem;
+}
+
+.k2b-ui .k2b-reaction-bar__add {
+  display: inline-flex;
+  flex: none;
+}
+
+.k2b-ui .k2b-icon-button.k2b-reaction-bar__add-button {
   width: 2rem;
-  height: 1.625rem;
+  height: var(--k2b-reaction-height);
   min-height: 0;
   flex: none;
   border-radius: 999px;
@@ -8687,34 +8755,126 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 1rem;
 }
 
-.k2b-ui .k2b-message-row__reactions[data-empty] .k2b-message-row__react {
+.k2b-ui .k2b-reaction-bar[data-density="compact"] .k2b-icon-button.k2b-reaction-bar__add-button {
+  width: var(--k2b-reaction-height);
+  font-size: 0.9375rem;
+}
+
+/* A progressive "Add reaction" (`k2b-progressive-action`) shows on hover and focus with a mouse or trackpad and keeps
+   its place meanwhile. A touch screen reacts elsewhere, such as in the item's detail, so there it is hidden; like every
+   input-mode rule this changes paint only, and its place stays reserved. */
+:where(html[data-k2b-input="touch"]) .k2b-ui .k2b-reaction-bar[data-add="progressive"] .k2b-reaction-bar__add {
+  visibility: hidden;
+}
+
+@media (any-hover: none) {
+  :where(html:not([data-k2b-input="trackpad"])) .k2b-ui .k2b-reaction-bar[data-add="progressive"] .k2b-reaction-bar__add {
+    visibility: hidden;
+  }
+}
+
+/* The names hint is a tooltip surface; held by a finger it reads larger above the chip. */
+.k2b-ui [popover].k2b-tooltip.k2b-reaction-bar__hint[data-touch] {
+  max-width: min(20rem, calc(100vw - 1rem));
+  padding: 0.375rem 0.625rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+/* Touch targets: on a coarse pointer, chips in a scrolling bar take taps 9 px above and below, inside the list that
+   clips them, without taking layout. "Add reaction" sits in its own slot, so like any button after others its 44 px
+   area does not reach back over the last chip. The device decides this room, never the bar's state. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-reaction-bar__add:not(:first-child) > .k2b-button::after {
+    inset-inline-start: 0;
+  }
+
+  /* Wrapped lines keep 0.625rem apart, as wrapping button rows do, so the area of "Add reaction" on a later line does
+     not take taps from the chips above it. */
+  .k2b-ui .k2b-reaction-bar[data-overflow="wrap"] {
+    row-gap: 0.625rem;
+  }
+
+  /* Wrapping chips and "Add reaction" take taps in half of the gaps around them, so neighbouring chips and lines split
+     the room and no area reaches over another. */
+  .k2b-ui .k2b-reaction-bar[data-overflow="wrap"] button.k2b-reaction-bar__chip {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-reaction-bar[data-overflow="wrap"] button.k2b-reaction-bar__chip::after {
+    position: absolute;
+    content: "";
+    inset: -0.3125rem -0.125rem;
+  }
+
+  .k2b-ui .k2b-reaction-bar[data-overflow="wrap"] .k2b-reaction-bar__add > .k2b-button::after {
+    inset-block: -0.3125rem;
+  }
+
+  .k2b-ui .k2b-reaction-bar__scroll {
+    position: relative;
+    margin-block: -0.5625rem;
+    padding-block: 0.5625rem;
+  }
+
+  .k2b-ui .k2b-reaction-bar__scroll > button.k2b-reaction-bar__chip {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-reaction-bar__scroll > button.k2b-reaction-bar__chip::after {
+    position: absolute;
+    content: "";
+    inset: -0.5625rem 0;
+  }
+}
+
+/* Fills disappear in forced colours; an outline marks every chip, a thicker one the reader's own. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-reaction-bar__chip {
+    outline: 1px solid CanvasText;
+  }
+
+  .k2b-ui .k2b-reaction-bar__chip[data-own] {
+    outline: 2px solid Highlight;
+    outline-offset: -1px;
+  }
+}
+
+/* In a message, the reaction bar is a ReactionBar of fixed height (`overflow="scroll"`) that shares the footer with the
+   status line. While a reserved bar is empty, "Add reaction" shows only like the actions do, and while its picker is
+   open. */
+.k2b-ui .k2b-message-row__footer > .k2b-reaction-bar {
+  flex: 0 1 auto;
+}
+
+.k2b-ui .k2b-message-row .k2b-reaction-bar[data-empty] .k2b-reaction-bar__add:not(:has([aria-expanded="true"])) {
   opacity: 0;
   pointer-events: none;
 }
 
-.k2b-ui .k2b-message-row:focus-within .k2b-message-row__reactions[data-empty] .k2b-message-row__react,
-.k2b-ui :focus > .k2b-message-row .k2b-message-row__reactions[data-empty] .k2b-message-row__react,
+.k2b-ui .k2b-message-row:focus-within .k2b-reaction-bar[data-empty] .k2b-reaction-bar__add,
+.k2b-ui :focus > .k2b-message-row .k2b-reaction-bar[data-empty] .k2b-reaction-bar__add,
 .k2b-ui
   :focus-visible
   > .k2b-gesture-menu
   > .k2b-gesture-menu__content
   > .k2b-message-row
-  .k2b-message-row__reactions[data-empty]
-  .k2b-message-row__react,
+  .k2b-reaction-bar[data-empty]
+  .k2b-reaction-bar__add,
 .k2b-ui
   :focus-visible
   > *
   > .k2b-gesture-menu
   > .k2b-gesture-menu__content
   > .k2b-message-row
-  .k2b-message-row__reactions[data-empty]
-  .k2b-message-row__react {
+  .k2b-reaction-bar[data-empty]
+  .k2b-reaction-bar__add {
   opacity: 1;
   pointer-events: auto;
 }
 
 @media (hover: hover) {
-  .k2b-ui .k2b-message-row:hover .k2b-message-row__reactions[data-empty] .k2b-message-row__react {
+  .k2b-ui .k2b-message-row:hover .k2b-reaction-bar[data-empty] .k2b-reaction-bar__add {
     opacity: 1;
     pointer-events: auto;
   }
@@ -8765,7 +8925,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-overflow: ellipsis;
 }
 
-.k2b-ui :is(.k2b-message-row__quote, .k2b-message-row__media-item, .k2b-message-row__file, .k2b-message-row__reaction, .k2b-message-row__thread):focus-visible {
+.k2b-ui :is(.k2b-message-row__quote, .k2b-message-row__media-item, .k2b-message-row__file, .k2b-message-row__thread):focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
@@ -8800,37 +8960,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-message-row:has(> .k2b-message-row__body > :is(.k2b-message-row__thread, .k2b-message-row__footer):last-child) {
     padding-bottom: 0.625rem;
   }
-
-  .k2b-ui .k2b-message-row__reaction-list {
-    position: relative;
-    margin-block: -0.5625rem;
-    padding-block: 0.5625rem;
-  }
-
-  .k2b-ui button.k2b-message-row__reaction {
-    position: relative;
-  }
-
-  .k2b-ui button.k2b-message-row__reaction::after {
-    position: absolute;
-    content: "";
-    inset: -0.5625rem 0;
-  }
 }
 
-/* Fills disappear in forced colours; an outline keeps the bubble and the toolbar apart without changing their size, and
-   the reader's own reactions get a thicker one. */
+/* Fills disappear in forced colours; an outline keeps the bubble and the toolbar apart without changing their size. */
 @media (forced-colors: active) {
   .k2b-ui .k2b-message-row__bubble,
   .k2b-ui .k2b-message-row__actions,
-  .k2b-ui .k2b-message-row__file,
-  .k2b-ui .k2b-message-row__reaction {
+  .k2b-ui .k2b-message-row__file {
     outline: 1px solid CanvasText;
-  }
-
-  .k2b-ui .k2b-message-row__reaction[data-own] {
-    outline: 2px solid Highlight;
-    outline-offset: -1px;
   }
 }
 

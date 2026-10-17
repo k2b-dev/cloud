@@ -1,15 +1,15 @@
 import { fileIcons } from "@k2b/stdlib";
 import type { Token, Tokens } from "marked";
-import { type Accessor, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { copyText } from "../actions/CopyButton";
 import { type ChatMessages, useChatMessages } from "../chat/chat-messages";
 import { announce } from "../feedback/announce";
 import { useLocale } from "../intl/locale";
 import { type UiMessages, useUiMessages } from "../intl/messages";
-import { ScrollArea } from "../layout/ScrollArea";
 import { Avatar } from "../surfaces/Avatar";
 import { createSafeMarked, createSafeRenderer, escapeHtml } from "./MarkdownView";
+import { ReactionBar, type ReactionBarItem } from "./ReactionBar";
 
 /** Messages by the same author within this time continue a group. */
 const GROUP_WINDOW_MS = 5 * 60_000;
@@ -69,16 +69,8 @@ export type MessageRowQuote = {
   onSelect?: () => void;
 };
 
-export type MessageRowReaction = {
-  /** Stable identity of the reaction, passed to `onToggleReaction`. */
-  key: string;
-  emoji: string;
-  count: number;
-  /** The reader reacted this way; the chip shows pressed. */
-  own?: boolean;
-  /** Who reacted, for example "Nora, Tobias". Read by screen readers and shown as a tooltip. */
-  label?: string;
-};
+/** Reaction labels are read by screen readers and shown in the names hint. */
+export type MessageRowReaction = ReactionBarItem;
 
 export type MessageRowThread = {
   /** Number of replies. */
@@ -426,9 +418,6 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
   const groupStart = () => props.groupStart ?? true;
   const hasLine = () => props.progress !== undefined || props.status !== undefined || props.receipt !== undefined;
   const reactions = () => (props.deleted ? undefined : props.reactions);
-  // Chips follow their keys, so a chip keeps its element, and focus, when the caller passes new objects for it.
-  const reactionKeys = createMemo(() => reactions()?.map((reaction) => reaction.key) ?? []);
-  const reactionByKey = createMemo(() => new Map(reactions()?.map((reaction) => [reaction.key, reaction])));
   const hasFooter = () => hasLine() || reactions() !== undefined;
   const writing = () => props.progress !== undefined && !props.deleted && props.text.trim() === "";
   const hasBubble = () => props.deleted || writing() || props.text.trim() !== "";
@@ -501,44 +490,6 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
     ]
       .filter(Boolean)
       .join(", ");
-
-  /** A toggle button, or with no `onToggleReaction` a labelled image that also says whether the reader reacted. */
-  const reactionChip = (key: string, reaction: Accessor<MessageRowReaction>) => {
-    const label = (own: boolean) =>
-      chatMessages().messageReaction({ emoji: reaction().emoji, count: reaction().count, names: reaction().label, own });
-    return (
-      <Show
-        when={props.onToggleReaction}
-        fallback={
-          <span
-            class="k2b-message-row__reaction"
-            role="img"
-            aria-label={label(Boolean(reaction().own))}
-            title={reaction().label}
-            data-own={reaction().own ? "" : undefined}
-          >
-            <span aria-hidden="true">{reaction().emoji}</span>
-            <span aria-hidden="true">{reaction().count}</span>
-          </span>
-        }
-      >
-        {(toggle) => (
-          <button
-            type="button"
-            class="k2b-message-row__reaction"
-            aria-pressed={reaction().own ? "true" : "false"}
-            aria-label={label(false)}
-            title={reaction().label}
-            data-own={reaction().own ? "" : undefined}
-            onClick={() => toggle()(key)}
-          >
-            <span aria-hidden="true">{reaction().emoji}</span>
-            <span aria-hidden="true">{reaction().count}</span>
-          </button>
-        )}
-      </Show>
-    );
-  };
 
   const mediaItem = (item: MessageRowMedia, index: () => number) => {
     const more = () => (index() === shownMedia().length - 1 ? hiddenMedia() : 0);
@@ -764,40 +715,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
         <Show when={hasFooter()}>
           <div class="k2b-message-row__footer">
             <Show when={reactions()}>
-              {(list) => (
-                <div
-                  class="k2b-message-row__reactions"
-                  role="group"
-                  aria-label={chatMessages().messageReactions}
-                  data-empty={list().length === 0 ? "" : undefined}
-                >
-                  <Show when={list().length > 0}>
-                    {/* Chips that do not fit scroll sideways behind a fade. Read-only chips are no tab stops, so the list
-                        is one: a keyboard can scroll it. */}
-                    <ScrollArea
-                      orientation="horizontal"
-                      class="k2b-message-row__reaction-list"
-                      tabindex={props.onToggleReaction ? undefined : 0}
-                    >
-                      <For each={reactionKeys()}>
-                        {(key) => <Show when={reactionByKey().get(key)}>{(reaction) => reactionChip(key, reaction)}</Show>}
-                      </For>
-                    </ScrollArea>
-                  </Show>
-                  <Show when={props.onAddReaction}>
-                    {(add) => (
-                      <IconButton
-                        label={chatMessages().messageAddReaction}
-                        size="xs"
-                        class="k2b-message-row__react"
-                        onClick={(event) => add()(event.currentTarget)}
-                      >
-                        <i class="ti ti-mood-plus" aria-hidden="true" />
-                      </IconButton>
-                    )}
-                  </Show>
-                </div>
-              )}
+              {(list) => <ReactionBar reactions={list()} onToggle={props.onToggleReaction} onAdd={props.onAddReaction} />}
             </Show>
             <Show when={hasLine()}>
               <div class="k2b-message-row__line">

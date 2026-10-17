@@ -25,3 +25,5 @@ Die Kontaktbuch-Einstellungen steuern Name, Beschreibung, Tags, Zugriff, API-Sch
 - **Bearbeiten:** Zusätzlich Kontakte anlegen und aktualisieren.
 - **Verwalten:** Zusätzlich die Einstellungen öffnen, das Kontaktbuch teilen, seine Tags bearbeiten, importieren, exportieren und das Kontaktbuch löschen.
 :::
+
+Ein Kontaktbuch behält immer mindestens eine Person, Gruppe oder einen Agenten mit Zugriff **Verwalten**; ein API-Schlüssel zählt nicht.

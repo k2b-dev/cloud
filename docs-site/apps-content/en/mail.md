@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-11
+updated: 2026-10-17
 ---
 
 # Mail
@@ -60,6 +60,84 @@ The email provider remains the source for portable mail state. Mail keeps a
 synchronized Cloud copy for search, collaboration, durable commands, and
 observable delivery. Credentials and refresh tokens are stored as write-only
 secrets.
+
+## Understand the working model
+
+We recommend **Needs action** as your inbox: the work status (**Needs action**, **Waiting for reply**, **Done**) is your queue; folders are filing.
+Every incoming message sets **Needs action** and clears **Show later** once Mail loads it, whatever its folder. A confirmed human reply sets **Waiting for reply**.
+Moving, archiving, filing, and marking read change no work status. Follow-up and assignment views span folders; see [Choose where a folder's mail appears](#choose-where-a-folders-mail-appears) for folder visibility.
+**Assigned to me** and **Unassigned** leave out **Done** and **Later** conversations.
+
+### Finish work and keep the provider Inbox in step
+
+Mark **Done** in **Conversation details**, with `cld mail done <conversation-id> --mailbox <mailbox>`, `cld mail conversation update <id> --revision <r> --done`, `POST /api/mail/mailboxes/{mailboxId}/conversations/completion`, or an automation's `set_status: done`.
+Done updates only Cloud collaboration state and activity, clears **Show later**, and sends no provider command. It does not archive, move, or mark read. Other mail clients still show the email in the provider Inbox.
+
+To also clear that Inbox, choose **Archive**, run `cld mail archive <conversation-id> --mailbox <mailbox>`, or add `move_to_folder` to the same automation.
+The archive command takes up to 50 IDs and acts on Inbox messages unless `--in` names another folder. On Gmail, it removes only the Inbox label. Archiving keeps the work status; it never marks Done.
+
+### File noise and keep important mail visible
+
+For newsletters, sign-in codes, or shipping updates, use one automation: `mark_read`, `set_status: done`, then `move_to_folder`. Save this as `newsletter.yaml`:
+
+```yaml
+name: File the Example newsletter
+enabled: true
+scope:
+  mode: matching
+  conditions:
+    mode: all
+    items:
+      - { field: sender_domain, operator: is, value: news.example.com }
+steps:
+  - id: 2f1c7a52-0b8e-4d3a-9c41-6a5e8f0d1b01
+    kind: mail_action
+    action: { kind: mark_read }
+  - id: 2f1c7a52-0b8e-4d3a-9c41-6a5e8f0d1b02
+    kind: mail_action
+    action: { kind: set_status, status: done }
+  - id: 2f1c7a52-0b8e-4d3a-9c41-6a5e8f0d1b03
+    kind: mail_action
+    action: { kind: move_to_folder, folderId: Newsletters }
+```
+
+Create it with `cld --json mail automation create --definition-file newsletter.yaml`. This example is enabled; omitting `enabled` defaults to `false`.
+For important mail, add no status step: incoming mail already sets **Needs action**.
+
+In the guided editor, **AI classify** starts with **Important**, **Routine**, and an If branch: **Set status → Needs action** for **Important**, **Set status → Done** otherwise. Add **Move to folder** to the **Routine** branch to file it too.
+An automation's **Done** or **Waiting for reply** covers only its triggering message: loading it later does not reopen it, but any other incoming message sets **Needs action** again. A person's Done or **Show later** also covers messages Mail still loads.
+When several automations match, the oldest decides the folder. Another skips its read step if the message has left its folder or is being moved. Keep read and move in one automation, with read first; the local status step can share that path.
+For existing mail, enable a saved automation without AI steps, then run `cld --json mail automation backfill start <automation-id> --revision <revision> --yes`. One backfill hands over at most 100 messages; `limited` means run it again. For moving only, see [`cld mail sender move`](#automate-mail-from-the-terminal).
+
+### Choose the right follow-up and mailbox pattern
+
+- **Show later** (`cld mail conversation update <id> --revision <r> --snooze-until <ISO>`) hides a conversation in **Later** until that time, then returns it with the same status; new incoming mail ends it earlier, and Done cannot be snoozed.
+- A personal reminder (`cld mail reminder set <id> --due <ISO>`) is private, sends you a Cloud notification when due, and changes no status.
+- A saved view (`cld mail saved-view create`, **Settings → Organization**) filters folder, assignee, next step, local tag, and Later, for example “Needs action + tag Priority”; it filters the same status, without creating a separate queue.
+
+For a personal mailbox, work from **Needs action**. Automations mark noise Done and file it. Mark Done when finished; also archive if you want another mail client's Inbox clean. **Waiting for reply** follows automatically; use **Show later** for date-dependent work.
+
+For a shared mailbox, use **Unassigned** with **Needs action** as team intake. Assign an owner with **Assign**, `cld mail assign <id> --to <user>`, or automation `assign_user`. Each person works from **Assigned to me**; the owner's confirmed reply sets **Waiting for reply**, and the owner marks **Done**. For team folders outside shared lists, use [**Only in the folder**](#choose-where-a-folders-mail-appears).
+
+### Make a clean start with old conversations
+
+For thousands of old Needs action conversations, choose a mailbox or folder and a cutoff. This Bash loop needs `jq` and keeps newer mail in Needs action:
+
+```bash
+mailbox=Personal            # or a folder: "Personal:Newsletters"
+before=2026-09-01           # keep newer conversations in Needs action
+cursor=
+while :; do
+  page=$(cld --json mail ls "$mailbox" --view needs_action --limit 100 ${cursor:+--cursor "$cursor"}) || break
+  jq -r --arg before "$before" '.items[] | select(.latestMessageAt < $before) | .id' <<<"$page" \
+    | xargs -r -n 50 cld mail done --mailbox "${mailbox%%:*}"
+  cursor=$(jq -r '.nextCursor // empty' <<<"$page")
+  [ -n "$cursor" ] || break
+done
+```
+
+Lists are newest first by `latestMessageAt` and page by position, so marking a page Done does not shift the next page; pass the same scope and view with `--cursor`. To finish every conversation in the view, drop the `select(...)` filter. Each `done` call takes up to 50 IDs, covers messages Mail still loads, and exits 1 when an ID reports `not_found`.
+Done changes nothing at the provider. To also empty the provider Inbox, run `cld mail archive` with the same IDs; an ID without Inbox messages reports an error and the command exits 1.
 
 ## Choose where a folder's mail appears
 
@@ -461,15 +539,7 @@ removes everyone. `cld mail conversation users` lists who can be assigned.
 `done` and `reopen` need no revision. Done also covers messages Mail still
 loads. Each result reports `ok` with the resulting status and revision, or
 `not_found` for a missing or invisible conversation. Partial results exit with
-status 1. To mark a page of Needs action conversations done in batches of 50,
-select the mailbox with `cld mail use` first:
-
-```bash
-cld mail use <mailbox>
-cld --json mail ls <mailbox> --view needs_action --limit 100 | jq -r '.items[].id' | xargs -r -n 50 cld mail done
-```
-
-Done conversations leave that view, so re-running the pipeline continues.
+status 1. For bulk cleanup, see [Make a clean start with old conversations](#make-a-clean-start-with-old-conversations).
 Lists return `items` and `nextCursor`; pass `--cursor` to read another page.
 
 API clients can undo the move commands returned by a conversation action with

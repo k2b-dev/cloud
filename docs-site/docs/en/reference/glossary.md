@@ -61,7 +61,7 @@ the term.
 | share, sharing | teilen, Freigabe | Give other people access to a resource. „Freigabe“ is the sharing area or one share. In new text it never means an approval. | — | `Zugriffsfreigabe*`, `Lesefreigabe*` |
 | approve, approval | genehmigen, Genehmigung | A person confirms a change before it takes effect. | `sign off`, `sign-off` | — |
 | claim | übernehmen | Take a task or a shift so that others see who works on it. Use „übernehmen“ only in this sense; for settings write „anwenden“ or „speichern“. | `pick up`, `grab` | `beanspruchen` |
-| assign, assignee | zuweisen, zugewiesene Person | Make a person responsible for an item. An assignment is not a claim. | — | — |
+| assign, assignee | zuweisen, zugewiesene Person | Make a person responsible for an item. In Spaces, a person's claim is the working state of one assignee. | — | — |
 | notification | Benachrichtigung | A message from Cloud about a change or an event. | — | `Mitteilung*`, `Notification*` |
 
 ## Content

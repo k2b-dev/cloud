@@ -25,3 +25,5 @@ Contact book settings control metadata, tags, access, API keys, import, export, 
 - **Edit:** Also create and update contacts.
 - **Manage:** Also open the book settings, share the book, edit its tags, import, export, and delete the book.
 :::
+
+A book always keeps at least one person, group, or agent with **Manage** access; an API key does not count.

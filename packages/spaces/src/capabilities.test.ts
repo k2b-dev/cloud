@@ -2093,6 +2093,29 @@ describe("spaces capabilities", () => {
 
 const encodePage = (page: number) => Buffer.from(JSON.stringify({ v: 1, page }), "utf8").toString("base64url");
 
+test.each(["en", "de"])("task.update exposes refused claim-holder removal as CONFLICT (%s)", async (locale) => {
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.item, "get").mockResolvedValue(task);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  const message = "Task is claimed; release its current claim before changing ownership or completing it";
+  const update = spyOn(spacesService.item, "update").mockResolvedValue({ ok: false, status: 409, error: message });
+  expect(await spacesCapabilities.actions["task.update"].run({ itemId, assigneeIds: [] }, { ...userContext, locale })).toMatchObject({
+    ok: false,
+    error: {
+      code: "CONFLICT",
+      status: 409,
+      message:
+        locale === "en"
+          ? message
+          : "Die Aufgabe ist übernommen. Gib die aktuelle Übernahme frei oder verwende die zugehörige Kennung und Identität.",
+    },
+  });
+  expect(update).toHaveBeenCalledWith(expect.objectContaining({ id: itemUuid, data: { assigneeIds: [] } }));
+  expect(TaskUpdateInputSchema.safeParse({ itemId, assigneeIds: [], claimId: userId, force: true }).success).toBeFalse();
+  expect(EventUpdateInputSchema.safeParse({ itemId, assigneeIds: [], claimId: userId, force: true }).success).toBeFalse();
+});
+
 test("work capabilities enforce grants and resource binding before touching work state", async () => {
   spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
   spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);

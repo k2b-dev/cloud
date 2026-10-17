@@ -158,6 +158,16 @@ export const change = async (params: {
       INSERT INTO spaces.task_work (item_id, claim, progress) VALUES (${params.itemId}::uuid, ${work.claim}::jsonb, ${work.progress}::jsonb)
       ON CONFLICT (item_id) DO UPDATE SET claim = EXCLUDED.claim, progress = EXCLUDED.progress
     `;
+    if (params.operation === "claim" && params.actor.kind === "user") {
+      await tx`
+        INSERT INTO spaces.item_assignees (item_id, user_id)
+        VALUES (${params.itemId}::uuid, ${params.actor.id}::uuid)
+        ON CONFLICT DO NOTHING
+      `;
+    }
+    if (takenOver?.actor.kind === "user") {
+      await tx`DELETE FROM spaces.item_assignees WHERE item_id = ${params.itemId}::uuid AND user_id = ${takenOver.actor.id}::uuid`;
+    }
     if (takenOver)
       await recordTakeOver(
         { spaceId: params.spaceId, itemId: params.itemId, itemTitle: item.title, actor: params.actor, claim: takenOver },

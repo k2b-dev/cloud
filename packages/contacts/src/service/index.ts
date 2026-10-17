@@ -1,5 +1,5 @@
 import type { AccessEntry } from "@k2b/cloud/contracts";
-import { type AccessSubject, type PermissionLevel, paginate, paginateItems } from "@k2b/cloud/server";
+import { type AccessSubject, type PermissionLevel, paginate, paginateItems, type RequestActor } from "@k2b/cloud/server";
 import type { PageParams, Paginated } from "@k2b/stdlib";
 import * as apiKeys from "./api-keys";
 import * as books from "./books";
@@ -104,11 +104,18 @@ export const contactsService = {
       }): Promise<Paginated<AccessEntry>> => books.access.list(config),
       grant: (config: { bookId: string; principal: AccessEntry["principal"]; permission: PermissionLevel }) =>
         wake(books.access.grant(config)),
-      update: (config: { bookId: string; accessId: string; permission: PermissionLevel }) => wake(books.access.update(config)),
-      remove: (config: { bookId: string; accessId: string }) => wake(books.access.remove(config)),
+      update: (config: {
+        bookId: string;
+        accessId: string;
+        permission: PermissionLevel;
+        actor: RequestActor;
+        accessSubject: AccessSubject;
+        locale?: string;
+      }) => wake(books.access.update(config)),
+      remove: (config: { bookId: string; accessId: string; actor: RequestActor; accessSubject: AccessSubject; locale?: string }) =>
+        wake(books.access.remove(config)),
       add: (config: { bookId: string; accessId: string }) => wake(books.access.add(config)),
       count: (config: { bookId: string }) => books.access.count(config),
-      guard: (config: { bookId: string; accessId: string }) => books.access.guard(config),
       apiKeys: {
         list: apiKeys.list,
         create: apiKeys.create,
