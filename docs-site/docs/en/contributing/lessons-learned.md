@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Unreported export loss | A PDF replaces content with a label, source, or error notice without telling the caller. | Tests: Notebooks `book-renderer.test.ts` checks typed omissions against rendered diagnostics and content order; `pdf-omissions.test.ts` checks the header budget; API and gateway tests check delivery. |
 | Release notes parsed as HTML | HTML-like placeholders swallow release sections, so release-please skips a component or mixes its notes with another release. | Check: `release-body` CI job (`scripts/check-release-pr-body.ts`) parses release PR bodies with the pinned release-please parser; the `check` job reads live PR text on PR and merge queue runs and refuses markup in titles, body commit headers, BREAKING CHANGE paragraphs, and nested-commit blocks; a self-test checks that lint against the pinned commit parser ([#1298](https://github.com/k2b-dev/cloud/issues/1298)). |
 | Silent truncation by a clamped page size | A caller asks for the whole collection with a page size above the helper's maximum and exports only the first page. | Check: `page-size` rejects oversized `pagination.perPage` literals. Tests: Contacts export pagination, cancellation, stream failure, serializer bytes, and the 1,001-contact integration case ([#1241](https://github.com/k2b-dev/cloud/issues/1241)). |
 | Claim and assignment diverge | A person works on a task while assignment-based lists still show it as unassigned, or a stale assignee replacement removes an active worker. | Tests: `packages/spaces/src/service/claim-assignment.integration.test.ts` checks transactional user claims, guarded assignee replacements, forced releases, completion, and idempotent backfill ([#1269](https://github.com/k2b-dev/cloud/issues/1269)). |
@@ -373,6 +374,13 @@ convention still needs a check or a test.
 - **Root cause:** The prompt, copy request, and navigation belonged to the note tree, while the panel had only an event name.
 - **Error class:** A browser event without a mounted consumer.
 - **Guard:** `duplicate-note.behavior.test.tsx` exercises the panel with no tree and with two trees, plus cancellation, errors, permissions, and listener cleanup. Both entry points use the same copy flow; only the panel handles its event.
+
+### Note PDFs did not report omitted content
+
+- **What happened:** Note PDFs replaced images, diagrams, and invalid blocks with labels, source, or notices without reporting the loss to the caller.
+- **Root cause:** The renderer returned HTML and parser diagnostics but no report of rendering fallbacks.
+- **Error class:** Unreported export loss.
+- **Guard:** Notebooks renderer tests cover each fallback, omission order, and one block omission per diagnostic in English and German. Header tests check Unicode labels and the maximal prefix within 2048 bytes; service, API, and gateway tests check delivery.
 
 ## Add a lesson
 

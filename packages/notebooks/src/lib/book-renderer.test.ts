@@ -1,10 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { cloudAiChartTable } from "@k2b/cloud/ai/browser";
 import { markdown } from "@k2b/cloud/shared";
 import { renderMarkdownInfoBlock } from "@k2b/ui";
+import katex from "katex";
 import type { NoteQueryResult } from "../service/note-query";
 import { renderNotebookBook, sanitizeNotebookBookHtml } from "./book-renderer";
 import { bookRendererMessages } from "./book-renderer-messages";
+import * as chartBlocks from "./chart-blocks";
 import { notebookChartTableHtml, parseNotebookChartBlocks, renderNotebookChartFigure } from "./chart-blocks";
 import { DOCUMENTED_IMAGE_FORMS } from "./markdown-image.fixtures";
 
@@ -773,4 +775,132 @@ test("Book and editor preserve chart payloads; print keeps only the drawing and 
   expect(print.html).toContain(notebookChartTableHtml(cloudAiChartTable(parsed, "de")));
   expect(print.html).toContain(">Jan</span>");
   expect(print.html).toContain(">12</span>");
+});
+
+describe("typed PDF omissions", () => {
+  test("malformed data uses its handle or localized opener line without changing diagnostics", () => {
+    expect(render("@profile\n:::data\nowner: [nested]\n:::").omissions).toEqual([
+      { code: "invalid_block", kind: "data", label: "@profile" },
+    ]);
+    for (const locale of ["en", "de"]) {
+      const document = render("\n:::data\nmissing colon\n:::", locale);
+      expect(document.omissions).toEqual([{ code: "invalid_block", kind: "data", label: locale === "de" ? "Zeile 2" : "Line 2" }]);
+      expect(document.diagnostics).toEqual([]);
+    }
+  });
+
+  test("unavailable queries report missing results and result diagnostics", () => {
+    for (const queryResults of [
+      undefined,
+      new Map([[1, { ...result, diagnostics: [{ code: "unavailable" as const, line: 1, path: "source" }] }]]),
+    ]) {
+      expect(render(":::query\nsource: notes\n:::", "en", queryResults).omissions).toEqual([
+        { code: "not_rendered", kind: "query", label: "Line 1" },
+      ]);
+    }
+  });
+
+  test("chart drawing failure reports one omission after a successful parse", () => {
+    // Parsing already rejects known drawing failures. Exercise a later renderer failure separately.
+    const markdown = ":::chart\ntype: bar\ntitle: Sales\ncolumns: [Month, Revenue]\nrows:\n  - [Jan, 12]\nx: Month\ny: Revenue\n:::";
+    expect(parseNotebookChartBlocks(markdown).blocks).toHaveLength(1);
+    const figure = spyOn(chartBlocks, "renderNotebookChartFigure").mockReturnValue(null);
+    try {
+      const document = render(markdown);
+      expect(document.omissions).toEqual([{ code: "invalid_block", kind: "chart", label: "Line 1" }]);
+      expect(document.html).toContain("These values cannot be drawn as this chart.");
+    } finally {
+      figure.mockRestore();
+    }
+  });
+
+  test("one block omission per in-place diagnostic in both locales and print modes", () => {
+    // An unclosed block consumes the rest of a note, so vary the final unclosed kind.
+    const closed = [
+      ":::toc\nmax-depth: 42\n:::",
+      ":::query\nsource: nowhere\n:::",
+      "@bad\n:::data\nmissing colon\n:::",
+      ":::chart\ntype: nope\n:::",
+    ];
+    for (const locale of ["en", "de"]) {
+      for (const print of [false, true]) {
+        for (const unclosed of ["query", "toc", "data", "chart", "info"] as const) {
+          const markdown = [...closed, `:::${unclosed}\nmissing close`].join("\n\n");
+          const document = renderNotebookBook({ markdown, locale, notebookId: "ABC123", print });
+          const blocks = document.omissions.filter(({ kind }) => ["query", "toc", "data", "chart", "callout"].includes(kind));
+          expect(blocks.map(({ code, kind }) => [code, kind])).toEqual([
+            ["invalid_block", "toc"],
+            ["invalid_block", "query"],
+            ["invalid_block", "data"],
+            ["invalid_block", "chart"],
+            ["invalid_block", unclosed === "info" ? "callout" : unclosed],
+          ]);
+          expect(document.html.match(/class="notebook-book-diagnostic"/g)?.length).toBe(blocks.length);
+          expect(blocks[2]?.label).toBe("@bad");
+          expect(blocks.at(-1)?.label).toBe(`${locale === "de" ? "Zeile" : "Line"} 18`);
+        }
+      }
+    }
+  });
+
+  test("print reports images and Mermaid in order, using safe labels, once per rendered slot", () => {
+    const markdown = [
+      ":::info\n![**Map**](attach://ABC123) ![](attach://DEF456 =80x40)\n:::",
+      "# ![](https://user:pw@example.test/path.png?query=secret#fragment)",
+      "```mermaid\n\n graph TD\nA-->B\n```",
+      "![](not-a-url) ![](https://[bad) ![](attach://MISSING)",
+    ].join("\n\n");
+    const input = {
+      markdown,
+      notebookId: "ABC123",
+      locale: "en",
+      references: { attachments: new Map([["DEF456", { filename: "Floor plan.png", sizeBytes: 100 }]]) },
+    };
+    const document = renderNotebookBook({ ...input, print: true });
+    expect(document.omissions).toEqual([
+      { code: "not_rendered", kind: "image", label: "Map" },
+      { code: "not_rendered", kind: "image", label: "Floor plan.png" },
+      { code: "not_rendered", kind: "image", label: "https://example.test/path.png" },
+      { code: "not_rendered", kind: "diagram", label: "graph TD" },
+      ...Array.from({ length: 3 }, () => ({ code: "not_rendered" as const, kind: "image" as const, label: "" })),
+    ]);
+    expect(document.html).not.toContain("OMISSION");
+    expect(renderNotebookBook(input).omissions).toEqual([]);
+  });
+
+  test("math and table formula errors follow rendered cell order, with source labels", () => {
+    const document = render('$\\frac{$\n\n| A | B | C |\n| --- | --- | --- |\n| =1/0 | $\\sqrt{$ | =NOPE("<&>") |');
+    expect(document.omissions).toEqual([
+      { code: "invalid_block", kind: "math", label: "\\frac{" },
+      { code: "invalid_block", kind: "formula", label: "=1/0" },
+      { code: "invalid_block", kind: "math", label: "\\sqrt{" },
+      { code: "invalid_block", kind: "formula", label: '=NOPE("<&>")' },
+    ]);
+    expect(document.html).toContain('class="katex-error"');
+    expect(document.html.match(/md-formula-error/g)).toHaveLength(2);
+  });
+
+  test("KaTeX catch fallback reports invalid math", () => {
+    const math = spyOn(katex, "renderToString").mockImplementation(() => {
+      throw new Error("render failed");
+    });
+    try {
+      expect(render("$x$").omissions).toEqual([{ code: "invalid_block", kind: "math", label: "x" }]);
+    } finally {
+      math.mockRestore();
+    }
+  });
+
+  test("clean notes, empty or truncated queries and source previews omit nothing", () => {
+    expect(render("# Guide\n\nText $x^2$ and a [link](note://DEF456).\n\n| A |\n| --- |\n| =1+2 |").omissions).toEqual([]);
+    const markdown = ":::query\nsource: notes\n:::";
+    for (const queryResult of [result, { ...result, items: [], total: 0, truncated: false }]) {
+      expect(render(markdown, "en", new Map([[1, queryResult]])).omissions).toEqual([]);
+    }
+    expect(renderNotebookBook({ markdown, notebookId: "ABC123", locale: "en", querySource: true }).omissions).toEqual([]);
+    // Invalid math in alt text is only a label; its KaTeX output never reaches the document.
+    expect(
+      renderNotebookBook({ markdown: "![ $\\frac{$ ](attach://ABC123)", notebookId: "ABC123", locale: "en", print: true }).omissions,
+    ).toEqual([{ code: "not_rendered", kind: "image", label: "\\frac{" }]);
+  });
 });

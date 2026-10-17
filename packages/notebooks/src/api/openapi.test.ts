@@ -11,7 +11,18 @@ type Schema = {
   type?: string | string[];
   anyOf?: Schema[];
 };
-type Operation = { responses?: Record<string, { content?: Record<string, { schema?: Schema }> }> };
+type Operation = {
+  responses?: Record<
+    string,
+    {
+      content?: Record<string, { schema?: Schema }>;
+      headers?: Record<
+        string,
+        { required?: boolean; description?: string; schema?: { type?: string; maxLength?: number; pattern?: string } }
+      >;
+    }
+  >;
+};
 type Spec = {
   paths: Record<string, { get?: Operation; post?: Operation }>;
   components?: { schemas?: Record<string, Schema> };
@@ -106,4 +117,14 @@ test("version restores document their public results and expose bodyless typed c
     { url: "http://example.test/abc123/notes/def456/versions/version/restore", method: "POST", body: undefined },
     { url: "http://example.test/abc123/notes/def456/versions/version/copy", method: "POST", body: undefined },
   ]);
+});
+
+test("PDF response documents the optional bounded omission report header", async () => {
+  const spec = (await generateSpecs(app)) as Spec;
+  const header = spec.paths["/{id}/notes/{noteId}/pdf"]?.post?.responses?.["200"]?.headers?.["X-Notebooks-Pdf-Omissions"];
+  expect(header).toMatchObject({ required: false, schema: { type: "string", maxLength: 2048, pattern: "^[A-Za-z0-9_-]+$" } });
+  expect(header?.description).toContain("base64url");
+  expect(header?.description).toContain("UTF-8 JSON {items:[{code,kind,label}],more}");
+  expect(header?.description).toContain("marked in place");
+  expect(header?.description).toContain("did not fit");
 });
