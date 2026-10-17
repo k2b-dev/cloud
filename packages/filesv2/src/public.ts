@@ -16,7 +16,7 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { errorMessage } from "./api/messages";
 import { EntryQuerySchema, PublicBrowseQuerySchema, PublicUploadInputSchema, UploadIdSchema } from "./contracts";
-import { publicUploadRateLimit } from "./public-upload-rate-limit";
+import { publicUploadPath, publicUploadRateLimit } from "./public-upload-rate-limit";
 import { FilesError, filesService } from "./service";
 import { setShareAccessCookie, shareAccessCookie } from "./share-access-cookie";
 
@@ -28,12 +28,10 @@ export const publicApi = new Hono<AuthContext>()
       keyBy: "ip",
       limitPerSecond: 10,
       windowSecs: 60,
-      routes: [
-        { method: "POST", path: /\/inbox\/[^/]+\/api\/uploads$/, disabled: true },
-        { method: "POST", path: /\/inbox\/[^/]+\/api\/uploads\/[^/]+\/(lease|commit|abort)$/, disabled: true },
-      ],
+      routes: [{ method: "POST", path: publicUploadPath, disabled: true }],
     }),
   )
+  .use("*", publicUploadRateLimit)
   .use("*", auth.requireRole("*"))
   .use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
@@ -82,39 +80,25 @@ export const publicApi = new Hono<AuthContext>()
   .get("/inbox/:token/api", v("query", PublicBrowseQuerySchema), async (c) =>
     respond(c, ok(await filesService.publicShare(c.req.param("token") ?? "", "inbox", c.req.valid("query"), shareAccessCookie(c)))),
   )
-  .post("/inbox/:token/api/uploads", publicUploadRateLimit, v("json", PublicUploadInputSchema), async (c) =>
+  .post("/inbox/:token/api/uploads", v("json", PublicUploadInputSchema), async (c) =>
     respond(c, ok(await filesService.publicInboxUpload(c.req.param("token") ?? "", c.req.valid("json"), shareAccessCookie(c)))),
   )
-  .post(
-    "/inbox/:token/api/uploads/:id/lease",
-    publicUploadRateLimit,
-    v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })),
-    async (c) =>
-      respond(c, ok(await filesService.publicInboxLease(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c)))),
+  .post("/inbox/:token/api/uploads/:id/lease", v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })), async (c) =>
+    respond(c, ok(await filesService.publicInboxLease(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c)))),
   )
-  .post(
-    "/inbox/:token/api/uploads/:id/commit",
-    publicUploadRateLimit,
-    v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })),
-    async (c) => {
-      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_MAX_SECONDS);
-      try {
-        return respond(
-          c,
-          ok(await filesService.publicInboxCommit(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c))),
-        );
-      } finally {
-        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
-      }
-    },
-  )
-  .post(
-    "/inbox/:token/api/uploads/:id/abort",
-    publicUploadRateLimit,
-    v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })),
-    async (c) => {
-      await filesService.publicInboxAbort(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c));
-      return respond(c, ok({ aborted: true }));
-    },
-  );
+  .post("/inbox/:token/api/uploads/:id/commit", v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })), async (c) => {
+    setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_MAX_SECONDS);
+    try {
+      return respond(
+        c,
+        ok(await filesService.publicInboxCommit(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c))),
+      );
+    } finally {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
+  })
+  .post("/inbox/:token/api/uploads/:id/abort", v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })), async (c) => {
+    await filesService.publicInboxAbort(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c));
+    return respond(c, ok({ aborted: true }));
+  });
 export type PublicApiType = typeof publicApi;

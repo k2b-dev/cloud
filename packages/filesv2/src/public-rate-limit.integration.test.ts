@@ -6,7 +6,11 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { valkeySuite } from "../../../scripts/fixtures/test-infra";
 import { FilesError } from "./service/errors";
 
-const pass: MiddlewareHandler = async (_c, next) => next();
+let authCalls = 0;
+const pass: MiddlewareHandler = async (_c, next) => {
+  authCalls++;
+  await next();
+};
 mock.module("@k2b/cloud/server", () => ({
   ...cloudServer,
   auth: { ...cloudServer.auth, requireRole: () => pass },
@@ -39,9 +43,9 @@ suite("public inbox upload rate limits", () => {
     for (const prefix of prefixes) found.push(...((await redis.send("KEYS", [`${prefix}:*`])) as string[]));
     return found;
   };
-  const request = (ip: string, path: string, method = "POST", withPrefix = false) => {
+  const request = (ip: string, path: string, method = "POST") => {
     const start = method === "POST" && path.endsWith("/api/uploads");
-    return (withPrefix ? mounted : publicApi).request(`${withPrefix ? "/share/filesv2" : ""}${path}`, {
+    return mounted.request(`/share/filesv2${path}`, {
       method,
       headers: {
         "X-Forwarded-For": ` ${ip} , 192.0.2.1`,
@@ -52,7 +56,10 @@ suite("public inbox upload rate limits", () => {
     });
   };
 
-  beforeEach(() => setSystemTime(new Date("2026-10-15T00:00:00Z")));
+  beforeEach(() => {
+    authCalls = 0;
+    setSystemTime(new Date("2026-10-15T00:00:00Z"));
+  });
   afterEach(async () => {
     try {
       for (const key of await keys()) {
@@ -73,13 +80,16 @@ suite("public inbox upload rate limits", () => {
     }
     for (let i = 30; i < 120; i++) {
       const action = ["lease", "commit", "abort"][i % 3];
-      const response = await request(ip, `${uploadPath}/upload-id/${action}`, "POST", i % 2 === 0);
+      const response = await request(ip, `${uploadPath}/upload-id/${action}`);
       expect(response.ok).toBe(true);
       expect(response.headers.get("X-RateLimit-Limit")).toBe("120");
       expect(response.headers.get("X-RateLimit-Remaining")).toBe(String(119 - i));
       expect(response.headers.get("X-RateLimit-Reset")).toBe("60");
     }
-    const limited = await request(ip, uploadPath, "POST", true);
+    expect(authCalls).toBe(120);
+    const callsBeforeLimited = authCalls;
+    const limited = await request(ip, uploadPath);
+    expect(authCalls).toBe(callsBeforeLimited);
     expect(limited.status).toBe(429);
     expect(limited.headers.get("Retry-After")).toMatch(/^[1-9]\d*$/);
     expect(limited.headers.get("X-RateLimit-Limit")).toBe("120");
@@ -97,7 +107,7 @@ suite("public inbox upload rate limits", () => {
     expect(visitor.headers.get("X-RateLimit-Remaining")).toBe("119");
 
     for (let i = 0; i < 10; i++) {
-      const response = await request(ip, `/inbox/${token}/api`, "GET", true);
+      const response = await request(ip, `/inbox/${token}/api`, "GET");
       expect(response.ok).toBe(true);
       expect(response.headers.get("X-RateLimit-Limit")).toBe("10");
       expect(response.headers.get("X-RateLimit-Remaining")).toBe(String(9 - i));
@@ -127,12 +137,54 @@ suite("public inbox upload rate limits", () => {
       ["POST", `/inbox/${token}/api/uploads/upload-id/other`],
     ] as const;
     for (const [i, [method, path]] of shapes.entries()) {
-      const response = await request(ip, path, method, true);
+      const response = await request(ip, path, method);
       expect(response.headers.get("X-RateLimit-Limit")).toBe("10");
       expect(response.headers.get("X-RateLimit-Remaining")).toBe(String(9 - i));
     }
-    expect((await request(ip, `/inbox/${token}/api`, "GET", true)).status).toBe(429);
+    expect((await request(ip, `/inbox/${token}/api`, "GET")).status).toBe(429);
     // Exhausting the page budget must not prevent starting an upload.
-    expect((await request(ip, `/inbox/${token}/api/uploads`, "POST", true)).ok).toBe(true);
+    expect((await request(ip, `/inbox/${token}/api/uploads`)).ok).toBe(true);
+  });
+
+  test("an extra path prefix consumes the public 10-request budget", async () => {
+    const { ip, token } = identity();
+    const path = `/extra/inbox/${token}/api/uploads`;
+    for (let i = 0; i < 10; i++) {
+      const response = await request(ip, path);
+      expect(response.status).toBe(404);
+      expect(response.headers.get("X-RateLimit-Limit")).toBe("10");
+      expect(response.headers.get("X-RateLimit-Remaining")).toBe(String(9 - i));
+    }
+    expect((await request(ip, path)).status).toBe(429);
+  });
+
+  test("unmounted uploads consume the public 10-request budget", async () => {
+    const { ip, token } = identity();
+    const upload = () =>
+      publicApi.request(`/inbox/${token}/api/uploads`, {
+        method: "POST",
+        headers: { "X-Forwarded-For": ip, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "file.txt", size: 0, idempotencyKey: crypto.randomUUID() }),
+      });
+    for (let i = 0; i < 10; i++) {
+      const response = await upload();
+      expect(response.ok).toBe(true);
+      expect(response.headers.get("X-RateLimit-Limit")).toBe("10");
+      expect(response.headers.get("X-RateLimit-Remaining")).toBe(String(9 - i));
+    }
+    expect((await upload()).status).toBe(429);
+  });
+
+  test.each(["encoded", "malformed"] as const)("%s token segments use the decoded route token in Valkey keys", async (encoding) => {
+    const { ip, token } = identity();
+    const routeToken = `${token}${encoding === "encoded" ? "/suffix" : "%invalid"}`;
+    const segment = encoding === "encoded" ? encodeURIComponent(routeToken) : routeToken;
+    const response = await request(ip, `/inbox/${segment}/api/uploads`);
+    expect(response.ok).toBe(true);
+    expect(response.headers.get("X-RateLimit-Limit")).toBe("120");
+    const hash = createHash("sha256").update(routeToken).digest("hex");
+    const storedKeys = await keys();
+    expect(storedKeys.some((key) => key.startsWith("filesv2:rate-limit:") && key.includes(`:share:${hash}:ip:${ip}:`))).toBe(true);
+    expect(storedKeys.every((key) => !key.includes(token))).toBe(true);
   });
 });

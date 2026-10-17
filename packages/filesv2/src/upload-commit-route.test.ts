@@ -8,7 +8,6 @@ mock.module("@k2b/cloud/server", () => ({
   ...cloudServer,
   auth: { ...cloudServer.auth, requireRole: () => pass },
   rateLimit: () => pass,
-  ratelimit: () => ({ check: async () => ({ limited: false, remaining: 119, resetIn: 60_000 }) }),
 }));
 
 let fail = false;
