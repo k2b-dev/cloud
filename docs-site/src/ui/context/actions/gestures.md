@@ -71,7 +71,9 @@ the viewport with an 8 px inset. The width is checked when the hold fires.
 The popover stays open after the lift. Further movement of the held finger
 never scrolls the page underneath it, and the lift never presses a menu item.
 Focus moves to the first item; Escape closes the menu and returns focus to
-the element. A tap outside or a scroll closes it.
+the element. A tap outside or a scroll closes it. Inside a modal dialog the
+hold keeps the sheet at every width, because everything outside the dialog is
+inert.
 
 The touch that opened the sheet never presses anything in it either. An item
 chosen in the sheet runs once the sheet has closed and left the history, so

@@ -475,6 +475,24 @@ else
 
       const menu = () => dom.document.querySelector<HTMLElement>(".k2b-context-menu[role='menu']");
 
+      test("inside a modal dialog keeps the sheet, since the menu on the body would be inert", async () => {
+        const view = await mount();
+        const dialog = dom.document.createElement("dialog");
+        dom.root.append(dialog);
+        dialog.append(view.host);
+        dialog.showModal();
+        // happy-dom does not know `:modal`; the browser test checks it in a real engine.
+        const matches = dialog.matches.bind(dialog);
+        Object.defineProperty(dialog, "matches", { value: (selector: string) => selector === ":modal" || matches(selector) });
+        view.pointer("pointerdown", view.text, 120, 40);
+        await settle(LONG_PRESS);
+        expect(view.sheet()).not.toBeNull();
+        expect(menu()).toBeNull();
+        view.pointer("pointerup", view.text, 120, 40);
+        view.touchEnd(view.text);
+        dialog.close();
+      });
+
       test("opens the same items at the press point once and consumes the release", async () => {
         let opens = 0;
         const view = await mount({ sheetTop: true, onOpen: () => opens++ });

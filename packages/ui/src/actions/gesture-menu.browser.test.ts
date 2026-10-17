@@ -575,6 +575,28 @@ describe(`GestureMenu on tablets in ${browserName}`, () => {
     }
   }, 30_000);
 
+  // Everything outside a modal dialog is inert, also a menu on the body, so the hold keeps the sheet there.
+  test("inside a modal dialog a hold still opens the sheet", async () => {
+    const { page, context } = await open(landscape);
+    try {
+      await page.evaluate(() => {
+        const dialog = document.createElement("dialog");
+        dialog.className = "host";
+        document.getElementById("app")!.append(dialog);
+        dialog.append(document.querySelector(".list")!);
+        dialog.showModal();
+      });
+      await hold(page, context, await center(page, ".k2b-gesture-menu >> nth=2 >> .text"));
+      const sheet = page.locator("dialog[open] .k2b-gesture-menu__sheet-menu");
+      await sheet.waitFor();
+      expect(await page.locator(".k2b-context-menu").count()).toBe(0);
+      await page.keyboard.press("ArrowDown");
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Reply");
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
   test("a 390px phone still opens the bottom sheet", async () => {
     const { page, context } = await open(phone);
     try {

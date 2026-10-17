@@ -211,6 +211,19 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
 
   const active = () => props.items.length > 0;
   const wide = () => window.matchMedia?.("(min-width: 48rem)").matches ?? false;
+  /**
+   * A modal dialog makes everything outside it inert, also ContextMenu's menu on the body, so inside one the hold
+   * keeps the sheet, which opens on the same dialog stack. An engine without `:modal` gets the sheet too.
+   */
+  const inModal = () => {
+    const dialog = surface.closest("dialog[open]");
+    if (!dialog) return false;
+    try {
+      return dialog.matches(":modal");
+    } catch {
+      return true;
+    }
+  };
   const action = (kind: GestureKind) => gestureAction(props.items, kind);
   const touchAction = () => (action("swipe-right") || action("swipe-left") ? "swipe" : action("double-tap") ? "tap" : undefined);
 
@@ -294,7 +307,7 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     if (!press) return;
     press.long = true;
     lastTap = undefined;
-    if (wide()) openMenuAt?.(press.x, press.y);
+    if (wide() && !inModal()) openMenuAt?.(press.x, press.y);
     else openSheet();
   };
 
