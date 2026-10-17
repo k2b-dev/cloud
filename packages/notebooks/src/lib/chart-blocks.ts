@@ -1,0 +1,418 @@
+import {
+  CLOUD_AI_CHART_MAX_SERIES,
+  CLOUD_AI_CHART_MAX_VALUES,
+  type CloudAiChartInput,
+  type CloudAiNumberFormat,
+  chartDrawingIssue,
+  cloudAiChartLegend,
+  cloudAiChartMarkKey,
+  cloudAiChartReferenceMark,
+  cloudAiChartRenderOptions,
+  cloudAiChartRows,
+  cloudAiChartSchema,
+  cloudAiChartTable,
+  cloudAiChartTooltip,
+} from "@k2b/cloud/ai/browser";
+import { type EvalResult, evaluateTableCell, isTotalRow } from "@k2b/cloud/shared";
+import { highlight, text } from "@k2b/stdlib";
+import { prepareChartSnapshot } from "@k2b/ui";
+import { Lexer, type Tokens } from "marked";
+import { evaluatePrettyTable } from "../frontend/lib/pretty-table";
+import { bookRendererMessages } from "./book-renderer-messages";
+import { extractNamedBlocks, isNamedBlockHandle, namedBlockBody, parseNamedDataBlockResult } from "./named-blocks";
+import {
+  directives,
+  type NotebookBlockDiagnostic,
+  type NotebookBlockDiagnosticCode,
+  parseScalar,
+  parseValue,
+  QUERY_MAX_BLOCKS,
+} from "./query-blocks";
+
+export const CHART_MAX_BLOCKS = QUERY_MAX_BLOCKS;
+export type ChartBlock = { line: number; input: CloudAiChartInput };
+type Frame = { kind: CloudAiChartInput["kind"]; area?: boolean; title: string; subtitle?: string };
+type Entry = { value: string; line: number };
+type Cell = { raw: string; result: EvalResult };
+type SourceData = { columns: string[]; rows: Cell[][]; implicit: boolean; keys?: string[] };
+const TYPES = new Set(["line", "area", "bar", "pie", "donut", "scatter", "stat"]);
+const escape = highlight.escape;
+const chartSchema = cloudAiChartSchema();
+const scalarCell = (value: string | number | boolean): Cell => {
+  const raw = String(value);
+  return {
+    raw,
+    result:
+      typeof value === "string"
+        ? evaluateTableCell(0, 0, { headers: ["value"], rows: [[raw]], currentRow: 0, currentCol: 0 })
+        : { kind: "ok", value },
+  };
+};
+
+/** Reads only local note data. Markdown table tokens match the Book table renderer's cell text. */
+const namedSource = (markdown: string, name: string): SourceData | null => {
+  const block = extractNamedBlocks(markdown).find((candidate) => candidate.name === name);
+  if (!block) return null;
+  const source = markdown.slice(block.blockStart, block.blockEnd);
+  if (block.type === "table") {
+    const table = Lexer.lex(source, { gfm: true }).find((token): token is Tokens.Table => token.type === "table");
+    if (!table || table.type !== "table") return null;
+    const columns = table.header.map((cell) => cell.text);
+    const data = { headers: columns, rows: table.rows.map((row) => row.map((cell) => cell.text)) };
+    // Count before evaluating formulas in a table that cannot fit the chart budget.
+    const valueRows = data.rows.filter((row) => !isTotalRow(row));
+    const rows =
+      valueRows.length > CLOUD_AI_CHART_MAX_VALUES
+        ? valueRows
+            .slice(0, CLOUD_AI_CHART_MAX_VALUES + 1)
+            .map((row) => row.map((cell) => ({ raw: cell, result: { kind: "ok" as const, value: cell } })))
+        : evaluatePrettyTable(data)
+            .filter((row) => !row.isTotalRow)
+            .map((row) => row.cells);
+    return { columns, rows, implicit: false };
+  }
+  if (block.type === "list") {
+    const list = Lexer.lex(source, { gfm: true }).find((token): token is Tokens.List => token.type === "list");
+    if (!list || list.type !== "list") return null;
+    const rows = list.items.slice(0, CLOUD_AI_CHART_MAX_VALUES + 1).map((item) => {
+      // The last colon followed by a space ends the label, so times like 10:30 stay in it.
+      const pair = item.text.match(/^([^\n]+):[ \t]+(\S.*)$/);
+      return pair ? [scalarCell(pair[1]!.trim()), scalarCell(pair[2]!)] : [scalarCell(item.text), scalarCell("")];
+    });
+    return { columns: ["label", "value"], rows, implicit: true };
+  }
+  if (block.type === "data") {
+    const parsed = parseNamedDataBlockResult(namedBlockBody(markdown, block));
+    if (parsed.diagnostics.length) return null;
+    const entries = parsed.entries.filter((entry) => typeof entry.value === "number");
+    return {
+      columns: ["label", "value"],
+      implicit: true,
+      keys: entries.map((entry) => entry.key),
+      rows: entries.map((entry) => [scalarCell(text.humanize(entry.key)), scalarCell(typeof entry.value === "number" ? entry.value : "")]),
+    };
+  }
+  return null;
+};
+
+const parseChart = (directive: ReturnType<typeof directives>[number], markdown: string) => {
+  const diagnostics: NotebookBlockDiagnostic[] = [];
+  const top = new Map<string, Entry>();
+  const tooltip = new Map<string, Entry>();
+  const rows: { cells: Cell[]; line: number }[] = [];
+  const add = (
+    code: NotebookBlockDiagnosticCode,
+    key: string,
+    line = top.get(key)?.line ?? directive.line,
+    params?: NotebookBlockDiagnostic["params"],
+  ) => diagnostics.push({ code, line, path: key ? `chart.${key}` : "chart", ...(params ? { params } : {}) });
+  const pair = (target: Map<string, Entry>, key: string, entry: Entry, path: string) => {
+    if (target.has(key)) add("duplicate-key", path, entry.line);
+    else target.set(key, entry);
+  };
+  let section = "";
+  let rowsExceeded = false;
+  for (const [index, source] of directive.body.entries()) {
+    const line = directive.line + index + 1;
+    if (!source.trim()) continue;
+    const entry = source.match(/^([A-Za-z][A-Za-z0-9-]*):\s*(.*)$/);
+    if (entry) {
+      const key = entry[1]!;
+      section = "";
+      if (!["type", "title", "subtitle", "data", "columns", "rows", "x", "y", "label", "value", "tooltip"].includes(key)) {
+        add("unknown-key", key, line);
+        continue;
+      }
+      pair(top, key, { value: entry[2]!, line }, key);
+      if (key === "rows" || key === "tooltip") {
+        section = key;
+        if (entry[2]!.trim()) add("invalid-type", key, line);
+      }
+      continue;
+    }
+    const row = section === "rows" ? source.match(/^ {2}- (.+)$/) : null;
+    if (row) {
+      if (rows.length >= CLOUD_AI_CHART_MAX_VALUES) {
+        if (!rowsExceeded) add("too-many-items", `rows.${rows.length}`, line, { limit: CLOUD_AI_CHART_MAX_VALUES });
+        rowsExceeded = true;
+        continue;
+      }
+      const values = parseValue(row[1]!);
+      if (!Array.isArray(values)) add("invalid-type", `rows.${rows.length}`, line);
+      else rows.push({ cells: values.map(scalarCell), line });
+      continue;
+    }
+    const nested = section === "tooltip" ? source.match(/^ {2}([A-Za-z][A-Za-z0-9-]*):\s*(.*)$/) : null;
+    if (nested) {
+      const key = nested[1]!;
+      if (!["label", "format", "unit"].includes(key)) add("unknown-key", `tooltip.${key}`, line);
+      else pair(tooltip, key, { value: nested[2]!, line }, `tooltip.${key}`);
+      continue;
+    }
+    add("unexpected-line", section, line);
+  }
+  if (!directive.closed) add("unclosed-block", "");
+  const string = (key: string, entries = top): string | undefined => {
+    const entry = entries.get(key);
+    if (!entry) return undefined;
+    const value = parseScalar(entry.value);
+    if (typeof value === "string" && value.trim()) return value;
+    add("invalid-type", entries === tooltip ? `tooltip.${key}` : key, entry.line);
+    return undefined;
+  };
+  for (const key of ["type", "title"]) if (!top.has(key)) add("missing-key", key);
+  const type = string("type");
+  const title = string("title");
+  const subtitle = string("subtitle");
+  if (type && !TYPES.has(type)) add("invalid-type", "type");
+  let data: SourceData = { columns: [], rows: [], implicit: false };
+  if (top.has("data")) {
+    if (top.has("columns") || top.has("rows")) add("invalid-type", "data");
+    const name = isNamedBlockHandle(top.get("data")!.value);
+    if (!name) add("invalid-type", "data");
+    else {
+      const source = namedSource(markdown, name);
+      if (!source) add("unknown-block", "data", undefined, { name });
+      else data = source;
+    }
+  } else if (top.has("columns") || top.has("rows")) {
+    for (const key of ["columns", "rows"]) if (!top.has(key)) add("missing-key", key);
+    const columns = parseValue(top.get("columns")?.value ?? "");
+    if (
+      !Array.isArray(columns) ||
+      !columns.length ||
+      !columns.every((column): column is string => typeof column === "string" && !!column.trim())
+    )
+      add("invalid-type", "columns");
+    else {
+      if (new Set(columns).size !== columns.length) add("duplicate-key", "columns");
+      data = { columns, rows: rows.map((row) => row.cells), implicit: false };
+      rows.forEach((row, index) => {
+        if (row.cells.length !== columns.length) add("invalid-type", `rows.${index}`, row.line);
+      });
+    }
+  } else if (type !== "stat") add("missing-key", "data");
+  const dataKey = top.has("data") ? "data" : "rows";
+  if (data.rows.length > CLOUD_AI_CHART_MAX_VALUES) add("too-many-items", dataKey, undefined, { limit: CLOUD_AI_CHART_MAX_VALUES });
+  if (diagnostics.length || !type || !title) return { diagnostics };
+
+  const column = (key: string, defaultName?: string): string | undefined => {
+    const name = top.has(key) ? string(key) : defaultName;
+    if (name === undefined) add("missing-key", key);
+    else if (!data.columns.includes(name)) add("unknown-column", key, undefined, { name });
+    return name;
+  };
+  const cells = (name: string) => data.rows.map((row) => row[data.columns.indexOf(name)]!);
+  // A column reports its first bad cell only: one fix at a time, never a diagnostic per row.
+  const reported = new Set<string>();
+  const once = (code: NotebookBlockDiagnosticCode, key: string, params: NotebookBlockDiagnostic["params"]) => {
+    if (reported.has(`${code}:${key}:${params?.name}`)) return;
+    reported.add(`${code}:${key}:${params?.name}`);
+    add(code, key, undefined, params);
+  };
+  const numbers = (name: string, key: string) =>
+    cells(name).map((cell, index) => {
+      if (cell.result.kind === "ok" && typeof cell.result.value === "number" && Number.isFinite(cell.result.value))
+        return cell.result.value;
+      once("not-a-number", key, { name, row: index + 1 });
+      return 0;
+    });
+  const labels = (name: string, key: string) =>
+    cells(name).map((cell, index) => {
+      if (cell.result.kind === "error") once("not-a-number", key, { name, row: index + 1 });
+      return cell.result.kind === "ok" ? String(cell.result.value) : cell.raw;
+    });
+  let format: CloudAiNumberFormat | undefined;
+  const formatName = string("format", tooltip);
+  const unit = string("unit", tooltip);
+  if (formatName === "number" || formatName === "percent") format = { style: formatName };
+  else if (formatName && /^[A-Z]{3}$/.test(formatName)) format = { style: "currency", currency: formatName };
+  else if (formatName) add("invalid-type", "tooltip.format", tooltip.get("format")?.line);
+  if (unit) format = { ...format, unit };
+  let valueLabel: string | undefined;
+  let mapped: unknown;
+  const common = { title, ...(subtitle ? { subtitle } : {}) };
+  if (type === "stat") {
+    const raw = top.get("value");
+    const value = raw ? parseScalar(raw.value) : undefined;
+    if (typeof value === "number") mapped = { ...common, kind: "stat", value, format };
+    else if (typeof value === "string" && data.keys?.includes(value)) {
+      const index = data.keys.indexOf(value);
+      valueLabel = text.humanize(value);
+      const cell = data.rows[index]![1]!;
+      mapped = { ...common, kind: "stat", value: cell.result.kind === "ok" ? cell.result.value : undefined, format };
+    } else {
+      const name = column("value", data.implicit ? "value" : undefined);
+      if (name && !diagnostics.length) {
+        if (!data.implicit) valueLabel = name;
+        const values = numbers(name, "value");
+        mapped = { ...common, kind: "stat", value: values.at(-1), ...(values.length >= 2 ? { sparkline: values } : {}), format };
+      }
+    }
+  } else if (type === "pie" || type === "donut") {
+    const label = column("label", data.implicit ? "label" : undefined);
+    const value = column("value", data.implicit ? "value" : undefined);
+    if (label && value && !diagnostics.length) {
+      if (!data.implicit) valueLabel = value;
+      const values = numbers(value, "value");
+      mapped = { ...common, kind: type, data: labels(label, "label").map((label, i) => ({ label, value: values[i] })), format };
+    }
+  } else {
+    const x = column("x", data.implicit ? "label" : undefined);
+    const y = top.has("y") ? parseValue(top.get("y")!.value) : data.implicit ? "value" : undefined;
+    const ys = typeof y === "string" ? [y] : y;
+    if (!ys) add("missing-key", "y");
+    else if (!Array.isArray(ys) || !ys.length || !ys.every((name) => typeof name === "string")) add("invalid-type", "y");
+    else {
+      for (const name of ys) if (!data.columns.includes(String(name))) add("unknown-column", "y", undefined, { name: String(name) });
+      if (type === "bar" && ys.length > 1) add("chart-one-series", "y");
+      if (ys.length > CLOUD_AI_CHART_MAX_SERIES) add("too-many-items", "y", undefined, { limit: CLOUD_AI_CHART_MAX_SERIES });
+      if (x && !diagnostics.length) {
+        // The implicit `label` and `value` of a list or data block are no names a reader wrote: the contract's own
+        // localized value label stays.
+        if (ys.length === 1 && !data.implicit) valueLabel = String(ys[0]);
+        if (type === "bar") {
+          const values = numbers(String(ys[0]), "y");
+          mapped = { ...common, kind: "bar", data: labels(x, "x").map((label, i) => ({ label, value: values[i] })) };
+        } else {
+          const xs = cells(x).map((cell, i) => {
+            if (cell.result.kind === "error") {
+              once("not-a-number", "x", { name: x, row: i + 1 });
+              return 0;
+            }
+            const value = cell.result.value;
+            // Calendar validity is checked by the shared ChartDate schema below.
+            if (typeof value === "number" || (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?)?$/.test(value)))
+              return value;
+            once("chart-x-type", "x", { name: x });
+            return 0;
+          });
+          mapped = {
+            ...common,
+            kind: type === "area" ? "line" : type,
+            ...(type === "area" ? { area: true } : {}),
+            ...(data.implicit ? {} : { xAxis: { label: x } }),
+            series: ys.map((name) => ({ label: name, data: numbers(String(name), "y").map((y, i) => ({ x: xs[i], y })) })),
+          };
+        }
+      }
+    }
+  }
+  const tooltipLabel = string("label", tooltip) ?? valueLabel;
+  const parsed = chartSchema.safeParse({
+    ...(typeof mapped === "object" && mapped !== null ? mapped : {}),
+    ...(tooltipLabel || format ? { tooltip: { ...(tooltipLabel ? { label: tooltipLabel } : {}), ...(format ? { format } : {}) } } : {}),
+  });
+  if (diagnostics.length) return { diagnostics };
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const path = issue.path.map(String);
+      const first = path[0];
+      const key =
+        first === "series"
+          ? path.includes("x")
+            ? "x"
+            : "y"
+          : first === "data" || first === "sparkline"
+            ? dataKey
+            : first === "xAxis"
+              ? "x"
+              : first === "kind"
+                ? "type"
+                : first === "format"
+                  ? "tooltip"
+                  : (first ?? "");
+      add("chart-unsupported", key, top.get(key)?.line ?? directive.line);
+    }
+    return { diagnostics };
+  }
+  if (chartDrawingIssue(parsed.data)) {
+    add("chart-unsupported", dataKey);
+    return { diagnostics };
+  }
+  return { diagnostics, block: { line: directive.line, input: parsed.data } };
+};
+
+export const parseNotebookChartBlocks = (markdown: string): { blocks: ChartBlock[]; diagnostics: NotebookBlockDiagnostic[] } => {
+  const blocks: ChartBlock[] = [];
+  const diagnostics: NotebookBlockDiagnostic[] = [];
+  for (const [index, directive] of directives(markdown)
+    .filter((entry) => entry.type === "chart")
+    .entries()) {
+    if (index >= CHART_MAX_BLOCKS) {
+      diagnostics.push({ code: "too-many-items", line: directive.line, path: "chart", params: { limit: CHART_MAX_BLOCKS } });
+      continue;
+    }
+    const result = parseChart(directive, markdown);
+    diagnostics.push(...result.diagnostics);
+    if (result.block) blocks.push(result.block);
+  }
+  return { blocks, diagnostics };
+};
+
+/** A cheap frame for an editor placeholder; it never resolves or draws data. */
+export const chartBlockFrame = (body: string[]): Frame | null => {
+  const entries = new Map<string, string>();
+  for (const line of body) {
+    const pair = /^(type|title|subtitle):\s*(.*)$/.exec(line);
+    if (!pair) continue;
+    if (entries.has(pair[1]!)) return null;
+    entries.set(pair[1]!, pair[2]!);
+  }
+  const type = parseScalar(entries.get("type") ?? "");
+  const title = parseScalar(entries.get("title") ?? "");
+  const subtitle = entries.has("subtitle") ? parseScalar(entries.get("subtitle")!) : undefined;
+  if (typeof type !== "string" || !TYPES.has(type) || typeof title !== "string" || (subtitle !== undefined && typeof subtitle !== "string"))
+    return null;
+  // Validate the shared header fields without reading data or drawing a chart.
+  const header = chartSchema.safeParse({ kind: "stat", title, subtitle, value: 0 });
+  if (!header.success) return null;
+  switch (type) {
+    case "area":
+      return { kind: "line", area: true, title: header.data.title, ...(header.data.subtitle ? { subtitle: header.data.subtitle } : {}) };
+    case "line":
+    case "bar":
+    case "scatter":
+    case "pie":
+    case "donut":
+    case "stat":
+      return { kind: type, title: header.data.title, ...(header.data.subtitle ? { subtitle: header.data.subtitle } : {}) };
+    default:
+      return null;
+  }
+};
+
+/**
+ * The figure around a chart: title, subtitle and a viewport whose height comes from the kind alone (app.css). The
+ * editor draws the same frame with an empty viewport while a preview loads, so the drawing never moves the text.
+ */
+export const notebookChartFrameHtml = (frame: Frame, viewportHtml: string, options: { legend?: boolean } = {}): string =>
+  `<figure class="notebook-book-chart" data-kind="${frame.kind === "line" && frame.area ? "area" : frame.kind}"><figcaption class="notebook-book-chart__header"><span class="notebook-book-chart__title">${escape(frame.title)}</span>${frame.subtitle ? `<span class="notebook-book-chart__subtitle">${escape(frame.subtitle)}</span>` : ""}</figcaption><div class="notebook-book-chart__viewport"${options.legend ? ' data-legend="true"' : ""}>${viewportHtml}</div></figure>`;
+
+/** Only the shared renderer supplies SVG. A failed drawing leaves the caller's source visible. */
+export const renderNotebookChartFigure = (input: CloudAiChartInput, locale: string, options: { print?: boolean } = {}): string | null => {
+  try {
+    const rows = cloudAiChartRows(input, locale);
+    const snapshot = prepareChartSnapshot(cloudAiChartRenderOptions(input, locale, { legend: "outside" }), {
+      key: ({ datum }) => cloudAiChartMarkKey(datum),
+      tooltip: ({ datum }) => {
+        const row = rows.add(datum);
+        return cloudAiChartTooltip(rows.columns(), row);
+      },
+      reference: ({ datum }) => cloudAiChartReferenceMark(input, datum),
+    });
+    if (!snapshot.marks.length) return null;
+    const legend = cloudAiChartLegend(input, locale);
+    const t = bookRendererMessages.resolve([locale]).t;
+    const legendHtml = legend.length
+      ? `<ul class="k2b-chart-legend" aria-label="${escape(t.chartLegend)}">${legend.map((entry) => `<li><span class="k2b-chart-legend__swatch"${entry.style && entry.style !== "solid" ? ` data-style="${entry.style}"` : ""}${entry.reference ? ' data-reference="true"' : ""} style="--k2b-chart-legend-color:var(--stdlib-chart-c${(entry.color % 8) + 1})" aria-hidden="true"></span>${escape(entry.label)}</li>`).join("")}</ul>`
+      : "";
+    const viewport = `<div class="k2b-chart" data-chart-kind="${snapshot.kind}"><div class="k2b-chart__svg"${snapshot.stretch ? ' data-stretch="true"' : ""} style="--k2b-chart-width:${snapshot.width}px;--k2b-chart-height:${snapshot.height}px">${snapshot.svg}</div></div>${legendHtml}`;
+    const figure = notebookChartFrameHtml(input, viewport, { legend: legend.length > 0 });
+    if (!options.print) return figure;
+    const table = cloudAiChartTable(input, locale);
+    return `${figure}<div class="md-table-wrap"><table class="md-table"><thead><tr>${table.columns.map((col) => `<th scope="col">${escape(col.label)}</th>`).join("")}</tr></thead><tbody>${table.rows.map((row) => `<tr>${table.columns.map((col) => `<td><span${col.numeric ? ' class="md-align-right"' : ""}>${escape(row.cells[col.id] ?? "")}</span></td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  } catch {
+    return null;
+  }
+};

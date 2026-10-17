@@ -71,4 +71,55 @@ TOC links to headings before and after the block on this page, not other pages. 
 Tables and tasks remain Markdown. Formula cells start with =, such as `=SUM(Hours)`, `=IF(Status == "done", "closed", "open")` or `=PROGRESS(2, 10)`. Use real column names; quote names containing spaces with backticks. These formulas operate within their table, not across query results or notebooks. Book and editor share formula evaluation, including totals/progress; errors remain visible. Ordinary Book table cells and headers support inline formatting, links, images and LaTeX. Escape literal table pipes as backslash-pipe. Preserve unknown existing syntax instead of inventing spreadsheet functions; note.preview is not a formula validator.
 ## Preview before saving structured changes
 
-Use notebooks.note.preview with the complete proposed Markdown before saving query or TOC changes. Fix diagnostics, then use the original saved note's hash as the edit precondition, not the preview hash. Preview the saved note after saving changed data. Preview checks query/TOC blocks, not every Markdown feature, data block or table formula; it is not a formula validator. Draft previews require write access and an unlocked note; previews require a user-backed actor.
+Use notebooks.note.preview with the complete proposed Markdown before saving query, TOC or chart changes. Fix diagnostics, then use the original saved note's hash as the edit precondition, not the preview hash. Preview the saved note after saving changed data. Preview checks query/TOC/chart blocks and reports formula errors in cells used by charts. It does not check every Markdown feature, data block or table formula; it is not a formula validator. Draft previews require write access and an unlocked note; previews require a user-backed actor.
+
+
+## Charts
+
+Type `:::` and choose **chart**. A chart reads only data from this note. Hover over a mark to see its values.
+
+```text
+@sales
+| Date | Revenue | Costs |
+| --- | --- | --- |
+| 2026-01-01 | 1200 | 600 |
+| 2026-02-01 | 1400 | 700 |
+
+:::chart
+type: area
+title: Sales 2026
+data: @sales
+x: Date
+y: [Revenue, Costs]
+tooltip:
+  label: Amount
+  format: EUR
+:::
+```
+
+Use `line`, `area`, `bar`, `pie`, `donut`, `scatter`, or `stat` as `type`. Every chart needs a `title`; `subtitle` is optional. An area chart fills a line chart.
+
+Set `data: @name` to a named table, list, or `:::data` block in this note. Tables use evaluated formula values and exclude total rows. Lists such as `- Jan: 12` and numeric data entries supply columns called `label` and `value`. Data keys become readable labels, as in Book. For these sources, you may omit the column settings.
+
+Use `x` for the x column and `y` for one value column or a list such as `[Revenue, Costs]`. Line, area, and scatter charts need numeric x values or ISO dates: `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm[:ss]`, without an offset. Lines need at least two rows. For text labels, use `bar`. Each bar chart shows exactly one y column. Pie and donut use `label` and `value` column names. For stat, `value` can be a number, a key in the referenced data block, or a table column. A table column shows its last value and, with two or more rows, a small trend line.
+
+Instead of `data`, write inline `columns` and `rows`:
+
+```text
+:::chart
+type: bar
+title: Sales
+columns: [Month, Revenue]
+rows:
+  - [Jan, 1200]
+  - [Feb, 1400]
+x: Month
+y: Revenue
+:::
+```
+
+Indent row items and tooltip fields by two spaces. Each row must match the column count. Do not combine `data` with inline rows. This is a small YAML-like format, not general YAML.
+
+The optional `tooltip` section accepts `label`, `format`, and `unit`. Formats are `number`, `percent`, or an uppercase three-letter currency code such as `EUR`. `unit` adds a short suffix. Pie, donut, and stat also use this format for their displayed number. A single value column supplies the tooltip label by default; y column names label the series.
+
+A note can contain 20 charts. Each data list has at most 480 values, and a chart has at most 8 series. The shared chart also checks the total marks and whether the values and labels fit. Invalid settings show an error at the source line and keep the source visible. PDF export includes the chart followed by its data table.

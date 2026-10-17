@@ -8,7 +8,7 @@ order: 130
 
 Nutze benannte Daten für Fakten neben deinem Text, Abfragen für automatische Seitenlisten und ein Inhaltsverzeichnis für die Überschriften einer Seite. Ein vorgegebenes Schema für Metadaten brauchst du nicht.
 
-Setze `:::data`, `:::query` und `:::toc` direkt ins Dokument. Setze sie nicht in Listen, Zitate, Codebeispiele oder andere Blöcke. Notebooks wertet verschachtelte Blöcke nicht aus.
+Setze `:::data`, `:::query`, `:::toc` und `:::chart` direkt ins Dokument. Setze sie nicht in Listen, Zitate, Codebeispiele oder andere Blöcke. Notebooks wertet verschachtelte Blöcke nicht aus.
 
 Rücke bei Hinweisblöcken wie `:::info` das schließende `:::` nicht weiter ein als die öffnende Zeile.
 
@@ -109,6 +109,56 @@ Lass `value` bei `exists` und `missing` weg. Operatoren für die Zugehörigkeit 
 - **Nicht verfügbar:** Verschachtelte Filtergruppen, Ausdrücke, Vergleiche von Datumsbereichen und Sortierung nach eigenen Feldern.
 :::
 
+## Diagramme {icon="chart-bar"}
+
+Tippe `:::` und wähle **chart**. Ein Diagramm liest nur Daten aus dieser Notiz. Bewege den Zeiger über einen Datenpunkt, um seine Werte zu sehen.
+
+```text
+@sales
+| Date | Revenue | Costs |
+| --- | --- | --- |
+| 2026-01-01 | 1200 | 600 |
+| 2026-02-01 | 1400 | 700 |
+
+:::chart
+type: area
+title: Sales 2026
+data: @sales
+x: Date
+y: [Revenue, Costs]
+tooltip:
+  label: Amount
+  format: EUR
+:::
+```
+
+Verwende `line`, `area`, `bar`, `pie`, `donut`, `scatter` oder `stat` als `type`. Jedes Diagramm braucht einen `title`; `subtitle` ist optional. Ein Flächendiagramm füllt ein Liniendiagramm.
+
+Setze `data: @name` auf eine benannte Tabelle, Liste oder einen `:::data`-Block dieser Notiz. Tabellen verwenden berechnete Formelwerte und lassen Summenzeilen weg. Listen wie `- Jan: 12` und numerische Dateneinträge liefern die Spalten `label` und `value`. Datenschlüssel werden wie in der Buchansicht zu lesbaren Beschriftungen. Bei diesen Quellen kannst du die Spaltenangaben weglassen.
+
+Verwende `x` für die x-Spalte und `y` für eine Wertspalte oder eine Liste wie `[Revenue, Costs]`. Linien-, Flächen- und Streudiagramme brauchen numerische x-Werte oder ISO-Daten: `YYYY-MM-DD` oder `YYYY-MM-DDTHH:mm[:ss]`, ohne Zeitzonenversatz. Linien brauchen mindestens zwei Zeilen. Verwende `bar` für Textbeschriftungen. Jedes Balkendiagramm zeigt genau eine y-Spalte. Kreis- und Ringdiagramme verwenden die Spaltennamen `label` und `value`. Bei `stat` kann `value` eine Zahl, ein Schlüssel im referenzierten Datenblock oder eine Tabellenspalte sein. Eine Tabellenspalte zeigt ihren letzten Wert und ab zwei Zeilen eine kleine Trendlinie.
+
+Statt `data` kannst du `columns` und `rows` direkt angeben:
+
+```text
+:::chart
+type: bar
+title: Sales
+columns: [Month, Revenue]
+rows:
+  - [Jan, 1200]
+  - [Feb, 1400]
+x: Month
+y: Revenue
+:::
+```
+
+Rücke Zeileneinträge und Tooltip-Felder um zwei Leerzeichen ein. Jede Zeile muss zur Spaltenzahl passen. Kombiniere `data` nicht mit direkt angegebenen Zeilen. Das Format ähnelt YAML, ist aber kein allgemeines YAML.
+
+Der optionale Abschnitt `tooltip` erlaubt `label`, `format` und `unit`. Formate sind `number`, `percent` oder ein Währungscode aus drei Großbuchstaben wie `EUR`. `unit` ergänzt ein kurzes Suffix. Kreis-, Ring- und Kennzahldiagramme verwenden dieses Format auch für die angezeigte Zahl. Eine einzelne Wertspalte liefert standardmäßig die Tooltip-Beschriftung; die y-Spaltennamen beschriften die Datenreihen.
+
+Eine Notiz kann 20 Diagramme enthalten. Jede Datenliste hat höchstens 480 Werte, ein Diagramm höchstens 8 Datenreihen. Das Diagramm prüft außerdem die Gesamtzahl der Datenpunkte und ob Werte und Beschriftungen passen. Ungültige Einstellungen zeigen einen Fehler in der Quellzeile; der Quelltext bleibt sichtbar. Der PDF-Export enthält das Diagramm und danach seine Datentabelle.
+
 ## Seiteninhalt verlinken {icon="list"}
 
 Tippe `:::` und wähle **toc**:
@@ -126,7 +176,7 @@ Die Buchansicht verlinkt auch Überschriften in Listen, Zitaten und Hinweisen. D
 
 ## Blöcke in der Vorschau sehen und aktualisieren {icon="refresh"}
 
-Der Rich-Modus zeigt Vorschauen für Abfragen und Inhaltsverzeichnisse, die der Server rendert. Um einen Block zu bearbeiten, setze den Cursor hinein oder wähle **Quelltext anzeigen**. Notebooks markiert ungültige Einstellungen in ihren Quellzeilen.
+Der Rich-Modus zeigt Vorschauen für Abfragen, Inhaltsverzeichnisse und Diagramme, die der Server rendert. Um einen Block zu bearbeiten, setze den Cursor hinein oder wähle **Quelltext anzeigen**. Notebooks markiert ungültige Einstellungen in ihren Quellzeilen.
 
 Eine Entwurfsvorschau nutzt die Abfrageeinstellungen und Überschriften deines Entwurfs. Abfragen lesen trotzdem gespeicherte Daten, auch für die aktuelle Notiz. Die Vorschau speichert den Entwurf nicht und ändert keine passenden Notizen.
 

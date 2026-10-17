@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { CompletionContext } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
+import { parseNotebookChartBlocks } from "../../../lib/chart-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../../../lib/query-blocks";
 import { buildDataBlockTemplate } from "./data-block-template";
 import { buildInfoBlockSnippet, infoBlockCompletionSource } from "./info-block-snippets";
@@ -43,6 +44,7 @@ key: value
         "warning",
         "danger",
         "data",
+        "chart",
         "query",
         "toc",
       ]);
@@ -61,4 +63,13 @@ key: value
     expect(parseNotebookTocBlocks(toc).blocks).toHaveLength(1);
     expect(parseNotebookTocBlocks(toc).diagnostics).toEqual([]);
   });
+});
+
+test("offers a chart snippet that parses without diagnostics", () => {
+  const doc = ":::";
+  const result = infoBlockCompletionSource(new CompletionContext(stateFor(doc), doc.length, true));
+  expect(result?.options.find((option) => option.label === "chart")?.detail).toBe("Chart from a table or list");
+  const parsed = parseNotebookChartBlocks(`:::${buildInfoBlockSnippet("chart").replace("${0}", "")}`);
+  expect(parsed.diagnostics).toEqual([]);
+  expect(parsed.blocks[0]?.input.kind).toBe("bar");
 });

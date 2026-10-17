@@ -689,3 +689,56 @@ describe("Notebook Book display ligatures", () => {
     expect(markdown.renderSync("a -> b (c) 2026 != x")).toBe("<p>a -&gt; b (c) 2026 != x</p>\n");
   });
 });
+
+const chartMarkdown = `:::chart
+type: bar
+title: Sales
+columns: [Month, Revenue]
+rows:
+  - [Jan, 12]
+  - [Feb, 18]
+x: Month
+y: Revenue
+:::`;
+
+test("charts survive sanitizing in the document and per-line editor preview", () => {
+  const result = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "en" });
+  expect(result.html).toContain('<figure class="notebook-book-chart" data-kind="bar">');
+  expect(result.html).toContain("<svg");
+  expect(result.html).toContain("<title>Jan · Revenue: 12</title>");
+  expect(result.html).not.toContain("NOTEBOOKBOOKSLOT");
+  expect(result.blocks).toHaveLength(1);
+  expect(result.blocks[0]?.line).toBe(1);
+  expect(result.blocks[0]?.html).toContain("<svg");
+});
+
+test("authored chart column labels stay escaped inside trusted SVG and print tables", () => {
+  const markdown = chartMarkdown.replaceAll("Revenue", "<img src=x onerror=alert(1)>");
+  const { html } = renderNotebookBook({ markdown, notebookId: "book01", locale: "en", print: true });
+  expect(html).toContain("<svg");
+  expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  expect(html).not.toContain("<img");
+});
+
+test("invalid charts show a localized diagnostic and the original source", () => {
+  const markdown = chartMarkdown.replace("y: Revenue", "y: Kosen");
+  const { html, blocks } = renderNotebookBook({ markdown, notebookId: "book01", locale: "en" });
+  expect(html).toContain('class="notebook-book-diagnostic"');
+  expect(html).toContain("Unknown column Kosen.");
+  expect(html).toContain(":::chart");
+  expect(html).not.toContain("<svg");
+  expect(blocks[0]?.html).toContain("Unknown column Kosen.");
+});
+
+test("print adds a data table after the chart figure", () => {
+  const { html } = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "en", print: true });
+  expect(html).toContain('</figure><div class="md-table-wrap"><table class="md-table">');
+  expect(html).toContain('<th scope="col">Revenue</th>');
+  expect(html).toContain('<span class="md-align-right">12</span>');
+});
+
+test("version source previews still draw charts from their own text", () => {
+  const { html } = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "en", querySource: true });
+  expect(html).toContain("<svg");
+  expect(html).not.toContain(":::chart");
+});

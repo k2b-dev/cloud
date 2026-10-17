@@ -7,10 +7,11 @@ import type { ComponentProps } from "solid-js";
 import { createComponent, renderToString } from "solid-js/web";
 import * as Y from "yjs";
 import { launchBrowser } from "../../../../../../ui/test/browser";
+import { renderNotebookBook } from "../../../../lib/book-renderer";
 import { notebooksYjs } from "../../../../lib/yjs";
 import type NoteEditor from "./NoteEditor.client";
 import "../detail/ssr-test-plugin";
-import { NOTE_PREVIEW_BUDGET, NOTE_PREVIEW_ID, notePreviewLines } from "./note-preview";
+import { NOTE_PREVIEW_BUDGET, NOTE_PREVIEW_ID, notePreviewChart, notePreviewLines } from "./note-preview";
 
 const { default: NotePreview } = await import("./NotePreview");
 
@@ -48,8 +49,30 @@ const longMarkdown = Array.from(
 ).join("\n");
 // More lines than the preview holds: the editor's gutter has four digits, the preview's rows only three.
 const manyMarkdown = Array.from({ length: 1200 }, (_, index) => `Zeile ${index + 1}`).join("\n");
+// A chart right below the preview's lines: the preview reserves the box of the editor's chart widget.
+const chartMarkdown = [
+  "# Umsatz",
+  "",
+  "Wir vergleichen **Umsatz** und Kosten der ersten Monate.",
+  "",
+  ":::chart",
+  "type: area",
+  "title: Umsatz 2026 nach Monaten, mit einem Titel, der auf einem Telefon umbricht",
+  "subtitle: In Euro",
+  "columns: [Datum, Umsatz, Kosten]",
+  "rows:",
+  "  - [2026-01-01, 1200, 800]",
+  "  - [2026-02-01, 1500, 900]",
+  "  - [2026-03-01, 1400, 1000]",
+  "x: Datum",
+  "y: [Umsatz, Kosten]",
+  ":::",
+  "",
+  "Danach geht es weiter.",
+].join("\n");
 const notes = {
   markdown: { text: markdown, snapshot: snapshot(markdown) },
+  chart: { text: chartMarkdown, snapshot: snapshot(chartMarkdown) },
   headings: { text: headingMarkdown, snapshot: snapshot(headingMarkdown) },
   long: { text: longMarkdown, snapshot: snapshot(longMarkdown) },
   many: { text: manyMarkdown, snapshot: snapshot(manyMarkdown) },
@@ -99,13 +122,20 @@ beforeAll(async () => {
   server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch(request, server) {
+    async fetch(request, server) {
       const url = new URL(request.url);
       if (url.pathname === "/editor.js") return new Response(bundle, { headers: { "content-type": "text/javascript" } });
       if (url.pathname === "/api/notebooks/ws" && server.upgrade(request, { data: undefined })) return;
-      if (url.pathname.endsWith("/block-preview")) return Response.json({ markdown, blocks: [], diagnostics: [], headings: [] });
+      if (url.pathname.endsWith("/block-preview")) {
+        // Book's rendering of the posted draft, as the API returns it; the saved note in read-only mode.
+        const body: unknown = await request.json();
+        const draft =
+          typeof body === "object" && body && "markdown" in body && typeof body.markdown === "string" ? body.markdown : markdown;
+        const { blocks } = renderNotebookBook({ markdown: draft, notebookId: "book01", noteId: "note01", locale: "en", linkMode: "write" });
+        return Response.json({ markdown: draft, blocks, diagnostics: [], headings: [] });
+      }
       const { text: note, snapshot: initialSnapshot } =
-        notes[(["many", "long", "headings"] as const).find((name) => url.searchParams.has(name)) ?? "markdown"];
+        notes[(["many", "long", "headings", "chart"] as const).find((name) => url.searchParams.has(name)) ?? "markdown"];
       const mode = url.searchParams.get("mode") === "source" ? "source" : "rich";
       const readOnly = url.searchParams.has("readonly");
       const historyIncomplete = url.searchParams.has("historyIncomplete");
@@ -404,6 +434,67 @@ for (const fixture of [
       }
     } finally {
       release?.();
+      await page.close();
+    }
+  }, 30_000);
+}
+
+for (const width of [375, 1280]) {
+  test(`a chart keeps the box the preview reserved, while it loads and once it is drawn: ${width}px`, async () => {
+    expect(notePreviewChart(chartMarkdown, notePreviewLines(chartMarkdown, "rich"))).toMatchObject({ kind: "line", area: true });
+    const page = await browser.newPage({ viewport: { width, height: 900 }, isMobile: width < 600, hasTouch: width < 600 });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    let releaseEditor: (() => void) | undefined;
+    let releasePreview: (() => void) | undefined;
+    const editorHeld = new Promise<void>((resolve) => {
+      releaseEditor = resolve;
+    });
+    const previewHeld = new Promise<void>((resolve) => {
+      releasePreview = resolve;
+    });
+    await page.route("**/editor.js", async (route) => {
+      await editorHeld;
+      await route.continue();
+    });
+    await page.route("**/block-preview", async (route) => {
+      await previewHeld;
+      await route.continue();
+    });
+    const box = (selector: string) =>
+      page.locator(selector).evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+      });
+    const same = (actual: Awaited<ReturnType<typeof box>>, expected: Awaited<ReturnType<typeof box>>, context: string) => {
+      for (const property of ["top", "left", "width", "height"] as const)
+        closeTo(actual[property], expected[property], `${context}: ${property}`);
+    };
+    try {
+      await page.goto(`${server.url}?chart&mode=rich`, { waitUntil: "commit" });
+      const preview = page.locator(`#${NOTE_PREVIEW_ID}`);
+      await preview.waitFor({ state: "visible" });
+      await settle(page);
+      const reserved = await box(`#${NOTE_PREVIEW_ID} .cm-query-block-widget`);
+      const reservedFrame = await box(`#${NOTE_PREVIEW_ID} .notebook-book-chart`);
+      // Title, subtitle and an 18rem frame: never a one-line placeholder.
+      expect(reservedFrame.height).toBeGreaterThan(320);
+      releaseEditor?.();
+      await page.waitForSelector(".cm-content .cm-query-block-widget .notebook-book-chart");
+      await preview.waitFor({ state: "detached" });
+      await settle(page);
+      same(await box(".cm-content .cm-query-block-widget"), reserved, "Loading widget");
+      same(await box(".cm-content .notebook-book-chart"), reservedFrame, "Loading frame");
+      releasePreview?.();
+      await page.waitForSelector(".cm-content .notebook-book-chart svg");
+      await settle(page);
+      same(await box(".cm-content .cm-query-block-widget"), reserved, "Drawn widget");
+      same(await box(".cm-content .notebook-book-chart"), reservedFrame, "Drawn frame");
+      expect(await page.locator(".cm-content .k2b-chart-legend li").allTextContents()).toEqual(["Umsatz", "Kosten"]);
+      expect(errors).toEqual([]);
+    } finally {
+      releaseEditor?.();
+      releasePreview?.();
       await page.close();
     }
   }, 30_000);

@@ -1078,7 +1078,7 @@ export const notebooksCapabilities = defineCapabilities({
     "note.preview": {
       title: "Check note blocks",
       description:
-        "Validate query and TOC blocks using the same server preview as the editor. Returns compact diagnostics, not HTML or query rows. Requires a user-backed actor; saved content needs read access, drafts need write access. Does not save or validate all Markdown/table formulas.",
+        "Validate query, TOC and chart blocks using the same server preview as the editor. Returns compact diagnostics, not HTML or query rows. Requires a user-backed actor; saved content needs read access, drafts need write access. Does not save or validate all Markdown/table formulas.",
       input: NotePreviewInputSchema,
       data: NotePreviewDataSchema,
       openWorld: false,

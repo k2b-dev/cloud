@@ -8,7 +8,7 @@ order: 130
 
 Use named data for facts next to your text, queries for automatic page lists, and a table of contents for the headings of one page. You do not need a predefined metadata schema.
 
-Place `:::data`, `:::query`, and `:::toc` directly in the document. Do not put them in lists, quotes, code examples, or other blocks. Notebooks does not evaluate nested blocks.
+Place `:::data`, `:::query`, `:::toc`, and `:::chart` directly in the document. Do not put them in lists, quotes, code examples, or other blocks. Notebooks does not evaluate nested blocks.
 
 For notice blocks such as `:::info`, do not indent the closing `:::` more than the opening line.
 
@@ -109,6 +109,56 @@ Leave out `value` for `exists` and `missing`. Membership operators take lists. O
 - **Not available:** Nested filter groups, expressions, date range comparisons, and sorting by your own fields.
 :::
 
+## Charts {icon="chart-bar"}
+
+Type `:::` and choose **chart**. A chart reads only data from this note. Hover over a mark to see its values.
+
+```text
+@sales
+| Date | Revenue | Costs |
+| --- | --- | --- |
+| 2026-01-01 | 1200 | 600 |
+| 2026-02-01 | 1400 | 700 |
+
+:::chart
+type: area
+title: Sales 2026
+data: @sales
+x: Date
+y: [Revenue, Costs]
+tooltip:
+  label: Amount
+  format: EUR
+:::
+```
+
+Use `line`, `area`, `bar`, `pie`, `donut`, `scatter`, or `stat` as `type`. Every chart needs a `title`; `subtitle` is optional. An area chart fills a line chart.
+
+Set `data: @name` to a named table, list, or `:::data` block in this note. Tables use evaluated formula values and exclude total rows. Lists such as `- Jan: 12` and numeric data entries supply columns called `label` and `value`. Data keys become readable labels, as in Book. For these sources, you may omit the column settings.
+
+Use `x` for the x column and `y` for one value column or a list such as `[Revenue, Costs]`. Line, area, and scatter charts need numeric x values or ISO dates: `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm[:ss]`, without an offset. Lines need at least two rows. For text labels, use `bar`. Each bar chart shows exactly one y column. Pie and donut use `label` and `value` column names. For stat, `value` can be a number, a key in the referenced data block, or a table column. A table column shows its last value and, with two or more rows, a small trend line.
+
+Instead of `data`, write inline `columns` and `rows`:
+
+```text
+:::chart
+type: bar
+title: Sales
+columns: [Month, Revenue]
+rows:
+  - [Jan, 1200]
+  - [Feb, 1400]
+x: Month
+y: Revenue
+:::
+```
+
+Indent row items and tooltip fields by two spaces. Each row must match the column count. Do not combine `data` with inline rows. This is a small YAML-like format, not general YAML.
+
+The optional `tooltip` section accepts `label`, `format`, and `unit`. Formats are `number`, `percent`, or an uppercase three-letter currency code such as `EUR`. `unit` adds a short suffix. Pie, donut, and stat also use this format for their displayed number. A single value column supplies the tooltip label by default; y column names label the series.
+
+A note can contain 20 charts. Each data list has at most 480 values, and a chart has at most 8 series. The shared chart also checks the total marks and whether the values and labels fit. Invalid settings show an error at the source line and keep the source visible. PDF export includes the chart followed by its data table.
+
 ## Add page contents {icon="list"}
 
 Type `:::` and choose **toc**:
@@ -126,7 +176,7 @@ Book also links to headings in lists, quotes, and notices. The editor preview ca
 
 ## Preview and refresh blocks {icon="refresh"}
 
-Rich mode shows query and contents previews that the server renders. To edit a block, move the cursor into it or choose **Show source**. Notebooks marks invalid settings on their source lines.
+Rich mode shows query, contents, and chart previews that the server renders. To edit a block, move the cursor into it or choose **Show source**. Notebooks marks invalid settings on their source lines.
 
 A draft preview uses the query settings and headings of your draft. Queries still read saved data, even for the current note. The preview does not save the draft and does not change matching notes.
 

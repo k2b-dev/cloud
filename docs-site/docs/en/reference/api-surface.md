@@ -232,6 +232,26 @@ and types come from `@k2b/cloud/shared`. See
 [runtime configuration guide](/en/docs/operations/runtime-configuration)
 documents all process variables; that larger list is not the shape of `env`.
 
+### Evaluate Markdown table cells
+
+Import `evaluateTableCell(row, column, context)` and `EvalResult` from
+`@k2b/cloud/shared` when a chart or another derived view must use the same
+values as a Markdown table. Row and column indices are zero-based. The context
+contains `headers`, raw `rows`, `currentRow`, and `currentCol`.
+
+```ts
+import { evaluateTableCell } from "@k2b/cloud/shared";
+
+const context = { headers: ["Amount"], rows: [["+1.2e2"]], currentRow: 0, currentCol: 0 };
+const result = evaluateTableCell(0, 0, context); // { kind: "ok", value: 120 }
+```
+
+A plain cell becomes a number only when its whole text is one decimal number,
+including optional sign and exponent. Dates stay text. Formula cells return
+the evaluated value or a structured error. Check `result.kind` before using its
+value. Use `isTotalRow(row)` from the same entry point to omit total rows from
+a derived chart while keeping the full table in the evaluation context.
+
 ## Specialized entry points
 
 View readers and types are exported from `@k2b/cloud/ai/browser` and

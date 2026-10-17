@@ -211,3 +211,21 @@ describe("authorized Book documents and server block previews", () => {
     if (result.kind === "ok") expect(result.preview.diagnostics).toEqual([{ line: 1, message: "Diese Abfrage ist nicht verfügbar." }]);
   });
 });
+
+for (const [locale, message] of [
+  ["en", "Invalid block at line 7. chart.y: Unknown column Kosen."],
+  ["de", "Ungültiger Block in Zeile 7. chart.y: Unbekannte Spalte Kosen."],
+] as const) {
+  test(`chart preview diagnoses the y line in ${locale}`, async () => {
+    fixture();
+    const result = await loadBookBlockPreview({
+      ...params,
+      locale,
+      markdown: ":::chart\ntype: bar\ntitle: Sales\ncolumns: [Month, Revenue]\nrows:\n  - [Jan, 12]\ny: Kosen\nx: Month\n:::",
+    });
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.preview.diagnostics).toEqual([{ line: 7, message }]);
+    expect(result.preview.blocks[0]?.html).toContain(locale === "en" ? "Unknown column Kosen." : "Unbekannte Spalte Kosen.");
+  });
+}

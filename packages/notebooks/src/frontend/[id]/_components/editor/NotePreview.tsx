@@ -1,7 +1,10 @@
-import { NoticeCard, ScrollArea, useLocale } from "@k2b/ui";
+import { highlight } from "@k2b/stdlib";
+import { Button, NoticeCard, ScrollArea, useLocale } from "@k2b/ui";
+import { notebookChartFrameHtml } from "../../../../lib/chart-blocks";
 import { fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
+import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { notebookWorkspaceMessages } from "../../messages";
-import { NOTE_PREVIEW_ID, type NotePreviewLine, type NotePreviewPart, notePreviewLines } from "./note-preview";
+import { NOTE_PREVIEW_ID, type NotePreviewLine, type NotePreviewPart, notePreviewChart, notePreviewLines } from "./note-preview";
 
 type Props = {
   text: string;
@@ -36,6 +39,8 @@ export default function NotePreview(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const lines = notePreviewLines(props.text, props.mode);
+  const chart = props.mode === "rich" ? notePreviewChart(props.text, lines) : null;
+  const blocks = () => queryBlockMessages.resolve([locale()]).t;
   // CodeMirror sizes the gutter with a hidden spacer for the note's last line number, which can lie past the preview.
   const lastNumber = "9".repeat(String((props.text.match(/\r\n?|\n/g)?.length ?? 0) + 1).length);
   return (
@@ -66,6 +71,23 @@ export default function NotePreview(props: Props) {
                 ) : (
                   <PreviewLine line={line} />
                 ),
+              )}
+              {chart && (
+                // The editor's chart widget while its drawing loads (query-blocks.tsx), inert until the editor runs.
+                <div class="cm-query-block-widget" role="group" aria-label={blocks().chart} inert>
+                  <div class="flex justify-end gap-1 mb-1">
+                    <Button size="xs" variant="ghost">
+                      {blocks().showSource}
+                    </Button>
+                  </div>
+                  <div
+                    class="cm-query-block-preview notebook-book-content"
+                    innerHTML={notebookChartFrameHtml(
+                      chart,
+                      `<p class="notebook-book-chart__status text-sm text-dimmed" role="status">${highlight.escape(blocks().loading)}</p>`,
+                    )}
+                  />
+                </div>
               )}
             </div>
           </div>
