@@ -86,7 +86,7 @@ export default function GraphList(props: Props) {
             return (
               <span class="notebook-graph__list-area" data-slot={row.area.slot}>
                 <span class="notebook-graph__dot" />
-                {row.area.index === 0 ? t().graphTopLevel : row.area.title}
+                {row.area.index === 0 ? t().graphTopLevel : row.area.title || t().untitled}
               </span>
             );
           if (col.id === "out") return related(row.out);

@@ -8,7 +8,8 @@ import { notebookWorkspaceMessages } from "../../messages";
 import { createNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "../sidebar/navigation-visibility";
 import GraphList from "./GraphList";
 import { GraphDisplaySwitcher, graphDisplayLabel } from "./graph-displays";
-import { buildGraphModel, type GraphLinksFilter, matchesQuery, visibleEdges, visibleNotes } from "./model";
+import { layoutNetworkInSlices, type NetPoint } from "./layout-net";
+import { buildGraphModel, type GraphArea, type GraphLinksFilter, matchesQuery, visibleEdges, visibleNotes } from "./model";
 import NetworkDisplay, { type GraphZoomControls } from "./NetworkDisplay";
 import { GRAPH_QUERY_MAX, type GraphViewState, normalizeGraphViewState, writeGraphViewState } from "./view-state";
 
@@ -92,9 +93,22 @@ export default function NotebookGraph(props: Props) {
   const currentId = () => (props.selectedNoteId && model.byId.has(props.selectedNoteId) ? props.selectedNoteId : null);
   const current = () => (currentId() ? model.byId.get(currentId()!) : undefined);
   const noteHref = (id: string) => buildNoteUrl(props.notebookId, id, props.from);
-  const open = (id: string) => {
+  const open = (id: string, newTab = false) => {
+    if (newTab) {
+      window.open(noteHref(id), "_blank", "noopener");
+      return;
+    }
     flushUrl();
     navigateTo(noteHref(id));
+  };
+  // The layout runs once, when the network first shows, and is kept while the island lives, so returning from the list
+  // or from an empty filter does not arrange the notes again or undo a drag.
+  const layoutAbort = new AbortController();
+  onCleanup(() => layoutAbort.abort());
+  let layout: Promise<Map<string, NetPoint> | null> | undefined;
+  const networkLayout = () => {
+    layout ??= layoutNetworkInSlices(model, layoutAbort.signal);
+    return layout;
   };
   const closeHref = () =>
     props.backHref ??
@@ -111,7 +125,7 @@ export default function NotebookGraph(props: Props) {
     const hide = state().hide;
     update({ hide: hide.includes(key) ? hide.filter((item) => item !== key) : [...hide, key] });
   };
-  const areaName = (title: string | null) => title ?? t().graphTopLevel;
+  const areaName = (area: GraphArea) => (area.index === 0 ? t().graphTopLevel : area.title || t().untitled);
   const navigationLabel = () => (navigationHidden() ? t().showNavigation : t().hideNavigation);
   const showsGraph = () => !state().list && hasLinks && notes().length > 0;
 
@@ -236,7 +250,7 @@ export default function NotebookGraph(props: Props) {
                   onClick={() => toggleArea(area.key)}
                 >
                   <span class="notebook-graph__dot" aria-hidden="true" />
-                  <span class="notebook-graph__area-name">{areaName(area.title)}</span>
+                  <span class="notebook-graph__area-name">{areaName(area)}</span>
                   <span class="notebook-graph__count">{area.count}</span>
                 </Button>
               )}
@@ -347,6 +361,7 @@ export default function NotebookGraph(props: Props) {
               displayName={graphDisplayLabel(state().display, t())}
               now={props.now}
               filterKey={filterKey()}
+              layout={networkLayout}
               onOpen={open}
               onClearQuery={() => update({ q: "" })}
               controls={setControls}

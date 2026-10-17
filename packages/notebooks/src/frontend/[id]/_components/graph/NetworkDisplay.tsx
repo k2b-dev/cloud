@@ -3,7 +3,7 @@ import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMo
 import { notebookWorkspaceMessages } from "../../messages";
 import { convexHull, fitView, type GraphView, type Rect, screenRadius, spatialNext, toScreen, toWorld, zoomView } from "./geometry";
 import { type AreaLabelInput, type LabelFont, type LabelKind, type LabelNode, placeLabels } from "./labels";
-import { layoutNetworkInSlices, type NetPoint } from "./layout-net";
+import type { NetPoint } from "./layout-net";
 import { type GraphModel, type GraphModelEdge, type GraphNote, matchesQuery } from "./model";
 
 /** Zoom and fit for the toolbar, which lives outside the canvas. */
@@ -20,7 +20,10 @@ type Props = {
   now: string;
   /** Key of the visible set; the view fits again when it changes, not when the search changes. */
   filterKey: string;
-  onOpen: (id: string) => void;
+  /** The layout of the whole model, computed once per graph; drags move its points in place, so they survive a remount. */
+  layout: () => Promise<Map<string, NetPoint> | null>;
+  /** Opens a note; `newTab` keeps the graph open, as Cmd/Ctrl+click and middle-click do on a link. */
+  onOpen: (id: string, newTab?: boolean) => void;
   onClearQuery: () => void;
   controls: (controls: GraphZoomControls | null) => void;
   /** Search Enter asks the canvas to focus its first match. */
@@ -149,7 +152,7 @@ export default function NetworkDisplay(props: Props) {
           area,
           pad,
           path: `M${hull.map((point) => `${f1(point.x)},${f1(point.y)}`).join("L")}Z`,
-          label: { key: area.key, text: area.title ?? "", x: (top.x + cx) / 2, y: top.y - pad - 6 } satisfies AreaLabelInput,
+          label: { key: area.key, text: area.title || t().untitled, x: (top.x + cx) / 2, y: top.y - pad - 6 } satisfies AreaLabelInput,
         },
       ];
     });
@@ -182,7 +185,7 @@ export default function NetworkDisplay(props: Props) {
     if (!fontsReady() || size().width === 0) return { labels: [], areaLabels: [] };
     const nodes: LabelNode[] = [...screen().values()].map((node) => ({
       id: node.note.id,
-      title: node.note.title,
+      title: node.note.title || t().untitled,
       x: node.x,
       y: node.y,
       r: node.r,
@@ -279,12 +282,17 @@ export default function NetworkDisplay(props: Props) {
   // ---- pointers: mouse clicks open, touch and pen taps select; the decision is per gesture, not per screen size
   const pointers = new Map<number, NetPoint>();
   let gesture: Gesture | null = null;
+  // A pointer gesture decides on pointerup; the click that follows it is ignored. A click without a pointer gesture
+  // just before it comes from assistive technology or voice control, and opens the note like a link.
+  const POINTER_CLICK_MS = 1000;
+  let pointerClickUntil = Number.NEGATIVE_INFINITY;
   const local = (event: { clientX: number; clientY: number }): NetPoint => {
     const rect = svg.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   };
   const onPointerDown = (event: PointerEvent) => {
     if (event.button !== 0) return;
+    pointerClickUntil = Number.POSITIVE_INFINITY;
     const point = local(event);
     pointers.set(event.pointerId, point);
     svg.setPointerCapture(event.pointerId);
@@ -347,6 +355,7 @@ export default function NetworkDisplay(props: Props) {
   };
   const onPointerEnd = (event: PointerEvent) => {
     pointers.delete(event.pointerId);
+    if (pointers.size === 0) pointerClickUntil = event.timeStamp + POINTER_CLICK_MS;
     const ended = gesture;
     if (!ended) return;
     if (ended.type === "pinch") {
@@ -362,11 +371,25 @@ export default function NetworkDisplay(props: Props) {
       setSelected(null);
       return;
     }
-    if (ended.pointerType === "mouse") props.onOpen(ended.id);
+    if (ended.pointerType === "mouse") props.onOpen(ended.id, event.metaKey || event.ctrlKey || event.shiftKey);
     else {
       setSelected(ended.id);
       setTabStop(ended.id);
     }
+  };
+  const clickedNode = (event: MouseEvent) => (event.target as Element | null)?.closest<SVGGElement>("[data-node]")?.dataset.node;
+  const onClick = (event: MouseEvent) => {
+    const id = clickedNode(event);
+    if (!id || event.timeStamp <= pointerClickUntil) return;
+    event.preventDefault();
+    props.onOpen(id, event.metaKey || event.ctrlKey || event.shiftKey);
+  };
+  // The middle button opens the note in a new tab, as on a link.
+  const onAuxClick = (event: MouseEvent) => {
+    const id = clickedNode(event);
+    if (!id || event.button !== 1) return;
+    event.preventDefault();
+    props.onOpen(id, true);
   };
   const onWheel = (event: WheelEvent) => {
     event.preventDefault();
@@ -377,9 +400,9 @@ export default function NetworkDisplay(props: Props) {
   onMount(() => {
     // One headless layout per graph, run in the browser in slices, so the page stays responsive. The canvas never
     // animates: the notes appear once, at their final places.
-    const layout = new AbortController();
-    void layoutNetworkInSlices(props.model, layout.signal).then((result) => {
-      if (result) setPositions(result);
+    let alive = true;
+    void props.layout().then((result) => {
+      if (alive && result) setPositions(result);
     });
     const resize = new ResizeObserver(() => {
       const rect = container.getBoundingClientRect();
@@ -393,7 +416,6 @@ export default function NetworkDisplay(props: Props) {
     props.focusRequest((id) => {
       if (byId().has(id)) focusNote(id);
     });
-    let alive = true;
     void document.fonts.ready.then(() => {
       if (!alive) return;
       context = document.createElement("canvas").getContext("2d");
@@ -402,7 +424,6 @@ export default function NetworkDisplay(props: Props) {
       setFontsReady(true);
     });
     onCleanup(() => {
-      layout.abort();
       alive = false;
       resize.disconnect();
       svg.removeEventListener("wheel", onWheel);
@@ -422,12 +443,12 @@ export default function NetworkDisplay(props: Props) {
   const nodeLabel = (note: GraphNote) =>
     t().graphNodeLabel({
       title: note.title || t().untitled,
-      area: note.area.index === 0 ? null : (note.area.title ?? ""),
+      area: note.area.index === 0 ? null : note.area.title || t().untitled,
       out: note.out.size,
       incoming: note.in.size,
       current: note.id === props.currentId,
     });
-  const areaName = (note: GraphNote) => (note.area.index === 0 ? t().graphTopLevel : (note.area.title ?? ""));
+  const areaName = (note: GraphNote) => (note.area.index === 0 ? t().graphTopLevel : note.area.title || t().untitled);
   const statusNote = () => {
     const id = highlight();
     return id ? props.model.byId.get(id) : undefined;
@@ -486,6 +507,8 @@ export default function NetworkDisplay(props: Props) {
           if (event.pointerType === "mouse" && !gesture) setHovered(null);
         }}
         onKeyDown={onKeyDown}
+        onClick={onClick}
+        onAuxClick={onAuxClick}
       >
         <g aria-hidden="true">
           <For each={hulls()}>

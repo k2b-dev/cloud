@@ -375,6 +375,67 @@ test(`${browserName}: As list shows the same notes as a table as wide as Main, a
   }
 }, 30_000);
 
+test(`${browserName}: a note opens like a link from the mouse, a modified click and assistive technology`, async () => {
+  const page = await open(graphPath("hand01"));
+  try {
+    const kuehl = HANDBOOK_IDS.kuehl!;
+    const start = HANDBOOK_IDS.start!;
+    // A click without a pointer gesture (screen reader, voice control) opens the note.
+    await page.locator(`[data-node="${start}"]`).dispatchEvent("click");
+    await page.waitForURL(`**/app/notebooks/hand01/notes/${start}?mode=book`);
+    await page.goBack();
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted === true);
+    await settled(page);
+    // Ctrl/Cmd+click keeps the graph and opens the note in a new tab.
+    const graphUrl = page.url();
+    const point = await nodeCenter(page, kuehl);
+    await page.keyboard.down("Control");
+    const [tab] = await Promise.all([page.context().waitForEvent("page"), page.mouse.click(point.x, point.y)]);
+    await page.keyboard.up("Control");
+    await tab.waitForURL(`**/app/notebooks/hand01/notes/${kuehl}?mode=book`);
+    expect(page.url()).toBe(graphUrl);
+    await tab.close();
+    // A plain mouse click opens the note once, in place.
+    await page.mouse.click(point.x, point.y);
+    await page.waitForURL(`**/app/notebooks/hand01/notes/${kuehl}?mode=book`);
+    expect(page.context().pages()).toHaveLength(1);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: returning from the list keeps the arranged notes and a drag`, async () => {
+  const page = await open(graphPath("hand01"));
+  try {
+    const kuehl = HANDBOOK_IDS.kuehl!;
+    const before = await positions(page);
+    const from = await nodeCenter(page, kuehl);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 80, from.y + 50, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForFunction(([id, old]) => document.querySelector(`[data-node="${id}"]`)?.getAttribute("transform") !== old, [
+      kuehl,
+      before[kuehl],
+    ] as const);
+    // A drag never opens the note.
+    expect(search(page).get("mode")).toBe("graph");
+    const fit = page.getByRole("toolbar", { name: "Graph filters" }).getByRole("button", { name: "Fit graph" });
+    await fit.click();
+    await page.waitForTimeout(100);
+    const dragged = await positions(page);
+    const toggle = page.getByRole("button", { name: "As list" });
+    await toggle.click();
+    await page.getByRole("table").waitFor();
+    await toggle.click();
+    await page.waitForFunction(() => document.querySelectorAll("[data-node]").length === 49);
+    expect(await page.locator(".notebook-graph__status-text").first().textContent()).not.toContain("Arranging");
+    expect(await positions(page)).toEqual(dragged);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
 test(`${browserName}: a touch tap selects a note and Open opens it`, async () => {
   const page = await open(graphPath("hand01"), { width: 820, height: 1180 }, { hasTouch: true, isMobile: browserName === "chromium" });
   try {
