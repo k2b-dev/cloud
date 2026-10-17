@@ -19,7 +19,7 @@ Choose **More options** to see all task or event fields. You keep what you alrea
 
 Deadlines are all-day by default. Choose a date to make the task due that day. **Add time** adds a specific time; **Remove time** returns to an all-day deadline.
 
-An all-day deadline becomes overdue on the following day in the application timezone. It stays due today for its whole day. The calendar shows it in the all-day row of the day and week views, and on its date in month and year views. Existing deadlines with a time keep their time.
+An all-day deadline becomes overdue on the following day in your timezone. It stays due today for its whole day. The calendar shows it in the all-day row of the day and week views, and on its date in month and year views. Existing deadlines with a time keep their time.
 
 ## Start from a template {icon="template"}
 
