@@ -372,8 +372,8 @@ export default function NotebookGraph(props: Props) {
               const first = hits()[0];
               if (!first && (state().list || !hasLinks)) return;
               if (state().list) document.querySelector<HTMLAnchorElement>(".notebook-graph__list-title")?.focus();
-              else if (display() === "timeline") focusNote?.();
               else if (!hasLinks) document.querySelector<HTMLAnchorElement>(".notebook-graph__unlinked a[data-match]")?.focus();
+              else if (display() === "timeline") focusNote?.();
               else focusNote?.(first?.id);
             }}
           />

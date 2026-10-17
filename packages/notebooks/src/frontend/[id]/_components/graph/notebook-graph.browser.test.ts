@@ -1516,3 +1516,61 @@ test(`${browserName}: Timeline and filters survive reload, opening a note, and B
     await close(page);
   }
 }, 30_000);
+
+test(`${browserName}: Timeline scroll range shrinks with the rows when a filter hides most of them`, async () => {
+  const model = buildGraphModel(bigGraph(), "en");
+  const page = await open(graphPath("big001", "&display=timeline"));
+  try {
+    await timelineReady(page, model.edges.length);
+    const range = () =>
+      page.evaluate(() => {
+        const scroller = document.querySelector<HTMLElement>(".notebook-graph__timeline")!;
+        const wrap = scroller.querySelector<HTMLElement>(".notebook-graph__timeline-wrap")!;
+        const arcs = scroller.querySelector<SVGSVGElement>(".notebook-graph__arcs")!;
+        return { scroll: scroller.scrollHeight, rows: wrap.offsetHeight, arcs: arcs.getBoundingClientRect().height };
+      });
+    const before = await range();
+    await page.evaluate(() => {
+      document.querySelector<HTMLElement>(".notebook-graph__timeline")!.scrollTop = 1e6;
+    });
+    // Hide every area but the first; the arcs of the remaining notes are drawn again from the new rows.
+    const areas = page.locator(".notebook-graph__areas button");
+    for (let index = (await areas.count()) - 1; index > 0; index--) await areas.nth(index).click();
+    const rows = await timelineRows(page).count();
+    expect(rows).toBeLessThan(300);
+    await page.waitForFunction(() => {
+      const wrap = document.querySelector<HTMLElement>(".notebook-graph__timeline-wrap")!;
+      return Math.abs(document.querySelector(".notebook-graph__arcs")!.getBoundingClientRect().height - wrap.offsetHeight) < 1;
+    });
+    const after = await range();
+    expect(after.rows).toBeLessThan(before.rows);
+    expect(after.scroll).toBeLessThanOrEqual(
+      Math.max(after.rows, await page.locator(".notebook-graph__timeline").evaluate((el) => el.clientHeight)) + 1,
+    );
+    // Some rows stay in view after the range shrinks.
+    expect(
+      await page.evaluate(() => {
+        const scroller = document.querySelector(".notebook-graph__timeline")!.getBoundingClientRect();
+        return [...document.querySelectorAll("[data-row]")].some((row) => {
+          const box = row.getBoundingClientRect();
+          return box.bottom > scroller.top && box.top < scroller.bottom;
+        });
+      }),
+    ).toBe(true);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: Timeline in a notebook without links keeps the unlinked notes and their search`, async () => {
+  const page = await open(graphPath("free01", "&display=timeline"));
+  try {
+    expect(await page.locator(".notebook-graph__timeline").count()).toBe(0);
+    const find = page.getByRole("searchbox", { name: "Find a note in the graph" });
+    await find.fill("Kost");
+    await find.press("Enter");
+    expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Kosten");
+  } finally {
+    await close(page);
+  }
+}, 30_000);

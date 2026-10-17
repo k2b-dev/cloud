@@ -2392,10 +2392,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A long area name gives way before the title does. */
 .notebook-graph__row-area {
-  flex: none;
+  min-width: 0;
+  max-width: 12rem;
+  flex: 0 100 auto;
+  overflow: hidden;
   color: var(--ui-text-dimmed);
   font-size: 0.75rem;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .notebook-graph__row-meta {

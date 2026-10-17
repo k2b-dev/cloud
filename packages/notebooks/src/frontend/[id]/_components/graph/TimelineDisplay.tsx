@@ -54,7 +54,8 @@ export default function TimelineDisplay(props: Props) {
     const box = wrap.getBoundingClientRect();
     setGeometry({
       dotX: dot ? dot.left + dot.width / 2 - box.left : 0,
-      height: wrap.scrollHeight,
+      // The rows' own height: scrollHeight would include the previous arcs and never shrink after a filter.
+      height: wrap.offsetHeight,
       centres: new Map(rows.map((element) => [element.dataset.row!, element.offsetTop + element.offsetHeight / 2])),
     });
   };
