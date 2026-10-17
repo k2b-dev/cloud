@@ -560,273 +560,6 @@ const resolveItemFilter = async <T extends { tagIds?: string[]; columnIds?: stri
 // own their authentication lifecycle.
 import widgetRoutes from "./widgets";
 
-const reactionRoutes = new Hono<AuthContext>()
-  .put(
-    "/:id/items/:itemId/reactions/:emoji",
-    describeRoute({
-      tags: ["Spaces"],
-      summary: "Add reaction",
-      description: "Add the caller's own reaction on this item row. Requires write access; does not record activity or send notifications.",
-      ...requiresAuth,
-      responses: {
-        200: jsonResponse(SpaceItemReactionsResponseSchema, "Fresh reactions summary"),
-        400: jsonResponse(ErrorResponseSchema, "Invalid emoji"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Item not found"),
-        409: jsonResponse(ErrorResponseSchema, "REACTION_LIMIT_REACHED: at most 20 different emoji"),
-      },
-    }),
-    v("param", z.object({ id: ResourceShortIdSchema, itemId: ResourceShortIdSchema, emoji: ReactionEmojiSchema })),
-    v("query", z.object({}).strict()),
-    async (c) => {
-      const { id, itemId, emoji } = c.req.valid("param");
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, id, "write");
-      if (error) return error;
-      const item = await requireItemInSpace(spaceId!, itemId);
-      if (!item.ok) return respond(c, item);
-      const actor = getCommentAuthor(c);
-      if (!actor.ok) return respond(c, actor);
-      return respond(c, spacesService.item.reactions.add({ itemId: item.data.id, emoji, actor: actor.data }));
-    },
-  )
-
-  .delete(
-    "/:id/items/:itemId/reactions/:emoji",
-    describeRoute({
-      tags: ["Spaces"],
-      summary: "Remove reaction",
-      description:
-        "Remove the caller's own reaction on this item row. Requires write access; does not record activity or send notifications.",
-      ...requiresAuth,
-      responses: {
-        200: jsonResponse(SpaceItemReactionsResponseSchema, "Fresh reactions summary"),
-        400: jsonResponse(ErrorResponseSchema, "Invalid emoji"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Item not found"),
-      },
-    }),
-    v("param", z.object({ id: ResourceShortIdSchema, itemId: ResourceShortIdSchema, emoji: ReactionEmojiSchema })),
-    v("query", z.object({}).strict()),
-    async (c) => {
-      const { id, itemId, emoji } = c.req.valid("param");
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, id, "write");
-      if (error) return error;
-      const item = await requireItemInSpace(spaceId!, itemId);
-      if (!item.ok) return respond(c, item);
-      const actor = getCommentAuthor(c);
-      if (!actor.ok) return respond(c, actor);
-      return respond(c, spacesService.item.reactions.remove({ itemId: item.data.id, emoji, actor: actor.data }));
-    },
-  );
-
-const discussionRoutes = new Hono<AuthContext>()
-  .route("/", reactionRoutes)
-
-  // List Comments
-  .get(
-    "/:id/items/:itemId/comments",
-    describeRoute({
-      tags: ["Spaces"],
-      summary: "List comments",
-      description: "List the newest bounded comment page as a legacy array response.",
-      ...requiresAuth,
-      responses: {
-        200: jsonResponse(SpaceCommentListSchema, "List of comments"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Item not found"),
-      },
-    }),
-    v("query", RecurringOccurrenceQuerySchema),
-    async (c) => {
-      const spaceShortId = c.req.param("id") ?? "";
-      const itemId = c.req.param("itemId") ?? "";
-
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId);
-      if (error) return error;
-      const itemCheck = await requireItemInSpace(spaceId!, itemId);
-      if (!itemCheck.ok) return respond(c, itemCheck);
-
-      const user = getUserBackedActor(c);
-      const result = await spacesService.comment.list({
-        itemId: itemCheck.data.id,
-        recurrenceId: c.req.valid("query").recurrence_id,
-        viewerUserId: user?.id ?? null,
-      });
-      return respond(c, ok(await projectComments(result.items)));
-    },
-  )
-
-  .get(
-    "/:id/items/:itemId/comments/page",
-    describeRoute({
-      tags: ["Spaces"],
-      summary: "List a comments page",
-      description: "List one bounded page of comments, starting with the newest conversation tail.",
-      ...requiresAuth,
-      responses: {
-        200: jsonResponse(SpaceCommentPageSchema, "Paginated comments"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Item not found"),
-      },
-    }),
-    v("query", CommentPageQuerySchema),
-    async (c) => {
-      const spaceShortId = c.req.param("id") ?? "";
-      const itemId = c.req.param("itemId") ?? "";
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId);
-      if (error) return error;
-      const itemCheck = await requireItemInSpace(spaceId!, itemId);
-      if (!itemCheck.ok) return respond(c, itemCheck);
-      const query = c.req.valid("query");
-      const user = getUserBackedActor(c);
-      const result = await spacesService.comment.list({
-        itemId: itemCheck.data.id,
-        recurrenceId: query.recurrence_id,
-        viewerUserId: user?.id ?? null,
-        pagination: { page: query.page, perPage: query.per_page },
-      });
-      return respond(c, ok({ ...result, items: await projectComments(result.items) }));
-    },
-  )
-
-  // Create Comment
-  .post(
-    "/:id/items/:itemId/comments",
-    describeRoute({
-      tags: ["Spaces"],
-      summary: "Add comment",
-      description: "Add a comment to an item.",
-      ...requiresAuth,
-      responses: {
-        200: jsonResponse(SpaceCommentSchema, "Created comment"),
-        400: jsonResponse(ErrorResponseSchema, "Invalid request"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Item not found"),
-      },
-    }),
-    v("query", RecurringOccurrenceQuerySchema),
-    v("json", CreateCommentSchema),
-    async (c) => {
-      const author = getCommentAuthor(c);
-      if (!author.ok) return respond(c, author);
-      const spaceShortId = c.req.param("id") ?? "";
-      const itemId = c.req.param("itemId") ?? "";
-      const { content } = c.req.valid("json");
-
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
-      if (error) return error;
-      const itemCheck = await requireItemInSpace(spaceId!, itemId);
-      if (!itemCheck.ok) return respond(c, itemCheck);
-      return respond(
-        c,
-        projectMutation(
-          spacesService.comment.create({
-            itemId: itemCheck.data.id,
-            recurrenceId: c.req.valid("query").recurrence_id,
-            dateConfig: getDateConfig(c),
-            author: author.data,
-            content,
-          }),
-          projectComments,
-        ),
-      );
-    },
-  )
-
-  // Update Comment
-  .patch(
-    "/:id/items/:itemId/comments/:commentId",
-    describeRoute({
-      tags: ["Spaces"],
-      summary: "Edit comment",
-      description: "Edit your own comment within 10 minutes.",
-      ...requiresAuth,
-      responses: {
-        200: jsonResponse(SpaceCommentSchema, "Updated comment"),
-        403: jsonResponse(ErrorResponseSchema, "Cannot edit another user's comment"),
-        404: jsonResponse(ErrorResponseSchema, "Comment not found"),
-      },
-    }),
-    v("json", UpdateCommentSchema),
-    async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
-      const user = userResult.data;
-      const spaceShortId = c.req.param("id") ?? "";
-      const itemId = c.req.param("itemId") ?? "";
-      const commentId = c.req.param("commentId") ?? "";
-      const { content } = c.req.valid("json");
-
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
-      if (error) return error;
-
-      // Cross-check the comment is actually in this space's item — owner-check
-      // in the service prevents cross-user mutation, but this stops a user
-      // from updating their own comment in space B via space A's URL.
-      const itemCheck = await requireItemInSpace(spaceId!, itemId);
-      if (!itemCheck.ok) return respond(c, itemCheck);
-      const internalCommentId = await resolvePublicId("comments", commentId);
-      if (!internalCommentId) return respond(c, fail(err.notFound("Comment")));
-      const existing = await spacesService.comment.get({ id: internalCommentId, viewerUserId: user.id });
-      if (!existing || existing.itemId !== itemCheck.data.id) {
-        return respond(c, fail(err.notFound("Comment")));
-      }
-
-      return respond(
-        c,
-        projectMutation(spacesService.comment.update({ id: internalCommentId, content, userId: user.id }), projectComments),
-      );
-    },
-  )
-
-  // Delete Comment
-  .delete(
-    "/:id/items/:itemId/comments/:commentId",
-    describeRoute({
-      tags: ["Spaces"],
-      summary: "Delete comment",
-      description: "Delete your own comment within 10 minutes.",
-      ...requiresAuth,
-      responses: {
-        200: jsonResponse(MessageResponseSchema, "Comment deleted"),
-        403: jsonResponse(ErrorResponseSchema, "Cannot delete this comment"),
-        404: jsonResponse(ErrorResponseSchema, "Comment not found"),
-      },
-    }),
-    async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
-      const user = userResult.data;
-      const spaceShortId = c.req.param("id") ?? "";
-      const itemId = c.req.param("itemId") ?? "";
-      const commentId = c.req.param("commentId") ?? "";
-
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
-      if (error) return error;
-
-      // Cross-check (see Update Comment above for rationale).
-      const itemCheck = await requireItemInSpace(spaceId!, itemId);
-      if (!itemCheck.ok) return respond(c, itemCheck);
-      const internalCommentId = await resolvePublicId("comments", commentId);
-      if (!internalCommentId) return respond(c, fail(err.notFound("Comment")));
-      const existing = await spacesService.comment.get({ id: internalCommentId, viewerUserId: user.id });
-      if (!existing || existing.itemId !== itemCheck.data.id) {
-        return respond(c, fail(err.notFound("Comment")));
-      }
-
-      return respondMessage(
-        c,
-        spacesService.comment.remove({
-          id: internalCommentId,
-          userId: user.id,
-        }),
-        "commentDeleted",
-      );
-    },
-  );
-
-// ==========================
-
 const app = new Hono<AuthContext>()
   .route("/widget", widgetRoutes)
   .route("/live", spacesLive.routes(spacesLiveChannels))
@@ -3168,7 +2901,7 @@ const app = new Hono<AuthContext>()
   // COMMENTS
   // ==========================
 
-  .route("/", discussionRoutes)
+  .route("/", discussionRoutes())
 
   // RESOURCE API KEYS
   // ==========================
@@ -3622,3 +3355,274 @@ const combined = new Hono()
 
 export default combined;
 export type ApiType = typeof combined;
+
+/**
+ * Reactions and comments on one item. A sub-app keeps the main chain below TypeScript's instantiation depth; the
+ * declaration is hoisted, so it reads after the middleware that protects it.
+ */
+function discussionRoutes() {
+  return (
+    new Hono<AuthContext>()
+      .put(
+        "/:id/items/:itemId/reactions/:emoji",
+        describeRoute({
+          tags: ["Spaces"],
+          summary: "Add reaction",
+          description:
+            "Add the caller's own reaction on this item row. Requires write access; does not record activity or send notifications.",
+          ...requiresAuth,
+          responses: {
+            200: jsonResponse(SpaceItemReactionsResponseSchema, "Fresh reactions summary"),
+            400: jsonResponse(ErrorResponseSchema, "Invalid emoji"),
+            403: jsonResponse(ErrorResponseSchema, "Access denied"),
+            404: jsonResponse(ErrorResponseSchema, "Item not found"),
+            409: jsonResponse(ErrorResponseSchema, "REACTION_LIMIT_REACHED: at most 20 different emoji"),
+          },
+        }),
+        v("param", z.object({ id: ResourceShortIdSchema, itemId: ResourceShortIdSchema, emoji: ReactionEmojiSchema })),
+        v("query", z.object({}).strict()),
+        async (c) => {
+          const { id, itemId, emoji } = c.req.valid("param");
+          const { internalId: spaceId, error } = await checkSpaceAccess(c, id, "write");
+          if (error) return error;
+          const item = await requireItemInSpace(spaceId!, itemId);
+          if (!item.ok) return respond(c, item);
+          const actor = getCommentAuthor(c);
+          if (!actor.ok) return respond(c, actor);
+          return respond(c, spacesService.item.reactions.add({ itemId: item.data.id, emoji, actor: actor.data }));
+        },
+      )
+
+      .delete(
+        "/:id/items/:itemId/reactions/:emoji",
+        describeRoute({
+          tags: ["Spaces"],
+          summary: "Remove reaction",
+          description:
+            "Remove the caller's own reaction on this item row. Requires write access; does not record activity or send notifications.",
+          ...requiresAuth,
+          responses: {
+            200: jsonResponse(SpaceItemReactionsResponseSchema, "Fresh reactions summary"),
+            400: jsonResponse(ErrorResponseSchema, "Invalid emoji"),
+            403: jsonResponse(ErrorResponseSchema, "Access denied"),
+            404: jsonResponse(ErrorResponseSchema, "Item not found"),
+          },
+        }),
+        v("param", z.object({ id: ResourceShortIdSchema, itemId: ResourceShortIdSchema, emoji: ReactionEmojiSchema })),
+        v("query", z.object({}).strict()),
+        async (c) => {
+          const { id, itemId, emoji } = c.req.valid("param");
+          const { internalId: spaceId, error } = await checkSpaceAccess(c, id, "write");
+          if (error) return error;
+          const item = await requireItemInSpace(spaceId!, itemId);
+          if (!item.ok) return respond(c, item);
+          const actor = getCommentAuthor(c);
+          if (!actor.ok) return respond(c, actor);
+          return respond(c, spacesService.item.reactions.remove({ itemId: item.data.id, emoji, actor: actor.data }));
+        },
+      )
+
+      // List Comments
+      .get(
+        "/:id/items/:itemId/comments",
+        describeRoute({
+          tags: ["Spaces"],
+          summary: "List comments",
+          description: "List the newest bounded comment page as a legacy array response.",
+          ...requiresAuth,
+          responses: {
+            200: jsonResponse(SpaceCommentListSchema, "List of comments"),
+            403: jsonResponse(ErrorResponseSchema, "Access denied"),
+            404: jsonResponse(ErrorResponseSchema, "Item not found"),
+          },
+        }),
+        v("query", RecurringOccurrenceQuerySchema),
+        async (c) => {
+          const spaceShortId = c.req.param("id") ?? "";
+          const itemId = c.req.param("itemId") ?? "";
+
+          const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId);
+          if (error) return error;
+          const itemCheck = await requireItemInSpace(spaceId!, itemId);
+          if (!itemCheck.ok) return respond(c, itemCheck);
+
+          const user = getUserBackedActor(c);
+          const result = await spacesService.comment.list({
+            itemId: itemCheck.data.id,
+            recurrenceId: c.req.valid("query").recurrence_id,
+            viewerUserId: user?.id ?? null,
+          });
+          return respond(c, ok(await projectComments(result.items)));
+        },
+      )
+
+      .get(
+        "/:id/items/:itemId/comments/page",
+        describeRoute({
+          tags: ["Spaces"],
+          summary: "List a comments page",
+          description: "List one bounded page of comments, starting with the newest conversation tail.",
+          ...requiresAuth,
+          responses: {
+            200: jsonResponse(SpaceCommentPageSchema, "Paginated comments"),
+            403: jsonResponse(ErrorResponseSchema, "Access denied"),
+            404: jsonResponse(ErrorResponseSchema, "Item not found"),
+          },
+        }),
+        v("query", CommentPageQuerySchema),
+        async (c) => {
+          const spaceShortId = c.req.param("id") ?? "";
+          const itemId = c.req.param("itemId") ?? "";
+          const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId);
+          if (error) return error;
+          const itemCheck = await requireItemInSpace(spaceId!, itemId);
+          if (!itemCheck.ok) return respond(c, itemCheck);
+          const query = c.req.valid("query");
+          const user = getUserBackedActor(c);
+          const result = await spacesService.comment.list({
+            itemId: itemCheck.data.id,
+            recurrenceId: query.recurrence_id,
+            viewerUserId: user?.id ?? null,
+            pagination: { page: query.page, perPage: query.per_page },
+          });
+          return respond(c, ok({ ...result, items: await projectComments(result.items) }));
+        },
+      )
+
+      // Create Comment
+      .post(
+        "/:id/items/:itemId/comments",
+        describeRoute({
+          tags: ["Spaces"],
+          summary: "Add comment",
+          description: "Add a comment to an item.",
+          ...requiresAuth,
+          responses: {
+            200: jsonResponse(SpaceCommentSchema, "Created comment"),
+            400: jsonResponse(ErrorResponseSchema, "Invalid request"),
+            403: jsonResponse(ErrorResponseSchema, "Access denied"),
+            404: jsonResponse(ErrorResponseSchema, "Item not found"),
+          },
+        }),
+        v("query", RecurringOccurrenceQuerySchema),
+        v("json", CreateCommentSchema),
+        async (c) => {
+          const author = getCommentAuthor(c);
+          if (!author.ok) return respond(c, author);
+          const spaceShortId = c.req.param("id") ?? "";
+          const itemId = c.req.param("itemId") ?? "";
+          const { content } = c.req.valid("json");
+
+          const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
+          if (error) return error;
+          const itemCheck = await requireItemInSpace(spaceId!, itemId);
+          if (!itemCheck.ok) return respond(c, itemCheck);
+          return respond(
+            c,
+            projectMutation(
+              spacesService.comment.create({
+                itemId: itemCheck.data.id,
+                recurrenceId: c.req.valid("query").recurrence_id,
+                dateConfig: getDateConfig(c),
+                author: author.data,
+                content,
+              }),
+              projectComments,
+            ),
+          );
+        },
+      )
+
+      // Update Comment
+      .patch(
+        "/:id/items/:itemId/comments/:commentId",
+        describeRoute({
+          tags: ["Spaces"],
+          summary: "Edit comment",
+          description: "Edit your own comment within 10 minutes.",
+          ...requiresAuth,
+          responses: {
+            200: jsonResponse(SpaceCommentSchema, "Updated comment"),
+            403: jsonResponse(ErrorResponseSchema, "Cannot edit another user's comment"),
+            404: jsonResponse(ErrorResponseSchema, "Comment not found"),
+          },
+        }),
+        v("json", UpdateCommentSchema),
+        async (c) => {
+          const userResult = requireUserBackedActor(c);
+          if (!userResult.ok) return respond(c, userResult);
+          const user = userResult.data;
+          const spaceShortId = c.req.param("id") ?? "";
+          const itemId = c.req.param("itemId") ?? "";
+          const commentId = c.req.param("commentId") ?? "";
+          const { content } = c.req.valid("json");
+
+          const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
+          if (error) return error;
+
+          // Cross-check the comment is actually in this space's item — owner-check
+          // in the service prevents cross-user mutation, but this stops a user
+          // from updating their own comment in space B via space A's URL.
+          const itemCheck = await requireItemInSpace(spaceId!, itemId);
+          if (!itemCheck.ok) return respond(c, itemCheck);
+          const internalCommentId = await resolvePublicId("comments", commentId);
+          if (!internalCommentId) return respond(c, fail(err.notFound("Comment")));
+          const existing = await spacesService.comment.get({ id: internalCommentId, viewerUserId: user.id });
+          if (!existing || existing.itemId !== itemCheck.data.id) {
+            return respond(c, fail(err.notFound("Comment")));
+          }
+
+          return respond(
+            c,
+            projectMutation(spacesService.comment.update({ id: internalCommentId, content, userId: user.id }), projectComments),
+          );
+        },
+      )
+
+      // Delete Comment
+      .delete(
+        "/:id/items/:itemId/comments/:commentId",
+        describeRoute({
+          tags: ["Spaces"],
+          summary: "Delete comment",
+          description: "Delete your own comment within 10 minutes.",
+          ...requiresAuth,
+          responses: {
+            200: jsonResponse(MessageResponseSchema, "Comment deleted"),
+            403: jsonResponse(ErrorResponseSchema, "Cannot delete this comment"),
+            404: jsonResponse(ErrorResponseSchema, "Comment not found"),
+          },
+        }),
+        async (c) => {
+          const userResult = requireUserBackedActor(c);
+          if (!userResult.ok) return respond(c, userResult);
+          const user = userResult.data;
+          const spaceShortId = c.req.param("id") ?? "";
+          const itemId = c.req.param("itemId") ?? "";
+          const commentId = c.req.param("commentId") ?? "";
+
+          const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
+          if (error) return error;
+
+          // Cross-check (see Update Comment above for rationale).
+          const itemCheck = await requireItemInSpace(spaceId!, itemId);
+          if (!itemCheck.ok) return respond(c, itemCheck);
+          const internalCommentId = await resolvePublicId("comments", commentId);
+          if (!internalCommentId) return respond(c, fail(err.notFound("Comment")));
+          const existing = await spacesService.comment.get({ id: internalCommentId, viewerUserId: user.id });
+          if (!existing || existing.itemId !== itemCheck.data.id) {
+            return respond(c, fail(err.notFound("Comment")));
+          }
+
+          return respondMessage(
+            c,
+            spacesService.comment.remove({
+              id: internalCommentId,
+              userId: user.id,
+            }),
+            "commentDeleted",
+          );
+        },
+      )
+  );
+}
