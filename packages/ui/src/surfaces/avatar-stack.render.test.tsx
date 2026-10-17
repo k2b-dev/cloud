@@ -23,8 +23,10 @@ const people = [
 ];
 
 describe("AvatarStack", () => {
-  test("shows three faces without the viewer, then +n, as one labelled button", () => {
+  test("shows three faces without the viewer, then +n, as one labelled button", async () => {
     const html = renderToString(() => createComponent(AvatarStack, { people, title: "Here now", label: "Here now: 5 people" }));
+    // The server disposes the render after it returns; nothing in that cleanup may reach for browser globals.
+    await Bun.sleep(0);
     const faces = html.slice(html.indexOf("k2b-avatar-stack__faces"), html.indexOf("k2b-avatar-stack__more"));
     expect(faces).toContain('src="/jana.png"');
     expect(faces).toContain('data-shape="square"');

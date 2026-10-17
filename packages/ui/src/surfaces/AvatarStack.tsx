@@ -1,4 +1,4 @@
-import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { dropdownPosition } from "../actions/Dropdown";
 import { prefersMenuSheet } from "../actions/menu-sheet";
 import { dialogCore } from "../feedback/dialog-core";
@@ -173,7 +173,8 @@ export function AvatarStack(props: AvatarStackProps): JSX.Element {
       resizeObserver.observe(popover);
     } else resizeObserver?.disconnect();
   };
-  onCleanup(() => follow(false));
+  // Only the browser ever follows; a server render has no window to let go of.
+  onMount(() => onCleanup(() => follow(false)));
 
   const openSheet = () => {
     if (sheetOpen) return;
