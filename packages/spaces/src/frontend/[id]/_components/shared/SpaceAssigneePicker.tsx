@@ -28,8 +28,6 @@ const selectedIds = (assignees: SpaceItemAssignee[]) => assignees.map((assignee)
 
 const removeAssignee = (assignees: SpaceItemAssignee[], id: string) => assignees.filter((assignee) => assignee.id !== id);
 
-type AssigneeOption = ComboboxOption & Pick<SpaceItemAssignee, "kind" | "avatarHash">;
-
 export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
   const t = useSpaceMessages();
   const variant = () => props.variant ?? "chips";
@@ -44,7 +42,13 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
   /** A claim whose holder is not among the assignees, which then still leads as a working row. */
   const unassignedHolder = () => (holder() ? null : claim());
 
-  const fetchAssignableUsers = async (query: string, signal: AbortSignal): Promise<AssigneeOption[]> => {
+  /**
+   * The assignees behind the options on show. The combobox hands back only an option's ID and label, so the kind and
+   * picture of the chosen person or service account come from here.
+   */
+  let shown = new Map<string, SpaceItemAssignee>();
+
+  const fetchAssignableUsers = async (query: string, signal: AbortSignal): Promise<ComboboxOption[]> => {
     const res = await apiClient[":id"]["assignable-users"].$get(
       {
         param: { id: props.spaceId },
@@ -57,21 +61,21 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
     );
     if (!res.ok) throw new Error(t.loadAssigneesFailed);
     const users = await res.json();
+    shown = new Map(
+      users.map((user) => [user.id, { id: user.id, kind: user.kind, displayName: user.displayName, avatarHash: user.avatarHash }]),
+    );
     return users.map((user) => ({
       id: user.id,
-      kind: user.kind,
       label: user.displayName,
-      avatarHash: user.avatarHash,
       description: user.description,
       icon: user.kind === "user" ? "ti ti-user" : "ti ti-api",
     }));
   };
 
   const addAssignee = (option: ComboboxOption) => {
-    if (current().some((assignee) => assignee.id === option.id)) return;
-    if (!("kind" in option) || (option.kind !== "user" && option.kind !== "service_account")) return;
-    const avatarHash = "avatarHash" in option && typeof option.avatarHash === "string" ? option.avatarHash : null;
-    props.onChange([...current(), { id: option.id, kind: option.kind, displayName: option.label, avatarHash }]);
+    const assignee = shown.get(option.id);
+    if (!assignee || current().some((entry) => entry.id === option.id)) return;
+    props.onChange([...current(), assignee]);
   };
 
   const remove = (id: string) => props.onChange(removeAssignee(current(), id));

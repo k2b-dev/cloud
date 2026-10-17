@@ -258,10 +258,18 @@ function spacesCommands(locale?: string) {
       ctx,
       withQuery(api(`/${encodeURIComponent(spaceId)}/assignable-users`), { search: ref }),
     );
-    const user = users.find(
-      (candidate) => candidate.uid === ref || (candidate.kind === "service_account" && candidate.uid.toLowerCase() === ref.toLowerCase()),
-    );
-    if (user) return user.id;
+    const person = users.find((candidate) => candidate.kind === "user" && candidate.uid === ref);
+    if (person) return person.id;
+    // Only standalone and agent names are unique, so a Space API key can share a name with an agent.
+    const accounts = users.filter((candidate) => candidate.kind === "service_account" && candidate.uid.toLowerCase() === ref.toLowerCase());
+    if (accounts.length > 1)
+      throw new Error(
+        t({
+          en: `Several service accounts are named "${ref}" in this space. Use the ID of the one you mean: ${accounts.map((account) => account.id).join(", ")}.`,
+          de: `Mehrere Dienstkonten in diesem Space heißen „${ref}“. Verwende die ID des gemeinten Kontos: ${accounts.map((account) => account.id).join(", ")}.`,
+        }),
+      );
+    if (accounts[0]) return accounts[0].id;
     throw new Error(
       t({
         en: `No person or service account named "${ref}" can be assigned in this space. Use me, an ID, a username, or a service account name with access.`,

@@ -21,6 +21,8 @@ setDefaultTimeout(60_000);
 const USER_ID = "33333333-3333-4333-8333-333333333333";
 const OTHER_ID = "44444444-4444-4444-8444-444444444444";
 const AGENT_ID = "66666666-6666-4666-8666-666666666666";
+const KEY_ID = "77777777-7777-4777-8777-777777777777";
+const SYNC_AGENT_ID = "88888888-8888-4888-8888-888888888888";
 const CLAIM_ID = "11111111-1111-4111-8111-111111111111";
 
 const space = {
@@ -198,6 +200,9 @@ beforeAll(async () => {
         return json([
           { id: OTHER_ID, kind: "user", uid: "ada", displayName: "Ada", avatarHash: null },
           { id: AGENT_ID, kind: "service_account", uid: "Release Agent", displayName: "Release Agent", avatarHash: null },
+          // Only standalone and agent names are unique; a Space API key may share one with an agent.
+          { id: KEY_ID, kind: "service_account", uid: "Roadmap sync", displayName: "Roadmap sync", avatarHash: null },
+          { id: SYNC_AGENT_ID, kind: "service_account", uid: "roadmap sync", displayName: "roadmap sync", avatarHash: null },
         ]);
       if (path === "/api/spaces/Space1/items/filter") return json({ items: [task], total: 1, page: 1, pageSize: 50, totalPages: 1 });
       if (path === "/api/spaces/Space1/items") return json({ ...task, ...(body as object), id: "New002" });
@@ -556,6 +561,12 @@ describe("changes", () => {
     expect((await failing(["assign", "Item01", "ADA"])).stderr).toContain(
       "Use me, an ID, a username, or a service account name with access",
     );
+    // A name that several service accounts share never picks one of them; it asks for the ID and changes nothing.
+    const ambiguous = await failing(["assign", "Item01", "Roadmap Sync"]);
+    expect(ambiguous.stderr).toContain(
+      `Several service accounts are named "Roadmap Sync" in this space. Use the ID of the one you mean: ${KEY_ID}, ${SYNC_AGENT_ID}.`,
+    );
+    expect(writes(ambiguous.requests)).toEqual([]);
   });
 
   test("deps lists both directions and adds or removes blockers by address", async () => {
