@@ -7,9 +7,7 @@ import {
   addBookAccess,
   CONTACT_BOOK_RESOURCE_TYPE,
   CONTACTS_APP_ID,
-  canAccessBook,
   countBookAccess,
-  getBookPermission,
   grantBookAccess,
   listBookAccessPaginated,
   listContactBookApiKeys,
@@ -428,25 +426,6 @@ export const remove = async (config: { id: string }): Promise<Result<void>> => {
   });
   return ok();
 };
-
-/**
- * Returns effective permission for one manual book.
- */
-export const getPermission = async (config: { bookId: string; subject: AccessSubject }): Promise<PermissionLevel> =>
-  getBookPermission({
-    bookId: config.bookId,
-    subject: config.subject,
-  });
-
-/**
- * Checks whether user/groups can access one manual book for the requested level.
- */
-export const canAccess = async (config: { bookId: string; subject: AccessSubject; requiredLevel?: PermissionLevel }): Promise<boolean> =>
-  canAccessBook({
-    bookId: config.bookId,
-    subject: config.subject,
-    requiredLevel: config.requiredLevel,
-  });
 
 /**
  * Access helpers scoped to manual contact books.

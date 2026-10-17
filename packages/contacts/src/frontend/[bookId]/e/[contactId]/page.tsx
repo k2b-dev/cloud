@@ -1,11 +1,11 @@
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor } from "@k2b/cloud/server";
+import { expectUserBackedActor, hasPermission } from "@k2b/cloud/server";
 import { ssr } from "../../../../config";
 import { contactsService } from "../../../../service";
 import { projectBooks, projectContacts, resolveBookPublicIds, resolvePublicId } from "../../../../service/public-resources";
 
 export default ssr<AuthContext>(async (c) => {
-  const user = expectUserBackedActor(c);
+  expectUserBackedActor(c);
   const publicBookId = c.req.param("bookId") ?? "";
   const publicContactId = c.req.param("contactId") ?? "";
   const bookId = await resolvePublicId("books", publicBookId);
@@ -16,20 +16,16 @@ export default ssr<AuthContext>(async (c) => {
   const book = await contactsService.book.get({ id: bookId });
   if (!book) return ssr.error(c, 404);
 
-  const hasReadAccess = await contactsService.book.permission.canAccess({
+  const permission = await contactsService.book.permission.forActor({
     bookId,
-    subject: { type: "user", userId: user.id },
-    requiredLevel: "read",
+    actor: c.get("actor"),
+    accessSubject: c.get("accessSubject"),
   });
 
-  if (!hasReadAccess) return ssr.error(c, 403);
-  const hasWriteAccess = await contactsService.book.permission.canAccess({
-    bookId,
-    subject: { type: "user", userId: user.id },
-    requiredLevel: "write",
-  });
+  if (!hasPermission(permission, "read")) return ssr.error(c, 403);
 
-  if (!hasWriteAccess) return c.redirect(`/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}`, 302);
+  if (!hasPermission(permission, "write"))
+    return c.redirect(`/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}`, 302);
 
   const contact = await contactsService.contact.get({ bookId, id: contactId });
   if (!contact) return ssr.error(c, 404);

@@ -140,8 +140,8 @@ test("retention PUT writes both settings and the old/new audit in one transactio
     expect(await response.json()).toEqual(next);
     expect(begin).toHaveBeenCalledTimes(1);
     expect(set.mock.calls).toEqual([
-      ["outgoing_mail.content_retention_days", 30, tx],
-      ["outgoing_mail.record_retention_days", 30, tx],
+      ["outgoing_mail.content_retention_days", 30, tx, { replaceUnreadable: true }],
+      ["outgoing_mail.record_retention_days", 30, tx, { replaceUnreadable: true }],
     ]);
     expect(record).toHaveBeenCalledTimes(1);
     expect(record.mock.calls[0]).toEqual([

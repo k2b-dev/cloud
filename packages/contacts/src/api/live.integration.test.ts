@@ -83,7 +83,8 @@ suite("Contacts live channels", () => {
     expect(await firstAnswer(owner.headers, "book", { book: shared.shortId })).toMatchObject({ t: "ready" });
     expect(await firstAnswer(stranger.headers, "book", { book: shared.shortId })).toEqual({ t: "revoked", id: "s", code: "not_found" });
     expect(await firstAnswer(stranger.headers, "book", { book: "Zz9999" })).toEqual({ t: "revoked", id: "s", code: "not_found" });
-    expect(await firstAnswer(admin.headers, "book", { book: shared.shortId })).toMatchObject({ t: "ready" });
+    expect((await api.request(`/books/${shared.shortId}`, { headers: admin.headers })).status).toBe(403);
+    expect(await firstAnswer(admin.headers, "book", { book: shared.shortId })).toEqual({ t: "revoked", id: "s", code: "not_found" });
     expect(await firstAnswer(stranger.headers, "all", {})).toMatchObject({ t: "ready" });
 
     // A book API key reads its own book and nothing else, like on the REST API.
@@ -135,9 +136,9 @@ suite("Contacts live channels", () => {
       origin,
       "x-forwarded-for": uniqueCallerAddress(),
     };
-    expect((await api.request(`/books/${book1.shortId}`, { headers: admin.headers })).status).toBe(200);
+    expect((await api.request(`/books/${book1.shortId}`, { headers: admin.headers })).status).toBe(403);
     expect((await api.request(`/books/${book1.shortId}`, { headers: phone })).status).toBe(403);
-    expect(await firstAnswer(admin.headers, "book", { book: book1.shortId })).toMatchObject({ t: "ready" });
+    expect(await firstAnswer(admin.headers, "book", { book: book1.shortId })).toEqual({ t: "revoked", id: "s", code: "not_found" });
     expect(await firstAnswer(phone, "book", { book: book1.shortId })).toEqual({ t: "revoked", id: "s", code: "not_found" });
   });
 

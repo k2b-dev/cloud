@@ -7,7 +7,6 @@ import {
   ensureManagerRemains,
   getEffectivePermission,
   getEffectivePermissions,
-  hasPermission,
   type PermissionLevel,
   type Principal,
   paginateItems,
@@ -269,6 +268,7 @@ export const removeBookAccess = async (config: {
   accessId: string;
   actor: RequestActor;
   accessSubject: AccessSubject;
+  authority: "grant" | "administration";
   locale?: string;
 }): Promise<Result<void>> => {
   const { bookId, accessId, actor, accessSubject, locale } = config;
@@ -280,7 +280,11 @@ export const removeBookAccess = async (config: {
     const [book] = await tx`SELECT id FROM contacts.books WHERE id = ${bookId}::uuid FOR UPDATE`;
     if (!book) return fail(err.notFound("Book"));
     const before = await readBookManagerEntries(bookId, tx);
-    if ((await getActorBookPermission({ bookId, actor, subject: accessSubject }, tx)) !== "admin") {
+    if (
+      config.authority === "administration"
+        ? !isContactsAdministrator(actor)
+        : (await getActorBookPermission({ bookId, actor, accessSubject }, tx)) !== "admin"
+    ) {
       return fail(err.forbidden("Access denied"));
     }
     if (!before.some((entry) => entry.id === accessId)) {
@@ -315,6 +319,7 @@ export const updateBookAccessPermission = async (config: {
   permission: PermissionLevel;
   actor: RequestActor;
   accessSubject: AccessSubject;
+  authority: "grant" | "administration";
   locale?: string;
 }): Promise<Result<void>> => {
   const { bookId, accessId, permission, actor, accessSubject, locale } = config;
@@ -326,7 +331,11 @@ export const updateBookAccessPermission = async (config: {
     const [book] = await tx`SELECT id FROM contacts.books WHERE id = ${bookId}::uuid FOR UPDATE`;
     if (!book) return fail(err.notFound("Book"));
     const before = await readBookManagerEntries(bookId, tx);
-    if ((await getActorBookPermission({ bookId, actor, subject: accessSubject }, tx)) !== "admin") {
+    if (
+      config.authority === "administration"
+        ? !isContactsAdministrator(actor)
+        : (await getActorBookPermission({ bookId, actor, accessSubject }, tx)) !== "admin"
+    ) {
       return fail(err.forbidden("Access denied"));
     }
     if (!before.some((entry) => entry.id === accessId)) {
@@ -368,7 +377,7 @@ export const countBookAccess = async (bookId: string): Promise<number> => {
 /**
  * Resolves the effective permission of a user for one manual book.
  */
-export const getBookPermission = async (config: { bookId: string; subject: AccessSubject }, db: SQL = sql): Promise<PermissionLevel> => {
+const getBookPermission = async (config: { bookId: string; subject: AccessSubject }, db: SQL = sql): Promise<PermissionLevel> => {
   if (!isUuid(config.bookId)) return "none";
 
   const accessRows = await db<{ access_id: string }[]>`
@@ -396,13 +405,10 @@ export const minPermission = (a: PermissionLevel, b: PermissionLevel): Permissio
   PERMISSION_RANK[a] <= PERMISSION_RANK[b] ? a : b;
 
 /**
- * What an actor's role or binding decides on a book without its grants:
- * administrators hold every book, and a resource-bound key holds nothing
- * outside its own book. `null` leaves the decision to the grants.
+ * A resource-bound key holds nothing outside its exact Contacts book binding.
+ * `null` leaves the decision to the grants.
  */
 const fixedBookPermission = (actor: RequestActor, bookId: string): PermissionLevel | null => {
-  const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
-  if (user && hasRole(user, "admin")) return "admin";
   const account = actor.kind === "service_account" ? actor.serviceAccount : null;
   if (
     account?.kind === "resource_bound" &&
@@ -413,6 +419,12 @@ const fixedBookPermission = (actor: RequestActor, bookId: string): PermissionLev
   return null;
 };
 
+/** The administration authority used only by the /admin group. */
+export const isContactsAdministrator = (actor: RequestActor): boolean => {
+  const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
+  return Boolean(user && hasRole(user, "admin"));
+};
+
 /** Only a user-delegated credential acts as its user; every other service account is capped by its scopes. */
 const capByCredential = (actor: RequestActor, permission: PermissionLevel): PermissionLevel =>
   actor.kind === "service_account" && actor.serviceAccount.kind !== "user_delegated"
@@ -420,26 +432,25 @@ const capByCredential = (actor: RequestActor, permission: PermissionLevel): Perm
     : permission;
 
 /**
- * The permission of a request's actor on one existing book: administrators
- * hold every book, a resource-bound key only its own, and every service account
- * that does not act as its user is capped by its credential scopes. The API and
- * the live channels decide with these rules.
+ * Resolves one existing book through the actor's exact resource binding and
+ * accessSubject grants, capped by credential scopes for every service account
+ * that is not user-delegated. API, capabilities, SSR, and live channels share this decision.
  */
 export const getActorBookPermission = async (
   config: {
     bookId: string;
     actor: RequestActor;
-    subject: AccessSubject;
+    accessSubject: AccessSubject;
   },
   db: SQL = sql,
 ): Promise<PermissionLevel> =>
   fixedBookPermission(config.actor, config.bookId) ??
-  capByCredential(config.actor, await getBookPermission({ bookId: config.bookId, subject: config.subject }, db));
+  capByCredential(config.actor, await getBookPermission({ bookId: config.bookId, subject: config.accessSubject }, db));
 
 /** `getActorBookPermission` for many actors on one existing book, with one query for all their grants. */
 export const getActorsBookPermissions = async (
   bookId: string,
-  readers: readonly { actor: RequestActor; subject: AccessSubject }[],
+  readers: readonly { actor: RequestActor; accessSubject: AccessSubject }[],
 ): Promise<PermissionLevel[]> => {
   const fixed = readers.map((reader) => fixedBookPermission(reader.actor, bookId));
   const open = readers.filter((_, position) => fixed[position] === null);
@@ -449,26 +460,10 @@ export const getActorsBookPermissions = async (
   `;
   const granted = await getEffectivePermissions({
     accessIds: accessRows.map((row) => row.access_id),
-    subjects: open.map((reader) => reader.subject),
+    subjects: open.map((reader) => reader.accessSubject),
   });
   let next = 0;
   return readers.map((reader, position) => fixed[position] ?? capByCredential(reader.actor, granted[next++] ?? "none"));
-};
-
-/**
- * Checks whether the user satisfies the required permission for one manual book.
- */
-export const canAccessBook = async (config: {
-  bookId: string;
-  subject: AccessSubject;
-  requiredLevel?: PermissionLevel;
-}): Promise<boolean> => {
-  const permission = await getBookPermission({
-    bookId: config.bookId,
-    subject: config.subject,
-  });
-
-  return hasPermission(permission, config.requiredLevel ?? "read");
 };
 
 export const listContactBookApiKeys = async (bookId: string): Promise<ContactBookApiKey[]> => {

@@ -10,6 +10,25 @@ updated: 2026-10-17
 
 # Deprecations and migrations
 
+## Cloud administrators see only granted contact books in Contacts
+
+Cloud administrators and their user-delegated keys now need a grant to read or
+change a contact book inside Contacts. This affects the Contacts app, API, app
+tools and capabilities (including Mail recipient suggestions), `cld contacts`,
+and live updates that previously let administrators read books without a grant.
+
+Requests for a book without access return HTTP 403, `forbidden`, or `not_found`,
+depending on the operation. Lists and suggestions show only granted books.
+
+**Administration → Contacts** still lists every book, shows its summary, and
+opens its permission dialog. The administration endpoint
+`/api/contacts/admin/books/:bookId/access` keeps the same behavior.
+
+To keep using a book in the app, open **Administration → Contacts**, open the
+access dialog of the book from its row, and grant yourself access. API clients
+can grant access with `POST /api/contacts/admin/books/:bookId/access`. Then use
+the Contacts app with that grant.
+
 ## Contacts requires finished short IDs
 
 Contacts creates `short_id` as a required column on books, contacts, tags, and
