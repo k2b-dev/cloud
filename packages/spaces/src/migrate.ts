@@ -679,7 +679,7 @@ export const migrate = async (): Promise<void> => {
       emoji TEXT NOT NULL,
       user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
       service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
       CONSTRAINT item_reactions_one_reactor CHECK (num_nonnulls(user_id, service_account_id) = 1)
     )
   `.simple();

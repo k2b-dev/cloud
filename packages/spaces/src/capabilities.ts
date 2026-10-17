@@ -315,8 +315,13 @@ const requireSpace = async (shortId: string, context: CapabilityExecutionContext
   return spaceId ? requireSpaceUuid(spaceId, context, required) : capabilityFail(context, err.notFound("Space"), "spaceNotFound");
 };
 
-const requireItemUuid = async (internalId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
-  const item = await spacesService.item.get({ id: internalId, viewer: reactionViewer(context) });
+const requireItemUuid = async (
+  internalId: string,
+  context: CapabilityExecutionContext,
+  required: PermissionLevel = "read",
+  viewer?: ReactionViewer,
+) => {
+  const item = await spacesService.item.get({ id: internalId, viewer });
   if (!item) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
   const access = await requireSpaceUuid(item.spaceId, context, required);
   if (!access.ok) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
@@ -326,9 +331,16 @@ const requireItemUuid = async (internalId: string, context: CapabilityExecutionC
     : capabilityFail(context, err.notFound("Item"), "itemNotFound");
 };
 
-const requireItem = async (itemId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
+const requireItem = async (
+  itemId: string,
+  context: CapabilityExecutionContext,
+  required: PermissionLevel = "read",
+  viewer?: ReactionViewer,
+) => {
   const internalId = await spacesPublicResources.resolvePublicId("items", itemId);
-  return internalId ? requireItemUuid(internalId, context, required) : capabilityFail(context, err.notFound("Item"), "itemNotFound");
+  return internalId
+    ? requireItemUuid(internalId, context, required, viewer)
+    : capabilityFail(context, err.notFound("Item"), "itemNotFound");
 };
 
 const isEvent = (item: SpaceItem): item is SpaceItem & { startsAt: string; endsAt: string } => Boolean(item.startsAt && item.endsAt);
@@ -691,9 +703,9 @@ const runItemReferenceFind = async (input: z.infer<typeof ItemResourceReferenceF
     limit: input.limit + 1,
   });
   const truncated = itemIds.length > input.limit;
-  const items = (
-    await Promise.all(itemIds.slice(0, input.limit).map((id) => spacesService.item.get({ id, viewer: reactionViewer(context) })))
-  ).filter((item): item is SpaceItem => item !== null);
+  const items = (await Promise.all(itemIds.slice(0, input.limit).map((id) => spacesService.item.get({ id })))).filter(
+    (item): item is SpaceItem => item !== null,
+  );
   const [publicItems, publicSpaces] = await Promise.all([
     spacesPublicResources.projectItems(items),
     spacesPublicResources.projectSpaces(spaces.items),
@@ -949,7 +961,7 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
 };
 
 const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: CapabilityExecutionContext) => {
-  const resolved = await requireItem(input.id, context);
+  const resolved = await requireItem(input.id, context, "read", reactionViewer(context));
   if (!resolved.ok) return resolved;
   const data = isEvent(resolved.data.item)
     ? mapEvent(resolved.data.item)
@@ -3004,7 +3016,7 @@ export const spacesCapabilities = defineCapabilities({
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
         if (!commentAuthor(context))
-          return capabilityFail(context, err.forbidden("Reactions require a user-backed actor"), "reactionsNeedUser");
+          return capabilityFail(context, err.forbidden("Reactions require a person or a standalone service account"), "reactionsNeedUser");
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
         return ok({
@@ -3020,7 +3032,12 @@ export const spacesCapabilities = defineCapabilities({
       run: async (input, context) =>
         audited(actionAudit(context, "reaction.add", "space_item", input.itemId), async () => {
           const actor = commentAuthor(context);
-          if (!actor) return capabilityFail(context, err.forbidden("Reactions require a user-backed actor"), "reactionsNeedUser");
+          if (!actor)
+            return capabilityFail(
+              context,
+              err.forbidden("Reactions require a person or a standalone service account"),
+              "reactionsNeedUser",
+            );
           const resolved = await requireItem(input.itemId, context, "write");
           if (!resolved.ok) return resolved;
           const result = await spacesService.item.reactions.add({
@@ -3048,7 +3065,7 @@ export const spacesCapabilities = defineCapabilities({
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
         if (!commentAuthor(context))
-          return capabilityFail(context, err.forbidden("Reactions require a user-backed actor"), "reactionsNeedUser");
+          return capabilityFail(context, err.forbidden("Reactions require a person or a standalone service account"), "reactionsNeedUser");
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
         return ok({
@@ -3064,7 +3081,12 @@ export const spacesCapabilities = defineCapabilities({
       run: async (input, context) =>
         audited(actionAudit(context, "reaction.remove", "space_item", input.itemId), async () => {
           const actor = commentAuthor(context);
-          if (!actor) return capabilityFail(context, err.forbidden("Reactions require a user-backed actor"), "reactionsNeedUser");
+          if (!actor)
+            return capabilityFail(
+              context,
+              err.forbidden("Reactions require a person or a standalone service account"),
+              "reactionsNeedUser",
+            );
           const resolved = await requireItem(input.itemId, context, "write");
           if (!resolved.ok) return resolved;
           const result = await spacesService.item.reactions.remove({

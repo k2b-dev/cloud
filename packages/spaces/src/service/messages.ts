@@ -22,7 +22,7 @@ const catalog = i18n.define({
       attachmentNotFound: "Attachment not found",
       endpointNeedsUser: "This endpoint requires a user-backed actor",
       commentsNeedUser: "Comments require a user-backed actor",
-      reactionsNeedUser: "Reactions require a user-backed actor",
+      reactionsNeedUser: "Reactions require a person or a standalone service account",
       emoji: "Emoji",
       reviewAddReaction: ({ title }: { title: string }) => `Add your reaction to ${title}.`,
       reviewRemoveReaction: ({ title }: { title: string }) => `Remove your reaction from ${title}.`,

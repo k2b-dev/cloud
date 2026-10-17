@@ -77,13 +77,14 @@ const mutate = async (
       if (limit && !limit.present && limit.count >= MAX_ITEM_REACTION_EMOJI) {
         return fail({ code: "REACTION_LIMIT_REACHED", message: "An item can have at most 20 different emoji reactions", status: 409 });
       }
+      // Timestamp after the item lock: now() predates any wait and can reorder committed emoji.
       const inserted =
         actor.kind === "user"
           ? await tx<{ id: string }[]>`
-          INSERT INTO spaces.item_reactions (item_id, emoji, user_id) VALUES (${itemId}, ${emoji}, ${userId})
+          INSERT INTO spaces.item_reactions (item_id, emoji, user_id, created_at) VALUES (${itemId}, ${emoji}, ${userId}, clock_timestamp())
           ON CONFLICT (item_id, emoji, user_id) WHERE user_id IS NOT NULL DO NOTHING RETURNING id`
           : await tx<{ id: string }[]>`
-          INSERT INTO spaces.item_reactions (item_id, emoji, service_account_id) VALUES (${itemId}, ${emoji}, ${serviceAccountId})
+          INSERT INTO spaces.item_reactions (item_id, emoji, service_account_id, created_at) VALUES (${itemId}, ${emoji}, ${serviceAccountId}, clock_timestamp())
           ON CONFLICT (item_id, emoji, service_account_id) WHERE service_account_id IS NOT NULL DO NOTHING RETURNING id`;
       changed = inserted.length > 0;
     } else {

@@ -435,7 +435,7 @@ const resolveRecurringDetail = async (params: {
 
   if (params.item.recurringEventId) {
     if (params.item.recurrenceId !== recurrenceId || !params.item.startsAt || !params.item.endsAt) return null;
-    const series = await spacesService.item.get({ id: params.item.recurringEventId, viewer: params.viewer });
+    const series = await spacesService.item.get({ id: params.item.recurringEventId });
     if (!series || series.spaceId !== params.spaceId || !series.recurrence || !series.startsAt || !series.endsAt) return null;
     const occurrence = resolveRecurringOccurrence({
       event: {

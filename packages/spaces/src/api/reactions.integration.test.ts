@@ -214,6 +214,44 @@ suite("Spaces reactions", () => {
       expect((await reactions.listForItem(f.itemId, { kind: "user", id: f.users[0]!.id })).map((r) => r.emoji)).toEqual(["👍", "❤️"]);
     }));
 
+  test.each(["user", "service_account"] as const)("a waiting %s add orders emoji after the lock holder's reaction", (kind) =>
+    fixture(async (f) => {
+      const actor = { kind, id: kind === "user" ? f.users[0]!.id : f.agentId };
+      let pendingAdd: ReturnType<typeof reactions.add> | undefined;
+      try {
+        await sql.begin(async (tx) => {
+          const [item] = await tx<{ pid: number }[]>`
+            SELECT pg_backend_pid() AS pid FROM spaces.items WHERE id = ${f.itemId} FOR NO KEY UPDATE
+          `;
+          pendingAdd = reactions.add({ itemId: f.itemId, spaceId: f.spaceId, emoji: "👍", actor });
+          const deadline = Date.now() + 5_000;
+          while (true) {
+            const [row] = await sql<{ blocked: boolean }[]>`
+              SELECT EXISTS (
+                SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock'
+                  AND ${item!.pid}::int = ANY(pg_blocking_pids(pid))
+              ) AS blocked
+            `;
+            if (row?.blocked) break;
+            if (Date.now() >= deadline) throw new Error("Reaction add did not wait for the item row lock within 5 seconds");
+            await Bun.sleep(10);
+          }
+          // The waiting add's transaction started before B; now() would incorrectly put A first.
+          await tx`
+            INSERT INTO spaces.item_reactions (item_id, emoji, user_id, created_at)
+            VALUES (${f.itemId}, '❤️', ${f.users[1]!.id}, clock_timestamp())
+          `;
+        });
+        const result = await pendingAdd;
+        if (!result?.ok) throw new Error("Expected the waiting reaction add to succeed");
+        expect(result.data.reactions.map((reaction) => reaction.emoji)).toEqual(["❤️", "👍"]);
+      } finally {
+        // A failed poll rolls back the lock holder before draining the add and cleaning up the fixture.
+        await pendingAdd;
+      }
+    }),
+  );
+
   test("a 21st distinct emoji has a coded conflict; an existing emoji accepts another reactor", () =>
     fixture(async (f) => {
       for (const emoji of emojiSet.slice(0, 20)) await summary(await f.users[0]!.call(reactionPath(f.itemPath, emoji), "PUT"));
