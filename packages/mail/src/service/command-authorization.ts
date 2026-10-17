@@ -1,5 +1,5 @@
 import type { AccessSubject } from "@k2b/cloud/server";
-import { toPgTextArray } from "@k2b/cloud/services";
+import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { draftVisibleTo, type MailboxAccess, mailboxAccessPrincipalCondition, messageVisibleTo } from "./access";
 
@@ -240,13 +240,14 @@ const commandPrincipalAuthorization = async (
   return grant?.authorized === true ? { scope: "assigned", permission: "write", userId: command.access_subject_id } : false;
 };
 
-/** Share principal checks; only assigned access depends on each command's current target. */
+/** Principal checks run once per principal; assigned target checks run once per principal group. */
 export const commandsStillAuthorized = async (
   commands: StoredCommandAuthorization[],
   permission: "write" | "admin",
   db: SqlClient = sql,
 ): Promise<Set<string>> => {
   const principals = new Map<string, boolean | MailboxAccess>();
+  const targetGroups = new Map<string, { access: MailboxAccess; kind: string; mailboxId: string; ids: string[]; targets: string[] }>();
   const authorized = new Set<string>();
   for (const command of commands) {
     const key = JSON.stringify([
@@ -269,11 +270,22 @@ export const commandsStillAuthorized = async (
     }
     if (access === true) authorized.add(command.id);
     else if (access && command.target) {
-      const [target] = await db<{ authorized: boolean }[]>`
-        SELECT ${commandTargetVisibleTo(access, sql`${command.kind}`, sql`${typeof command.target === "string" ? JSON.parse(command.target) : command.target}::jsonb`, command.mailbox_id, sql`${command.id}::uuid`)} AS authorized
-      `;
-      if (target?.authorized === true) authorized.add(command.id);
+      let group = targetGroups.get(key);
+      if (!group) {
+        group = { access, kind: command.kind, mailboxId: command.mailbox_id, ids: [], targets: [] };
+        targetGroups.set(key, group);
+      }
+      group.ids.push(command.id);
+      group.targets.push(typeof command.target === "string" ? command.target : JSON.stringify(command.target));
     }
+  }
+  for (const { access, kind, mailboxId, ids, targets } of targetGroups.values()) {
+    const visible = await db<{ id: string }[]>`
+      SELECT entry.id
+      FROM unnest(${toPgUuidArray(ids)}::uuid[], ${toPgTextArray(targets)}::jsonb[]) AS entry(id, target)
+      WHERE ${commandTargetVisibleTo(access, sql`${kind}`, sql`entry.target`, mailboxId, sql`entry.id`)}
+    `;
+    for (const command of visible) authorized.add(command.id);
   }
   return authorized;
 };

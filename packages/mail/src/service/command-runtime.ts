@@ -1165,8 +1165,8 @@ const prepareFreshMove = async (command: DbCommandExecution): Promise<FreshMove>
  * one UID MOVE, and one FETCH for the messages that stayed in the source. Each command keeps its
  * own effect marker and outcome, as if it ran alone. A command whose own step fails goes to `fail`
  * and the others go on; a failure of the whole set, such as a connection lost during MOVE, is thrown.
- * Marking and settling use set-wide statements: per-row costs grow with the set, while a slow
- * statement costs once per set.
+ * Marking and settling use a constant number of set-wide statements; their per-row costs grow
+ * with the set.
  */
 const executeFreshMoves = async (moves: FreshMove[], assertLeaseActive: LeaseAssertion, fail: MoveFailure): Promise<void> => {
   const [head] = moves;
@@ -1294,6 +1294,7 @@ const settleMoveSet = async (members: SettledMove[], destination: DbDestinationF
 /**
  * Checks identities first, then marks, moves, and settles the set. Marking and settling use a
  * constant number of set-wide statements; their per-row costs still grow with the set size.
+ * Live and workflow-dependency notifications run once per confirmed command after settle commits.
  */
 const moveMessageSet = async (params: {
   runtime: MutationRuntime;
@@ -4099,15 +4100,15 @@ const nextMailboxMutation = async (mailboxId: string): Promise<{ id: string; wai
 /**
  * Moves one turn carries at most. Their UID set takes at most 550 octets, ten digits and a comma
  * per UID, far inside the 8,192-octet command line RFC 7162 asks clients to stay under. Admission
- * uses `MOVE_SET_ADMISSION_MS`; marking and settling use set-wide statements.
+ * uses `MOVE_SET_ADMISSION_MS`; marking and settling use a constant number of set-wide statements.
  */
 const MOVE_SET_LIMIT = 50;
 
 /**
  * Admission budget while a move set holds the provider lease. A fifth of two seconds leaves the
- * rest for per-row marking and settling costs, which still grow with the set size. After the cut,
- * marking and settling use a constant number of set-wide statements, so a per-statement slowdown
- * adds a constant cost per set. While admission costs less than 8 ms per move, all 50 fit.
+ * rest for per-row and per-command costs. Marking and settling use a constant number of set-wide
+ * statements; the workflow-run check runs once per workflow command inside the marker transaction.
+ * While admission costs less than 8 ms per move, all 50 fit.
  */
 export const MOVE_SET_ADMISSION_MS = 2_000 / 5;
 
@@ -4179,8 +4180,7 @@ const pendingMoveSet = async (mailboxId: string, headId: string): Promise<string
  * Runs a set of fresh moves under one provider lease and over one session. Each move is claimed and
  * settled as its own command, so idempotency, activity, and reconciliation stay those of one move.
  * Admission stops after `MOVE_SET_ADMISSION_MS`, reserving the rest of about two seconds for
- * per-row costs. Marking and settling use a constant number of set-wide statements, so a slow
- * statement adds a constant cost per set.
+ * per-row and per-command costs. Marking and settling use a constant number of set-wide statements.
  */
 const runMoveSet = async (commandIds: string[], jobHeartbeat?: () => Promise<void>): Promise<LeaseOutcome> => {
   const [headId] = commandIds;
