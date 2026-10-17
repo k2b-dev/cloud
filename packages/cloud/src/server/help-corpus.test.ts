@@ -29,7 +29,7 @@ const helpPackages = [
   "weather",
 ] as const;
 
-const sourceGlob = new Bun.Glob("src/help/documents/**/*.help.md");
+const sourceGlob = new Bun.Glob("src/help/**/*.help.md");
 const withoutFencedCode = (source: string) =>
   source
     .split("\n")
@@ -75,9 +75,17 @@ describe("Cloud guided Help corpus", () => {
       const sources = await readPackageSources(packageName);
       expect(sources.length, `${packageName} should own Help Markdown`).toBeGreaterThan(0);
 
+      const localized = {
+        en: sources.filter(({ path }) => !path.includes("/de/")),
+        de: sources.filter(({ path }) => path.includes("/de/")),
+      };
+      const collection = defineHelp({
+        baseLocale: "en",
+        documents: { en: localized.en.map(({ source }) => source), de: localized.de.map(({ source }) => source) },
+      });
       for (const { path, source } of sources) {
-        const collection = defineHelp({ documents: [source] });
-        const [document] = collection.documents;
+        const id = /^id: (.+)$/m.exec(source)?.[1];
+        const document = collection.documentsByLocale?.[path.includes("/de/") ? "de" : "en"]?.find((document) => document.id === id);
         expect(document, `${path} should define one valid document`).toBeDefined();
 
         expect(document!.html, `${path} should not leak a guided directive`).not.toMatch(/<p>:::(?:steps|compare|reference)/);
@@ -85,10 +93,6 @@ describe("Cloud guided Help corpus", () => {
 
         const headings = [...withoutFencedCode(source).matchAll(/^## (?!#)(.+)$/gm)];
         expect(headings.length, `${path} should have at least one navigable H2 section`).toBeGreaterThan(0);
-        expect(
-          headings.every((match) => /\{icon="[a-z0-9-]+"\}\s*$/i.test(match[1]!)),
-          `${path} should annotate every H2 section`,
-        ).toBe(true);
 
         const ids = [...document!.html.matchAll(/<h2 id="([^"]+)"/g)].map((match) => match[1]);
         expect(new Set(ids).size, `${path} should not render duplicate H2 ids`).toBe(ids.length);

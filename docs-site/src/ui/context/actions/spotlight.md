@@ -32,12 +32,12 @@ type SpotlightButtonVariant = "default" | "compact" | "chip" | "sidebar" | "side
 
 type SpotlightButtonProps = {
   variant?: SpotlightButtonVariant; label?: string; title?: string; icon?: string;
-  shortcutLabel?: string | false; ariaLabel?: string; disabled?: boolean; class?: string;
+  shortcut?: string; shortcutLabel?: string | false; ariaLabel?: string; disabled?: boolean; class?: string;
   onClick: () => void | Promise<void>;
 };
 ```
 
-The default variant is `"default"`. Shortcut text is opt-in with `shortcutLabel`; omission or `false` hides it. The default title is the button label. `openSpotlightSearch<T>(options)` uses the [prompts.search options and result](/en/ui/feedback/prompts#api-reference) and resolves to `PromptSearchItem<T> | undefined`; handle the selected value.
+The default variant is `"default"`. Shortcut caps are opt-in and show only in the `chip` and `sidebar` variants; without `shortcut` or `shortcutLabel`, none show. The default title is the button label. `openSpotlightSearch<T>(options)` uses the [prompts.search options and result](/en/ui/feedback/prompts#api-reference) and resolves to `PromptSearchItem<T> | undefined`; handle the selected value.
 
 ## Accessibility
 
@@ -49,7 +49,7 @@ The button renders during SSR; opening and resolving the prompt require browser 
 
 ## Shortcut caps
 
-Pass `shortcut="mod+k"` to `SpotlightButton` for shared platform and locale aware
-caps in the `chip` and `sidebar` variants. `shortcutLabel` still accepts a
-ready-made label, or `false` to hide it. `shortcut` takes precedence when both
-are supplied.
+Pass `shortcut="mod+k"` to show the shortcut. This is the recommended way:
+the caps are platform and locale aware, as in [Kbd](/en/ui/content/kbd). Use
+`shortcutLabel` only when the host already has a ready-made label; `false`
+hides it. `shortcut` takes precedence when both are supplied.

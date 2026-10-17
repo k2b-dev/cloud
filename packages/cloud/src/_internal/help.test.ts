@@ -1,4 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { Lexer } from "marked";
 import { defineHelp, type HelpDefinition } from "../server/help";
 import { compileHelp, HELP_DOCUMENT_MAX_BYTES } from "./help";
 
@@ -13,6 +15,32 @@ order: ${order}
 ${body}`;
 
 describe("Help registration compiler", () => {
+  test("lexes each document at most three times during definition and compilation", () => {
+    const markers = ["help-lexer-budget-en-body", "help-lexer-budget-de-body"];
+    const lexer = spyOn(Lexer.prototype, "lex");
+    try {
+      compileHelp({
+        appId: "inventory",
+        definition: defineHelp({
+          baseLocale: "en",
+          documents: {
+            en: [article("start", "Start", 10, `${markers[0]} [Read](help:inventory/start) :kbd[esc]`)],
+            de: [article("start", "Starten", 10, `${markers[1]} [Lesen](help:inventory/start) :kbd[esc]`)],
+          },
+        }),
+      });
+
+      for (const marker of markers) {
+        // Count full block-lexer passes over each body, including the converted agent output.
+        const passes = lexer.mock.calls.filter(([source]) => source.includes(marker)).length;
+        expect(passes).toBeGreaterThan(0);
+        expect(passes).toBeLessThanOrEqual(3);
+      }
+    } finally {
+      lexer.mockRestore();
+    }
+  });
+
   test("validates, sorts, and freezes one app-owned declaration", () => {
     const definition = defineHelp({
       documents: [article("second", "Second", 20), article("first", "First", 10)],
@@ -77,6 +105,8 @@ describe("Help registration compiler", () => {
         id: `article-${index}`,
         title: `Article ${index}`,
         order: index,
+        kind: "task",
+        related: [],
         markdown: "x".repeat(120 * 1024),
         html: "",
         searchText: "",
@@ -109,4 +139,47 @@ describe("Help registration compiler", () => {
     expect(compiled.corpus.documents[0]?.searchText).toBeTruthy();
     expect(compiled.corpus.documentsByLocale?.de?.[0]?.searchText).toBeTruthy();
   });
+});
+
+test("own-app prefixed related and inline references validate at compile time", () => {
+  for (const source of [
+    article("start", "Start", 10).replace("order: 10", "order: 10\nrelated: [inventory/missing]"),
+    article("start", "Start", 10, "[Read](help:inventory/missing#section)"),
+  ]) {
+    const definition = defineHelp({ documents: [source] });
+    expect(() => compileHelp({ appId: "inventory", definition })).toThrow(
+      'Help locale "en" document "start" has unknown reference "inventory/missing',
+    );
+    expect(() => compileHelp({ appId: "other", definition })).not.toThrow();
+  }
+});
+
+test("validates inline references in hand-built definitions without cached targets", () => {
+  const original = defineHelp({ documents: [article("start", "Start", 10)] });
+  const definition: HelpDefinition = {
+    documents: [{ ...original.documents[0]!, markdown: "[Read](help:inventory/missing#section)" }],
+    getMarkdown: () => undefined,
+  };
+  expect(() => compileHelp({ appId: "inventory", definition })).toThrow(
+    'Help locale "en" document "start" has unknown reference "inventory/missing#section"',
+  );
+  expect(() => compileHelp({ appId: "other", definition })).not.toThrow();
+});
+
+test("revision two republishes an unchanged definition", () => {
+  const { corpus } = compileHelp({ appId: "inventory", definition: defineHelp({ documents: [article("start", "Start", 10)] }) });
+  const hash = (revision: number) =>
+    createHash("sha256")
+      .update(
+        JSON.stringify({
+          revision,
+          appId: corpus.appId,
+          baseLocale: corpus.baseLocale,
+          documents: corpus.documents,
+          documentsByLocale: corpus.documentsByLocale,
+        }),
+      )
+      .digest("hex");
+  expect(corpus.manifestHash).toBe(hash(2));
+  expect(corpus.manifestHash).not.toBe(hash(1));
 });

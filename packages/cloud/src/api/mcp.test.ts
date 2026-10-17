@@ -128,7 +128,7 @@ const help: FixtureCorpus = {
         title: "Erste Schritte",
         description: "Demo-Elemente erstellen und prüfen.",
         order: 10,
-        markdown: "# Erste Schritte\n\nErstelle ein Element und prüfe den aktuellen Zustand.",
+        markdown: "# Erste Schritte\n\nErstelle ein Element und prüfe den aktuellen Zustand.\n\nDrücke :kbd[mod+k].",
         searchText: "erste schritte element erstellen prüfen aktueller zustand",
       },
     ],
@@ -139,7 +139,7 @@ const help: FixtureCorpus = {
       title: "Getting started",
       description: "Create and inspect demo items.",
       order: 10,
-      markdown: "# Getting started\n\nCreate an item, then inspect its current state.",
+      markdown: '# Getting started\n\nCreate an item, then inspect its current state.\n\nPress :kbd[mod+k].\n\n**Hide**{icon="eye-off"}',
       searchText: "getting started create inspect demo items current state",
     },
   ],
@@ -691,7 +691,11 @@ describe("capability MCP projection", () => {
       { jsonrpc: "2.0", id: 31, method: "resources/read", params: { uri: "cloud://help/demo/getting-started" } },
       "2025-11-25",
     );
-    expect(await read.json()).toMatchObject({ result: { contents: [{ text: expect.stringContaining("Create an item") }] } });
+    const resource = z.object({ result: z.object({ contents: z.array(z.object({ text: z.string() })) }) }).parse(await read.json());
+    expect(resource.result.contents[0]!.text).toContain("Ctrl+K (⌘K on Mac)");
+    expect(resource.result.contents[0]!.text).toContain("**Hide**");
+    expect(resource.result.contents[0]!.text).not.toContain('{icon="');
+    expect(resource).toMatchObject({ result: { contents: [{ text: expect.stringContaining("Create an item") }] } });
 
     const searched = await rpc(routes, {
       jsonrpc: "2.0",
@@ -716,6 +720,9 @@ describe("capability MCP projection", () => {
       params: { name: "cloud__help__read", arguments: { appId: "demo", documentId: "getting-started", query: "current state" } },
     });
     const readResult = (await toolRead.json()) as { result: { structuredContent: unknown; content: Array<Record<string, unknown>> } };
+    const toolMarkdown = z.object({ document: z.object({ markdown: z.string() }) }).parse(readResult.result.structuredContent)
+      .document.markdown;
+    expect(toolMarkdown).toContain("Ctrl+K (⌘K on Mac)");
     expect(readResult).toMatchObject({
       result: {
         structuredContent: { document: { markdown: expect.stringContaining("current state"), truncated: false } },

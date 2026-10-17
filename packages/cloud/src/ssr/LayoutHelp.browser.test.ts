@@ -104,34 +104,37 @@ afterAll(async () => {
   for (const spy of spies) spy.mockRestore();
   await browser?.close();
 });
-const open = async (query = "", viewport = { width: 1440, height: 900 }) => {
+const open = async (query = "", viewport = { width: 1440, height: 900 }, ready = "[data-help-search]") => {
   const page = await browser.newPage({ viewport, reducedMotion: "reduce" });
   await page.route("http://cloud.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }));
   await page.goto(`http://cloud.test/help/apps/spaces${query}`);
   await page.addScriptTag({ content: bundle });
-  await page.locator("[data-help-search]").waitFor();
+  await page.locator(ready).waitFor();
   return page;
 };
 
-test("the TOC stays in view and follows Layout's actual page scroller", async () => {
+test("wide: a text table of contents stays in view beside the article and follows Layout's page scroller", async () => {
   const page = await open();
   try {
     await page.getByRole("button", { name: "Topic 0", exact: false }).first().click();
-    // The frame and its reserved TOC column exist before the body arrives.
+    // The frame exists before the body arrives.
     await page.locator(".help-article-layout").waitFor();
     expect(await page.locator("article h3").textContent()).toBe("Topic 0");
-    await page.locator('.help-article-toc button[aria-current="location"]').waitFor();
-    const before = await page.locator('.help-article-toc button[aria-current="location"]').getAttribute("title");
+    const toc = page.locator(".help-article-aside .k2b-toc");
+    const active = toc.locator('a[aria-current="location"]');
+    await active.waitFor();
+    // Text only: the section titles, no icon tiles.
+    expect(await toc.locator("a").allTextContents()).toEqual(Array.from({ length: 8 }, (_, index) => `Section ${index}`));
+    expect(await toc.locator("i").count()).toBe(0);
+    expect(await page.locator(".help-section-icon, [data-help-icon]").count()).toBe(0);
+    expect(await page.locator(".help-article-tools").isVisible()).toBe(false);
+    expect(await active.textContent()).toBe("Section 0");
     expect(await page.locator(".cloud-app-canvas").getAttribute("style")).toContain("--app-accent:#16a34a");
     await page.evaluate(() => {
-      const main = document.querySelector<HTMLElement>(".layout-content-main")!;
-      main.scrollTop = 2000;
+      document.querySelector<HTMLElement>(".layout-content-main")!.scrollTop = 2000;
     });
-    await page.waitForFunction(
-      () => document.querySelector('.help-article-toc button[aria-current="location"]')?.getAttribute("title") !== "Section 0",
-    );
-    expect(await page.locator('.help-article-toc button[aria-current="location"]').getAttribute("title")).not.toBe(before);
-    const rect = await page.locator(".help-article-toc").boundingBox();
+    await page.waitForFunction(() => document.querySelector('.help-article-aside a[aria-current="location"]')?.textContent !== "Section 0");
+    const rect = await toc.boundingBox();
     expect(rect).not.toBeNull();
     expect(rect!.y).toBeGreaterThanOrEqual(0);
     expect(rect!.y + rect!.height).toBeLessThanOrEqual(900);
@@ -141,45 +144,174 @@ test("the TOC stays in view and follows Layout's actual page scroller", async ()
   }
 }, 30_000);
 
-test("on a phone the document scrolls: the TOC strip stays in view and follows the reading position", async () => {
+test("on a phone a short task article shows its access once and its first step without scrolling", async () => {
   const page = await open("", { width: 390, height: 844 });
   try {
-    await page.getByRole("button", { name: "Topic 0", exact: false }).first().click();
-    const active = page.locator('.help-article-toc button[aria-current="location"]');
-    await active.waitFor();
-    expect(await active.getAttribute("title")).toBe("Section 0");
-    // Below md, Layout's main does not scroll; the document does.
-    expect(await page.locator(".layout-content-main").evaluate((element) => getComputedStyle(element).overflowY)).toBe("visible");
-    await page.evaluate(() => window.scrollTo(0, 2000));
-    await page.waitForFunction(
-      () => document.querySelector('.help-article-toc button[aria-current="location"]')?.getAttribute("title") !== "Section 0",
-    );
-    expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBeGreaterThanOrEqual(2000);
-    const rect = await page.locator(".help-article-toc").boundingBox();
-    expect(rect).not.toBeNull();
-    expect(rect!.y).toBeGreaterThanOrEqual(0);
-    expect(rect!.y + rect!.height).toBeLessThanOrEqual(844);
+    await page.getByRole("button", { name: "Topic 1", exact: false }).first().click();
+    const firstStep = page.locator(".help-document .k2b-steps > li").first();
+    await firstStep.waitFor();
+    // One access chip, and no second "You need" anywhere in the reader's chrome.
+    expect(await page.locator(".help-article-fact").allTextContents()).toEqual(["You need Manage", "4 steps"]);
+    expect(await page.locator("article").getByText("You need", { exact: false }).count()).toBe(1);
+    expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
+    const step = await firstStep.boundingBox();
+    expect(step).not.toBeNull();
+    expect(step!.y + step!.height).toBeLessThanOrEqual(844);
+    expect(await page.locator(".help-article-end .help-article-next").textContent()).toContain("Topic 2");
   } finally {
     await page.close();
   }
 }, 30_000);
 
-test("an embedded reader in a narrow pane uses one column in a wide window", async () => {
-  const page = await open("?embedded");
+test("in the Help dialog on a phone a short task article shows its first step without scrolling", async () => {
+  const page = await open("?modal", { width: 390, height: 844 });
   try {
-    await page.getByRole("button", { name: "Topic 0", exact: false }).first().click();
-    await page.locator(".help-article-toc button").first().waitFor();
-    const layout = await page.locator(".help-article-layout").evaluate((element) => {
-      const toc = element.querySelector(".help-article-toc")!.getBoundingClientRect();
-      const copy = element.querySelector(".help-article-copy")!.getBoundingClientRect();
-      return { columns: getComputedStyle(element).gridTemplateColumns.split(" ").length, tocBottom: toc.bottom, copyTop: copy.top };
-    });
-    expect(layout.columns).toBe(1);
-    expect(layout.tocBottom).toBeLessThanOrEqual(layout.copyTop);
+    await page.getByRole("dialog").getByRole("button", { name: "Topic 1", exact: false }).first().click();
+    const firstStep = page.getByRole("dialog").locator(".help-document .k2b-steps > li").first();
+    await firstStep.waitFor();
+    const step = await firstStep.boundingBox();
+    expect(step).not.toBeNull();
+    expect(step!.y).toBeGreaterThanOrEqual(0);
+    expect(step!.y + step!.height).toBeLessThanOrEqual(844);
   } finally {
     await page.close();
   }
 }, 30_000);
+
+test("compare blocks use two columns on a wide page and one on a phone", async () => {
+  for (const [viewport, columns] of [
+    [{ width: 1440, height: 900 }, 2],
+    [{ width: 390, height: 844 }, 1],
+  ] as const) {
+    const page = await open("", viewport);
+    try {
+      await page.getByRole("button", { name: "Topic 1", exact: false }).first().click();
+      const compare = page.locator(".help-document .help-compare > ul");
+      await compare.waitFor();
+      expect(await compare.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(columns);
+    } finally {
+      await page.close();
+    }
+  }
+}, 30_000);
+
+test("on a phone the table of contents is an On this page menu under the head that follows the reading position", async () => {
+  const page = await open("", { width: 390, height: 844 });
+  try {
+    await page.getByRole("button", { name: "Topic 0", exact: false }).first().click();
+    const trigger = page.getByRole("button", { name: "On this page" });
+    await trigger.waitFor();
+    expect(await page.locator(".help-article-aside").isVisible()).toBe(false);
+    const head = await page.locator(".help-article-head h3").boundingBox();
+    const menu = await trigger.boundingBox();
+    expect(menu!.y).toBeGreaterThan(head!.y);
+    // Below md, Layout's main does not scroll; the document does.
+    expect(await page.locator(".layout-content-main").evaluate((element) => getComputedStyle(element).overflowY)).toBe("visible");
+    await page.evaluate(() => window.scrollTo(0, 2000));
+    await page.waitForFunction(() => document.querySelector('.help-article-aside a[aria-current="location"]')?.textContent !== "Section 0");
+    // Open the menu where the reader is: a pointer click would first scroll the trigger back into view.
+    await trigger.dispatchEvent("click");
+    const items = page.getByRole("menuitemradio");
+    expect(await items.allTextContents()).toEqual(Array.from({ length: 8 }, (_, index) => `Section ${index}`));
+    expect(await page.getByRole("menuitemradio", { name: "Section 0" }).getAttribute("aria-checked")).toBe("false");
+    await page.getByRole("menuitemradio", { name: "Section 6" }).click();
+    await page.waitForFunction(() => {
+      const heading = document.getElementById("section-6")?.getBoundingClientRect();
+      return heading !== undefined && heading.top >= -1 && heading.top < 80;
+    });
+    expect(new URL(page.url()).hash).toBe("#section-6");
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("an open article keeps following the reading position when the window crosses Layout's breakpoint", async () => {
+  const page = await open("", { width: 390, height: 844 });
+  const active = "document.querySelector('.help-article-aside a[aria-current=\"location\"]')?.textContent";
+  try {
+    await page.getByRole("button", { name: "Topic 0", exact: false }).first().click();
+    await page.waitForFunction(`${active} === "Section 0"`);
+    // Wide: Layout's main column scrolls instead of the document.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForFunction(() => getComputedStyle(document.querySelector(".layout-content-main")!).overflowY !== "visible");
+    await page.evaluate(() => {
+      document.querySelector<HTMLElement>(".layout-content-main")!.scrollTop = 2000;
+    });
+    await page.waitForFunction(`${active} !== "Section 0"`);
+    await page.evaluate(() => {
+      document.querySelector<HTMLElement>(".layout-content-main")!.scrollTop = 0;
+    });
+    await page.waitForFunction(`${active} === "Section 0"`);
+    // Narrow again: the document scrolls, and the contents measure against the window.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForFunction(() => getComputedStyle(document.querySelector(".layout-content-main")!).overflowY === "visible");
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForFunction(`${active} === "Section 0"`);
+    await page.evaluate(() => window.scrollTo(0, 2000));
+    await page.waitForFunction(`${active} !== "Section 0"`);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("an embedded reader in a narrow pane uses one column with the menu in a wide window", async () => {
+  const page = await open("?embedded");
+  try {
+    await page.getByRole("button", { name: "Topic 0", exact: false }).first().click();
+    await page.getByRole("button", { name: "On this page" }).waitFor();
+    const layout = await page.locator(".help-article-layout").evaluate((element) => ({
+      columns: getComputedStyle(element).gridTemplateColumns.split(" ").length,
+      aside: getComputedStyle(element.querySelector(".help-article-aside")!).display,
+    }));
+    expect(layout).toEqual({ columns: 1, aside: "none" });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+for (const host of ["grids", "pulse"] as const)
+  test(`the ${host} query reference shows its article with a text table of contents that follows its scroller`, async () => {
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      const page = await open(`?host=${host}`, viewport, ".help-document #section-0");
+      try {
+        expect(await page.locator("article h3").textContent()).toBe("Topic 0");
+        expect(await page.locator(".help-article-toc-icon, .help-section-icon, [data-help-icon]").count()).toBe(0);
+        const phone = viewport.width < 768;
+        expect(await page.locator(".help-article-aside").isVisible()).toBe(!phone);
+        const toc = page.locator(".help-article-aside .k2b-toc");
+        expect(await toc.locator("a").allTextContents()).toEqual(Array.from({ length: 8 }, (_, index) => `Section ${index}`));
+        expect(await toc.locator("i").count()).toBe(0);
+        // The host, not the window, scrolls the article.
+        const scroller = await page.locator(".help-article-layout").evaluateHandle((element) => {
+          let box = element.parentElement;
+          while (box && !(box.scrollHeight > box.clientHeight && /auto|scroll/.test(getComputedStyle(box).overflowY)))
+            box = box.parentElement;
+          if (!box || box === document.scrollingElement || box === document.body) throw new Error("The host does not scroll the article");
+          return box;
+        });
+        await scroller.evaluate((element) => {
+          element.scrollTop = 2000;
+        });
+        await page.waitForFunction(() => {
+          const current = document.querySelector('.help-article-aside a[aria-current="location"]')?.textContent;
+          return current !== undefined && current !== "Section 0";
+        });
+        if (!phone) continue;
+        // Open the menu where the reader is: a pointer click would first scroll the trigger back into view.
+        await page.getByRole("button", { name: "On this page" }).dispatchEvent("click");
+        await page.getByRole("menuitemradio", { name: "Section 6" }).click();
+        await page.waitForFunction((element) => {
+          const top = document.getElementById("section-6")!.getBoundingClientRect().top - element.getBoundingClientRect().top;
+          return top >= -1 && top < 120;
+        }, scroller);
+      } finally {
+        await page.close();
+      }
+    }
+  }, 30_000);
 
 test("typing keeps the same focused search input at the same position and reserves the result region", async () => {
   const page = await open();

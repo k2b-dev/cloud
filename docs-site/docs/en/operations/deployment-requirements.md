@@ -1060,6 +1060,13 @@ schema. Every supported PostgreSQL version (15 to 17) provides this baseline.
 Apps renew their Help collection through the existing app heartbeat; Core owns
 bounded cleanup of expired collections. See [In-product Help](/en/docs/platform/help).
 
+On upgrade, Core adds four columns to `help.documents` during setup: `kind`,
+`needs`, `next_id`, and `related`. Update Core before applications that publish
+Help. Until Core adds the columns, an updated application that publishes Help
+fails its first registration and does not start. Every application republishes
+its Help once after its update because the manifest revision changed. Old
+collections expire as usual after six minutes without renewal.
+
 Help, Notebooks, Mail, Assistant conversations, AI memories, and AI Skills
 search with native PostgreSQL full-text search. BM25 ranking with
 `pg_textsearch` is optional; it changes the order of matches, not which

@@ -1,7 +1,8 @@
-import type { HelpDocumentManifest, HelpDocumentPayload } from "@k2b/cloud/shared";
+import type { HelpAccessLevel, HelpArticleLink, HelpDocumentManifest, HelpDocumentPayload } from "@k2b/cloud/shared";
 import { clipboard } from "@k2b/stdlib/solid";
 import {
   Button,
+  Dropdown,
   IconButton,
   IconButtonLink,
   Kbd,
@@ -11,15 +12,18 @@ import {
   prefersReducedMotion,
   prompts,
   ScrollArea,
+  TableOfContents,
   TextInput,
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { COMMANDS_CHANGED, contextCommandsWithShortcuts } from "../browser/command-shortcuts";
+import { HELP_ACCESS_LEVELS, HELP_KINDS } from "../shared/help";
 import { appAccentStyle } from "./app-appearance";
 import { helpMessages } from "./help-messages";
+import { helpArticleParts } from "./layout-help-article";
 import { formatHelpBundleMarkdown, formatHelpDocumentMarkdown } from "./layout-help-markdown";
-import { adjacentHelpDocuments, focusHelpArticleHeading, resetHelpArticleScroll } from "./layout-help-navigation";
+import { focusHelpArticleHeading, resetHelpArticleScroll } from "./layout-help-navigation";
 import { HELP_TOPICS_EVENT, type HelpTopic, registry } from "./layout-help-registry";
 import { searchHelpTopics } from "./layout-help-search";
 import { helpLinkTarget, layoutHelpTopicHref } from "./layout-help-url";
@@ -44,16 +48,27 @@ type HelpSession = {
   articleScrollTop: number;
   articleCache: Map<string, HelpDocumentPayload>;
 };
-type HelpSection = {
-  element: HTMLHeadingElement;
-  icon: string;
-  id: string;
-  title: string;
-};
+type HelpSection = { id: string; label: string };
 
 const LAST_TOPIC_KEY = "cloud.layoutHelp.activeTopic";
 
-const iconClass = (icon?: string) => (icon?.startsWith("ti ") ? icon : `ti ${icon ?? "ti-circle"}`);
+const optionalString = (value: object, key: string): string | undefined => {
+  const field = Reflect.get(value, key);
+  return typeof field === "string" ? field : undefined;
+};
+/** A linked article from the Help API, or nothing when the server sent something else. */
+const articleLink = (value: unknown): HelpArticleLink | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const [appId, appName, documentId, title, url] = ["appId", "appName", "documentId", "title", "url"].map((key) =>
+    optionalString(value, key),
+  );
+  if (!appId || !appName || !documentId || !title || !url?.startsWith("/")) return undefined;
+  const [accent, description, icon] = ["accent", "description", "icon"].map((key) => optionalString(value, key));
+  return { appId, appName, accent, documentId, title, description, icon, url };
+};
+
+/** An article without its own icon gets a neutral page tile. */
+const iconClass = (icon?: string) => (icon?.startsWith("ti ") ? icon : `ti ${icon ?? "ti-file-text"}`);
 const legacyTopicContent = (topic: HelpTopic) => (topic.kind === "content" ? topic.children : null);
 const sortedTopics = () =>
   [...(registry()?.values() ?? [])].sort((a, b) => (a.order ?? 100) - (b.order ?? 100) || a.title.localeCompare(b.title));
@@ -113,7 +128,10 @@ const HelpShell = (props: {
   const locale = useLocale();
   const t = () => helpMessages.resolve([locale()]).t;
   // Links to this app's Help, by its own route or Core's `/help/apps/<id>`, open in place.
-  const appId = useShellData()?.appId;
+  const shell = useShellData();
+  const appId = shell?.appId;
+  const appName = shell?.apps.find((app) => app.id === appId)?.label;
+  const accessLabel = (level: HelpAccessLevel) => ({ view: t().accessView, edit: t().accessEdit, manage: t().accessManage })[level];
   const [externalTopics, setExternalTopics] = createSignal(mergeTopics(sortedTopics(), props.documents));
   const [view, setView] = createSignal<HelpView>(props.session.view);
   const [query, setQuery] = createSignal(props.session.query);
@@ -126,8 +144,8 @@ const HelpShell = (props: {
   const [searching, setSearching] = createSignal(false);
   const [copyingAll, setCopyingAll] = createSignal(false);
   const [copyAllError, setCopyAllError] = createSignal<string | null>(null);
-  const [articleSections, setArticleSections] = createSignal<HelpSection[]>([]);
   const [activeSectionId, setActiveSectionId] = createSignal<string | null>(null);
+  const [tocScrollRoot, setTocScrollRoot] = createSignal<HTMLElement>();
   const articleClipboard = clipboard.create(1800);
   const allHelpClipboard = clipboard.create(1800);
   let root: HTMLDivElement | undefined;
@@ -168,42 +186,32 @@ const HelpShell = (props: {
     });
   };
 
-  const syncActiveSection = (scroller = articleScroller()) => {
-    const sections = articleSections();
-    if (!scroller || sections.length === 0) return;
-    const top = scroller === document.scrollingElement ? 0 : scroller.getBoundingClientRect().top;
-    const readingLine = top + Math.min(160, scroller.clientHeight * 0.22);
-    let active = sections[0];
-    for (const section of sections) {
-      if (section.element.getBoundingClientRect().top <= readingLine) active = section;
-      else break;
-    }
-    setActiveSectionId(active?.id ?? null);
-  };
-
   const scrollToHash = (hash: string) => {
     const heading = Array.from(
       articleContent?.querySelectorAll<HTMLHeadingElement>("h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]") ?? [],
     ).find((element) => element.id === hash);
     if (!heading) return false;
+    // A link to a heading in collapsed details opens them, and any details around them, first.
+    for (let details = heading.closest("details"); details; details = details.parentElement?.closest("details") ?? null)
+      details.open = true;
     setActiveSectionId(hash);
     heading.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
     return true;
   };
 
-  const collectArticleSections = () => {
-    const sections = Array.from(articleContent?.querySelectorAll<HTMLHeadingElement>("h2[id]") ?? []).map((element) => ({
-      element,
-      icon: element.dataset.helpIcon ?? "ti ti-point",
-      id: element.id,
-      title: element.textContent?.trim() || t().section,
-    }));
-    setArticleSections(sections);
-    setActiveSectionId(sections[0]?.id ?? null);
+  /** Once the article body is in the document: open the requested section, or start at the top. */
+  const syncTocScrollRoot = () => {
+    const scroller = articleScroller();
+    // The table of contents follows the window unless the reader scrolls in its own container.
+    setTocScrollRoot(scroller instanceof HTMLElement && scroller !== document.scrollingElement ? scroller : undefined);
+  };
+
+  const settleArticle = () => {
+    syncTocScrollRoot();
     const openedSection = pendingHash ? scrollToHash(pendingHash) : false;
     pendingHash = "";
     pendingNavigation = false;
-    if (!openedSection) syncActiveSection();
+    if (!openedSection) setActiveSectionId(articleSections()[0]?.id ?? null);
   };
 
   const openArticleSection = (section: HelpSection) => {
@@ -235,7 +243,12 @@ const HelpShell = (props: {
     externalTopics().filter((topic): topic is HelpDocumentManifest & { kind: "document" } => topic.kind === "document"),
   );
   const activeTopic = createMemo(() => topics().find((topic) => topic.id === activeId()) ?? null);
-  const adjacentTopics = createMemo(() => adjacentHelpDocuments(documentTopics(), activeId()));
+  // Article bodies load in the browser only; the server renders the head and the loading state.
+  const articleParts = createMemo(() => {
+    const html = payload()?.html;
+    return html ? helpArticleParts(html) : null;
+  });
+  const articleSections = (): HelpSection[] => (view() === "article" ? articleParts()?.sections : undefined) ?? [];
   const normalizedQuery = createMemo(() => query().trim().toLocaleLowerCase());
   const results = createMemo(() => {
     const value = normalizedQuery();
@@ -295,7 +308,6 @@ const HelpShell = (props: {
   createEffect(() => {
     const html = payload()?.html;
     if (!html || view() !== "article") {
-      setArticleSections([]);
       setActiveSectionId(null);
       return;
     }
@@ -304,7 +316,7 @@ const HelpShell = (props: {
         const scroller = articleScroller();
         if (scroller) scroller.scrollTop = 0;
       }
-      collectArticleSections();
+      settleArticle();
     });
     onCleanup(() => cancelAnimationFrame(frame));
   });
@@ -337,18 +349,20 @@ const HelpShell = (props: {
     update();
     onCleanup(() => window.removeEventListener(HELP_TOPICS_EVENT, update));
     restoreArticleScroll();
-    let scrollFrame: number | undefined;
-    const onScroll = (event: Event) => {
-      const scroller = event.target === document ? document.scrollingElement : event.target;
-      if (!(scroller instanceof Element) || !articleContent || !scroller.contains(articleContent) || view() !== "article") return;
-      if (props.surface === "modal" && scroller === scrollArea) props.session.articleScrollTop = scroller.scrollTop;
-      if (scrollFrame !== undefined) return;
-      scrollFrame = requestAnimationFrame(() => {
-        scrollFrame = undefined;
-        syncActiveSection(scroller);
+    // The dialog reopens at the article position it had.
+    const onScroll = () => {
+      if (view() === "article" && scrollArea) props.session.articleScrollTop = scrollArea.scrollTop;
+    };
+    if (props.surface === "modal") scrollArea?.addEventListener("scroll", onScroll, { passive: true });
+    // Layout's breakpoints move page scrolling between its main column and the window; the contents follow.
+    let resizeFrame: number | undefined;
+    const onResize = () => {
+      resizeFrame ??= requestAnimationFrame(() => {
+        resizeFrame = undefined;
+        if (view() === "article") syncTocScrollRoot();
       });
     };
-    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    if (props.surface === "page") window.addEventListener("resize", onResize);
     const onPopState = () => {
       const address = pageAddress();
       if (address === shownAddress) return;
@@ -362,9 +376,10 @@ const HelpShell = (props: {
     };
     if (props.syncPageUrl) window.addEventListener("popstate", onPopState);
     onCleanup(() => {
-      document.removeEventListener("scroll", onScroll, true);
+      scrollArea?.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+      if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
       window.removeEventListener("popstate", onPopState);
-      if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);
     });
   });
   onCleanup(() => copyAllController?.abort());
@@ -393,12 +408,21 @@ const HelpShell = (props: {
     ) {
       throw new Error(t().invalidDocument);
     }
+    const kind = Reflect.get(value, "kind");
+    const needs = Reflect.get(value, "needs");
+    const related = Reflect.get(value, "related");
+    const next = articleLink(Reflect.get(value, "next"));
     const document: HelpDocumentPayload = {
       id: topic.id,
       title: value.title,
       html: value.html,
       markdown: value.markdown,
       locale: "locale" in value && typeof value.locale === "string" ? value.locale : (topic.locale ?? "en"),
+      // A Core older than the app's Help reader sends no article facts; the article then shows none.
+      kind: HELP_KINDS.find((candidate) => candidate === kind) ?? "task",
+      needs: HELP_ACCESS_LEVELS.find((level) => level === needs),
+      ...(next ? { next } : {}),
+      related: Array.isArray(related) ? related.flatMap((link) => articleLink(link) ?? []) : [],
     };
     props.session.articleCache.set(cacheKey, document);
     return document;
@@ -512,11 +536,12 @@ const HelpShell = (props: {
     pushHelpUrl(null);
   };
 
+  /** Links in the article, its table of contents, and its end open Help targets of this app in place. */
   const followHelpLink = (event: MouseEvent) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    if (!(event.target instanceof Element)) return;
+    if (!(event.target instanceof Element) || !(event.currentTarget instanceof Element)) return;
     const anchor = event.target.closest("a");
-    if (!anchor || !articleContent?.contains(anchor) || (anchor.target && anchor.target !== "_self") || anchor.hasAttribute("download"))
+    if (!anchor || !event.currentTarget.contains(anchor) || (anchor.target && anchor.target !== "_self") || anchor.hasAttribute("download"))
       return;
     const target = helpLinkTarget(anchor.getAttribute("href") ?? "", location.href, { appId, pageBase: props.pageBase });
     if (!target) return;
@@ -537,19 +562,6 @@ const HelpShell = (props: {
       openTopic(target.topicId, target.hash);
     }
   };
-
-  const modalTitle = createMemo(() => {
-    if (view() === "article") return activeTopic()?.title ?? t().help;
-    return t().help;
-  });
-  const modalDescription = createMemo(() => {
-    if (view() === "article") return activeTopic()?.description ?? t().description;
-    return t().description;
-  });
-  const modalIcon = createMemo(() => {
-    if (view() === "article") return iconClass(activeTopic()?.icon);
-    return "ti ti-help";
-  });
 
   const TopicList = (listProps: { items: HelpTopic[] }) => (
     <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5">
@@ -576,40 +588,52 @@ const HelpShell = (props: {
     </div>
   );
 
-  const TopicNavigation = () => (
-    <Show when={adjacentTopics().previous || adjacentTopics().next}>
-      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label={t().topicNavigation}>
-        <Show when={adjacentTopics().previous}>
-          {(previous) => (
-            <button
-              type="button"
-              class="group flex min-w-0 flex-col items-start gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-4 text-left transition-colors hover:bg-[var(--ui-surface-muted)] focus-ui"
-              onClick={() => openTopic(previous().id)}
-            >
-              <span class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
-                <i class="ti ti-arrow-left" aria-hidden="true" />
-                {t().previousTopic}
-              </span>
-              <span class="text-sm font-medium text-primary group-hover:app-accent-text">{previous().title}</span>
-            </button>
-          )}
-        </Show>
-        <Show when={adjacentTopics().next}>
+  const ArticleLinkTitle = (link: { link: HelpArticleLink }) => (
+    <span class="help-article-link-copy">
+      <span class="help-article-link-title">{link.link.title}</span>
+      <Show when={link.link.description}>{(description) => <span class="help-article-link-description">{description()}</span>}</Show>
+    </span>
+  );
+
+  /** "Next" leads on; related articles keep their own app's colour, and another app says whose article it is. */
+  const ArticleEnd = (end: { document: HelpDocumentPayload }) => (
+    <Show when={end.document.next || end.document.related.length > 0}>
+      <footer class="help-article-end">
+        <Show when={end.document.next}>
           {(next) => (
-            <button
-              type="button"
-              class="group flex min-w-0 flex-col items-end gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-4 text-right transition-colors hover:bg-[var(--ui-surface-muted)] focus-ui sm:col-start-2"
-              onClick={() => openTopic(next().id)}
-            >
-              <span class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
-                {t().nextTopic}
-                <i class="ti ti-arrow-right" aria-hidden="true" />
+            <a class="help-article-next app-accent-scope focus-ui" href={next().url} style={appAccentStyle(next().accent)}>
+              <span class="help-article-next-label">{t().next}</span>
+              <span class="help-article-next-row">
+                <i class={`${iconClass(next().icon)} help-article-next-icon`} aria-hidden="true" />
+                <ArticleLinkTitle link={next()} />
+                <i class="ti ti-arrow-right help-article-next-arrow" aria-hidden="true" />
               </span>
-              <span class="text-sm font-medium text-primary group-hover:app-accent-text">{next().title}</span>
-            </button>
+            </a>
           )}
         </Show>
-      </nav>
+        <Show when={end.document.related.length > 0}>
+          <section class="help-article-related" aria-labelledby="help-article-related-title">
+            <h4 id="help-article-related-title">{t().related}</h4>
+            <ul>
+              <For each={end.document.related}>
+                {(link) => (
+                  <li>
+                    <a class="help-article-related-link app-accent-scope focus-ui" href={link.url} style={appAccentStyle(link.accent)}>
+                      <span class="help-topic-icon help-article-related-icon app-accent-text" aria-hidden="true">
+                        <i class={iconClass(link.icon)} />
+                      </span>
+                      <ArticleLinkTitle link={link} />
+                      <Show when={link.appId !== appId}>
+                        <span class="help-article-related-app app-accent-text">{link.appName}</span>
+                      </Show>
+                    </a>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </section>
+        </Show>
+      </footer>
     </Show>
   );
 
@@ -641,15 +665,16 @@ const HelpShell = (props: {
               <i class="ti ti-arrow-left" />
             </IconButton>
           </Show>
+          {/* The article names itself in its own head, so the dialog keeps one name and never repeats the title. */}
           <span class="help-topic-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] app-accent-text">
-            <i class={`${modalIcon()} text-lg`} />
+            <i class="ti ti-help text-lg" />
           </span>
           <div class="min-w-0 flex-1">
-            <h2 ref={articleHeading} id="layout-help-title" tabindex="-1" class="truncate rounded-sm font-semibold text-primary focus-ui">
-              {modalTitle()}
+            <h2 id="layout-help-title" class="truncate font-semibold text-primary">
+              {t().help}
             </h2>
-            <p id="layout-help-subtitle" class="truncate text-xs text-dimmed" title={modalDescription()}>
-              {modalDescription()}
+            <p id="layout-help-subtitle" class="truncate text-xs text-dimmed">
+              {t().description}
             </p>
           </div>
           <div class="flex shrink-0 items-center gap-1" role="group" aria-label={t().actions}>
@@ -795,71 +820,104 @@ const HelpShell = (props: {
 
         <Show when={view() === "article" && activeTopic()}>
           {(topic) => (
-            <article class="help-article mx-auto flex min-h-full w-full max-w-7xl flex-col">
-              <Show when={props.surface !== "modal"}>
-                <button
-                  type="button"
-                  class="mb-6 inline-flex items-center gap-1.5 text-xs font-medium text-dimmed hover:app-accent-text focus-ui"
-                  onClick={goBack}
-                >
-                  <i class="ti ti-arrow-left" /> {t().back}
-                </button>
-                <header class="mb-8 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
-                  <span class="help-topic-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] app-accent-text">
-                    <i class={`${iconClass(topic().icon)} text-lg`} />
-                  </span>
-                  <div class="min-w-0 flex-1">
-                    <h3 ref={articleHeading} tabindex="-1" class="rounded-sm text-2xl font-semibold tracking-tight text-primary focus-ui">
+            <article
+              class="help-article"
+              data-surface={props.surface}
+              ref={(element) => {
+                // Delegated from the article: its body, table of contents, and end hold the links.
+                element.addEventListener("click", followHelpLink);
+                onCleanup(() => element.removeEventListener("click", followHelpLink));
+              }}
+            >
+              <div class="help-article-layout">
+                <div class="help-article-main">
+                  <header class="help-article-head">
+                    <p class="help-article-path">
+                      <Show when={appName}>
+                        {(name) => (
+                          <>
+                            <span class="app-accent-text">{name()}</span>
+                            <i class="ti ti-chevron-right" aria-hidden="true" />
+                          </>
+                        )}
+                      </Show>
+                      <button type="button" class="help-article-path-link focus-ui" onClick={goBack}>
+                        {t().help}
+                      </button>
+                    </p>
+                    <h3 ref={articleHeading} tabindex="-1" class="help-article-title focus-ui">
                       {topic().title}
                     </h3>
-                    <Show when={topic().description}>
-                      {(description) => <p class="mt-1.5 text-sm leading-relaxed text-dimmed">{description()}</p>}
-                    </Show>
-                  </div>
-                  <Show when={topic().kind === "document" && payload()}>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      class="col-start-2 shrink-0 justify-self-start sm:col-start-3 sm:row-start-1 sm:justify-self-auto"
-                      onClick={() => void copyArticle(topic(), payload())}
+                    <Show
+                      when={articleParts()?.lead}
+                      fallback={
+                        // An article without a leading paragraph, or a built-in topic, shows its description; a loading article shows neither yet.
+                        <Show when={(topic().kind === "content" || articleParts()) && topic().description}>
+                          {(description) => <p class="help-article-lead">{description()}</p>}
+                        </Show>
+                      }
                     >
-                      <i class={articleClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
-                      {articleClipboard.wasCopied() ? t().copied : t().copyMarkdown}
-                    </Button>
-                  </Show>
-                </header>
-              </Show>
-              <Show when={topic().kind === "content"}>{legacyTopicContent(topic())}</Show>
-              <Show when={topic().kind === "document"}>
-                <div class="help-article-layout">
-                  <nav
-                    class="help-article-toc"
-                    aria-label={t().onThisPage}
-                    aria-hidden={articleSections().length === 0 ? "true" : undefined}
-                    data-empty={articleSections().length === 0 ? "" : undefined}
-                  >
-                    <p class="help-article-toc-label">{t().onThisPage}</p>
-                    <ol>
-                      <For each={articleSections()}>
-                        {(section) => (
-                          <li>
-                            <button
-                              type="button"
-                              aria-current={activeSectionId() === section.id ? "location" : undefined}
-                              title={section.title}
-                              onClick={() => openArticleSection(section)}
-                            >
-                              <span class="help-article-toc-icon" aria-hidden="true">
-                                <i class={section.icon} />
+                      {(lead) => <MarkdownView trustedHtml={lead()} class="help-document help-article-lead" />}
+                    </Show>
+                    <Show when={payload()?.needs || articleParts()?.steps}>
+                      {/* One row of facts; the access level appears here and nowhere else in the reader's chrome. */}
+                      <ul class="help-article-facts" aria-label={t().articleFacts}>
+                        <Show when={payload()?.needs}>
+                          {(level) => (
+                            <li class="help-article-fact" data-fact="needs">
+                              <i class="ti ti-key" aria-hidden="true" />
+                              <span>
+                                {t().youNeed} <strong>{accessLabel(level())}</strong>
                               </span>
-                              <span class="help-article-toc-title">{section.title}</span>
-                            </button>
-                          </li>
-                        )}
-                      </For>
-                    </ol>
-                  </nav>
-                  <div class="help-article-copy">
+                            </li>
+                          )}
+                        </Show>
+                        <Show when={articleParts()?.steps}>
+                          {(count) => (
+                            <li class="help-article-fact" data-fact="steps">
+                              <i class="ti ti-list-numbers" aria-hidden="true" />
+                              <span>{t().steps({ count: count() })}</span>
+                            </li>
+                          )}
+                        </Show>
+                      </ul>
+                    </Show>
+                    <Show when={articleSections().length > 0 || (props.surface !== "modal" && topic().kind === "document")}>
+                      <div class="help-article-tools">
+                        <Show when={articleSections().length > 0}>
+                          <Dropdown.Root
+                            label={t().onThisPage}
+                            position="bottom-left"
+                            items={articleSections().map((section) => ({
+                              label: section.label,
+                              choice: "radio" as const,
+                              checked: () => activeSectionId() === section.id,
+                              action: () => openArticleSection(section),
+                            }))}
+                          >
+                            <Dropdown.Trigger label={t().onThisPage} size="sm" tooltip={false} variant="secondary">
+                              <i class="ti ti-list" aria-hidden="true" />
+                              <span>{t().onThisPage}</span>
+                              <i class="ti ti-chevron-down" aria-hidden="true" />
+                            </Dropdown.Trigger>
+                          </Dropdown.Root>
+                        </Show>
+                        <Show when={props.surface !== "modal" && topic().kind === "document"}>
+                          <IconButton
+                            class="help-article-tools-copy"
+                            disabled={!payload()}
+                            label={articleClipboard.wasCopied() ? t().articleCopied : t().copyArticle}
+                            title={articleClipboard.wasCopied() ? t().copied : t().copyArticle}
+                            onClick={() => void copyArticle(topic(), payload())}
+                          >
+                            <i class={articleClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
+                          </IconButton>
+                        </Show>
+                      </div>
+                    </Show>
+                  </header>
+                  <Show when={topic().kind === "content"}>{legacyTopicContent(topic())}</Show>
+                  <Show when={topic().kind === "document"}>
                     <Show when={loading()}>
                       <div class="min-h-[24rem]">
                         <Placeholder state="loading" variant="panel" title={t().loading} />
@@ -874,21 +932,32 @@ const HelpShell = (props: {
                         </NoticeCard>
                       )}
                     </Show>
-                    <div
-                      ref={(element) => {
-                        articleContent = element;
-                        element.addEventListener("click", followHelpLink);
-                        onCleanup(() => element.removeEventListener("click", followHelpLink));
-                      }}
-                    >
-                      <Show when={payload()}>{(document) => <MarkdownView trustedHtml={document().html} class="help-document" />}</Show>
+                    <div ref={articleContent}>
+                      <Show when={articleParts()}>{(parts) => <MarkdownView trustedHtml={parts().body} class="help-document" />}</Show>
                     </div>
-                    <Show when={payload()}>
-                      <TopicNavigation />
-                    </Show>
-                  </div>
+                    <Show when={payload()}>{(document) => <ArticleEnd document={document()} />}</Show>
+                  </Show>
                 </div>
-              </Show>
+                <Show when={topic().kind === "document"}>
+                  <aside class="help-article-aside">
+                    <div class="help-article-aside-sticky">
+                      <TableOfContents
+                        items={articleSections()}
+                        title={t().onThisPage}
+                        scrollRoot={tocScrollRoot}
+                        contentRoot={() => articleContent}
+                        onActiveChange={(id) => setActiveSectionId(id ?? null)}
+                      />
+                      <Show when={props.surface !== "modal"}>
+                        <Button size="sm" variant="ghost" disabled={!payload()} onClick={() => void copyArticle(topic(), payload())}>
+                          <i class={articleClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
+                          {articleClipboard.wasCopied() ? t().copied : t().copyMarkdown}
+                        </Button>
+                      </Show>
+                    </div>
+                  </aside>
+                </Show>
+              </div>
             </article>
           )}
         </Show>

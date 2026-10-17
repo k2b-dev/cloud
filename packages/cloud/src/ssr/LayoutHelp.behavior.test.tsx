@@ -22,7 +22,12 @@ const until = async (condition: () => boolean) => {
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
-  const setup = async (surface: "modal" | "page" | "embedded", initialTopic?: string, path = "/help/apps/spaces/first") => {
+  const setup = async (
+    surface: "modal" | "page" | "embedded",
+    initialTopic?: string,
+    path = "/help/apps/spaces/first",
+    articleHtml = html,
+  ) => {
     const dom = createDomTestHarness();
     Object.assign(dom.window.happyDOM.settings.navigation, {
       disableMainFrameNavigation: true,
@@ -40,7 +45,24 @@ else {
       Object.assign(
         async (input: URL | RequestInfo) => {
           const id = String(input).split("/").at(-1) ?? "first";
-          return Response.json({ id, locale: "en", title: `Article ${id}`, markdown: "Steps", html });
+          const link = (appId: string, documentId: string) => ({
+            appId,
+            appName: appId,
+            documentId,
+            title: `Article ${documentId}`,
+            url: `/help/apps/${appId}/${documentId}`,
+          });
+          return Response.json({
+            id,
+            locale: "en",
+            title: `Article ${id}`,
+            markdown: "Steps",
+            html: articleHtml,
+            kind: "task",
+            needs: "edit",
+            next: link("spaces", "second"),
+            related: [link("spaces", "third"), link("mail", "mail-share")],
+          });
         },
         { preconnect: () => {} },
       ),
@@ -78,7 +100,7 @@ else {
       anchor.dispatchEvent(event);
       return event;
     };
-    const title = () => dom.document.querySelector("article h3, dialog #layout-help-title")?.textContent ?? "";
+    const title = () => dom.document.querySelector("article h3")?.textContent ?? "";
     return {
       dom,
       button,
@@ -93,6 +115,26 @@ else {
       },
     };
   };
+
+  test("same-article section links open every enclosing details element", async () => {
+    const reader = await setup(
+      "page",
+      "first",
+      "/help/apps/spaces/first",
+      '<a href="#hidden">Hidden section</a><details><summary>Outer</summary><details><summary>Inner</summary><h2 id="hidden">Hidden</h2></details></details>',
+    );
+    try {
+      await until(() => !!reader.dom.document.querySelector(".help-document a"));
+      const details = [...reader.dom.document.querySelectorAll<HTMLDetailsElement>(".help-document details")];
+      expect(details).toHaveLength(2);
+      expect(details.every((element) => !element.open)).toBe(true);
+      expect(reader.clickLink("Hidden section").defaultPrevented).toBe(true);
+      await until(() => details.every((element) => element.open));
+      expect(details.map((element) => element.open)).toEqual([true, true]);
+    } finally {
+      await reader.cleanup();
+    }
+  });
 
   for (const surface of ["modal", "page", "embedded"] as const) {
     test(`${surface}: same-app article and section links stay in Help; modified and external links keep native behavior`, async () => {
@@ -243,6 +285,30 @@ else {
       await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
       expect(location.pathname).toBe("/help/apps/spaces/does-not-exist");
       expect(reader.dom.document.querySelector("article h3")).toBeNull();
+    } finally {
+      await reader.cleanup();
+    }
+  });
+
+  test("page: Next and a related article of the same app open in place; another app's article navigates", async () => {
+    const reader = await setup("page", "first");
+    try {
+      await until(() => !!reader.dom.document.querySelector(".help-article-next"));
+      const click = (selector: string) => {
+        const anchor = reader.dom.document.querySelector<HTMLAnchorElement>(selector);
+        if (!anchor) throw new Error(`Missing ${selector}`);
+        const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+        anchor.dispatchEvent(event);
+        return event;
+      };
+      expect(reader.dom.document.querySelector(".help-article-fact")?.textContent).toBe("You need Edit");
+      expect(click('.help-article-related-link[href="/help/apps/mail/mail-share"]').defaultPrevented).toBe(false);
+      expect(click(".help-article-next").defaultPrevented).toBe(true);
+      await until(() => reader.title() === "Article second");
+      expect(location.pathname).toBe("/app/spaces/help/second");
+      await until(() => !!reader.dom.document.querySelector(".help-article-related-link"));
+      expect(click('.help-article-related-link[href="/help/apps/spaces/third"]').defaultPrevented).toBe(true);
+      await until(() => reader.title() === "Article third");
     } finally {
       await reader.cleanup();
     }
