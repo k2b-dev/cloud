@@ -1,5 +1,4 @@
-import type { User } from "@k2b/cloud/contracts";
-import type { PermissionLevel } from "@k2b/cloud/server";
+import { type AccessSubject, hasPermission, type PermissionLevel, type RequestActor } from "@k2b/cloud/server";
 import { type Contact, type ContactBook, contactsService } from "../service";
 import { resolveBookPublicIds, resolvePublicId } from "../service/public-resources";
 
@@ -16,13 +15,14 @@ export const parseContactsPage = (value: string | undefined): number => {
 export const loadFavoriteKeysForContacts = (userId: string, contacts: Contact[]): Promise<string[]> =>
   contactsService.favorite.listKeysForContacts({ userId, contacts });
 
-export const loadContactBookPermissions = async (config: { books: ContactBook[]; user: User }) => {
+export const loadContactBookPermissions = async (config: { books: ContactBook[]; actor: RequestActor; accessSubject: AccessSubject }) => {
   const entries = await Promise.all(
     config.books.map(async (book) => ({
       book,
-      permission: await contactsService.book.permission.get({
+      permission: await contactsService.book.permission.forActor({
         bookId: book.id,
-        subject: { type: "user", userId: config.user.id },
+        actor: config.actor,
+        accessSubject: config.accessSubject,
       }),
     })),
   );
@@ -31,7 +31,7 @@ export const loadContactBookPermissions = async (config: { books: ContactBook[];
     entries,
     adminBookIds: entries.filter((entry) => entry.permission === "admin").map((entry) => entry.book.id),
     writableBooks: entries
-      .filter((entry) => entry.permission === "write" || entry.permission === "admin")
+      .filter((entry) => hasPermission(entry.permission, "write"))
       .map((entry) => ({ id: entry.book.id, name: entry.book.name })),
   };
 };
@@ -43,7 +43,8 @@ export const resolveSelectedContact = async (config: {
   contacts: Contact[];
   contactId: string | null;
   bookId: string | null;
-  user: User;
+  actor: RequestActor;
+  accessSubject: AccessSubject;
 }): Promise<Contact | null> => {
   if (!config.contactId || !config.bookId) return null;
 
@@ -55,12 +56,12 @@ export const resolveSelectedContact = async (config: {
   const selectedFromPage = config.contacts.find((contact) => contact.id === internalContactId && contact.bookId === internalBookId) ?? null;
   if (selectedFromPage) return selectedFromPage;
 
-  const hasReadAccess = await contactsService.book.permission.canAccess({
+  const permission = await contactsService.book.permission.forActor({
     bookId: internalBookId,
-    subject: { type: "user", userId: config.user.id },
-    requiredLevel: "read",
+    actor: config.actor,
+    accessSubject: config.accessSubject,
   });
-  if (!hasReadAccess) return null;
+  if (!hasPermission(permission, "read")) return null;
 
   return contactsService.contact.get({ bookId: internalBookId, id: internalContactId });
 };
