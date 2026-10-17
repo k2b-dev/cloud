@@ -59,7 +59,7 @@ import {
   TOGGLE_RICH_MODE_EVENT,
 } from "../detail/events";
 import { extractTaskProgress } from "../detail/tasks";
-import { extractTocFromMarkdown } from "../detail/toc";
+import type { extractTocFromMarkdown } from "../detail/toc";
 import { followFullWidth } from "../full-width";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import {
@@ -735,7 +735,8 @@ function EditorInstance(
       });
       window.dispatchEvent(new CustomEvent(NOTE_TITLE_CHANGED_EVENT, { detail: { noteId: props.noteId, title } }));
     }
-    window.dispatchEvent(new CustomEvent(TOC_UPDATE_EVENT, { detail: extractTocFromMarkdown(md) }));
+    // The headings parsed above are the outline too; a second parse would double the cost on long notes.
+    window.dispatchEvent(new CustomEvent(TOC_UPDATE_EVENT, { detail: headingLines.map(({ line: _line, ...item }) => item) }));
     window.dispatchEvent(new CustomEvent(TASKS_UPDATE_EVENT, { detail: extractTaskProgress(md) }));
     window.dispatchEvent(new CustomEvent(ATTACHMENTS_UPDATE_EVENT, { detail: extractAttachmentIds(md) }));
     window.dispatchEvent(new CustomEvent(NAMED_BLOCKS_UPDATE_EVENT, { detail: extractNamedBlockSummaries(md) }));

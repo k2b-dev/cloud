@@ -229,10 +229,20 @@ export default function NotebookDetailPanel(props: Props) {
       .filter((item) => item.action !== "note.created"),
   );
   /**
-   * The newest edit in the log, which a refresh keeps current when someone else saves; the server's snapshot covers
-   * the time before the log loads and edits older than its first page.
+   * The newest edit seen in the log for this note, which a refresh keeps current when someone else saves. It stays
+   * when later comments push it off the first page; the server's snapshot covers the time before the log loads.
    */
-  const newestEdit = createMemo(() => noteActivity.pages()[0]?.data.find((item) => EDIT_ACTIONS.has(item.action)));
+  const seenEdit = createMemo<{ noteId: string; item: NoteActivityItem | undefined }>(
+    (previous) => {
+      const id = noteId();
+      const kept = previous.noteId === id ? previous.item : undefined;
+      const onPage = noteActivity.pages()[0]?.data.find((item) => EDIT_ACTIONS.has(item.action));
+      const newer = onPage && (!kept || Date.parse(onPage.lastOccurredAt) >= Date.parse(kept.lastOccurredAt));
+      return { noteId: id, item: newer ? onPage : kept };
+    },
+    { noteId: noteId(), item: undefined },
+  );
+  const newestEdit = () => seenEdit().item;
   const lastEditor = () => newestEdit()?.actor ?? authors().lastEditedBy;
   const editedAt = () => {
     const logged = newestEdit()?.lastOccurredAt;

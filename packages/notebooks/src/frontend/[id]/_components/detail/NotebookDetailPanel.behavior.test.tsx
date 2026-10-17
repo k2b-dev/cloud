@@ -220,6 +220,16 @@ describe("Notebook detail panel recovery and pagination", () => {
       await until(() => header().includes("Cleo Example"));
       expect(dom.root.querySelector('[role="alert"]')).toBeNull();
       expect(requests.every((url) => !url.searchParams.has("cursor"))).toBe(true);
+
+      // Newer comments push the edit off the first page; the header keeps the newest edit it saw.
+      answer = () =>
+        Response.json({
+          data: [{ ...activity(1), action: "comment.created", lastOccurredAt: "2026-10-16T19:29:00.000Z" }],
+          nextCursor: "older",
+        });
+      updated();
+      await until(() => authors().includes("Author 1"));
+      expect(header()).toContain("Cleo Example");
     } finally {
       dispose();
     }
