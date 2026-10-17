@@ -16,8 +16,6 @@ const root = mkdtempSync(resolve(tmpdir(), "cloud-compact-shell-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-// Several tests walk every device, each in a fresh browser context.
-setDefaultTimeout(30_000);
 
 const { Hono } = await import("hono");
 const { AppWorkspace, Button, ScrollArea } = await import("@k2b/ui");
@@ -311,6 +309,9 @@ const spies: { mockRestore(): void }[] = [];
  * browser-launch check find it as a browser suite and the gate also runs it in WebKit.
  */
 export function installCompactShellHarness(launch: typeof launchBrowser) {
+  // Several tests walk every device, each in a fresh browser context. Bun scopes the default timeout to
+  // the test file that sets it, and this module runs once per process, so each suite sets it here.
+  setDefaultTimeout(30_000);
   beforeAll(async () => {
     spies.push(
       spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
