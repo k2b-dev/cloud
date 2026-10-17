@@ -167,14 +167,17 @@ describe("streamed search in a browser", () => {
     ] as const) {
       const { page, close } = await open(views[1]!, path);
       try {
-        const [left, top, width, height] = (await layout(page)).dialog;
+        const { left, top, width, bottom } = await page.locator("dialog").evaluate((dialog) => {
+          const rect = dialog.getBoundingClientRect();
+          return { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), bottom: Math.round(rect.bottom) };
+        });
         if (sheet) {
           expect([left, width]).toEqual([0, 390]);
           expect(top).toBeLessThanOrEqual(12);
-          expect(top + height).toBe(844);
+          expect(bottom).toBe(844);
         } else {
           expect(left).toBeGreaterThan(0);
-          expect(top + height).toBeLessThan(844);
+          expect(bottom).toBeLessThan(844);
         }
       } finally {
         await close();
