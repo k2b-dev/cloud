@@ -59,8 +59,6 @@ export function assistantInsertCommands(input: {
   copy: AssistantCopy;
   locale: string;
   tags: readonly CloudSearchTag[];
-  /** Attachments in the draft. */
-  attachmentCount: number;
   /** Attachments plus references in the text: the server counts both. */
   partCount: number;
   excludeRefs: () => readonly CloudResourceRef[];
@@ -115,11 +113,7 @@ export function assistantInsertCommands(input: {
     icon: "ti ti-paperclip",
     keywords: ["datei", "dateien", "anhängen", "anhang", "hochladen", "upload", "attach", "file", "files", "attachment"],
     attachFiles: true,
-    reason: input.fileSelectionDisabled
-      ? input.copy.commandNeedsIdle
-      : input.attachmentCount >= AI_TURN_ATTACHMENT_MAX_ITEMS
-        ? limit
-        : undefined,
+    reason: input.fileSelectionDisabled ? input.copy.commandNeedsIdle : input.partCount >= AI_TURN_ATTACHMENT_MAX_ITEMS ? limit : undefined,
   };
   return { commands: [menu.insert, attach, ...menu.tags], scopes: menu.scopes, fallback: menu.fallback };
 }

@@ -1049,7 +1049,6 @@ test("a Cloud insert mention preserves its identity through send and draft hydra
     copy: assistantCopyFor("de"),
     locale: "de",
     tags: [],
-    attachmentCount: 0,
     partCount: 0,
     excludeRefs: () => [],
     fileSelectionDisabled: false,
@@ -1068,19 +1067,19 @@ test("a Cloud insert mention preserves its identity through send and draft hydra
   expect(result.mention.id).toBe("resource:notebooks.note:Q3note");
 });
 
-test("insert counts mentions with attachments; files use their own limit and running restriction", () => {
+test("references in the text count toward the limit for inserting and attaching alike; files also wait for the response", () => {
   const input = {
     copy: assistantCopyFor("de"),
     locale: "de",
     tags: [],
-    attachmentCount: 0,
     partCount: 16,
     excludeRefs: () => [],
     fileSelectionDisabled: false,
   };
   const rows = assistantInsertCommands(input);
   expect(rows.commands[0]!.reason).toBe("Eine Nachricht kann höchstens 16 Elemente enthalten.");
-  expect(rows.commands[1]!.reason).toBeUndefined();
+  // The server counts attachments and inline references together (AiConversationDraftInputSchema).
+  expect(rows.commands[1]!.reason).toBe(rows.commands[0]!.reason);
   expect(rows.commands[2]!.reason).toBe(rows.commands[0]!.reason);
   expect(rows.fallback({ query: "q3" })?.reason).toBe(rows.commands[0]!.reason);
   const running = assistantInsertCommands({ ...input, partCount: 0, fileSelectionDisabled: true });

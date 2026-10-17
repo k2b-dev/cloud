@@ -60,7 +60,6 @@ const insert = createMemo(() =>
     copy,
     locale,
     tags,
-    attachmentCount,
     partCount: attachmentCount + mentions().length,
     excludeRefs: () => [],
     fileSelectionDisabled: running,

@@ -1140,11 +1140,13 @@ export default function AssistantWorkspace(props: Props) {
         chat.setError(t().attachResourceFailed);
       }
   };
+  /** The server counts every non-text part of a draft: attachments and references in the text alike. */
+  const composerPartCount = (key: string) => composerAttachmentsFor(key).length + mentionsFor(key).length;
   const addComposerFiles = async (sessionKey: string, files: readonly File[]) => {
     const current = composerAttachmentsFor(sessionKey);
     const result = await readAiComposerFiles(files, {
       acceptsImages: acceptsImages(),
-      currentCount: current.length,
+      currentCount: composerPartCount(sessionKey),
       currentImageBytes: current.reduce((total, attachment) => total + (attachment.kind === "image" ? attachment.size : 0), 0),
     });
     const attachmentErrors = [...result.errors];
@@ -1158,7 +1160,7 @@ export default function AssistantWorkspace(props: Props) {
 
   /** From this device or from a Cloud app, within what the draft can still take; a full draft says so at once. */
   const chooseComposerFiles = (sessionKey: string): Promise<readonly File[]> => {
-    const maxBytes = aiComposerChooseMaxBytes(composerAttachmentsFor(sessionKey).length);
+    const maxBytes = aiComposerChooseMaxBytes(composerPartCount(sessionKey));
     if (maxBytes === 0) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return Promise.resolve([]);
@@ -1181,7 +1183,7 @@ export default function AssistantWorkspace(props: Props) {
       chat.setError(t().resourceAlreadyAttached);
       return;
     }
-    if (current.length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+    if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return;
     }
@@ -1191,7 +1193,7 @@ export default function AssistantWorkspace(props: Props) {
       chat.setError(t().resourceAlreadyAttached);
       return;
     }
-    if (latest.length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+    if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return;
     }
@@ -1213,7 +1215,7 @@ export default function AssistantWorkspace(props: Props) {
     const key = task.chatId;
     const attachments = composerAttachmentsFor(key);
     const attached = attachments.some((item) => item.kind === "resource" && item.ref.type === "core.ai.task" && item.ref.id === task.id);
-    if (!attached && attachments.length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+    if (!attached && composerPartCount(key) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return;
     }
@@ -1286,7 +1288,7 @@ export default function AssistantWorkspace(props: Props) {
 
   const addComposerResource = async (sessionKey: string) => {
     if (!requireComposerAttachmentsAvailable(sessionKey)) return;
-    if (composerAttachmentsFor(sessionKey).length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+    if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return;
     }
@@ -1390,7 +1392,6 @@ export default function AssistantWorkspace(props: Props) {
         copy: commandCopy(),
         locale: locale(),
         tags: catalogTags(),
-        attachmentCount: attachmentCount(),
         partCount: attachmentCount() + mentionCount(),
         excludeRefs: () => assistantExcludedRefs(composerAttachmentsFor(sessionKey()), mentionsFor(sessionKey())),
         fileSelectionDisabled: composerRunning(),
