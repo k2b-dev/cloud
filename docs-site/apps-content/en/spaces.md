@@ -102,7 +102,7 @@ Rows do not open the item. Read and edit details in Spaces on the web.
 | Link | A Cloud resource reference or an external URL on one item; GitHub issue and pull request links show a cached preview |
 | Calendar surface | Time-based view, invitation integration, and optional iCal export |
 
-Tasks use deadlines; events use a schedule and may recur. Views, filters, and
+Tasks use deadlines; events use a schedule and may recur. Deadlines are all-day by default. Choose **Add time** for a specific time and **Remove time** to return to an all-day deadline. An all-day deadline becomes overdue on the following day in the application timezone. Day and week calendars show it in the all-day row; month and year show it on its date. Existing timed deadlines keep their time. Views, filters, and
 grouping change how items are presented, not which resource owns them.
 
 Each person can react once per emoji. Reacting needs write access; seeing reactions
@@ -261,7 +261,7 @@ with names unique per kind. A template stores a title and a description that
 may contain `{{date}}`, `{{weekday}}`, and `{{week}}`, a priority, tags,
 assignees or **Assign to me** for whoever creates the item, a task checklist
 and estimate, and an event's location, link, all-day flag, and duration. A due
-time for tasks or a start time for events defaults to 17:00 or 09:00.
+time is optional for tasks: without one, the deadline is all-day. Events default to a 09:00 start.
 
 Its date rule decides which dates the new item dialog proposes:
 
@@ -273,8 +273,7 @@ Its date rule decides which dates the new item dialog proposes:
 
 Proposals are local calendar dates in the person's time zone, so week, month,
 and daylight-saving changes never move a proposed day. A weekday rule offers
-today only while the template's time still lies ahead; an offset always counts
-from today. When someone presses **+**, a Space with templates of that kind
+today all day for a task without a time, or only while the template's time still lies ahead when it has one. An offset always counts from today. When someone presses **+**, a Space with templates of that kind
 shows a **Template** chip row (a searchable list with more than six), and
 choosing one fills the form and shows the proposals as date chips with the
 first selected, next to **Other date…** and, for tasks, **No date**.
@@ -336,6 +335,8 @@ list templates with their rule and next proposals in the local time zone.
 --no-date]` creates an item from a template; other `add` flags override it. A
 given `--deadline` or `--starts-at` picks the day instead, and `--starts-at`
 needs `--ends-at`.
+
+For task deadlines, the API and CLI accept `YYYY-MM-DD` as an all-day date or an ISO date-time as a timed deadline. For example, `cld spaces due <item> 2026-10-24` sets an all-day deadline; `cld spaces due <item> 2026-10-24T17:00:00+02:00` adds a time. Responses carry `deadline` unchanged as a calendar date or normalized ISO instant, and `deadlineAllDay` is true only for a date-only deadline. It is false for timed or absent deadlines. Send `deadline: null` to clear a deadline through the update API. Calendar dates never pass through a timezone. `--due-before` still compares against an instant; an all-day deadline sorts at the start of its day in the configured timezone.
 
 Titles are matched exactly. When a space name or title matches several
 resources, the command fails with every candidate as `path (id)` and changes

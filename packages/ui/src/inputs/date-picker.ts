@@ -69,6 +69,9 @@ export const msUntilNextDay = (now: Date, context?: DateContext): number => {
   return delay > 0 ? delay : 60_000;
 };
 
+/** Whether `value` is a date key such as `2026-10-24`, a date without a time. */
+export const isDateKey = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
 export const parseDateValue = (value: string | null | undefined, context?: DateContext): Date => {
   if (!value) return dates.today(pickerContext(context));
   return dates.parseCalendarDate(value.slice(0, 10), pickerContext(context));

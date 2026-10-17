@@ -15,6 +15,12 @@ When you create an item, Spaces first selects a task or an event, based on the c
 
 Choose **More options** to see all task or event fields. You keep what you already entered. A task gets the status where you started to create it, or the first status when none was selected.
 
+## Set a task deadline {icon="calendar-due"}
+
+Deadlines are all-day by default. Choose a date to make the task due that day. **Add time** adds a specific time; **Remove time** returns to an all-day deadline.
+
+An all-day deadline becomes overdue on the following day in the application timezone. It stays due today for its whole day. The calendar shows it in the all-day row of the day and week views, and on its date in month and year views. Existing deadlines with a time keep their time.
+
 ## Start from a template {icon="template"}
 
 When a Space has templates, the dialog for a new task or event shows a **Template** row. The row offers **Blank** and the templates for that kind of item. With more than six templates, the row becomes a searchable list.
@@ -26,7 +32,7 @@ A template can propose dates:
 - A rule such as "Wednesday or Thursday" shows the next matching days as chips, for example **Wed 10/14**, **Thu 10/15**, and **Wed 10/21**. A rule such as "in 3 days" proposes one date.
 - The first proposal is selected. Choose another chip, **Other date…** for any date, or **No date** for a task without a deadline.
 - For events, the schedule field below stays available for any other time.
-- Proposals use your time zone. With a weekday rule, today appears only while the time of the template has not passed yet.
+- Proposals use your time zone. With a weekday rule, an all-day task keeps today available for its whole day. A template with a time offers today only while that time still lies ahead.
 - The placeholders `{{date}}`, `{{weekday}}`, and `{{week}}` in the title and description follow the chosen date until you edit the text. This also applies to **No date** and to a date from the picker.
 
 With **Manage** access, you set up templates in the Space settings under **Templates**: a name, the defaults, the date rule, and a due time or start time. **Assign to me** assigns whoever creates the item. Changing or deleting a template never changes items that were already created from it. Everyone who can create items can use the templates.

@@ -468,6 +468,7 @@ const DateDemo = () => {
   const [date, setDate] = createSignal<string | null>("2026-07-28");
   const [due, setDue] = createSignal<string | null>(null);
   const [dateTime, setDateTime] = createSignal<string | null>("2026-07-28T09:30");
+  const [deadline, setDeadline] = createSignal<string | null>("2026-07-31");
   const [range, setRange] = createSignal<DateRangeValue>({
     start: "2026-07-28",
     end: "2026-07-31",
@@ -484,10 +485,11 @@ const DateDemo = () => {
         { kind: "component", name: "DateTimePicker", from: "@k2b/ui" },
         { kind: "component", name: "DateRangePicker", from: "@k2b/ui" },
       ]}
-      description="Date, date-time, and range pickers share one controlled, timezone-aware calendar interaction with clear and preset support. Every calendar marks today in its time zone; the empty Due picker opens on it."
+      description="Date, date-time, and range pickers share one controlled, timezone-aware calendar interaction with clear and preset support. Every calendar marks today in its time zone; the empty Due picker opens on it. The Deadline picker keeps a date and adds a time only on request."
       code={`<DatePicker label="Release date" value={date()} onValueChange={setDate} clearable />
 <DatePicker label="Due" placeholder="Pick a due date" value={due()} onValueChange={setDue} dateConfig={dateConfig} clearable />
 <DateTimePicker label="Starts at" value={dateTime()} onValueChange={setDateTime} dateConfig={dateConfig} />
+<DateTimePicker label="Deadline" optionalTime defaultTime="17:00" value={deadline()} onValueChange={setDeadline} dateConfig={dateConfig} clearable />
 <DateRangePicker label="Window" value={range()} onValueChange={setRange} presets={datePresets} />
 <DateRangePicker
   label="Meeting window"
@@ -514,6 +516,15 @@ const DateDemo = () => {
           value={dateTime()}
           onValueChange={setDateTime}
           dateConfig={{ timeZone: "Europe/Berlin", weekStartsOn: 1 }}
+        />
+        <DateTimePicker
+          label="Deadline"
+          optionalTime
+          defaultTime="17:00"
+          value={deadline()}
+          onValueChange={setDeadline}
+          dateConfig={{ timeZone: "Europe/Berlin", weekStartsOn: 1 }}
+          clearable
         />
         <DateRangePicker
           label="Window"

@@ -73,6 +73,7 @@ const base = {
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   priority: null,
   recurrence: null,
   recurringEventId: null,
@@ -867,7 +868,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       await menu.getByRole("menuitem", { name: "New task with deadline" }).click();
       await page.locator(openPopover).waitFor();
       expect(await page.locator(`${openPopover} [role='radio'][aria-checked='true']`).innerText()).toBe("Task");
-      expect(await quickCreateWhen(page)).toBe("due Wed, Oct 14, 17:00");
+      expect(await quickCreateWhen(page)).toBe("due Wed, Oct 14");
       // The save answers only after the person moved on to another day: its late close leaves the focus there.
       const held = Promise.withResolvers<void>();
       let saving = false;
@@ -884,7 +885,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       await page.locator(day("2026-10-27")).focus();
       held.resolve();
       await waitFor(() => created.length === 1, "the create request");
-      expect(created[0]).toMatchObject({ title: "Print the price list", deadline: at(10, 14, "17:00") });
+      expect(created[0]).toMatchObject({ title: "Print the price list", deadline: "2026-10-14" });
       expect(created[0]!.startsAt).toBeUndefined();
       await page.waitForFunction(() => !document.querySelector(".k2b-calendar-popover:popover-open"));
       expect(await focusedDay(page)).toBe("2026-10-27");

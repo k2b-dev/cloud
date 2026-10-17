@@ -7019,6 +7019,56 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
 }
 
+/* The optional time of a DateTimePicker: one slot of the time field's height holds either "Add time" or the field
+   with its remove button, so adding or removing the time never moves the panel. */
+.k2b-ui .k2b-date-optional-time {
+  display: flex;
+  min-width: 0;
+  min-height: 2rem;
+  flex: 1;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-date-optional-time__add,
+.k2b-ui .k2b-date-optional-time__remove {
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-date-optional-time__add {
+  margin-left: -0.5rem;
+}
+
+.k2b-ui .k2b-date-optional-time__remove {
+  width: 2rem;
+  padding: 0;
+}
+
+.k2b-ui .k2b-date-optional-time__add:hover,
+.k2b-ui .k2b-date-optional-time__remove:hover {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-date-optional-time__add:focus-visible,
+.k2b-ui .k2b-date-optional-time__remove:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
+}
+
 .k2b-ui .k2b-date-durations button[aria-pressed="true"] {
   color: var(--k2b-action);
   background: var(--k2b-selected);

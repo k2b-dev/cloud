@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,9 @@ import { spaceMessages } from "../../messages";
 import { CALENDAR_NEUTRAL_COLOR, CALENDAR_PRIORITY_COLORS, calendarPersonColor } from "./colors";
 import { type CalendarColorBy, defaultCalendarFilter } from "./filter";
 import type { CalendarView } from "./types";
+
+beforeEach(() => setSystemTime(new Date("2026-10-24T12:00:00Z")));
+afterEach(() => setSystemTime());
 
 const root = mkdtempSync(join(tmpdir(), "spaces-calendar-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -115,6 +118,7 @@ describe("Spaces calendar toolbar", () => {
       endsAt: "2026-08-16T10:30:00.000Z",
       allDay: false,
       deadline: null,
+      deadlineAllDay: false,
       priority: null,
       recurrence: null,
       recurringEventId: null,
@@ -166,6 +170,7 @@ const base = (patch: Partial<CalendarItem>): CalendarItem => ({
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   priority: null,
   recurrence: null,
   recurringEventId: null,
@@ -372,6 +377,7 @@ describe("Spaces task tray below the day view", () => {
     endsAt: null,
     allDay: false,
     deadline: null,
+    deadlineAllDay: false,
     estimatedDurationMinutes: null,
     activeBlockerCount: 0,
     priority: null,
@@ -510,3 +516,33 @@ describe("Spaces task tray below the day view", () => {
     for (const view of ["week", "month", "year"] as const) expect(render({ view, tray: full })).not.toContain("data-spaces-task-tray");
   });
 });
+
+for (const timeZone of ["America/Los_Angeles", "Europe/Berlin", "Pacific/Kiritimati"]) {
+  test(`all-day deadlines appear in the day and week all-day row in ${timeZone}`, () => {
+    for (const view of ["day", "week"] as const) {
+      const html = renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(Calendar, {
+              spaceId: "Space1",
+              items: [base({ title: "Ganztägig fällig", deadline: "2026-10-24", deadlineAllDay: true })],
+              columns,
+              tags: [],
+              filter: defaultCalendarFilter,
+              view,
+              date: new Date("2026-10-24T09:00:00Z"),
+              baseUrl: "/app/spaces/Space1",
+              dateConfig: { locale: "de", timeZone },
+              canWrite: false,
+            });
+          },
+        }),
+      );
+      expect(html).toMatch(
+        new RegExp(`class="k2b-calendar-${view === "day" ? "days" : "week"}__all-day"[^>]*>(?:(?!<header).)*Ganztägig fällig`, "s"),
+      );
+      expect(html).not.toContain("Ganztägig fällig, 00:00");
+    }
+  });
+}

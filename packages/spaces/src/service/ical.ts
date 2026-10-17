@@ -31,6 +31,7 @@ type DbItem = {
   ends_at: Date | null;
   all_day: boolean;
   deadline: Date | null;
+  deadline_date: string | null;
   priority: string | null;
   recurrence_rrule: string | null;
   recurrence_dtstart: Date | null;
@@ -53,6 +54,7 @@ type ICalFeedItem = {
   endsAt: Date | null;
   allDay: boolean;
   deadline: Date | null;
+  deadlineDate: string | null;
   priority: Priority | null;
   recurrenceRrule: string | null;
   recurrenceDtstart: Date | null;
@@ -88,6 +90,7 @@ const mapItem = (row: DbItem): ICalFeedItem => ({
   endsAt: row.ends_at,
   allDay: row.all_day,
   deadline: row.deadline,
+  deadlineDate: row.deadline_date,
   priority: row.priority as Priority | null,
   recurrenceRrule: row.recurrence_rrule,
   recurrenceDtstart: row.recurrence_dtstart,
@@ -197,6 +200,23 @@ export const createICalContent = async (params: {
         lastModified: item.updatedAt,
         priority: priorityToIcal(item.priority),
       });
+    } else if (item.deadlineDate) {
+      const [year = 1970, month = 1, day = 1] = item.deadlineDate.split("-").map(Number);
+      // With a calendar timezone, ical-generator writes a VALUE=DATE from the process's local date getters, so the
+      // date is built at local noon: its local date is the stored date in every process timezone.
+      calendar.createEvent({
+        id: buildSpaceCalendarUid(item.shortId),
+        start: new Date(year, month - 1, day, 12),
+        end: new Date(year, month - 1, day + 1, 12),
+        allDay: true,
+        summary: `[Deadline] ${item.title}`,
+        description: item.description ?? undefined,
+        location: item.location ?? undefined,
+        url: eventUrl(params.baseUrl, params.space.short_id, item),
+        created: item.createdAt,
+        lastModified: item.updatedAt,
+        priority: priorityToIcal(item.priority),
+      });
     } else if (item.deadline) {
       calendar.createEvent({
         id: buildSpaceCalendarUid(item.shortId),
@@ -235,15 +255,15 @@ export const generate = async (params: { spaceId: string; baseUrl: string; dateC
   // Get all non-completed items with time data
   const rows = await sql<DbItem[]>`
     SELECT item.id, item.short_id, item.title, item.description, item.location, item.url, item.starts_at, item.ends_at,
-           item.all_day, item.deadline, item.priority, item.recurrence_rrule, item.recurrence_dtstart, item.recurrence_exdate,
+           item.all_day, item.deadline, item.deadline_date::text AS deadline_date, item.priority, item.recurrence_rrule, item.recurrence_dtstart, item.recurrence_exdate,
            item.recurring_event_id, recurring.short_id AS recurring_event_short_id, item.recurrence_id,
            item.created_at, item.updated_at
     FROM spaces.items item
     LEFT JOIN spaces.items recurring ON recurring.id = item.recurring_event_id
     WHERE item.space_id = ${params.spaceId}
       AND item.completed_at IS NULL
-      AND (item.starts_at IS NOT NULL OR item.deadline IS NOT NULL)
-    ORDER BY COALESCE(item.starts_at, item.deadline)
+      AND (item.starts_at IS NOT NULL OR item.deadline IS NOT NULL OR item.deadline_date IS NOT NULL)
+    ORDER BY COALESCE(item.starts_at, item.deadline), item.deadline_date
   `;
 
   return createICalContent({

@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { AssignedToFilterSchema, DeadlineFilterSchema, PrioritySchema, ResourceShortIdSchema } from "./contracts";
+import {
+  AssignedToFilterSchema,
+  DeadlineAllDaySchema,
+  DeadlineFilterSchema,
+  DeadlineInputSchema,
+  PrioritySchema,
+  ResourceShortIdSchema,
+} from "./contracts";
 
 const paging = {
   cursor: z.string().min(1).max(256).optional().describe("Opaque continuation cursor; keep all filters unchanged."),
@@ -32,7 +39,8 @@ export const TaskFocusDataSchema = z
         spaceName: z.string().max(200),
         columnId: ResourceShortIdSchema,
         columnName: z.string().max(200).nullable(),
-        deadline: z.string().nullable(),
+        deadline: DeadlineInputSchema.nullable(),
+        deadlineAllDay: DeadlineAllDaySchema,
         overdue: z.boolean().describe("True only for an open task whose deadline is before today in the configured application timezone."),
         priority: PrioritySchema.nullable(),
         activeBlockerCount: z.number().int().nonnegative(),
@@ -67,6 +75,7 @@ export const EventAgendaDataSchema = z
         startsAt: z.string(),
         endsAt: z.string(),
         allDay: z.boolean(),
+        deadlineAllDay: DeadlineAllDaySchema,
         location: z.string().max(500).nullable(),
         recurrenceId: z.string().nullable(),
         seriesId: ResourceShortIdSchema.nullable(),
