@@ -121,7 +121,6 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
       class={`k2b-chat-decision ${props.class ?? ""}`}
       data-state={props.state}
       data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
-      aria-busy={props.state === "sending" ? "true" : undefined}
     >
       <Show when={open()} fallback={<DecisionScope.Provider value={scope}>{props.outcome}</DecisionScope.Provider>}>
         <section class="k2b-chat-decision__card" aria-labelledby={sentenceId} aria-describedby={reasonId}>
@@ -185,6 +184,8 @@ export type ChatOutcomeProps = {
   lines: Readonly<Record<string, ChatOutcomeLine>>;
   /** The key of the visible line. */
   current: string;
+  /** Receives an error thrown or rejected by a line's `action`. */
+  onActionError?: (error: unknown) => void;
   anchorId?: string | number;
   class?: string;
 };
@@ -201,7 +202,8 @@ const OUTCOME_ICONS: Record<ChatOutcomeTone, string> = {
 /** The visible words of a line, without what screen readers do not hear. */
 const spokenText = (element: Element): string => {
   const copy = element.cloneNode(true) as Element;
-  for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+  // Buttons under the line are controls, not part of what happened.
+  for (const hidden of copy.querySelectorAll('[aria-hidden="true"], .k2b-chat-outcome__actions')) hidden.remove();
   // The time and the link stand apart by margin only; spoken, they need a space.
   for (const part of copy.querySelectorAll(".k2b-chat-outcome__time, .k2b-chat-outcome__link")) part.before(" ");
   return (copy.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -252,12 +254,12 @@ export function ChatOutcome(props: ChatOutcomeProps): JSX.Element {
       data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
       data-enter={entering ? "true" : undefined}
       tabindex="-1"
-      aria-busy={tone() === "running" ? "true" : undefined}
     >
       <span class="k2b-chat-outcome__icon" aria-hidden="true">
         <i class={line()?.icon ?? OUTCOME_ICONS[tone()]} />
       </span>
-      <div ref={cell} class="k2b-chat-outcome__cell">
+      {/* Busy is set on the words only: a live region inside a busy subtree would be held back. */}
+      <div ref={cell} class="k2b-chat-outcome__cell" aria-busy={tone() === "running" ? "true" : undefined}>
         <For each={keys()}>
           {(key) => {
             const entry = () => lines()[key];
@@ -288,16 +290,20 @@ export function ChatOutcome(props: ChatOutcomeProps): JSX.Element {
                           tabIndex={current() ? undefined : -1}
                           onClick={() => {
                             scope?.pressed();
-                            void action().onSelect();
+                            try {
+                              const result = action().onSelect();
+                              if (result instanceof Promise) result.catch((error: unknown) => props.onActionError?.(error));
+                            } catch (error) {
+                              props.onActionError?.(error);
+                            }
                           }}
                         >
                           {action().label}
                         </Button>
                       )}
                     </Show>
-                    <Show when={current() ? item().actions : undefined}>
-                      {(actions) => <div class="k2b-chat-outcome__actions">{actions()}</div>}
-                    </Show>
+                    {/* Every line keeps its buttons, hidden with its text, so the cell also reserves their row. */}
+                    <Show when={item().actions}>{(actions) => <div class="k2b-chat-outcome__actions">{actions()}</div>}</Show>
                   </div>
                 )}
               </Show>
@@ -444,13 +450,18 @@ export type ChatPreviewLineProps = {
 /** One line led by an icon: a consequence, a right, an attachment, or a warning. */
 function ChatPreviewLine(props: ChatPreviewLineProps): JSX.Element {
   const inList = useContext(InList);
+  const messages = useChatMessages();
   const content = () => (
     <>
       <i class={`k2b-chat-line__icon ${props.icon}`} style={props.accent ? { color: props.accent } : undefined} aria-hidden="true" />
       <span class="k2b-chat-line__text">
-        <Show when={props.mark} fallback={props.children}>
-          {(mark) => <ChatMark change={mark()}>{props.children}</ChatMark>}
-        </Show>
+        {/* One stable wrapper, so marking a line later never moves its mounted children. */}
+        <span class="k2b-chat-mark" data-change={props.mark}>
+          <Show when={props.mark}>
+            {(mark) => <span class="k2b-sr-only">{mark() === "added" ? messages().markAdded : messages().markRemoved} </span>}
+          </Show>
+          {props.children}
+        </span>
         <Show when={props.meta}>
           {(meta) => (
             <>

@@ -93,7 +93,8 @@ describe("Chat.Decision SSR", () => {
     test(`${state} replaces the question with its outcome`, () => {
       const body = render(() => decision({ state, outcome: "Outcome slot" }));
       expect(body.firstElementChild!.getAttribute("data-state")).toBe(state);
-      expect(body.firstElementChild!.getAttribute("aria-busy")).toBe(state === "sending" ? "true" : null);
+      // Busy belongs to the outcome's words; a busy ancestor would hold back its live region.
+      expect(body.firstElementChild!.hasAttribute("aria-busy")).toBe(false);
       expect(body.textContent).toBe("Outcome slot");
       expect(body.querySelector("button, section")).toBeNull();
     });
@@ -113,7 +114,9 @@ describe("Chat.Outcome SSR", () => {
       const body = render(() => createComponent(Chat.Outcome, { current: "one", lines: { one: { tone, text: "Result" } } }));
       const outcome = body.firstElementChild!;
       expect(outcome.getAttribute("data-tone")).toBe(tone);
-      expect(outcome.getAttribute("aria-busy")).toBe(tone === "running" ? "true" : null);
+      expect(outcome.hasAttribute("aria-busy")).toBe(false);
+      expect(outcome.querySelector(".k2b-chat-outcome__cell")!.getAttribute("aria-busy")).toBe(tone === "running" ? "true" : null);
+      expect(outcome.querySelector('[aria-busy] [role="status"]')).toBeNull();
       expect(outcome.getAttribute("tabindex")).toBe("-1");
       expect(outcome.hasAttribute("data-enter")).toBe(false);
       expect(outcome.querySelector("i")!.className).toContain(icons[tone]);
@@ -146,7 +149,8 @@ describe("Chat.Outcome SSR", () => {
     expect(entries[0]!.querySelector("button")!.hasAttribute("tabindex")).toBe(false);
     expect(entries[1]!.querySelector("button")!.getAttribute("tabindex")).toBe("-1");
     expect(entries[0]!.querySelector(".k2b-chat-outcome__actions")!.textContent).toBe("Current controls");
-    expect(body.textContent).not.toContain("Hidden controls");
+    // Inactive lines keep their buttons, hidden with their text, so the shared cell reserves that row too.
+    expect(entries[1]!.querySelector(".k2b-chat-outcome__actions")!.textContent).toBe("Hidden controls");
     expect(body.querySelector(".k2b-chat-outcome__icon i")!.className).toBe("ti ti-mail");
   });
 });
@@ -214,9 +218,12 @@ for (const [locale, added, removed] of [
     expect(attachment.querySelector("i")!.getAttribute("style")).toContain("color:red");
     expect(attachment.querySelector(".k2b-chat-preview__meta")!.textContent).toBe("12 KB");
     expect(body.querySelectorAll('ul[aria-label="Consequences"] > li').length).toBe(3);
-    expect(body.querySelector('li[data-tone="muted"] del')).not.toBeNull();
+    expect(body.querySelector('li[data-tone="muted"] .k2b-chat-mark[data-change="removed"]')).not.toBeNull();
+    expect(body.querySelector('li:not([data-tone]) .k2b-chat-mark[data-change="added"] .k2b-sr-only')!.textContent).toBe(`${added} `);
+    expect(body.querySelector('li[data-tone="muted"] .k2b-chat-mark .k2b-sr-only')!.textContent).toBe(`${removed} `);
+    expect(body.querySelector('li[data-tone="warning"] .k2b-chat-mark')!.hasAttribute("data-change")).toBe(false);
     expect(body.querySelector('li[data-tone="warning"]')!.textContent).toBe("Outside content");
-    expect(body.querySelectorAll("mark .k2b-sr-only").length).toBe(2);
+    expect(body.querySelectorAll("mark .k2b-sr-only").length).toBe(1);
     for (const word of body.querySelectorAll("mark .k2b-sr-only")) expect(word.textContent).toBe(`${added} `);
     for (const word of body.querySelectorAll("del .k2b-sr-only")) expect(word.textContent).toBe(`${removed} `);
     const faces = body.querySelector(".k2b-chat-preview__faces")!;

@@ -43,7 +43,7 @@ export type ChatOutcomeLine = {
   icon?: string;
   /** One text link after the line, such as "Ask again". */
   action?: { label: string; onSelect: () => void | Promise<void> };
-  /** Small buttons under the line, shown only while this line is current. */
+  /** Small buttons under the line. Shown while this line is current; otherwise hidden but still reserving their row. */
   actions?: JSX.Element;
 };
 

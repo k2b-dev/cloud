@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { Chat, type ChatDecisionState, type ChatOutcomeLine, ReferenceChip } from "../src/index";
+import { Button, Chat, type ChatDecisionState, type ChatOutcomeLine, ReferenceChip } from "../src/index";
 
 export const fullTitle = `${"Quarterly".repeat(8)}.pdf`;
 export const runningSentence = "Sending the mail to Lea.";
@@ -13,6 +13,10 @@ declare global {
   interface Window {
     __finish: () => void;
     __expire: () => void;
+    __check: () => void;
+    __fail: () => void;
+    __mark: () => void;
+    __errors: string[];
   }
 }
 
@@ -23,6 +27,16 @@ function Fixture() {
     setCurrent("done");
     setState("decided");
   };
+  const [mark, setMark] = createSignal<"added" | undefined>();
+  // A retained element: marking its line later must not move it out of the page.
+  const retained = <b id="retained">Retained words</b>;
+  window.__errors = [];
+  window.__mark = () => setMark("added");
+  window.__check = () => setCurrent("checkfail");
+  window.__fail = () => {
+    setCurrent("failed");
+    setState("decided");
+  };
   window.__expire = () => {
     setCurrent("expired");
     setState("expired");
@@ -31,6 +45,30 @@ function Fixture() {
     running: { tone: "running", text: runningSentence },
     done: { tone: "done", text: doneSentence, detail: doneDetail, time: "09:41" },
     declined: { tone: "off", text: "Kept the mail as a draft.", detail: "You declined." },
+    checkfail: {
+      tone: "warning",
+      text: "Still checking whether the mail went out.",
+      actions: (
+        <>
+          <Button size="sm" variant="subtle">
+            Open the draft
+          </Button>
+          <Button size="sm" variant="subtle">
+            Check again
+          </Button>
+        </>
+      ),
+    },
+    failed: {
+      tone: "error",
+      text: "The mail was not sent.",
+      action: {
+        label: "Send again",
+        onSelect: async () => {
+          throw new Error("offline");
+        },
+      },
+    },
     expired: {
       tone: "off",
       text: "This question expired.",
@@ -103,8 +141,13 @@ function Fixture() {
             setState("decided");
           },
         }}
-        outcome={<Chat.Outcome lines={lines} current={current()} />}
+        outcome={<Chat.Outcome lines={lines} current={current()} onActionError={(error) => window.__errors.push(String(error))} />}
       />
+      <Chat.Preview>
+        <Chat.Preview.Line icon="ti ti-pencil" mark={mark()}>
+          {retained}
+        </Chat.Preview.Line>
+      </Chat.Preview>
       <p id="sentinel">The next conversation paragraph stays in place.</p>
       <Chat.Activity label="Checked the draft" icon="ti ti-alert-triangle" tone="warning" />
     </main>

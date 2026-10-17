@@ -22,7 +22,6 @@ export type {
   ChatFileSelection,
   ChatPasteHandler,
 } from "./ChatComposer";
-export type { ChatActivityProps, ChatContextUsageProps, ChatMessageProps } from "./ChatPrimitives";
 export type {
   ChatDecisionProps,
   ChatMarkProps,
@@ -34,6 +33,7 @@ export type {
   ChatPreviewReadMoreProps,
   ChatPreviewTitleProps,
 } from "./ChatDecision";
+export type { ChatActivityProps, ChatContextUsageProps, ChatMessageProps } from "./ChatPrimitives";
 export { formatChatTokens } from "./ChatPrimitives";
 export type { ChatRootProps } from "./ChatRoot";
 export type { ChatActivityItem, ChatMessageItem, ChatTimelineItem, ChatTimelineProps } from "./ChatTimeline";

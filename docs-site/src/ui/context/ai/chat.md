@@ -103,8 +103,7 @@ has no link.
 
 Set `state` synchronously in each answer's `onSelect`, before awaiting work, so
 the question collapses immediately. `open` shows the question;
-`sending`, `decided`, and `expired` show the `outcome` slot. Only `sending` sets
-`aria-busy` on the decision. An answer given here focuses `Chat.Outcome` and
+`sending`, `decided`, and `expired` show the `outcome` slot. An answer given here focuses `Chat.Outcome` and
 announces its current sentence. An outcome action that reopens the question
 returns focus to the sentence and briefly highlights it. Changes from elsewhere
 do not move focus. Handle rejected answer callbacks with `onAnswerError` and
@@ -114,11 +113,15 @@ Pass `Chat.Outcome` only the lines this flow can reach. Every supplied line
 occupies the same grid cell, including hidden alternatives, so the longest line
 reserves the height. This keeps running-to-done transitions still without
 reserving space for unrelated outcomes. Only the current line is visible and
-accessible; inactive action links leave the tab order. Additional `actions`
-render only under the current line. `running` alone sets the outcome's
-`aria-busy`. A polite live region starts empty in SSR and on initial history
+accessible; inactive action links leave the tab order. `actions` under a line
+stay in the cell while the line is hidden, so a line with buttons reserves
+their row from the start. `running` sets `aria-busy` on the words only, never
+on an ancestor of the live region. Pass `onActionError` to receive an error a
+line's `action` throws or rejects with, and show a recoverable line. A polite
+live region starts empty in SSR and on initial history
 mount; it announces an answer given here and every subsequent `current` change,
-including detail, time, and action text with spaces between them.
+including detail, time, and action link text with spaces between them; buttons
+under the line are not announced.
 
 Use `unavailable` to disable confirm and remember while keeping decline enabled.
 Its reason replaces the original reason in the same described element. The
@@ -239,7 +242,7 @@ type ChatOutcomeLine = {
 };
 type ChatOutcomeProps = {
   lines: Readonly<Record<string, ChatOutcomeLine>>; current: string;
-  anchorId?: string | number; class?: string;
+  onActionError?: (error: unknown) => void; anchorId?: string | number; class?: string;
 };
 type ChatPreviewPerson = { name?: string; address?: string };
 type ChatPreviewHeaderRow = {

@@ -87,6 +87,10 @@ test("confirm collapses immediately, focuses and announces the outcome, and fini
     await spoken(page, done);
     expect(await boxes(page)).toEqual(before);
     expect(await page.locator(".k2b-chat-outcome").getAttribute("data-tone")).toBe("done");
+    // A line with buttons under it reserved their row from the start, so it moves nothing either.
+    await page.evaluate(() => window.__check());
+    await spoken(page, "Still checking whether the mail went out.");
+    expect(await boxes(page)).toEqual(before);
   } finally {
     await page.close();
   }
@@ -151,7 +155,7 @@ for (const width of [1440, 390])
           weight: style.fontWeight,
         };
       });
-      expect(metrics.indent.length).toBe(6); // reason, four preview lines, activity
+      expect(metrics.indent.length).toBe(7); // reason, four decision preview lines, the later-marked line, activity
       for (const indent of metrics.indent) expect(Math.abs(indent - 24)).toBeLessThanOrEqual(0.5);
       for (const left of metrics.flush) expect(Math.abs(left)).toBeLessThanOrEqual(0.5);
       for (const [index, expected] of [4, 20, 20].entries()) expect(Math.abs(metrics.gaps[index]! - expected)).toBeLessThanOrEqual(0.5);
@@ -203,7 +207,7 @@ test("dark question, done icon and added marks use the inherited dark tokens", a
         return getComputedStyle(probe).color;
       };
       const sentence = getComputedStyle(document.querySelector(".k2b-chat-decision__sentence")!).color;
-      const mark = getComputedStyle(document.querySelector("mark")!).backgroundColor;
+      const mark = getComputedStyle(document.querySelector('.k2b-chat-mark[data-change="added"]')!).backgroundColor;
       const expectedText = color(root.getPropertyValue("--k2b-text"));
       probe.style.backgroundColor = `color-mix(in srgb, ${root.getPropertyValue("--k2b-ai-accent")} 22%, transparent)`;
       const expectedMark = getComputedStyle(probe).backgroundColor;
@@ -216,6 +220,34 @@ test("dark question, done icon and added marks use the inherited dark tokens", a
     await page.getByRole("button", { name: "Send to Lea", exact: true }).click();
     await page.evaluate(() => window.__finish());
     expect(await page.locator(".k2b-chat-outcome__icon i").evaluate((e) => getComputedStyle(e).color)).toBe(colors.expectedSuccess);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a rejected outcome action reaches onActionError instead of going unhandled", async () => {
+  const page = await open();
+  const unhandled: string[] = [];
+  page.on("pageerror", (error) => unhandled.push(error.message));
+  try {
+    await page.evaluate(() => window.__fail());
+    await page.getByRole("button", { name: "Send again", exact: true }).click();
+    await page.waitForFunction(() => window.__errors.length === 1);
+    expect(await page.evaluate(() => window.__errors)).toEqual(["Error: offline"]);
+    expect(unhandled).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
+
+test("marking a line later keeps its retained children in place", async () => {
+  const page = await open();
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  try {
+    await page.evaluate(() => window.__mark());
+    expect(errors).toEqual([]);
+    expect(await page.locator('.k2b-chat-mark[data-change="added"] #retained').textContent()).toBe("Retained words");
   } finally {
     await page.close();
   }
