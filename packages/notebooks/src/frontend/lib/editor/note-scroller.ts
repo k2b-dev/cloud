@@ -1,4 +1,4 @@
-import { EditorView, ViewPlugin } from "@codemirror/view";
+import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 
 /**
  * The note page's arrangement: CodeMirror grows inside the page's scroll area
@@ -15,28 +15,42 @@ const noteScrollerTheme = EditorView.theme({
 });
 
 /**
- * CodeMirror builds the lines it scrolled to in several DOM steps. A layout
- * between them sees a note shorter than its height map, and the page scroller
- * clamps its position to that height. WebKit runs such a layout when a widget
- * parses an SVG `viewBox` or path (the notice icon does) while the page has a
- * size container, which every app area is. A height set during the update
- * does not reach that layout in WebKit, so the content already holds the
- * height CodeMirror knew after the last update when the next one starts. It
- * follows the height map after each update, once CodeMirror has kept the
- * visible lines in place, so a shorter note still ends its scroll range there.
+ * CodeMirror builds the lines it scrolled to in several DOM steps and locks the
+ * content's height only for the last one. A layout between the earlier steps
+ * sees a note shorter than its height map, and the page scroller clamps its
+ * position to that height. WebKit runs such a layout when a widget parses an
+ * SVG `viewBox` or path (the notice icon does) while the page has a size
+ * container, which every app area is. This holds the height for the whole DOM
+ * update. WebKit's layout during the update uses the content's style from
+ * before it, so the lock is resolved at once; releasing it with the update
+ * keeps CodeMirror's own measuring and scroll correction as they were.
  */
-const holdKnownHeight = (view: EditorView) => {
-  const minHeight = `${view.contentHeight}px`;
-  if (view.contentDOM.style.minHeight !== minHeight) view.contentDOM.style.minHeight = minHeight;
-};
+const lockHeightWhileRendering = ViewPlugin.fromClass(
+  class {
+    constructor(private readonly view: EditorView) {}
 
-const keepKnownHeight = [
-  ViewPlugin.define((view) => {
-    holdKnownHeight(view);
-    return { destroy: () => view.contentDOM.style.removeProperty("min-height") };
-  }),
-  EditorView.updateListener.of((update) => holdKnownHeight(update.view)),
-];
+    // Plugins update right before CodeMirror's DOM update, with the height it knows from its height map.
+    update(update: ViewUpdate) {
+      const content = update.view.contentDOM;
+      content.style.minHeight = `${update.view.contentHeight}px`;
+      void getComputedStyle(content).minHeight;
+      // An update that draws nothing ends without `docViewUpdate`.
+      queueMicrotask(() => this.release());
+    }
+
+    docViewUpdate() {
+      this.release();
+    }
+
+    destroy() {
+      this.release();
+    }
+
+    private release() {
+      this.view.contentDOM.style.removeProperty("min-height");
+    }
+  },
+);
 
 /** The page scrolls the note; CodeMirror only renders it. */
-export const noteScroller = [noteScrollerTheme, keepKnownHeight];
+export const noteScroller = [noteScrollerTheme, lockHeightWhileRendering];
