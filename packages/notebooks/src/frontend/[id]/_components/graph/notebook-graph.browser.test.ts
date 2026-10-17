@@ -1487,6 +1487,19 @@ test(`${browserName}: Timeline returns to the scrolled rows after opening a note
     await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
     await timelineReady(page, model.edges.length);
     expect(Math.abs((await scrollTop()) - 400)).toBeLessThanOrEqual(1);
+    // A display switch right after scrolling, before the pause, keeps the newest position too.
+    const pendingAtSwitch = await page.getByRole("radio", { name: "Network", exact: true }).evaluate(async (radio: HTMLElement) => {
+      document.querySelector(".notebook-graph__timeline")!.scrollTop = 1200;
+      await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
+      const pending = history.state?.notebookGraphTimelineScroll !== 1200;
+      radio.click();
+      return pending;
+    });
+    expect(pendingAtSwitch).toBe(true);
+    expect(search(page).get("display")).toBe("network");
+    await page.getByRole("radio", { name: "Timeline", exact: true }).click();
+    await timelineReady(page, model.edges.length);
+    expect(Math.abs((await scrollTop()) - 1200)).toBeLessThanOrEqual(1);
   } finally {
     await close(page);
   }

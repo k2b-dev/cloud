@@ -66,6 +66,7 @@ export default function TimelineDisplay(props: Props) {
   let scrollTimer: ReturnType<typeof setTimeout> | undefined;
   const saveScroll = () => {
     clearTimeout(scrollTimer);
+    scrollTimer = undefined;
     try {
       history.replaceState({ ...historyState(), [SCROLL_KEY]: scroller.scrollTop }, "");
     } catch {
@@ -73,9 +74,17 @@ export default function TimelineDisplay(props: Props) {
     }
   };
   // Saved after each scroll pause, which stays well inside the browsers' history write limits.
+  let scrolledAt = "";
   const onScroll = () => {
     clearTimeout(scrollTimer);
+    scrolledAt = location.href;
     scrollTimer = setTimeout(saveScroll, SCROLL_SAVE_DELAY_MS);
+  };
+  // A pending save is written before the display goes away, but never into a newer history entry. A reload within
+  // the delay keeps the previous pause: Chromium drops history writes made while the page unloads.
+  const flushScroll = () => {
+    if (scrollTimer !== undefined && location.href === scrolledAt) saveScroll();
+    scrollTimer = undefined;
   };
   let mounted = false;
   onMount(() => {
@@ -98,7 +107,7 @@ export default function TimelineDisplay(props: Props) {
     onCleanup(() => {
       mounted = false;
       observer.disconnect();
-      clearTimeout(scrollTimer);
+      flushScroll();
       scroller.removeEventListener("scroll", onScroll);
     });
   });
