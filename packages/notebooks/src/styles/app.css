@@ -525,8 +525,9 @@
    the same room, and a legend scrolls inside the frame instead of growing it. The SVG stretches to the column's width
    through the shared `.k2b-chart` rules, which keep its text and marks at their pixel size. */
 .notebook-book-content .notebook-book-chart {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 0.5rem;
   min-width: 0;
   margin: 1.25rem 0;
@@ -535,6 +536,25 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+/* Copy data and the table switch: two small icon buttons, as on a chart in an Assistant chat. The server reserves
+   this box empty, so the controls appear in place when the browser enhancement mounts them. */
+.notebook-book-chart__actions {
+  display: flex;
+  gap: 0.25rem;
+  width: 3.75rem;
+  height: 1.75rem;
+}
+/* The table takes the drawing's place inside the same fixed frame and scrolls there. */
+.notebook-book-chart[data-view="table"] .notebook-book-chart__viewport > :not(.notebook-book-chart__table) {
+  display: none;
+}
+/* Like every note table, it bleeds past the text on both sides so its cell text lines up with the title. */
+.notebook-book-content .notebook-book-chart__table {
+  flex: 1 1 0;
+  min-height: 0;
+  margin-block: 0;
+  overflow: auto;
 }
 .notebook-book-chart__title {
   font-size: 1rem;
@@ -547,6 +567,7 @@
   line-height: 1.25rem;
 }
 .notebook-book-chart__viewport {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -613,6 +634,19 @@
   }
   .notebook-book-content .notebook-book-mermaid > details {
     display: none;
+  }
+  /* Chart controls stay on screen. A chart switched to its table prints every row: the frame grows with it. */
+  .notebook-book-chart__actions {
+    display: none;
+  }
+  .notebook-book-content .notebook-book-chart {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .notebook-book-chart[data-view="table"] .notebook-book-chart__viewport {
+    height: auto;
+  }
+  .notebook-book-content .notebook-book-chart__table {
+    flex: none;
   }
 }
 

@@ -4,6 +4,7 @@ title: Work together in a mailbox
 icon: ti ti-users
 description: Assign work, coordinate replies, comment internally, and understand access levels.
 order: 40
+kind: task
 ---
 
 Cloud collaboration stays attached to a conversation, while the email itself stays normal provider mail. Open **Conversation details** to see the shared follow-up state apart from your private personal reminder.

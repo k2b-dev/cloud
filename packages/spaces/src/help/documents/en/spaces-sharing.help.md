@@ -4,6 +4,7 @@ title: Share a Space and change settings
 icon: ti ti-lock
 description: Give people the right access level, change Space settings, and share calendar exports safely.
 order: 130
+kind: task
 ---
 
 Give each person and group only the access they need in this Space.

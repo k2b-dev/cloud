@@ -267,12 +267,13 @@ export const defineHelpCollection = (options: { basePath: string; sources: reado
   const byId = new Map(documents.map((document) => [document.id, document]));
 
   const searchUrl = `${basePath}/search`;
-  const manifest = documents.map<HelpDocumentManifest>(({ id, title, icon, description, order }) => ({
+  const manifest = documents.map<HelpDocumentManifest>(({ id, title, icon, description, order, kind }) => ({
     id,
     title,
     icon,
     description,
     order,
+    kind,
     searchUrl,
     url: `${basePath}/${encodeURIComponent(id)}`,
   }));

@@ -4,6 +4,7 @@ title: Automate responses and mailbox work
 icon: ti ti-automation
 description: Configure automatic replies, incoming-mail processing, and safe workflow activation.
 order: 60
+kind: task
 ---
 
 Open **Mailbox tools → Automations**. The full-width overview shows what is active and opens the exact setup that you choose. **Automatic replies** and **Incoming mail** cover common tasks. With **Manage** access, you also see **Activity** and **Workflows** under Advanced.

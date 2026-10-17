@@ -843,7 +843,8 @@ for the same user and chat or app before using the CLI.
 Assistant computes with scripts and shows the result as an HTML app: key
 figures, tables and charts from `cloud.chart`, which draws in Cloud colors and
 redraws at the real width, so axes fit phones. Hover, focus or tap a chart value
-to see it. Filters, tabs and forms are ordinary HTML controls. The
+to see it. When you print an app or download its PDF, each chart is followed by
+a table of its values. Filters, tabs and forms are ordinary HTML controls. The
 `assistant-data-analysis` Skill guides source inspection, metric definitions,
 reconciliation, chart choice, and delivery. The API is available without
 loading the Skill. An app states when its data was retrieved and whether it is

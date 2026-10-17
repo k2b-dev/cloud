@@ -45,6 +45,8 @@ export type FileDropTargetEntry = {
   region?: () => Element | undefined;
   /** Set for regions: where the target itself is rendered; a region whose host is hidden takes no drops. */
   host?: () => Element | undefined;
+  /** Set for specific targets that show the drop sentence themselves, so the area's overlay does not repeat it. */
+  labelled?: boolean;
 };
 
 export type FileDropHover = { entry: FileDropTargetEntry; element: Element; invalid: boolean };

@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-10-12
+updated: 2026-10-17
 ---
 
 # Layout and navigation
@@ -114,6 +114,14 @@ the shell. The entries above it are the pages above this one; on signed-in
 pages the shell turns them into the way up (see below). Anonymous pages show
 the entries as breadcrumbs in their header from 1024 px; the final breadcrumb
 has no link. A plain string is valid for a one-level title.
+
+`help?: string[]` names two or three articles from the current app's Help that
+fit this page, for example `help={["inventory-start", "inventory-access"]}`.
+Help lists them first under **For this view**, in the declared order. Cloud
+removes duplicates, ignores IDs outside the reader's authorized Help manifest,
+and keeps at most three. Without a manifest, the section is absent. These
+articles stay in their usual task tiles or kind groups too. See
+[In-product Help](/en/docs/platform/help#use-the-automatically-derived-surfaces).
 
 `printHint?: string` supplies the application's final localized export or printing guidance. In regular and focus mode, `Layout` appends a screen-hidden `data-print-fallback` as the last child of the app canvas. When no `data-print-region` exists, only this fallback prints. Its default hint is “Open the item you want to print, or use the app's export.” Pass an app-specific sentence, such as “Open a note to print it, or download it as a PDF from the note's details.” See [Browser printing](/en/ui/layout/print) for marking printable content.
 

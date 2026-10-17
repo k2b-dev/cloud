@@ -4,6 +4,7 @@ title: Read, search, and organize
 icon: ti ti-inbox
 description: Find conversations, read complete threads, and change portable mail state safely.
 order: 20
+kind: task
 ---
 
 ## Find the conversation you need {icon="search"}

@@ -4,6 +4,7 @@ title: Set up and manage a mailbox
 icon: ti ti-settings
 description: Manage transport, identities, folders, access, automation, and mailbox lifecycle.
 order: 50
+kind: task
 ---
 
 With **Manage** access to a mailbox, you control the provider connection and the Cloud rules around it. Open **Settings** from the mailbox navigation.

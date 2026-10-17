@@ -8,6 +8,7 @@ import { render } from "solid-js/web";
 import { chartBlockFrame, notebookChartFrameHtml } from "../../../lib/chart-blocks";
 import { extractNotebookDirectiveRanges } from "../../../lib/query-blocks";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../../[id]/_components/sidebar/workspace-events";
+import { enhanceNotebookCharts } from "../notebook-charts";
 import {
   blockWidgetLineNavigationExtension,
   holdsDecorations,
@@ -36,6 +37,7 @@ const previewEffect = StateEffect.define<PreviewSnapshot>();
 
 class QueryBlockWidget extends WidgetType {
   private dispose?: () => void;
+  private restoreCharts?: () => void;
 
   constructor(
     private block: BlockRange,
@@ -78,8 +80,11 @@ class QueryBlockWidget extends WidgetType {
     controls.className = "flex justify-end gap-1 mb-1";
     const content = document.createElement("div");
     content.className = "cm-query-block-preview notebook-book-content";
-    if (this.html !== undefined && !this.snapshot.failed) content.innerHTML = this.html;
-    else if (this.chart) {
+    if (this.html !== undefined && !this.snapshot.failed) {
+      content.innerHTML = this.html;
+      // A drawn chart gets the same tooltips, table and Copy data as in Book.
+      this.restoreCharts = enhanceNotebookCharts(content, this.snapshot.locale);
+    } else if (this.chart) {
       // The frame keeps the drawn chart's height, so loading, a failure or a reload message never moves the note.
       const status = document.createElement("p");
       status.className = "notebook-book-chart__status text-sm text-dimmed";
@@ -144,13 +149,15 @@ class QueryBlockWidget extends WidgetType {
 
   override destroy() {
     this.dispose?.();
+    this.restoreCharts?.();
   }
   override ignoreEvent() {
     return true;
   }
   override get estimatedHeight() {
-    // Widget margins, border, padding and controls (66px), the title row and the kind's fixed frame (app.css).
-    if (this.chart) return 66 + 24 + (this.chart.subtitle ? 20 : 0) + 8 + (this.chart.kind === "stat" ? 160 : 288);
+    // Widget margins, border, padding and controls (66px), the title row beside the chart's 28px controls and the
+    // kind's fixed frame (app.css).
+    if (this.chart) return 66 + (this.chart.subtitle ? 44 : 28) + 8 + (this.chart.kind === "stat" ? 160 : 288);
     // Query tables have 14px / 21px text, 16px cell padding and row dividers;
     // controls, widget padding/border and table spacing add 65px.
     // The truncated count paragraph inherits 16px / 1.6 text (25.6px) in

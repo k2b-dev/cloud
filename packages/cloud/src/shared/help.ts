@@ -42,6 +42,8 @@ export type HelpDocumentManifest = {
   icon?: string;
   description?: string;
   order: number;
+  /** Where the Help start lists the article; missing means `task`. */
+  kind?: HelpKind;
   /** Core-owned endpoint used for debounced full-text search. */
   searchUrl: string;
   url: string;

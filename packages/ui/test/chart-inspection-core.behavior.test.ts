@@ -225,6 +225,62 @@ describe("framework-free chart inspection", () => {
     }
   });
 
+  test("a line's edge point answers its own mark outside the plot bounds", async () => {
+    const svg = charts
+      .line({
+        series: [
+          {
+            data: [
+              { x: 1, y: 10 },
+              { x: 2, y: 20 },
+            ],
+          },
+        ],
+        inspect: true,
+        width: 480,
+        height: 280,
+      })
+      .replace(/<style>[\s\S]*?<\/style>/g, "");
+    const container = mount(svg);
+    // The plot starts at x 200; the first point's hit area straddles that edge.
+    for (const axis of container.querySelectorAll(".stdlib-chart-axis"))
+      axis.getBoundingClientRect = () => new dom.window.DOMRect(200, 0, 200, 280);
+    const inspection = inspectChart(container, { kind: "line", format: () => ({ rows: [{ label: "Value", value: "10" }] }) });
+    const tooltip = container.querySelector<HTMLElement>('[role="tooltip"]')!;
+    let open = false;
+    const matches = tooltip.matches.bind(tooltip);
+    tooltip.showPopover = () => {
+      open = true;
+    };
+    tooltip.hidePopover = () => {
+      open = false;
+    };
+    Object.defineProperty(tooltip, "matches", {
+      value: (selector: string) => (selector === ":popover-open" ? open : matches(selector)),
+    });
+    const move = (target: Element, clientX: number) =>
+      target.dispatchEvent(
+        new dom.window.PointerEvent("pointermove", {
+          bubbles: true,
+          pointerType: "mouse",
+          clientX,
+          clientY: 100,
+        }) as unknown as PointerEvent,
+      );
+    try {
+      move(container.querySelector("[data-chart-datum]")!, 199);
+      await nextFrame();
+      expect(open).toBe(true);
+      // Empty space outside the plot still closes inspection.
+      move(container.querySelector("svg")!, 150);
+      await nextFrame();
+      expect(open).toBe(false);
+    } finally {
+      inspection.destroy();
+      container.remove();
+    }
+  });
+
   test("keeps the host's own accessible description while inspecting", () => {
     const container = mount();
     container.setAttribute("aria-describedby", "chart-note");

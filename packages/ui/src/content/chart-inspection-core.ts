@@ -314,14 +314,16 @@ export function createChartInspector(options: {
   };
   const nearest = (x: number, y: number, target: Element | null): Entry | undefined => {
     if (target?.closest("button,a") && !target.closest("[data-chart-datum]")) return;
+    const nodes = visibleRecords();
+    // A mark wins before the plot bounds: the first and last points of a line sit on the plot's edges, so half of
+    // their hit area lies outside it.
+    const direct = target?.closest("[data-chart-datum]");
+    const hit = direct ? byElement.get(direct) : undefined;
+    if (hit && nodes.includes(hit)) return hit;
     if (seriesChart()) {
       const plot = updatePlotBounds();
       if (plot && (x < plot.left || x > plot.right || y < plot.top || y > plot.bottom)) return;
     }
-    const nodes = visibleRecords();
-    const direct = target?.closest("[data-chart-datum]");
-    const hit = direct ? byElement.get(direct) : undefined;
-    if (hit && nodes.includes(hit)) return hit;
     // Exact shapes win. A small physical hit radius also reaches tiny or
     // zero-sized marks; distant whitespace leaves the chart unselected.
     const points = seriesChart() ? sortedPoints : nodes;

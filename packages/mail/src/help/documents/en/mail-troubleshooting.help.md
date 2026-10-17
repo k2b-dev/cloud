@@ -4,6 +4,7 @@ title: Troubleshoot Mail
 icon: ti ti-lifebuoy
 description: Diagnose missing mail, paused transport, sending failures, draft conflicts, and search gaps.
 order: 80
+kind: troubleshoot
 ---
 
 Start with the symptom that you see. When transport, folders, or search can be involved, use **Mailbox tools → Mailbox health**.
