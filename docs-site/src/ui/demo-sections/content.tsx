@@ -36,10 +36,13 @@ import {
   NoticeCard,
   Pagination,
   PanelDialog,
+  Paper,
   PdfPreview,
   Placeholder,
   panelDialogFixedOptions,
   panelDialogOptions,
+  ReactionBar,
+  reactionPeople,
   StatusBadge,
   Steps,
   StructuredDataPreview,
@@ -750,10 +753,156 @@ const chatReactions = (reactions?: DemoReaction[]) =>
     emoji: reaction.emoji,
     count: reaction.by.length,
     own: reaction.by.includes("me"),
-    label: reaction.by.map((person) => chatPeople[person]!.name).join(", "),
+    label: reactionPeople({
+      names: reaction.by.filter((person) => person !== "me").map((person) => chatPeople[person]!.name),
+      own: reaction.by.includes("me"),
+      count: reaction.by.length,
+    }),
   }));
 const agentReply =
   "Here is what changed since this morning: the meter reading API is live with a limit of 60 requests per minute, the sign-in test plan is in the wiki, and the tile colors are still open.";
+
+/** The reactions of one item and the reader's choices, as an application keeps them. */
+function useDemoReactions() {
+  const locale = useLocale();
+  const [entries, setEntries] = createSignal([
+    { key: "👍", emoji: "👍", names: ["Nora Brandt", "Tobias Wendt", "Lea Sommer", "Jonas Peters"], own: true },
+    { key: "🎉", emoji: "🎉", names: ["Nora Brandt", "Release-Bot"], own: false },
+    { key: "❤️", emoji: "❤️", names: ["Lea Sommer"], own: false },
+    { key: "👀", emoji: "👀", names: ["Tobias Wendt"], own: false },
+    { key: "☕", emoji: "☕", names: ["Jonas Peters"], own: false },
+  ]);
+  const [anchor, setAnchor] = createSignal<HTMLElement>();
+  const reactions = () =>
+    entries().map((entry) => {
+      const count = entry.names.length + Number(entry.own);
+      return {
+        key: entry.key,
+        emoji: entry.emoji,
+        own: entry.own,
+        count,
+        label: reactionPeople({ names: entry.names, own: entry.own, count }, locale()),
+      };
+    });
+  const toggle = (key: string) =>
+    setEntries((items) =>
+      items.map((item) => (item.key === key ? { ...item, own: !item.own } : item)).filter((item) => item.own || item.names.length > 0),
+    );
+  const pick = (emoji: string) => {
+    if (entries().some((entry) => entry.key === emoji && entry.own)) return;
+    if (entries().some((entry) => entry.key === emoji)) toggle(emoji);
+    else setEntries((items) => [...items, { key: emoji, emoji, names: [], own: true }]);
+  };
+  return { reactions, toggle, pick, anchor, setAnchor };
+}
+
+const reactionStateCode = `// reactions(), toggle(key), and pick(emoji) come from the item's state; see the page's example.
+const [anchor, setAnchor] = createSignal<HTMLElement>();`;
+
+function ReactionBarChatDemo() {
+  const item = useDemoReactions();
+  return (
+    <>
+      <ReactionBar reactions={item.reactions()} onToggle={item.toggle} onAdd={item.setAnchor} />
+      <EmojiPicker.Popover anchor={item.anchor()} onPick={item.pick} onClose={() => item.setAnchor(undefined)} />
+    </>
+  );
+}
+
+function ReactionBarCardDemo() {
+  const item = useDemoReactions();
+  return (
+    <>
+      <Paper class="k2b-progressive-row" style={{ display: "grid", gap: "0.5rem", width: "16.75rem", padding: "0.625rem" }}>
+        <span style={{ "font-size": "0.875rem", "font-weight": "500" }}>Plan the team offsite</span>
+        <ReactionBar
+          reactions={item.reactions()}
+          onToggle={item.toggle}
+          onAdd={item.setAnchor}
+          density="compact"
+          max={3}
+          add="progressive"
+          moreLabel={(count) => `${count} more reactions, shown in the item`}
+        />
+      </Paper>
+      <EmojiPicker.Popover anchor={item.anchor()} onPick={item.pick} onClose={() => item.setAnchor(undefined)} />
+    </>
+  );
+}
+
+function ReactionBarWrapDemo() {
+  const item = useDemoReactions();
+  return (
+    <>
+      <div style={{ width: "13rem" }}>
+        <ReactionBar reactions={item.reactions()} onToggle={item.toggle} onAdd={item.setAnchor} overflow="wrap" />
+      </div>
+      <EmojiPicker.Popover anchor={item.anchor()} onPick={item.pick} onClose={() => item.setAnchor(undefined)} />
+    </>
+  );
+}
+
+function ReactionBarReadOnlyDemo() {
+  const item = useDemoReactions();
+  return <ReactionBar reactions={item.reactions()} overflow="wrap" />;
+}
+
+const ReactionBarDemos = () => (
+  <DemoGrid>
+    <DemoCard
+      id="reaction-bar"
+      chip={{ kind: "component", name: "ReactionBar", from: "@k2b/ui" }}
+      description="Chat and item detail: 26 px chips in one line that scrolls sideways, and Add reaction with the emoji picker. Hover or hold a chip for the names."
+      code={`${reactionStateCode}
+
+<ReactionBar reactions={reactions()} onToggle={toggle} onAdd={setAnchor} />
+<EmojiPicker.Popover anchor={anchor()} onPick={pick} onClose={() => setAnchor(undefined)} />`}
+    >
+      <ReactionBarChatDemo />
+    </DemoCard>
+    <DemoCard
+      id="reaction-bar-card"
+      chip={{ kind: "component", name: "ReactionBar", from: "@k2b/ui" }}
+      description="Card: 24 px chips, the first three emoji and +n. Add reaction shows while the card is hovered or focused, and not on touch."
+      code={`${reactionStateCode}
+
+<Paper class="k2b-progressive-row">
+  <span>Plan the team offsite</span>
+  <ReactionBar
+    reactions={reactions()}
+    onToggle={toggle}
+    onAdd={setAnchor}
+    density="compact"
+    max={3}
+    add="progressive"
+    moreLabel={(count) => \`\${count} more reactions, shown in the item\`}
+  />
+</Paper>
+<EmojiPicker.Popover anchor={anchor()} onPick={pick} onClose={() => setAnchor(undefined)} />`}
+    >
+      <ReactionBarCardDemo />
+    </DemoCard>
+    <DemoCard
+      id="reaction-bar-wrap"
+      chip={{ kind: "component", name: "ReactionBar", from: "@k2b/ui" }}
+      description="Every reaction of an item: the chips and Add reaction wrap."
+      code={`${reactionStateCode}
+
+<ReactionBar reactions={reactions()} onToggle={toggle} onAdd={setAnchor} overflow="wrap" />
+<EmojiPicker.Popover anchor={anchor()} onPick={pick} onClose={() => setAnchor(undefined)} />`}
+    >
+      <ReactionBarWrapDemo />
+    </DemoCard>
+    <DemoCard
+      id="reaction-bar-read-only"
+      chip={{ kind: "component", name: "ReactionBar", from: "@k2b/ui" }}
+      description="Read-only: the chips are no controls. Hover, or tap on a touch screen, shows the names."
+      code={`<ReactionBar reactions={reactions()} overflow="wrap" />`}
+    >
+      <ReactionBarReadOnlyDemo />
+    </DemoCard>
+  </DemoGrid>
+);
 
 const MessageRowsDemo = () => {
   // A store changes a message in place, so its row updates without mounting again and keeps focus on its controls.
@@ -1663,6 +1812,7 @@ const demos: DemoSection = {
       <MessageRowsDemo />
     </DemoGrid>
   ),
+  "reaction-bar": () => <ReactionBarDemos />,
   "structured-data": () => (
     <DemoGrid columns="one">
       <StructuredDemo />

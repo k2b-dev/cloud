@@ -93,7 +93,7 @@ try {
       throw new Error("public root did not resolve to packed dist/ssr/index.js: " + resolved);
     }
     const ui = await import("@k2b/ui");
-    const required = ["Button", "Chart", "DatePicker", "Panes", "createPanesLayout", "prompts"];
+    const required = ["Button", "Chart", "DatePicker", "Panes", "createPanesLayout", "prompts", "ReactionBar", "reactionPeople"];
     const missing = required.filter((name) => ui[name] === undefined);
     if (missing.length) throw new Error("missing representative exports: " + missing.join(", "));
     const { renderToString } = await import("solid-js/web");
