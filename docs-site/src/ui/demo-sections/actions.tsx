@@ -292,7 +292,7 @@ const GesturesDemo = () => {
     <DemoCard
       id="gestures"
       chip={{ kind: "component", name: "GestureMenu", from: "@k2b/ui" }}
-      description="On a phone, swipe a message right to reply, double-tap it to react, or press and hold it for the whole menu as a bottom sheet. With a mouse, double-click reacts and right-click opens the menu; Shift+F10 opens it from the keyboard."
+      description="Swipe a message right to reply or double-tap it to react. On a phone, press and hold for the whole menu as a bottom sheet. On a tablet, press and hold opens the menu at the finger. With a mouse, double-click reacts and right-click opens the menu; Shift+F10 opens it from the keyboard."
       code={`const items: GestureMenuItem[] = [
   { label: "Reply", icon: "ti ti-arrow-back-up", action: reply, gesture: "swipe-right" },
   { label: "React with 👍", icon: "ti ti-thumb-up", action: react, gesture: "double-tap" },

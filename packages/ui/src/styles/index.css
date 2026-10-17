@@ -10616,6 +10616,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: flex;
 }
 
+/* GestureMenu names what was pressed above its entries. The title widens the
+   menu up to about the mockup's 16rem; a longer one ends in an ellipsis. */
+.k2b-ui.k2b-context-menu > .k2b-context-menu__title {
+  max-width: 16rem;
+  flex: none;
+  padding: 0.375rem 0.75rem 0.25rem;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* GestureMenu: the content follows a swipe with a transform only while the
    swipe runs, so the row never moves the layout and its descendants keep their
    containing block the rest of the time. */
