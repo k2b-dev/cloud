@@ -115,6 +115,19 @@ suite("Notebooks REST access for standalone agents", () => {
       // A resource-bound key keeps seeing only its bound Notebook, even with a grant elsewhere.
       const boundCall = await apiAs(bound, ["read"]);
       expect(await listedIds(await boundCall("/"))).toEqual([granted.shortId]);
+      const graphResponse = await boundCall(`/${granted.shortId}/graph`);
+      expect(graphResponse.status).toBe(200);
+      const graph = (await graphResponse.json()) as { data: { nodes: Record<string, unknown>[]; edges: unknown[] } };
+      const node = graph.data.nodes[0]!;
+      expect(Object.keys(node).sort()).toEqual(["id", "inDegree", "parentId", "position", "title", "updatedAt"]);
+      expect(node.id).toBe(note.data.shortId);
+      expect(typeof node.title).toBe("string");
+      expect(typeof node.inDegree).toBe("number");
+      expect(node.parentId).toBeNull();
+      expect(typeof node.position).toBe("number");
+      expect(Number.isInteger(node.position)).toBe(true);
+      expect(node.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      expect(Array.isArray(graph.data.edges)).toBe(true);
       expect((await boundCall(`/${other.shortId}`)).status).toBe(403);
     } finally {
       await sql`DELETE FROM notebooks.notebooks WHERE id IN (${granted.id}::uuid, ${other.id}::uuid)`;

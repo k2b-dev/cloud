@@ -1040,7 +1040,10 @@ function notebooksCommands(locale?: string) {
         async run({ ctx, args }) {
           const notebook = await resolveNotebookRef(ctx, args.notebook);
           const graph = await ctx.readJson<{
-            data: { nodes: { id: string; title: string; inDegree: number }[]; edges: { source: string; target: string }[] };
+            data: {
+              nodes: { id: string; title: string; inDegree: number; parentId: string | null; position: number; updatedAt: string }[];
+              edges: { source: string; target: string }[];
+            };
           }>(await ctx.fetch(api(notebook.id, "/graph")));
           ctx.json({
             ...graph,

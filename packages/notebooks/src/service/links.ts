@@ -39,6 +39,12 @@ export type GraphNode = {
   /** Number of incoming links from inside this notebook — drives node size
    *  in the visualisation (more linked = bigger). */
   inDegree: number;
+  /** Parent note's public id, or null at the top level. */
+  parentId: string | null;
+  /** Manual order within the parent level. */
+  position: number;
+  /** Last change as an ISO timestamp. */
+  updatedAt: string;
 };
 
 export type GraphEdge = {
@@ -306,6 +312,7 @@ export const listNoteRelations = async (params: {
  * Build the per-notebook link graph: every note in the notebook becomes a
  * node, every `note_links` row whose source AND target are both inside the
  * notebook becomes an edge.
+ * Nodes include the parent's public id, manual position, and last change as ISO.
  *
  * Edges that point outside the notebook (cross-notebook links) are
  * intentionally dropped from the graph payload — the visualisation is
@@ -322,11 +329,14 @@ export const listNoteRelations = async (params: {
 export const buildNotebookGraph = async (params: { notebookId: string }): Promise<NoteGraph> => {
   const { notebookId } = params;
 
-  const noteRows = await sql<{ id: string; short_id: string; title: string }[]>`
-    SELECT id, short_id, title
-    FROM notebooks.notes
-    WHERE notebook_id = ${notebookId}::uuid
-    ORDER BY created_at ASC
+  const noteRows = await sql<
+    { id: string; short_id: string; title: string; parent_short_id: string | null; position: number; updated_at: Date }[]
+  >`
+    SELECT n.id, n.short_id, n.title, p.short_id AS parent_short_id, n.position, n.updated_at
+    FROM notebooks.notes n
+    LEFT JOIN notebooks.notes p ON p.id = n.parent_id AND p.notebook_id = n.notebook_id
+    WHERE n.notebook_id = ${notebookId}::uuid
+    ORDER BY n.created_at ASC, n.short_id ASC
   `;
 
   const edgeRows = await sql<{ source_note_id: string; target_note_id: string; source_short_id: string; target_short_id: string }[]>`
@@ -336,6 +346,7 @@ export const buildNotebookGraph = async (params: { notebookId: string }): Promis
     JOIN notebooks.notes tgt ON tgt.id = nl.target_note_id
     WHERE src.notebook_id = ${notebookId}::uuid
       AND tgt.notebook_id = ${notebookId}::uuid
+    ORDER BY src.short_id, tgt.short_id
   `;
 
   const inDegree = new Map<string, number>();
@@ -348,6 +359,9 @@ export const buildNotebookGraph = async (params: { notebookId: string }): Promis
       id: n.short_id,
       title: n.title,
       inDegree: inDegree.get(n.id) ?? 0,
+      parentId: n.parent_short_id,
+      position: n.position,
+      updatedAt: n.updated_at.toISOString(),
     })),
     edges: edgeRows.map((e) => ({ source: e.source_short_id, target: e.target_short_id })),
   };

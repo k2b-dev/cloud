@@ -3,7 +3,14 @@ import { hc } from "hono/client";
 import { generateSpecs } from "hono-openapi";
 import app from "./index";
 
-type Schema = { $ref?: string; items?: Schema; properties?: Record<string, Schema> };
+type Schema = {
+  $ref?: string;
+  items?: Schema;
+  properties?: Record<string, Schema>;
+  nullable?: boolean;
+  type?: string | string[];
+  anyOf?: Schema[];
+};
 type Operation = { responses?: Record<string, { content?: Record<string, { schema?: Schema }> }> };
 type Spec = {
   paths: Record<string, { get?: Operation; post?: Operation }>;
@@ -12,6 +19,24 @@ type Spec = {
 
 const responseSchema = (spec: Spec, path: string, method: "get" | "post" = "get", status = "200") =>
   spec.paths[path]?.[method]?.responses?.[status]?.content?.["application/json"]?.schema;
+
+test("graph nodes document hierarchy, manual position, and last change", async () => {
+  const spec = (await generateSpecs(app)) as Spec;
+  const resolve = (schema?: Schema): Schema | undefined =>
+    schema?.$ref ? resolve(spec.components?.schemas?.[schema.$ref.replace("#/components/schemas/", "")]) : schema;
+  const response = resolve(responseSchema(spec, "/{id}/graph"));
+  const data = resolve(response?.properties?.data);
+  const nodes = resolve(data?.properties?.nodes);
+  const node = resolve(nodes?.items);
+  expect(Object.keys(node?.properties ?? {}).sort()).toEqual(["id", "inDegree", "parentId", "position", "title", "updatedAt"]);
+  const parent = resolve(node?.properties?.parentId);
+  expect(
+    parent?.nullable === true ||
+      parent?.type === "null" ||
+      (Array.isArray(parent?.type) && parent.type.includes("null")) ||
+      parent?.anyOf?.some((schema) => resolve(schema)?.type === "null") === true,
+  ).toBe(true);
+});
 
 test("the note tree and the book tree are separate OpenAPI components", async () => {
   const spec = (await generateSpecs(app)) as Spec;
