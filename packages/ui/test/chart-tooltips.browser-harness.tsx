@@ -46,6 +46,9 @@ render(
           <StatCell label="Umsatz" value={1500} trend={[1200, 1500]} />
         </LocaleProvider>
       </div>
+      <div class="fraction-trend">
+        <StatCell label="Error rate" value="0.025%" trend={[0.0001, 0.00025]} />
+      </div>
       <div class="custom-trend">
         <StatCell
           label="Latency"

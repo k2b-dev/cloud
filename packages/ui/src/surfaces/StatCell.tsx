@@ -43,7 +43,9 @@ function Body(props: StatCellProps): JSX.Element {
   const defaultTrendTooltip: ChartTooltipFormatter = ({ datum }) => {
     const y = datum.values.find((field) => field.key === "y")?.value ?? "";
     return {
-      rows: [{ label: props.label, value: typeof y === "number" ? new Intl.NumberFormat(locale()).format(y) : y }],
+      rows: [
+        { label: props.label, value: typeof y === "number" ? new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 }).format(y) : y },
+      ],
     };
   };
   return (

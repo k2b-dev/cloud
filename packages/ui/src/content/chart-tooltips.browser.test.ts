@@ -67,6 +67,14 @@ const tooltipContent = (page: Page, chart: string) =>
       row.querySelector("b")?.textContent,
     ]),
   }));
+// Hovering scrolls a mark into view first; the scroll event that follows would close the tooltip again, so the page
+// scrolls and lets a frame pass before the pointer arrives.
+const hoverLastPoint = async (page: Page, cell: string) => {
+  const point = page.locator(`${cell} [data-chart-datum] circle`).last();
+  await point.scrollIntoViewIfNeeded();
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  await point.hover();
+};
 const closed = (page: Page) => page.waitForFunction(() => !document.querySelector('[role="tooltip"]:popover-open'));
 const focused = (page: Page) => page.locator(".plain-bar").evaluate((chart) => chart === document.activeElement);
 
@@ -191,12 +199,16 @@ test("a StatCell trend shows one named value on a phone and closes on outside to
   }
 });
 
-test("a StatCell trend formats values in the inherited locale", async () => {
+test("a StatCell trend formats values in the inherited locale and keeps small fractions", async () => {
   const page = await open();
   try {
-    await page.locator(".de-trend [data-chart-datum] circle").last().hover();
+    await hoverLastPoint(page, ".de-trend");
     await tooltipText(page, ".de-trend .k2b-stat-cell__trend", "1.500");
     expect(await tooltipContent(page, ".de-trend")).toEqual({ title: null, rows: [["Umsatz", "1.500"]] });
+    // Small measurements keep the six fraction digits of the Chart default instead of rounding to 0.
+    await hoverLastPoint(page, ".fraction-trend");
+    await tooltipText(page, ".fraction-trend .k2b-stat-cell__trend", "0.00025");
+    expect(await tooltipContent(page, ".fraction-trend")).toEqual({ title: null, rows: [["Error rate", "0.00025"]] });
   } finally {
     await page.close();
   }
@@ -205,7 +217,7 @@ test("a StatCell trend formats values in the inherited locale", async () => {
 test("a StatCell trend formatter replaces the default with a period title and unit", async () => {
   const page = await open();
   try {
-    await page.locator(".custom-trend [data-chart-datum] circle").last().hover();
+    await hoverLastPoint(page, ".custom-trend");
     await tooltipText(page, ".custom-trend .k2b-stat-cell__trend", "18 ms");
     expect(await tooltipContent(page, ".custom-trend")).toEqual({ title: "Day 2", rows: [["Latency", "18 ms"]] });
   } finally {
