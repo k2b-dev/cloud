@@ -134,3 +134,32 @@ test("global task dialogs provide live context through activity, run detail and 
     dom.cleanup();
   }
 });
+
+test("a run removed after 90 days explains that its result stays in the chat instead of failing", async () => {
+  const dom = createDomTestHarness();
+  dom.root.className = "k2b-ui";
+  const { dialogCore } = await import("@k2b/ui");
+  const { openAssistantTaskRun } = await import("./AssistantActivitiesDialog");
+  const { createAssistantLiveHub } = await import("./assistant-live");
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(async () => Response.json({ error: { code: "NOT_FOUND", message: "Task run not found" } }, { status: 404 }), {
+      preconnect: globalThis.fetch.preconnect,
+    }),
+  );
+  try {
+    const result = openAssistantTaskRun("task01", "run001", createAssistantLiveHub());
+    await tick();
+    const placeholder = dom.document.querySelector(".k2b-placeholder");
+    expect(placeholder?.getAttribute("data-state")).toBe("empty");
+    expect(placeholder?.textContent).toContain("This run is no longer available");
+    expect(placeholder?.textContent).toContain("Its result stays in the chat.");
+    expect(dom.document.body.textContent).not.toContain("Could not load background activity");
+    dialogCore.close();
+    await result;
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    await tick();
+    fetchMock.mockRestore();
+    dom.cleanup();
+  }
+});

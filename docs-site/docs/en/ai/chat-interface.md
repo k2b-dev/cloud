@@ -273,7 +273,11 @@ order:
    its name is that action, and the alt text describes it. Without `fileUrl`
    the step shows no thumbnail. The run history of a scheduled task passes the
    file route of the task's chat, so its thumbnails, files and views load with
-   the viewer's access as in the chat.
+   the viewer's access as in the chat. Run details and run history are kept
+   for 90 days after the run finished. Afterwards the run's details show
+   **This run is no longer available**, and the result stays in the chat. A
+   task older than 90 days without a newer run shows **No runs in the last 90
+   days** instead of **No occurrences yet**.
 2. **Results.** Presented files and code views, `code_present` apps, charts, cards, and
    capability tables in the order they were made. A later result with the same
    target, the same file path for `present` or the same title for

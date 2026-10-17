@@ -16,10 +16,14 @@ import {
   updateMandatePolicy,
   validateMandateIssueAuthority,
 } from "../services/mandates";
-import { parsePgJsonValue } from "../services/postgres";
+import { parsePgJsonValue, toPgUuidArray } from "../services/postgres";
 import { withAiShortIdForDb } from "./short-id";
 import { aiConversations } from "./store";
 import type { AiChatTurnRunConfig, AiStoredMessage, AiTurnStatus } from "./types";
+
+/** Run history and transcripts are operational evidence; 90 days matches capability execution history.
+ * Fixed platform constant, not configurable. */
+export const AI_CHAT_TASK_RUN_RETENTION_DAYS = 90;
 
 export type AiChatTaskState = "active" | "paused" | "completed" | "needs_attention";
 export type AiChatTaskSchedule = { kind: "once"; runAt: string } | { kind: "cron"; cron: string };
@@ -912,6 +916,35 @@ export const aiChatTasks = {
       }
     }
     return occurrences;
+  },
+
+  pruneExpiredRuns: async (input: { now?: Date; limit?: number } = {}): Promise<number> => {
+    const cutoff = new Date((input.now ?? new Date()).getTime() - AI_CHAT_TASK_RUN_RETENTION_DAYS * 86_400_000);
+    const limit = Math.min(Math.max(input.limit ?? 100, 1), 500);
+    return sql.begin(async (tx) => {
+      const occurrences = await tx<{ id: string; turn_id: string | null }[]>`
+        SELECT occurrence.id, occurrence.turn_id
+        FROM ai.chat_task_occurrences occurrence
+        WHERE occurrence.state IN ('completed', 'failed') AND occurrence.completed_at < ${cutoff}
+          AND NOT EXISTS (
+            SELECT 1 FROM ai.turns turn WHERE turn.id = occurrence.turn_id
+              AND turn.status NOT IN ('completed', 'failed', 'aborted')
+          )
+        ORDER BY occurrence.completed_at, occurrence.id
+        LIMIT ${limit}
+        FOR UPDATE OF occurrence SKIP LOCKED
+      `;
+      if (occurrences.length === 0) return 0;
+      const occurrenceIds = toPgUuidArray(occurrences.map((occurrence) => occurrence.id));
+      const turnIds = toPgUuidArray(occurrences.flatMap((occurrence) => (occurrence.turn_id ? [occurrence.turn_id] : [])));
+      await tx`DELETE FROM ai.task_messages WHERE loop_id = ANY(${turnIds}::text[])`;
+      await tx`DELETE FROM ai.chat_task_occurrences WHERE id = ANY(${occurrenceIds}::uuid[])`;
+      await tx`
+        DELETE FROM ai.turns WHERE id = ANY(${turnIds}::uuid[])
+          AND status IN ('completed', 'failed', 'aborted') AND run_config ? 'background'
+      `;
+      return occurrences.length;
+    });
   },
 
   listQueuedOccurrences: async (limit = 100): Promise<Array<{ occurrence: AiChatTaskOccurrence; task: AiChatTask }>> => {

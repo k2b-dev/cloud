@@ -1006,6 +1006,12 @@ export const migrateCloudAi = async (): Promise<void> => {
   `.simple();
 
   await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_finished
+    ON ai.chat_task_occurrences(completed_at, id)
+    WHERE state IN ('completed', 'failed')
+  `.simple();
+
+  await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_active_task
     ON ai.chat_task_occurrences(task_id)
     WHERE state IN ('queued', 'running')

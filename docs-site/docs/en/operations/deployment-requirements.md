@@ -970,6 +970,20 @@ for new rows; the table files shrink only after `VACUUM FULL` or a similar
 rewrite. See
 [Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
 
+### Expire scheduled task runs after 90 days
+
+This release expires finished scheduled task runs after 90 days. It needs no
+configuration change. The first Core start adds the index
+`idx_ai_chat_task_occurrences_finished`. The scheduled task recovery tick then
+deletes completed and failed runs older than 90 days, their background turns
+with tool calls, and their run transcripts (`ai.task_messages`) in batches of
+100 per minute. Queued and running runs, finished runs whose turns are still
+active, and chat result messages stay.
+
+An installation with a large backlog drains it over time. PostgreSQL reuses
+the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
+See [Scheduled task run history](/en/docs/ai/structured-and-background-ai#keep-scheduled-task-run-history-for-90-days).
+
 ## Coordinate an existing installation's identity upgrade
 
 Use one maintenance window for the gateway, Core, OAuth, applications, and

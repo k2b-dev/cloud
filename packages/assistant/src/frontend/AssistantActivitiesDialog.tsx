@@ -17,8 +17,12 @@ export type AssistantActivity = { task: AiChatTaskView; occurrence: AiChatTaskOc
 type ActivitiesPage = { items: AssistantActivity[]; hasMore: boolean };
 type RunDetail = { task: AiChatTaskView; occurrence: AiChatTaskOccurrenceView; messages: AiStoredMessage[] };
 
+/** Core deletes finished runs after 90 days and with their task; the chat keeps the result. */
+class RunUnavailableError extends Error {}
+
 async function read<T>(path: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(`/api/ai/tasks/${path}`, { signal });
+  if (response.status === 404) throw new RunUnavailableError(assistantBrowserText("This run is no longer available"));
   if (!response.ok) throw new Error(assistantBrowserText("Could not load background activity"));
   return response.json();
 }
@@ -75,10 +79,21 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
         <Show
           when={detail.data()}
           fallback={
-            <Placeholder
-              state={detail.error() ? "error" : "loading"}
-              title={text(detail.error() ? "Could not load background activity" : "Loading background activity")}
-            />
+            <Show
+              when={detail.error() instanceof RunUnavailableError}
+              fallback={
+                <Placeholder
+                  state={detail.error() ? "error" : "loading"}
+                  title={text(detail.error() ? "Could not load background activity" : "Loading background activity")}
+                />
+              }
+            >
+              <Placeholder
+                icon="ti ti-history-off"
+                title={text("This run is no longer available")}
+                description={text("Run details are kept for 90 days after a run finishes. Its result stays in the chat.")}
+              />
+            </Show>
           }
         >
           {(value) => (

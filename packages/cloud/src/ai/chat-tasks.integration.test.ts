@@ -14,6 +14,149 @@ suite("AI chat tasks", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  const createRetentionRun = async (input: {
+    userId: string;
+    conversation: { id: string; shortId: string };
+    now: Date;
+    ageDays: number;
+    state?: "completed" | "failed" | "running";
+    turnStatus?: "completed" | "failed" | "aborted" | "running";
+  }) => {
+    const state = input.state ?? "completed";
+    const finishedAt = new Date(input.now.getTime() - input.ageDays * 86_400_000);
+    const startedAt = new Date(finishedAt.getTime() - 60_000);
+    const task = (await aiChatTasks.create({
+      userId: input.userId,
+      chatId: input.conversation.shortId,
+      prompt: "Retention evidence",
+      schedule: { kind: "cron", cron: "0 9 * * *" },
+      timezone: "UTC",
+    }))!;
+    const occurrence = (await aiChatTasks.createOccurrence({
+      taskId: task.id,
+      scheduledFor: startedAt.toISOString(),
+      trigger: "manual",
+      requestKey: crypto.randomUUID(),
+    }))!;
+    const delivered = await aiChatTasks.deliverOccurrence({
+      occurrenceId: occurrence.id,
+      modelProfileId: "test",
+      runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
+      userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
+      expectedRevision: task.revision,
+    });
+    if (!delivered.delivered) throw new Error("Expected retention run to start");
+    await sql`INSERT INTO ai.task_messages(short_id, conversation_id, seq, kind, role, message, loop_id, created_at)
+      VALUES (${createAiShortId()}, ${input.conversation.id}::uuid, 2, 'message', 'assistant',
+        ${JSON.stringify({ role: "assistant", content: [{ type: "text", text: "Retained chat result" }] })}::text::jsonb,
+        ${delivered.turnId}, ${finishedAt})`;
+    if (state !== "running") {
+      expect(await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: state })).toEqual({
+        occurrenceId: occurrence.id,
+        failed: state === "failed",
+      });
+    }
+    await sql`UPDATE ai.chat_task_occurrences
+      SET created_at = ${startedAt}, started_at = ${startedAt}, completed_at = ${state === "running" ? null : finishedAt}
+      WHERE id = ${occurrence.id}::uuid`;
+    const turnStatus = input.turnStatus ?? state;
+    await sql`UPDATE ai.turns SET status = ${turnStatus}, created_at = ${startedAt},
+      completed_at = ${turnStatus === "running" ? null : finishedAt} WHERE id = ${delivered.turnId}::uuid`;
+    await sql`UPDATE ai.task_messages SET created_at = ${startedAt} WHERE loop_id = ${delivered.turnId} AND role = 'user'`;
+    return { occurrence, turnId: delivered.turnId };
+  };
+
+  test("prunes expired run evidence while preserving the delivered chat result", async () => {
+    const now = new Date("2001-01-01T00:00:00.000Z");
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name, mail, given_name, sn)
+      VALUES (${`retention-result-${suffix}`}, 'local', 'user', 'Retention', ${`${suffix}@example.test`}, 'AI', 'Test') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Retained result" });
+    try {
+      const run = await createRetentionRun({ userId: user!.id, conversation, now, ageDays: 91 });
+      await sql`INSERT INTO ai.tool_calls(turn_id, conversation_id, call_id, tool_name, status)
+        VALUES (${run.turnId}::uuid, ${conversation.id}::uuid, 'retention-tool', 'code', 'completed')`;
+      const before = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(before).toHaveLength(1);
+      expect(await sql`SELECT id FROM ai.task_messages WHERE loop_id = ${run.turnId}`).toHaveLength(2);
+      expect(await aiChatTasks.pruneExpiredRuns({ now, limit: 100 })).toBe(1);
+      expect(await sql`SELECT id FROM ai.chat_task_occurrences WHERE id = ${run.occurrence.id}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM ai.turns WHERE id = ${run.turnId}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM ai.task_messages WHERE loop_id = ${run.turnId}`).toHaveLength(0);
+      expect(await sql`SELECT id FROM ai.tool_calls WHERE turn_id = ${run.turnId}::uuid`).toHaveLength(0);
+      const results = await sql<{ loop_id: string | null }[]>`SELECT loop_id FROM ai.messages
+        WHERE conversation_id = ${conversation.id}::uuid AND meta->'scheduledTask'->>'occurrenceId' = ${run.occurrence.shortId}`;
+      expect(results).toEqual([{ loop_id: null }]);
+      expect(await aiConversations.listMessages({ conversationId: conversation.id })).toEqual(before);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
+  test("keeps active turns and runs within retention regardless of their creation age", async () => {
+    const now = new Date("2001-01-01T00:00:00.000Z");
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name, mail, given_name, sn)
+      VALUES (${`retention-kept-${suffix}`}, 'local', 'user', 'Retention', ${`${suffix}@example.test`}, 'AI', 'Test') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Active retention runs" });
+    try {
+      const runs = [
+        await createRetentionRun({ userId: user!.id, conversation, now, ageDays: 200, state: "running", turnStatus: "running" }),
+        await createRetentionRun({ userId: user!.id, conversation, now, ageDays: 91, state: "failed", turnStatus: "running" }),
+        await createRetentionRun({ userId: user!.id, conversation, now, ageDays: 89 }),
+        // The cutoff is strict: a run finished exactly 90 days ago stays until the next tick.
+        await createRetentionRun({ userId: user!.id, conversation, now, ageDays: 90 }),
+      ];
+      expect(await aiChatTasks.pruneExpiredRuns({ now, limit: 100 })).toBe(0);
+      for (const run of runs) {
+        expect(await sql`SELECT id FROM ai.chat_task_occurrences WHERE id = ${run.occurrence.id}::uuid`).toHaveLength(1);
+        expect(await sql`SELECT id FROM ai.turns WHERE id = ${run.turnId}::uuid`).toHaveLength(1);
+        expect(await sql`SELECT id FROM ai.task_messages WHERE loop_id = ${run.turnId}`).toHaveLength(2);
+      }
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
+  test("prunes expired runs oldest first in bounded idempotent batches", async () => {
+    const now = new Date("2001-01-01T00:00:00.000Z");
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name, mail, given_name, sn)
+      VALUES (${`retention-batches-${suffix}`}, 'local', 'user', 'Retention', ${`${suffix}@example.test`}, 'AI', 'Test') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Retention batches" });
+    try {
+      const runs = [];
+      for (let index = 0; index < 5; index++) {
+        runs.push(
+          await createRetentionRun({
+            userId: user!.id,
+            conversation,
+            now,
+            ageDays: 91 + index,
+            state: index === 0 ? "failed" : "completed",
+            turnStatus: index === 0 ? "aborted" : "completed",
+          }),
+        );
+      }
+      expect(await aiChatTasks.pruneExpiredRuns({ now, limit: 2 })).toBe(2);
+      // Created youngest first, so the two last-created runs must be removed first.
+      for (const [index, run] of runs.entries()) {
+        expect(await sql`SELECT id FROM ai.chat_task_occurrences WHERE id = ${run.occurrence.id}::uuid`).toHaveLength(index >= 3 ? 0 : 1);
+      }
+      expect(await aiChatTasks.pruneExpiredRuns({ now, limit: 2 })).toBe(2);
+      expect(await aiChatTasks.pruneExpiredRuns({ now, limit: 2 })).toBe(1);
+      expect(await aiChatTasks.pruneExpiredRuns({ now, limit: 2 })).toBe(0);
+      expect(await aiChatTasks.pruneExpiredRuns({ now, limit: 2 })).toBe(0);
+      expect(await sql`SELECT id FROM ai.turns WHERE conversation_id = ${conversation.id}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM ai.task_messages WHERE conversation_id = ${conversation.id}::uuid`).toHaveLength(0);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
   test("uses current mandate revisions for explicit lifecycle changes without restoring changed authority", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`
