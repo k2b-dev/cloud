@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.38.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.37.0...npm-cloud-v0.38.0) (2026-10-17)
+
+
+### Features
+
+* **ai:** delete finished scheduled task runs and their transcripts after 90 days ([#1347](https://github.com/k2b-dev/cloud/issues/1347)) ([9e5c53d](https://github.com/k2b-dev/cloud/commit/9e5c53d10d134a75d9596ff340f0dcaab460a268))
+* **ai:** let charts name and format the value their tooltips show ([#1300](https://github.com/k2b-dev/cloud/issues/1300)) ([6047e6f](https://github.com/k2b-dev/cloud/commit/6047e6f309773dbe4e4197cca44dbe2aa9c76af3))
+* **ai:** save a readable Markdown copy next to each web page fetch_file downloads ([#1286](https://github.com/k2b-dev/cloud/issues/1286)) ([7c9ca08](https://github.com/k2b-dev/cloud/commit/7c9ca08195edd3bde25f302e0a8c96139f88d6d8))
+* **assistant:** Studio charts show tooltips by default ([#1329](https://github.com/k2b-dev/cloud/issues/1329)) ([6cbfff0](https://github.com/k2b-dev/cloud/commit/6cbfff0ba065b9d21dfc941c6c8417b9927eaffb))
+* **cloud:** pass the caller's context to file providers so they can offer only matching files ([#1302](https://github.com/k2b-dev/cloud/issues/1302)) ([4ec47b8](https://github.com/k2b-dev/cloud/commit/4ec47b8b7e69dc47342bfc6662a3d3e518c0a6ee))
+* **cloud:** send administrator-chosen outbound endpoints through the network guard ([#1325](https://github.com/k2b-dev/cloud/issues/1325)) ([97928d0](https://github.com/k2b-dev/cloud/commit/97928d05fe32a5475adeb3a8ecf33859a1b5130a))
+* **cloud:** start app Help with tasks, then Get started, Look up, Solve problems and shortcuts ([#1345](https://github.com/k2b-dev/cloud/issues/1345)) ([5a93645](https://github.com/k2b-dev/cloud/commit/5a93645dbf76772c3fcb309a99ae11ac873a9484))
+* **cloud:** write Help with task kinds, needs, next steps, key caps and details ([#1324](https://github.com/k2b-dev/cloud/issues/1324)) ([48560d3](https://github.com/k2b-dev/cloud/commit/48560d3c861dd4f0d61c03899a583b2928a4379f))
+* **notebooks:** a calm note side panel with one action row, clear sections and translated activity ([#1339](https://github.com/k2b-dev/cloud/issues/1339)) ([c1682b4](https://github.com/k2b-dev/cloud/commit/c1682b4bbc0b3e7dd9fe4791697e992f3ec2cc71))
+* **notebooks:** draw charts from a note's own tables, lists and data blocks with :::chart ([#1322](https://github.com/k2b-dev/cloud/issues/1322)) ([9ecc090](https://github.com/k2b-dev/cloud/commit/9ecc090bdf095a42a5c86fe457d1e6cd6a9f54df))
+* **ui:** draw an avatar's status ring inside the avatar so panels never cut it off ([#1320](https://github.com/k2b-dev/cloud/issues/1320)) ([0d675c0](https://github.com/k2b-dev/cloud/commit/0d675c066d7df8dbcee592a2448deef7bcf26aa5))
+* **ui:** know whether a person uses touch, a trackpad or a keyboard without moving anything ([#1291](https://github.com/k2b-dev/cloud/issues/1291)) ([558cb3f](https://github.com/k2b-dev/cloud/commit/558cb3fefaceb22d70c3316aece6658e31b51252))
+* **ui:** print page content without the app chrome, starting with Notebooks ([#1321](https://github.com/k2b-dev/cloud/issues/1321)) ([e1b2b21](https://github.com/k2b-dev/cloud/commit/e1b2b2188d08c9426af13261969a6db12ed03485)), closes [#1281](https://github.com/k2b-dev/cloud/issues/1281)
+* **ui:** show the slash menu as a sheet above the phone keyboard ([#1336](https://github.com/k2b-dev/cloud/issues/1336)) ([3b4dff1](https://github.com/k2b-dev/cloud/commit/3b4dff10ef1db29409d54a38091510cb5c6dd46e))
+* **workflows:** cap workflow event payloads at 16 MiB and expire them after 30 days ([#1327](https://github.com/k2b-dev/cloud/issues/1327)) ([51d1da7](https://github.com/k2b-dev/cloud/commit/51d1da756cc8c1259a38576de12ec9f0fe09d274))
+
+
+### Bug Fixes
+
+* **cloud:** never overwrite a settings row that this app cannot decrypt ([#1295](https://github.com/k2b-dev/cloud/issues/1295)) ([#1304](https://github.com/k2b-dev/cloud/issues/1304)) ([6fe064e](https://github.com/k2b-dev/cloud/commit/6fe064e227b8283d7dd0a0ec9e3b3d90c566c0b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.27.0 to 0.28.0
+
 ## [0.37.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.36.0...npm-cloud-v0.37.0) (2026-10-16)
 
 

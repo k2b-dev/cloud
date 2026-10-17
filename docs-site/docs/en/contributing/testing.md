@@ -575,7 +575,18 @@ bun run --cwd packages/ui build
 bun --no-env-file scripts/heavy.ts bun scripts/check-cloud-packed-consumer.ts --release
 ```
 
-Every job of the CI and nightly workflows installs dependencies through
+The `release-body` job parses the live release PR body with the release-please
+parser pinned in `main.yml`, including in the merge queue. It fails if a bumped
+component is missing, has another version, or swallowed another section. It
+also tests historical fixtures when the guard, its fixtures, or the parser pin
+changes. The `check` job runs `bun scripts/check-release-pr-body.ts --message`
+on pull requests and again in the merge queue. It reads the live PR title and
+body to refuse HTML-like markup in the parts that release-please copies into
+release notes. After fixing the text, re-run the failed `check` job to check
+it again. See
+[Release process](/en/docs/contributing/release-process#let-release-please-cut-the-release).
+
+Jobs of the CI and nightly workflows install workspace dependencies through
 `.github/actions/install`. It restores the Bun install cache that `main.yml`
 writes for the current `bun.lock`. With that cache, `bun ci` needs no
 registry. `scripts/ci-install.ts` stops an install that takes over two

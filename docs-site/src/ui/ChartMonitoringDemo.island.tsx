@@ -40,7 +40,7 @@ export default function ChartMonitoringDemo() {
       chip={{ kind: "component", name: "createChartCursor", from: "@k2b/ui" }}
       description="Synthetic service monitoring. Hover any plot to compare latency, traffic and errors at the same time. Use arrow keys to inspect, Escape to dismiss. Checkout has a deliberate data gap."
       code={
-        'const cursor = createChartCursor({ formatX: formatTime });\n<Chart kind="line" series={latency} cursor={cursor} interactive />\n<Chart kind="line" series={requests} cursor={cursor} interactive />\n<Chart kind="line" series={errors} cursor={cursor} interactive />'
+        'const cursor = createChartCursor({ formatX: formatTime });\n<Chart kind="line" series={latency} cursor={cursor} />\n<Chart kind="line" series={requests} cursor={cursor} />\n<Chart kind="line" series={errors} cursor={cursor} />'
       }
     >
       <div class="ui-demo-monitoring">
@@ -56,7 +56,6 @@ export default function ChartMonitoringDemo() {
             yAxis={{ domain: [0, 1500], format: (y) => `${y} ms` }}
             tooltip={tooltip("ms")}
             cursor={cursor}
-            interactive
             style={{ height: "18rem" }}
           />
         </Paper>
@@ -73,7 +72,6 @@ export default function ChartMonitoringDemo() {
             yAxis={{ domain: [0, 1500], format: (y) => (y >= 1000 ? `${y / 1000}k` : String(y)) }}
             tooltip={tooltip("/min")}
             cursor={cursor}
-            interactive
             style={{ height: "15rem" }}
           />
         </Paper>
@@ -90,7 +88,6 @@ export default function ChartMonitoringDemo() {
             yAxis={{ domain: [0, 5], format: (y) => `${y}%` }}
             tooltip={tooltip("%")}
             cursor={cursor}
-            interactive
             style={{ height: "15rem" }}
           />
         </Paper>

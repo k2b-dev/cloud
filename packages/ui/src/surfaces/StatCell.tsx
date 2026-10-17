@@ -43,6 +43,7 @@ function Body(props: StatCellProps): JSX.Element {
       <Show when={props.trend && props.trend.length > 1}>
         <Chart
           kind="sparkline"
+          labels={{ interactiveChart: props.label }}
           class="k2b-stat-cell__trend"
           style={{ height: "32px" }}
           data={Array.from(props.trend ?? [])}

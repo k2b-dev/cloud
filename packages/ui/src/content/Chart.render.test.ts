@@ -38,7 +38,7 @@ describe("Chart map interaction SSR", () => {
     expect(html).toContain("stdlib-chart-map-viewport");
   });
 
-  test("keeps static maps free of interaction controls", () => {
+  test("inspects maps without enabling navigation controls", () => {
     const html = renderToString(() =>
       createComponent(Chart, {
         kind: "map",
@@ -46,7 +46,11 @@ describe("Chart map interaction SSR", () => {
       }),
     );
 
-    expect(html).not.toContain('aria-label="Interactive map"');
+    expect(html).toContain('aria-label="Interactive map"');
+    expect(html).toContain("data-chart-datum=");
+    expect(html).toContain('role="tooltip"');
+    expect(html).not.toContain("data-drag=");
+    expect(html).not.toContain("k2b-chart__controls");
     expect(html).not.toContain('aria-label="Zoom in"');
     expect(html).toContain("stdlib-chart-map-viewport");
   });
@@ -87,7 +91,7 @@ describe("Chart state timeline SSR", () => {
     expect(html).toContain("/admin/observability/jobs?run=trace%3Aspan");
   });
 
-  test("keeps static timelines free of interaction controls", () => {
+  test("inspects timelines without enabling navigation controls", () => {
     const html = renderToString(() =>
       createComponent(Chart, {
         kind: "stateTimeline",
@@ -95,7 +99,11 @@ describe("Chart state timeline SSR", () => {
       }),
     );
 
-    expect(html).not.toContain('aria-label="Interactive timeline"');
+    expect(html).toContain('aria-label="Interactive timeline"');
+    expect(html).toContain("data-chart-datum=");
+    expect(html).toContain('role="tooltip"');
+    expect(html).not.toContain("data-drag=");
+    expect(html).not.toContain("k2b-chart__controls");
     expect(html).not.toContain('aria-label="Zoom in"');
   });
 });
@@ -148,5 +156,86 @@ describe("Chart presentation hooks", () => {
     expect(empty).toContain("k2b-chart__empty");
     expect(empty).toContain("No data");
     expect(empty).not.toContain("text-dimmed");
+  });
+});
+
+describe("Chart default inspection SSR", () => {
+  for (const options of [
+    { kind: "bar", data: [{ label: "Imports", value: 42 }] },
+    { kind: "sparkline", data: [12, 24, 18] },
+    { kind: "stat", label: "Requests", value: 42 },
+  ] satisfies import("./Chart").ChartProps[]) {
+    test(`${options.kind} is inspectable without interactive`, () => {
+      const html = renderToString(() => createComponent(Chart, options));
+      expect(html).toContain("data-chart-datum=");
+      expect(html).toContain('tabindex="0"');
+      expect(html).toContain('role="group"');
+      expect(html).toContain('data-interactive="true"');
+      expect(html).toContain('role="tooltip"');
+      expect(html).toContain('popover="manual"');
+      expect(html).toContain('data-instant="true"');
+      expect(html).toContain('class="k2b-chart__anchor"');
+      expect(html).toContain('aria-label="');
+      const marks = [...html.matchAll(/<g data-chart-role="[^"]*" data-chart-datum="[^"]*">([\s\S]*?)<\/g>/g)];
+      expect(marks.length).toBeGreaterThan(0);
+      for (const mark of marks) expect(mark[1]).toMatch(/^<title>[^<]+<\/title>/);
+      if (options.kind === "stat") expect(html).toContain('aria-label="Requests"');
+    });
+  }
+
+  test("explicit false still inspects a line and exposes its crosshair", () => {
+    const html = renderToString(() =>
+      createComponent(Chart, {
+        kind: "line",
+        series: [{ data: [{ x: 1, y: 2 }] }],
+        interactive: false,
+      }),
+    );
+    expect(html).toContain('data-crosshair="true"');
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain('role="tooltip"');
+    expect(html).toContain("data-chart-datum=");
+  });
+
+  test("names prefer the kind override, then nonblank title, then value label, then default", () => {
+    const bar = { kind: "bar" } as const;
+    const data = [{ label: "Imports", value: 42 }];
+    const render = (options: import("./Chart").ChartProps) => renderToString(() => createComponent(Chart, options));
+    expect(render({ ...bar, data, title: "Queue jobs" })).toContain('aria-label="Queue jobs"');
+    expect(render({ ...bar, data, title: "Queue jobs", labels: { interactiveChart: "Import queues" } })).toContain(
+      'aria-label="Import queues"',
+    );
+    expect(render({ kind: "stat", label: "Requests", value: 42, title: "Traffic" })).toContain('aria-label="Traffic"');
+    expect(render({ kind: "gauge", value: 42, label: "Capacity", title: "  " })).toContain('aria-label="Capacity"');
+    expect(render({ ...bar, data, title: "  " })).not.toContain("aria-description=");
+    expect(render({ ...bar, data, title: "Queue jobs" })).toContain("aria-description=");
+    expect(render({ kind: "map", series, labels: { interactiveMap: "Visitors" } })).toContain('aria-label="Visitors"');
+    expect(
+      render({
+        kind: "stateTimeline",
+        rows: [{ label: "Worker", intervals: [{ from: 0, to: 1, state: "ok" }] }],
+        labels: { interactiveTimeline: "Worker history" },
+      }),
+    ).toContain('aria-label="Worker history"');
+    expect(render({ kind: "line", series: [{ data: [{ x: 1, y: 2 }] }], labels: { interactiveLine: "Latency" } })).toContain(
+      'aria-label="Latency"',
+    );
+  });
+
+  test("empty charts have no inspection or accessible group", () => {
+    const html = renderToString(() => createComponent(Chart, { kind: "bar", data: [], interactive: true }));
+    expect(html).toContain("No data");
+    expect(html).not.toContain("tabindex=");
+    expect(html).not.toContain('role="tooltip"');
+    expect(html).not.toContain("aria-label=");
+    expect(html).not.toContain('role="group"');
+  });
+
+  test("StatCell names its inspectable trend after the cell", async () => {
+    const { StatCell } = await import("../surfaces/StatCell");
+    const html = renderToString(() => createComponent(StatCell, { label: "Requests", value: 42, trend: [12, 24, 18] }));
+    expect(html).toContain('data-chart-kind="sparkline"');
+    expect(html).toContain('aria-label="Requests"');
+    expect(html).toContain('role="tooltip"');
   });
 });
