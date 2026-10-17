@@ -114,8 +114,8 @@ The repository's development and production Compose files accept
 is not a runtime variable read by Mail.
 
 > Keep `APP_SECRET` stable and back it up. Cloud has no built-in key rotation;
-> changing it makes encrypted values unreadable and can overwrite stored
-> settings at startup. See
+> changing it makes encrypted values unreadable. Settings then fall back to
+> their environment value or default; Cloud keeps the stored rows unchanged. See
 > [Keep the encryption key stable](/en/docs/data/secrets-and-persistent-state#keep-the-encryption-key-stable).
 
 `app.start()` refuses to boot without `APP_SECRET`.
