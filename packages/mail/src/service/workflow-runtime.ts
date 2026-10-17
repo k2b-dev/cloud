@@ -2,7 +2,12 @@ import { env } from "@k2b/cloud/config";
 import { createRuntimeLifecycle } from "@k2b/cloud/services";
 import { AI_WORKFLOW_ACTIONS, createWorkflowBuiltinActionPorts, type WorkflowExecutionError } from "@k2b/cloud/workflows";
 import { startWorkflowAiRuntime, stopWorkflowAiRuntime } from "@k2b/cloud/workflows/ai";
-import type { WorkflowExecuteActionPort, WorkflowTracePort } from "@k2b/cloud/workflows/runtime";
+import type {
+  WorkflowActionStep,
+  WorkflowExecuteActionContext,
+  WorkflowExecuteActionPort,
+  WorkflowTracePort,
+} from "@k2b/cloud/workflows/runtime";
 import {
   createWorkflowActionPort,
   createWorkflowWorker,
@@ -12,10 +17,11 @@ import {
   wakeExpiredWorkflowRuns,
 } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
-import { authorizeMailWorkflowExecution } from "../workflows/actions";
+import { authorizeMailWorkflowExecution, MAIL_WORKFLOW_ACTIONS } from "../workflows/actions";
 import { MAIL_WORKFLOW_APP_ID } from "../workflows/events";
 import { mailWorkflows } from "../workflows/module";
-import { renderMailLiquidTemplate } from "./template-rendering";
+import { MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS } from "../workflows/template-validation";
+import { mailLiquidTemplateVariables, renderMailLiquidTemplate } from "./template-rendering";
 import { publishMailWorkflowCollaborationEventFromOutput } from "./workflow-collaboration-events";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
 import {
@@ -28,6 +34,7 @@ import { startMailWorkflowScheduleRuntime, stopMailWorkflowScheduleRuntime } fro
 
 const workerId = `mail:${env.HOSTNAME ?? "local"}:${process.pid}`;
 
+const mailActionNames = new Set(Object.keys(MAIL_WORKFLOW_ACTIONS));
 const aiActionNames = new Set(Object.keys(AI_WORKFLOW_ACTIONS));
 const declaredActions = createWorkflowActionPort(mailWorkflows, {
   authorize: (context, step) => (aiActionNames.has(step.action) ? authorizeMailWorkflowExecution(context) : Promise.resolve(true)),
@@ -67,15 +74,44 @@ const builtins = createWorkflowBuiltinActionPorts({
     return rendered.data;
   },
 });
+// Resolve before entering an action transaction: freezing locks workflows.run in its own transaction.
+const resolveTemplateBodies = async (ctx: WorkflowExecuteActionContext, step: WorkflowActionStep): Promise<void> => {
+  for (const field of MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS[step.action] ?? []) {
+    const source = step.config[field];
+    if (typeof source !== "string") continue;
+    const variables = mailLiquidTemplateVariables(source);
+    if (!variables.ok) continue; // The existing renderer reports template parse errors.
+    for (const variable of variables.data) {
+      const body = /^inputs\.([^.[]+)\.(?:bodyText|bodyHtml|body)(?=[.[]|$)/.exec(variable);
+      const reference = body?.[0] ?? (/^inputs(?:\.[^.[]+)?$/.test(variable) ? variable : undefined);
+      if (!reference) continue;
+      const value = await ctx.resolveReference(reference, [...step.sourcePath, step.action, field]);
+      // A body of a present message that Mail can no longer load fails the step instead of rendering empty text.
+      const message = body ? ctx.invocation.inputs[body[1]!] : undefined;
+      if (value === undefined && message !== null && typeof message === "object" && !Array.isArray(message)) {
+        throw new Error(`Mail workflow value unavailable: ${reference}`);
+      }
+    }
+  }
+};
+
 const actions: WorkflowExecuteActionPort = {
   get: (name) => {
     const declared = declaredActions.get(name);
     if (!declared) {
       const builtin = builtins.execute.get(name);
-      return builtin ? rebindMailWorkflowRestoredOutput(builtin) : undefined;
+      if (!builtin) return undefined;
+      return rebindMailWorkflowRestoredOutput({
+        ...builtin,
+        execute: async (ctx, step) => {
+          await resolveTemplateBodies(ctx, step);
+          return builtin.execute(ctx, step);
+        },
+      });
     }
     return {
       execute: async (ctx, step) => {
+        await resolveTemplateBodies(ctx, step);
         const outcome = await declared.execute(ctx, step);
         if (outcome.state === "completed") await publishMailWorkflowCollaborationEventFromOutput(outcome.output);
         return outcome;
@@ -117,6 +153,7 @@ const values = (claim: WorkflowRunClaim) => {
         claim,
         mailboxId: claim.scopeId,
         frozenHydration: await frozen,
+        mailActionNames,
       }).resolve(input);
     },
   };

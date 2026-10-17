@@ -26,7 +26,9 @@ const messageForReference = (
     return null;
   }
   const input = inputs[parts[1]];
-  return isObject(input) ? { message: input, field, tail: parts.slice(3), frozenKey: parts.slice(0, 3).join(".") } : null;
+  return isObject(input)
+    ? { message: input, field, tail: parts.slice(3), frozenKey: `inputs.${parts[1]}.${field === "body" ? "bodyText" : field}` }
+    : null;
 };
 
 const hydratedMessageValue = async (
@@ -132,49 +134,87 @@ export const createMailWorkflowValueResolver = (params: {
   claim: Pick<WorkflowRunClaim, "runId" | "executionGeneration" | "inputs">;
   mailboxId: string;
   frozenHydration: Record<string, WorkflowJsonValue>;
-}): WorkflowValueResolverPort => ({
-  resolve: async ({ reference, fallback }) => {
-    const candidate = messageForReference(reference, params.claim.inputs);
-    if (!candidate) {
-      const value = fallback();
-      return value === undefined ? { state: "missing" } : { state: "resolved", value };
-    }
-
-    const available =
-      candidate.field === "attachments" ? candidate.message.attachmentsAvailable === true : candidate.message.bodyAvailable === true;
-    if (available) {
-      const value = fallback();
-      return value === undefined ? { state: "missing" } : { state: "resolved", value };
-    }
-
-    if (Object.prototype.hasOwnProperty.call(params.frozenHydration, candidate.frozenKey)) {
-      return resolvedPath(params.frozenHydration[candidate.frozenKey]!, candidate.tail);
-    }
-
-    const messageId = candidate.message.id;
-    if (typeof messageId !== "string") return { state: "missing" };
-    const hydrated = await hydratedMessageValue(params.mailboxId, messageId, candidate.field);
-    if (hydrated.state === "unavailable") return { state: "missing" };
-    if (hydrated.state === "pending") {
-      await enqueueMessageHydration(hydrated.messageId);
-      return {
-        state: "waiting",
-        dependency: {
-          kind: "mail.hydration",
-          key: hydrated.messageId,
-          deadline: mailWorkflowDependencyDeadline(),
-          data: { runId: params.claim.runId },
-        },
-      };
-    }
-
+  mailActionNames: ReadonlySet<string>;
+}): WorkflowValueResolverPort => {
+  const hasFrozen = (key: string) => Object.hasOwn(params.frozenHydration, key);
+  const freeze = async (reference: string, value: WorkflowJsonValue): Promise<WorkflowJsonValue> => {
     const frozen = await freezeHydrationValue({
       runId: params.claim.runId,
       executionGeneration: params.claim.executionGeneration,
-      reference: candidate.frozenKey,
-      value: hydrated.value,
+      reference,
+      value,
     });
-    params.frozenHydration[candidate.frozenKey] = frozen;
-    return resolvedPath(frozen, candidate.tail);
-  },
-});
+    params.frozenHydration[reference] = frozen;
+    return frozen;
+  };
+  const projectBody = (name: string, message: JsonObject): void => {
+    const plainKey = `inputs.${name}.bodyText`;
+    const htmlKey = `inputs.${name}.bodyHtml`;
+    // Mutate the shared projection so action contexts and restored aliases see the same body.
+    if (hasFrozen(plainKey)) message.body = message.bodyText = params.frozenHydration[plainKey]!;
+    if (hasFrozen(htmlKey)) message.bodyHtml = params.frozenHydration[htmlKey]!;
+    if (hasFrozen(plainKey) && hasFrozen(htmlKey)) message.bodyAvailable = true;
+  };
+  const hydrateWholeMessage = async (name: string): Promise<void> => {
+    const message = params.claim.inputs[name];
+    if (!isObject(message) || message.bodyAvailable === true || typeof message.id !== "string") return;
+    const entries: Array<{ key: string; value: WorkflowJsonValue }> = [];
+    for (const field of ["bodyText", "bodyHtml"] as const) {
+      const key = `inputs.${name}.${field}`;
+      if (hasFrozen(key)) continue;
+      const hydrated = await hydratedMessageValue(params.mailboxId, message.id, field);
+      // Whole values keep receipt-time behavior: pending or unavailable bodies do not block the step.
+      if (hydrated.state !== "resolved") return;
+      entries.push({ key, value: hydrated.value });
+    }
+    for (const entry of entries) await freeze(entry.key, entry.value);
+    projectBody(name, message);
+  };
+  return {
+    resolve: async ({ reference, path, plan, fallback }) => {
+      const candidate = messageForReference(reference, params.claim.inputs);
+      if (!candidate) {
+        const action = path.at(-2);
+        const referenceOnly = path.at(-1) === "message" && typeof action === "string" && params.mailActionNames.has(action);
+        if (!referenceOnly) {
+          for (const input of plan.inputs) {
+            if (input.type === "mailMessage" && (reference === "inputs" || reference === `inputs.${input.name}`)) {
+              await hydrateWholeMessage(input.name);
+            }
+          }
+        }
+        const value = fallback();
+        return value === undefined ? { state: "missing" } : { state: "resolved", value };
+      }
+
+      const available =
+        candidate.field === "attachments" ? candidate.message.attachmentsAvailable === true : candidate.message.bodyAvailable === true;
+      if (available) {
+        const value = fallback();
+        return value === undefined ? { state: "missing" } : { state: "resolved", value };
+      }
+
+      if (!hasFrozen(candidate.frozenKey)) {
+        const messageId = candidate.message.id;
+        if (typeof messageId !== "string") return { state: "missing" };
+        const hydrated = await hydratedMessageValue(params.mailboxId, messageId, candidate.field);
+        if (hydrated.state === "unavailable") return { state: "missing" };
+        if (hydrated.state === "pending") {
+          await enqueueMessageHydration(hydrated.messageId);
+          return {
+            state: "waiting",
+            dependency: {
+              kind: "mail.hydration",
+              key: hydrated.messageId,
+              deadline: mailWorkflowDependencyDeadline(),
+              data: { runId: params.claim.runId },
+            },
+          };
+        }
+        await freeze(candidate.frozenKey, hydrated.value);
+      }
+      if (candidate.field !== "attachments") projectBody(reference.split(".")[1]!, candidate.message);
+      return resolvedPath(params.frozenHydration[candidate.frozenKey]!, candidate.tail);
+    },
+  };
+};

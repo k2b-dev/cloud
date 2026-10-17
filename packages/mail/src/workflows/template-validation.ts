@@ -12,6 +12,12 @@ const TEMPLATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
   succeed: ["message"],
 };
 
+/** Every step field that Mail renders as a Liquid template at run time; the summary is rendered but not validated here. */
+export const MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  ...TEMPLATE_FIELDS,
+  setConversationSummary: ["summary"],
+};
+
 const validateSteps = (ir: WorkflowIr, steps: readonly WorkflowIrStep[], diagnostics: WorkflowDiagnostic[]): void => {
   for (const step of steps) {
     if (step.kind === "if") {

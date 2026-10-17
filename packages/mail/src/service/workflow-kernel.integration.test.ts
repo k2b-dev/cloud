@@ -985,6 +985,151 @@ steps:
     }
   }, 15_000);
 
+  for (const [index, scenario] of (
+    [
+      "paths",
+      "whole message",
+      "whole inputs",
+      "pending template",
+      "pending whole",
+      "deleted path",
+      "deleted template",
+      "failed hydration",
+    ] as const
+  ).entries()) {
+    test(`resolves body-less workflow inputs: ${scenario}`, async () => {
+      const incoming = envelope({ uid: 7200 + index, providerMessageId: `workflow-body-${index}-${suffix}` });
+      const messageId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: incoming,
+        captureWorkflowTriggers: false,
+      });
+      const plain = "PRIVATE_WORKFLOW_PLAIN_BODY";
+      const html = "<p>PRIVATE_WORKFLOW_HTML_BODY</p>";
+      const pending = scenario.startsWith("pending");
+      if (!pending) {
+        await sql`
+          UPDATE mail.message_contents SET hydration_status = 'complete', plain_text = ${plain}, sanitized_html = ${html}
+          WHERE id = ${messageId}::uuid
+        `;
+      }
+      const [ref] = await sql<{ id: string }[]>`
+        SELECT id FROM mail.remote_message_refs WHERE message_id = ${messageId}::uuid
+      `;
+      const snapshot = await getWorkflowSnapshot({ mailboxId, remoteMessageRefId: ref!.id });
+      if (!snapshot) throw new Error("Missing body-less workflow snapshot");
+      let steps = `  - succeed: { message: "{{ inputs.message.body }}|{{ inputs.message.bodyText }}|{{ inputs.message.bodyHtml }}" }`;
+      if (scenario === "paths" || scenario === "deleted path" || scenario === "failed hydration") {
+        steps = `  - setVariable: { name: plain, value: "\${{ inputs.message.bodyText }}" }
+  - setVariable: { name: alias, value: "\${{ inputs.message.body }}" }
+  - setVariable: { name: html, value: "\${{ inputs.message.bodyHtml }}" }
+  - succeed: { message: "{{ plain }}|{{ alias }}|{{ html }}" }`;
+      } else if (scenario === "whole message" || scenario === "pending whole") {
+        steps = `  - setVariable: { name: selected, value: "\${{ inputs.message }}" }
+  - succeed: { message: "{{ selected.body }}|{{ selected.bodyText }}|{{ selected.bodyHtml }}" }`;
+      } else if (scenario === "whole inputs") {
+        steps = `  - setVariable: { name: selected, value: "\${{ inputs }}" }
+  - succeed: { message: "{{ selected.message.body }}|{{ selected.message.bodyText }}|{{ selected.message.bodyHtml }}" }`;
+      }
+      const created = await createWorkflow({
+        context,
+        mailboxId,
+        input: {
+          name: `Body references ${scenario} ${suffix}`,
+          priority: 100,
+          source: `inputs:
+  message: { type: mailMessage, required: true }
+triggers:
+  messageReceived:
+    with: { message: "\${{ trigger.message }}" }
+steps:
+${steps}
+`,
+          effectBudget: noEffectBudget,
+        },
+      });
+      if (!created.ok) throw new Error(created.error.message);
+      const activated = await activateWorkflow({
+        context,
+        mailboxId,
+        workflowId: created.data.id,
+        input: { expectedVersionId: created.data.currentVersion.id },
+      });
+      if (!activated.ok) throw new Error(activated.error.message);
+      const emission = await emitWorkflowEvent(
+        {
+          appId: "mail",
+          scopeId: mailboxId,
+          type: "mail.messageReceived",
+          targetWorkflowId: created.data.id,
+          data: { message: snapshot.source.message },
+          context: mailWorkflowEventContext(snapshot),
+          dedupeKey: `body-references-${scenario}-${suffix}`,
+          occurredAt: new Date(snapshot.internalDate),
+        },
+        { dispatch: "now" },
+      );
+      const runId = emission.runIds[0]!;
+      if (scenario.startsWith("deleted")) {
+        await sql`DELETE FROM mail.message_contents WHERE id = ${messageId}::uuid`;
+      } else if (scenario === "failed hydration") {
+        await sql`
+          UPDATE mail.message_contents
+          SET hydration_status = 'failed', hydration_attempt = 5, plain_text = NULL, sanitized_html = NULL
+          WHERE id = ${messageId}::uuid
+        `;
+      }
+      let outcome = await runMailWorkflow(runId);
+      if (scenario === "pending template") {
+        expect(outcome).toMatchObject({ state: "finished", result: { state: "waiting" } });
+        const dependencies = await sql<{ kind: string; key: string }[]>`
+          SELECT dependency ->> 'kind' AS kind, dependency ->> 'key' AS key
+          FROM workflows.step_outcome WHERE run_id = ${runId}::uuid AND state = 'waiting'
+        `;
+        expect(dependencies).toEqual([expect.objectContaining({ kind: "mail.hydration", key: messageId })]);
+        await sql`
+          UPDATE mail.message_contents SET hydration_status = 'body', plain_text = ${plain}, sanitized_html = ${html}
+          WHERE id = ${messageId}::uuid
+        `;
+        expect(await wakeWorkflowRunsWaitingOn({ appId: "mail", kind: "mail.hydration", key: messageId })).toContain(runId);
+        outcome = await runMailWorkflow(runId);
+      }
+      if (scenario.startsWith("deleted") || scenario === "failed hydration") {
+        expect(outcome).toMatchObject({ state: "finished", result: { state: "failed" } });
+        if (scenario === "deleted template") {
+          expect(outcome).toMatchObject({ result: { error: { message: expect.stringContaining("inputs.message.body") } } });
+        } else {
+          expect(outcome).toMatchObject({ result: { error: { code: "WORKFLOW_VALUE_UNAVAILABLE" } } });
+        }
+      } else {
+        expect(outcome).toMatchObject({
+          state: "finished",
+          result: { state: "succeeded", message: scenario === "pending whole" ? "||" : `${plain}|${plain}|${html}` },
+        });
+      }
+      const [state] = await sql<{ frozen_hydration: Record<string, unknown> }[]>`
+        SELECT frozen_hydration FROM mail.workflow_run_state WHERE run_id = ${runId}::uuid
+      `;
+      const frozen = state?.frozen_hydration ?? {};
+      if (scenario.startsWith("deleted") || scenario === "failed hydration" || scenario === "pending whole") {
+        expect(frozen).toEqual({});
+      } else {
+        expect(frozen).toEqual({ "inputs.message.bodyText": plain, "inputs.message.bodyHtml": html });
+      }
+      const [stored] = await sql<{ inputs: Record<string, unknown>; context: Record<string, unknown> }[]>`
+        SELECT inputs, context FROM workflows.run WHERE id = ${runId}::uuid
+      `;
+      expect(JSON.stringify(stored)).not.toContain(plain);
+      expect(JSON.stringify(stored)).not.toContain(html);
+      expect(stored?.inputs.message).toMatchObject({ body: "", bodyText: "", bodyHtml: "", bodyAvailable: false });
+      await sql`DELETE FROM workflows.run WHERE id = ${runId}::uuid`;
+      expect(await sql`SELECT run_id FROM mail.workflow_run_state WHERE run_id = ${runId}::uuid`).toHaveLength(0);
+    });
+  }
+
   test("creates reviewable workflow reply drafts in the source conversation", async () => {
     const incomingBase = envelope({ uid: 7091, providerMessageId: `workflow-reply-draft-${suffix}` });
     const incoming = {
@@ -1371,7 +1516,8 @@ steps:
     // ingests no headers, so state it before the snapshot is taken.
     await sql`
       UPDATE mail.message_contents
-      SET protocol_facts = protocol_facts || ${{ returnPath: `<${sender}>`, autoSubmitted: "no" }}::jsonb
+      SET hydration_status = 'complete', plain_text = 'PRIVATE_AUTOMATIC_REPLY_BODY', sanitized_html = '<p>HTML reply source</p>',
+          protocol_facts = protocol_facts || ${{ returnPath: `<${sender}>`, autoSubmitted: "no" }}::jsonb
       WHERE mailbox_id = ${mailboxId}::uuid AND message_id = ${incoming.messageId}
     `;
     const snapshot = await getWorkflowSnapshot({ mailboxId, remoteMessageRefId: reference.id });
@@ -1410,7 +1556,7 @@ steps:
       schedule:
         mode: always
       subject: Receipt
-      body: We received your message.
+      body: "We received your message: {{ inputs.message.body }}"
 `,
         effectBudget: { ...noEffectBudget, maxSends: 1, maxDrafts: 1 },
       },
@@ -1443,12 +1589,17 @@ steps:
       SELECT id, kind, result FROM mail.commands WHERE correlation_id = ${runId}
     `;
     expect(commands.map((command) => command.kind)).toEqual(["send"]);
-    const submissions = await sql<{ id: string }[]>`
-      SELECT submission.id
+    const submissions = await sql<{ id: string; draft_snapshot: Record<string, unknown> }[]>`
+      SELECT submission.id, submission.draft_snapshot
       FROM mail.outbox_submissions submission
       WHERE submission.command_id = ${commands[0]!.id}::uuid
     `;
     expect(submissions).toHaveLength(1);
+    expect(submissions[0]?.draft_snapshot).toMatchObject({ body: "We received your message: PRIVATE_AUTOMATIC_REPLY_BODY" });
+    const [frozen] = await sql<{ frozen_hydration: Record<string, unknown> }[]>`
+      SELECT frozen_hydration FROM mail.workflow_run_state WHERE run_id = ${runId}::uuid
+    `;
+    expect(frozen?.frozen_hydration).toEqual({ "inputs.message.bodyText": "PRIVATE_AUTOMATIC_REPLY_BODY" });
 
     // The provider confirms the send, and the run resumes to observe it.
     await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${commands[0]!.id}::uuid`;
