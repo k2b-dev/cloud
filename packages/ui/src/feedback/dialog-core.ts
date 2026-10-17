@@ -506,8 +506,8 @@ export const createDialogCore = () => {
           resolve(value as T | undefined);
           return;
         }
-        // After the history sync, so a caller that navigates or opens the next dialog finds the history settled.
-        queueMicrotask(() => void (returning ?? Promise.resolve()).then(() => resolve(value as T | undefined)));
+        // After every pending history sync, so a caller that navigates or opens the next dialog finds the history settled.
+        queueMicrotask(() => void historySettled().then(() => resolve(value as T | undefined)));
       };
       const closeTyped: DialogClose<T> = (result) => {
         if (state.stack[state.stack.length - 1] !== entry) return;

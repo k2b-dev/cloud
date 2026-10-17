@@ -296,6 +296,45 @@ for (const navigationApi of [true, false]) {
         await outer;
       });
 
+      test("a parent closed while its child's Back is on its way settles after both entries left", async () => {
+        const core = createDialogCore();
+        let closeParent = () => {};
+        let closeChild = () => {};
+        const parent = core.open(
+          (close) => {
+            closeParent = close;
+            return view("Parent")();
+          },
+          { history: true },
+        );
+        const child = core.open(
+          (close) => {
+            closeChild = close;
+            return view("Child")();
+          },
+          { history: true },
+        );
+        // A browser traverses later than the call, as a phone under load does.
+        const go = Object.getPrototypeOf(history).go.bind(history);
+        const delayed = spyOn(history, "go").mockImplementation((delta) => void setTimeout(() => go(delta), 5));
+        try {
+          closeChild();
+          await Promise.resolve();
+          await Promise.resolve();
+          expect(delayed).toHaveBeenCalledTimes(1);
+          closeParent();
+          await parent;
+          await child;
+          // A caller that navigates once the result arrives keeps its new entry.
+          history.pushState({ page: "next" }, "", "/next");
+          await settle();
+          expect(location.pathname).toBe("/next");
+          expect(history.state).toEqual({ page: "next" });
+        } finally {
+          delayed.mockRestore();
+        }
+      });
+
       test("closing the outer dialog after Forward onto a retired entry also removes that entry", async () => {
         const core = createDialogCore();
         const outer = core.open(view("A"), { history: true });
