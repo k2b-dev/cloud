@@ -866,10 +866,11 @@ owner.
 
 Grids Bases, Pulse Bases, Venues, and contact books now refuse a grant change
 that would leave them without a manager. They answer `409` with code
-`LAST_MANAGER`; Venue and Contacts used to answer a removal of the last admin
-with `400`. API keys bound to the resource do not count as managers. Grids also
-refuses a **None** grant for the same person, group, or account as the last
-manager.
+`LAST_MANAGER`; Venue used to answer a removal of its last admin with `400`,
+and Contacts answered both a removal and a lowering of the last admin with
+`400`. API keys bound to the resource and user-delegated accounts do not count
+as managers. Grids also refuses a **None** grant for the same person, group, or
+account as the last manager.
 The administration routes follow the same rule; an administrator recovers a
 resource by granting a new manager first. Pulse, Venue, and Contacts now also
 check under the same lock that the person who makes the change still manages
