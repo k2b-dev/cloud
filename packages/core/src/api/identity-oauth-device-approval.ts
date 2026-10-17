@@ -56,7 +56,7 @@ export const terminalLogins: AppTerminalLogins = {
         login_lifetime_seconds=l.lifetime_seconds
       FROM oauth.clients c, auth.app_logins l
       WHERE d.id=${input.deviceAuthorizationId}::uuid AND d.client_id=${input.clientId}
-        AND d.status='pending' AND d.expires_at > now()
+        AND d.status='pending' AND d.expires_at > clock_timestamp()
         AND c.client_id=d.client_id AND c.is_public AND c.allow_device_grant
         AND l.device_authorization_id=d.id AND l.kind='terminal' AND l.client_id=d.client_id
         AND l.user_id=${input.user.id}::uuid AND l.state='pending'

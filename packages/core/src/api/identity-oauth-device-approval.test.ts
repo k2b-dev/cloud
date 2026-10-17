@@ -226,6 +226,31 @@ databaseSuite()("Core terminal authorization bridge", () => {
     }
   });
 
+  test("a decision that waited past the OAuth expiry does not approve the grant", async () => {
+    const f = await fixture();
+    try {
+      const id = await f.authorization();
+      expect((await request(createIdentityOAuthDeviceApprovalRoutes(), input(id, f.clientId, f.uid))).status).toBe(200);
+      const decided = await sql.begin(async (tx) => {
+        // The transaction's now() is fixed here, as when a decision waits on the device lock.
+        await tx`SELECT now()`;
+        await sql`UPDATE oauth.device_authorizations SET expires_at=clock_timestamp()+interval '100 milliseconds' WHERE id=${id}::uuid`;
+        await Bun.sleep(250);
+        return terminalLogins.decide(tx, {
+          deviceAuthorizationId: id,
+          clientId: f.clientId,
+          user: { id: f.userId, uid: f.uid, provider: "local", profile: "user" },
+          decision: "approve",
+        });
+      });
+      expect(decided).toBe(false);
+      const [grant] = await sql`SELECT status,user_id FROM oauth.device_authorizations WHERE id=${id}::uuid`;
+      expect(grant).toMatchObject({ status: "pending", user_id: null });
+    } finally {
+      await f.cleanup();
+    }
+  });
+
   test("cleanup retains approved terminal evidence until the expired OAuth row is gone", async () => {
     const f = await fixture();
     try {
