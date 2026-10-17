@@ -34,7 +34,7 @@ In a floating toolbar, `priority` lets an action move into More when the column 
 
 `keys` uses the `Kbd` format, such as `"e"`, `"mod+j"`, or `"shift+arrowdown"`. It adds a hint under the icon, the platform shortcut to the tooltip, and `aria-keyshortcuts`. Hints appear with the [keyboard input flag](/en/ui/input-mode) and never move icons or resize buttons. The application still owns shortcut handlers.
 
-To hide an action, stop rendering it, or set `hidden`, `class`, or `style` on the action or its group: the toolbar measures again and the action leaves More. A style that an outer element's class applies to the toolbar's inside is not noticed until the next resize. In a floating toolbar, empty groups and leading, trailing, or repeated separators are hidden. Keep fixed content compact. Actions move before a `Toolbar.Label` truncates; only when the fixed items alone are too wide does the label shrink.
+To hide an action, stop rendering it, for example with `<Show>`. A `Toolbar.Group` hidden through its `class` also takes its actions out of More, because the toolbar measures again. A style that an outer element's class applies inside the toolbar is noticed only at the next resize. In a floating toolbar, empty groups and leading, trailing, or repeated separators are hidden. Keep fixed content compact. Actions move before a `Toolbar.Label` truncates; only when the fixed items alone are too wide does the label shrink.
 
 ## Toolbar.Label
 
