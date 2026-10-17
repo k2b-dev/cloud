@@ -57,7 +57,7 @@ The built-in **Follow-up** views show what happens next. **Assignment** shows wh
 | More | Kept | Conversations protected from deletion, from every folder |
 | Mail | Scheduled | Messages that wait for later delivery |
 
-Provider folders are a different layer. When you move a conversation to Archive, Trash, Junk, or another provider folder, the remote mail moves too. Other clients can show this. Marking a conversation **Done** changes only the Cloud follow-up state. It does not archive or move the email.
+Provider folders are a different layer. When you move a conversation to Archive, Trash, Junk, or another provider folder, the remote mail moves too. Other clients can show this. Marking a conversation **Done** changes only the Cloud follow-up state. It does not archive, move, or mark the email read. The provider Inbox stays unchanged.
 
 With **Manage** access, you can keep the mail of a folder inside that folder, for example a shared team folder (**Only in the folder**). Its conversations then stay out of these views and their counts:
 
@@ -96,6 +96,17 @@ To act on several conversations, select their checkboxes. Hold **Shift** while y
 :::
 
 Choose **Assign** to change the assignees of the selected conversations. Choose **Assign to me**, **Remove me**, or **Remove all assignees**, or search for a person who can be assigned. A person that you add joins the other assignees and receives one notification for the whole selection. Mail confirms how many conversations changed and offers **Undo**. **Undo** reverses the change only in the conversations that it changed. **Remove all assignees** has no **Undo**. If a conversation no longer belongs to the mailbox, Mail says how many conversations did not change.
+
+### Work from Needs action
+
+We recommend **Needs action** as your inbox. Use folders for filing; filing and archiving change no work status.
+To empty the Inbox in other mail clients too, also choose **Archive**. Archive does not mark **Done**.
+
+- **Personal mailbox:** Work from **Needs action**. Use automations to mark noise **Done** and file it. Mark finished work **Done**.
+  **Waiting for reply** follows a confirmed human reply automatically. Use **Show later** for date-dependent work.
+- **Shared mailbox:** Use **Unassigned** with **Needs action** for team intake. Choose **Assign** to name an owner.
+  Each person works from **Assigned to me**. The owner's confirmed reply sets **Waiting for reply**; the owner marks **Done**.
+  Use **Only in the folder** for team folders that must stay outside shared lists, as described above.
 
 ## Take a quick look before opening {icon="eye"}
 

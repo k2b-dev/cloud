@@ -57,7 +57,7 @@ Die eingebauten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes ges
 | Mehr | Aufbewahrt | Vor dem Löschen geschützte Unterhaltungen aus jedem Ordner |
 | E-Mail | Geplant | Nachrichten, die auf eine spätere Zustellung warten |
 
-Anbieterordner sind eine andere Ebene. Verschiebst du eine Unterhaltung in Archiv, Papierkorb, Spam oder einen anderen Anbieterordner, verschiebt sich auch die E-Mail beim Anbieter. Andere Programme können das zeigen. Markierst du eine Unterhaltung als **Erledigt**, ändert sich nur der Status der Nachverfolgung in Cloud. Die E-Mail wird weder archiviert noch verschoben.
+Anbieterordner sind eine andere Ebene. Verschiebst du eine Unterhaltung in Archiv, Papierkorb, Spam oder einen anderen Anbieterordner, verschiebt sich auch die E-Mail beim Anbieter. Andere Programme können das zeigen. Markierst du eine Unterhaltung als **Erledigt**, ändert sich nur der Status der Nachverfolgung in Cloud. Die E-Mail wird weder archiviert noch verschoben oder als gelesen markiert. Der Posteingang beim Anbieter bleibt unverändert.
 
 Mit Zugriff **Verwalten** hältst du die E-Mails eines Ordners in diesem Ordner, etwa bei einem gemeinsamen Teamordner (**Nur im Ordner**). Seine Unterhaltungen fehlen dann in diesen Ansichten und ihren Zählern:
 
@@ -96,6 +96,17 @@ Um mehrere Unterhaltungen zu bearbeiten, wähle ihre Kontrollkästchen aus. Halt
 :::
 
 Wähle **Zuweisen**, um die zugewiesenen Personen der ausgewählten Unterhaltungen zu ändern. Wähle **Mir zuweisen**, **Mich entfernen** oder **Alle Zuweisungen entfernen**, oder suche eine Person, die zugewiesen werden kann. Eine Person, die du hinzufügst, kommt zu den anderen zugewiesenen Personen dazu und erhält eine einzige Benachrichtigung für die ganze Auswahl. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** macht die Änderung nur in den Unterhaltungen rückgängig, die sie geändert hat. **Alle Zuweisungen entfernen** bietet kein **Rückgängig**. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
+
+### Von Handlungsbedarf aus arbeiten
+
+Wir empfehlen **Handlungsbedarf** als deinen Posteingang. Nutze Ordner zur Ablage; Ablegen und Archivieren ändern keinen Arbeitsstatus.
+Damit der Posteingang auch in anderen E-Mail-Programmen leer ist, wähle zusätzlich **Archivieren**. Archivieren setzt nicht **Erledigt**.
+
+- **Persönliches Postfach:** Arbeite aus **Handlungsbedarf**. Automatisierungen markieren Unwichtiges als **Erledigt** und legen es ab. Markiere abgeschlossene Arbeit als **Erledigt**.
+  **Wartet auf Antwort** folgt automatisch auf eine bestätigte menschliche Antwort. Nutze **Später anzeigen** für Arbeit, die von einem Datum abhängt.
+- **Gemeinsames Postfach:** Nutze **Nicht zugewiesen** mit **Handlungsbedarf** als Teameingang. Wähle **Zuweisen**, um eine zuständige Person festzulegen.
+  Jede Person arbeitet aus **Mir zugewiesen**. Ihre bestätigte Antwort setzt **Wartet auf Antwort**; sie markiert die Unterhaltung als **Erledigt**.
+  Nutze **Nur im Ordner** für Teamordner, die außerhalb gemeinsamer Listen bleiben sollen, wie oben beschrieben.
 
 ## Kurz hineinschauen, ohne zu öffnen {icon="eye"}
 
