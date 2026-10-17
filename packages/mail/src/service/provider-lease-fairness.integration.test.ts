@@ -1360,17 +1360,18 @@ suite("mail provider lease fairness", () => {
     async (uidplus) => {
       const label = `set-kept-${uidplus}`;
       const mailbox = await connect(label, { uidplus });
-      // IMAP UIDs are unsigned 32-bit values, so the set projection must also handle values above INT_MAX.
-      folderOf(mailbox.account, ARCHIVE).nextUid = 4_000_000_000;
+      // IMAP UIDs are unsigned 32-bit values, so the set projection of COPYUID must also handle values above
+      // INT_MAX. Without COPYUID, the Archive sync below walks its UID range, so it keeps low UIDs.
+      if (uidplus) folderOf(mailbox.account, ARCHIVE).nextUid = 4_000_000_000;
       const messageIds = await deliverAndSync(mailbox, 3, label);
       const messages = await sql<{ id: string }[]>`SELECT id FROM mail.message_contents
       WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND message_id IN ${sql(messageIds)}`;
-      for (const message of messages) {
-        const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations (short_id, mailbox_id, subject, latest_message_at)
-        VALUES (${newShortId()}, ${mailbox.mailboxId}::uuid, 'Kept move set', '2026-10-16T00:00:00Z') RETURNING id`;
-        await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position)
-        VALUES (${conversation!.id}::uuid, ${message.id}::uuid, 0)`;
-        expect((await keepConversation({ context, mailboxId: mailbox.mailboxId, conversationId: conversation!.id })).ok).toBe(true);
+      // The sync already linked each message to its conversation; keep those.
+      const conversations = await sql<{ conversation_id: string }[]>`SELECT DISTINCT conversation_id FROM mail.conversation_messages
+      WHERE message_id IN ${sql(messages.map((message) => message.id))}`;
+      expect(conversations.length).toBeGreaterThan(0);
+      for (const { conversation_id } of conversations) {
+        expect((await keepConversation({ context, mailboxId: mailbox.mailboxId, conversationId: conversation_id })).ok).toBe(true);
       }
       const moves = await queueMoves(mailbox, messageIds, label, { startTogether: true });
       await waitFor(async () => (await pending(moves)) === 0, "the kept set to finish");
