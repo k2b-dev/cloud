@@ -9,7 +9,7 @@ const bootstrap = createDomTestHarness();
 const { LocaleProvider } = await import("@k2b/ui");
 const commandsModule = await import("@k2b/cloud/browser/commands");
 const events: string[] = [];
-const openCommand = mock(async (_id: string, _input: unknown, _options: { returnTo?: string }) => {
+const openCommand = mock(async (_id: string, _input: unknown, _options: { returnTo?: string }, _signal?: AbortSignal) => {
   events.push("open");
 });
 mock.module("@k2b/cloud/browser/commands", () => ({ ...commandsModule, openCommand }));
@@ -249,7 +249,16 @@ const mount = async (
     );
   await waitFor(() => Boolean(row()));
   const choose = () => row()!.click();
-  return { ...dom, input, row, choose, saves, creates, status: () => dom.root.querySelector(".k2b-chat-composer__status")?.textContent };
+  return {
+    ...dom,
+    input,
+    row,
+    choose,
+    saves,
+    creates,
+    dispose,
+    status: () => dom.root.querySelector(".k2b-chat-composer__status")?.textContent,
+  };
 };
 
 test("choosing an app Command saves the token-free draft with its revision, then opens with the chat return path", async () => {
@@ -258,7 +267,12 @@ test("choosing an app Command saves the token-free draft with its revision, then
   await waitFor(() => openCommand.mock.calls.length === 1);
   expect(events).toEqual(["save", "open"]);
   expect(h.saves).toEqual([{ expectedRevision: 4, content: [{ type: "text", text: "Plan" }] }]);
-  expect(openCommand).toHaveBeenCalledWith("spaces.task.compose", {}, { returnTo: "/app/assistant?conversation=chat01" });
+  expect(openCommand).toHaveBeenCalledWith(
+    "spaces.task.compose",
+    {},
+    { returnTo: "/app/assistant?conversation=chat01" },
+    expect.any(AbortSignal),
+  );
 });
 
 test("a save conflict opens nothing and reports why in the composer status line", async () => {
@@ -301,7 +315,12 @@ test("a project composer creates a chat without navigating, saves there, and ret
   expect(events).toEqual(["create", "save", "open"]);
   expect(h.creates).toEqual([{ title: "Neuer Chat", projectId: "Proj01" }]);
   expect(h.saves).toEqual([{ expectedRevision: 0, content: [{ type: "text", text: "Plan" }] }]);
-  expect(openCommand).toHaveBeenCalledWith("spaces.task.compose", {}, { returnTo: "/app/assistant?conversation=new001" });
+  expect(openCommand).toHaveBeenCalledWith(
+    "spaces.task.compose",
+    {},
+    { returnTo: "/app/assistant?conversation=new001" },
+    expect.any(AbortSignal),
+  );
   expect(h.window.location.search).toBe("?project=Proj01");
 });
 
@@ -311,7 +330,12 @@ test("a plain new chat creates its target before saving and keeps the saved draf
   await waitFor(() => openCommand.mock.calls.length === 1);
   expect(events).toEqual(["create", "save", "open"]);
   expect(h.root.querySelector("textarea")?.value).toBe("Plan ");
-  expect(openCommand).toHaveBeenCalledWith("spaces.task.compose", {}, { returnTo: "/app/assistant?conversation=new001" });
+  expect(openCommand).toHaveBeenCalledWith(
+    "spaces.task.compose",
+    {},
+    { returnTo: "/app/assistant?conversation=new001" },
+    expect.any(AbortSignal),
+  );
 });
 
 test("an unreachable app from a plain new chat names the failure in the status line of the chat it created", async () => {
@@ -369,5 +393,19 @@ test("moving to another chat while the draft saves opens nothing and says why", 
   await waitFor(() => h.window.location.search !== "?conversation=chat01");
   release();
   await waitFor(() => Boolean(h.status()?.includes("anderen Chat")));
+  expect(openCommand).not.toHaveBeenCalled();
+});
+
+test("a composer that goes away while the draft saves, such as for Approvals, opens nothing", async () => {
+  let release!: () => void;
+  const saveGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const h = await mount({ saveGate });
+  h.choose();
+  await waitFor(() => events.includes("save"));
+  h.dispose();
+  release();
+  await Bun.sleep(50);
   expect(openCommand).not.toHaveBeenCalled();
 });

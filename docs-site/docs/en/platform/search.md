@@ -518,12 +518,14 @@ retry row that starts another opening. The row's `before(draft)` must save
 the attachments, through your revisioned draft path. Read `returnTo()` after
 saving, so a newly created chat can supply its path.
 
-`openComposerCommand(command, { before, returnTo, locale })` provides the same
-save-then-open behavior for a custom row. A rejected `before()` reaches the
-composer status line and opens nothing. An invalid return path throws. If
+`openComposerCommand(command, { before, returnTo, signal, locale })` provides
+the same save-then-open behavior for a custom row. A rejected `before()` reaches
+the composer status line and opens nothing. An invalid return path throws. If
 Command resolution fails, the row shows the app's unavailability and stays
-open for retry. After navigation, the target app owns error feedback and
-chooses whether to use `returnTo`.
+open for retry. `signal()` is read after saving: once it aborts, for example
+because the person left the chat, the row ends without opening anything. After
+navigation, the target app owns error feedback and chooses whether to use
+`returnTo`.
 
 ```tsx
 import { cloudCommandMenu, cloudInsertMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";

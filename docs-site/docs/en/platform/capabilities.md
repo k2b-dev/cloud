@@ -1588,6 +1588,11 @@ onMount(() => {
 });
 ```
 
+Pass an `AbortSignal` as the fourth argument when the request may outlive its
+reason, for example `openCommand(id, input, { returnTo }, signal)` from a view
+the person can leave: once the signal aborts, nothing opens, also when it aborts
+while the link resolves.
+
 `openCommand` offers the request to mounted handlers synchronously. Exactly one
 accepting handler owns it; with no owner Cloud resolves the link and navigates.
 Overlapping owners produce an error before either runs; use `accepts` to keep ownership unambiguous.

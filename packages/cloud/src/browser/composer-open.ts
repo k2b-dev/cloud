@@ -7,6 +7,8 @@ import { composerOpenMessages } from "./composer-open-messages";
 export type OpenComposerCommandOptions = {
   before: () => Promise<void>;
   returnTo: () => string | undefined;
+  /** Read after `before`; once it aborts, for example because the person left the chat, nothing opens. */
+  signal?: () => AbortSignal | undefined;
   locale: string;
 };
 
@@ -16,13 +18,17 @@ export const openComposerCommand = async (
   options: OpenComposerCommandOptions,
 ): Promise<ChatCommandOpenResult> => {
   await options.before();
+  const signal = options.signal?.();
+  if (signal?.aborted) return "cancelled";
   const returnTo = options.returnTo();
   if (returnTo !== undefined && !isCommandPath(returnTo)) throw new Error("Invalid Command return path");
   try {
-    await openCommand(command.id, command.input, { returnTo });
+    await openCommand(command.id, command.input, { returnTo }, signal);
   } catch {
+    if (signal?.aborted) return "cancelled";
     return { failed: composerOpenMessages.resolve([options.locale]).t.appUnavailable({ app: command.appName }) };
   }
+  if (signal?.aborted) return "cancelled";
 };
 
 export type CloudCommandMenuOptions = {
@@ -32,6 +38,8 @@ export type CloudCommandMenuOptions = {
   section?: string;
   before: (draft: ChatCommandDraft) => Promise<void>;
   returnTo: () => string | undefined;
+  /** See `OpenComposerCommandOptions.signal`. */
+  signal?: () => AbortSignal | undefined;
 };
 export type CloudCommandMenu = { commands: ChatCommand[]; pending: boolean };
 
@@ -66,7 +74,12 @@ export const cloudCommandMenu = (options: CloudCommandMenuOptions): CloudCommand
       app: command.appName,
       section: options.section,
       open: (draft) =>
-        openComposerCommand(command, { before: () => options.before(draft), returnTo: options.returnTo, locale: options.locale }),
+        openComposerCommand(command, {
+          before: () => options.before(draft),
+          returnTo: options.returnTo,
+          signal: options.signal,
+          locale: options.locale,
+        }),
     })),
     pending: false,
   };

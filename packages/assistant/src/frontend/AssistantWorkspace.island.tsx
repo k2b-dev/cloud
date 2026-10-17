@@ -1414,6 +1414,14 @@ export default function AssistantWorkspace(props: Props) {
     const composerRunning = () => !projectComposer() && chat.running();
     const catalog = createCloudComposerCatalog();
     let commandTarget: string | undefined;
+    // One app opening at a time; it ends when this composer goes away or the person moves to another chat, so a late
+    // answer never navigates over where they are now.
+    let commandOpening: { controller: AbortController; key?: string } | undefined;
+    onCleanup(() => commandOpening?.controller.abort());
+    createEffect(() => {
+      const key = sessionKey();
+      if (commandOpening?.key !== undefined && commandOpening.key !== key) commandOpening.controller.abort();
+    });
     // Saves the draft without its "/…" before an app opens, through the revisioned path, with references and
     // attachments. A chat that does not exist yet is created first, as "Assign project" and dictation do.
     const beforeCommand = async (draft: { value: string; mentions: readonly ChatMention[] }) => {
@@ -1422,6 +1430,9 @@ export default function AssistantWorkspace(props: Props) {
       if (session(key).conflict) throw new Error(commandCopy().commandDraftConflict);
       const projectId = composerProps.projectId;
       let target = projectId ? pendingProjectChats()[projectId]?.id : chat.activeConversationId();
+      commandOpening?.controller.abort();
+      const opening: { controller: AbortController; key?: string } = { controller: new AbortController() };
+      commandOpening = opening;
       try {
         if (!target) {
           // The new chat starts with the draft as it is saved, without "/…": its key changes, so the composer cannot
@@ -1445,12 +1456,16 @@ export default function AssistantWorkspace(props: Props) {
         // A failed save answers null for a revision conflict and for any other failure alike; a conflict also
         // shows the composer's conflict notice.
         if (!(await saveComposer(key, target, { text: draft.value, mentions: draft.mentions }))) throw new Error("Draft not saved");
+        // This composer went away meanwhile, such as for Approvals: the opening just ends.
+        if (opening.controller.signal.aborted) return;
         // The person moved to another chat while it saved: the app does not open over that one.
         if (sessionKey() !== opened) {
-          commandTarget = undefined;
+          opening.controller.abort();
           throw new Error(commandCopy().commandSuperseded);
         }
         commandTarget = target;
+        // From here on, moving to another chat ends the opening, also while the link resolves.
+        opening.key = opened;
       } catch (error) {
         // The composer's status line names the failure once.
         chat.setError(null);
@@ -1467,6 +1482,7 @@ export default function AssistantWorkspace(props: Props) {
         section: "apps",
         before: (draft) => trackComposerPicking(beforeCommand(draft)),
         returnTo: () => (commandTarget ? assistantConversationHref(window.location.href, commandTarget) : undefined),
+        signal: () => commandOpening?.controller.signal,
       }),
     );
     const attachmentCount = createMemo(() => composerAttachmentsFor(sessionKey()).length);

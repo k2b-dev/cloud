@@ -14,15 +14,24 @@ export type { CommandOptions } from "../contracts/commands";
 export type { CommandTarget, ContextAwareCommand } from "./command-bridge";
 export { registerCommandHandler, registerContextAwareCommand } from "./command-bridge";
 
-/** Opens locally only when a mounted owner explicitly accepts; otherwise follows the app's URL. */
-export const openCommand = async (command: string, input: unknown = {}, options: CommandOptions = {}): Promise<void> => {
+/**
+ * Opens locally only when a mounted owner explicitly accepts; otherwise follows the app's URL. Once `signal` aborts,
+ * for example because the person moved on while the link resolved, nothing opens.
+ */
+export const openCommand = async (
+  command: string,
+  input: unknown = {},
+  options: CommandOptions = {},
+  signal?: AbortSignal,
+): Promise<void> => {
   const modules = await importOnDemand(() => Promise.all([import("../contracts/commands"), import("../capabilities/client")]));
-  if (!modules) return;
+  if (!modules || signal?.aborted) return;
   const [contracts, capabilities] = modules;
   const parsedOptions = contracts.CommandOptionsSchema.parse(options);
   const handled = requestCommandHandling({ command, input, options: parsedOptions });
   if (handled) return handled;
   const result = await capabilities.resolveCommand(command, input, parsedOptions);
+  if (signal?.aborted) return;
   if (!result.ok) throw new Error(result.error.message);
   window.location.assign(result.data.href);
 };
