@@ -21,11 +21,19 @@ databaseSuite()("PDF route admission and idle timeout", () => {
     >`SELECT key, value FROM settings.entries WHERE key IN ('gotenberg.url', 'gotenberg.timeout_ms')`;
     const originalValues = new Map(await Promise.all(keys.map(async (key) => [key, await settings.get(key)] as const)));
     const hanging = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Promise<Response>(() => {}) });
+    // Record the idle timeouts the route sets on its socket. Bun 1.4 does not drop a pending POST at its idle
+    // timeout (measured), so the raise is checked directly: both phases plus 10 s, then the default before answering.
+    const timeouts: number[] = [];
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      idleTimeout: 1,
-      fetch: (request, bunServer) => api.fetch(request, bunServer),
+      fetch: (request, bunServer) =>
+        api.fetch(request, {
+          timeout: (raw: Request, seconds: number) => {
+            timeouts.push(seconds);
+            bunServer.timeout(raw, seconds);
+          },
+        }),
     });
     try {
       const token = await serviceAccountCredentials.createApiToken({ serviceAccountId: account!.id, name: "pdf", scopes: ["read"] });
@@ -35,11 +43,12 @@ databaseSuite()("PDF route admission and idle timeout", () => {
       const denied = await fetch(url, { method: "POST", headers, body: "x".repeat(400 * 1024) });
       expect([403, 404]).toContain(denied.status);
       await denied.body?.cancel();
+      expect(timeouts).toEqual([]);
       const [access] = await sql<{ id: string }[]>`INSERT INTO auth.access (service_account_id, permission)
         VALUES (${account!.id}::uuid, 'read') RETURNING id`;
       await sql`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${notebook!.id}::uuid, ${access!.id}::uuid)`;
       await settings.set("gotenberg.url", hanging.url.origin);
-      await settings.set("gotenberg.timeout_ms", 2000);
+      await settings.set("gotenberg.timeout_ms", 1000);
       const response = await fetch(url, {
         method: "POST",
         headers,
@@ -47,6 +56,7 @@ databaseSuite()("PDF route admission and idle timeout", () => {
         signal: AbortSignal.timeout(10000),
       });
       expect(response.status).toBe(504);
+      expect(timeouts).toEqual([12, 10]);
       expect(await response.json()).toMatchObject({ message: "Der PDF-Renderer hat das Zeitlimit überschritten. Versuche es erneut." });
     } finally {
       await server.stop(true);
