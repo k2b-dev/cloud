@@ -1,5 +1,6 @@
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import type { Contact, ContactTag } from "../../service";
+import type { ContactsScope } from "./contacts-empty-state";
 import ContactsResults from "./ContactsResults.island";
 import CreateContactButton from "./CreateContactButton.island";
 import { resultsMessages } from "./results-messages";
@@ -10,6 +11,7 @@ type ContactBookOption = {
 };
 
 type Props = {
+  scope: ContactsScope;
   title: string;
   description: string;
   total: number;
@@ -55,6 +57,7 @@ export default function ContactsWorkspaceMain(props: Props) {
       </header>
 
       <ContactsResults
+        scope={props.scope}
         bookId={props.bookId}
         initialSearch={props.search}
         initialHref={props.resultHref}

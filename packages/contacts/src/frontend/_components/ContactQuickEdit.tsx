@@ -8,7 +8,8 @@ import { readErrorMessage } from "./api";
 import { openBookSettingsDialog } from "./BookSettingsDialog";
 import ContactSearchPicker from "./ContactSearchPicker";
 import ContactTagsPicker from "./ContactTagsPicker";
-import { buildContactPayload, contactToUpsertDraft } from "./ContactUpsertForm.model";
+import { contactFormMessages, contactRowLabels } from "./contact-form-messages";
+import { applyQuickEditFields, buildContactPayload, contactToUpsertDraft } from "./ContactUpsertForm.model";
 import { detailMessages } from "./detail-messages";
 
 type Props = {
@@ -31,7 +32,8 @@ const toContactRef = (contact: Contact): ContactRef => ({
 export default function ContactQuickEdit(props: Props) {
   const locale = useLocale();
   const t = () => detailMessages.resolve([locale()]).t;
-  const initial = contactToUpsertDraft(props.contact);
+  const rowLabels = () => contactRowLabels(contactFormMessages.resolve([locale()]).t);
+  const initial = contactToUpsertDraft(props.contact, rowLabels());
   const [label, setLabel] = createSignal(initial.label);
   const [firstName, setFirstName] = createSignal(initial.firstName);
   const [lastName, setLastName] = createSignal(initial.lastName);
@@ -65,24 +67,23 @@ export default function ContactQuickEdit(props: Props) {
 
   const save = () => {
     try {
-      const draft = contactToUpsertDraft(props.contact);
-      const emails = [...draft.emails];
-      const phones = [...draft.phones];
-      emails[0] = { label: emails[0]?.label ?? "Email", email: email() };
-      phones[0] = { label: phones[0]?.label ?? "Telephone", phone: phone() };
-
-      const payload = buildContactPayload({
-        ...draft,
-        label: label(),
-        firstName: firstName(),
-        lastName: lastName(),
-        companyName: companyName(),
-        jobTitle: jobTitle(),
-        emails,
-        phones,
-        parentRef: parentRef(),
-        tagIds: tagIds(),
-      });
+      const payload = buildContactPayload(
+        applyQuickEditFields(
+          props.contact,
+          {
+            label: label(),
+            firstName: firstName(),
+            lastName: lastName(),
+            companyName: companyName(),
+            jobTitle: jobTitle(),
+            email: email(),
+            phone: phone(),
+            parentRef: parentRef(),
+            tagIds: tagIds(),
+          },
+          rowLabels(),
+        ),
+      );
       void saveMutation.mutate({
         bookId: props.contact.bookId,
         contactId: props.contact.id,

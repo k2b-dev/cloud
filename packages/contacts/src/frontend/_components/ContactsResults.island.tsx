@@ -6,6 +6,9 @@ import { apiClient } from "@/api/client";
 import type { Contact, ContactPresenceFilter, ContactSort, ContactTag } from "../../service";
 import { buildContactsQueryHref, readContactsQueryOptions } from "../contacts-query";
 import { readErrorMessage } from "./api";
+import { bookMessages } from "./book-messages";
+import { contactsEmptyState, type ContactsScope } from "./contacts-empty-state";
+import { createBookController } from "./create-book";
 import { openContactDuplicatesDialog } from "./ContactDuplicatesDialog";
 import ContactsBulkActions from "./ContactsBulkActions";
 import ContactsList from "./ContactsList";
@@ -23,6 +26,7 @@ import { syncContactDetailFromUrl } from "./context";
 import { type ResultsMessages, resultsMessages } from "./results-messages";
 
 type Props = {
+  scope: ContactsScope;
   bookId?: string;
   initialSearch: string;
   initialHref: string;
@@ -148,6 +152,18 @@ const loadContactsResults = async (
   };
 };
 
+function CreateFirstBookAction() {
+  const locale = useLocale();
+  const t = () => bookMessages.resolve([locale()]).t;
+  const { createBook, busy } = createBookController();
+  return (
+    <Button variant="secondary" size="sm" loading={busy()} loadingLabel={t().creatingBook} onClick={() => void createBook()}>
+      <i class="ti ti-cube-plus" aria-hidden="true" />
+      {t().newBook}
+    </Button>
+  );
+}
+
 export default function ContactsResults(props: Props) {
   const locale = useLocale();
   const t = () => resultsMessages.resolve([locale()]).t;
@@ -209,6 +225,23 @@ export default function ContactsResults(props: Props) {
     });
   };
   const currentHref = () => current()?.href ?? source();
+
+  // The scope comes from SSR and never changes inside this island, so the action is created once.
+  const createBookAction = props.scope === "noBooks" ? <CreateFirstBookAction /> : undefined;
+  const emptyState = () => {
+    const href = currentHref();
+    const url = new URL(href, "http://contacts.local");
+    return contactsEmptyState(
+      {
+        ...readContactsQueryOptions(href),
+        scope: props.scope,
+        canWrite: props.bookId ? props.canWrite : props.writableBooks.length > 0,
+        search: url.searchParams.get("search") ?? "",
+        tagId: url.searchParams.get("tag_id"),
+      },
+      t(),
+    );
+  };
 
   const commitHistory = (href: string) => {
     navigate(href, { replace: true, scroll: "preserve" });
@@ -481,8 +514,9 @@ export default function ContactsResults(props: Props) {
                 selectionMode={selectionMode()}
                 selectedIds={selectedIds()}
                 onToggleSelection={toggleSelection}
-                emptyTitle={committedSearch().trim() ? t().noMatchingContacts : t().noContactsYet}
-                emptyDescription={committedSearch().trim() ? t().noMatchingContactsHint : t().noContactsYetHint}
+                emptyTitle={emptyState().title}
+                emptyDescription={emptyState().description}
+                emptyAction={emptyState().action === "createBook" ? createBookAction : undefined}
               />
               <Show when={snapshot().totalPages > 1}>
                 <div class="pt-3">
