@@ -202,6 +202,8 @@ describe("Help author contract", () => {
       "<div>mode=help:desk</div>",
       ":::note mode=help:desk\nBody\n:::",
       ":::reference-data\nText",
+      ":::details Example\n:::reference-data\nText\n:::",
+      ":::details Example\n:::details-data\nText\n:::",
       `<div>${"a".repeat(20_000)}</div>`,
     ]) {
       expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).not.toThrow();

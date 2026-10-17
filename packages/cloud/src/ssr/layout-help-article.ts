@@ -7,6 +7,13 @@ export type HelpArticleParts = {
   steps: number;
 };
 
+/** The text a screen reader reads: key names instead of key caps, no icons or decorative separators. */
+const spokenText = (element: Element): string => {
+  const copy = element.cloneNode(true) as Element;
+  for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+  return copy.textContent?.replace(/\s+/g, " ").trim() ?? "";
+};
+
 /**
  * Splits trusted Help HTML before it renders, so the head shows the short answer, the step count, and the
  * section menu in the same frame as the body and nothing moves afterwards.
@@ -26,7 +33,7 @@ export const helpArticleParts = (html: string): HelpArticleParts => {
     // A heading inside collapsed details is not a section of the page.
     sections: Array.from(body.querySelectorAll("h2[id]"))
       .filter((heading) => !heading.closest("details"))
-      .map((heading) => ({ id: heading.id, label: heading.textContent?.trim() ?? "" }))
+      .map((heading) => ({ id: heading.id, label: spokenText(heading) }))
       .filter((section) => section.label),
     // Steps inside a collapsed `details` block are an aside, not the task.
     steps: Array.from(body.querySelectorAll(".help-steps > ol > li")).filter((step) => !step.closest("details")).length,

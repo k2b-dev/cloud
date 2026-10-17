@@ -19,6 +19,18 @@ else {
         { id: "remove", label: "Remove" },
       ]);
       expect(parts.steps).toBe(5);
+      // Section labels read like a screen reader: key names, no key caps, icons or decorative separators.
+      expect(
+        helpArticleParts(
+          [
+            '<h2 id="press">Press <kbd class="k2b-kbd"><span class="k2b-sr-only">Control K</span><span class="k2b-kbd__keys" aria-hidden="true"><kbd class="k2b-kbd__key">Ctrl</kbd><kbd class="k2b-kbd__key">K</kbd></span></kbd> now</h2>',
+            '<h2 id="path"><span class="help-menu-path"><span class="k2b-label-chip"><i class="ti ti-settings" aria-hidden="true"></i>Settings</span><span class="help-menu-path-separator" aria-hidden="true">›</span><span class="k2b-sr-only"> → </span><span class="k2b-label-chip">Sharing</span></span></h2>',
+          ].join(""),
+        ).sections,
+      ).toEqual([
+        { id: "press", label: "Press Control K now" },
+        { id: "path", label: "Settings → Sharing" },
+      ]);
       // A bold-only eyebrow or a heading first means the article has no short answer.
       for (const html of ['<p class="help-eyebrow"><strong>First steps</strong></p><p>Text</p>', '<h2 id="a">A</h2><p>Text</p>'])
         expect(helpArticleParts(html)).toMatchObject({ lead: undefined, body: html });

@@ -118,7 +118,7 @@ test("labels and menu paths use chips while preserving inline Markdown", () => {
   expect(path).toContain("Space <em>settings</em>");
   expect(path.match(/class="k2b-label-chip"/g)).toHaveLength(2);
   expect(path.match(/ti-settings/g)).toHaveLength(1);
-  expect(path).toContain('<span class="help-menu-path-separator" aria-hidden="true">›</span><span class="k2b-sr-only">→</span>');
+  expect(path).toContain('<span class="help-menu-path-separator" aria-hidden="true">›</span><span class="k2b-sr-only"> → </span>');
   expect(renderHelpMarkdown("**Settings → Sharing**")).toContain("help-menu-path");
   expect(renderHelpMarkdown("**View**")).toContain("<strong>View</strong>");
   expect(renderHelpMarkdown('**Open `Settings`**{icon="settings"}')).toContain(">Settings</code>");
@@ -148,6 +148,15 @@ test("details start closed, contain guided blocks and keep their full searchable
   expect(markdownToPlainText(source)).toContain("Hidden but searchable.");
   expect(markdownToPlainText(source)).toContain("Choose Share.");
   expect(renderHelpMarkdown(":::details\nText\n:::")).toContain(":::details");
+});
+
+test("other ::: names inside details stay text and leave the details closer alone", () => {
+  for (const name of ["reference-data", "details-data", "note-card"]) {
+    const html = renderHelpMarkdown(`:::details Example\n:::${name}\nText\n:::\n\nAfter.`);
+    expect(html.match(/<details /g)).toHaveLength(1);
+    expect(html).toContain(`:::${name}`);
+    expect(html).toContain("</details><p>After.</p>");
+  }
 });
 
 test("details end at their own closing line, never inside code, and an unclosed block stays text", () => {

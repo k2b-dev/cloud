@@ -22,10 +22,11 @@ const headingTitleTokens = (token: Tokens.Heading): Token[] => {
 };
 
 const FENCE = /^([ \t]*(?:>[ \t]*|(?:[-+*]|\d+[.)])[ \t]+)*)(`{3,}|~{3,})(.*)$/;
-const DIRECTIVE_OPENER = /^ {0,3}:::(?:steps|reference|compare|details|note|info|success|warning|danger)\b/i;
+// A directive name ends at a space or the line end, as in the openers themselves: `:::reference-data` is text.
+const DIRECTIVE_OPENER = /^ {0,3}:::(?:steps|reference|compare|details|note|info|success|warning|danger)(?=[ \t]|$)/i;
 const DIRECTIVE_CLOSER = /^ {0,3}:::[ \t]*$/;
-const CALLOUT_OPENER = /^ {0,3}:::(?:note|info|success|warning|danger)\b/i;
-const DETAILS_OPENER = /^ {0,3}:::details\b/i;
+const CALLOUT_OPENER = /^ {0,3}:::(?:note|info|success|warning|danger)(?=[ \t]|$)/i;
+const DETAILS_OPENER = /^ {0,3}:::details(?=[ \t]|$)/i;
 
 const detailsLexers = new WeakSet<Lexer>();
 
@@ -139,7 +140,7 @@ export function guidedHelpExtension(): MarkedExtension {
         const chips = menuSegments(token.tokens ?? []).map(
           (segment) => `<span class="k2b-label-chip">${this.parser.parseInline(segment)}</span>`,
         );
-        return `<span class="help-menu-path">${chips.join('<span class="help-menu-path-separator" aria-hidden="true">›</span><span class="k2b-sr-only">→</span>')}</span>`;
+        return `<span class="help-menu-path">${chips.join('<span class="help-menu-path-separator" aria-hidden="true">›</span><span class="k2b-sr-only"> → </span>')}</span>`;
       },
     },
     extensions: [
@@ -180,7 +181,7 @@ export function guidedHelpExtension(): MarkedExtension {
           );
           return segments.length === 1
             ? chips[0]!
-            : `<span class="help-menu-path">${chips.join('<span class="help-menu-path-separator" aria-hidden="true">›</span><span class="k2b-sr-only">→</span>')}</span>`;
+            : `<span class="help-menu-path">${chips.join('<span class="help-menu-path-separator" aria-hidden="true">›</span><span class="k2b-sr-only"> → </span>')}</span>`;
         },
         childTokens: ["tokens"],
       },
