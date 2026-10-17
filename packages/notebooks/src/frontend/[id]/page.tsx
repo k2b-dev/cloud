@@ -146,7 +146,8 @@ export default ssr<AuthContext>(async (c) => {
           ctx={ctx}
           editorToolbar={editorOwnsWorkspaceSocket}
           current={isGraphMode ? "graph" : undefined}
-          graphBack={data.graphBack}
+          // Version history loads as a whole page, so its address is where Links returns to.
+          graphBack={isVersionsMode ? c.req.path + new URL(c.req.url).search : data.graphBack}
         />
 
         <AppWorkspace.Content>

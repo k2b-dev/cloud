@@ -498,6 +498,13 @@ test.each(["versions", "graph"] as const)("%s mode has no note preview", async (
   expect(await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]')).toEqual([]);
 });
 
+test("Links from version history returns to version history", async () => {
+  const html = await renderEditorPage({ mode: "versions" });
+  const [links] = await select(html, ".notebook-sidebar-foot a");
+  const back = encodeURIComponent("/app/notebooks/book01/notes/note01?mode=versions");
+  expect(links?.attributes.href).toBe(`/app/notebooks/book01?mode=graph&amp;note=note01&amp;back=${back}`);
+});
+
 test("source mode includes line numbers and the literal Markdown markers", async () => {
   const html = await renderEditorPage({ richMode: "source" });
   const [preview] = await select(html, "#notebook-note-preview");
