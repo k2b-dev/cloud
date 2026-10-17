@@ -44,7 +44,8 @@ export const resolveMailWorkflowTemplateBodies = async (ctx: WorkflowExecuteActi
               enumerable: true,
               configurable: true,
               get: () => {
-                if (resolved.has(reference) || message.bodyAvailable === true) return value;
+                // A non-empty field came from this run's frozen hydration (new snapshots carry ""), also under an aliased input name.
+                if (resolved.has(reference) || message.bodyAvailable === true || (typeof value === "string" && value !== "")) return value;
                 pendingReference = reference;
                 throw unresolvedBody;
               },

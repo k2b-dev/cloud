@@ -1071,7 +1071,7 @@ ${steps}
         `;
       }
       let outcome = await runMailWorkflow(runId);
-      if (scenario === "pending template") {
+      if (pending) {
         expect(outcome).toMatchObject({ state: "finished", result: { state: "waiting" } });
         const dependencies = await sql<{ kind: string; key: string }[]>`
           SELECT dependency ->> 'kind' AS kind, dependency ->> 'key' AS key
@@ -1095,14 +1095,14 @@ ${steps}
       } else {
         expect(outcome).toMatchObject({
           state: "finished",
-          result: { state: "succeeded", message: scenario === "pending whole" ? "||" : `${plain}|${plain}|${html}` },
+          result: { state: "succeeded", message: `${plain}|${plain}|${html}` },
         });
       }
       const [state] = await sql<{ frozen_hydration: Record<string, unknown> }[]>`
         SELECT frozen_hydration FROM mail.workflow_run_state WHERE run_id = ${runId}::uuid
       `;
       const frozen = state?.frozen_hydration ?? {};
-      if (scenario.startsWith("deleted") || scenario === "failed hydration" || scenario === "pending whole") {
+      if (scenario.startsWith("deleted") || scenario === "failed hydration") {
         expect(frozen).toEqual({});
       } else {
         expect(frozen).toEqual({ "inputs.message.bodyText": plain, "inputs.message.bodyHtml": html });

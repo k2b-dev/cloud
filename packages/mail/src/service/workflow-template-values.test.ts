@@ -125,6 +125,17 @@ describe("Mail workflow template body access", () => {
     expect(resolveReference).not.toHaveBeenCalled();
   });
 
+  test("uses a frozen body projected through an aliased input without resolving it again", async () => {
+    const { ctx, message, resolveReference } = fixture();
+    ctx.plan.inputs.push({ name: "second", type: "mailMessage", config: {} });
+    ctx.invocation.inputs.second = message;
+    Object.assign(message, { body: "frozen plain", bodyText: "frozen plain" });
+
+    await resolveMailWorkflowTemplateBodies(ctx, step("{{ inputs.second.bodyText }}"));
+
+    expect(resolveReference).not.toHaveBeenCalled();
+  });
+
   test("does not resolve bodies in untaken branches", async () => {
     const { ctx, message, resolveReference } = fixture();
     await resolveMailWorkflowTemplateBodies(ctx, step("{% if false %}{{ inputs.message.bodyText }}{% else %}OK{% endif %}"));
