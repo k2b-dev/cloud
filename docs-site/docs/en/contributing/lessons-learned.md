@@ -34,6 +34,7 @@ convention still needs a check or a test.
 | Retention deletes a dedupe guard | Expiring a one-off task's current occurrence lets its scheduled time run twice after reactivation. | Test: `chat-tasks.integration.test.ts` keeps the current slot row through completion and timezone reactivation while its turn and transcript expire, rejects a duplicate slot, and removes the row after the scheduled time changes. |
 | Retention blocked by a dependent check | A row's `ON DELETE SET NULL` violates its own CHECK, so every delete of the referenced row fails and an oldest-first sweep stalls for good. | Test: `chat-tasks.integration.test.ts` expires a background turn that a workflow memory learning run points at. |
 | Unreadable treated as missing | Startup replaces an unreadable or invalid stored value with an environment value. | Test: `packages/cloud/src/services/settings/bootstrap.integration.test.ts` preserves ciphertext and timestamps for undecryptable and invalid rows while reads use the environment fallback ([#1295](https://github.com/k2b-dev/cloud/issues/1295)). |
+| Read fallback written back | A read fallback hides an unreadable row and a later merge writes that fallback over saved data. | Guard: settings store refuses unreadable rows by default; `unreadable.integration.test.ts` and Files configuration tests cover explicit recovery ([#1303](https://github.com/k2b-dev/cloud/issues/1303)). |
 | Motion choice ignored | JavaScript or a separate document animates despite the person's reduced-motion choice. | Tests: `MailConversationReader.behavior.test.tsx` checks the choice at jump time; `MailMessageBody.browser.test.ts` checks initial and live propagation into the sandboxed message and rejects frame-originated motion messages ([#1230](https://github.com/k2b-dev/cloud/issues/1230)). |
 | One Markdown dialect parsed differently by editor and renderer | Separate parsers disagree about documented source forms, so an image renders in one view and disappears in another. | Shared helper: Notebooks uses `parseSizedMarkdownImage` in Book and Lezer. Test: both views iterate `DOCUMENTED_IMAGE_FORMS` for attachment and HTTPS images with sizes and titles ([#1278](https://github.com/k2b-dev/cloud/issues/1278)). |
 | Shared renderer configuration race | Concurrent Mermaid consumers overwrite singleton configuration before a queued render reads it. | Test: Notebooks `mermaid-render.test.ts` checks serialized configuration and rendering, call order, and recovery after rejection. Convention: all Notebooks Mermaid consumers use `renderMermaid`. |
@@ -444,6 +445,15 @@ convention still needs a check or a test.
 - **Root cause:** Fixed CSS mixes adjusted every accent by the same amount without checking background contrast.
 - **Error class:** Derived theme text color without a contrast guarantee.
 - **Guard:** `app-color.test.ts` checks every declared app accent and edge colors against theme and selection surfaces, pins surface and default token values, and verifies the mildest passing clamp step. SSR and compiled stylesheet tests pin emission and scoped theme mappings.
+
+### Read fallback written back
+
+- **What happened:** Settings reads returned a fallback for undecryptable or invalid rows. Files token retention, VAPID bootstrap, and the AI credential split could then write over data that another process could still read ([#1303](https://github.com/k2b-dev/cloud/issues/1303)).
+- **Root cause:** A fallback value carried no stored-state information, and writes trusted it as a readable value.
+- **Error class:** Read fallback written back.
+- **Guard:** The settings store locks and checks the existing row in the write transaction and refuses unreadable rows with `setting_unreadable` unless replacement is explicit. `packages/cloud/src/services/settings/unreadable.integration.test.ts` preserves ciphertext and timestamps, checks read/list state even with shared plaintext cache entries, checks secret redaction, and covers replacement and reset. Stored-state reads bypass the shared cache because decryption depends on each process's `APP_SECRET`. Files configuration unit and integration tests refuse token retention over unreadable data and verify recovery.
+- **Concurrent inserts:** A missing-row lock does not prevent another writer from inserting; `write-key.test.ts` covers the insert-conflict recheck before any update, including unreadable winners and explicit replacement.
+- **Lock order and startup:** The store takes its row lock with an `UPDATE`, so it waits behind a table-level `SHARE` lock instead of deadlocking with it (`unreadable.integration.test.ts`). Core startup leaves Web Push off instead of failing when its key rows cannot be read (`browser-settings.test.ts`).
 
 ## Add a lesson
 

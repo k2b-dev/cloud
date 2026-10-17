@@ -23,8 +23,10 @@ export const storageSettings = {
   async write(value: unknown, identity: ArtifactIdentity) {
     authorize(identity);
     const input = StorageSettings.parse(value);
-    await app.settings.set("assistant.storage_file_mib", input.fileMiB);
-    await app.settings.set("assistant.storage_total_mib", input.totalMiB);
+    // complete value from explicit admin input; nothing is merged over a read (#1303)
+    await app.settings.set("assistant.storage_file_mib", input.fileMiB, { replaceUnreadable: true });
+    // complete value from explicit admin input; nothing is merged over a read (#1303)
+    await app.settings.set("assistant.storage_total_mib", input.totalMiB, { replaceUnreadable: true });
     return this.read(identity);
   },
 };

@@ -45,6 +45,8 @@ export const notebooksAdminMessages = i18n.define({
       deleted: "Notebook deleted",
       loadSettingsFailed: ({ status }: { status: number }) => `Failed to load settings (${status})`,
       updateSettingFailed: ({ key }: { key: string }) => `Failed to update ${key}`,
+      settingUnreadable:
+        "The saved value cannot be read by this application, usually because it was saved with a different APP_SECRET. The field shows the value in use here; saving replaces the saved value.",
       settingsReloadWarning: "The latest settings could not be reloaded, so the failed key remains queued for review.",
       settingsSaved: "Notebook settings saved",
       notebookSettings: "Notebook Settings",
@@ -104,6 +106,8 @@ export const notebooksAdminMessages = i18n.define({
       deleted: "Notizbuch gelöscht",
       loadSettingsFailed: ({ status }) => `Einstellungen konnten nicht geladen werden (${status})`,
       updateSettingFailed: ({ key }) => `${key} konnte nicht aktualisiert werden`,
+      settingUnreadable:
+        "Der gespeicherte Wert ist für diese Anwendung nicht lesbar, meist weil er mit einem anderen APP_SECRET gespeichert wurde. Das Feld zeigt den hier verwendeten Wert; Speichern ersetzt den gespeicherten Wert.",
       settingsReloadWarning:
         "Die aktuellen Einstellungen konnten nicht neu geladen werden. Der fehlgeschlagene Eintrag bleibt deshalb zur Prüfung vorgemerkt.",
       settingsSaved: "Notizbucheinstellungen gespeichert",

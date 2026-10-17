@@ -160,6 +160,11 @@ export const settingsMessages = i18n.define({
       customOverride: "Customized",
       environmentFallback: "From environment",
       codeDefault: "Default",
+      unreadableValue: "Unreadable",
+      unreadableTitle: ({ count }: { count: number }) =>
+        count === 1 ? "A stored setting cannot be read" : `${count} stored settings cannot be read`,
+      unreadableDetail:
+        "This application cannot decrypt or check the stored value, usually because it was saved with a different APP_SECRET. Until you act, it uses the default or environment value shown here. Enter a new value and save to replace the stored one, or use the default to remove it. Both change the value for every application.",
       empty: "Empty",
       defaultStageHint: "Stage the default value. Save applies it; Discard cancels it.",
       open: "Open",
@@ -397,6 +402,11 @@ export const settingsMessages = i18n.define({
       customOverride: "Angepasst",
       environmentFallback: "Aus Umgebungsvariable",
       codeDefault: "Standardwert",
+      unreadableValue: "Nicht lesbar",
+      unreadableTitle: ({ count }) =>
+        count === 1 ? "Eine gespeicherte Einstellung ist nicht lesbar" : `${count} gespeicherte Einstellungen sind nicht lesbar`,
+      unreadableDetail:
+        "Diese Anwendung kann den gespeicherten Wert nicht entschlüsseln oder prüfen, meist weil er mit einem anderen APP_SECRET gespeichert wurde. Bis du handelst, nutzt sie den hier gezeigten Standard- oder Umgebungswert. Gib einen neuen Wert ein und speichere, um den gespeicherten zu ersetzen, oder nutze den Standardwert, um ihn zu entfernen. Beides ändert den Wert für alle Anwendungen.",
       empty: "Leer",
       defaultStageHint: "Standardwert vormerken. Speichern übernimmt ihn; Verwerfen bricht ab.",
       open: "Öffnen",

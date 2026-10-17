@@ -1,7 +1,7 @@
 /**
  * Settings store — Redis cache-aside read/write primitives.
  *
- * Pattern: each key is cached in Redis with a 5-minute TTL. Reads try Redis
+ * Pattern: each key is cached in Redis with a 5-minute TTL. Value reads try Redis
  * first, fall back to DB on miss, and populate Redis. Writes update DB and
  * delete the Redis key (next reader repopulates with fresh DB state).
  *
@@ -26,6 +26,19 @@ import { SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from ".
 const REDIS_KEY = (k: string) => `settings:${k}`;
 
 type SqlClient = typeof sql;
+
+export type StoredSettingState = "none" | "readable" | "unreadable";
+export type SettingRead = { value: unknown; stored: StoredSettingState };
+
+export class SettingUnreadableError extends HTTPException {
+  readonly code = "setting_unreadable" as const;
+
+  constructor(readonly key: string) {
+    const message = `The stored value of setting "${key}" cannot be read by this application. Replace it with a new value or reset it to the default.`;
+    super(409, { message, res: Response.json({ code: "setting_unreadable", message }, { status: 409 }) });
+    this.name = "SettingUnreadableError";
+  }
+}
 
 /**
  * Forget cached values so every container re-reads on next access.
@@ -69,6 +82,12 @@ const resolveFallback = (def: SettingDef | undefined): unknown => {
  * On DB hit, populates Redis with TTL. On miss, returns env-fallback or default.
  */
 export const readKey = async (key: string): Promise<unknown> => (await bulkRead([key])).get(key);
+
+export const readKeyState = async (key: string): Promise<SettingRead> => {
+  const state = (await readStates([key])).get(key);
+  if (!state) throw new Error(`Missing read state for setting "${key}"`);
+  return state;
+};
 
 /** One warm MGET; missing rows are cached independently of local env/defaults. */
 export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unknown>> => {
@@ -132,6 +151,32 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
 };
 
 /**
+ * Stored state is per process (APP_SECRET), but the plaintext cache is shared.
+ * State reads go directly to Postgres without reading or filling the cache;
+ * value reads (`get`, snapshot) keep using the cache.
+ */
+export const readStates = async (keys: readonly string[]): Promise<Map<string, SettingRead>> => {
+  const result = new Map<string, SettingRead>();
+  if (keys.length === 0) return result;
+  const rows = await sql<StoredRow[]>`SELECT key, value FROM settings.entries WHERE key = ANY(${toPgTextArray([...keys])}::text[])`;
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+  for (const key of keys) {
+    const row = byKey.get(key);
+    const def = SETTINGS_MAP.get(key);
+    result.set(key, { stored: row ? "unreadable" : "none", value: resolveFallback(def) });
+    if (!row) continue;
+    try {
+      const value = await decryptValue(row.value);
+      const validated = def ? validateSettingValue(def, value) : { ok: true as const, value };
+      if (validated.ok) result.set(key, { stored: "readable", value: validated.value });
+    } catch {
+      // Keep this process's fallback without changing the stored row or cache.
+    }
+  }
+  return result;
+};
+
+/**
  * Get every known setting key (across all registered defs).
  * Used by snapshot loader to determine what to bulk-read.
  */
@@ -184,11 +229,12 @@ export const deleteLegacyKeys = async (extraKnownKeys: readonly string[] = []): 
 /**
  * Encrypt the value, upsert the DB row, invalidate the Redis key.
  *
- * Validation is the caller's responsibility — the typed wrapper API
- * (createSettingsAPI) validates against the declared SettingDef before reaching
- * here. Direct callers must ensure the value matches the setting's kind.
+ * Validate new values and refuse to overwrite unreadable stored rows unless
+ * the caller explicitly replaces them. The row check and write share a transaction.
+ * Lock with a no-op UPDATE so ROW EXCLUSIVE is acquired before the row lock,
+ * preserving lock order with table-level SHARE locks (#1303 review).
  */
-export const writeKey = async (key: string, value: unknown, db?: SqlClient): Promise<void> => {
+export const writeKey = async (key: string, value: unknown, db?: SqlClient, options?: { replaceUnreadable?: boolean }): Promise<void> => {
   const def = SETTINGS_MAP.get(key);
   if (!def) throw new Error(`Unknown setting: ${key}`);
   const validated = validateSettingValue(def, value);
@@ -197,12 +243,38 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient): Pro
   const storedValue =
     def.kind === "image" && typeof validated.value === "string" ? stripImageDataUrlMetadata(validated.value) : validated.value;
   const encrypted = await encryptValue(storedValue);
-  await (db ?? sql)`
-    INSERT INTO settings.entries (key, value, updated_at)
-    VALUES (${key}, ${encrypted}, now())
-    ON CONFLICT (key)
-    DO UPDATE SET value = ${encrypted}, updated_at = now()
-  `;
+  const write = async (tx: SqlClient) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let [row] = await tx<{ value: string }[]>`UPDATE settings.entries SET value = value WHERE key = ${key} RETURNING value`;
+      if (!row) {
+        const inserted = await tx<{ key: string }[]>`
+          INSERT INTO settings.entries (key, value, updated_at)
+          VALUES (${key}, ${encrypted}, now())
+          ON CONFLICT (key) DO NOTHING RETURNING key
+        `;
+        if (inserted.length > 0) return;
+        // A concurrent insert can win after the missing-row read; lock and check its value before updating.
+        [row] = await tx<{ value: string }[]>`UPDATE settings.entries SET value = value WHERE key = ${key} RETURNING value`;
+        if (!row) continue;
+      }
+      if (options?.replaceUnreadable !== true) {
+        let readable = false;
+        try {
+          readable = validateSettingValue(def, await decryptValue(row.value)).ok;
+        } catch {
+          // Only the key is exposed by the recovery error.
+        }
+        if (!readable) throw new SettingUnreadableError(key);
+      }
+      await tx`
+        UPDATE settings.entries SET value = ${encrypted}, updated_at = now() WHERE key = ${key}
+      `;
+      return;
+    }
+    throw new Error(`Could not write setting "${key}" after 3 attempts`);
+  };
+  if (db) await write(db);
+  else await sql.begin(write);
 
   // Passing a transaction means the caller owns invalidation, because the row
   // is not visible to anyone else until they commit.

@@ -87,6 +87,8 @@ authorization.
 
 ## Deployment requirements
 
+`PUT /api/weather/admin/settings` accepts `{ updates, replaceUnreadable: ["weather.geo_url"] }` to explicitly replace unreadable saved settings; every listed key must be a Weather setting included in `updates`.
+
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
