@@ -3656,6 +3656,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   justify-content: center;
   color: var(--k2b-text-muted);
   font-size: 0.875rem;
+  /* The title's line: an icon or an empty slot never makes a row taller than its text. */
+  line-height: 1rem;
 }
 
 .k2b-ui .k2b-detail-panel__action-copy {
