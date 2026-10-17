@@ -570,11 +570,13 @@ export default function AssistantWorkspace(props: Props) {
       mentions: override?.mentions ?? mentionsFor(key),
       attachments: aiChatAttachments(composerAttachmentsFor(key)),
     });
-  const saveComposer = (key: string, target: string, override?: ComposerOverride) =>
-    serializeComposer(key, async () => {
+  const saveComposer = (key: string, target: string, override?: ComposerOverride) => {
+    // An override snapshots this generation, even if newer edits arrive before its queued save starts.
+    const overrideGeneration = override ? session(key).editGeneration : undefined;
+    return serializeComposer(key, async () => {
       const local = session(key);
       if (local.conflict) return null;
-      const generation = local.editGeneration;
+      const generation = overrideGeneration ?? local.editGeneration;
       local.saving = true;
       try {
         const saved = await chat.saveDraft({
@@ -595,6 +597,7 @@ export default function AssistantWorkspace(props: Props) {
         touchSession();
       }
     });
+  };
 
   const selectedModel = createMemo(() => props.models.find((model) => model.id === selectedModelId()) ?? null);
   const acceptsImages = () =>
@@ -609,11 +612,14 @@ export default function AssistantWorkspace(props: Props) {
     if (href === current) return;
     navigate(href, { replace, scroll: "manual", viewTransition: false });
   };
-  const newConversation = mutation.create<AiConversation | null, { focus: boolean; projectId?: string; navigate?: boolean }>({
+  const newConversation = mutation.create<
+    AiConversation | null,
+    { focus: boolean; projectId?: string; navigate?: boolean | (() => boolean) }
+  >({
     mutation: async ({ focus, projectId, navigate: shouldNavigate = true }) => {
       const conversation = await chat.createConversation({ title: t().newChat, ...(projectId ? { projectId } : {}) });
       if (conversation && chat.activeConversationId() === conversation.id) {
-        if (shouldNavigate) {
+        if (typeof shouldNavigate === "function" ? shouldNavigate() : shouldNavigate) {
           setProjectView(null);
           setApprovalsOpen(false);
           commitConversationUrl(conversation.id);
@@ -623,7 +629,7 @@ export default function AssistantWorkspace(props: Props) {
       return conversation;
     },
   });
-  const createConversation = async (focus: boolean, projectId?: string, shouldNavigate = true) => {
+  const createConversation = async (focus: boolean, projectId?: string, shouldNavigate: boolean | (() => boolean) = true) => {
     if (newConversation.loading()) return null;
     await newConversation.mutate({ focus, projectId, navigate: shouldNavigate });
     return newConversation.data();
@@ -1438,7 +1444,7 @@ export default function AssistantWorkspace(props: Props) {
           // The new chat starts with the draft as it is saved, without "/…": its key changes, so the composer cannot
           // take the token out there itself.
           const attachments = composerAttachmentsFor(key);
-          const created = await createConversation(false, projectId, !projectId);
+          const created = await createConversation(false, projectId, projectId ? false : () => !opening.controller.signal.aborted);
           if (!created) throw new Error("Chat not created");
           target = created.id;
           if (projectId) {

@@ -75,8 +75,8 @@ afterEach(() => {
   events.length = 0;
   setSystemTime();
 });
-const waitFor = async (condition: () => boolean) => {
-  for (let i = 0; i < 100; i++) {
+const waitFor = async (condition: () => boolean, timeoutMs = 1_000) => {
+  for (let i = 0; i < timeoutMs / 10; i++) {
     if (condition()) return;
     await Bun.sleep(10);
   }
@@ -89,6 +89,8 @@ const mount = async (
     newChat?: boolean;
     content?: AiConversation["draft"]["content"];
     saveGate?: Promise<void>;
+    createGate?: Promise<void>;
+    pendingApprovals?: number;
   } = {},
 ) => {
   setSystemTime(new Date(now));
@@ -163,6 +165,7 @@ const mount = async (
       if (url.pathname === "/api/ai/conversations" && init?.method === "POST") {
         events.push("create");
         creates.push(JSON.parse(String(init.body)));
+        await options.createGate;
         return Response.json({
           ...conversation,
           id: "new001",
@@ -173,13 +176,14 @@ const mount = async (
       }
       if (url.pathname.endsWith("/draft") && init?.method === "PUT") {
         events.push("save");
-        const body: { content: AiConversation["draft"]["content"] } = JSON.parse(String(init.body));
+        const body: { content: AiConversation["draft"]["content"]; expectedRevision: number } = JSON.parse(String(init.body));
         saves.push(body);
         await options.saveGate;
         return options.conflict
           ? Response.json({ message: "Draft conflict" }, { status: 409 })
-          : Response.json({ content: body.content, revision: 5, updatedAt: now });
+          : Response.json({ content: body.content, revision: body.expectedRevision + 1, updatedAt: now });
       }
+      if (url.pathname === "/api/approvals") return Response.json({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
       if (url.pathname.endsWith("/stream") || url.pathname.endsWith("/live"))
         return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
       if (url.pathname.startsWith("/api/ai/skills")) return Response.json({ skills: [] });
@@ -227,7 +231,7 @@ const mount = async (
                 }
               : null
           }
-          approvals={{ page: { items: [], nextCursor: null, count: 0, elsewhere: 0 }, open: false }}
+          approvals={{ page: { items: [], nextCursor: null, count: options.pendingApprovals ?? 0, elsewhere: 0 }, open: false }}
         />
       </LocaleProvider>
     ),
@@ -407,5 +411,54 @@ test("a composer that goes away while the draft saves, such as for Approvals, op
   h.dispose();
   release();
   await Bun.sleep(50);
+  expect(openCommand).not.toHaveBeenCalled();
+});
+
+test("a queued app-opening save does not mark edits made after Escape as saved", async () => {
+  let release!: () => void;
+  const saveGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const h = await mount({ saveGate });
+  await waitFor(() => h.saves.length === 1, 3_000);
+  h.choose();
+  expect(h.input.readOnly).toBe(true);
+  h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await waitFor(() => !h.input.readOnly);
+  batch(() => {
+    h.input.value = "Newer plan";
+    h.input.setSelectionRange(h.input.value.length, h.input.value.length);
+    h.input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  release();
+  await waitFor(() => h.saves.length === 2);
+  expect(h.saves[1]).toEqual({ expectedRevision: 5, content: [{ type: "text", text: "Plan" }] });
+  await waitFor(() => h.saves.length === 3, 3_000);
+  expect(h.saves[2]).toEqual({ expectedRevision: 6, content: [{ type: "text", text: "Newer plan" }] });
+  expect(openCommand).not.toHaveBeenCalled();
+}, 10_000);
+
+test("opening Approvals while an app Command creates a plain chat keeps Approvals and its URL", async () => {
+  let release!: () => void;
+  const createGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const h = await mount({ newChat: true, createGate, pendingApprovals: 1 });
+  h.choose();
+  await waitFor(() => h.creates.length === 1);
+  const approvals = h.root.querySelector<HTMLAnchorElement>('a[href="/app/assistant?approvals=1"]');
+  expect(approvals).not.toBeNull();
+  approvals!.click();
+  await waitFor(() => h.window.location.search === "?approvals=1");
+  const heading = h.root.querySelector("h1");
+  expect(heading).not.toBeNull();
+  expect(h.root.querySelector("textarea")).toBeNull();
+  const href = h.window.location.href;
+  release();
+  await waitFor(() => h.saves.length === 1);
+  await Bun.sleep(50);
+  expect(h.window.location.href).toBe(href);
+  expect(h.root.querySelector("h1") === heading).toBe(true);
+  expect(h.root.querySelector("textarea")).toBeNull();
   expect(openCommand).not.toHaveBeenCalled();
 });
