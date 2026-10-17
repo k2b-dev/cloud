@@ -2,8 +2,8 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Hono } from "hono";
 import { createGeoIp, describeRequest } from "@k2b/cloud/server/request-context/index";
+import { Hono } from "hono";
 import * as logging from "../../services/logging";
 import { mmdbFixture } from "./geoip.test-fixture";
 

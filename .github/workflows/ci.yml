@@ -648,6 +648,8 @@ jobs:
           for container in app-core gateway; do
             [[ "$(docker exec "$container" id -u)" != "0" ]] || { echo "$container runs as root" >&2; exit 1; }
           done
+          # Core maps the GeoIP snapshot as its runtime user, and Bun.mmap opens files read-write.
+          docker exec app-core bun -e 'for (const kind of ["city", "asn"]) if (Bun.mmap(`/app/geoip/dbip-${kind}-lite.mmdb`, { shared: false }).length < 1e6) throw new Error(`${kind} snapshot is incomplete`)'
           for _attempt in {1..90}; do
             ready=$(curl --silent --fail http://127.0.0.1:3001/_cloud/ready || true)
             routes=$(curl --silent --fail http://127.0.0.1:3000/health | jq -r '.routeTable.routeCount // 0' || echo 0)

@@ -74,8 +74,7 @@ RUN set -eu; mkdir -p /geoip; \
       echo "c839d407f85a1e0bddba354cef16b2c398182d1c34ed8d985555dce134b36b14  /geoip/dbip-city-lite.mmdb.gz" | sha256sum -c -; \
       echo "6cdde02baa8c1bd619ab84c2e505ecd91d45288b5a87faadf1b7c41525a17a94  /geoip/dbip-asn-lite.mmdb.gz" | sha256sum -c -; \
       gunzip /geoip/dbip-city-lite.mmdb.gz /geoip/dbip-asn-lite.mmdb.gz; \
-      chmod 0444 /geoip/*.mmdb; \
-    fi; chmod 0555 /geoip
+    fi
 
 # ──────────────────────────────────────────────────────────────────────
 # Stage 5: runtime — only the bundled output + bun runtime.
@@ -93,7 +92,9 @@ ENV NODE_ENV=production \
     CLOUD_RELEASE=${CLOUD_RELEASE} \
     CLOUD_CLI_CHROMIUM=/usr/bin/chromium
 COPY --from=build --chown=bun:bun /app/dist ./
-COPY --from=geoip /geoip /app/geoip
+# Bun.mmap opens files read-write, so the runtime user owns them like dist;
+# Core maps them privately and never writes.
+COPY --from=geoip --chown=bun:bun /geoip /app/geoip
 USER bun
 
 EXPOSE 3000

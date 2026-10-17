@@ -89,7 +89,8 @@ export const createGeoIp = (paths: { cityPath: string; asnPath: string } = BUNDL
   };
   const open = (kind: "city" | "asn", path: string): Database | null => {
     try {
-      const database = openGeoIpDatabase(kind, Bun.mmap(path));
+      // A private mapping: pages load on demand and a stray write never reaches the file.
+      const database = openGeoIpDatabase(kind, Bun.mmap(path, { shared: false }));
       if (!database)
         logOnce(kind, `GeoIP ${kind} snapshot is invalid; sign-in ${kind === "city" ? "locations" : "network names"} are unavailable`);
       return database;
