@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
@@ -249,6 +249,34 @@ suite("OAuth device authorization grant", () => {
       }
     });
   }
+
+  test("a failed lifetime lookup leaves device approval available for the next poll", async () => {
+    const previous = await settings.get<number>("user.session.expiry_hours");
+    try {
+      await settings.set("user.session.expiry_hours", 8);
+      const who = await person();
+      const started = await startDevice({ scope: "openid offline_access", ttl: "600" });
+      await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
+
+      const lookup = spyOn(settings, "get").mockRejectedValueOnce(new Error("Settings temporarily unavailable"));
+      try {
+        expect(await poll(started.device_code)).toMatchObject({ status: 500, body: { error: "server_error" } });
+        expect(lookup).toHaveBeenCalledTimes(1);
+        expect(lookup).toHaveBeenCalledWith("user.session.expiry_hours");
+        expect((await deviceRow(started.device_code)).status).toBe("approved");
+      } finally {
+        lookup.mockRestore();
+      }
+
+      await allowNextPoll(started.device_code);
+      const tokens = await poll(started.device_code);
+      expect(tokens.status).toBe(200);
+      expect(typeof tokens.body.refresh_token).toBe("string");
+      expectRemaining(tokens.body.refresh_token_expires_in, 600);
+    } finally {
+      await settings.set("user.session.expiry_hours", previous);
+    }
+  });
 
   test("a one-year ttl and session setting cannot extend the 90-day default", async () => {
     const previous = await settings.get<number>("user.session.expiry_hours");
@@ -539,7 +567,11 @@ suite("OAuth device authorization grant", () => {
     const consume = async () => {
       const started = await startDevice({ clientId: created.data.clientId });
       await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
-      const result = await oauth.device.poll({ deviceCode: started.device_code, clientId: created.data.clientId });
+      const result = await oauth.device.poll({
+        deviceCode: started.device_code,
+        clientId: created.data.clientId,
+        resolveLoginLifetime: async () => oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS,
+      });
       if (!result.ok) throw new Error(`poll failed: ${result.error}`);
       return result.authorityGrant;
     };

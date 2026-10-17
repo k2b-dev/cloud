@@ -163,7 +163,7 @@ export type DevicePollResult =
       userId: string;
       scopes: OAuthScope[];
       audiences: string[];
-      loginLifetimeSeconds: number | null;
+      loginLifetimeSeconds: number;
       authorityGrant: { kind: "device_code"; deviceAuthorizationId: string; nonce: string };
     };
 
@@ -171,7 +171,11 @@ export type DevicePollResult =
  * Answer one token-endpoint poll. An approved authorization is consumed atomically,
  * so a device code can mint tokens at most once.
  */
-export const poll = async (params: { deviceCode: string; clientId: string }): Promise<DevicePollResult> => {
+export const poll = async (params: {
+  deviceCode: string;
+  clientId: string;
+  resolveLoginLifetime: (stored: number | null) => Promise<number>;
+}): Promise<DevicePollResult> => {
   const [row] = await sql<(DbDeviceAuthorization & { expired: boolean })[]>`
     SELECT id, client_id, scopes, status, user_id, expires_at, login_lifetime_seconds, expires_at <= now() AS expired
     FROM oauth.device_authorizations
@@ -188,14 +192,15 @@ export const poll = async (params: { deviceCode: string; clientId: string }): Pr
   if (row.status === "pending") return { ok: false, error: "authorization_pending" };
   if (row.status === "denied") return { ok: false, error: "access_denied" };
 
+  const loginLifetimeSeconds = await params.resolveLoginLifetime(row.login_lifetime_seconds);
   const nonce = crypto.randomUUID();
-  const [consumed] = await sql<{ user_id: string; scopes: string[]; audiences: string[]; login_lifetime_seconds: number | null }[]>`
+  const [consumed] = await sql<{ user_id: string; scopes: string[]; audiences: string[] }[]>`
     UPDATE oauth.device_authorizations
     SET status = 'consumed', authority_nonce = ${nonce}::uuid
     WHERE id = ${row.id}::uuid
       AND status = 'approved'
       AND expires_at > now()
-    RETURNING user_id, scopes, audiences, login_lifetime_seconds
+    RETURNING user_id, scopes, audiences
   `;
   if (!consumed) return { ok: false, error: "invalid_grant" };
   return {
@@ -203,7 +208,7 @@ export const poll = async (params: { deviceCode: string; clientId: string }): Pr
     userId: consumed.user_id,
     scopes: consumed.scopes as OAuthScope[],
     audiences: consumed.audiences,
-    loginLifetimeSeconds: consumed.login_lifetime_seconds,
+    loginLifetimeSeconds,
     authorityGrant: { kind: "device_code", deviceAuthorizationId: row.id, nonce },
   };
 };

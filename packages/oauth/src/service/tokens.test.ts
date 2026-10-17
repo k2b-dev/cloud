@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from "bun:test";
+import { beforeAll, expect, spyOn, test } from "bun:test";
 import { createMcpRoutes } from "@k2b/cloud/api";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { oauthTokens, serviceAccounts } from "@k2b/cloud/services";
@@ -515,6 +515,18 @@ suite("OAuth resource access tokens", () => {
           const response = await exchange(malformed);
           expect(response.status).toBe(400);
           expect(await response.json()).toEqual({ error: "invalid_request", error_description: "Token request validation failed" });
+        }
+        if (ttl !== undefined) {
+          const lookup = spyOn(settings, "get").mockRejectedValueOnce(new Error("Settings temporarily unavailable"));
+          try {
+            const failed = await exchange(ttl);
+            expect(failed.status).toBe(500);
+            expect(await failed.json()).toMatchObject({ error: "server_error" });
+            expect(lookup).toHaveBeenCalledTimes(1);
+            expect(lookup).toHaveBeenCalledWith("user.session.expiry_hours");
+          } finally {
+            lookup.mockRestore();
+          }
         }
         const response = await exchange(ttl);
         expect(response.status).toBe(200);

@@ -16,6 +16,7 @@ import {
   type OAuthClient,
   type OAuthScope,
 } from "@/contracts";
+import type { DevicePollResult } from "./service/device";
 import { oauth } from "./service/oauth";
 import { DEFAULT_LOGIN_LIFETIME_SECONDS } from "./service/refresh-tokens";
 import type { OAuthUserGrantReference } from "./service/token-authority";
@@ -820,19 +821,17 @@ const app = new Hono<AuthContext>()
           return tokenError(c, "unauthorized_client", "Client is not allowed to use the device authorization grant");
         }
         if (body.resource) return tokenError(c, "invalid_target", "The device grant does not accept a resource");
-        const result = await oauth.device.poll({ deviceCode: body.device_code, clientId: client.clientId });
-        if (!result.ok) return tokenError(c, result.error, DEVICE_POLL_ERROR_DESCRIPTIONS[result.error]);
-        let loginLifetimeSeconds: number;
+        let result: DevicePollResult;
         try {
-          loginLifetimeSeconds = await resolveLoginLifetime(result.loginLifetimeSeconds);
+          result = await oauth.device.poll({ deviceCode: body.device_code, clientId: client.clientId, resolveLoginLifetime });
         } catch (err) {
           log.error("Failed to generate tokens", {
             error: err instanceof Error ? err.message : String(err),
             clientId: client.clientId,
-            userId: result.userId,
           });
           return tokenError(c, "server_error", "Token generation failed. Please try again or contact an administrator.", 500);
         }
+        if (!result.ok) return tokenError(c, result.error, DEVICE_POLL_ERROR_DESCRIPTIONS[result.error]);
         return issueUserGrant(c, {
           client,
           userId: result.userId,
@@ -841,7 +840,7 @@ const app = new Hono<AuthContext>()
           resource: null,
           authorityGrant: result.authorityGrant,
           grantName: "Device code",
-          loginLifetimeSeconds,
+          loginLifetimeSeconds: result.loginLifetimeSeconds,
         });
       }
 
