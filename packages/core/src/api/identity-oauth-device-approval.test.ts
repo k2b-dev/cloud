@@ -90,8 +90,8 @@ databaseSuite()("Core terminal authorization bridge", () => {
     await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES (${userId}::uuid,${uid},'local','user')`;
     await sql`INSERT INTO oauth.clients(id,name,client_id,redirect_uris,scopes,audiences,allowed_profiles,access_mode,registration_kind,is_public,allow_device_grant)
       VALUES (${clientPk}::uuid,'Terminal test client',${clientId},'{}',ARRAY['openid','profile','admin'],ARRAY['cloud'],ARRAY['user'],'profiles','managed',true,true)`;
-    await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted)
-      VALUES (${deviceId}::uuid,${issuer},${userId}::uuid,'Phone',${JSON.stringify(key)}::text::jsonb,false)`;
+    await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted,accepts)
+      VALUES (${deviceId}::uuid,${issuer},${userId}::uuid,'Phone',${JSON.stringify(key)}::text::jsonb,false,ARRAY['terminal-logins'])`;
     const authorization = async () => {
       const id = crypto.randomUUID();
       await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,expires_at,login_lifetime_seconds)
@@ -204,7 +204,8 @@ databaseSuite()("Core terminal authorization bridge", () => {
           await sql`INSERT INTO oauth.client_access_users(client_id,user_id) VALUES (${f.clientPk}::uuid,${f.userId}::uuid)`;
         if (kind === "nested") {
           await sql`DELETE FROM oauth.client_access_users WHERE client_id=${f.clientPk}::uuid`;
-          for (const group of groups) await sql`INSERT INTO auth.groups(id,provider,name) VALUES (${group}::uuid,'local',${group})`;
+          for (const group of groups)
+            await sql`INSERT INTO auth.groups(id,cn,provider,name) VALUES (${group}::uuid,${group},'local',${group})`;
           await sql`INSERT INTO auth.user_groups_v2(user_id,group_id) VALUES (${f.userId}::uuid,${groups[0]}::uuid)`;
           await sql`INSERT INTO auth.group_groups_v2(parent_group_id,child_group_id) VALUES (${groups[1]}::uuid,${groups[0]}::uuid)`;
           await sql`INSERT INTO oauth.client_access_groups(client_id,group_id) VALUES (${f.clientPk}::uuid,${groups[1]}::uuid)`;
@@ -225,7 +226,7 @@ databaseSuite()("Core terminal authorization bridge", () => {
     }
   });
 
-  test("cleanup retains approval evidence while tokens can still be issued", async () => {
+  test("cleanup retains approved terminal evidence until the expired OAuth row is gone", async () => {
     const f = await fixture();
     try {
       const id = await f.authorization();
@@ -236,6 +237,9 @@ databaseSuite()("Core terminal authorization bridge", () => {
       await cleanupTerminalLogins();
       expect(await sql`SELECT 1 FROM auth.app_logins WHERE device_authorization_id=${id}::uuid`).toHaveLength(1);
       await sql`UPDATE oauth.device_authorizations SET expires_at=now()-interval '1 second' WHERE id=${id}::uuid`;
+      await cleanupTerminalLogins();
+      expect(await sql`SELECT 1 FROM auth.app_logins WHERE device_authorization_id=${id}::uuid`).toHaveLength(1);
+      await sql`DELETE FROM oauth.device_authorizations WHERE id=${id}::uuid`;
       await cleanupTerminalLogins();
       expect(await sql`SELECT 1 FROM auth.app_logins WHERE device_authorization_id=${id}::uuid`).toHaveLength(0);
     } finally {
@@ -268,7 +272,7 @@ databaseSuite()("Core terminal authorization bridge", () => {
         const [pending] = await sql`SELECT status,user_id FROM oauth.device_authorizations WHERE id=${id}::uuid`;
         expect(pending).toMatchObject({ status: "pending", user_id: null });
         expect(
-          await sql`SELECT 1 FROM audit.events WHERE action='oauth.device.authorize' AND metadata->>'deviceAuthorizationId'=${id}`,
+          await sql`SELECT 1 FROM audit.events WHERE action='oauth.device.authorize' AND metadata->>'deviceGrantId'=${id}`,
         ).toHaveLength(0);
         expect(await f.decide(id, decision)).toEqual({ state: decision === "approve" ? "approved" : "denied" });
         const [grant] = await sql`SELECT status,user_id,login_lifetime_seconds FROM oauth.device_authorizations WHERE id=${id}::uuid`;
@@ -281,13 +285,13 @@ databaseSuite()("Core terminal authorization bridge", () => {
         expect(untouched).toMatchObject({ status: "pending", user_id: null });
         const events = await sql<
           { action: string; outcome: string; reason: string | null; metadata: unknown }[]
-        >`SELECT action,outcome,reason,metadata FROM audit.events WHERE actor_user_id=${f.userId}::uuid AND metadata->>'deviceAuthorizationId'=${id} ORDER BY action`;
+        >`SELECT action,outcome,reason,metadata FROM audit.events WHERE actor_user_id=${f.userId}::uuid AND metadata->>'deviceGrantId'=${id} ORDER BY action`;
         expect(events).toHaveLength(2);
         expect(events.map((row) => row.action)).toEqual([`auth.app.login.${decision}`, "oauth.device.authorize"]);
         expect(events[1]).toMatchObject({
           outcome: decision === "approve" ? "allowed" : "denied",
           reason: decision === "deny" ? "resource_owner_denied" : null,
-          metadata: { clientId: f.clientId, deviceAuthorizationId: id, scopes: ["openid", "profile"], via: "app-approval" },
+          metadata: { clientId: f.clientId, deviceGrantId: id, scopes: ["openid", "profile"], via: "app-approval" },
         });
         expect(await sql.begin((tx) => terminalLogins.describe(tx, [id]))).toEqual(new Map());
       }

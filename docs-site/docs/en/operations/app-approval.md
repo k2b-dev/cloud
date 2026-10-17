@@ -315,6 +315,8 @@ The SDK filters `accept` against the Cloud's announced features. It omits the
 key when none match. Updating the SDK alone does not opt in. Each signed
 `inbox` stores the device's latest capability list; omitting `accept` clears
 it. `pending` always returns browser sign-ins only.
+Only a device whose latest inbox opted in to `terminal-logins` can decide a
+terminal request.
 
 Each terminal login has the usual request ID, challenge, comparison code,
 creation time and expiry, plus:
@@ -344,9 +346,10 @@ response shape and no wake-up.
 Before token issuance, Core checks that the approving device still exists,
 is active and belongs to the account, and that the account's authentication
 epoch still matches. Revocation or signing out everywhere between approval and
-issuance prevents tokens. Approved terminal evidence stays until issuance or
-until the OAuth authorization can no longer issue tokens. Existing browser
-approvals of OAuth device grants keep their current behavior.
+issuance prevents tokens. Approved terminal evidence stays until issuance
+consumes it or the linked OAuth authorization row is deleted, even when that
+row has expired. Existing browser approvals of OAuth device grants keep their
+current behavior.
 
 ### Upgrade the three components
 

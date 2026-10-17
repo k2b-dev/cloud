@@ -154,8 +154,9 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
         const [login] = await db<{ id: string; user_id: string | null; approved_by: string | null; auth_epoch: string | null }[]>`
           SELECT id,user_id,approved_by,auth_epoch FROM auth.app_logins
           WHERE device_authorization_id=${params.request.grant.deviceAuthorizationId}::uuid
-            AND kind='terminal' AND state='approved' FOR UPDATE`;
+            AND kind='terminal' AND state='approved'`;
         if (login) {
+          // Lock user, device, then login, matching sign-out everywhere and signed decisions.
           const [user] = await db`SELECT id FROM auth.users WHERE id=${grant.user_id}::uuid
             AND id=${login.user_id}::uuid AND auth_epoch=${login.auth_epoch}::bigint FOR UPDATE`;
           if (!user) return null;
@@ -163,7 +164,9 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
             WHERE id=${login.approved_by}::uuid AND revoked_at IS NULL
               AND user_id=${grant.user_id}::uuid FOR UPDATE`;
           if (!device) return null;
-          await db`UPDATE auth.app_logins SET state='consumed' WHERE id=${login.id}::uuid`;
+          const [consumed] = await db`UPDATE auth.app_logins SET state='consumed'
+            WHERE id=${login.id}::uuid AND state='approved' AND approved_by=${login.approved_by}::uuid RETURNING id`;
+          if (!consumed) return null;
         }
       }
     } else {

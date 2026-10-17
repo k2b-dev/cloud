@@ -1,5 +1,5 @@
 import { AppTerminalLoginSchema } from "@k2b/cloud/contracts";
-import { type AppTerminalLogins, AppApprovalError, appApproval, audit, toPgTextArray } from "@k2b/cloud/services";
+import { AppApprovalError, type AppTerminalLogins, appApproval, audit, toPgTextArray } from "@k2b/cloud/services";
 import { type SQL, sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -71,7 +71,7 @@ export const terminalLogins: AppTerminalLogins = {
         actor: { userId: input.user.id, uid: input.user.uid, provider: input.user.provider },
         target: { type: "oauth_client", id: row.client_pk, label: row.name },
         ...(input.decision === "deny" ? { reason: "resource_owner_denied" } : {}),
-        metadata: { clientId: input.clientId, deviceAuthorizationId: row.id, scopes: row.scopes, via: "app-approval" },
+        metadata: { clientId: input.clientId, deviceGrantId: row.id, scopes: row.scopes, via: "app-approval" },
       },
       tx,
     );
@@ -121,14 +121,13 @@ export const createIdentityOAuthDeviceApprovalRoutes = (
       }
     });
 
-/** Retain approval evidence until OAuth can no longer issue from it. OAuth is an optional app. */
+/** Retain approval evidence until the linked OAuth row is gone, including during issuance. OAuth is an optional app. */
 export const cleanupTerminalLogins = async (db: SQL = sql): Promise<void> => {
   const [schema] = await db`SELECT to_regclass('oauth.device_authorizations') IS NOT NULL AS installed`;
   if (!schema?.installed) return;
   await db`DELETE FROM auth.app_logins WHERE id IN (
     SELECT l.id FROM auth.app_logins l WHERE l.kind='terminal' AND l.state='approved' AND l.expires_at < now()
-      AND NOT EXISTS (SELECT 1 FROM oauth.device_authorizations d WHERE d.id=l.device_authorization_id
-        AND d.status IN ('approved','consumed') AND d.expires_at > now() AND d.authority_issued_at IS NULL)
+      AND NOT EXISTS (SELECT 1 FROM oauth.device_authorizations d WHERE d.id=l.device_authorization_id)
     ORDER BY l.expires_at LIMIT 100 FOR UPDATE OF l SKIP LOCKED)`;
 };
 

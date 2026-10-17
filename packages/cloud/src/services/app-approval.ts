@@ -112,6 +112,7 @@ type DeviceRow = {
   created_at: Date;
   last_used_at: Date | null;
   assisted: boolean;
+  accepts: string[] | null;
 };
 type PairingRow = {
   id: string;
@@ -324,13 +325,7 @@ export const createAppApprovalService = (
     const candidates = await tx<AccountRow[]>`
       SELECT id,uid,provider,profile,auth_epoch,account_expires FROM auth.users
       WHERE lower(uid)=lower(${identifier}) OR lower(btrim(mail))=lower(${identifier}) LIMIT 2`;
-    let candidate = candidates.length === 1 ? candidates[0] : undefined;
-    if (candidate) {
-      // Re-read under the account lock: starts share one budget, and epoch changes cannot race the snapshot.
-      const [locked] = await tx<AccountRow[]>`SELECT id,uid,provider,profile,auth_epoch,account_expires
-        FROM auth.users WHERE id=${candidate.id}::uuid FOR UPDATE`;
-      candidate = locked;
-    }
+    const candidate = candidates.length === 1 ? candidates[0] : undefined;
     if (
       candidate &&
       ((category !== undefined && accountCategory(candidate) !== category) ||
@@ -338,7 +333,12 @@ export const createAppApprovalService = (
         !(await isAccountCategoryAllowed(candidate, tx)))
     )
       return undefined;
-    return candidate;
+    if (!candidate) return undefined;
+    // Re-read under the account lock: starts share one budget, and epoch changes cannot race the snapshot.
+    const [locked] = await tx<AccountRow[]>`SELECT id,uid,provider,profile,auth_epoch,account_expires
+      FROM auth.users WHERE id=${candidate.id}::uuid FOR UPDATE`;
+    if (locked?.account_expires && new Date(locked.account_expires).getTime() <= Date.now()) return undefined;
+    return locked;
   };
   const loginBudget = async (tx: SQL, issuer: string, userId: string) => {
     const [count] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM auth.app_logins
@@ -710,7 +710,8 @@ export const createAppApprovalService = (
           return reject("CONFLICT", 409);
         if (
           row.kind === "terminal" &&
-          (!terminal ||
+          (!device.accepts?.includes("terminal-logins") ||
+            !terminal ||
             !row.device_authorization_id ||
             !row.client_id ||
             !(await terminal.decide(tx, {
@@ -728,9 +729,7 @@ export const createAppApprovalService = (
         if (!decided.length) return reject("CONFLICT", 409);
         await record(tx, `login.${command.decision}`, device.user_id, device.id, {
           requestId: row.id,
-          ...(row.kind === "terminal"
-            ? { kind: "terminal", clientId: row.client_id, deviceAuthorizationId: row.device_authorization_id }
-            : {}),
+          ...(row.kind === "terminal" ? { kind: "terminal", clientId: row.client_id, deviceGrantId: row.device_authorization_id } : {}),
         });
         return { state };
       });

@@ -2,8 +2,8 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { type Server, sql } from "bun";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
-import { withActiveIdentitySigner } from "./identity";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { withActiveIdentitySigner } from "./identity";
 import "../../../../scripts/fixtures/authorization-preload";
 import { migrateCloudAi } from "../ai/migrate";
 import { aiConversations } from "../ai/store";
@@ -32,9 +32,9 @@ import {
 import {
   type AppApprovalActor,
   type AppApprovalConfig,
-  type AppTerminalLogins,
   type AppLoginDecisionHints,
   type AppLoginPushSender,
+  type AppTerminalLogins,
   createAppApprovalService,
   readAppApprovalConfig,
 } from "./app-approval";
@@ -980,11 +980,38 @@ suite("isolated app approval protocol", () => {
     });
   });
 
+  test("terminal decisions require the deciding device to opt in", async () => {
+    const owner = await account(),
+      device = await enroll(owner),
+      second = await enroll(owner);
+    await service.deviceCommand(await proof(device, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
+    const login = await terminalStart(owner.uid);
+    const command = terminalDecision(login);
+    const api = createAppApprovalRoutes(service, () => noActions, terminal);
+    const decide = async () =>
+      api.request("/device", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: cfg.appOrigin },
+        body: JSON.stringify(await proof(second, command)),
+      });
+    const rejected = await decide();
+    expect(rejected.status).toBe(409);
+    expect(await rejected.json()).toMatchObject({ code: "CONFLICT" });
+    const [pending] = await sql`SELECT state FROM auth.app_logins WHERE id=${login.id}::uuid`;
+    expect(pending.state).toBe("pending");
+    await service.deviceCommand(await proof(second, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
+    const approved = await decide();
+    expect(approved.status).toBe(200);
+    expect(await approved.json()).toEqual({ state: "approved" });
+  });
+
   test("terminal decide commits the hook and audit together, rejects stale, foreign, decoy and replayed requests", async () => {
     const owner = await account(),
       device = await enroll(owner),
       stranger = await account(),
       foreignDevice = await enroll(stranger);
+    for (const phone of [device, foreignDevice])
+      await service.deviceCommand(await proof(phone, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
     const waiting = await terminalStart(owner.uid);
     const command = terminalDecision(waiting);
     await expect(service.deviceCommand(await proof(device, command), noActions)).rejects.toMatchObject({ status: 409 });
@@ -1014,7 +1041,7 @@ suite("isolated app approval protocol", () => {
     expect(event.metadata).toMatchObject({
       kind: "terminal",
       clientId: waiting.input.clientId,
-      deviceAuthorizationId: waiting.input.deviceAuthorizationId,
+      deviceGrantId: waiting.input.deviceAuthorizationId,
     });
     const denied = await terminalStart(owner.uid);
     expect(await service.deviceCommand(await proof(device, terminalDecision(denied, "deny")), noActions, terminal)).toEqual({
@@ -1035,6 +1062,7 @@ suite("isolated app approval protocol", () => {
   test("expiry during the terminal hook rolls back the entire decision", async () => {
     const owner = await account(),
       device = await enroll(owner);
+    await service.deviceCommand(await proof(device, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
     const login = await terminalStart(owner.uid);
     const expiresDuringDecision: AppTerminalLogins = {
       ...terminal,
@@ -1057,6 +1085,8 @@ suite("isolated app approval protocol", () => {
     const owner = await account(),
       device = await enroll(owner),
       second = await enroll(owner);
+    for (const phone of [device, second])
+      await service.deviceCommand(await proof(phone, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
     const login = await terminalStart(owner.uid);
     const outcomes = await Promise.allSettled([
       service.deviceCommand(await proof(device, terminalDecision(login)), noActions, terminal),

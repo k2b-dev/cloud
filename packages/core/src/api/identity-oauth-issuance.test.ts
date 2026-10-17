@@ -689,6 +689,102 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
 });
 
 withDatabase("Core terminal approval issuance boundary", () => {
+  test("issuance waits for the device before locking the login, avoiding a concurrent decide deadlock", async () => {
+    const { migrate } = await import("../migrate/core/app-approval");
+    await migrate();
+    const { privateKey } = await generateKeyPair("RS256");
+    const userId = crypto.randomUUID(),
+      deviceId = crypto.randomUUID(),
+      authorizationId = crypto.randomUUID(),
+      loginId = crypto.randomUUID(),
+      nonce = crypto.randomUUID(),
+      clientId = `issuance-lock-order-${crypto.randomUUID()}`;
+    let issuancePid: number | undefined;
+    let issuance: Promise<Response> | undefined;
+    const routes = createIdentityOAuthIssuanceRoutes({
+      authenticate: () => true,
+      withActiveSigner: async (_purpose, callback) =>
+        sql.begin(async (db) => {
+          await db`SET LOCAL statement_timeout='5s'`;
+          const [backend] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          issuancePid = backend!.pid;
+          return callback(
+            {
+              kid: crypto.randomUUID(),
+              key: privateKey,
+              signUntil: new Date(Date.now() + 60_000),
+              issuer: "https://cloud.example.test",
+            },
+            db,
+          );
+        }),
+      issuer: async () => "https://cloud.example.test",
+    });
+    try {
+      await sql`INSERT INTO auth.users(id,uid,provider,profile)
+        VALUES (${userId}::uuid,${`terminal-lock-order-${userId}`},'local','user')`;
+      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes,audiences,allowed_profiles,access_mode,registration_kind,is_public,allow_device_grant)
+        VALUES ('Issuance lock order',${clientId},'{}',ARRAY['openid','profile'],ARRAY['cloud'],ARRAY['user'],'profiles','managed',true,true)`;
+      await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,expires_at,authority_nonce)
+        VALUES (${authorizationId}::uuid,${authorizationId},${authorizationId},${clientId},ARRAY['openid','profile'],ARRAY['cloud'],
+          'consumed',${userId}::uuid,now()+interval '10 minutes',${nonce}::uuid)`;
+      await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted)
+        VALUES (${deviceId}::uuid,'https://cloud.example.test',${userId}::uuid,'Phone','{}',false)`;
+      await sql`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,state,approved_by,expires_at,
+        kind,device_authorization_id,client_id,scopes,lifetime_seconds)
+        SELECT ${loginId}::uuid,'https://cloud.example.test',u.id,u.auth_epoch,'login','unusable','unusable','000123','approved',${deviceId}::uuid,
+          now()+interval '5 minutes','terminal',${authorizationId}::uuid,${clientId},ARRAY['openid','profile'],3600
+        FROM auth.users u WHERE u.id=${userId}::uuid`;
+
+      // Transaction A models a signed decide: device first, then login.
+      await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout='3s'`;
+        const [locker] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        await tx`SELECT id FROM auth.app_devices WHERE id=${deviceId}::uuid FOR UPDATE`;
+        issuance = Promise.resolve(
+          routes.request("/oauth/token", {
+            method: "POST",
+            headers: { authorization: "Bearer broker", "content-type": "application/json" },
+            body: JSON.stringify({
+              tokens: [
+                { kind: "user_access", grant: { kind: "device_code", deviceAuthorizationId: authorizationId, nonce }, expiresIn: 3600 },
+              ],
+            }),
+          }),
+        );
+        let blocked = false;
+        const deadline = performance.now() + 3000;
+        while (performance.now() < deadline) {
+          if (issuancePid !== undefined) {
+            const [waiting] = await tx<{ blocked: boolean }[]>`
+              SELECT ${locker!.pid}=ANY(pg_blocking_pids(${issuancePid})) AS blocked`;
+            if (waiting?.blocked) {
+              blocked = true;
+              break;
+            }
+          }
+          await Bun.sleep(10);
+        }
+        expect(blocked).toBe(true);
+        // With the inverted order, issuance already holds this row and A deadlocks.
+        const locked = await tx`SELECT id FROM auth.app_logins WHERE id=${loginId}::uuid FOR UPDATE`;
+        expect(locked).toHaveLength(1);
+      });
+      const response = await issuance;
+      expect(response?.status).toBe(200);
+      expect(z.object({ tokens: z.array(z.string()).length(1) }).parse(await response!.json()).tokens).toHaveLength(1);
+      const [login] = await sql`SELECT state FROM auth.app_logins WHERE id=${loginId}::uuid`;
+      expect(login.state).toBe("consumed");
+      const [grant] = await sql`SELECT authority_issued_at FROM oauth.device_authorizations WHERE id=${authorizationId}::uuid`;
+      expect(grant.authority_issued_at).not.toBeNull();
+    } finally {
+      await issuance;
+      await sql`DELETE FROM auth.app_logins WHERE id=${loginId}::uuid`;
+      await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 15_000);
+
   test("rechecks device ownership and epoch, consumes approval, and preserves browser grants", async () => {
     const { migrate } = await import("../migrate/core/app-approval");
     await migrate();
