@@ -552,8 +552,15 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
   };
   const cancel = () => end();
   const pickupModal = modalOf(origin);
-  /** Whether a modal dialog opened over a pickup that started outside of every modal, leaving the origin inert. */
-  const behindModal = () => !pickupModal && Array.from(doc.querySelectorAll("dialog[open]")).some(isModal);
+  /**
+   * Whether a modal dialog opened over the pickup, leaving the origin inert: the key comes from inside another modal,
+   * or a modal opened over a pickup that started outside of every modal.
+   */
+  const behindModal = (event: KeyboardEvent) => {
+    const keyModal = event.target instanceof Element ? modalOf(event.target) : undefined;
+    if (keyModal && keyModal !== pickupModal && !keyModal.contains(origin)) return true;
+    return !pickupModal && Array.from(doc.querySelectorAll("dialog[open]")).some(isModal);
+  };
   const describe = (target: Target) =>
     target.messages.choice({ target: target.label, index: targets.indexOf(target) + 1, count: targets.length });
   const choose = (target: Target, text = describe(target)) => {
@@ -568,7 +575,7 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
     const forward = !backward && (event.key === "ArrowDown" || event.key === "ArrowRight" || event.key === "Tab");
     if (!backward && !forward && !["Home", "End", "Enter", " ", "Escape"].includes(event.key)) return;
     // A modal dialog opened since the pickup: its keys are its own, and the pickup behind it ends.
-    if (behindModal()) {
+    if (behindModal(event)) {
       cancel();
       return;
     }

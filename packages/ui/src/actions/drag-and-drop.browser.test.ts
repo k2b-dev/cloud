@@ -50,7 +50,13 @@ window.openNested = () => {
   document.querySelector(".archive").append(dialog);
   render(() => createComponent(LocaleProvider, { locale: "en", get children() {
     const row = document.createElement("div"); row.className = "inner-row"; row.textContent = "Inner row";
-    return createComponent(DragSource, { payload: { type: "demo.row", value: "inner", label: "Inner" }, children: row });
+    const pickUp = useKeyboardDrag();
+    window.pickUpInner = () => pickUp({ type: "demo.row", value: "inner", label: "Inner" }, row);
+    return [
+      createComponent(DragSource, { payload: { type: "demo.row", value: "inner", label: "Inner" }, children: row }),
+      createComponent(DropTarget, { label: "Inbox", accept: ["demo.row"], class: "inbox",
+        onDrop: (payload) => window.drops.push({ target: "Inbox", value: payload.value }), children: "Inbox" }),
+    ];
   } }), dialog);
   dialog.showModal();
 };
@@ -480,6 +486,32 @@ describe(`drag and drop in ${browserName}`, () => {
       await page.keyboard.press("ArrowDown");
       await page.keyboard.press("Enter");
       await until(page, `document.querySelector('.archive')?.dataset.drop === 'over'`);
+      await page.evaluate(() => {
+        const dialog = document.createElement("dialog");
+        dialog.innerHTML = "<button>OK</button>";
+        document.body.append(dialog);
+        dialog.showModal();
+      });
+      await page.keyboard.press("Enter");
+      await clean(page);
+      expect(await drops(page)).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a second modal that opens over a keyboard pickup inside a modal ends it", async () => {
+    const { page, context } = await open();
+    try {
+      await page.evaluate("window.openNested()");
+      await page.evaluate(() => {
+        const row = document.querySelector<HTMLElement>(".inner-row")!;
+        row.tabIndex = 0;
+        row.focus();
+      });
+      await page.evaluate("window.pickUpInner()");
+      // Only the destination inside the same modal takes part.
+      await until(page, `document.querySelector('.inbox')?.dataset.drop === 'over'`);
       await page.evaluate(() => {
         const dialog = document.createElement("dialog");
         dialog.innerHTML = "<button>OK</button>";
