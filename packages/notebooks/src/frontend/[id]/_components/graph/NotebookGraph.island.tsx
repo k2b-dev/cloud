@@ -160,7 +160,21 @@ export default function NotebookGraph(props: Props) {
     (current()
       ? buildNoteUrl(props.notebookId, current()!.id, props.from)
       : `/app/notebooks/${props.notebookId}${props.from ? `?mode=${props.from}` : ""}`);
-  const resetFilters = () => update({ links: "all", hide: [] });
+  // A way out of an empty state replaces the button that had focus. Focus moves to the graph that replaces it, or to
+  // the next empty state's first action, never to the page start.
+  let root!: HTMLDivElement;
+  let focusGraph = false;
+  const claimFocus = () => focusGraph;
+  const leaveEmpty = (patch: Partial<GraphViewState>) => {
+    focusGraph = !!document.activeElement?.closest(".notebook-graph__empty");
+    update(patch);
+    if (!focusGraph) return;
+    focusGraph = false;
+    queueMicrotask(() => {
+      if (!root.contains(document.activeElement)) root.querySelector<HTMLElement>(".notebook-graph__empty :is(button, a[href])")?.focus();
+    });
+  };
+  const resetFilters = () => leaveEmpty({ links: "all", hide: [] });
   const linkOptions = () => [
     { value: "all" as const, label: t().graphLinksAll, icon: "ti ti-circles" },
     { value: "linked" as const, label: t().graphLinksLinked, icon: "ti ti-affiliate" },
@@ -214,6 +228,7 @@ export default function NotebookGraph(props: Props) {
       focusRequest={(focus) => {
         focusNote = focus;
       }}
+      claimFocus={claimFocus}
     />
   );
   const neighborhood = () => (
@@ -229,7 +244,7 @@ export default function NotebookGraph(props: Props) {
       filterKey={filterKey()}
       depth={state().depth}
       onCentre={recenter}
-      onNetwork={() => update({ display: "network" })}
+      onNetwork={() => leaveEmpty({ display: "network" })}
       onResetFilters={resetFilters}
       noteHref={noteHref}
       onOpen={open}
@@ -238,11 +253,12 @@ export default function NotebookGraph(props: Props) {
       focusRequest={(focus) => {
         focusNote = focus;
       }}
+      claimFocus={claimFocus}
     />
   );
 
   return (
-    <div class="notebook-graph" data-display={display() ?? undefined} data-list={state().list ? "" : undefined}>
+    <div ref={root} class="notebook-graph" data-display={display() ?? undefined} data-list={state().list ? "" : undefined}>
       <Toolbar label={t().graphTools} class="notebook-graph__head">
         {/* The navigation sidebar sits beside the graph from lg up; between md and lg the toggle only brings a hidden
             navigation back, as the editor's does. Phones keep the header's menu. */}

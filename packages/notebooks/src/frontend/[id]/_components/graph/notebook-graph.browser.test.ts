@@ -777,17 +777,22 @@ test(`${browserName}: isolated and filter-hidden centres offer a way out`, async
     expect(await page.getByRole("link", { name: "Go to note", exact: true }).getAttribute("href")).toBe(
       `/app/notebooks/hand01/notes/${HANDBOOK_IDS.rampe}?mode=book`,
     );
-    await page.getByRole("button", { name: "Show whole notebook", exact: true }).click();
+    // Keyboard activation: the button disappears with the empty state, so focus moves to the centre in the network.
+    await page.getByRole("button", { name: "Show whole notebook", exact: true }).focus();
+    await page.keyboard.press("Enter");
     await settled(page);
     expect(search(page).get("display")).toBe("network");
     expect(await nodes(page).count()).toBe(49);
+    await page.waitForFunction((id) => document.activeElement?.getAttribute("data-node") === id, HANDBOOK_IDS.rampe);
     await page.goto(new URL(graphPath("hand01", "&display=neighborhood&links=unlinked"), server.url).href);
     await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
     expect(await page.getByText("No link of “Wareneingang” matches the filters", { exact: true }).isVisible()).toBe(true);
     expect(await page.getByText("The current filters hide all links of this note.", { exact: true }).isVisible()).toBe(true);
-    await page.getByRole("button", { name: "Reset filters", exact: true }).click();
+    await page.getByRole("button", { name: "Reset filters", exact: true }).focus();
+    await page.keyboard.press("Enter");
     await settled(page);
     expect(await page.locator('[data-ring="1"]').count()).toBeGreaterThan(0);
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label")?.endsWith(", current note"));
   } finally {
     await close(page);
   }

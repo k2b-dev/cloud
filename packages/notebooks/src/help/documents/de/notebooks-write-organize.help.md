@@ -242,7 +242,7 @@ Im Editor erscheinen die Bedienelemente, wenn du auf das Diagramm zeigst oder es
 
 :::reference
 - **Verknüpfungen sehen:** Wähle **Verknüpfungen** unten in der Navigation. **Netz** zeigt alle Notizen des Notizbuchs und die Verknüpfungen zwischen ihnen. Die offene Notiz hat einen Ring in der Farbe der App. Das geht auch mit Zugriff **Ansehen** in der Buchansicht.
-- **Umgebung:** Die aktuelle Notiz steht in der Mitte. Notizen, auf die sie verweist, stehen rechts. Notizen, die auf sie verweisen, stehen links. Der zweite Schritt steht auf dem äußeren Ring. Auf dem Telefon stehen eingehende Verweise oben und ausgehende unten.
+- **Umgebung:** Die aktuelle Notiz steht in der Mitte. Notizen, auf die sie verweist, stehen rechts. Notizen, die auf sie verweisen, stehen links. Der zweite Schritt steht auf dem äußeren Ring. Auf einem hohen, schmalen Bildschirm wie einem Telefon stehen eingehende Verweise oben und ausgehende unten.
 - **Tiefe:** Wähle in **Umgebung** zwischen **1 Schritt** und **2 Schritte**.
 - **In die Mitte:** Fokussiere eine Notiz und drücke die **Leertaste**. Auf einem Touchscreen wählst du eine Notiz und dann **In die Mitte**. Diese Notiz wird die Mitte.
 - **Auf dem Telefon:** Verknüpfungen öffnet sich in **Umgebung**, außer du wählst **Netz**. Deine Wahl bleibt in der Adresse.

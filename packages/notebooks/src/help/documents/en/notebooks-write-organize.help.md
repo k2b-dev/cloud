@@ -242,7 +242,7 @@ In the editor, the controls appear when you point at the diagram or focus it. Af
 
 :::reference
 - **See how notes link:** Choose **Links** at the bottom of the navigation. **Network** shows every note of the notebook and the links between them. The open note has a ring in the app color. This also works with **View** access, in Book view.
-- **Neighborhood:** The current note is in the middle. Notes it links to are on the right. Notes linking to it are on the left. The second step is on the outer ring. On a phone, incoming links are above and outgoing links are below.
+- **Neighborhood:** The current note is in the middle. Notes it links to are on the right. Notes linking to it are on the left. The second step is on the outer ring. On a tall, narrow screen such as a phone, incoming links are above and outgoing links are below.
 - **Depth:** Choose **1 step** or **2 steps** in **Neighborhood**.
 - **Move to center:** Focus a note and press **Space**. On a touchscreen, select a note and choose **Move to center**. This note becomes the middle.
 - **On a phone:** Links opens in **Neighborhood** unless you choose **Network**. Your choice stays in the address.

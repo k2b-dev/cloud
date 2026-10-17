@@ -35,6 +35,8 @@ export type GraphDisplayProps = {
   controls: (controls: GraphZoomControls | null) => void;
   /** Search Enter asks the canvas to focus its first match. */
   focusRequest: (focus: (id?: string) => void) => void;
+  /** Asked once on mount: true when the canvas replaces a way out that had focus, so focus moves to its tab stop. */
+  claimFocus: () => boolean;
 };
 
 export type GraphCanvasProps = GraphDisplayProps &
@@ -537,6 +539,16 @@ export default function GraphCanvas(props: GraphCanvasProps) {
       if (frame) cancelAnimationFrame(frame);
       if (gesture?.type === "node") gesture.release?.();
     });
+  });
+
+  // Focus taken over from an empty state lands on the tab stop once the notes are drawn; the network lays out later.
+  let pendingFocus = props.claimFocus();
+  createEffect(() => {
+    if (!pendingFocus) return;
+    const id = tabTarget();
+    if (!id || !screen().has(id)) return;
+    pendingFocus = false;
+    queueMicrotask(() => container.isConnected && focusNote(id));
   });
 
   // A selection or focus on a note that the filters hid is cleared.
