@@ -707,6 +707,10 @@ export const UpdateItemSchema = z
     recurringEventId: ResourceShortIdSchema.nullable().optional().describe("Parent recurring event ID for overrides"),
     recurrenceId: z.string().datetime().nullable().optional().describe("Original occurrence timestamp (ISO) for overrides"),
     assigneeIds: z.array(UuidSchema).max(100).optional().describe("Assigned user UUIDs"),
+    claimId: UuidSchema.optional().describe(
+      "Current worker claim ID; required when assigneeIds drops the person holding the claim, which ends it",
+    ),
+    force: z.boolean().optional().describe("Take over another actor's claim given as its exact claimId; any writer may"),
     tagIds: z.array(ResourceShortIdSchema).max(100).optional().describe("Tag IDs"),
   })
   .refine((data) => !data.startsAt || !data.endsAt || new Date(data.endsAt) > new Date(data.startsAt), {

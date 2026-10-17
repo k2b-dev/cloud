@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Claim and assignment diverge | A person works on a task while assignment-based lists still show it as unassigned, or a stale assignee replacement removes an active worker. | Tests: `packages/spaces/src/service/claim-assignment.integration.test.ts` checks transactional user claims, guarded assignee replacements, forced releases, completion, and idempotent backfill ([#1269](https://github.com/k2b-dev/cloud/issues/1269)). |
 | Paint outside a scrollport | An outline or outset shadow, such as a status ring, reaches past its element and a scrolling ancestor flush with it cuts it off. | Test: `packages/ui/src/layout/detail-panel-sections.browser.test.ts` checks that an avatar ring flush with the detail body paints inside the scrollport and keeps the avatar size. |
 | Unbounded storage growth | Durable payloads have no size bound or retention. | Tests: workflow event integration cases cover byte limits, payload retention, dedupe, and resumable runs; workflow observability integration cases cover expired payloads; Mail integration cases cover oversized messages ([#1183](https://github.com/k2b-dev/cloud/issues/1183)). |
 | Unreadable treated as missing | Startup replaces an unreadable or invalid stored value with an environment value. | Test: `packages/cloud/src/services/settings/bootstrap.integration.test.ts` preserves ciphertext and timestamps for undecryptable and invalid rows while reads use the environment fallback ([#1295](https://github.com/k2b-dev/cloud/issues/1295)). |
@@ -51,6 +52,13 @@ convention still needs a check or a test.
 | Theme in print | The screen theme reaches paper: dark-theme text and surfaces print on white paper, or print rules show what the screen hides on purpose. | Test: the Mail printing browser test in `MailConversationList.browser.test.ts` prints a dark and a light conversation through Print conversation in Chromium and WebKit. It checks contrast against the printed surface, the sender rows, and the single quote label ([#1175](https://github.com/k2b-dev/cloud/issues/1175)). No shared guard yet: native printing still prints the dark theme on every other page ([#1274](https://github.com/k2b-dev/cloud/issues/1274)). |
 
 ## Lessons
+
+### A claimed Spaces task still appeared unassigned
+
+- **What happened:** A person could claim a task without becoming an assignee, so assignment filters missed work already in progress ([#1269](https://github.com/k2b-dev/cloud/issues/1269)).
+- **Root cause:** Claim writes and assignee replacements treated working state and responsibility as independent data.
+- **Error class:** Claim and assignment diverge.
+- **Guard:** `claim-assignment.integration.test.ts` checks that user claims assign once, holder removal is guarded before any write, forced release removes the previous holder, and startup backfill repairs old user claims. The existing item row lock serializes claim writes and assignee replacements.
 
 ### Concurrent upload commits rejected each other
 

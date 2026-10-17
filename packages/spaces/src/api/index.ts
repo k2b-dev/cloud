@@ -2456,6 +2456,10 @@ const app = new Hono<AuthContext>()
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Item not found"),
+        409: jsonResponse(
+          ErrorResponseSchema,
+          "Dropping a claim holder from assigneeIds requires their claimId, or claimId with force for another actor; release a claim before converting a task to an event",
+        ),
       },
     }),
     v("json", UpdateItemSchema),
@@ -2708,6 +2712,7 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Claim task work",
+      description: "Claim an open task. Claiming as a person also assigns you to the task.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(TaskWorkSchema, "Updated task work"),
@@ -2738,6 +2743,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Release task work",
+      description:
+        "Releasing your own claim keeps you assigned. A forced release of another person's claim also removes them from the assignees.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(TaskWorkSchema, "Updated task work"),

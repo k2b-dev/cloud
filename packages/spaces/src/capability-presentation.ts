@@ -414,7 +414,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "task.claim": {
           title: "Aufgabe übernehmen",
           description:
-            "Offene, unblockierte Aufgabe mit einer selbst erzeugten UUID für eine Sitzung übernehmen. Konkurrierende Übernahmen werden abgewiesen. Übernahmen koordinieren die Arbeit und sperren sie nicht: Alle mit Schreibzugriff können sie übernehmen; der nächste Aufruf mit der beendeten Kennung wird dann abgewiesen.",
+            "Offene, unblockierte Aufgabe mit einer selbst erzeugten UUID für eine Sitzung übernehmen. Als Person wirst du dabei auch zugewiesen. Konkurrierende Übernahmen werden abgewiesen. Übernahmen koordinieren die Arbeit und sperren sie nicht: Alle mit Schreibzugriff können sie übernehmen; der nächste Aufruf mit der beendeten Kennung wird dann abgewiesen.",
           input: {
             claimId: "ID der aktuellen Aufgabenübernahme.",
             itemId: "Öffentliche ID der Aufgabe.",
@@ -423,7 +423,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "task.release": {
           title: "Aufgabe freigeben",
           description:
-            "Aktuelle Übernahme anhand ihrer genauen Kennung freigeben. Mit force die Übernahme einer anderen Person anhand ihrer genauen Kennung übernehmen; das dürfen alle mit Schreibzugriff, und die Aktivität hält fest, wer sie übernommen hat.",
+            "Aktuelle Übernahme anhand ihrer genauen Kennung freigeben. Du bleibst zugewiesen. Mit force die genaue Übernahme eines anderen Kontos freigeben; bei einer Person wird auch ihre Zuweisung entfernt. Das dürfen alle mit Schreibzugriff. Die Aktivität hält fest, wer die Übernahme beendet hat.",
           input: {
             claimId: "ID der aktuellen Aufgabenübernahme.",
             force: "Die genau beobachtete Übernahme einer anderen Person übernehmen und beenden.",
@@ -591,7 +591,8 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description: "Aktualisieren Sie ausgewählte Ereignisfelder, ohne den Elementtyp zu konvertieren.",
           input: {
             itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
-            assigneeIds: "Vollständiger Ersatzsatz der Benutzer UUIDs, zurückgegeben von List zuweisbaren Space-Mitgliedern.",
+            assigneeIds:
+              "Vollständige Liste der Benutzer-UUIDs aus der Liste zuweisbarer Space-Mitglieder. Die arbeitende Person kann erst nach Freigabe ihrer aktiven Übernahme mit task.release entfernt werden.",
             tagIds: "Kompletter Ersatzsatz des Tags IDs, zurückgegeben von Read Space.",
             title: "Optionaler Veranstaltungstitel.",
             description: "Optionale Ereignisbeschreibung; null löscht es.",
@@ -707,7 +708,8 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description: "Aktualisieren Sie ausgewählte Felder einer vorhandenen Aufgabe, ohne deren Elementtyp zu konvertieren.",
           input: {
             itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
-            assigneeIds: "Vollständiger Ersatzsatz der Benutzer UUIDs, zurückgegeben von List zuweisbaren Space-Mitgliedern.",
+            assigneeIds:
+              "Vollständige Liste der Benutzer-UUIDs aus der Liste zuweisbarer Space-Mitglieder. Die arbeitende Person kann erst nach Freigabe ihrer aktiven Übernahme mit task.release entfernt werden.",
             tagIds: "Kompletter Ersatzsatz des Tags IDs, zurückgegeben von Read Space.",
             title: "Optionaler Aufgabentitel.",
             description: "Optionale Aufgabenbeschreibung; null löscht es.",

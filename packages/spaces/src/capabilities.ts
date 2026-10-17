@@ -1138,7 +1138,8 @@ const mutationError = <T>(result: Exclude<MutationResult<T>, { ok: true }>, cont
       : result.status === 404
         ? { code: "NOT_FOUND" as const, message: result.error, status: 404 as const }
         : result.status === 409
-          ? err.conflict(result.error)
+          ? // err.conflict takes a subject noun and appends "already exists"; a service conflict is a full sentence.
+            { code: "CONFLICT" as const, message: result.error, status: 409 as const }
           : result.status === 500
             ? err.internal(result.error)
             : err.badInput(result.error);
@@ -2408,7 +2409,7 @@ export const spacesCapabilities = defineCapabilities({
     "task.claim": {
       title: "Claim task work",
       description:
-        "Claim an open unblocked task for one worker. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict. Claims coordinate work and do not lock it: any writer can take one over, and progress, release or completion with the ended claimId then returns 409 'Task claim is no longer active'.",
+        "Claim an open unblocked task for one worker. Claiming as a person also assigns you to the task. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict. Claims coordinate work and do not lock it: any writer can take one over, and progress, release or completion with the ended claimId then returns 409 'Task claim is no longer active'.",
       input: ClaimTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
       data: TaskWorkSchema,
       destructive: false,
@@ -2440,7 +2441,7 @@ export const spacesCapabilities = defineCapabilities({
     "task.release": {
       title: "Release task work",
       description:
-        "Release your current claim using its exact claimId. With force, take over another worker's claim by its exact claimId; any writer may, and the task activity records who took it over. Progress and completion results remain available.",
+        "Release your current claim using its exact claimId; you stay assigned. With force, release another worker's exact claim and remove them from the assignees if they are a person; any writer may, and task activity records who took it over. Progress and completion results remain available.",
       input: ReleaseTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
       data: TaskWorkSchema,
       destructive: false,
