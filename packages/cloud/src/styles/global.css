@@ -117,18 +117,17 @@ html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
       55%,
     color-mix(in srgb, var(--app-canvas-to, var(--color-zinc-400)) var(--cloud-shell-strength), var(--ui-canvas))
   );
-  /* On color the open item is the surface; on the surface it is tinted. */
+  /* On color the open item is the surface; on the surface it is tinted. Its
+     label is the app ink, which app-color.ts keeps at AA on the surface and on
+     the app's selection fills. */
   --cloud-shell-selected: var(--k2b-surface);
-  /* The accent, darkened or lightened only as far as AA text needs; see
-     `shellInk()` in app-appearance.ts. */
-  --cloud-shell-selected-text: var(--app-shell-ink, var(--color-blue-700));
+  --cloud-shell-selected-text: var(--ui-app-accent-text);
 }
 
 .dark .cloud-app-canvas {
   --cloud-shell-strength: 22%;
   --cloud-shell-via-strength: 12%;
-  --cloud-shell-selected: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 30%, var(--k2b-surface));
-  --cloud-shell-selected-text: var(--app-shell-ink-dark, var(--color-blue-300));
+  --cloud-shell-selected: var(--ui-app-selected-nav);
 }
 
 :root {

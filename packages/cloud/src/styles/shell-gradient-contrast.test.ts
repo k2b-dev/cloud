@@ -2,13 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { appIds } from "../../../../scripts/workspace";
-import { SHELL_DARK_SELECTED_TINT, SHELL_SURFACE, shellInk } from "../ssr/app-appearance";
+import { appColors } from "../ssr/app-color";
 
 const read = (path: string) => readFileSync(resolve(import.meta.dir, path), "utf8");
 const shell = read("global.css");
 const tokens = read("tokens.css");
 const ui = read("../../../ui/src/styles/index.css");
 type RGB = [number, number, number];
+const isHexColor = (value: string): value is `#${string}` => /^#[\da-f]{6}$/i.test(value);
 const rgb = (hex: string): RGB => {
   if (!/^#[\da-f]{6}$/i.test(hex)) throw new Error(`Expected a six-digit sRGB color: ${hex}`);
   return [parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255];
@@ -56,11 +57,13 @@ const appearances = appIds().flatMap((id) => {
   const appearance = source.match(/\bappearance:\s*\{([\s\S]*?)\}\s*[,}]/)?.[1];
   if (source.includes("appearance:") && !appearance) throw new Error(`Cannot parse ${id} appearance`);
   if (!appearance) return []; // Gateway and the phone app declare no appearance.
-  const color = (key: string) => {
-    const match = appearance?.match(new RegExp(`\\b${key}:\\s*"([^"]+)"`));
-    if (appearance?.includes(`${key}:`) && !match) throw new Error(`Cannot parse ${id}.${key}`);
-    if (match) rgb(match[1]!); // Fail closed if a new declaration needs a different parser.
-    return match?.[1];
+  const color = (key: string): `#${string}` | undefined => {
+    const value = appearance?.match(new RegExp(`\\b${key}:\\s*"([^"]+)"`))?.[1];
+    if (appearance?.includes(`${key}:`) && !value) throw new Error(`Cannot parse ${id}.${key}`);
+    if (value === undefined) return undefined;
+    // Fail closed if a new declaration needs a different parser.
+    if (!isHexColor(value)) throw new Error(`Expected a six-digit sRGB color: ${value}`);
+    return value;
   };
   const accent = color("accent");
   if (!accent) throw new Error(`${id} appearance needs an accent`);
@@ -70,7 +73,7 @@ const appearances = appIds().flatMap((id) => {
   return [{ id, accent, from, to, via: color("via") ?? "#ffffff", strength }];
 });
 // A third-party app may declare any color at full strength; the shell must stay readable for it too.
-const extremes = ["#000000", "#ffffff", "#0000ff", "#ffff00"].map((color) => ({
+const extremes = (["#000000", "#ffffff", "#0000ff", "#ffff00"] as const).map((color) => ({
   id: `extreme ${color}`,
   accent: color,
   from: color,
@@ -97,7 +100,6 @@ describe("shell gradient contrast for built-in and extreme app colors", () => {
         const canvas = rgb(canvasToken === "var(--color-zinc-50)" ? "#fafafa" : canvasToken);
         const from = rgb(appearance.from);
         const to = rgb(appearance.to);
-        const accent = rgb(appearance.accent);
         const stops = [
           mix(from, percent("--cloud-shell-strength", dark), canvas),
           mix(mix(from, middleWeight, to), percent("--cloud-shell-via-strength", dark), canvas),
@@ -105,12 +107,13 @@ describe("shell gradient contrast for built-in and extreme app colors", () => {
         ];
         const secondary = rgb(token(ui, "--k2b-text-secondary", dark));
         const text = rgb(token(ui, "--k2b-text", dark));
-        const surface = rgb(token(ui, "--k2b-surface", dark));
-        // The server computes the open item's text color from the same surface and tint as the stylesheet.
-        expect<string>(SHELL_SURFACE[dark ? "dark" : "light"]).toBe(token(ui, "--k2b-surface", dark));
-        if (dark) expect(SHELL_DARK_SELECTED_TINT).toBe(weight(selectedBackground[1]!));
-        const selected = dark ? mix(accent, weight(selectedBackground[1]!), surface) : surface;
-        const selectedText = rgb(shellInk(appearance.accent)[dark ? "dark" : "light"]);
+        // The open item is the surface in light and the app's sidebar selection fill in dark, labelled with the
+        // app ink; app-color.ts derives both from the accent.
+        expect(selectedBackground).toEqual(["var(--k2b-surface)", "var(--ui-app-selected-nav)"]);
+        expect(declarations(shell, "--cloud-shell-selected-text")).toEqual(["var(--ui-app-accent-text)"]);
+        const colors = appColors(appearance.accent)[dark ? "dark" : "light"];
+        const selected = rgb(dark ? colors.selectedNav : token(ui, "--k2b-surface", dark));
+        const selectedText = rgb(colors.ink);
         // The phone canvas behind the title row: the app's own gradient, capped.
         const strength = Math.min(dark ? Math.round(appearance.strength / 2) / 100 : appearance.strength / 100, phoneCap(dark));
         const phoneStops = [
