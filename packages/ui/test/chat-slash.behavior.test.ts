@@ -323,7 +323,7 @@ const compactCommand: ChatCommand = {
   keywords: ["compact", "kompaktieren", "zusammenfassen"],
 };
 
-test.each(["Ctrl+Enter", "Cmd+Enter", "send before Back", "send during Back", "desktop", "another draft"])(
+test.each(["Ctrl+Enter", "Cmd+Enter", "send before Back", "send during Back", "desktop", "another draft", "disabled meanwhile"])(
   "%s submits only after the phone sheet's history entry has left, keeping desktop synchronous",
   async (activation) => {
     const dom = createHarness();
@@ -352,6 +352,7 @@ test.each(["Ctrl+Enter", "Cmd+Enter", "send before Back", "send during Back", "d
     const { ChatComposer } = await import("../src/chat/ChatComposer");
     const [value, setValue] = createSignal("/");
     const [draftKey, setDraftKey] = createSignal("first");
+    const [disabled, setDisabled] = createSignal(false);
     const submissions: ChatSubmitInput[] = [];
     const submissionStates: unknown[] = [];
     let resolveSubmitted!: () => void;
@@ -367,6 +368,9 @@ test.each(["Ctrl+Enter", "Cmd+Enter", "send before Back", "send during Back", "d
           onValueChange: setValue,
           get draftKey() {
             return draftKey();
+          },
+          get disabled() {
+            return disabled();
           },
           commands: [compactCommand],
           variant: "conversation",
@@ -405,9 +409,11 @@ test.each(["Ctrl+Enter", "Cmd+Enter", "send before Back", "send during Back", "d
         }),
       );
     expect(submissions).toHaveLength(activation === "desktop" ? 1 : 0);
-    if (activation === "another draft") {
-      // Another conversation's draft replaces this one while the sheet's Back is on its way: nothing is sent.
-      setDraftKey("second");
+    if (activation === "another draft" || activation === "disabled meanwhile") {
+      // Another conversation's draft replaces this one, or the composer is disabled, while the sheet's Back is on its
+      // way: nothing is sent.
+      if (activation === "another draft") setDraftKey("second");
+      else setDisabled(true);
       await core.historySettled();
       await flush();
       expect(submissions).toEqual([]);

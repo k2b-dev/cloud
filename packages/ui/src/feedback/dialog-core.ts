@@ -223,7 +223,6 @@ export const createDialogCore = () => {
   };
   /** The window whose history this core listens to; a test harness may replace the window between dialogs. */
   let listening: { window: Window; navigation?: Navigation } | undefined;
-  // Capture at the target runs before application listeners on the window, whenever they were added.
   const listen = () => {
     if (listening?.window === window) return;
     listening?.window.removeEventListener("popstate", onPopState, { capture: true });
@@ -233,6 +232,9 @@ export const createDialogCore = () => {
     current?.addEventListener("navigate", onNavigate);
     listening = { window, navigation: current };
   };
+  // Chromium runs a window's popstate listeners in the order they were added, capture or not. The shared core is
+  // created before islands mount and add their navigation listeners, so it listens from the start.
+  if (typeof window !== "undefined") listen();
 
   const pushHistory = (entry: HistoryEntry) => {
     listen();

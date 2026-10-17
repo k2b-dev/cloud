@@ -686,7 +686,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   /** The conversation field stays editable while a message is sent, so it keeps the focus and a phone its keyboard. */
   const editBlocked = () => (conversation() ? busy() : blocked());
   const hasDraft = () => Boolean(props.value.trim() || (!running() && attachments().length > 0));
-  const canSubmit = () => !blocked() && hasDraft() && !(running() && runningSubmitIntent() === "steer" && mentions().length);
+  /** The draft may go out now, apart from a submission that is already on its way. */
+  const submittable = () => !busy() && hasDraft() && !(running() && runningSubmitIntent() === "steer" && mentions().length);
+  const canSubmit = () => !submitting() && submittable();
   const canSelectFiles = () => Boolean(props.fileSelection && !props.fileSelection.disabled && !running() && !blocked());
   const hasAddMenu = () => Boolean(props.fileSelection || props.menuActions?.length);
   const hasContextUsage = () => {
@@ -841,8 +843,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         if (commandSheetHeld()) setClosedAt(commandQuery()?.start);
         // The sheet's Back entry leaves first, so a submit handler that navigates finds the history settled.
         await dialogHistorySettled();
-        // A draft that another one replaced or that was emptied meanwhile is not sent, and keeps its text.
-        if (disposed || props.draftKey !== key || !hasDraft()) return;
+        // A draft that another one replaced, or that may no longer go out, is not sent and keeps its text.
+        if (disposed || props.draftKey !== key || !submittable()) return;
       }
       const intent = running() ? runningSubmitIntent() : "send";
       const previousValue = props.value;

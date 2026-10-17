@@ -87,15 +87,20 @@ for (const navigationApi of [true, false]) {
         }
       }
 
-      test("listens in the capture phase of the window that holds its first entry", async () => {
+      test("listens in the capture phase when created, and moves to a window that replaced its own", async () => {
         const listen = spyOn(window, "addEventListener");
         const core = createDialogCore();
-        expect(listen).not.toHaveBeenCalledWith("popstate", expect.any(Function), { capture: true });
-        const result = core.open(view("Sheet"), { history: true });
         expect(listen).toHaveBeenCalledWith("popstate", expect.any(Function), { capture: true });
         listen.mockRestore();
-        core.close();
+        dom.cleanup();
+        dom = createDomTestHarness();
+        const moved = spyOn(window, "addEventListener");
+        const result = core.open(view("Sheet"), { history: true });
+        expect(moved).toHaveBeenCalledWith("popstate", expect.any(Function), { capture: true });
+        moved.mockRestore();
+        history.back();
         await result;
+        expect(core.isOpen()).toBe(false);
       });
 
       test("an application listener added before the first entry still misses its same-URL Back", async () => {
