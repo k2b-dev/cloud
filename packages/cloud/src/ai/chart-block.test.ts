@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { type ChartDatum, charts } from "@k2b/stdlib";
+import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { z } from "zod";
 import {
   chartDateTime,
@@ -35,6 +36,12 @@ const issues = (input: unknown) => {
   const result = CloudAiChartInputSchema.safeParse(input);
   return result.success ? [] : result.error.issues.map((issue) => issue.message);
 };
+const chartDatums = (svg: string): ChartDatum[] =>
+  [...svg.matchAll(/data-chart-datum="([^"]*)"/g)].map((match) => {
+    const datum: unknown = JSON.parse(match[1]!.replaceAll("&quot;", '"'));
+    if (!isChartDatum(datum)) throw new Error("Invalid chart datum");
+    return datum;
+  });
 
 describe("chart tool input", () => {
   test("accepts every cloud.chart() kind as plain data", () => {
@@ -881,19 +888,52 @@ describe("shared chart tooltip", () => {
     const row = { key: "0:0", cells: { label: "Jan", value: "1.200,00\u00a0€" }, values: { label: "Jan", value: 1200 } };
     expect(cloudAiChartTooltip(columns, row)).toEqual({
       title: "Jan",
-      rows: [
-        { label: "Umsatz", value: "1.200,00\u00a0€" },
-        { label: "Other", value: "" },
-      ],
+      rows: [{ label: "Umsatz", value: "1.200,00\u00a0€" }],
     });
     expect(cloudAiChartTooltip(columns.slice(1), row)).toEqual({
       title: undefined,
+      rows: [{ label: "Umsatz", value: "1.200,00\u00a0€" }],
+    });
+    expect(cloudAiChartTooltip(columns, { ...row, cells: { ...row.cells, missing: "" } })).toEqual({
+      title: "Jan",
       rows: [
         { label: "Umsatz", value: "1.200,00\u00a0€" },
         { label: "Other", value: "" },
       ],
     });
     expect(cloudAiChartTooltip([], row)).toEqual({ title: undefined, rows: [] });
+  });
+
+  test("stat sparkline tooltips omit the stat value and delta columns", () => {
+    const input = parse({ kind: "stat", title: "S", value: 5, delta: 1, sparkline: [1, 2, 3] });
+    const options = cloudAiChartRenderOptions(input, "de");
+    if (options.kind !== "stat") throw new Error("Expected stat");
+    const rows = cloudAiChartRows(input, "de");
+    const marks = chartDatums(charts.stat({ ...options, width: 480, height: 280, inspect: true }));
+    const added = marks.map((datum) => ({ datum, row: rows.add(datum) }));
+    const point = added.find(({ datum }) => datum.role === "point" && datum.index === 0);
+    if (!point) throw new Error("Missing sparkline point");
+    expect(cloudAiChartTooltip(rows.columns(), point.row)).toEqual({
+      title: undefined,
+      rows: [
+        { label: "#", value: "1" },
+        { label: "Wert", value: "1" },
+      ],
+    });
+    expect(rows.table()).toEqual(cloudAiChartTable(input, "de"));
+  });
+
+  test("boxplot outlier tooltips omit summary columns", () => {
+    const input = parse({ kind: "boxplot", title: "B", data: [{ label: "A", values: [1, 1, 1, 1, 20] }] });
+    const options = cloudAiChartRenderOptions(input, "de");
+    if (options.kind !== "boxplot") throw new Error("Expected boxplot");
+    const rows = cloudAiChartRows(input, "de");
+    const marks = chartDatums(charts.boxplot({ ...options, width: 480, height: 280, inspect: true }));
+    const added = marks.map((datum) => ({ datum, row: rows.add(datum) }));
+    const outlier = added.find(({ datum }) => datum.role === "outlier");
+    if (!outlier) throw new Error("Missing outlier");
+    expect(cloudAiChartTooltip(rows.columns(), outlier.row)).toEqual({ title: "A", rows: [{ label: "Wert", value: "20" }] });
+    expect(rows.table()).toEqual(cloudAiChartTable(input, "de"));
   });
 });
 
@@ -948,7 +988,7 @@ describe("function formats in chart rows", () => {
     expect(rows.add(datum).cells).toEqual({ x: "day 1", y: "1.200,00\u00a0€" });
   });
 
-  test("histogram bounds use x functions and counts stay unformatted", () => {
+  test("histogram bounds use x functions and counts follow the count axis", () => {
     const input = parse({
       kind: "histogram",
       title: "Bins",
@@ -969,9 +1009,31 @@ describe("function formats in chart rows", () => {
     expect(cloudAiChartRows(input, "de", { formats: { x, y, value } }).add(datum).cells).toEqual({
       from: "day 1",
       to: "day 2",
-      count: "1",
+      count: "1 kWh",
     });
     expect(cloudAiChartRows(input, "de").add(datum).cells).toEqual({ from: "1,0 kg", to: "2,0 kg", count: "1" });
+  });
+
+  test("histogram y functions format counts without formatting bounds", () => {
+    const input = parse({ kind: "histogram", title: "Bins", data: [1, 1, 3], bins: [1, 2, 4] });
+    const options = cloudAiChartRenderOptions(input, "de");
+    if (options.kind !== "histogram") throw new Error("Expected histogram");
+    const datum = chartDatums(charts.histogram({ ...options, width: 480, height: 280, inspect: true })).find(
+      (datum) => datum.role === "bin" && datum.index === 0,
+    );
+    if (!datum) throw new Error("Missing histogram bin");
+    const y = (v: number) => `${v} Stk.`;
+    expect(cloudAiChartRows(input, "de", { formats: { y } }).add(datum).cells).toEqual({ from: "1", to: "2", count: "2 Stk." });
+    expect(cloudAiChartRows(input, "de", { formats: { x, y } }).add(datum).cells).toEqual({
+      from: "day 1",
+      to: "day 2",
+      count: "2 Stk.",
+    });
+    expect(cloudAiChartRows(input, "de", { formats: { y, value } }).add(datum).cells).toEqual({
+      from: "1 units",
+      to: "2 units",
+      count: "2 Stk.",
+    });
   });
 
   test("omitting function formats preserves declarative output", () => {

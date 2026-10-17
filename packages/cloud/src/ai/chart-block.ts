@@ -536,7 +536,9 @@ export function cloudAiChartTooltip(
   const named = first && !first.numeric;
   return {
     title: named ? row.cells[first.id] : undefined,
-    rows: (named ? rest : columns).map((column) => ({ label: column.label, value: row.cells[column.id] ?? "" })),
+    rows: (named ? rest : columns)
+      .filter((column) => column.id in row.cells)
+      .map((column) => ({ label: column.label, value: row.cells[column.id] ?? "" })),
   };
 }
 
@@ -553,10 +555,10 @@ export function cloudAiChartRows(
   const format = formats(input, locale);
   const valueFormat = input.tooltip?.format
     ? cloudAiNumberFormatters(input.tooltip.format, locale).value
-    : (options.formats?.value ?? options.formats?.y ?? format.value);
+    : (options.formats?.value ?? (input.kind === "histogram" ? undefined : options.formats?.y) ?? format.value);
   const xFormat = options.formats?.x ?? format.x.value;
   const series = seriesOf(input);
-  const countFormat = cloudAiNumberFormatters(undefined, locale).value;
+  const countFormat = (input.kind === "histogram" ? options.formats?.y : undefined) ?? cloudAiNumberFormatters(undefined, locale).value;
   const percent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
   const unit = "unit" in input && input.unit ? ` ${input.unit}` : "";
   const columns = new Map<string, CloudAiChartColumn>();

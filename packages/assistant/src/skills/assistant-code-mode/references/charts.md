@@ -6,7 +6,10 @@ no DOM, so it works the same in apps, scripts and PDFs. In an app, cartesian
 charts redraw at their real width, so axes and labels fit phones. App charts show
 tooltips by default on hover, keyboard focus and tap. Tab to a chart, use arrow
 keys or Home/End to inspect values, and press Escape to close the tooltip;
-tapping outside the chart also closes it.
+tapping outside the chart also closes it. The markup carries every value for
+its tooltip, so a dense chart is large: 8 series × 480 points is about 3 MB.
+Draw dense charts in the app that shows them instead of returning their markup
+from an action or storing it in KV.
 
 For computed values in the chat, call `cloud.view.chart`, `cloud.view.group`,
 `cloud.view.table`, `cloud.view.stats`, `cloud.view.details` or `cloud.view.explorer`

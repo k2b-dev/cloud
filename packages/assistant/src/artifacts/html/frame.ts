@@ -321,7 +321,14 @@ const scrollers = new ResizeObserver((entries) => {
     else element.removeAttribute("tabindex");
   }
 });
-new MutationObserver(() => {
+new MutationObserver((records) => {
+  if (
+    records.every(({ target }) => {
+      const element = target instanceof Element ? target : target.parentElement;
+      return element?.closest(".k2b-chart__tooltip");
+    })
+  )
+    return;
   for (const [element, inspection] of inspections) {
     if (element.isConnected) continue;
     inspection.destroy();
