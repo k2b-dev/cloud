@@ -668,6 +668,23 @@ describe("a page that scrolls its content in a ScrollArea", () => {
     });
     try {
       expect(await scrolling(page)).toEqual({ areaGutter: 12, areaScrolls: true, documentScrolls: false });
+      // The soft card reserves no second gutter beside the area's.
+      expect(await page.locator("main.layout-content-main").evaluate((main: HTMLElement) => main.offsetWidth - main.clientWidth)).toBe(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("600×900 signed in: a regular page reserves the soft card's scrollbar gutter", async () => {
+    const { context, page } = await open({ name: "narrow window", width: 600, height: 900, touch: false }, "/app/mail/inbox?plain=1", {
+      style,
+    });
+    try {
+      const main = await page.evaluate(() => {
+        const main = document.querySelector<HTMLElement>("main.layout-content-main")!;
+        return { gutter: main.offsetWidth - main.clientWidth, rule: getComputedStyle(main).scrollbarGutter };
+      });
+      expect(main).toEqual({ gutter: 12, rule: "stable" });
     } finally {
       await context.close();
     }
@@ -1121,6 +1138,30 @@ describe("soft tablet and phone shell", () => {
         }
       });
     }
+  }
+
+  for (const device of [phone, ipadSplitView]) {
+    test(`${device.width}: content wider than the soft card scrolls sideways in it while the window stays put`, async () => {
+      const { context, page } = await open(device, "/app/mail/inbox?plain=1", {
+        style: '.plain-row:first-child::before { content: ""; display: block; width: 900px; height: 1px; }',
+      });
+      try {
+        // A scroller that is not `hidden` takes the person's swipe or wheel; mobile WebKit has no wheel to send.
+        expect(
+          await page.evaluate(() => {
+            const main = document.querySelector<HTMLElement>("main.layout-content-main")!;
+            return {
+              overflowX: getComputedStyle(main).overflowX,
+              wider: main.scrollWidth > main.clientWidth,
+              window: window.scrollX,
+              documentWidth: document.scrollingElement!.scrollWidth,
+            };
+          }),
+        ).toEqual({ overflowX: "auto", wider: true, window: 0, documentWidth: device.width });
+      } finally {
+        await context.close();
+      }
+    });
   }
 
   test("bar links follow personal rail order, keep the later current app and allow native navigation", async () => {

@@ -363,9 +363,15 @@ solid-island {
   .dark .cloud-app-canvas:not([data-layout-authenticated]) {
     background: var(--ui-surface);
   }
-  /* Reserve the document's scrollbar gutter so short and long pages keep the
-     same width. Full-page surfaces own their inner scrolling. */
+  /* Reserve the page scroller's gutter so short and long pages keep the same
+     width: the document's, or the card's for signed-in people. Full-page
+     surfaces, workspaces, and scroll areas own their inner scrolling, so the
+     card reserves no second gutter beside theirs. */
   html:has(.cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated])) { scrollbar-gutter: stable; }
+  .cloud-app-canvas[data-layout-authenticated]:not([data-layout-full-page])
+    .layout-content-main:not(:has(> .k2b-scroll-area, > .k2b-app-workspace, > :is(solid-island, solid-client) > .k2b-app-workspace)) {
+    scrollbar-gutter: stable;
+  }
   /* A page that scrolls its content in a ScrollArea grows with it here, so
      the area does not scroll and reserves no second gutter beside the
      document's. From md, `main` bounds its height and it scrolls. */
@@ -406,9 +412,10 @@ solid-island {
   .cloud-app-canvas[data-layout-authenticated] .layout-header .font-semibold {
     font-size: 1.125rem;
   }
+  /* Content wider than the card scrolls sideways in it, as from md; the
+     rounded corners still clip. */
   .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
-    overflow-x: hidden;
-    overflow-y: auto;
+    overflow: auto;
     border-top: 1px solid transparent;
     border-radius: 1.75rem 1.75rem 0 0;
     background: var(--k2b-surface);

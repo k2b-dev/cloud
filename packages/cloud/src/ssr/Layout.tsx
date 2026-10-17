@@ -9,7 +9,7 @@ import { defaultRailPreferences } from "../contracts/rail-preferences";
 import { hasRole, type User } from "../contracts/shared";
 import { getLocale } from "../server/locale";
 import { getDateConfig } from "../server/time";
-import { dates, normalizeRedirectTo } from "../shared";
+import { dates, resolveHomePath } from "../shared";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import AnnouncementBanners from "./AnnouncementBanners";
 import { appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
@@ -85,12 +85,7 @@ function buildNavLinks(
     });
   }
   return { primary, more };
-} /** The page `/` opens, by Core's rule for `app.home_path`: a local path other than `/`, sign-in, or admin. */
-const startPagePath = (value: unknown): string => {
-  const path = typeof value === "string" ? normalizeRedirectTo(value) : undefined;
-  return !path || path === "/" || /^\/(?:auth|admin)(?:\/|$)/.test(path) ? "/app/dashboard" : path;
-};
-// ==========================
+} // ==========================
 // Warning Components
 const WARN_DAYS = 14;
 function ProfileWarnings({ user, locale }: { user: User; locale: string }) {
@@ -227,7 +222,7 @@ export default function Layout(props: LayoutProps) {
     ...(user
       ? {
           rail: c.get("railPreferences") ?? defaultRailPreferences(),
-          home: startPagePath(settings?.app?.home_path),
+          home: resolveHomePath(settings?.app?.home_path),
           profile: { name: profileName, avatarSrc: profileAvatarSrc, appHref },
         }
       : {}),
