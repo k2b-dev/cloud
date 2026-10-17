@@ -38,12 +38,17 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-test("a widget parsing an SVG while CodeMirror renders the lines it scrolled to does not move the page scroller", async () => {
+const open = async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await page.goto(server.url.href);
+  await page.waitForFunction(() => "harness" in window);
+  await page.evaluate(() => (window as unknown as { harness: NoteScrollerHarness }).harness.settle());
+  return page;
+};
+
+test("a widget parsing an SVG while CodeMirror renders the lines it scrolled to does not move the page scroller", async () => {
+  const page = await open();
   try {
-    await page.goto(server.url.href);
-    await page.waitForFunction(() => "harness" in window);
-    await page.evaluate(() => (window as unknown as { harness: NoteScrollerHarness }).harness.settle());
     // The last jump lands near the end, where the note without its new lines is shorter than the scroll position.
     for (const anchor of ["Anchor 2", "Anchor 4", "Anchor 6"]) {
       const { written, scrollTop } = await page.evaluate(
@@ -52,6 +57,19 @@ test("a widget parsing an SVG while CodeMirror renders the lines it scrolled to 
       );
       expect({ anchor, scrollTop }).toEqual({ anchor, scrollTop: written });
     }
+  } finally {
+    await page.close();
+  }
+});
+
+test("a note shortened above the view keeps a focused editor at the bottom", async () => {
+  const page = await open();
+  try {
+    const { before, after } = await page.evaluate(() =>
+      (window as unknown as { harness: NoteScrollerHarness }).harness.deleteAboveAtBottom(2000),
+    );
+    expect(before).toBeLessThanOrEqual(1);
+    expect(after).toBeLessThanOrEqual(1);
   } finally {
     await page.close();
   }

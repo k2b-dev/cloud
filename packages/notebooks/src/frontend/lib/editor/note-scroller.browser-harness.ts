@@ -68,6 +68,16 @@ const harness = {
     for (let index = 0; index < 4; index++) await frame();
     return { written, scrollTop: port.scrollTop };
   },
+  /** Deletes the start of the note while the focused editor sits at the bottom, as a collaborator's edit arrives. */
+  deleteAboveAtBottom: async (length: number) => {
+    view.focus();
+    port.scrollTop = port.scrollHeight;
+    for (let index = 0; index < 4; index++) await frame();
+    const before = port.scrollHeight - port.clientHeight - port.scrollTop;
+    view.dispatch({ changes: { from: 0, to: length } });
+    for (let index = 0; index < 4; index++) await frame();
+    return { before, after: port.scrollHeight - port.clientHeight - port.scrollTop };
+  },
 };
 
 export type NoteScrollerHarness = typeof harness;
