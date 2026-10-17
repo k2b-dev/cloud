@@ -847,6 +847,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
     setSubmitting(true);
     try {
+      if (commandSheetHeld()) setClosedAt(commandQuery()?.start);
+      // The sheet's Back entry leaves first, so a submit handler that navigates finds the history settled.
+      if (isTouchOnly()) await dialogHistorySettled();
       await runChatSubmission({
         clear: () => {
           props.onValueChange("");

@@ -401,7 +401,9 @@ dialog or its transient state.
 
 Application `popstate` listeners do not receive a Back or Forward that keeps
 the address and only moves between dialog or sheet entries and the page beneath
-them. A Back or Forward that changes the address still reaches them, also when
+them when the browser supports the Navigation API. Without it, only the
+synthetic Back on close is suppressed; user Back and Forward still reach listeners.
+A Back or Forward that changes the address still reaches them, also when
 the application pushed or replaced an address while a dialog was open; closing
 such a dialog then leaves that history alone.
 

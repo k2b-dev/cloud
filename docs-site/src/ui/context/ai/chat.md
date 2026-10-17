@@ -522,8 +522,11 @@ A tap beside it closes only the list and reaches nothing beneath; the field
 keeps focus and the keyboard stays open. Back closes the list first through one
 same-URL history entry, removed on every other close path. A Back or Forward
 that only moves onto or off this entry does not reach application `popstate`
-listeners. With a mouse or trackpad, an outside click closes the list and then
-acts normally. Emoji suggestions keep their floating list.
+listeners when the browser supports the Navigation API. Without it, only the
+synthetic Back on close is suppressed. Submitting on a touch-only device waits
+for the sheet's entry to leave before calling `onSubmit`, including when a tap
+on Send has already closed the list. With a mouse or trackpad, an outside click
+closes the list and then acts normally. Emoji suggestions keep their floating list.
 
 When changing a controlled draft outside the composer, use
 `reconcileChatMentions(before, after, mentions)` from `@k2b/ui` to update its

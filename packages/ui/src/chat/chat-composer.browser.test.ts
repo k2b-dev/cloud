@@ -89,6 +89,8 @@ render(
             onSubmit: ({ text }) => {
               window.sent.push(text);
               setItems((current) => [...current, { id: "s" + current.length, text }]);
+              // An application that opens the sent conversation's address at once.
+              if (options.submitNavigate) history.pushState({ page: "sent" }, "", "#sent");
               // A server round trip, as an application that waits for its request.
               if (options.submitDelay) return new Promise((done) => setTimeout(done, options.submitDelay));
             },
@@ -148,6 +150,8 @@ const open = async (
     viewportHeight?: boolean;
     /** Adds a command whose action pushes a history entry, as a router's navigation does. */
     navigate?: boolean;
+    /** Makes onSubmit push a history entry, as an application that opens the sent conversation does. */
+    submitNavigate?: boolean;
     /** Installs Playwright's clock before the page loads; it follows real time until a test moves it. */
     clock?: boolean;
     width?: number;
@@ -689,6 +693,8 @@ declare global {
     outsideClicks: { native: number; onclick: number };
     /** The hash of every popstate an application listener received. */
     pops: string[];
+    /** The text of every submission. */
+    sent: string[];
   }
 }
 
@@ -904,6 +910,26 @@ describe(`slash command phone sheet in ${browserName}`, () => {
       await frames(page, 2);
       expect(await pops()).toEqual(["", ""]);
       expect(await page.locator(".k2b-chat-composer__commands").count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("sending with the sheet open lets the application's address follow the page beneath it", async () => {
+    const page = await open({ mode: "slash", viewportHeight: true, submitNavigate: true }, phones[0]!.context);
+    try {
+      await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+      const field = page.locator("textarea").first();
+      await field.tap();
+      await page.keyboard.type("/al");
+      await finishListAnimation(page);
+      expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+      await page.locator(".k2b-chat-composer__send").tap();
+      await page.waitForFunction(() => history.state?.page === "sent");
+      expect(await page.evaluate(() => window.sent)).toEqual(["/al"]);
+      // One Back returns to the page as it was before the sheet opened, not to a leftover sheet entry.
+      await page.evaluate(() => history.back());
+      await expectPageHistory(page);
     } finally {
       await page.close();
     }

@@ -19,7 +19,8 @@ export type OpenDialogOptions = {
   /**
    * Add a same-URL history entry while the dialog is open, so the browser's or the phone's Back closes the dialog
    * instead of leaving the page. Closing the dialog removes the entry again; the returned promise settles after that.
-   * A same-URL Back or Forward between this core's entries and the page beneath them does not reach application popstate listeners.
+   * With the Navigation API, same-URL traversals between this core's entries and the page do not reach application popstate listeners.
+   * Without it, only the synthetic Back on close is suppressed.
    */
   history?: boolean;
 };
@@ -86,7 +87,7 @@ const HISTORY_MARKER = "k2bDialog";
 const historyRecord = (): Record<string, unknown> =>
   typeof history.state === "object" && history.state !== null ? { ...history.state } : {};
 const historyMarker = (): unknown => historyRecord()[HISTORY_MARKER];
-const historySnapshot = () => ({ href: location.href, marker: historyMarker(), length: history.length });
+const historySnapshot = () => ({ href: location.href, length: history.length });
 
 const resolveInitialFocusTarget = (entry: DialogStackEntry, dialog: HTMLDialogElement): HTMLElement | null => {
   const { initialFocus } = entry;
@@ -142,9 +143,10 @@ export const createDialogCore = () => {
   /** Markers of this core's entries in the browser history, oldest first. */
   let historyIds: number[] = [];
   const issued = new Set<number>();
-  const ownMarker = (marker: unknown) => typeof marker === "number" && issued.has(marker);
+  const ownMarker = (marker: unknown): marker is number => typeof marker === "number" && issued.has(marker);
   let seen = typeof window !== "undefined" ? historySnapshot() : undefined;
   let traversalFrom: { href: string; marker: unknown } | undefined;
+  let syntheticFrom: { href: string; marker: unknown } | undefined;
   const historyHolders = new Set<HistoryHolder>();
   let historySyncScheduled = false;
   /** Settles when the synthetic Back that removes closed dialogs' entries has arrived. */
@@ -176,6 +178,7 @@ export const createDialogCore = () => {
     void back.then(() => {
       if (returning === back) returning = undefined;
     });
+    syntheticFrom = { href: location.href, marker: current };
     history.go(-steps);
   };
 
@@ -187,20 +190,18 @@ export const createDialogCore = () => {
 
   /** Back or Forward moved to another entry: close dialogs and holders opened after the one it shows. */
   const onPopState = (event: PopStateEvent) => {
-    // Without the Navigation API, the fallback cannot see a foreign replaceState.
-    const from = typeof navigation !== "undefined" ? traversalFrom : history.length === seen?.length ? seen : undefined;
-    traversalFrom = undefined;
     const resolveBack = resolveReturning;
+    // Without the Navigation API, only our synthetic Back has a known departure.
+    const from = typeof navigation !== "undefined" ? traversalFrom : resolveBack ? syntheticFrom : undefined;
+    traversalFrom = undefined;
+    syntheticFrom = undefined;
     resolveReturning = undefined;
     try {
       const marker = historyMarker();
       if (from && from.href === location.href && from.marker !== marker && (ownMarker(from.marker) || ownMarker(marker))) {
         event.stopImmediatePropagation();
       }
-      const index = typeof marker === "number" ? historyIds.indexOf(marker) : -1;
-      // Forward can revisit a closed entry without reviving it or closing any live entries.
-      if (ownMarker(marker) && index === -1) return;
-      historyIds = historyIds.slice(0, index + 1);
+      historyIds = ownMarker(marker) ? historyIds.filter((id) => id <= marker) : [];
       const gone = (entry: DialogStackEntry) => entry.historyId !== undefined && !historyIds.includes(entry.historyId);
       while (state.stack.some(gone)) popTop(undefined);
       for (const holder of [...historyHolders].reverse()) {
@@ -598,7 +599,7 @@ export const dialogCore: DialogCore = publicDialogCore;
 
 /**
  * Internal: transient UI shares dialogs' Back handling without exposing another public dialog capability.
- * A same-URL Back or Forward between this core's entries and the page beneath them does not reach application popstate listeners.
+ * Same-URL traversals are suppressed with the Navigation API; without it, only the synthetic Back on release is suppressed.
  */
 export const holdDialogHistory = holdHistory;
 /** Internal: waits until entries released through `holdDialogHistory` have left the history. */
