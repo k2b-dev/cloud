@@ -226,12 +226,12 @@
 @utility sidebar-item-active {
   position: relative;
   background: var(--ui-selected);
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
+  color: var(--ui-app-accent-text);
   @apply font-medium;
   box-shadow: var(--ui-shadow-surface);
 
   &:hover {
-    color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 88%, black);
+    color: var(--ui-app-accent-text);
   }
 
   &::before {
@@ -239,14 +239,6 @@
     background: var(--app-accent, var(--color-blue-500));
     @apply pointer-events-none absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full;
   }
-}
-
-.dark .sidebar-item-active {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
-}
-
-.dark .sidebar-item-active:hover {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 45%, white);
 }
 
 @utility sidebar-item-meta {
@@ -723,12 +715,12 @@
   border-left: 0;
   position: relative;
   background: var(--ui-selected);
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
+  color: var(--ui-app-accent-text);
   @apply rounded-lg font-medium;
   box-shadow: var(--ui-shadow-surface);
 
   &:hover {
-    color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 88%, black);
+    color: var(--ui-app-accent-text);
   }
 
   &::before {
@@ -736,14 +728,6 @@
     background: var(--app-accent, var(--color-blue-500));
     @apply pointer-events-none absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full;
   }
-}
-
-.dark .list-item-active {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
-}
-
-.dark .list-item-active:hover {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 45%, white);
 }
 
 @utility section-label {
@@ -1115,7 +1099,7 @@
 }
 
 .sidebar-icon-action-active {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
+  color: var(--ui-app-accent-text);
   background: var(--ui-selected);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 20%, transparent);
 }

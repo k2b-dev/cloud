@@ -1,5 +1,6 @@
-import { AppWorkspace, Button, type ButtonVariant, useLocale } from "@k2b/ui";
+import { AppWorkspace, type ButtonVariant, useLocale } from "@k2b/ui";
 import { bookMessages } from "./book-messages";
+import CreateBookAction from "./CreateBookAction";
 import { createBookController } from "./create-book";
 
 type Props = {
@@ -9,37 +10,24 @@ type Props = {
   buttonVariant?: ButtonVariant;
 };
 
+function CreateBookIconAction(props: { label?: string }) {
+  const locale = useLocale();
+  const t = () => bookMessages.resolve([locale()]).t;
+  const { createBook, busy } = createBookController();
+  return (
+    <AppWorkspace.SidebarIconAction
+      icon={busy() ? "ti ti-loader-2 k2b-spin" : "ti ti-cube-plus"}
+      label={props.label ?? t().newBook}
+      disabled={busy()}
+      onClick={() => void createBook()}
+    />
+  );
+}
+
 /**
  * Opens a modal to create a new contact book and redirects to the created book.
  */
 export default function CreateBookButton(props: Props) {
-  const locale = useLocale();
-  const t = () => bookMessages.resolve([locale()]).t;
-  const { createBook, busy } = createBookController();
-  if (props.variant === "icon") {
-    return (
-      <AppWorkspace.SidebarIconAction
-        icon={busy() ? "ti ti-loader-2 k2b-spin" : "ti ti-cube-plus"}
-        label={props.label ?? t().newBook}
-        disabled={busy()}
-        onClick={() => void createBook()}
-      />
-    );
-  }
-
-  return (
-    <Button
-      variant={props.buttonVariant ?? "secondary"}
-      size="sm"
-      class={props.class}
-      loading={busy()}
-      loadingLabel={t().creatingBook}
-      data-contacts-editor={busy() ? "true" : undefined}
-      onClick={() => void createBook()}
-      aria-label={t().createNewContactBook}
-    >
-      <i class="ti ti-cube-plus" aria-hidden="true" />
-      {props.label ?? t().newBook}
-    </Button>
-  );
+  if (props.variant === "icon") return <CreateBookIconAction label={props.label} />;
+  return <CreateBookAction class={props.class} label={props.label} buttonVariant={props.buttonVariant} />;
 }

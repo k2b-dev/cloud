@@ -58,6 +58,7 @@ import {
 import { setItemCompleted } from "../shared/completion";
 import { openEditItemDialog } from "../shared/editItem";
 import { deadlinePresets } from "../shared/item-form/date";
+import ItemReactions, { createReactionPicker } from "../shared/reactions/ItemReactions";
 import SpaceAssigneePicker from "../shared/SpaceAssigneePicker";
 import {
   invalidateSpacesData,
@@ -172,6 +173,7 @@ export default function ItemDetailPanel(props: Props) {
   const locale = useLocale();
   const t = useSpaceMessages();
   const retryToast = createRetryToasts();
+  const reactionPicker = createReactionPicker();
   const priorityOptions = [
     { value: "urgent", label: t.urgent, icon: "ti ti-alert-circle", color: "#ef4444" },
     { value: "high", label: t.high, icon: "ti ti-arrow-up", color: "#f97316" },
@@ -1294,6 +1296,22 @@ export default function ItemDetailPanel(props: Props) {
             </DetailPanel.Group>
           </Show>
 
+          {/* The discussion starts with the item's reactions: no heading, no frame, every chip, and "Add reaction" at the end.
+              A generated occurrence of a series is no item of its own and has none. */}
+          <Show when={!isGeneratedOccurrence() && (canEditItem() || (props.item.reactions?.length ?? 0) > 0)}>
+            <ItemReactions
+              spaceId={props.spaceId}
+              itemId={props.item.id}
+              reactions={props.item.reactions}
+              canReact={canEditItem()}
+              picker={reactionPicker}
+              retryToast={retryToast}
+              density="default"
+              add="always"
+              class="spaces-item-reactions"
+            />
+          </Show>
+
           <Show when={props.canWrite || commentsPage().total > 0}>
             <CommentsSection
               spaceId={props.spaceId}
@@ -1329,6 +1347,7 @@ export default function ItemDetailPanel(props: Props) {
           </DetailPanel.Group>
         </DetailPanel.Body>
       </DetailPanel>
+      {reactionPicker.popover()}
     </div>
   );
 }

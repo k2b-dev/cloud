@@ -76,20 +76,12 @@ export type ContactRowLabels = {
   address: string;
 };
 
-export const DEFAULT_ROW_LABELS: ContactRowLabels = {
-  email: "Email",
-  phone: "Telephone",
-  website: "Website",
-  bank: "Bank",
-  address: "Address",
-};
-
 /**
  * Builds the editable form shape without dropping values that are outside a
  * compact editor. This lets focused editors patch a few common fields while
  * still sending the complete contact payload expected by the API.
  */
-export const contactToUpsertDraft = (contact: Contact, rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): ContactUpsertDraft => ({
+export const contactToUpsertDraft = (contact: Contact, rowLabels: ContactRowLabels): ContactUpsertDraft => ({
   label: contact.label ?? "",
   firstName: contact.firstName ?? "",
   lastName: contact.lastName ?? "",
@@ -110,22 +102,38 @@ export const contactToUpsertDraft = (contact: Contact, rowLabels: ContactRowLabe
   bankAccounts: initialBankAccountRows(contact, rowLabels),
 });
 
-export const emptyEmailRow = (rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableEmail => ({
+export type ContactQuickEditFields = Pick<
+  ContactUpsertDraft,
+  "label" | "firstName" | "lastName" | "companyName" | "jobTitle" | "parentRef" | "tagIds"
+> & { email: string; phone: string };
+
+/** Applies focused edits while preserving the remaining contact data. */
+export const applyQuickEditFields = (contact: Contact, fields: ContactQuickEditFields, rowLabels: ContactRowLabels): ContactUpsertDraft => {
+  const draft = contactToUpsertDraft(contact, rowLabels);
+  const { email, phone, ...otherFields } = fields;
+  const emails = [...draft.emails];
+  const phones = [...draft.phones];
+  emails[0] = { label: emails[0]?.label ?? rowLabels.email, email };
+  phones[0] = { label: phones[0]?.label ?? rowLabels.phone, phone };
+  return { ...draft, ...otherFields, emails, phones };
+};
+
+export const emptyEmailRow = (rowLabels: ContactRowLabels): EditableEmail => ({
   label: rowLabels.email,
   email: "",
 });
 
-export const emptyPhoneRow = (rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditablePhone => ({
+export const emptyPhoneRow = (rowLabels: ContactRowLabels): EditablePhone => ({
   label: rowLabels.phone,
   phone: "",
 });
 
-export const emptyWebsiteRow = (rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableWebsite => ({
+export const emptyWebsiteRow = (rowLabels: ContactRowLabels): EditableWebsite => ({
   label: rowLabels.website,
   url: "",
 });
 
-export const emptyBankAccountRow = (rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableBankAccount => ({
+export const emptyBankAccountRow = (rowLabels: ContactRowLabels): EditableBankAccount => ({
   label: rowLabels.bank,
   accountHolderName: "",
   iban: "",
@@ -134,7 +142,7 @@ export const emptyBankAccountRow = (rowLabels: ContactRowLabels = DEFAULT_ROW_LA
   note: "",
 });
 
-export const emptyAddressRow = (rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableAddress => ({
+export const emptyAddressRow = (rowLabels: ContactRowLabels): EditableAddress => ({
   label: rowLabels.address,
   recipientName: "",
   companyName: "",
@@ -146,7 +154,7 @@ export const emptyAddressRow = (rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS
   countryCode: "DE",
 });
 
-export const initialEmailRows = (contact: Contact | null, rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableEmail[] => {
+export const initialEmailRows = (contact: Contact | null, rowLabels: ContactRowLabels): EditableEmail[] => {
   if (!contact) return [emptyEmailRow(rowLabels)];
   return contact.emails.length > 0
     ? contact.emails.map((email) => ({
@@ -156,7 +164,7 @@ export const initialEmailRows = (contact: Contact | null, rowLabels: ContactRowL
     : [emptyEmailRow(rowLabels)];
 };
 
-export const initialPhoneRows = (contact: Contact | null, rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditablePhone[] => {
+export const initialPhoneRows = (contact: Contact | null, rowLabels: ContactRowLabels): EditablePhone[] => {
   if (!contact) return [emptyPhoneRow(rowLabels)];
   return contact.phones.length > 0
     ? contact.phones.map((phone) => ({
@@ -166,7 +174,7 @@ export const initialPhoneRows = (contact: Contact | null, rowLabels: ContactRowL
     : [emptyPhoneRow(rowLabels)];
 };
 
-export const initialWebsiteRows = (contact: Contact | null, rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableWebsite[] => {
+export const initialWebsiteRows = (contact: Contact | null, rowLabels: ContactRowLabels): EditableWebsite[] => {
   if (!contact) return [emptyWebsiteRow(rowLabels)];
   return contact.websites.length > 0
     ? contact.websites.map((website) => ({
@@ -176,7 +184,7 @@ export const initialWebsiteRows = (contact: Contact | null, rowLabels: ContactRo
     : [emptyWebsiteRow(rowLabels)];
 };
 
-export const initialAddressRows = (contact: Contact | null, rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableAddress[] => {
+export const initialAddressRows = (contact: Contact | null, rowLabels: ContactRowLabels): EditableAddress[] => {
   if (!contact) return [emptyAddressRow(rowLabels)];
   return contact.addresses.length > 0
     ? contact.addresses.map((address) => ({
@@ -193,10 +201,7 @@ export const initialAddressRows = (contact: Contact | null, rowLabels: ContactRo
     : [emptyAddressRow(rowLabels)];
 };
 
-export const initialBankAccountRows = (
-  contact: Contact | null,
-  rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS,
-): EditableBankAccount[] => {
+export const initialBankAccountRows = (contact: Contact | null, rowLabels: ContactRowLabels): EditableBankAccount[] => {
   if (!contact) return [];
   return contact.bankAccounts.map((account) => ({
     label: account.label?.trim() || rowLabels.bank,
@@ -208,10 +213,7 @@ export const initialBankAccountRows = (
   }));
 };
 
-export const createContactUpsertDraft = (
-  initialValues: ContactUpsertInitialValues = {},
-  rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS,
-): ContactUpsertDraft => ({
+export const createContactUpsertDraft = (initialValues: ContactUpsertInitialValues, rowLabels: ContactRowLabels): ContactUpsertDraft => ({
   label: initialValues.label?.trim() ?? "",
   firstName: "",
   lastName: "",

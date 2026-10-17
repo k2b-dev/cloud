@@ -86,6 +86,20 @@ Under **Blocked by**, every blocking task shows its title and state: a lock for 
 
 You can edit or delete your own comment for 10 minutes after you post it. Comments of other people stay unchanged, even for people with **Manage** access.
 
+## React with an emoji {icon="mood-plus"}
+
+You need **Edit** access to react. Reactions send no notifications.
+
+:::steps
+1. On a Kanban card, select an emoji chip to add or remove your reaction.
+2. With a mouse, point at the card. Select **Add reaction** to pick another emoji.
+3. On a phone or tablet, open the item. Above the comments, select a chip or **Add reaction**.
+4. To see who reacted, point at a chip. On a touch screen, hold the chip.
+5. If saving fails, select **Try again** in the error message.
+:::
+
+An item can have up to 20 different emoji. When it has 20, react with one of them.
+
 ## Work quickly with the keyboard {icon="keyboard"}
 
 - With an item open, press **J** for the next and **K** for the previous item in List, Table, and Kanban.

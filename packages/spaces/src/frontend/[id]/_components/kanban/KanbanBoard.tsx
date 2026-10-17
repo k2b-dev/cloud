@@ -16,6 +16,7 @@ import {
   type ItemListResult,
   type SpaceColumn,
   type SpaceItem,
+  type SpaceItemReaction,
   type SpaceItemTemplate,
   type SpaceTag,
   type SpaceVirtualColumnKind,
@@ -35,6 +36,8 @@ import ClaimButton from "../shared/claim/ClaimButton";
 import { type ClaimFields, claimTask, releaseTask, resolveCompletionClaim, resolveTransferClaim } from "../shared/claim/claim";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { isInactiveTask } from "../shared/item-activity";
+import ItemReactions, { createReactionPicker } from "../shared/reactions/ItemReactions";
+import { onReactionAnswer } from "../shared/reactions/reaction-queue";
 import CreateItemButton from "../sidebar/CreateItemButton";
 import {
   invalidateSpacesData,
@@ -160,6 +163,8 @@ export default function KanbanBoard(props: Props) {
   const locale = useLocale();
   const t = useSpaceMessages();
   const retryToast = createRetryToasts();
+  const reactionPicker = createReactionPicker();
+  const cardMetaId = (itemId: string) => `spaces-kanban-card-meta-${props.spaceId}-${itemId}`;
   // The route mounts a new board for every snapshot, so one board keeps one filter for its lifetime.
   const filter = props.filter;
   const filtered = hasActiveFilters(filter);
@@ -269,6 +274,33 @@ export default function KanbanBoard(props: Props) {
   };
   const buckets = () => inColumnOrder(optimisticBuckets() ?? canonicalBuckets());
   const bucketKeys = createMemo(() => buckets().map((bucket) => bucket.key));
+  /**
+   * Reactions as the columns last read them. A card can show a board copy a write made, whose write response carries no
+   * reactions and which a later reload does not update, so its chips come from the reads instead.
+   */
+  const readReactions = createMemo(
+    () => new Map(canonicalBuckets().flatMap((bucket) => bucket.items.map((item) => [item.id, item.reactions] as const))),
+  );
+  /**
+   * The newest reactions the board has seen per card, from a column read or a saved reaction's answer, in the order they
+   * arrived. A card that no loaded page holds any more, but that the board copy still shows (#1388), gets no reload,
+   * so it shows these. A read that holds the card always wins, so a late answer never hides a fresher live reload.
+   */
+  const [seenReactions, setSeenReactions] = createSignal<ReadonlyMap<string, SpaceItemReaction[] | undefined>>(new Map());
+  const seeReactions = (seen: Iterable<readonly [string, SpaceItemReaction[] | undefined]>) =>
+    setSeenReactions((current) => new Map([...current, ...seen]));
+  createEffect(() => {
+    const read = readReactions();
+    untrack(() => seeReactions(read));
+  });
+  onMount(() =>
+    onCleanup(
+      onReactionAnswer((target, reactions) => {
+        if (target.spaceId === props.spaceId) seeReactions([[target.itemId, reactions]]);
+      }),
+    ),
+  );
+  const cardReactions = (item: SpaceItem) => readReactions().get(item.id) ?? seenReactions().get(item.id) ?? item.reactions;
   const setBuckets = (update: KanbanBucketInitial[] | ((current: KanbanBucketInitial[]) => KanbanBucketInitial[])) =>
     setOptimisticBuckets((current) => (typeof update === "function" ? update(current ?? canonicalBuckets()) : update));
   const [movingItemId, setMovingItemId] = createSignal<string | null>(null);
@@ -710,21 +742,24 @@ export default function KanbanBoard(props: Props) {
     onSuccess: (updated, ctx) => {
       withBoardScrollPreserved(() => {
         withViewTransition(() => {
-          setBuckets((current) =>
-            current.map((bucket) => {
+          setBuckets((current) => {
+            // A write omits reactions; keep the last summary if the card leaves the loaded pages.
+            const previous = current.flatMap((bucket) => bucket.items).find((item) => item.id === updated.id);
+            const item = { ...updated, reactions: updated.reactions ?? (previous ? cardReactions(previous) : undefined) };
+            return current.map((bucket) => {
               const hadItem = bucket.items.some((item) => item.id === updated.id);
               const nextItems = bucket.items.filter((item) => item.id !== updated.id);
               let delta = hadItem ? -1 : 0;
 
               if (bucket.key === ctx?.targetBucketKey) {
                 const insertIndex = clamp(ctx.targetIndex, 0, nextItems.length);
-                nextItems.splice(insertIndex, 0, updated);
+                nextItems.splice(insertIndex, 0, item);
                 delta += 1;
               }
 
               return { ...bucket, items: nextItems, ...shiftTotals(bucket, delta) };
-            }),
-          );
+            });
+          });
         });
       });
       if (ctx?.gatheredBy) {
@@ -1089,7 +1124,12 @@ export default function KanbanBoard(props: Props) {
         (assignee) => assignee.kind === "user" && assignee.id === props.currentUserId,
       );
       setBuckets((current) =>
-        current.map((bucket) => ({ ...bucket, items: bucket.items.map((candidate) => (candidate.id === item.id ? item : candidate)) })),
+        current.map((bucket) => ({
+          ...bucket,
+          items: bucket.items.map((candidate) =>
+            candidate.id === item.id ? { ...item, reactions: item.reactions ?? cardReactions(candidate) } : candidate,
+          ),
+        })),
       );
       const refocus = () => focusCard(kanbanCards().find((card) => card.dataset.itemId === item.id));
       queueMicrotask(refocus);
@@ -1574,6 +1614,7 @@ export default function KanbanBoard(props: Props) {
                               // A keyboard pick-up keeps full opacity, so the focus ring on the grip stays clear.
                               const isPickedUpThis = () => keyboardMove()?.itemId === id;
                               const isMovingThis = () => (moveMutation.loading() || transferMutation.loading()) && movingItemId() === id;
+                              let cardLink: HTMLAnchorElement | undefined;
 
                               return (
                                 <>
@@ -1616,9 +1657,9 @@ export default function KanbanBoard(props: Props) {
                                       <Show
                                         when={isMovingThis()}
                                         fallback={
-                                          // The card link is not positioned, so the handle's touch area paints over it. A finger on the
-                                          // handle must not scroll the board: the browser would cancel the drag.
-                                          <div class="k2b-progressive-action absolute right-1.5 top-1.5 flex">
+                                          // The card link's stretched area is positioned, so the handle sits a layer above it. A finger on
+                                          // the handle must not scroll the board: the browser would cancel the drag.
+                                          <div class="k2b-progressive-action absolute right-1.5 top-1.5 z-[2] flex">
                                             <IconButton
                                               data-dnd-card-handle
                                               data-spaces-kanban-grip={id}
@@ -1641,14 +1682,16 @@ export default function KanbanBoard(props: Props) {
                                           </div>
                                         }
                                       >
-                                        <div class="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center text-dimmed">
+                                        <div class="pointer-events-none absolute right-1.5 top-1.5 z-[2] inline-flex h-5 w-5 items-center justify-center text-dimmed">
                                           <i class="ti ti-loader-2 animate-spin text-[11px]" />
                                         </div>
                                       </Show>
                                     </Show>
                                     <Show when={props.canWrite && !item().completedAt && !item().startsAt && !item().endsAt}>
                                       {/* The wrapper places the button: on touch screens buttons are positioned relative for their larger hit area. */}
-                                      <div class={`absolute bottom-1.5 right-1.5 flex ${item().claim ? "" : "k2b-progressive-action"}`}>
+                                      <div
+                                        class={`absolute bottom-1.5 right-1.5 z-[2] flex ${item().claim ? "" : "k2b-progressive-action"}`}
+                                      >
                                         <ClaimButton
                                           claim={item().claim}
                                           currentUserId={props.currentUserId}
@@ -1664,10 +1707,12 @@ export default function KanbanBoard(props: Props) {
                                       </div>
                                     </Show>
                                     <a
+                                      ref={cardLink}
                                       data-spaces-kanban-card
                                       data-bucket-key={key}
                                       data-item-id={id}
                                       aria-keyshortcuts={props.canWrite ? "Enter M D" : "Enter"}
+                                      aria-describedby={cardMetaId(id)}
                                       href={buildItemUrl(props.baseUrl, id)}
                                       onClick={(event) => {
                                         if (!shouldHandleDetailClick(event, event.currentTarget)) return;
@@ -1676,8 +1721,10 @@ export default function KanbanBoard(props: Props) {
                                         setSelectedItemId(id);
                                         requestSpacesRouteNavigation(href, { scroll: "preserve" });
                                       }}
-                                      // On touch screens the grip's area reaches 12 px past its box; the text ends before it, so a tap on it opens the item.
-                                      class={`focus-ui block rounded-[var(--ui-radius-control)] ${props.canWrite ? "pr-5 any-pointer-coarse:pr-8" : ""}`}
+                                      // The link spans the whole card through its ::after, which also carries the focus ring; the footer
+                                      // lies above it and lets the pointer through to it except on reaction controls. On touch screens
+                                      // the grip's area reaches 12 px past its box; the text ends before it, so a tap on it opens the item.
+                                      class={`block rounded-[var(--ui-radius-control)] outline-none after:absolute after:-inset-px after:rounded-[var(--ui-radius-control)] focus-visible:after:shadow-[var(--ui-focus)] ${props.canWrite ? "pr-5 any-pointer-coarse:pr-8" : ""}`}
                                     >
                                       <div class="flex items-start gap-2">
                                         <Show when={priority()}>
@@ -1693,8 +1740,17 @@ export default function KanbanBoard(props: Props) {
                                       <Show when={descriptionPreview(item().description)}>
                                         {(preview) => <p class="mt-1.5 line-clamp-3 break-words text-[11px] text-dimmed">{preview()}</p>}
                                       </Show>
+                                    </a>
 
-                                      <div class={`mt-2 flex flex-wrap items-center gap-1.5 ${props.canWrite ? "min-h-6 pr-6" : ""}`}>
+                                    {/* A sibling of the link, because its reaction chips and "Add reaction" are buttons. For writers the
+                                        row keeps the chips' height, so the first reaction does not grow a card whose row has room. */}
+                                    <div
+                                      data-spaces-kanban-card-footer
+                                      class={`pointer-events-none relative z-[1] mt-2 flex flex-wrap items-center gap-1.5 ${props.canWrite ? "min-h-6 pr-6 any-pointer-coarse:pr-8" : ""}`}
+                                    >
+                                      {/* The metadata lies outside the link, so it describes the link: a focused card still says its status,
+                                          deadline, and people. The reactions are their own controls and stay out of it. */}
+                                      <span id={cardMetaId(id)} class="contents">
                                         {/* In an automatic column the status is no longer the column, so the card names it. */}
                                         <Show when={virtual && columnOf(item().columnId)}>
                                           {(column) => (
@@ -1745,8 +1801,24 @@ export default function KanbanBoard(props: Props) {
                                             {t.inactive}
                                           </span>
                                         </Show>
-                                      </div>
-                                    </a>
+                                      </span>
+                                      <Show when={props.canWrite || (cardReactions(item())?.length ?? 0) > 0}>
+                                        <ItemReactions
+                                          spaceId={props.spaceId}
+                                          itemId={id}
+                                          reactions={cardReactions(item())}
+                                          canReact={props.canWrite}
+                                          picker={reactionPicker}
+                                          retryToast={retryToast}
+                                          density="compact"
+                                          add="progressive"
+                                          max={3}
+                                          // A removed chip with nothing left to focus beside it, such as on touch without Add reaction.
+                                          focusFallback={() => cardLink}
+                                          class="spaces-card-reactions"
+                                        />
+                                      </Show>
+                                    </div>
                                   </article>
                                 </>
                               );
@@ -1854,6 +1926,7 @@ export default function KanbanBoard(props: Props) {
           </Show>
         </div>
       </div>
+      {reactionPicker.popover()}
     </div>
   );
 }
