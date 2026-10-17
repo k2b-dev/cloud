@@ -10,9 +10,9 @@ import { type ConnectorEnvelope, type ConnectorProtocolFacts, MAX_IMAP_LITERAL_B
 import { updateConversationCollaboration } from "./conversation-assignments";
 import { refreshConversationTimeline } from "./conversation-timeline";
 import { splitConversation } from "./conversations";
+import { loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { createMailbox } from "./mailboxes";
 import { createBlobReadable } from "./message-blobs";
-import { loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { hydrateMessageFromSource, recordMissingMessageSources, releaseExpiredHydrationClaims } from "./message-hydration";
 import { EMPTY_MESSAGE_PROTOCOL_FACTS } from "./message-protocol";
 import { ingestEnvelope } from "./sync-runtime";
