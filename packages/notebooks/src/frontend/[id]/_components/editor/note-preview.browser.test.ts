@@ -162,6 +162,7 @@ beforeAll(async () => {
         readOnly,
         initialHref: "/app/notebooks/book01/notes/note01",
         initialDetail: {
+          noteAuthors: { createdBy: null, lastEditedBy: null },
           noteId: "note01",
           noteTitle: "Wochenplan",
           contentMd: note,

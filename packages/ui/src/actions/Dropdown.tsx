@@ -11,10 +11,14 @@ import {
   splitProps,
   useContext,
 } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
+import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
+import { focusRowSegment } from "./menu-rows";
+import { openMenuSheet, prefersMenuSheet } from "./menu-sheet";
 
 // Resolved outside JSX: a conditional attribute compiles to a lazy memo, which would be created inside the click handler.
 const selectAction = (item: { action?: () => void }) => item.action;
@@ -44,6 +48,12 @@ export type DropdownAction =
        * the focus stays on the row. Defaults to `true`.
        */
       closeOnSelect?: boolean;
+      /**
+       * In a phone sheet, run while the tap still counts as the person's gesture, before the sheet closes, as browsers
+       * require for clipboard writes. Other actions run after the sheet has left the history. Such an action must
+       * not navigate or open a dialog.
+       */
+      immediate?: boolean;
       href?: never;
       external?: never;
     })
@@ -65,6 +75,7 @@ export type DropdownChoice = DropdownActionBase & {
   action: () => void;
   checked: boolean | (() => boolean);
   choice: "checkbox" | "radio";
+  href?: string;
   closeOnSelect?: boolean;
   color?: string;
 };
@@ -101,6 +112,11 @@ export type DropdownProps = {
   disabled?: boolean;
   label?: string;
   align?: "start" | "end";
+  /**
+   * `sheet` opens the same items as a bottom sheet on phones (below 48rem) instead of a menu beside the trigger.
+   * Defaults to `menu`. A controlled menu (`open`) always stays a menu.
+   */
+  phone?: "menu" | "sheet";
 };
 
 export type DropdownTriggerProps = Omit<
@@ -170,21 +186,6 @@ const focusMenuItem = (menu: HTMLElement | undefined, index: number): void => {
   const items = actionableItems(menu);
   if (items.length === 0) return;
   items[(index + items.length) % items.length]?.focus();
-};
-
-/**
- * Left and Right cycle through the segments of a row section; Up and Down leave it like any item. Returns whether
- * the key moved focus.
- */
-export const focusRowSegment = (items: HTMLElement[], key: string): boolean => {
-  if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
-  const active = document.activeElement as HTMLElement | null;
-  const row = active?.closest(".k2b-dropdown__row");
-  if (!active || !row) return false;
-  const segments = items.filter((item) => row.contains(item));
-  const next = segments.indexOf(active) + (key === "ArrowRight" ? 1 : -1);
-  segments[(next + segments.length) % segments.length]?.focus();
-  return true;
 };
 
 export const dropdownPosition = (
@@ -282,10 +283,15 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
 function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
   const menu = useContext(MenuContext);
   const checked = () => (typeof props.checked === "function" ? props.checked() : props.checked);
+  let element: HTMLElement | undefined;
   return (
-    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the runtime role is always menuitemcheckbox or menuitemradio, both of which support aria-checked.
-    <button
-      type="button"
+    <Dynamic
+      ref={(node: HTMLAnchorElement | HTMLButtonElement) => {
+        element = node;
+      }}
+      component={!props.disabled && props.href ? "a" : "button"}
+      href={!props.disabled ? props.href : undefined}
+      type={!props.disabled && props.href ? undefined : "button"}
       role={props.choice === "checkbox" ? "menuitemcheckbox" : "menuitemradio"}
       aria-label={props.ariaLabel}
       aria-checked={checked()}
@@ -294,11 +300,21 @@ function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
       class={`k2b-dropdown__item ${props.class ?? ""}`}
       data-selected={checked() ? "true" : undefined}
       disabled={props.disabled}
-      onClick={(event) => {
+      onClick={(event: MouseEvent) => {
+        if (props.href && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
+          menu?.close(false);
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         if (props.closeOnSelect !== false) menu?.close();
         props.action();
+      }}
+      onKeyDown={(event: KeyboardEvent) => {
+        // A link answers only Enter; as a menu choice it also answers Space, like the button form.
+        if (event.key !== " " || props.disabled || !props.href) return;
+        event.preventDefault();
+        element?.click();
       }}
     >
       <Show when={props.choice === "checkbox"}>
@@ -322,7 +338,7 @@ function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
       <Show when={props.choice === "radio"}>
         <i class="ti ti-check k2b-dropdown__check" data-hidden={checked() ? undefined : "true"} aria-hidden="true" />
       </Show>
-    </button>
+    </Dynamic>
   );
 }
 
@@ -479,6 +495,9 @@ function DropdownTrigger(props: DropdownTriggerProps): JSX.Element {
 /** Accessible top-layer menu with explicit trigger ownership. */
 function DropdownRoot(props: DropdownProps): JSX.Element {
   const messages = useUiMessages();
+  const locale = useLocale();
+  /** The open phone sheet's cancel switch: it closes when the menu goes or is disabled, as the popover does. */
+  let sheet: AbortController | undefined;
   const id = createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-");
   const menuId = `k2b-dropdown-${id}`;
   const [internalOpen, setInternalOpen] = createSignal(false);
@@ -552,6 +571,27 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
       props.onOpenChange?.(next);
       return;
     }
+    if (next && props.phone === "sheet" && prefersMenuSheet()) {
+      if (sheet) return;
+      const current = new AbortController();
+      sheet = current;
+      // The sheet is this menu's open state: the trigger reports it and the owner hears both ends.
+      setInternalOpen(true);
+      props.onOpenChange?.(true);
+      void openMenuSheet({
+        Items: DropdownItems,
+        items: props.items,
+        label: props.label ?? messages().dropdownMenu,
+        locale: locale(),
+        signal: current.signal,
+      }).finally(() => {
+        sheet = undefined;
+        setInternalOpen(false);
+        props.onOpenChange?.(false);
+        props.onClose?.();
+      });
+      return;
+    }
     if (next) open(focus);
     else close(false);
   };
@@ -604,13 +644,16 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     if (!controlled && menuRef.matches(":popover-open")) close(false);
   });
   createEffect(() => {
-    if (mounted && props.disabled) close(false);
+    if (!props.disabled) return;
+    sheet?.abort();
+    if (mounted) close(false);
   });
   onMount(() => {
     mounted = true;
     if (props.open) open(false);
     onCleanup(detachViewportListeners);
   });
+  onCleanup(() => sheet?.abort());
 
   return (
     <DropdownContext.Provider value={context}>

@@ -32,6 +32,7 @@ convention still needs a check or a test.
 | Shared renderer configuration race | Concurrent Mermaid consumers overwrite singleton configuration before a queued render reads it. | Test: Notebooks `mermaid-render.test.ts` checks serialized configuration and rendering, call order, and recovery after rejection. Convention: all Notebooks Mermaid consumers use `renderMermaid`. |
 | Screen-only layout printed as-is | Browser printing includes navigation, toolbars and detail panels, or clips content at a fixed-height scrollport. | Tests: `packages/cloud/src/ssr/print.browser.test.ts`, `packages/ui/src/layout/workspace-print.browser.test.ts`, and Notebooks `note-print-copy.browser.test.ts` emulate print and check complete content. Convention: every view supplies printable content or an export hint; see [Browser printing](/en/ui/layout/print) ([#1281](https://github.com/k2b-dev/cloud/issues/1281)). |
 | Workspace-only export | A published package imports code that exists only in the workspace copy of a pinned sibling; workspace links hide the missing export. | Check: the `packed` CI job runs with `--release` on the release pull request and in the merge queue, resolving already published sibling pins from npm. Convention: [refresh the release PR after the last feature PR merges](/en/docs/contributing/release-process#let-release-please-cut-the-release). |
+| Raw keys in UI text | An open action string falls through a switch and becomes an untranslated label. | Test: Notebooks `activity-messages.test.ts` checks service literals, both actor forms in English/German, and neutral unknown-action labels. Exhaustive catalog records require every typed action. |
 | Time | A test or a render depends on today's date, the time zone, or randomness, so it passes on one day and fails on another. | Test: the Assistant sidebar test from [#1121](https://github.com/k2b-dev/cloud/pull/1121) freezes its clock. No repository check finds other tests that compare fixed dates with the real clock yet. |
 | Lease starvation under a continuous competing workload | A class of work keeps the lease while competing work retains places and retries without progress. | Test: Mail’s `provider-lease-fairness.integration.test.ts` checks command progress during continuous folder syncs, sync progress under old command backlogs, and a total order with one first waiter ([#1268](https://github.com/k2b-dev/cloud/issues/1268)); “a folder sync waits for at most one move set's two seconds and a few slow statements while each marker and settle statement is slow” guards constant per-set costs for per-statement marker and settle slowdowns ([#1013](https://github.com/k2b-dev/cloud/issues/1013)). |
 | Shared subprocess lost after timeout | Bun kills a shared browser when one test times out, so later tests fail too. | Test: `packages/ui/test/browser.browser.test.ts` runs a child suite with one hung test and checks that three later tests still open pages ([#1254](https://github.com/k2b-dev/cloud/issues/1254)). |
@@ -332,6 +333,20 @@ convention still needs a check or a test.
 - **Root cause:** Emission had no byte limit, and finished events had no payload retention.
 - **Error class:** Unbounded storage growth.
 - **Guard:** Event integration cases cover UTF-8 size limits before SQL, retained dedupe rows, dispatch age, resumable runs, repeated retention batches, and concurrently built retention indexes. Observability integration cases distinguish expired payloads from missing events. Mail integration cases emit an oversized message without its body through sync and backfill, and retry failed runs after event expiry while excluding succeeded runs. Convention: emitters keep large content out of events and let runs read it by reference; history queries use retained run context when event context and deliveries expire.
+
+### Activity keys leaked into note labels
+
+- **What happened:** The note detail panel displayed “note created” instead of a translated sentence.
+- **Root cause:** Separate switches mapped open action strings and rendered unknown keys by replacing dots with spaces.
+- **Error class:** An open string enum mapped to UI text through a raw-key fallback.
+- **Guard:** Notebooks uses a typed action union, an exhaustive English/German activity catalog, and neutral unknown-action labels. `activity-messages.test.ts` scans service activity literals and checks both actor forms and fallbacks; `activity.integration.test.ts` checks filtered paging past unknown stored actions.
+
+### A panel command had no owner
+
+- **What happened:** Duplicate in the Notebooks panel emitted an event without starting the copy flow.
+- **Root cause:** The prompt, copy request, and navigation belonged to the note tree, while the panel had only an event name.
+- **Error class:** A browser event without a mounted consumer.
+- **Guard:** `duplicate-note.behavior.test.tsx` exercises the panel with no tree and with two trees, plus cancellation, errors, permissions, and listener cleanup. Both entry points use the same copy flow; only the panel handles its event.
 
 ## Add a lesson
 

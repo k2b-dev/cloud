@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../../ui/test/dom";
+import type { PublicNoteComment } from "../../../../api/public-resources";
 
 const flush = async () => {
   await Promise.resolve();
@@ -39,21 +40,84 @@ describe("Note comment feedback", () => {
     dom.cleanup();
   });
 
-  const renderSection = async () => {
+  const renderSection = async (items: PublicNoteComment[] = [], locale = "en") => {
+    const { LocaleProvider } = await import("@k2b/ui");
     const { default: NoteCommentsSection } = await import("./NoteCommentsSection");
     return render(
       () =>
-        createComponent(NoteCommentsSection, {
-          notebookId: "Book01",
-          noteId: "Note01",
-          currentUserId,
-          canWrite: true,
-          initialCommentsPage: emptyPage,
-          dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(NoteCommentsSection, {
+              notebookId: "Book01",
+              noteId: "Note01",
+              currentUserId,
+              canWrite: true,
+              initialCommentsPage: { ...emptyPage, items, total: items.length },
+              dateConfig: { locale, timeZone: "Europe/Berlin", ...{ base: "2026-10-16T19:30:00.000Z" } },
+            });
+          },
         }),
       dom.root,
     );
   };
+
+  test("German comments fold to the newest three, call the viewer Du and open the composer below the list", async () => {
+    const comments = Array.from(
+      { length: 5 },
+      (_, index): PublicNoteComment => ({
+        id: `comment${index}`,
+        notebookId: "Book01",
+        noteId: "Note01",
+        authorUserId: index === 4 ? currentUserId : "jana",
+        authorDisplayName: index === 4 ? "Tom Sample" : "Jana Berger",
+        authorAvatarHash: null,
+        content: `Kommentar ${index}`,
+        createdAt: `2026-10-03T10:0${index}:00.000Z`,
+        updatedAt: `2026-10-03T10:0${index}:00.000Z`,
+        canEdit: index === 4,
+        canDelete: index === 4,
+      }),
+    ).reverse();
+    const dispose = await renderSection(comments, "de");
+    try {
+      expect([...dom.root.querySelectorAll(".k2b-discussion__entry > header > strong")].map((author) => author.textContent)).toEqual([
+        "Jana Berger",
+        "Jana Berger",
+        "Du",
+      ]);
+      expect([...dom.root.querySelectorAll(".k2b-discussion__item")].map((item) => item.textContent)).toEqual([
+        expect.stringContaining("Kommentar 2"),
+        expect.stringContaining("Kommentar 3"),
+        expect.stringContaining("Kommentar 4"),
+      ]);
+      const older = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent?.trim() === "2 ältere anzeigen",
+      )!;
+      older.click();
+      expect(dom.root.querySelectorAll(".k2b-discussion__item")).toHaveLength(5);
+      const comment = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent?.trim() === "Kommentieren",
+      )!;
+      comment.focus();
+      comment.click();
+      await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
+      const list = dom.root.querySelector(".k2b-discussion__list")!;
+      const composer = dom.root.querySelector(".k2b-discussion__composer")!;
+      expect(Boolean(list.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      // The button turns disabled, so focus moves into the composer below the list, which the panel scrolls to.
+      const textarea = composer.querySelector("textarea")!;
+      await until(() => dom.document.activeElement === textarea);
+      expect(dom.document.activeElement).toBe(textarea);
+      // Cancel hands focus back to the button.
+      [...composer.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Abbrechen")!.click();
+      await flush();
+      expect(dom.root.querySelector(".k2b-discussion__composer")).toBeNull();
+      expect(dom.document.activeElement).toBe(comment);
+    } finally {
+      dispose();
+    }
+  });
 
   test("a rejected comment stays in the composer with the reason under it", async () => {
     answer = rejectPosts;
@@ -63,7 +127,7 @@ describe("Note comment feedback", () => {
     const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
     const dispose = await renderSection();
     try {
-      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Add comment"))!.click();
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Comment"))!.click();
       await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
       const composer = dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!;
       composer.value = "Link the budget sheet here.";
@@ -122,7 +186,7 @@ describe("Note comment feedback", () => {
       textarea.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     };
     try {
-      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Add comment"))!.click();
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Comment"))!.click();
       await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
       submit(dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!, "Link the budget sheet here.");
       await until(() => Boolean(dom.root.querySelector('button[aria-label="Edit comment"]')));
@@ -169,7 +233,7 @@ describe("Note comment feedback", () => {
     dom.document.querySelector("[data-k2b-live]")?.remove();
     const dispose = await renderSection();
     try {
-      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Add comment"))!.click();
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Comment"))!.click();
       await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
       const composer = dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!;
       composer.value = "Link the budget sheet here.";
@@ -182,6 +246,225 @@ describe("Note comment feedback", () => {
     } finally {
       dispose();
       errors.mockRestore();
+    }
+  });
+
+  test("an activity link pages in its comment, unfolds and focuses it, with a ten-page search limit", async () => {
+    const { setSystemTime } = await import("bun:test");
+    const { REVEAL_COMMENT_EVENT } = await import("./events");
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { default: NoteCommentsSection } = await import("./NoteCommentsSection");
+    const now = "2026-10-16T19:30:00.000Z";
+    setSystemTime(new Date(now));
+    const comment = (id: string): PublicNoteComment => ({
+      id,
+      notebookId: "Book01",
+      noteId: "Note01",
+      authorUserId: "jana",
+      authorDisplayName: "Jana Berger",
+      authorAvatarHash: null,
+      content: `Comment ${id}`,
+      createdAt: "2026-10-03T10:00:00.000Z",
+      updatedAt: "2026-10-03T10:00:00.000Z",
+      canEdit: false,
+      canDelete: false,
+    });
+    const pages: number[] = [];
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: RequestInfo | URL) => {
+          const url = new URL(String(input), "http://localhost");
+          expect(url.pathname).toBe("/api/notebooks/Book01/notes/Note01/comments/page");
+          const page = Number(url.searchParams.get("page"));
+          pages.push(page);
+          return Response.json({
+            ...emptyPage,
+            page,
+            total: 400,
+            hasNext: page < 14,
+            items: [comment(page === 3 ? "target" : `page${page}`)],
+          });
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    // The DOM harness binds browser globals individually; comment links also need CSS.escape.
+    const previousCSS = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+    const dispose = render(
+      () =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(NoteCommentsSection, {
+              notebookId: "Book01",
+              noteId: "Note01",
+              currentUserId,
+              canWrite: true,
+              initialCommentsPage: {
+                ...emptyPage,
+                total: 400,
+                hasNext: true,
+                items: [comment("newest"), comment("middle"), comment("oldest-loaded")],
+              },
+              dateConfig: { locale: "de", timeZone: "UTC" },
+            });
+          },
+        }),
+      dom.root,
+    );
+    try {
+      expect(dom.root.querySelectorAll("[data-note-comment]")).toHaveLength(3);
+      window.dispatchEvent(new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: "target" } }));
+      await until(() => dom.document.activeElement?.getAttribute("data-note-comment") === "target");
+      const target = dom.root.querySelector('[data-note-comment="target"]');
+      expect(target).not.toBeNull();
+      expect(dom.document.activeElement).toBe(target);
+      expect(pages).toEqual([2, 3]);
+      expect(dom.root.querySelectorAll("[data-note-comment]")).toHaveLength(5);
+
+      // An eleventh page remains available, but a missing comment stops the search after ten.
+      window.dispatchEvent(new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: "missing" } }));
+      await until(() => dom.document.activeElement === dom.root.querySelector("[data-note-comments]"));
+      expect(pages).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    } finally {
+      dispose();
+      fetch.mockRestore();
+      if (previousCSS) Object.defineProperty(globalThis, "CSS", previousCSS);
+      else Reflect.deleteProperty(globalThis, "CSS");
+      setSystemTime();
+    }
+  });
+
+  test("an activity link stops paging when an older page fails, and leaves the retry to the list", async () => {
+    const { REVEAL_COMMENT_EVENT } = await import("./events");
+    const requests: number[] = [];
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: RequestInfo | URL) => {
+          requests.push(Number(new URL(String(input), "http://localhost").searchParams.get("page")));
+          return Response.json({ message: "Unavailable" }, { status: 503 });
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    const previousCSS = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { default: NoteCommentsSection } = await import("./NoteCommentsSection");
+    const comment: PublicNoteComment = {
+      id: "newest",
+      notebookId: "Book01",
+      noteId: "Note01",
+      authorUserId: "jana",
+      authorDisplayName: "Jana Berger",
+      authorAvatarHash: null,
+      content: "Newest",
+      createdAt: "2026-10-03T10:00:00.000Z",
+      updatedAt: "2026-10-03T10:00:00.000Z",
+      canEdit: false,
+      canDelete: false,
+    };
+    const dispose = render(
+      () =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(NoteCommentsSection, {
+              notebookId: "Book01",
+              noteId: "Note01",
+              currentUserId,
+              canWrite: true,
+              initialCommentsPage: { ...emptyPage, total: 60, hasNext: true, items: [comment] },
+              dateConfig: { locale: "de", timeZone: "UTC", base: "2026-10-16T19:30:00.000Z" },
+            });
+          },
+        }),
+      dom.root,
+    );
+    try {
+      window.dispatchEvent(new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: "older" } }));
+      await until(() => dom.document.activeElement === dom.root.querySelector("[data-note-comments]"));
+      // One failed request, not ten in a row; the list shows the failure with its own retry.
+      expect(requests).toEqual([2]);
+      expect(dom.root.querySelector('[role="alert"]')).not.toBeNull();
+    } finally {
+      dispose();
+      fetch.mockRestore();
+      if (previousCSS) Object.defineProperty(globalThis, "CSS", previousCSS);
+      else Reflect.deleteProperty(globalThis, "CSS");
+    }
+  });
+
+  test("a reveal that is still paging stops when the person switches notes", async () => {
+    const { createSignal } = await import("solid-js");
+    const { REVEAL_COMMENT_EVENT } = await import("./events");
+    let release: (() => void) | undefined;
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: RequestInfo | URL) => {
+          const url = new URL(String(input), "http://localhost");
+          if (url.pathname.includes("/Note01/")) await new Promise<void>((resolve) => (release = resolve));
+          return Response.json(emptyPage);
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    const previousCSS = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { default: NoteCommentsSection } = await import("./NoteCommentsSection");
+    const [noteId, setNoteId] = createSignal("Note01");
+    const comment: PublicNoteComment = {
+      id: "newest",
+      notebookId: "Book01",
+      noteId: "Note01",
+      authorUserId: "jana",
+      authorDisplayName: "Jana Berger",
+      authorAvatarHash: null,
+      content: "Newest",
+      createdAt: "2026-10-03T10:00:00.000Z",
+      updatedAt: "2026-10-03T10:00:00.000Z",
+      canEdit: false,
+      canDelete: false,
+    };
+    const dispose = render(
+      () =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(NoteCommentsSection, {
+              notebookId: "Book01",
+              get noteId() {
+                return noteId();
+              },
+              currentUserId,
+              canWrite: true,
+              initialCommentsPage: { ...emptyPage, total: 60, hasNext: true, items: [comment] },
+              dateConfig: { locale: "de", timeZone: "UTC", base: "2026-10-16T19:30:00.000Z" },
+            });
+          },
+        }),
+      dom.root,
+    );
+    try {
+      const outside = dom.document.createElement("button");
+      dom.document.body.append(outside);
+      outside.focus();
+      window.dispatchEvent(new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: "older" } }));
+      await until(() => release !== undefined);
+      setNoteId("Note02");
+      release?.();
+      await flush();
+      await flush();
+      // The other note's discussion is not scrolled to or focused by a reveal that began on the first note.
+      expect(dom.document.activeElement).toBe(outside);
+      outside.remove();
+    } finally {
+      dispose();
+      fetch.mockRestore();
+      if (previousCSS) Object.defineProperty(globalThis, "CSS", previousCSS);
+      else Reflect.deleteProperty(globalThis, "CSS");
     }
   });
 });

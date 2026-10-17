@@ -78,6 +78,7 @@ const open = async (mode = "write", width = 2560, mobile = false) => {
     await page.goto(`${server.url}?mode=${mode}`);
     await page.waitForFunction(() => Boolean(window.harness));
     await settle(page);
+    await openView(page);
     return page;
   } catch (error) {
     await page.close();
@@ -86,7 +87,11 @@ const open = async (mode = "write", width = 2560, mobile = false) => {
 };
 const settle = (page: Page) => page.evaluate(() => window.harness.settle());
 const measure = (page: Page) => page.evaluate(() => window.harness.measure());
-const toggle = (page: Page) => page.getByRole("switch", { name: "Volle Breite" });
+const toggle = (page: Page) => page.getByRole("menuitemcheckbox", { name: "Volle Breite" });
+const openView = async (page: Page) => {
+  const trigger = page.getByRole("button", { name: "Ansicht", exact: true });
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
+};
 const closeTo = (actual: number, expected: number, tolerance = 1) => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance);
 const assertWide = async (page: Page) => {
   const result = await measure(page);
@@ -106,6 +111,7 @@ for (const mode of ["write", "book"]) {
         // Subscribe before the click; reading the next frame after Playwright returns can miss a jump.
         const painted = page.evaluate(() => window.harness.firstPaint());
         await toggle(page).click();
+        expect(await toggle(page).isVisible()).toBe(true);
         closeTo(await painted, before);
         await settle(page);
         closeTo(await page.evaluate(() => window.harness.anchor()), before);
@@ -139,8 +145,10 @@ for (const shift of [0, 3, 7]) {
         const start = await page.evaluate(() => window.harness.anchor());
         for (let cycle = 0; cycle < 3; cycle++) {
           await toggle(page).click();
+          expect(await toggle(page).isVisible()).toBe(true);
           await settle(page);
           await toggle(page).click();
+          expect(await toggle(page).isVisible()).toBe(true);
           await settle(page);
           closeTo(await page.evaluate(() => window.harness.anchor()), start, 0.5);
         }
@@ -152,13 +160,15 @@ for (const shift of [0, 3, 7]) {
   );
 }
 
-test("a reload starts wide with the saved cookie and checked switch", async () => {
+test("a reload starts wide with the saved cookie and checked menu choice", async () => {
   const page = await open();
   try {
     await toggle(page).click();
+    expect(await toggle(page).isVisible()).toBe(true);
     expect(await page.evaluate(() => window.harness.stored())).toBe(true);
     await page.reload();
     await page.waitForFunction(() => Boolean(window.harness));
+    await openView(page);
     expect(await page.locator(".notebook-document-surface").getAttribute("data-full-width")).toBe("");
     expect(await toggle(page).isChecked()).toBe(true);
     await assertWide(page);
@@ -167,7 +177,7 @@ test("a reload starts wide with the saved cookie and checked switch", async () =
   }
 }, 30_000);
 
-test("the palette command shares the switch, cookie and live on/off title", async () => {
+test("the palette command shares the menu choice, cookie and live on/off title", async () => {
   const page = await open();
   try {
     expect(await page.evaluate(() => window.harness.command())).toEqual({
@@ -188,10 +198,10 @@ test("the palette command shares the switch, cookie and live on/off title", asyn
 }, 30_000);
 
 for (const width of [390, 1023, 1024]) {
-  test(`the switch and command follow the 64rem boundary at ${width}px`, async () => {
+  test(`the menu choice and command follow the 64rem boundary at ${width}px`, async () => {
     const page = await open("write", width, width === 390);
     try {
-      expect(await page.locator('input[role="switch"]').isVisible()).toBe(width >= 1024);
+      expect(await toggle(page).isVisible()).toBe(width >= 1024);
       expect(await page.evaluate(() => window.harness.command() !== null)).toBe(width >= 1024);
     } finally {
       await page.close();
@@ -231,9 +241,10 @@ test("resizing removes and restores the command without losing the preference", 
   const page = await open();
   try {
     await toggle(page).click();
+    expect(await toggle(page).isVisible()).toBe(true);
     await page.setViewportSize({ width: 1023, height: 1440 });
     await page.waitForFunction(() => window.harness.command() === null);
-    expect(await page.locator('input[role="switch"]').isVisible()).toBe(false);
+    expect(await toggle(page).isVisible()).toBe(false);
     // Nothing here can switch it off, so the text keeps the reading column.
     const measureValue = () =>
       page
@@ -250,13 +261,14 @@ test("resizing removes and restores the command without losing the preference", 
   }
 }, 30_000);
 
-test("toggling leaves every panel child, panel and switch track in place", async () => {
+test("toggling leaves every panel child, panel and menu trigger in place", async () => {
   const page = await open();
   try {
     const before = await page.evaluate(() => window.harness.panelRects());
     expect(before.length).toBeGreaterThan(4);
     for (const _on of [true, false]) {
       await toggle(page).click();
+      expect(await toggle(page).isVisible()).toBe(true);
       await settle(page);
       const after = await page.evaluate(() => window.harness.panelRects());
       expect(after).toHaveLength(before.length);
@@ -296,11 +308,14 @@ for (const mode of ["write", "book"]) {
         const narrowOpen = await lineWidth();
         expect(narrowOpen).toBeLessThan(704);
         await toggle(page).click();
+        expect(await toggle(page).isVisible()).toBe(true);
         closeTo(await lineWidth(), narrowOpen);
         await setPanelOpen(false);
         const wideClosed = await lineWidth();
         await setPanelOpen(true);
+        await openView(page);
         await toggle(page).click();
+        expect(await toggle(page).isVisible()).toBe(true);
         await setPanelOpen(false);
         const narrowClosed = await lineWidth();
         closeTo(narrowClosed, 704);

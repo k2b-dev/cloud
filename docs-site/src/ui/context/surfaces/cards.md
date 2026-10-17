@@ -12,7 +12,10 @@ Use `LinkCard` when the complete surface leads to one destination. Use `Resource
 import { Avatar, LinkCard, ResourceCard, type ResourceCardState } from "@k2b/ui";
 ```
 
-`LinkCard` accepts a title, description, icon, destination, optional semantic color, and one optional trailing `meta` fact. Without `color`, the glyph uses `--k2b-app-workspace-active`, the same optional accent hook as `AppOverview`'s icon, which defaults to the action color; Cloud maps it to the active application's accent. For navigation in place, pass `navigation="enhanced"` and `onNavigate`, as with `ButtonLink`. Without both, the card follows its link with a full page load. Use `meta` for one count or one non-interactive badge, such as a role; counts render with tabular figures. `Avatar` accepts a name, optional image URL or icon, fallback, size, and loading behavior. Image content takes precedence over the icon, which takes precedence over initials. Initials and icons sit on a calm tint that the name decides, from a palette of ten colors, so the same name has the same color wherever an avatar shows it and people stay apart in long lists and conversations. Pass the display name the application shows for the person, so their avatar matches across surfaces.
+`LinkCard` accepts a title, description, icon, destination, optional semantic color, and one optional trailing `meta` fact. Without `color`, the glyph uses `--k2b-app-workspace-active`, the same optional accent hook as `AppOverview`'s icon, which defaults to the action color; Cloud maps it to the active application's accent. For navigation in place, pass `navigation="enhanced"` and `onNavigate`, as with `ButtonLink`. Without both, the card follows its link with a full page load. Use `meta` for one count or one non-interactive badge, such as a role; counts render with tabular figures. `Avatar` accepts a name, optional image URL or icon, fallback, size, shape, and loading behavior. `shape="circle"` is the default for people;
+use `shape="square"` for agents and service accounts. Both image and fallback
+respect the shape. See [AvatarStack](/en/ui/surfaces/avatar-stack) for a compact
+list of people. Image content takes precedence over the icon, which takes precedence over initials. Initials and icons sit on a calm tint that the name decides, from a palette of ten colors, so the same name has the same color wherever an avatar shows it and people stay apart in long lists and conversations. Pass the display name the application shows for the person, so their avatar matches across surfaces.
 
 Use `Avatar`'s `ring` for a live status such as someone working on a task, or a collaborator's own color, not for selection or focus. `"success"` uses the theme's success text color; `{ color }` accepts any CSS color the application owns. The ring and its small transparent gap lie inside the avatar's own box: it keeps its size, nothing moves when the ring appears or disappears, and a scrolling panel edge does not cut it off.
 
@@ -49,9 +52,10 @@ type ResourceCardProps = {
 
 type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
 type AvatarRing = "success" | { color: string };
+type AvatarShape = "circle" | "square";
 
 type AvatarProps = {
-  name: string; src?: string | null; icon?: string; alt?: string; fallback?: string; size?: AvatarSize;
+  name: string; src?: string | null; icon?: string; alt?: string; fallback?: string; size?: AvatarSize; shape?: AvatarShape;
   ring?: AvatarRing; loading?: "eager" | "lazy"; class?: string; style?: JSX.CSSProperties | string;
 };
 ```
