@@ -562,8 +562,12 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         const waiting = detailWaiting(aside);
         const before = detailWasWaiting.get(aside);
         detailWasWaiting.set(aside, waiting);
-        if (!waiting) parkDetailDrawer(aside);
-        else if (detailDrawer(aside)) syncDetailDrawerSpace(aside);
+        if (!waiting) {
+          // The Details button hides with the waiting; its focus moves to the returning column's title.
+          const toggleFocused = detailToggle(aside)?.contains(ownerDocument.activeElement) ?? false;
+          parkDetailDrawer(aside);
+          if (toggleFocused) focusTitle(aside);
+        } else if (detailDrawer(aside)) syncDetailDrawerSpace(aside);
         else if (before !== true && aside.contains(ownerDocument.activeElement)) detailToggle(aside)?.focus({ preventScroll: true });
       }
     }

@@ -2435,6 +2435,10 @@ html {
     --k2b-workspace-detail-waiting: 1;
     display: none;
   }
+  /* Parking or starting to wait hides at once; the slide belongs to opening. */
+  .k2b-ui .k2b-app-workspace .k2b-app-workspace__detail[data-width="sm"]:not([hidden], [data-workspace-detail-drawer]) {
+    transition: none;
+  }
   .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"]:has(+ .k2b-app-workspace__detail[data-width="sm"]:not([hidden])) {
     display: none;
   }
@@ -2471,6 +2475,10 @@ html {
   .k2b-ui .k2b-app-workspace__detail[data-width="md"]:not([hidden]) {
     --k2b-workspace-detail-waiting: 1;
     display: none;
+  }
+  /* Parking or starting to wait hides at once; the slide belongs to opening. */
+  .k2b-ui .k2b-app-workspace .k2b-app-workspace__detail[data-width="md"]:not([hidden], [data-workspace-detail-drawer]) {
+    transition: none;
   }
   .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"]:has(+ .k2b-app-workspace__detail[data-width="md"]:not([hidden])) {
     display: none;
@@ -2509,6 +2517,10 @@ html {
     --k2b-workspace-detail-waiting: 1;
     display: none;
   }
+  /* Parking or starting to wait hides at once; the slide belongs to opening. */
+  .k2b-ui .k2b-app-workspace .k2b-app-workspace__detail[data-width="lg"]:not([hidden], [data-workspace-detail-drawer]) {
+    transition: none;
+  }
   .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"]:has(+ .k2b-app-workspace__detail[data-width="lg"]:not([hidden])) {
     display: none;
   }
@@ -2545,6 +2557,10 @@ html {
   .k2b-ui .k2b-app-workspace__detail[data-width="xl"]:not([hidden]) {
     --k2b-workspace-detail-waiting: 1;
     display: none;
+  }
+  /* Parking or starting to wait hides at once; the slide belongs to opening. */
+  .k2b-ui .k2b-app-workspace .k2b-app-workspace__detail[data-width="xl"]:not([hidden], [data-workspace-detail-drawer]) {
+    transition: none;
   }
   .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"]:has(+ .k2b-app-workspace__detail[data-width="xl"]:not([hidden])) {
     display: none;

@@ -318,3 +318,37 @@ test("focus in a column opened later moves to Details when it starts waiting", a
     await page.close();
   }
 });
+
+test("with motion, parking hides the drawer at once and a second Escape keeps the app detail open", async () => {
+  const page = await load(860, {}, 1440, 64, true);
+  try {
+    await workspaceFrames(page);
+    await workspaceFrames(page);
+    await toggle(page).focus();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    await page.keyboard.press("Escape");
+    expect(await aside(page).evaluate((element) => getComputedStyle(element).display)).toBe("none");
+    await page.keyboard.press("Escape");
+    expect(await page.locator("body").getAttribute("data-closed")).toBeNull();
+  } finally {
+    await page.close();
+  }
+});
+
+test("focus on Details moves to the title when the column returns", async () => {
+  const page = await load();
+  try {
+    await toggle(page).click();
+    expect(await toggle(page).evaluate((button) => document.activeElement === button)).toBe(true);
+    await resizeHost(page, 1440);
+    expect(await toggle(page).isVisible()).toBe(false);
+    expect(
+      await aside(page)
+        .locator("h2")
+        .evaluate((title) => document.activeElement === title),
+    ).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
