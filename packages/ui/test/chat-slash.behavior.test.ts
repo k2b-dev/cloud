@@ -323,7 +323,7 @@ const compactCommand: ChatCommand = {
   keywords: ["compact", "kompaktieren", "zusammenfassen"],
 };
 
-test.each(["Ctrl+Enter", "Cmd+Enter", "send before Back", "send during Back", "desktop"])(
+test.each(["Ctrl+Enter", "Cmd+Enter", "send before Back", "send during Back", "desktop", "another draft"])(
   "%s submits only after the phone sheet's history entry has left, keeping desktop synchronous",
   async (activation) => {
     const dom = createHarness();
@@ -351,6 +351,7 @@ test.each(["Ctrl+Enter", "Cmd+Enter", "send before Back", "send during Back", "d
     history.replaceState({ page: "chat" }, "");
     const { ChatComposer } = await import("../src/chat/ChatComposer");
     const [value, setValue] = createSignal("/");
+    const [draftKey, setDraftKey] = createSignal("first");
     const submissions: ChatSubmitInput[] = [];
     const submissionStates: unknown[] = [];
     let resolveSubmitted!: () => void;
@@ -364,6 +365,9 @@ test.each(["Ctrl+Enter", "Cmd+Enter", "send before Back", "send during Back", "d
             return value();
           },
           onValueChange: setValue,
+          get draftKey() {
+            return draftKey();
+          },
           commands: [compactCommand],
           variant: "conversation",
           onSubmit(input) {
@@ -401,11 +405,21 @@ test.each(["Ctrl+Enter", "Cmd+Enter", "send before Back", "send during Back", "d
         }),
       );
     expect(submissions).toHaveLength(activation === "desktop" ? 1 : 0);
-    // The draft clears at once, so text typed while the sheet's Back is on its way stays in the field.
-    expect(value()).toBe("");
+    if (activation === "another draft") {
+      // Another conversation's draft replaces this one while the sheet's Back is on its way: nothing is sent.
+      setDraftKey("second");
+      await core.historySettled();
+      await flush();
+      expect(submissions).toEqual([]);
+      expect(value()).toBe("/");
+      return;
+    }
+    // Text typed while the sheet's Back is on its way goes out with the message instead of being cleared.
+    if (activation !== "desktop") setValue("/ more");
     await submitted;
     expect(submissionStates).toEqual([{ page: "chat" }]);
-    expect(submissions).toEqual([{ intent: "send", text: "/", mentions: [], attachments: [] }]);
+    expect(submissions).toEqual([{ intent: "send", text: activation === "desktop" ? "/" : "/ more", mentions: [], attachments: [] }]);
+    expect(value()).toBe("");
     expect(dom.root.querySelector('[role="listbox"]')).toBeNull();
     expect(location.pathname).toBe("/sent");
     const back = new Promise<void>((resolve) => window.addEventListener("popstate", () => resolve(), { once: true }));

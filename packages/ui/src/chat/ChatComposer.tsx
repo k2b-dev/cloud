@@ -834,30 +834,33 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
   const submit = async () => {
     if (!canSubmit()) return;
-    const intent = running() ? runningSubmitIntent() : "send";
-    const previousValue = props.value;
-    const previousAttachments = attachments();
-    const previousMentions = mentions();
-    const input: ChatSubmitInput = {
-      intent,
-      text: previousValue,
-      mentions: previousMentions,
-      attachments: intent !== "steer" ? previousAttachments : [],
-    };
-
+    const key = props.draftKey;
     setSubmitting(true);
     try {
+      if (isTouchOnly()) {
+        if (commandSheetHeld()) setClosedAt(commandQuery()?.start);
+        // The sheet's Back entry leaves first, so a submit handler that navigates finds the history settled.
+        await dialogHistorySettled();
+        // A draft that another one replaced or that was emptied meanwhile is not sent, and keeps its text.
+        if (disposed || props.draftKey !== key || !hasDraft()) return;
+      }
+      const intent = running() ? runningSubmitIntent() : "send";
+      const previousValue = props.value;
+      const previousAttachments = attachments();
+      const previousMentions = mentions();
+      const input: ChatSubmitInput = {
+        intent,
+        text: previousValue,
+        mentions: previousMentions,
+        attachments: intent !== "steer" ? previousAttachments : [],
+      };
       await runChatSubmission({
         clear: () => {
           props.onValueChange("");
           props.onMentionsChange?.([]);
           if (intent !== "steer") setAttachments([]);
         },
-        perform: async () => {
-          // Clearing the draft closes the sheet; its Back entry leaves before a submit handler that navigates runs.
-          if (isTouchOnly()) await dialogHistorySettled();
-          return props.onSubmit(input);
-        },
+        perform: () => props.onSubmit(input),
         restore: () => {
           // Text typed while the submission ran stays, after the returned draft. Its mentions are read first, because
           // an application may already move them when the text changes.
@@ -936,7 +939,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     showCommandStatus(command.busyLabel ? { tone: "busy", text: command.busyLabel } : undefined);
     try {
       // The sheet's Back entry leaves first, so an action that navigates or opens a dialog finds the history settled.
-      if (heldHistory && command.action) await dialogHistorySettled();
+      if (heldHistory && command.action) {
+        await dialogHistorySettled();
+        // Another draft or no composer any more: the command does not run against it.
+        if (disposed || props.draftKey !== key) return;
+      }
       const result = await command.action?.({
         setValue: (value) => edit(value),
         submit: () => {
