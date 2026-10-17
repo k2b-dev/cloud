@@ -5,9 +5,33 @@ import type { ChatCommand, ChatCommandResult, ChatComposerProps } from "../src/c
 import type { ChatMention, ChatSubmitInput } from "../src/chat/types";
 import { createDomTestHarness } from "./dom";
 
+const installPopoverStub = () => {
+  const open = new WeakSet<HTMLElement>();
+  const prototype = HTMLElement.prototype as HTMLElement & { showPopover: () => void; hidePopover: () => void };
+  const matches = prototype.matches;
+  const toggle = (element: HTMLElement, newState: "open" | "closed") =>
+    element.dispatchEvent(Object.assign(new Event("toggle"), { newState, oldState: newState === "open" ? "closed" : "open" }));
+  Object.defineProperty(prototype, "matches", {
+    configurable: true,
+    writable: true,
+    value(this: HTMLElement, selector: string): boolean {
+      return selector === ":popover-open" ? open.has(this) : matches.call(this, selector);
+    },
+  });
+  prototype.showPopover = function (this: HTMLElement) {
+    if (open.has(this)) return;
+    open.add(this);
+    toggle(this, "open");
+  };
+  prototype.hidePopover = function (this: HTMLElement) {
+    if (open.delete(this)) toggle(this, "closed");
+  };
+};
+
 const createHarness = () => {
   const dom = createDomTestHarness();
-  delegateEvents(["click", "input", "keydown", "keyup"]);
+  installPopoverStub();
+  delegateEvents(["click", "input", "keydown", "keyup", "beforeinput"]);
   return dom;
 };
 
@@ -222,9 +246,10 @@ afterEach(() => {
 const flush = async () => {
   for (let n = 0; n < 8; n++) await Promise.resolve();
 };
-const slash = async (options: Partial<ChatComposerProps> = {}) => {
+const slash = async (options: Partial<ChatComposerProps> = {}, locale = "en") => {
   const dom = createHarness();
   slashCleanups.push(dom.cleanup);
+  dom.document.documentElement.lang = locale;
   const { ChatComposer } = await import("../src/chat/ChatComposer");
   const [value, setValue] = createSignal(options.value ?? "/");
   const [draftKey, setDraftKey] = createSignal("first");
@@ -236,6 +261,9 @@ const slash = async (options: Partial<ChatComposerProps> = {}) => {
         ...options,
         get commands() {
           return options.commands;
+        },
+        get state() {
+          return options.state;
         },
         get value() {
           return value();
@@ -932,6 +960,378 @@ test("sections keep prop order across keystrokes with labelled groups, deduplica
 });
 
 const skillScopes = [{ id: "skill", title: "Skills", words: ["skill", "skills"] }];
+
+test("a command opens its model chip, resolves after change, and cancellation restores the token", async () => {
+  let chosen: string | null | undefined;
+  const changes: string[] = [];
+  const h = await slash({
+    value: "/model",
+    models: [
+      { id: "a", label: "Alpha" },
+      { id: "b", label: "Beta" },
+    ],
+    selectedModelId: "a",
+    onModelChange(id) {
+      changes.push(id);
+    },
+    commands: [
+      {
+        name: "model",
+        description: "",
+        action: async (ctx) => {
+          chosen = await ctx.openModelSelection();
+          if (chosen) expect(changes.at(-1)).toBe(chosen);
+          return chosen ? { done: `Chosen ${chosen}` } : "cancelled";
+        },
+      },
+    ],
+  });
+  const chip = () => h.root.querySelector<HTMLButtonElement>(".k2b-chat-composer__model button")!;
+  h.key("Enter");
+  await flush();
+  expect(chip().disabled).toBe(false);
+  const menu = h.root.querySelector<HTMLElement>('[role="menu"]')!;
+  expect(menu.matches(":popover-open")).toBe(true);
+  expect(h.document.activeElement).toBe(menu.querySelector('[role="menuitemradio"]'));
+  menu.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')[1]!.click();
+  await flush();
+  expect(chosen).toBe("b");
+  expect(changes).toEqual(["b"]);
+  expect(h.value()).toBe("");
+  expect(h.status().textContent).toBe("Chosen b");
+  expect(h.document.activeElement).toBe(h.input);
+  h.type("/model");
+  h.key("Enter");
+  await flush();
+  h.document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await flush();
+  expect(chosen).toBeNull();
+  expect(h.value()).toBe("/model");
+  expect(h.document.activeElement).toBe(h.input);
+  chip().click();
+  await flush();
+  expect(menu.matches(":popover-open")).toBe(true);
+  expect(h.document.activeElement).toBe(menu.querySelector('[role="menuitemradio"]'));
+  menu.hidePopover();
+  await flush();
+  chip().dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+  await flush();
+  expect(h.document.activeElement).toBe(menu.querySelectorAll('[role="menuitemradio"]')[1]!);
+  menu.hidePopover();
+  await flush();
+  h.type("/model");
+  h.key("Enter");
+  await flush();
+  menu.hidePopover();
+  await flush();
+  expect(chosen).toBeNull();
+  expect(h.value()).toBe("/model");
+});
+
+test("model selection is unavailable without a usable control and while running", async () => {
+  const cases: Partial<ChatComposerProps>[] = [
+    {},
+    { onModelChange() {} },
+    { models: [{ id: "a", label: "Alpha" }] },
+    { models: [{ id: "a", label: "Alpha" }], onModelChange() {}, state: "running" },
+  ];
+  for (const options of cases) {
+    let chosen: string | null | undefined;
+    const h = await slash({
+      ...options,
+      commands: [
+        {
+          name: "model",
+          description: "",
+          action: async (ctx) => {
+            chosen = await ctx.openModelSelection();
+            return "cancelled" as const;
+          },
+        },
+      ],
+      value: "/model",
+    });
+    h.key("Enter");
+    await flush();
+    expect(chosen).toBeNull();
+    expect(h.value()).toBe("/model");
+    if (options.state === "running")
+      expect(h.root.querySelector<HTMLButtonElement>(".k2b-chat-composer__model button")!.disabled).toBe(true);
+  }
+});
+
+test("footer content creates one component across run changes and cancels model selection", async () => {
+  const dom = createHarness();
+  slashCleanups.push(dom.cleanup);
+  const { ChatComposer } = await import("../src/chat/ChatComposer");
+  const [value, setValue] = createSignal("/model");
+  const [state, setState] = createSignal<ChatComposerProps["state"]>("idle");
+  let created = 0;
+  let chosen: string | null | undefined;
+  const Footer = () => {
+    created++;
+    const content = dom.document.createElement("div");
+    content.textContent = "Recording";
+    return content;
+  };
+  const dispose = render(
+    () =>
+      createComponent(ChatComposer, {
+        get value() {
+          return value();
+        },
+        onValueChange: setValue,
+        onSubmit() {},
+        get state() {
+          return state();
+        },
+        get footerContent() {
+          return createComponent(Footer, {});
+        },
+        models: [{ id: "a", label: "Alpha" }],
+        onModelChange() {
+          throw new Error("Must not change model during recording");
+        },
+        commands: [
+          {
+            name: "model",
+            description: "",
+            action: async (ctx) => {
+              chosen = await ctx.openModelSelection();
+              return "cancelled" as const;
+            },
+          },
+        ],
+      }),
+    dom.root,
+  );
+  slashCleanups.push(dispose);
+  const footer = dom.root.querySelector(".k2b-chat-composer__footer")!;
+  const content = footer.firstElementChild;
+  expect(created).toBe(1);
+  expect(footer.textContent).toBe("Recording");
+  for (const next of ["running", "idle", "running", "idle"] as const) {
+    setState(next);
+    await flush();
+    expect(created).toBe(1);
+    expect(footer.firstElementChild).toBe(content);
+  }
+  const input = dom.root.querySelector("textarea")!;
+  input.setSelectionRange(value().length, value().length);
+  input.click();
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  await flush();
+  expect(chosen).toBeNull();
+  expect(value()).toBe("/model");
+  expect(dom.root.querySelector(".k2b-chat-composer__model")).toBeNull();
+  expect(created).toBe(1);
+});
+
+test("a model command cancels when a run starts while its control is open", async () => {
+  const [state, setState] = createSignal<ChatComposerProps["state"]>("idle");
+  let chosen: string | null | undefined;
+  const h = await slash({
+    get state() {
+      return state();
+    },
+    value: "/model",
+    models: [{ id: "a", label: "Alpha" }],
+    onModelChange() {},
+    commands: [
+      {
+        name: "model",
+        description: "",
+        action: async (ctx) => {
+          chosen = await ctx.openModelSelection();
+          return "cancelled" as const;
+        },
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  setState("running");
+  await flush();
+  expect(chosen).toBeNull();
+  expect(h.value()).toBe("/model");
+  expect(h.root.querySelector<HTMLElement>('[role="menu"]')!.matches(":popover-open")).toBe(false);
+  expect(h.root.querySelector<HTMLButtonElement>(".k2b-chat-composer__model button")!.disabled).toBe(true);
+});
+
+test.each(["submitting", "stopping"] as const)("a model command cancels when the composer becomes %s", async (nextState) => {
+  const [state, setState] = createSignal<ChatComposerProps["state"]>("idle");
+  let chosen: string | null | undefined;
+  let result: "cancelled" | undefined;
+  const changes: string[] = [];
+  const h = await slash({
+    get state() {
+      return state();
+    },
+    value: "/model",
+    models: [{ id: "a", label: "Alpha" }],
+    onModelChange(id) {
+      changes.push(id);
+    },
+    commands: [
+      {
+        name: "model",
+        description: "",
+        action: async (ctx) => {
+          chosen = await ctx.openModelSelection();
+          result = "cancelled";
+          return result;
+        },
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  const menu = h.root.querySelector<HTMLElement>('[role="menu"]')!;
+  const chip = h.root.querySelector<HTMLButtonElement>(".k2b-chat-composer__model button")!;
+  expect(menu.matches(":popover-open")).toBe(true);
+  expect(chip.disabled).toBe(false);
+  expect(chosen).toBeUndefined();
+  expect(h.value()).toBe("");
+  setState(nextState);
+  await flush();
+  expect(chosen).toBeNull();
+  expect(result).toBe("cancelled");
+  expect(h.value()).toBe("/model");
+  expect(menu.matches(":popover-open")).toBe(false);
+  expect(chip.disabled).toBe(true);
+  expect(changes).toEqual([]);
+});
+
+test.each(["en", "de"])("selected rows show a check and accessible %s selected text", async (locale) => {
+  const h = await slash(
+    {
+      commands: [
+        { name: "Alpha", description: "", selected: true },
+        { name: "Beta", description: "" },
+      ],
+    },
+    locale,
+  );
+
+  expect(h.rows()[0]?.querySelector(".k2b-chat-composer__command-end .ti-check")).not.toBeNull();
+  expect(h.rows()[0]?.querySelector(".k2b-sr-only")?.textContent).toBe(locale === "de" ? "gewählt" : "selected");
+  expect(h.rows()[1]?.querySelector(".k2b-chat-composer__command-end")).toBeNull();
+});
+
+test("running changes refresh open server rows in the same opening and retain rows while loading", async () => {
+  const [state, setState] = createSignal<ChatComposerProps["state"]>("idle");
+  const calls: { opening: number; query: string; scope?: string; state: ChatComposerProps["state"] }[] = [];
+  let resolve!: (rows: ChatCommand[]) => void;
+  const h = await slash({
+    value: "/model ",
+    commandScopes: [{ id: "model", title: "Models", words: ["model"] }],
+    get state() {
+      return state();
+    },
+    searchCommands: (query, _signal, search) => {
+      calls.push({ ...search, query, state: state() });
+      return new Promise((done) => {
+        resolve = done;
+      });
+    },
+  });
+  await Bun.sleep(140);
+  resolve([{ id: "model:a", name: "Idle model", description: "" }]);
+  await flush();
+  const opening = calls[0]!.opening;
+  let previous = "Idle model";
+  for (const next of ["running", "idle"] as const) {
+    setState(next);
+    await Bun.sleep(140);
+    await flush();
+    expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual([previous]);
+    expect(calls.at(-1)).toEqual({ opening, query: "", scope: "model", state: next });
+    const name = `${next} model`;
+    resolve([{ id: "model:a", name, description: "", reason: next === "running" ? "Wait for the response" : undefined }]);
+    await flush();
+    expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual([name]);
+    expect(h.rows()[0]?.querySelector("small")?.textContent ?? "").toBe(next === "running" ? "Wait for the response" : "");
+    expect(h.value()).toBe("/model ");
+    previous = name;
+  }
+  expect(calls).toHaveLength(3);
+});
+
+test("replacing an open or escaped slash at the same position starts another opening", async () => {
+  const openings: number[] = [];
+  const h = await slash({
+    searchCommands: async (_query, _signal, search) => {
+      openings.push(search.opening);
+      return [{ name: "One", description: "" }];
+    },
+  });
+  await Bun.sleep(140);
+  await flush();
+  for (const escape of [false, true]) {
+    const previous = openings.at(-1);
+    if (escape) h.key("Escape");
+    h.input.setSelectionRange(0, h.value().length);
+    h.input.dispatchEvent(new Event("beforeinput", { bubbles: true }));
+    h.type("/");
+    await Bun.sleep(140);
+    await flush();
+    expect(openings.at(-1)).not.toBe(previous);
+  }
+  expect(openings).toHaveLength(3);
+});
+
+test.each(["Enter", "Tab", "click"])("openings survive typing and %s retries retain the query and rows", async (activation) => {
+  const calls: { opening: number; query: string; scope?: string }[] = [];
+  let resolveRetry!: (rows: ChatCommand[]) => void;
+  const retry: ChatCommand = {
+    name: "Try again",
+    description: "",
+    searchAgain: true,
+    action: () => {
+      throw new Error("Must not execute");
+    },
+  };
+  const h = await slash({
+    value: "/skill ",
+    commandScopes: skillScopes,
+    searchCommands: async (query, _signal, search) => {
+      calls.push({ ...search, query });
+      if (calls.length === 3)
+        return new Promise<ChatCommand[]>((resolve) => {
+          resolveRetry = resolve;
+        });
+      return [retry];
+    },
+  });
+  await Bun.sleep(140);
+  await flush();
+  h.type("/skill a");
+  await Bun.sleep(140);
+  await flush();
+  expect(calls[0]?.opening).toBe(calls[1]?.opening);
+  if (activation === "click") h.rows()[0]!.click();
+  else h.key(activation);
+  await Bun.sleep(10);
+  await flush();
+  expect(calls).toHaveLength(3);
+  expect(calls[2]).toMatchObject({ query: "a", scope: "skill" });
+  expect(calls[2]?.opening).not.toBe(calls[1]?.opening);
+  expect(h.value()).toBe("/skill a");
+  expect(h.rows()).toHaveLength(1);
+  resolveRetry([retry]);
+  await flush();
+  h.key("Escape");
+  h.type("");
+  h.type("/");
+  await Bun.sleep(140);
+  await flush();
+  expect(calls[3]?.opening).not.toBe(calls[2]?.opening);
+  h.setDraftKey("another");
+  h.type("/");
+  await Bun.sleep(140);
+  await flush();
+  expect(calls.at(-1)?.opening).not.toBe(calls[3]?.opening);
+});
 
 test("first-word scope passes the rest and scope id to search, hides static rows and labels its group", async () => {
   const calls: { query: string; signal: AbortSignal; scope?: string }[] = [];

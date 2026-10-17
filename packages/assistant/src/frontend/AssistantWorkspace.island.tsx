@@ -83,7 +83,6 @@ import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
 import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
-import { assistantTaskTitle } from "./AssistantTasksDialog";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
 import {
@@ -111,7 +110,14 @@ import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
-import { assistantBuiltInCommands, assistantCommandScopes, assistantCommandSections, assistantComposerCommands } from "./composer-commands";
+import {
+  assistantBuiltInCommands,
+  assistantCommandScopes,
+  assistantCommandSections,
+  assistantComposerCommands,
+  createAssistantCommandSession,
+  createAssistantTaskRunKeys,
+} from "./composer-commands";
 import {
   confirmComposerSave,
   editComposerSession,
@@ -122,6 +128,7 @@ import {
 import { isPlainChat } from "./conversation-view";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
+import { assistantTaskTitle } from "./scheduled-task-format";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 type Status = {
@@ -182,6 +189,7 @@ export default function AssistantWorkspace(props: Props) {
   const locale = useLocale();
   const contextText = useAssistantText();
   const commandCopy = useAssistantCopy();
+  const runKeys = createAssistantTaskRunKeys();
   const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref);
   const [workspaceMounted, setWorkspaceMounted] = createSignal(false);
   const openContextView = (view: ContextView) =>
@@ -1368,6 +1376,14 @@ export default function AssistantWorkspace(props: Props) {
   const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
     const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
     const projectComposer = () => Boolean(composerProps.projectId);
+    // A Project composer starts new chats; a response still running in the previous chat does not block it.
+    const composerRunning = () => !projectComposer() && chat.running();
+    const commandSession = createAssistantCommandSession();
+    onCleanup(() => commandSession.dispose());
+    const searchChat = () => {
+      const conversation = activeConversation();
+      if (conversation) openGlobalSearch(assistantSearchOptions(locale(), conversation));
+    };
     // In the chat the command started in, it takes over the controller's error so the failure is reported once,
     // in the composer status line. After the person moved on, that error belongs to the other chat and stays there.
     const commandFailure = (key: string, message: (input: { reason: string }) => string, draftUnchanged = true) => {
@@ -1467,7 +1483,11 @@ export default function AssistantWorkspace(props: Props) {
               (chat.conversation()?.projectId
                 ? (projects().find((project) => project.id === chat.conversation()?.projectId)?.name ?? "")
                 : undefined),
-            running: chat.running(),
+            running: composerRunning(),
+            recording: dictation.recording(),
+            models: aiChatModelOptions(props.models),
+            selectedModelId: selectedModelId(),
+            searchChat,
             hasMessages: chat.messages().length > 0,
             hasAssistantMessage: chat.messages().some((message) => message.message.role === "assistant"),
             compact: async () => {
@@ -1510,12 +1530,19 @@ export default function AssistantWorkspace(props: Props) {
             assistantComposerCommands({
               query,
               scope: search.scope,
+              session: search.opening,
+              sessionLoader: commandSession,
+              runKeys,
+              models: aiChatModelOptions(props.models),
+              selectedModelId: selectedModelId(),
+              chooseModel: setSelectedModelId,
+              isRunning: () => composerRunning(),
               signal,
               locale: locale(),
               conversationId: projectComposer() ? undefined : (chat.activeConversationId() ?? undefined),
               projectId: composerProps.projectId ?? chat.conversation()?.projectId,
               projects: projects(),
-              running: chat.running(),
+              running: composerRunning(),
               assignProject: async (projectId) => {
                 const key = sessionKey();
                 const text = composerDraft(key),
@@ -1633,11 +1660,7 @@ export default function AssistantWorkspace(props: Props) {
                     id: "search-chat",
                     label: t().searchThisChat,
                     icon: "ti ti-search",
-                    onSelect: async () => {
-                      const conversation = activeConversation();
-                      if (!conversation) return;
-                      openGlobalSearch(assistantSearchOptions(locale(), conversation));
-                    },
+                    onSelect: searchChat,
                   },
                 ]
               : []),

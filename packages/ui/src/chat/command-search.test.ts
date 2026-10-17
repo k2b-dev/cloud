@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { ChatCommand, ChatCommandScope } from "./ChatComposer";
-import { chatCommandListModel, parseChatCommandQuery, rankChatCommand, resolveChatCommandScope } from "./command-search";
+import {
+  chatCommandListModel,
+  matchesChatCommand,
+  parseChatCommandQuery,
+  rankChatCommand,
+  resolveChatCommandScope,
+} from "./command-search";
 
 const command = (label: string, extra: Partial<ChatCommand> = {}): ChatCommand => ({ name: label, label, description: "", ...extra });
 const scopes: ChatCommandScope[] = [
@@ -227,4 +233,10 @@ test("a search-only section stays out of the overview, placeholder included, and
   expect(overview.rows.map((row) => row.command.name)).toEqual(["New chat"]);
   const search = chatCommandListModel({ ...input, query: "rep", searching: false });
   expect(search.groups.map((group) => group.section?.id)).toEqual(["files"]);
+});
+
+test("matchesChatCommand shares empty, bilingual, accent and typo ranking rules", () => {
+  const row = command("Modell wählen", { keywords: ["choose", "model"], description: "Straße prüfen" });
+  for (const query of ["", "  ", "modell", "wahlen", "choose", "modle", "strasse"]) expect(matchesChatCommand(row, query)).toBe(true);
+  for (const query of ["xyz", "modleeeee"]) expect(matchesChatCommand(row, query)).toBe(false);
 });

@@ -128,6 +128,7 @@ type ChatMention = { start: number; end: number; attachment: ChatAttachment };
 ```ts
 type ChatCommandContext = {
   setValue: (value: string) => void; submit: () => void; focus: () => void;
+  openModelSelection: () => Promise<string | null>;
 };
 
 type ChatCommandResult = void | "cancelled" | { done: string };
@@ -138,11 +139,12 @@ type ChatCommand = {
   section?: string; scope?: string; hiddenUntilSearch?: boolean; app?: string;
   action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
   mention?: ChatAttachment;
+  selected?: boolean; searchAgain?: boolean;
 };
 
 type ChatCommandSection = { id: string; label: string; searched?: boolean; searchOnly?: boolean };
 type ChatCommandScope = { id: string; title: string; words: readonly string[] };
-type ChatCommandSearch = { scope?: string };
+type ChatCommandSearch = { scope?: string; opening: number };
 
 type ChatFileSelection = {
   onSelect: (files: readonly File[]) => void | Promise<void>; onError?: (error: unknown) => void;
@@ -170,21 +172,38 @@ prefix (4+ characters). The title is `label ?? name`; when a label exists,
 not displayed. Equal ranks keep static rows first, then server rows, each in
 consumer order.
 
-`searchCommands(query, signal, { scope })` runs after a 120 ms debounce. Fresh
+`searchCommands(query, signal, { scope, opening })` runs after a 120 ms debounce. Fresh
 server results remain visible even without a local match, after matching rows.
 Retained results from an earlier query must match the new query; changing scope
 clears them. Marking follows the top row until an arrow key moves it, then
 stays on that entry while results arrive. Typing starts at the top again.
 Enter and Tab wait for fresh server rows; clicks may choose retained matching
 rows. Local matches remain available while loading.
+Server rows are requested again when the composer’s running state changes, so
+reasons that depend on it stay current.
+
+The `opening` number identifies one opening of the list. It stays the same
+while typing, narrowing, or moving with arrow keys. A new `/`, closing and
+reopening the list, or switching drafts starts another opening. Consumers can
+cache discovery per opening with their own cancellation controller; the search
+`signal` still belongs to one query.
+
+Set `searchAgain: true` for a retry row. Enter, Tab, and click preserve the
+current `/…`, query, and scope, run no action, and immediately search with a new
+opening. Current matching rows remain visible while loading.
+
+Use `matchesChatCommand(command, query)` from `@k2b/ui` to filter server rows
+with the same ranking rules. It returns true for an empty or whitespace query.
+Fresh server rows are never removed by the composer, so consumers own that
+filtering.
 
 Use `commandScopes` for first-word narrowing. Only a word followed by
 whitespace can resolve: an exact word wins if unique. Otherwise, with at least
 three letters, the scope with the shortest extension wins; a tie resolves to
 nothing. Both paths ignore case and accents. A resolved scope shows one group
 with `scope.title`, containing only server rows. The search callback receives
-the rest of the query and `{ scope: scope.id }`; otherwise it receives the whole
-query and `{ scope: undefined }`.
+the rest of the query and `{ scope: scope.id, opening }`; otherwise it receives
+the whole query and `{ scope: undefined, opening }`.
 
 Tab on a command with `scope` replaces the query after `/` with that scope's
 `words[0]` and a space, through normal undoable editing. Enter runs its action or
@@ -216,6 +235,20 @@ wrap; nothing is truncated. The title match is bold. Rows have no preview,
 badges, key hints, or `/name` suffix. Groups have labelled headings; arrow keys
 wrap across all rows and skip placeholders. Emoji suggestions keep their own
 markup and selection behavior.
+
+Set `selected: true` to show a trailing check mark and localized visually
+hidden “selected” text. This marks a chosen value independently of the row
+currently marked by the arrow keys.
+
+Command actions can call `await context.openModelSelection()` to open the
+composer's own model control. It resolves with the chosen model id after
+`onModelChange` runs, or `null` on Escape, outside close, or an unavailable
+control (including running, no models, no change callback, or `footerContent`
+replacing the footer). For the states your application knows, give the command
+a `reason`, or drop its action so Enter narrows to its `scope`; it never
+resolves `null` silently. The control stays
+usable while that command awaits a choice. Return `"cancelled"` on null
+to restore the token. The action's normal completion restores field focus.
 
 Set `reason` when a command is unavailable. It replaces the description and is
 associated with the option for screen readers. Enter, Tab, and click keep the

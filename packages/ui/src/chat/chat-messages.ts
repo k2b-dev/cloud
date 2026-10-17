@@ -6,6 +6,7 @@ const chatMessages = i18n.define({
   messages: {
     en: {
       commandFailed: "That did not work.",
+      commandSelected: "selected",
       attachments: "Attachments",
       assistant: "Assistant",
       addToChat: "Add to chat",
@@ -101,6 +102,7 @@ const chatMessages = i18n.define({
     },
     de: {
       commandFailed: "Das hat nicht geklappt.",
+      commandSelected: "gewählt",
       attachments: "Anhänge",
       assistant: "Assistent",
       addToChat: "Zum Chat hinzufügen",

@@ -38,7 +38,7 @@ import {
   openAssistantKnowledgeSearch,
   openAssistantMarkdown,
 } from "./AssistantContextContent";
-import { AssistantTasksView, assistantTaskTitle, formatAssistantTaskSchedule } from "./AssistantTasksDialog";
+import { AssistantTasksView } from "./AssistantTasksDialog";
 import {
   assistantChatContextFor,
   assistantReferenceTitle,
@@ -55,6 +55,7 @@ import {
 } from "./assistant-live";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { formatDictationTimestamp } from "./dictation-files";
+import { assistantTaskTitle, formatAssistantTaskSchedule } from "./scheduled-task-format";
 import { assistantBrowserCopy, useAssistantCopy, useAssistantText } from "./ui-copy";
 
 export { splitAssistantConversationSources } from "./assistant-context";

@@ -1149,8 +1149,8 @@ tasks restore the plan automatically; switching chats resets the disclosure.
 
 Assistant recognizes `/` at a word boundary anywhere in the composer. Its
 sections stay in this order: **Skills**, **Files in this chat**, **Studio apps**,
-**This chat**. Files appear when searching or narrowing to files. Type a name,
-or narrow by typing one of these words followed by a space:
+**This chat**, **Scheduled tasks**. Files appear when searching or narrowing to
+files. Type a name, or narrow by typing one of these words followed by a space:
 
 | List | German and English words |
 | --- | --- |
@@ -1158,6 +1158,8 @@ or narrow by typing one of these words followed by a space:
 | Files in this chat | `datei`, `dateien`, `file`, `files` |
 | Projects | `projekt`, `projekte`, `project`, `projects` |
 | Studio apps | `app`, `apps`, `studio` |
+| Models | `model`, `models`, `modell`, `modelle` |
+| Scheduled tasks | `routine`, `routinen` |
 
 The full words also list their category without a trailing space, including
 `/project` and `/projekt` for Projects.
@@ -1176,14 +1178,26 @@ state. Matching previous results stay visible while the next search loads.
 Switching lists clears previous results. Screen readers announce the number
 of suggestions once the search settles.
 
-The built-in actions are **Assign to project**, **Compact chat**, **Fork chat**,
-and **New chat**. Assign to project opens the Project list.
-Their old names `/compact`, `/fork`, and `/new` still find them. Compact chat
+The Skills overview shows the first four enabled Skills. If there are more,
+**All N Skills** narrows to the full Skill list with Enter or Tab. If the Skill
+list fails to load, **Skills could not be loaded** with **Try again** takes the
+place of the Skills; the other sections stay. Choosing it loads the list again.
+
+The **This chat** entries are **Choose model**, **Assign to project**,
+**Compact chat**, **Fork chat**, **Search this chat**, and **New chat**.
+Choose model opens the composer's model menu. Type `/model ` or `/modell ` to
+list models directly; a check marks the current model. Choosing another model
+applies it to this chat and confirms the choice. You can change models once the
+current response finishes. While you record a dictation, Choose model lists the
+models instead of opening the menu. Assign to project opens the Project list.
+The names `/compact`, `/fork`, and `/new` still find those actions. Compact chat
 summarizes older history to free up room. Fork chat starts from the latest
 assistant response and brings your draft along. New chat starts empty and keeps
-the previous chat in the list. Compact and Fork are absent from the overview
-until their prerequisites are met; searching finds them with a reason. While a response runs, they remain
-visible with a waiting reason. An unavailable command explains why. Selecting
+the previous chat in the list. Search this chat opens search scoped to this
+chat's messages and files. It is absent from the overview for an empty chat;
+searching for it explains why it is unavailable. Compact and Fork are absent
+from the overview until their prerequisites are met; searching finds them with
+a reason. While a response runs, they remain visible with a waiting reason. An unavailable command explains why. Selecting
 it leaves the menu open. Cancelling a command keeps `/…` in your unchanged
 draft; failures restore it too and show a message above the composer until the
 next edit or command.
@@ -1192,6 +1206,31 @@ highlighted references. Editing a reference's
 label turns it into ordinary text; undo restores its identity. Saving and
 reopening a draft preserves references, including versioned conversation files.
 Project file references name a read-only path in the current Project.
+
+**Scheduled tasks** offers **New scheduled task** and your own scheduled tasks.
+New scheduled task inserts a reference to Assistant's scheduled-tasks Skill;
+send it with your request to describe what should happen and when. If you
+turned off that Skill, or it is unavailable to you, the row explains why and
+inserts nothing.
+
+Choosing an active task runs it now. The composer shows a starting status while
+the request is pending and a running status only after the server accepts the
+run. The result arrives in the scheduled task's chat. A failed request restores
+`/…` and explains the failure in plain words: the task already runs, no longer
+exists, was started too often, or was not accepted. If the server is
+unreachable or gives no clear answer, the composer says it cannot tell whether
+the task started. Choosing the task again in the same browser tab, also after a
+reload, checks the earlier start instead of starting it a second time. If that
+run already finished, the status says so and points to the task's chat. Paused tasks ask you to resume them first;
+tasks that need attention explain that you must intervene before they can run.
+Selecting either sends no run request.
+
+Tasks load once per menu opening. The overview shows up to five tasks, newest
+first, after New scheduled task. Searching or narrowing with `routine` or
+`routinen` shows all matching loaded tasks, including paused tasks and those
+that need attention; completed tasks are excluded. If task loading fails,
+**Scheduled tasks could not be loaded** with **Try again** replaces the task
+rows. Choosing it reloads the list and preserves `/…` while results load.
 
 Selecting a Project permanently assigns a previously unassigned chat. Future
 turns use that Project's instructions and files. Once the chat belongs to a

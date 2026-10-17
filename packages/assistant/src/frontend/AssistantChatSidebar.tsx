@@ -45,7 +45,6 @@ import {
   openAssistantKnowledgeSearch,
   openAssistantMarkdown,
 } from "./AssistantContextContent";
-import { assistantTaskTitle, formatAssistantTaskSchedule } from "./AssistantTasksDialog";
 import { assistantResourceTypeLabel } from "./assistant-context";
 import { type ChatSidebarCopy, chatSidebarMessages } from "./chat-sidebar-messages";
 import {
@@ -65,6 +64,7 @@ import {
   type WorkingGroup,
 } from "./chat-sidebar-model";
 import { formatDictationTimestamp } from "./dictation-files";
+import { assistantTaskTitle, formatAssistantTaskSchedule } from "./scheduled-task-format";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 /** Where a result came from in the chat: the message that holds its delivering call. */

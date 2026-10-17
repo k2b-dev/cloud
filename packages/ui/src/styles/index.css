@@ -9500,6 +9500,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-composer__commands .k2b-chat-composer__command-text { display: grid; flex: 1; min-width: 0; gap: 0.125rem; }
 .k2b-ui .k2b-chat-composer__command-text > strong { color: var(--k2b-text); }
 .k2b-ui .k2b-chat-composer__command-text > strong > b { font-weight: 600; }
+/* The chosen value of a list, such as the current model: a check at the row's end, beside the name. */
+.k2b-ui .k2b-chat-composer__commands .k2b-chat-composer__command-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 1rem;
+  color: var(--k2b-text);
+}
+.k2b-ui .k2b-chat-composer__command-end > i { font-size: 1rem; line-height: 1rem; }
 /* One quiet row in place of server rows that are still on their way. */
 .k2b-ui .k2b-chat-composer__command-placeholder {
   display: flex;

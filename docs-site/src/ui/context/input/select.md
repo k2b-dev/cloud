@@ -375,10 +375,15 @@ type SelectChipOption<T extends string | number = string> = {
 type SelectChipProps<T extends string | number = string> = ValueFieldProps<T> & {
   value: MaybeAccessor<T>; options: SelectChipOption<T>[]; icon?: string; iconOnly?: boolean;
   size?: ButtonSize; placeholder?: string; position?: DropdownPosition; menuWidth?: string; name?: string; loading?: boolean;
+  open?: boolean; onOpenChange?: (open: boolean) => void;
 };
 ```
 
 `fetchData` takes precedence over `loadOptions`; either remote source takes precedence over `options`. Debounce is `fetchDebounceMs ?? debounceMs ?? 200` milliseconds. Static `Select` search defaults off; static `MultiSelectInput` search defaults on. Remote search is always enabled. Render callbacks belong to `MultiSelectInput`, not `Select`. They receive normalized `ChoiceOption<string>` objects and return Solid content. `appearance` defaults to `"field"`; `DatePicker`, `DateTimePicker`, `DateRangePicker`, and `NumberInput` accept the same `ChoiceAppearance`.
+
+Use `open` with `onOpenChange` to control the SelectChip menu, including opening
+it from another control and reacting to Escape or outside close. Leave `open`
+undefined for the existing uncontrolled menu behavior.
 
 `SelectChip.size` uses [ButtonSize](/en/ui/actions/buttons); `position` uses [DropdownPosition](/en/ui/actions/menus#api-reference). `menuWidth` is an optional exact CSS length; without it the menu sizes to its options, at least `10rem`. `SelectChip` does not accept `null`; represent an explicit empty choice with an option of your value type.
 

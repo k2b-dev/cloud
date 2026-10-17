@@ -58,4 +58,5 @@ export const Chat = Object.assign(ChatRoot, {
   ContextPanel: ChatContextPanel,
 });
 
+export { matchesChatCommand } from "./command-search";
 export { reconcileChatMentions } from "./composer-document";

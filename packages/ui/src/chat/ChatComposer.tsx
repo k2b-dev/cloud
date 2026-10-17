@@ -67,6 +67,7 @@ export type ChatCommandContext = {
   setValue: (value: string) => void;
   submit: () => void;
   focus: () => void;
+  openModelSelection: () => Promise<string | null>;
 };
 
 /** An action can cancel and restore its token, or report a short completion message. */
@@ -84,7 +85,11 @@ export type ChatCommandSection = {
 /** First-word narrowing; Tab writes `words[0]` followed by a space. */
 export type ChatCommandScope = { id: string; title: string; words: readonly string[] };
 /** Passed as the third argument to `searchCommands`. */
-export type ChatCommandSearch = { scope?: string };
+export type ChatCommandSearch = {
+  scope?: string;
+  /** One list opening, unchanged across queries and narrowing; retries start another opening. */
+  opening: number;
+};
 
 export type ChatCommand = {
   /** Section id; unknown or missing ids render in a trailing part without a heading. */
@@ -93,6 +98,10 @@ export type ChatCommand = {
   scope?: string;
   /** Absent from the overview; appears when searched, including its unavailable reason. */
   hiddenUntilSearch?: boolean;
+  /** A chosen value, independent of the row marked by keyboard navigation. */
+  selected?: boolean;
+  /** Retry discovery in a new opening, retaining the token and currently displayed rows. */
+  searchAgain?: boolean;
   /** Application name, searchable but not displayed. */
   app?: string;
   /** Stable row key for option ids, marking and de-duplication. Defaults to `name`. */
@@ -238,6 +247,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const accessory = children(() => props.accessory);
   const hasAccessory = () => hasContent(accessory.toArray());
   const hint = children(() => props.hint);
+  const footer = children(() => props.footerContent);
   const messages = useUiMessages();
   const markdownToolbarMessages = useMarkdownToolbarMessages();
   const chatMessages = useChatMessages();
@@ -258,6 +268,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const [closedAt, setClosedAt] = createSignal<number>();
   // Where the pending native edit starts; a selection replaced as a whole starts at its beginning.
   let inputStart: number | undefined;
+  let inputEnd: number | undefined;
   const [commandStatus, setCommandStatus] = createSignal<{ tone: "busy" | "done" | "error"; text: string }>();
   const [announcement, setAnnouncement] = createSignal<{ text: string }>();
   let statusTimer: ReturnType<typeof setTimeout> | undefined;
@@ -304,6 +315,49 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const [searching, setSearching] = createSignal(false);
   const [searchError, setSearchError] = createSignal(false);
   const [executing, setExecuting] = createSignal(false);
+  const [modelOpen, setModelOpen] = createSignal<boolean>();
+  const [choosingModel, setChoosingModel] = createSignal(false);
+  let resolveModel: ((id: string | null) => void) | undefined;
+  const finishModelSelection = (id: string | null) => {
+    const resolve = resolveModel;
+    resolveModel = undefined;
+    if (choosingModel()) {
+      setModelOpen(false);
+      // Let the controlled close reach Dropdown before returning normal clicks to its own state.
+      queueMicrotask(() => {
+        if (!choosingModel()) setModelOpen(undefined);
+      });
+    }
+    setChoosingModel(false);
+    resolve?.(id);
+  };
+  const blockedBesidesCommand = () => Boolean(props.disabled || stopping() || state() === "submitting" || addingFiles() || submitting());
+  const usableModelControl = () =>
+    !conversation() && !footer() && !blockedBesidesCommand() && !running() && Boolean(props.models?.length && props.onModelChange);
+  const openModelSelection = (): Promise<string | null> => {
+    if (!usableModelControl()) return Promise.resolve(null);
+    finishModelSelection(null);
+    return new Promise((resolve) => {
+      resolveModel = resolve;
+      setChoosingModel(true);
+      setModelOpen(true);
+      queueMicrotask(() => {
+        if (!choosingModel() || !modelOpen()) return;
+        // Start on the current model, as a click on the chip would show it checked.
+        const menu = composerRef?.querySelector(".k2b-chat-composer__model");
+        (
+          menu?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]:not(:disabled)') ??
+          menu?.querySelector<HTMLButtonElement>('[role="menuitemradio"]:not(:disabled)')
+        )?.focus();
+      });
+    });
+  };
+  createEffect(() => {
+    if (!usableModelControl()) finishModelSelection(null);
+  });
+  onCleanup(() => finishModelSelection(null));
+  const [commandOpening, setCommandOpening] = createSignal(0);
+  let retrySearch = false;
   let highlightRef: HTMLDivElement | undefined;
   let commandListRef: HTMLDivElement | undefined;
   const mentions = () => props.mentions ?? [];
@@ -338,6 +392,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const commandQuery = createMemo(() => {
     const token = caretCommandToken();
     return dismissed() || composing() || token?.start === closedAt() ? null : token;
+  });
+  const openingStart = createMemo(() => commandQuery()?.start);
+  createEffect(() => {
+    props.draftKey;
+    const start = openingStart();
+    if (start !== undefined) setCommandOpening((opening) => opening + 1);
   });
   const parsedCommandQuery = createMemo(() => parseChatCommandQuery(commandQuery()?.query ?? "", props.commandScopes ?? []));
   const currentCommandScope = createMemo(() => parsedCommandQuery().scope?.id);
@@ -403,12 +463,16 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       setSearching(false);
       return;
     }
+    running();
     const parsed = parsedCommandQuery();
+    const opening = commandOpening();
     const abort = new AbortController();
     setSearching(true);
+    const delay = retrySearch ? 0 : 120;
+    retrySearch = false;
     const timer = setTimeout(() => {
       Promise.resolve()
-        .then(() => props.searchCommands!(parsed.query, abort.signal, { scope: parsed.scope?.id }))
+        .then(() => props.searchCommands!(parsed.query, abort.signal, { scope: parsed.scope?.id, opening }))
         .then((results) => {
           if (!abort.signal.aborted) {
             batch(() => {
@@ -428,7 +492,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         .finally(() => {
           if (!abort.signal.aborted) setSearching(false);
         });
-    }, 120);
+    }, delay);
     onCleanup(() => {
       clearTimeout(timer);
       abort.abort();
@@ -477,6 +541,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     untrack(() => {
       history.length = 0;
       historyIndex = -1;
+      finishModelSelection(null);
       setDismissed(true);
       setClosedAt(undefined);
       setSearchResults([]);
@@ -500,6 +565,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   };
   const edit = (value: string, nextMentions = reconcileChatMentions(props.value, value, mentions())) => {
     if (commandStatus()?.tone === "error") showCommandStatus();
+    // Replacing `/` can leave its position and query identical, but starts a new opening.
+    if (inputStart !== undefined && inputEnd !== undefined && props.value.slice(inputStart, inputEnd).includes("/")) {
+      setCommandOpening((opening) => opening + 1);
+      setSearchResults([]);
+      setSearchResultsQuery(undefined);
+      setCommandMoved(false);
+    }
     // An edit that starts at or before the closed `/` (select all, then type `/`) replaces it; the new `/` may open again.
     const closed = closedAt();
     if (closed !== undefined) {
@@ -508,6 +580,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       if (Math.min(same, inputStart ?? same) <= closed) setClosedAt(undefined);
     }
     inputStart = undefined;
+    inputEnd = undefined;
     record();
     props.onValueChange(value);
     props.onMentionsChange?.(nextMentions);
@@ -764,6 +837,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       setAnnouncement(command.reason ? { text: command.reason } : undefined);
       return;
     }
+    if (command.searchAgain) {
+      retrySearch = true;
+      setCommandOpening((opening) => opening + 1);
+      return;
+    }
     if (command.scope && (tab || (!command.action && !command.mention)) && narrowCommand(command)) return;
     const previous = snapshot();
     const key = props.draftKey;
@@ -796,6 +874,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           submitRequested = true;
         },
         focus,
+        openModelSelection,
       });
       if (result === "cancelled") {
         submitRequested = false;
@@ -1326,6 +1405,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         }}
         onBeforeInput={(event) => {
           inputStart = event.currentTarget.selectionStart;
+          inputEnd = event.currentTarget.selectionEnd;
           if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
             event.preventDefault();
             restoreHistory(event.inputType === "historyUndo" ? -1 : 1);
@@ -1380,6 +1460,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             <small id={command.reason ? `${commandOptionId(command)}-reason` : undefined}>{command.reason ?? command.description}</small>
           </Show>
         </span>
+        <Show when={command.selected}>
+          <span class="k2b-chat-composer__command-end">
+            <i class="ti ti-check" aria-hidden="true" />
+            <span class="k2b-sr-only">{chatMessages().commandSelected}</span>
+          </span>
+        </Show>
       </button>
     );
   };
@@ -1617,7 +1703,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
               <footer class="k2b-chat-composer__footer">
                 <Show
-                  when={props.footerContent}
+                  when={footer()}
                   fallback={
                     <>
                       <div class="k2b-chat-composer__tools">
@@ -1641,9 +1727,20 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                               icon: model.icon,
                               image: model.image,
                             }))}
-                            disabled={blocked() || running() || !props.onModelChange}
+                            open={modelOpen()}
+                            onOpenChange={(open) => {
+                              if (!choosingModel()) return;
+                              setModelOpen(open);
+                              // Dropdown closes before committing the choice; let onValueChange settle it first.
+                              if (!open)
+                                queueMicrotask(() => {
+                                  if (!modelOpen()) finishModelSelection(null);
+                                });
+                            }}
+                            disabled={(choosingModel() ? blockedBesidesCommand() : blocked()) || running() || !props.onModelChange}
                             onValueChange={(modelId) => {
                               props.onModelChange?.(modelId);
+                              finishModelSelection(modelId);
                               queueMicrotask(focus);
                             }}
                           />
@@ -1678,7 +1775,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     </>
                   }
                 >
-                  {(content) => content()}
+                  {footer()}
                 </Show>
               </footer>
             </>

@@ -413,6 +413,7 @@ export const documentedOnlyUiCatalogExports = {
   formatShortcut: "Documented Kbd formatter for plain text labels and spoken names.",
   keyboardPlatform: "Documented Kbd platform detection for browser and server hosts.",
   reconcileChatMentions: "Documented Chat composer helper for preserving reference ranges during external text edits.",
+  matchesChatCommand: "Documented Chat composer helper that filters application-owned slash rows with the composer's own matching.",
   findNavigationItem: "Documented lookup for the latest enabled Navigation item.",
   parseSignature: "Documented server-side reader that rebuilds a submitted SignatureInput value.",
   ChartSnapshotView: "Documented prepared-chart surface composed by ChartExplorer.",
