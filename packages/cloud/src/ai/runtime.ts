@@ -40,6 +40,7 @@ import type {
 import { isAiImageMediaType } from "./types";
 import { validateAiTurnRequest } from "./validate";
 
+export { createAiTurnCodeAndClientTools } from "./default-tools";
 export type { ValidateAiTurnInput } from "./validate";
 export { isAiSettingsError, validateAiTurnRequest } from "./validate";
 
