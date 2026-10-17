@@ -8,6 +8,7 @@ import {
   DescriptionList,
   DetailPanel,
   Dropdown,
+  Format,
   IconButton,
   Placeholder,
   Tag,
@@ -50,13 +51,6 @@ type Props = {
   currentUserId: string;
   showEmpty?: boolean;
   initialFavoriteKeys: string[];
-};
-
-const formatBirthday = (value: string | null, locale: string) => {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(locale);
 };
 
 const formatAddress = (address: Contact["addresses"][number]) => {
@@ -617,7 +611,12 @@ export default function ContactDetailPanel(props: Props) {
                               ...(hasFormalName() && c().firstName ? [{ term: t().firstName, description: c().firstName }] : []),
                               ...(hasFormalName() && c().lastName ? [{ term: t().lastName, description: c().lastName }] : []),
                               ...(c().birthday
-                                ? [{ term: t().birthday, description: formatBirthday(c().birthday, locale()) ?? c().birthday }]
+                                ? [
+                                    {
+                                      term: t().birthday,
+                                      description: <Format.Date value={c().birthday} fallback={c().birthday ?? undefined} />,
+                                    },
+                                  ]
                                 : []),
                               ...(c().salutation ? [{ term: t().salutation, description: c().salutation }] : []),
                               ...(c().pronouns ? [{ term: t().pronouns, description: c().pronouns }] : []),
