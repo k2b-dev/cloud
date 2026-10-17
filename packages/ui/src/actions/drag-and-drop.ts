@@ -73,6 +73,10 @@ const modalOf = (element: Element): Element | undefined => {
     if (isModal(dialog)) return dialog;
   return undefined;
 };
+const visible = (element: Element) =>
+  typeof element.checkVisibility === "function"
+    ? element.checkVisibility({ checkVisibilityCSS: true })
+    : element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden";
 /**
  * A keyboard destination must be one a pointer could reach from where the pickup started: shown and visible, not
  * inert, and in the same modal dialog as the origin.
@@ -80,8 +84,7 @@ const modalOf = (element: Element): Element | undefined => {
 const reachable = (target: Target, origin: HTMLElement) => {
   const element = target.element;
   if (element.closest("[inert]") || modalOf(element) !== modalOf(origin)) return false;
-  if (typeof element.checkVisibility === "function") return element.checkVisibility({ checkVisibilityCSS: true });
-  return element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden";
+  return visible(element);
 };
 const mark = (target: Target, payload?: DragPayload) => {
   if (payload && accepts(target, payload)) target.element.dataset.drop = "ok";
@@ -294,6 +297,7 @@ export const bindDragSource = (
     // Ready before the drag starts, so its first announcement is read.
     announcerFor(source);
     const id = event.pointerId;
+    const mouse = event.pointerType === "mouse";
     const start = { x: event.clientX, y: event.clientY };
     let point = start;
     let held = false;
@@ -326,6 +330,8 @@ export const bindDragSource = (
       win.removeEventListener("keydown", key, true);
       win.removeEventListener("contextmenu", preventContext, true);
       doc.removeEventListener("touchmove", preventScroll);
+      source.removeEventListener("lostpointercapture", lostCapture);
+      if (source.hasPointerCapture?.(id)) source.releasePointerCapture(id);
       delete source.dataset.held;
       delete source.dataset.pressing;
       preview?.remove();
@@ -407,6 +413,15 @@ export const bindDragSource = (
       source.dataset.dragging = "";
       win.addEventListener("contextmenu", preventContext, true);
       releaseSelection = suppressTextSelection(id);
+      // Captured, the mouse's moves and release reach this drag also over an iframe, such as a PDF preview. A finger
+      // or pen is captured by the browser already.
+      if (mouse)
+        try {
+          source.setPointerCapture(id);
+          source.addEventListener("lostpointercapture", lostCapture);
+        } catch {
+          // The pointer is already gone; its pointerup or pointercancel ends the drag.
+        }
       preview = doc.createElement("div");
       // Inside the source's own .k2b-ui scope the preview inherits its theme, also a scoped dark one; a second
       // .k2b-ui would reset the tokens to light.
@@ -464,6 +479,10 @@ export const bindDragSource = (
       clean();
       announce(source, result);
       drop?.(payload);
+    };
+    // Capture ends without a release only when the browser takes the pointer away.
+    const lostCapture = (event: PointerEvent) => {
+      if (event.pointerId === id) cancel();
     };
     const cancelPointer = (event: PointerEvent) => {
       if (event.pointerId !== id) return;
@@ -559,6 +578,8 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
   const behindModal = (event: KeyboardEvent) => {
     const keyModal = event.target instanceof Element ? modalOf(event.target) : undefined;
     if (keyModal && keyModal !== pickupModal && !keyModal.contains(origin)) return true;
+    // A dialog stack that shares one native dialog hides the level below, the origin's, when the next one opens.
+    if (pickupModal && (!origin.isConnected || !visible(origin))) return true;
     return !pickupModal && Array.from(doc.querySelectorAll("dialog[open]")).some(isModal);
   };
   const describe = (target: Target) =>

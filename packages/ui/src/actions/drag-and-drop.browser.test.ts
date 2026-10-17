@@ -146,6 +146,8 @@ describe(`drag and drop in ${browserName}`, () => {
       // In the top layer, so a transformed or modal dialog neither offsets nor covers it.
       expect(await page.locator(".k2b-drag-preview").evaluate((el) => el.matches(":popover-open"))).toBe(true);
       await until(page, "window.announcements.some(text => text.startsWith('Row 2 picked up.'))");
+      // Captured, so a release over an iframe still ends the drag.
+      expect(await row.evaluate((el) => el.hasPointerCapture((window as unknown as { lastPointer: number }).lastPointer))).toBe(true);
       await page.mouse.up();
       await clean(page);
       expect(await drops(page)).toEqual([{ target: "Archive", value: "row-2" }]);
@@ -519,6 +521,27 @@ describe(`drag and drop in ${browserName}`, () => {
         dialog.showModal();
       });
       await page.keyboard.press("Enter");
+      await clean(page);
+      expect(await drops(page)).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a keyboard pickup ends when a shared dialog stack hides the origin's level", async () => {
+    const { page, context } = await open();
+    try {
+      await page.evaluate("window.openNested()");
+      await page.evaluate("window.pickUpInner()");
+      await until(page, `document.querySelector('.inbox')?.dataset.drop === 'over'`);
+      // The next level of a dialogCore stack hides the level below with display: none.
+      const prevented = await page.evaluate(() => {
+        (document.querySelector(".inner-row")!.parentElement as HTMLElement).style.display = "none";
+        const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+        document.querySelector("dialog.nested")!.dispatchEvent(event);
+        return event.defaultPrevented;
+      });
+      expect(prevented).toBe(false);
       await clean(page);
       expect(await drops(page)).toEqual([]);
     } finally {
