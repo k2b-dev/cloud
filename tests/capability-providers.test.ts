@@ -161,6 +161,8 @@ describe("Capability v2 provider conformance", () => {
       "spaces.event.create",
       "spaces.event.invitation.prepare",
       "spaces.item.delete",
+      "spaces.reaction.add",
+      "spaces.reaction.remove",
       "spaces.task.checklist.delete",
       "spaces.task.create",
       "spaces.template.delete",
