@@ -470,6 +470,51 @@ describe(`drag and drop in ${browserName}`, () => {
     }
   });
 
+  test("a modal dialog that opens during a keyboard pickup ends it without a drop", async () => {
+    const { page, context } = await open();
+    try {
+      const row = page.getByRole("group", { name: "Row 2", exact: true });
+      await row.focus();
+      await page.keyboard.press("Shift+F10");
+      await until(page, `document.activeElement?.textContent === 'Reply'`);
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await until(page, `document.querySelector('.archive')?.dataset.drop === 'over'`);
+      await page.evaluate(() => {
+        const dialog = document.createElement("dialog");
+        dialog.innerHTML = "<button>OK</button>";
+        document.body.append(dialog);
+        dialog.showModal();
+      });
+      await page.keyboard.press("Enter");
+      await clean(page);
+      expect(await drops(page)).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("text inside an editable region of a source keeps its native drag", async () => {
+    const { page, context } = await open();
+    try {
+      const prevented = await page.evaluate(() => {
+        const source = document.querySelectorAll(".k2b-drag-source")[3]!;
+        const editor = document.createElement("div");
+        editor.contentEditable = "true";
+        editor.textContent = "Editable";
+        source.append(editor);
+        const editable = new DragEvent("dragstart", { bubbles: true, cancelable: true });
+        editor.dispatchEvent(editable);
+        const row = new DragEvent("dragstart", { bubbles: true, cancelable: true });
+        source.querySelector(".row")!.dispatchEvent(row);
+        return { editable: editable.defaultPrevented, row: row.defaultPrevented };
+      });
+      expect(prevented).toEqual({ editable: false, row: true });
+    } finally {
+      await context.close();
+    }
+  });
+
   test("keyboard pickup skips a hidden destination", async () => {
     const { page, context } = await open();
     try {

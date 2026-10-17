@@ -16,6 +16,7 @@ export type DragPayload<Type extends string = string> = {
 };
 
 const SLOP = 10;
+const IGNORE = "input, textarea, select, [contenteditable]:not([contenteditable='false']), [data-drag-ignore]";
 const HOLD_MS = 500;
 const AUTOSCROLL_EDGE = 32;
 const [readActiveDrag, setActiveDrag] = createSignal<DragPayload>();
@@ -277,12 +278,18 @@ export const bindDragSource = (
   const win = doc.defaultView!;
   const engine = engineFor(doc);
   let abandon: (() => void) | undefined;
-  const nativeDrag = (event: Event) => event.preventDefault();
+  /** Fields, editable text, and marked regions inside the source keep their own press and native drag. */
+  const ignored = (target: EventTarget | null) => {
+    const found = target instanceof Element ? target.closest(IGNORE) : null;
+    return found !== null && source.contains(found);
+  };
+  const nativeDrag = (event: Event) => {
+    if (!ignored(event.target)) event.preventDefault();
+  };
   const down = (event: PointerEvent) => {
     if (!event.isPrimary || event.button !== 0 || engine.session || read().disabled) return;
     if (!(event.target instanceof Element) || event.target.closest(".k2b-drag-source") !== source) return;
-    const ignored = event.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), [data-drag-ignore]");
-    if (ignored && source.contains(ignored)) return;
+    if (ignored(event.target)) return;
     engine.abandonPress?.();
     // Ready before the drag starts, so its first announcement is read.
     announcerFor(source);
@@ -544,6 +551,9 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
     drop?.(payload);
   };
   const cancel = () => end();
+  const pickupModal = modalOf(origin);
+  /** Whether a modal dialog opened over a pickup that started outside of every modal, leaving the origin inert. */
+  const behindModal = () => !pickupModal && Array.from(doc.querySelectorAll("dialog[open]")).some(isModal);
   const describe = (target: Target) =>
     target.messages.choice({ target: target.label, index: targets.indexOf(target) + 1, count: targets.length });
   const choose = (target: Target, text = describe(target)) => {
@@ -557,6 +567,11 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
     const backward = event.key === "ArrowUp" || event.key === "ArrowLeft" || (event.key === "Tab" && event.shiftKey);
     const forward = !backward && (event.key === "ArrowDown" || event.key === "ArrowRight" || event.key === "Tab");
     if (!backward && !forward && !["Home", "End", "Enter", " ", "Escape"].includes(event.key)) return;
+    // A modal dialog opened since the pickup: its keys are its own, and the pickup behind it ends.
+    if (behindModal()) {
+      cancel();
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     if (event.key === "Escape") {

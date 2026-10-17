@@ -40,7 +40,8 @@ the host owns asynchronous feedback and recovery from a failed move.
 **Pointer.** A primary mouse press with button 0 starts dragging after moving
 at least `SLOP = 10` px. Releasing earlier keeps the normal click. Inputs,
 textareas, selects, editable content, and `[data-drag-ignore]` keep their own
-press behavior. Native link and image dragging inside a source is prevented.
+press and native drag behavior. Elsewhere in a source, native link and image
+dragging is prevented.
 The source keeps its box and dims; a fixed preview with the icon, the label,
 and the count follows the pointer.
 
@@ -96,8 +97,9 @@ order. With no destination, it announces that no place takes the item.
 
 Pickup announces the instructions together with the first destination. Each
 further choice scrolls into view and announces its position. A pointer press
-cancels the sequence. Focus then returns to the origin, or to its nearest
-focusable ancestor such as the `GestureMenu` group, if it is still connected.
+or a modal dialog that opens over the origin cancels the sequence. Focus then
+returns to the origin, or to its nearest focusable ancestor such as the
+`GestureMenu` group, if it is still connected.
 Starting another keyboard pickup cancels the previous drag first.
 
 ## Hosts and far-away targets
