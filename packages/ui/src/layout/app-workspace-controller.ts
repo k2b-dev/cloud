@@ -543,12 +543,25 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       first.focus();
     }
   };
+  // Whether each open detail waited at the last check, so a column that starts
+  // waiting under focus hands that focus to its Details button.
+  const detailWasWaiting = new WeakMap<HTMLElement, boolean>();
   const syncHostState = () => {
     if (overlay && cssState(overlay.root, "--k2b-workspace-sidebar-form") !== "overlay") closeOverlay("none");
     for (const root of allRoots())
-      for (const aside of rootElements(root, DETAIL_DRAWER_SELECTOR))
-        if (aside.hidden || !detailWaiting(aside)) parkDetailDrawer(aside);
-        else syncDetailDrawerSpace(aside);
+      for (const aside of rootElements(root, detailSelector)) {
+        if (aside.hidden) {
+          detailWasWaiting.delete(aside);
+          parkDetailDrawer(aside);
+          continue;
+        }
+        const waiting = detailWaiting(aside);
+        const before = detailWasWaiting.get(aside);
+        detailWasWaiting.set(aside, waiting);
+        if (!waiting) parkDetailDrawer(aside);
+        else if (detailDrawer(aside)) syncDetailDrawerSpace(aside);
+        else if (before === false && aside.contains(ownerDocument.activeElement)) detailToggle(aside)?.focus({ preventScroll: true });
+      }
   };
   const phone = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 47.999rem)") : null;
   const wide = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 48rem)") : null;
@@ -1488,7 +1501,35 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           syncHostState();
           scheduleReconcile();
         });
+  // A host can change its width while a workspace with a fixed width keeps
+  // its own, so the controller also watches each root's nearest named host.
+  const observedHosts = new Set<Element>();
+  // Found once per root: reading styles on every mutation would cost a style pass.
+  const rootHosts = new WeakMap<HTMLElement, Element | null>();
+  const hostOf = (root: HTMLElement) => {
+    if (rootHosts.has(root)) return rootHosts.get(root)!;
+    let host: Element | null = null;
+    for (let element = root.parentElement; element && !host; element = element.parentElement)
+      if (getComputedStyle(element).containerName.split(/\s+/).includes("k2b-app-area")) host = element;
+    rootHosts.set(root, host);
+    return host;
+  };
   const syncObservedRoots = () => {
+    const hosts = new Set(
+      allRoots()
+        .map(hostOf)
+        .filter((host): host is Element => host !== null),
+    );
+    observedHosts.forEach((host) => {
+      if (hosts.has(host)) return;
+      resizeObserver?.unobserve(host);
+      observedHosts.delete(host);
+    });
+    hosts.forEach((host) => {
+      if (observedHosts.has(host)) return;
+      observedHosts.add(host);
+      resizeObserver?.observe(host);
+    });
     for (const elements of [touchedDetails, titleTabIndices, motionRoots]) {
       elements.forEach((element) => {
         if (!element.isConnected) elements.delete(element);
@@ -1650,6 +1691,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     mutationObserver?.disconnect();
     resizeObserver?.disconnect();
     observedRoots.clear();
+    observedHosts.clear();
     closeOverlay("none");
     eventRoot.removeEventListener("pointerdown", onPointerDown as EventListener);
     eventRoot.removeEventListener("click", onClick as EventListener);

@@ -214,3 +214,35 @@ test("a full-width workspace switches its track exactly at each token's content-
     }
   }
 });
+
+test("a host change closes the overlay even when the workspace keeps its width", async () => {
+  const page = await load(860, { scenario: "closed" });
+  try {
+    await page.locator("#app").evaluate((app) => {
+      app.style.width = "640px";
+      app.style.flex = "none";
+    });
+    await workspaceFrames(page);
+    await page.locator("[data-app-workspace-sidebar-toggle]").click();
+    expect(await root(page).getAttribute("data-sidebar-overlay")).toBe("open");
+    const before = (await root(page).boundingBox())!.width;
+    await resizeHost(page, 1100);
+    expect((await root(page).boundingBox())!.width).toBe(before);
+    expect(await root(page).getAttribute("data-sidebar-overlay")).toBeNull();
+    expect(await page.locator(".k2b-app-workspace__content").getAttribute("inert")).toBeNull();
+  } finally {
+    await page.close();
+  }
+});
+
+test("focus in a column that starts waiting moves to its Details button", async () => {
+  const page = await load(1440);
+  try {
+    await aside(page).getByRole("button", { name: "Contact action" }).focus();
+    await resizeHost(page, 860);
+    expect(await aside(page).isVisible()).toBe(false);
+    expect(await toggle(page).evaluate((button) => document.activeElement === button)).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
