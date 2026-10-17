@@ -384,6 +384,32 @@ const joinUrl = (server: string, path: string): string => `${normalizeServer(ser
 
 const readTokenFile = async (path: string): Promise<string> => (await readFile(path, "utf8")).trim();
 
+/**
+ * Why a token reader failed, in plain words: not installed, a timeout, the first
+ * line of its stderr, or its exit code. Never its stdout or command line, which
+ * may carry the secret.
+ */
+const tokenReaderFailure = (error: unknown, reader: { en: string; de: string }): { en: string; de: string } => {
+  if (!(error instanceof Error)) return { en: String(error), de: String(error) };
+  const code = "code" in error ? error.code : undefined;
+  const seconds = TOKEN_TIMEOUT_MS / 1000;
+  if (code === "ENOENT") return { en: `${reader.en} is not installed`, de: `${reader.de} ist nicht installiert` };
+  if ("killed" in error && error.killed) {
+    return {
+      en: `${reader.en} did not answer within ${seconds} seconds`,
+      de: `${reader.de} hat nicht innerhalb von ${seconds} Sekunden geantwortet`,
+    };
+  }
+  const stderr = "stderr" in error && typeof error.stderr === "string" ? error.stderr : "";
+  const detail = stderr
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (detail) return { en: detail, de: detail };
+  if (typeof code === "number") return { en: `${reader.en} ended with exit code ${code}`, de: `${reader.de} endete mit Exit-Code ${code}` };
+  return { en: `${reader.en} failed`, de: `${reader.de} ist fehlgeschlagen` };
+};
+
 const readFd0Token = async (name: string, scope: string | undefined): Promise<string> => {
   const args = ["get", name, "--raw"];
   if (scope) args.push("--scope", scope);
@@ -394,7 +420,12 @@ const readFd0Token = async (name: string, scope: string | undefined): Promise<st
     return token;
   } catch (error) {
     if (error instanceof CliError) throw error;
-    throw new CliError(`Failed to read token from fd0: ${error instanceof Error ? error.message : String(error)}`);
+    const reason = tokenReaderFailure(error, { en: "fd0", de: "fd0" });
+    throw new CliError(
+      `Cannot read the token from fd0 item "${name}": ${reason.en}`,
+      1,
+      `Token aus fd0-Eintrag "${name}" kann nicht gelesen werden: ${reason.de}`,
+    );
   }
 };
 
@@ -450,7 +481,12 @@ const readCommandToken = async (command: string): Promise<string> => {
     return token;
   } catch (error) {
     if (error instanceof CliError) throw error;
-    throw new CliError(`Failed to read token from command: ${error instanceof Error ? error.message : String(error)}`);
+    const reason = tokenReaderFailure(error, { en: "the token command", de: "der Token-Befehl" });
+    throw new CliError(
+      `Cannot read the token from the token command: ${reason.en}`,
+      1,
+      `Token aus dem Token-Befehl kann nicht gelesen werden: ${reason.de}`,
+    );
   }
 };
 
@@ -1431,8 +1467,12 @@ Usage:
 
 Every Cloud application serves its own commands as a plugin. \`install <name>\`
 downloads a plugin from the current profile's Cloud, checks the SHA-512 of every
-file, and locks that version for the profile. \`update\` fetches newer versions for
-the current profile, or for every profile with --all. \`list --all\` covers every
+file, and locks that version for the profile. \`update\` fetches newer versions of
+every plugin of the current profile (or the one --profile names); --all covers
+every profile, also with --profile. A profile that cannot sign in, for example
+with a locked fd0 vault, prints \`cld: <profile>: <reason>\`; the other profiles
+still update, and cld exits with 1. A release that ships the same files under a
+new version only refreshes the version label. \`list --all\` covers every
 profile. Profiles share identical plugin versions on disk.
 
 A local directory, a .tgz archive, or an npm: package installs a plugin for every
@@ -1458,9 +1498,13 @@ Verwendung:
 
 Jede Cloud-Anwendung stellt ihre Befehle als Plugin bereit. \`install <Name>\` lädt
 ein Plugin von der Cloud des aktuellen Profils, prüft den SHA-512 jeder Datei und
-legt diese Version für das Profil fest. \`update\` holt neuere Versionen für das
-aktuelle Profil, mit --all für alle Profile. \`list --all\` zeigt alle Profile.
-Profile teilen sich identische Plugin-Versionen auf der Festplatte.
+legt diese Version für das Profil fest. \`update\` holt neuere Versionen aller Plugins
+des aktuellen Profils (oder des mit --profile genannten); --all umfasst alle Profile,
+auch mit --profile. Kann sich ein Profil nicht anmelden, etwa weil der fd0-Tresor
+gesperrt ist, meldet cld \`cld: <Profil>: <Grund>\`; die anderen Profile werden
+trotzdem aktualisiert, und cld endet mit 1. Eine neue Version mit denselben Dateien
+aktualisiert nur die Versionsangabe. \`list --all\` zeigt alle Profile. Profile
+teilen sich identische Plugin-Versionen auf der Festplatte.
 
 Ein lokales Verzeichnis, ein .tgz-Archiv oder ein npm:-Paket installiert ein Plugin
 für alle Profile, zum Entwickeln oder für Befehle, die keine Cloud bereitstellt. Autoren
@@ -1843,15 +1887,17 @@ const pluginCloud = async (global: GlobalArgs, otherProfile?: string): Promise<P
   return { profile: options.profile, server: options.server, fetch: createContext([], {}, options).fetch };
 };
 
-type PluginChange = {
-  profile: string;
-  name: string;
-  app: string;
-  version: string;
-  previous?: string;
-  status: "installed" | "updated" | "unchanged" | "not served" | "failed";
-  message?: string;
-};
+type PluginChange =
+  | {
+      profile: string;
+      name: string;
+      app: string;
+      version: string;
+      previous?: string;
+      status: "installed" | "updated" | "unchanged" | "not served" | "failed";
+      message?: string;
+    }
+  | { profile: string; status: "failed"; message: string };
 
 /** Save the names the profile's Cloud serves now; never creates a profile. */
 const saveServedPlugins = async (profileName: string, plugins: readonly CloudCliPluginSummary[]): Promise<void> => {
@@ -1892,7 +1938,9 @@ const syncProfilePlugins = async (
       const previous = Object.hasOwn(current, name) ? current[name] : undefined;
       if (previous?.digest === manifest.digest && (await hasStoredPlugin(manifest.digest))) {
         const metadata = pluginMetadata(await loadStoredPlugin(name, previous));
+        const labelChanged = previous.version !== manifest.version || previous.app !== manifest.app;
         if (
+          labelChanged ||
           previous.summary !== metadata.summary ||
           previous.alias !== metadata.alias ||
           JSON.stringify(previous.shortcuts) !== JSON.stringify(metadata.shortcuts)
@@ -1900,10 +1948,18 @@ const syncProfilePlugins = async (
           staged.push({
             name,
             incoming: null,
-            locked: { app: previous.app, version: previous.version, digest: previous.digest, ...metadata },
+            locked: { app: manifest.app, version: manifest.version, digest: previous.digest, ...metadata },
           });
         }
-        changes.push({ profile: cloud.profile, name, app: manifest.app, version: manifest.version, status: "unchanged" });
+        changes.push({
+          profile: cloud.profile,
+          name,
+          app: manifest.app,
+          version: manifest.version,
+          ...(labelChanged
+            ? { status: "updated", previous: previous.version, message: "version label refreshed; files unchanged" }
+            : { status: "unchanged" }),
+        });
         continue;
       }
       const download = (await hasStoredPlugin(manifest.digest))
@@ -1967,15 +2023,20 @@ const printPluginChanges = (changes: PluginChange[], output: GlobalArgs["output"
   else if (output === "json") printLine(JSON.stringify({ plugins: changes }, null, 2));
   else {
     for (const change of changes) {
+      if (!("name" in change)) {
+        printErrorLine(`cld: ${change.profile}: ${change.message}`);
+        continue;
+      }
       const label = `${change.name} ${change.version}`.trim();
+      const labelRefreshed = change.message === "version label refreshed; files unchanged";
       const line =
         change.status === "installed"
           ? text(locale, `Installed ${label} (profile "${change.profile}").`, `${label} installiert (Profil "${change.profile}").`)
           : change.status === "updated"
             ? text(
                 locale,
-                `Updated ${change.name} ${change.previous} → ${change.version} (profile "${change.profile}").`,
-                `${change.name} ${change.previous} → ${change.version} aktualisiert (Profil "${change.profile}").`,
+                `Updated ${change.name} ${change.previous} → ${change.version} (profile "${change.profile}")${labelRefreshed ? ": version label refreshed, files unchanged" : ""}.`,
+                `${change.name} ${change.previous} → ${change.version} aktualisiert (Profil "${change.profile}")${labelRefreshed ? ": nur die Versionsangabe, Dateien unverändert" : ""}.`,
               )
             : change.status === "unchanged"
               ? text(locale, `${label} is up to date (profile "${change.profile}").`, `${label} ist aktuell (Profil "${change.profile}").`)
@@ -2033,7 +2094,7 @@ const listProfilePlugins = async (global: GlobalArgs, profileName: string, curre
         ? "available"
         : !served
           ? "not served"
-          : digests.get(name) === locked.digest
+          : digests.get(name) === locked.digest && served.version === locked.version
             ? "ok"
             : "update available";
     return {
@@ -2276,30 +2337,39 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     const profileNames = all ? Object.keys(config.profiles ?? {}).sort() : [currentProfile];
     const changes: PluginChange[] = [];
     for (const profileName of profileNames) {
-      const lock = profileLock(config, profileName);
-      const names = targets.length > 0 ? targets : Object.keys(lock).sort();
-      const missing = names.find((name) => !Object.hasOwn(lock, name));
-      if (missing) {
-        const packages = await readPackagePlugins();
-        const record = Object.hasOwn(packages, missing) ? packages[missing] : undefined;
-        if (record) {
-          // The recorded npm source pins the installed version; an update needs the latest one.
-          const source = record.source.startsWith("npm:") ? `npm:${record.package}` : record.source;
+      try {
+        const lock = profileLock(config, profileName);
+        const names = targets.length > 0 ? targets : Object.keys(lock).sort();
+        const missing = names.find((name) => !Object.hasOwn(lock, name));
+        if (missing) {
+          const packages = await readPackagePlugins();
+          const record = Object.hasOwn(packages, missing) ? packages[missing] : undefined;
+          if (record) {
+            // The recorded npm source pins the installed version; an update needs the latest one.
+            const source = record.source.startsWith("npm:") ? `npm:${record.package}` : record.source;
+            throw new CliError(
+              `Package plugins update by installing the new package again: \`cld plugins install ${source}\`.`,
+              1,
+              `Paket-Plugins werden durch erneutes Installieren des neuen Pakets aktualisiert: \`cld plugins install ${source}\`.`,
+            );
+          }
           throw new CliError(
-            `Package plugins update by installing the new package again: \`cld plugins install ${source}\`.`,
+            `Plugin "${missing}" is not installed for profile "${profileName}". Run \`cld plugins install ${missing}\`.`,
             1,
-            `Paket-Plugins werden durch erneutes Installieren des neuen Pakets aktualisiert: \`cld plugins install ${source}\`.`,
+            `Plugin "${missing}" ist für Profil "${profileName}" nicht installiert. Führe \`cld plugins install ${missing}\` aus.`,
           );
         }
-        throw new CliError(
-          `Plugin "${missing}" is not installed for profile "${profileName}". Run \`cld plugins install ${missing}\`.`,
-          1,
-          `Plugin "${missing}" ist für Profil "${profileName}" nicht installiert. Führe \`cld plugins install ${missing}\` aus.`,
-        );
+        if (names.length === 0) continue;
+        const cloud = await pluginCloud(global, profileName === currentProfile ? undefined : profileName);
+        changes.push(...(await syncProfilePlugins(cloud, names, "update", locale)));
+      } catch (error) {
+        if (!all) throw error;
+        changes.push({
+          profile: profileName,
+          status: "failed",
+          message: error instanceof CliError ? error.localizedMessage(locale) : error instanceof Error ? error.message : String(error),
+        });
       }
-      if (names.length === 0) continue;
-      const cloud = await pluginCloud(global, profileName === currentProfile ? undefined : profileName);
-      changes.push(...(await syncProfilePlugins(cloud, names, "update", locale)));
     }
     if (changes.length === 0 && output === "text") {
       printLine(text(locale, "No plugins installed.", "Keine Plugins installiert."));
