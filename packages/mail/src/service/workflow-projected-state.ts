@@ -46,7 +46,14 @@ export const rebindMailWorkflowRestoredOutput = (handler: WorkflowExecuteActionH
     const rebind = (value: WorkflowJsonValue): WorkflowJsonValue => {
       if (Array.isArray(value)) return value.map(rebind);
       if (!isMailWorkflowProjectedObject(value) || Object.getPrototypeOf(value) !== Object.prototype) return value;
-      if (isSnapshotOf(value, message)) return message;
+      if (isSnapshotOf(value, message)) {
+        // Journaled bodies came from this run's frozen hydration; preserve them across execution generations.
+        for (const field of ["body", "bodyText", "bodyHtml"] as const) {
+          if (message[field] === "" && typeof value[field] === "string" && value[field] !== "") message[field] = value[field];
+        }
+        if (value.bodyAvailable === true) message.bodyAvailable = true;
+        return message;
+      }
       if (isSnapshotOf(value, conversation)) return conversation;
       return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, rebind(nested)]));
     };

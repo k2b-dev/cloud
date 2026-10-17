@@ -986,16 +986,7 @@ steps:
   }, 15_000);
 
   for (const [index, scenario] of (
-    [
-      "paths",
-      "whole message",
-      "whole inputs",
-      "pending template",
-      "pending whole",
-      "deleted path",
-      "deleted template",
-      "failed hydration",
-    ] as const
+    ["paths", "whole message", "pending template", "pending whole", "deleted path", "deleted template", "failed hydration"] as const
   ).entries()) {
     test(`resolves body-less workflow inputs: ${scenario}`, async () => {
       const incoming = envelope({ uid: 7200 + index, providerMessageId: `workflow-body-${index}-${suffix}` });
@@ -1030,9 +1021,6 @@ steps:
       } else if (scenario === "whole message" || scenario === "pending whole") {
         steps = `  - setVariable: { name: selected, value: "\${{ inputs.message }}" }
   - succeed: { message: "{{ selected.body }}|{{ selected.bodyText }}|{{ selected.bodyHtml }}" }`;
-      } else if (scenario === "whole inputs") {
-        steps = `  - setVariable: { name: selected, value: "\${{ inputs }}" }
-  - succeed: { message: "{{ selected.message.body }}|{{ selected.message.bodyText }}|{{ selected.message.bodyHtml }}" }`;
       }
       const created = await createWorkflow({
         context,

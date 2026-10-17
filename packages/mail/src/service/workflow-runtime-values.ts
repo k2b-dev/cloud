@@ -136,6 +136,12 @@ export const createMailWorkflowValueResolver = (params: {
   frozenHydration: Record<string, WorkflowJsonValue>;
   mailActionNames: ReadonlySet<string>;
 }): WorkflowValueResolverPort => {
+  // Runs frozen before #1313 may have only the legacy plain-text body key.
+  for (const [key, value] of Object.entries(params.frozenHydration)) {
+    if (/^inputs\.[^.]+\.body$/.test(key) && !Object.hasOwn(params.frozenHydration, `${key}Text`)) {
+      params.frozenHydration[`${key}Text`] = value;
+    }
+  }
   const hasFrozen = (key: string) => Object.hasOwn(params.frozenHydration, key);
   const freeze = async (reference: string, value: WorkflowJsonValue): Promise<WorkflowJsonValue> => {
     const frozen = await freezeHydrationValue({

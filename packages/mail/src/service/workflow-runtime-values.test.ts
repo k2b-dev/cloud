@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { readWorkflowValuePath } from "@k2b/cloud/workflows/language";
+import { sql } from "bun";
 import { MAIL_WORKFLOW_ACTIONS } from "../workflows/actions";
 import * as publicResources from "./public-resources";
 import { createMailWorkflowValueResolver } from "./workflow-runtime-values";
@@ -61,6 +62,28 @@ describe("Mail lazy workflow values", () => {
     expect(await resolve("inputs.message.bodyText")).toEqual({ state: "resolved", value: "Frozen plain text" });
     expect(message).toMatchObject({ body: "Frozen plain text", bodyText: "Frozen plain text", bodyAvailable: false });
     expect(Object.keys(frozen)).toEqual(["inputs.message.bodyText"]);
+  });
+
+  test("reuses plain text frozen before #1313 without reading Mail or freezing again", async () => {
+    const read = spyOn(publicResources, "resolveMailboxPublicId").mockImplementation(async () => {
+      throw new Error("Legacy frozen bodies must not read Mail");
+    });
+    const freeze = spyOn(sql, "begin").mockImplementation(() => {
+      throw new Error("Legacy frozen bodies must not write a database freeze");
+    });
+    try {
+      const frozen: Record<string, WorkflowJsonValue> = { "inputs.message.body": "Legacy frozen text" };
+      const { message, resolve } = fixture(frozen);
+      expect(await resolve("inputs.message.bodyText")).toEqual({ state: "resolved", value: "Legacy frozen text" });
+      expect(await resolve("inputs.message.body")).toEqual({ state: "resolved", value: "Legacy frozen text" });
+      expect(message).toMatchObject({ body: "Legacy frozen text", bodyText: "Legacy frozen text", bodyAvailable: false });
+      expect(frozen).toEqual({ "inputs.message.body": "Legacy frozen text", "inputs.message.bodyText": "Legacy frozen text" });
+      expect(read).not.toHaveBeenCalled();
+      expect(freeze).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+      freeze.mockRestore();
+    }
   });
 
   for (const reference of ["inputs.message", "inputs"]) {
