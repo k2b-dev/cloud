@@ -2,7 +2,9 @@ import { afterEach, beforeEach, expect, mock, setSystemTime, spyOn, test } from 
 import type { AiChatTaskView, AiSkillSummary } from "@k2b/cloud/ai";
 import type { AiComposerAttachment } from "@k2b/cloud/ai/ui";
 import type { CloudResourcePickerItem, CloudResourcePickerOptions } from "@k2b/cloud/browser/resource-picker";
-import { currentLibrary } from "../../../cloud/test/future-capability-manifest";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
+import { ok } from "@k2b/stdlib";
 import type { ChatMention } from "@k2b/ui";
 import { batch, createMemo, createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
@@ -22,13 +24,24 @@ const catalog = {
       appName: "Notebooks",
       appIcon: "ti ti-notebook",
       appDescription: "Notes",
-      manifest: {
-        ...currentLibrary.manifest,
-        appId: "notebooks",
-        queries: currentLibrary.manifest.queries.map((query) =>
-          query.universalSearch ? { ...query, universalSearch: { tags: catalogTags } } : query,
-        ),
-      },
+      // The manifest Notebooks would register, with its search tags.
+      manifest: compileCapabilityManifest(
+        "notebooks",
+        defineCapabilities({
+          protocolVersion: 2,
+          queries: {
+            search: {
+              title: "Search notes",
+              description: "Find notes and notebooks.",
+              input: UniversalSearchInputSchema,
+              data: UniversalSearchDataSchema,
+              openWorld: false,
+              universalSearch: { tags: catalogTags },
+              run: async () => ok({ data: [] }),
+            },
+          },
+        }),
+      ),
     },
   ],
   page: { hasMore: false },
@@ -127,6 +140,7 @@ const mount = async (
     scheduledTaskSkills?: AiSkillSummary[];
     scheduledTaskSkillsFail?: () => boolean;
     post?: () => Promise<Response>;
+    track?: <T>(picking: Promise<T>) => Promise<T>;
   } = {},
 ) => {
   const dom = options.host ? { ...options.host, root: options.host.document.createElement("div") } : createDomTestHarness();
@@ -214,6 +228,7 @@ const mount = async (
       partCount: (options.attachments ?? []).length + mentions().length,
       excludeRefs: () => assistantExcludedRefs(options.attachments ?? [], mentions()),
       fileSelectionDisabled: state() === "running",
+      track: options.track,
     }),
   );
   const modelChanges: string[] = [];
@@ -788,6 +803,31 @@ test("a Studio app chosen through /app becomes the artifact reference the Assist
   expect(picker.mock.calls.at(-1)?.[0]?.requireReader).toBeUndefined();
   await settled();
   expect(h.mentions()[0]?.attachment.data).toMatchObject({ kind: "resource", ref: { type: "assistant.artifact", id: "App1" } });
+});
+
+test("an open picker is tracked until it settles, so the workspace holds back saving a new chat meanwhile", async () => {
+  let open = 0;
+  let resolve!: (item: CloudResourcePickerItem | undefined) => void;
+  picker.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const h = await mount({
+    value: "/notiz q3",
+    track: (picking) => {
+      open++;
+      return picking.finally(() => open--);
+    },
+  });
+  h.key("Enter");
+  await flush();
+  expect(open).toBe(1);
+  resolve(chosenNote);
+  await settled();
+  expect(open).toBe(0);
+  expect(h.mentions()).toHaveLength(1);
 });
 
 test("attached and mentioned resources are excluded from the picker", async () => {

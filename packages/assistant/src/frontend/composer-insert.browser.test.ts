@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { SearchItem, SearchStreamLine } from "../../../cloud/src/api/search/schemas";
+import type { CloudResourcePickerItem } from "@k2b/cloud/browser/resource-picker";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
 
@@ -41,7 +41,7 @@ const buildHarness = async (): Promise<string> => {
 };
 
 const apps = [{ id: "notebooks", name: "Notebooks", icon: "ti ti-notebook" }];
-const note = (id: string, title: string, preview: string): SearchItem => ({
+const note = (id: string, title: string, preview: string): CloudResourcePickerItem => ({
   appId: "notebooks",
   appName: "Notebooks",
   appIcon: "ti ti-notebook",
@@ -82,7 +82,8 @@ beforeAll(async () => {
       if (url.pathname === "/api/search") {
         searches.push(url);
         const query = (url.searchParams.get("q") ?? "").toLowerCase();
-        const lines: SearchStreamLine[] = [
+        // The NDJSON lines of /api/search: start, one per app, done.
+        const lines = [
           { type: "start", query, apps, providers: ["notebooks"] },
           {
             type: "provider",

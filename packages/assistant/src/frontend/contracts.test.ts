@@ -97,6 +97,9 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).not.toContain("const slashCommands");
     expect(workspace).toMatch(/searchCommands=\{async \(query, signal, search\) => \{[\s\S]*?assistantComposerCommands\(/);
     expect(workspace).toContain("catalog.ready(search, locale())");
+    // Saving a new chat moves its draft to another key; it waits while a slash-list picker is open.
+    expect(workspace).toContain("if (activeProject() || composerSubmitting() || composerPicking()) return;");
+    expect(workspace).toContain("track: trackComposerPicking");
     expect(workspace).toContain("commandFallback={insert().fallback}");
     expect(workspace).not.toContain("type / ...");
     expect(workspace).toContain('id: "attach-resource"');

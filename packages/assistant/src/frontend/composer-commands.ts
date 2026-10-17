@@ -10,11 +10,11 @@ import type { CloudResourcePickerItem } from "@k2b/cloud/browser/resource-picker
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import {
   type ChatAttachment,
-  type ChatMention,
   type ChatCommand,
   type ChatCommandResult,
   type ChatCommandScope,
   type ChatCommandSection,
+  type ChatMention,
   type ChatModelOption,
   matchesChatCommand,
 } from "@k2b/ui";
@@ -117,22 +117,21 @@ export function assistantInsertCommands(input: {
   partCount: number;
   excludeRefs: () => readonly CloudResourceRef[];
   fileSelectionDisabled: boolean;
+  /** Sees every open picker through, so the draft can wait with changes that would move it elsewhere. */
+  track?: <T>(picking: Promise<T>) => Promise<T>;
 }) {
   const t = assistantMessages.resolve([input.locale]).t;
-  const tags = input.tags.some((tag) => tag.appId === "assistant" && tag.tag === "studio-app")
-    ? input.tags
-    : [
-        ...input.tags,
-        {
-          appId: "assistant",
-          appName: t.assistant,
-          appIcon: "ti ti-sparkles",
-          tag: "studio-app",
-          title: input.copy.commandApps,
-          description: "",
-          aliases: ["studio-apps", "studio"],
-        },
-      ];
+  // The Assistant's own Studio-app tag works before, and without, the catalog; the catalog's copy replaces it.
+  const ownTag: CloudSearchTag = {
+    appId: "assistant",
+    appName: t.assistant,
+    appIcon: "ti ti-sparkles",
+    tag: "studio-app",
+    title: input.copy.commandApps,
+    description: "",
+    aliases: ["studio-apps", "studio"],
+  };
+  const tags = [...new Map([ownTag, ...input.tags].map((tag) => [`${tag.appId}:${tag.tag}`, tag])).values()];
   const limit = t.attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS });
   const menu = cloudInsertMenu({
     locale: input.locale,
@@ -157,7 +156,18 @@ export function assistantInsertCommands(input: {
     attachFiles: true,
     reason: input.fileSelectionDisabled ? input.copy.commandNeedsIdle : input.partCount >= AI_TURN_ATTACHMENT_MAX_ITEMS ? limit : undefined,
   };
-  return { commands: [menu.insert, attach, ...menu.tags], scopes: menu.scopes, fallback: menu.fallback };
+  const tracked = (command: ChatCommand): ChatCommand => {
+    const { action, ...rest } = command;
+    return action && input.track ? { ...rest, action: (context) => input.track!(Promise.resolve(action(context))) } : command;
+  };
+  return {
+    commands: [tracked(menu.insert), attach, ...menu.tags.map(tracked)],
+    scopes: menu.scopes,
+    fallback: (search: { query: string; scope?: string }) => {
+      const row = menu.fallback(search);
+      return row && tracked(row);
+    },
+  };
 }
 
 export function assistantBuiltInCommands(input: {

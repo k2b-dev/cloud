@@ -389,6 +389,13 @@ export default function AssistantWorkspace(props: Props) {
   });
   const [sendingQueuedId, setSendingQueuedId] = createSignal<string | null>(null);
   const [composerSubmitting, setComposerSubmitting] = createSignal(false);
+  // A picker the slash list opened inserts into the draft it came from; saving a new chat meanwhile would move that
+  // draft to another key and lose the choice.
+  const [composerPicking, setComposerPicking] = createSignal(0);
+  const trackComposerPicking = <T,>(picking: Promise<T>): Promise<T> => {
+    setComposerPicking((count) => count + 1);
+    return picking.finally(() => setComposerPicking((count) => count - 1));
+  };
   const [pendingProjectChats, setPendingProjectChats] = createSignal<Record<string, AiConversation>>({});
   const [filesDialogOpen, setFilesDialogOpen] = createSignal(false);
   const [timelineViewport, setTimelineViewport] = createSignal<HTMLDivElement>();
@@ -598,7 +605,7 @@ export default function AssistantWorkspace(props: Props) {
     return newConversation.data();
   };
   createEffect(() => {
-    if (activeProject() || composerSubmitting()) return;
+    if (activeProject() || composerSubmitting() || composerPicking()) return;
     const key = composerSessionKey();
     const text = composerDraft(key);
     const files = composerAttachmentsFor(key);
@@ -1394,6 +1401,7 @@ export default function AssistantWorkspace(props: Props) {
         partCount: attachmentCount() + mentionCount(),
         excludeRefs: () => assistantExcludedRefs(composerAttachmentsFor(sessionKey()), mentionsFor(sessionKey())),
         fileSelectionDisabled: composerRunning(),
+        track: trackComposerPicking,
       }),
     );
     const commandSession = createAssistantCommandSession();
