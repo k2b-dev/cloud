@@ -1,15 +1,28 @@
 import { type Rect, rectsIntersect } from "./geometry";
 
-export type LabelKind = "current" | "hover" | "hit" | "neighbour" | "normal";
+export type LabelKind = "current" | "hover" | "hit" | "neighbour" | "normal" | "far";
 export type LabelFont = { size: number; weight: number };
 export const LABEL_FONTS: Record<LabelKind, LabelFont> = {
   current: { size: 13, weight: 700 },
   hover: { size: 12, weight: 600 },
   hit: { size: 12, weight: 700 },
   neighbour: { size: 12, weight: 600 },
+  far: { size: 11, weight: 400 },
   normal: { size: 12, weight: 400 },
 };
-export type LabelNode = { id: string; title: string; x: number; y: number; r: number; deg: number; kind: LabelKind };
+export type LabelSide = "r" | "l" | "b" | "t";
+export type LabelNode = {
+  id: string;
+  title: string;
+  x: number;
+  y: number;
+  r: number;
+  deg: number;
+  kind: LabelKind;
+  sides?: readonly LabelSide[];
+  maxWidth?: number;
+  priority?: number;
+};
 export type AreaLabelInput = { key: string; text: string; x: number; y: number };
 export type PlacedLabel = {
   id: string;
@@ -36,7 +49,7 @@ export function fitText(text: string, maxWidth: number, font: LabelFont, measure
   }
   return lo < 3 ? "" : `${text.slice(0, lo).trimEnd()}…`;
 }
-const priority: Record<LabelKind, number> = { current: 1000, hover: 900, hit: 700, neighbour: 500, normal: 0 };
+const priority: Record<LabelKind, number> = { current: 1000, hover: 900, hit: 700, neighbour: 500, normal: 0, far: 0 };
 const forcedRank = (kind: LabelKind) => (kind === "current" ? 2 : kind === "hover" ? 1 : 0);
 const rect = (x: number, y: number, w: number, h: number): Rect => ({ x0: x, y0: y, x1: x + w, y1: y + h });
 
@@ -48,6 +61,7 @@ export function placeLabels(input: {
   measure: Measure;
   maxLabels: number;
   maxWidth: number;
+  obstacles?: readonly Rect[];
 }): { labels: PlacedLabel[]; areaLabels: PlacedAreaLabel[] } {
   const { width, height, measure } = input;
   const inside = (r: Rect) => r.x0 >= 2 && r.y0 >= 2 && r.x1 <= width - 2 && r.y1 <= height - 2;
@@ -59,7 +73,8 @@ export function placeLabels(input: {
   }
   const obstacles = input.nodes.map((node) => rect(node.x - node.r - 1, node.y - node.r - 1, (node.r + 1) * 2, (node.r + 1) * 2));
   const labels: PlacedLabel[] = [];
-  const labelFree = (r: Rect) => !labels.some((label) => rectsIntersect(r, label.rect));
+  const labelFree = (r: Rect) =>
+    !labels.some((label) => rectsIntersect(r, label.rect)) && !(input.obstacles ?? []).some((other) => rectsIntersect(r, other));
   const free = (r: Rect) =>
     labelFree(r) && !obstacles.some((other) => rectsIntersect(r, other)) && !areaLabels.some((other) => rectsIntersect(r, other.rect));
   const nodes = input.nodes
@@ -67,7 +82,7 @@ export function placeLabels(input: {
     .sort(
       (a, b) =>
         forcedRank(b.node.kind) - forcedRank(a.node.kind) ||
-        b.node.deg + priority[b.node.kind] - (a.node.deg + priority[a.node.kind]) ||
+        b.node.deg + (b.node.priority ?? 0) + priority[b.node.kind] - (a.node.deg + (a.node.priority ?? 0) + priority[a.node.kind]) ||
         a.index - b.index,
     );
   let count = 0;
@@ -80,17 +95,20 @@ export function placeLabels(input: {
     const current = node.kind === "current";
     const paddingX = current ? 5 : 2,
       paddingY = current ? 2 : 0;
-    const text = fitText(node.title, Math.min(input.maxWidth, width - 4 - paddingX * 2), font, measure);
+    const text = fitText(node.title, Math.min(node.maxWidth ?? input.maxWidth, width - 4 - paddingX * 2), font, measure);
     if (!text) continue;
     const w = measure(text, font),
       h = font.size + 4;
     const gap = node.r + 5;
-    const candidates = [
-      { x: node.x + gap, y: node.y - h / 2 },
-      { x: node.x - gap - w, y: node.y - h / 2 },
-      { x: node.x - w / 2, y: node.y + gap },
-      { x: node.x - w / 2, y: node.y - gap - h },
-    ].map(({ x, y }) => rect(x - paddingX, y - paddingY, w + paddingX * 2, h + paddingY * 2));
+    const sides: Record<LabelSide, { x: number; y: number }> = {
+      r: { x: node.x + gap, y: node.y - h / 2 },
+      l: { x: node.x - gap - w, y: node.y - h / 2 },
+      b: { x: node.x - w / 2, y: node.y + gap },
+      t: { x: node.x - w / 2, y: node.y - gap - h },
+    };
+    const candidates = (node.sides ?? (["r", "l", "b", "t"] as const))
+      .map((side) => sides[side])
+      .map(({ x, y }) => rect(x - paddingX, y - paddingY, w + paddingX * 2, h + paddingY * 2));
     let bounds = candidates.find((candidate) => inside(candidate) && free(candidate));
     if (!bounds && forced) {
       bounds = candidates.find((candidate) => inside(candidate) && labelFree(candidate));
