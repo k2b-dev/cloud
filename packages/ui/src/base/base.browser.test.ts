@@ -465,6 +465,97 @@ describe("@k2b/ui base stylesheet in a browser", () => {
     }
   });
 
+  // HTML apps enhance chart markup with @k2b/ui/chart-inspection; its tab stop,
+  // inspected mark and tooltip must look like the Chart component's in both
+  // themes, and adding the anchor and tooltip must not move anything.
+  for (const theme of ["light", "dark"] as const) {
+    test(`styles chart inspection and its tooltip like the Chart component (${theme})`, async () => {
+      const svg = charts.bar({
+        data: [
+          { label: "Jan", value: 1200 },
+          { label: "Feb", value: 900 },
+        ],
+        width: 480,
+        height: 280,
+        inspect: true,
+      });
+      const tooltip =
+        '<span class="k2b-chart__anchor" aria-hidden="true"></span><span class="k2b-tooltip k2b-chart__tooltip" role="tooltip" popover="manual" data-instant="true" style="left:16px;top:16px"><strong class="k2b-chart__tooltip-title">Jan</strong><span class="k2b-chart__tooltip-row"><span>Revenue: </span><b>1,200.00 €</b></span></span>';
+      const inspect = async (stylesheet: string, wrap: (chart: string) => string, render: (svg: string) => string) => {
+        const tab = await (await browser.newContext({ ...viewports.desktop, reducedMotion: "reduce" })).newPage();
+        try {
+          await tab.setContent(
+            `<!doctype html><html lang="en" data-theme="${theme}"><head><style>${stylesheet}</style><style>:root, .k2b-ui { --k2b-font-sans: sans-serif; }</style></head><body>${wrap(`<button type="button">Before</button><div class="k2b-chart" data-chart-kind="bar" role="group" aria-label="Revenue" tabindex="0" data-interactive="true"><div class="k2b-chart__svg" data-stretch style="--k2b-chart-width:480px;--k2b-chart-height:280px">${responsiveChartSvg(render(svg))}</div></div>`)}</body></html>`,
+          );
+          const before = await tab.$eval(".k2b-chart", (chart) => JSON.stringify(chart.getBoundingClientRect()));
+          await tab.$eval(".k2b-chart", (chart, markup) => chart.insertAdjacentHTML("beforeend", markup), tooltip);
+          const after = await tab.$eval(".k2b-chart", (chart) => JSON.stringify(chart.getBoundingClientRect()));
+          await tab.focus("button");
+          await tab.keyboard.press("Tab");
+          return await tab.evaluate(
+            ({ before, after }) => {
+              const pick = (element: Element, names: string[]) => {
+                const computed = getComputedStyle(element);
+                return Object.fromEntries(names.map((name) => [name, computed.getPropertyValue(name)]));
+              };
+              const mark = document.querySelector("[data-chart-datum]") as SVGGElement;
+              mark.style.setProperty("--k2b-chart-inspection-color", "rgb(1, 2, 3)");
+              mark.setAttribute("data-inspected", "true");
+              const tip = document.querySelector<HTMLElement>(".k2b-chart__tooltip")!;
+              const hidden = tip.getBoundingClientRect().height;
+              tip.showPopover();
+              const box = tip.getBoundingClientRect();
+              return {
+                shift: before !== after,
+                hidden,
+                size: [Math.round(box.width), Math.round(box.height)],
+                focus: pick(document.activeElement!, [
+                  "outline-style",
+                  "outline-color",
+                  "outline-width",
+                  "outline-offset",
+                  "border-top-left-radius",
+                ]),
+                mark: pick(mark.querySelector("rect")!, ["stroke", "stroke-width"]),
+                tooltip: pick(tip, [
+                  "position",
+                  "background-color",
+                  "color",
+                  "border-top-color",
+                  "border-top-width",
+                  "border-top-left-radius",
+                  "padding-top",
+                  "padding-left",
+                  "font-size",
+                  "line-height",
+                  "box-shadow",
+                  "pointer-events",
+                  "transition-duration",
+                ]),
+                row: pick(tip.querySelector(".k2b-chart__tooltip-row")!, ["display", "line-height"]),
+                label: pick(tip.querySelector(".k2b-chart__tooltip-row > span")!, ["opacity"]),
+              };
+            },
+            { before, after },
+          );
+        } finally {
+          await tab.context().close();
+        }
+      };
+      const base = await inspect(css, (chart) => chart, withoutStdlibStyle);
+      const component = await inspect(
+        componentCss,
+        (chart) => `<div class="k2b-ui" data-theme="${theme}">${chart}</div>`,
+        (markup) => markup,
+      );
+      expect(base.shift).toBe(false);
+      expect(base.hidden).toBe(0);
+      expect(base.focus["outline-style"]).toBe("solid");
+      expect(base.mark.stroke).toBe("rgb(1, 2, 3)");
+      expect(base).toEqual(component);
+    });
+  }
+
   test("follows the theme attribute live and lets unlayered page rules win", async () => {
     const tab = await open("desktop", "light", { head: "<style>button { background: rgb(1, 2, 3); }</style>" });
     try {

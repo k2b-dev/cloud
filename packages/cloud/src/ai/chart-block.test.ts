@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
+import { type ChartDatum, charts } from "@k2b/stdlib";
 import { z } from "zod";
 import {
   chartDateTime,
@@ -894,5 +894,91 @@ describe("shared chart tooltip", () => {
       ],
     });
     expect(cloudAiChartTooltip([], row)).toEqual({ title: undefined, rows: [] });
+  });
+});
+
+describe("function formats in chart rows", () => {
+  const datum: ChartDatum = {
+    index: 0,
+    role: "point",
+    anchor: [0, 0],
+    values: [
+      { key: "x", value: 1 },
+      { key: "y", value: 1200 },
+    ],
+  };
+  const input = parse({
+    kind: "line",
+    title: "Energy",
+    series: [
+      {
+        data: [
+          { x: 1, y: 1200 },
+          { x: 2, y: 900 },
+        ],
+      },
+    ],
+  });
+  const x = (v: number) => `day ${v}`;
+  const y = (v: number) => `${v} kWh`;
+  const value = (v: number) => `${v} units`;
+
+  test("uses x and y functions for table and tooltip cells, with value taking precedence", () => {
+    const rows = cloudAiChartRows(input, "de", { formats: { x, y } });
+    const row = rows.add(datum);
+    expect(row.cells).toEqual({ x: "day 1", y: "1200 kWh" });
+    expect(cloudAiChartTooltip(rows.columns(), row)).toEqual({
+      title: undefined,
+      rows: [
+        { label: "X", value: "day 1" },
+        { label: "Y", value: "1200 kWh" },
+      ],
+    });
+    expect(cloudAiChartRows(input, "de", { formats: { y, value } }).add(datum).cells.y).toBe("1200 units");
+    const bar = parse({ kind: "bar", title: "Energy", data: [{ label: "Jan", value: 1200 }] });
+    expect(
+      cloudAiChartRows(bar, "de", { formats: { y } }).add({ ...datum, role: "item", values: [{ key: "value", value: 1200 }] }).cells.value,
+    ).toBe("1200 kWh");
+  });
+
+  test("explicit tooltip format wins over functions without changing x cells", () => {
+    const rows = cloudAiChartRows({ ...input, tooltip: { format: { style: "currency", currency: "EUR" } } }, "de", {
+      formats: { x, y, value },
+    });
+    expect(rows.add(datum).cells).toEqual({ x: "day 1", y: "1.200,00\u00a0€" });
+  });
+
+  test("histogram bounds use x functions and counts stay unformatted", () => {
+    const input = parse({
+      kind: "histogram",
+      title: "Bins",
+      data: [1, 2, 3],
+      bins: [1, 2, 4],
+      tooltip: { format: { unit: "kg", decimals: 1 } },
+    });
+    const datum: ChartDatum = {
+      index: 0,
+      role: "bin",
+      anchor: [0, 0],
+      values: [
+        { key: "from", value: 1 },
+        { key: "to", value: 2 },
+        { key: "count", value: 1 },
+      ],
+    };
+    expect(cloudAiChartRows(input, "de", { formats: { x, y, value } }).add(datum).cells).toEqual({
+      from: "day 1",
+      to: "day 2",
+      count: "1",
+    });
+    expect(cloudAiChartRows(input, "de").add(datum).cells).toEqual({ from: "1,0 kg", to: "2,0 kg", count: "1" });
+  });
+
+  test("omitting function formats preserves declarative output", () => {
+    expect(cloudAiChartRows(input, "de", {}).add(datum)).toEqual(cloudAiChartRows(input, "de").add(datum));
+    const spark = parse({ kind: "sparkline", title: "Trend", data: [1, 2] });
+    expect(cloudAiChartRows(spark, "de").add(datum).cells.x).toBe("2");
+    // A sparkline's x is its position, never a formatted axis value.
+    expect(cloudAiChartRows(spark, "de", { formats: { x } }).add(datum).cells.x).toBe("2");
   });
 });

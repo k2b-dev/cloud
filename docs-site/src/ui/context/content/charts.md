@@ -360,7 +360,7 @@ Interactive charts require browser code. Static charts remain readable in the se
 
 Use `@k2b/ui/chart-inspection` when your host renders stdlib chart SVG itself,
 for example in a sandboxed HTML document that cannot load a framework.
-The module contains no Solid.
+The module contains no Solid. The base stylesheet styles chart tooltips in HTML apps.
 
 ```ts
 import { inspectChart } from "@k2b/ui/chart-inspection";

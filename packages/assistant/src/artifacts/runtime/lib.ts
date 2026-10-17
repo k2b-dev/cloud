@@ -7,9 +7,27 @@ import {
   type CloudAiNumberFormat,
   cloudAiAppChartSchema,
   cloudAiChartRenderOptions,
+  cloudAiChartRows,
+  cloudAiChartTooltip,
 } from "@k2b/cloud/ai/browser";
 // Named renderers, not the `charts` namespace, so app frames leave out the map and state timeline renderers.
-import { bar, barGauge, boxplot, donut, gauge, heatmap, histogram, line, money, pie, scatter, sparkline, stat } from "@k2b/stdlib";
+import {
+  bar,
+  barGauge,
+  boxplot,
+  donut,
+  escapeXml,
+  gauge,
+  heatmap,
+  histogram,
+  line,
+  money,
+  pie,
+  scatter,
+  sparkline,
+  stat,
+} from "@k2b/stdlib";
+import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { CloudError } from "./errors";
 import { normalizeChartDates } from "./views";
 
@@ -64,11 +82,9 @@ function responsive(svg: string): string {
 /** SVG at the measured size; initial markup and redraws use the same mapping and function formats. */
 export function chartSvg(options: StoredChart, locale: string, width: number, height: number): string {
   try {
-    const mapped = cloudAiChartRenderOptions(options.input, locale, {
-      width,
-      formats: { x: options.xFormat, y: options.yFormat, value: options.format },
-    });
-    const common = { width, height, title: options.title, subtitle: options.input.subtitle };
+    const formats = { x: options.xFormat, y: options.yFormat, value: options.format };
+    const mapped = cloudAiChartRenderOptions(options.input, locale, { width, formats });
+    const common = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
     let svg: string;
     switch (mapped.kind) {
       case "bar":
@@ -108,6 +124,29 @@ export function chartSvg(options: StoredChart, locale: string, width: number, he
         svg = sparkline({ ...mapped, ...common });
         break;
     }
+    // Walk marks in emitted order, exactly as the chat builds its table and tooltips.
+    const rows = cloudAiChartRows(options.input, locale, { formats });
+    svg = svg.replace(
+      /(<g data-chart-role="[^"]*" data-chart-datum="([^"]*)")><title>[\s\S]*?<\/title>/g,
+      (match, opening: string, encoded: string) => {
+        const datum: unknown = JSON.parse(
+          encoded
+            .replace(/&quot;/g, '"')
+            .replace(/&apos;|&#39;/g, "'")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&amp;/g, "&"),
+        );
+        // An empty stat may emit a null value; keep its static drawing, without inspecting it.
+        if (!isChartDatum(datum)) return match;
+        const row = rows.add(datum);
+        const tooltip = cloudAiChartTooltip(rows.columns(), row);
+        const text = [tooltip.title, ...tooltip.rows.map((row) => `${row.label}: ${row.value}`)].filter(Boolean).join(" · ");
+        // Single-quoted XML attributes keep compact JSON quotes literal, saving space on dense charts.
+        const encodedTooltip = escapeXml(JSON.stringify(tooltip)).replace(/&quot;/g, '"');
+        return `${opening} data-chart-tooltip='${encodedTooltip}'><title>${escapeXml(text)}</title>`;
+      },
+    );
     // stdlib embeds an unlayered <style> with fixed colors; the base stylesheet owns those rules instead.
     svg = svg.replace(/<style>[\s\S]*?<\/style>/, "");
     return KEEP_ASPECT.has(mapped.kind) ? svg : responsive(svg);
