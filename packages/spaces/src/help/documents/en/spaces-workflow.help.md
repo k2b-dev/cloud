@@ -111,7 +111,7 @@ While a task is claimed, other people see who works on it:
 
 A holder outside the assignees, such as a personal automation key or an account that was deleted, still appears first as a working row. This row has no remove action.
 
-Claiming a task also assigns it to you. The claim shows which assignee works on it now. Releasing your own claim keeps you assigned. The column does not change. **Assigned to me** includes tasks you claimed. **Unassigned** excludes tasks claimed by a person or an agent. Active service accounts with their own access to the Space can be assignees; Space API keys can be assigned only in their own Space. Personal automation keys cannot be assignees. **Assigned to me** stays limited to your personal assignments.
+Claiming a task also assigns it to you. The claim shows which assignee works on it now. Releasing your own claim keeps you assigned. The column does not change. **Assigned to me** includes tasks you claimed. **Unassigned** excludes tasks claimed by a person or an agent. Active service accounts with their own access to the Space can be assignees; Space API keys can be assigned only in their own Space. Personal automation keys cannot be assignees. An account that claims a task is assigned even without its own access, for example with access for all signed-in accounts. **Assigned to me** stays limited to your personal assignments.
 
 **Take over** moves the claim and the assignment to you. A forced release of another account's claim also removes their assignment. If they were the only assignee, the task becomes unassigned.
 

@@ -435,7 +435,8 @@ direct access. A Space API key can be assigned only within its own Space, and
 personal automation keys cannot be assignees. Assignment never grants access.
 
 Claiming as a person or an agent also assigns you; the claim is the working
-state of one assignee. Releasing your own claim keeps you assigned.
+state of one assignee. This applies to every account that may claim, also
+when it has write access only through access for all signed-in accounts. Releasing your own claim keeps you assigned.
 **Assigned to me** and **For me** select your personal assignments, including
 tasks you claimed. **Assigned** and **Unassigned** count both people and
 service accounts; filtering by an assignee ID can select either kind. The

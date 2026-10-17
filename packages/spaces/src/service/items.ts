@@ -392,7 +392,7 @@ export const listServiceAccountsWithAccess = async (params: {
   }));
 };
 
-/** People first, then service accounts; `kind` lists only one of them, so people never crowd out an account name lookup. */
+/** Lists the requested kinds together, ordered by exact search match, lowercased display name, then ID before limiting. */
 export const listAssignableUsers = async (params: {
   spaceId: string;
   search?: string;
@@ -401,15 +401,21 @@ export const listAssignableUsers = async (params: {
   kind?: SpaceAssignableUser["kind"];
 }): Promise<SpaceAssignableUser[]> => {
   const limit = Math.min(Math.max(params.limit ?? 20, 1), 500);
-  const users =
+  const [users, accounts] = await Promise.all([
     params.kind === "service_account"
       ? []
-      : await listUsersWithAccess({
-          accessIds: await listSpaceAccessIds(params.spaceId),
+      : listSpaceAccessIds(params.spaceId).then((accessIds) =>
+          listUsersWithAccess({ accessIds, search: params.search, excludeUserIds: params.excludeUserIds, limit }),
+        ),
+    params.kind === "user"
+      ? []
+      : listServiceAccountsWithAccess({
+          spaceId: params.spaceId,
           search: params.search,
-          excludeUserIds: params.excludeUserIds,
+          excludeIds: params.excludeUserIds,
           limit,
-        });
+        }),
+  ]);
   const people: SpaceAssignableUser[] = users.map((user) => ({
     kind: "user",
     id: user.id,
@@ -418,14 +424,18 @@ export const listAssignableUsers = async (params: {
     uid: user.uid,
     description: assignableUserDescription(user),
   }));
-  if (people.length === limit || params.kind === "user") return people;
-  const accounts = await listServiceAccountsWithAccess({
-    spaceId: params.spaceId,
-    search: params.search,
-    excludeIds: [...(params.excludeUserIds ?? []), ...people.map((person) => person.id)],
-    limit: limit - people.length,
-  });
-  return [...people, ...accounts];
+  const query = params.search?.trim().toLowerCase();
+  const exact = (entry: SpaceAssignableUser) =>
+    Boolean(query && (entry.displayName.toLowerCase() === query || entry.uid.toLowerCase() === query));
+  return [...new Map([...accounts, ...people].map((entry) => [entry.id, entry])).values()]
+    .sort((a, b) => {
+      const matchOrder = Number(exact(b)) - Number(exact(a));
+      if (matchOrder) return matchOrder;
+      const aName = a.displayName.toLowerCase();
+      const bName = b.displayName.toLowerCase();
+      return aName < bName ? -1 : aName > bName ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    })
+    .slice(0, limit);
 };
 
 type AssigneePrincipal = Pick<SpaceItemAssignee, "kind" | "id">;

@@ -2358,7 +2358,7 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "List assignable people and service accounts",
       description:
-        "List people with effective access and active service accounts with their own direct access to this space that can be assigned to items: up to 20, people first, service accounts with an exactly matching name first among them. Requires write access, since this is the assignee picker's directory.",
+        "List people with effective access and active service accounts with their own direct access to this space that can be assigned to items: up to 20, sorted by name, with exact name matches first. Requires write access, since this is the assignee picker's directory.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceAssignableUserListSchema, "Assignable people and service accounts"),

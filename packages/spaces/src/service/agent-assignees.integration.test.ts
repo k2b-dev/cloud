@@ -106,6 +106,8 @@ const createFixture = async (spaceIds: string[], userId: string, accountIds: str
 suite("Spaces service-account assignees", () => {
   test("an exact account name lists first, and kind keeps people from crowding out accounts", async () => {
     await withFixture(async (f) => {
+      // "Assignment ..." sorts before "Writer", even when the person could fill the only slot.
+      expect(await listAssignableUsers({ spaceId: f.spaceId, limit: 1 })).toMatchObject([{ kind: "service_account" }]);
       const suffix = crypto.randomUUID();
       const exact = await f.account("agent");
       const longer = await f.account("standalone");
@@ -126,6 +128,21 @@ suite("Spaces service-account assignees", () => {
       const accounts = await listAssignableUsers({ spaceId: f.spaceId, kind: "service_account" });
       expect(accounts.map((entry) => entry.id)).toContain(f.agent.id);
       expect(accounts.every((entry) => entry.kind === "service_account")).toBe(true);
+    });
+  });
+
+  test("a claim assigns the account however it got write access", async () => {
+    await withFixture(async (f) => {
+      const outsider = await f.account("standalone", { grant: false });
+      await f.grant(f.spaceId, null);
+      const itemId = await f.task();
+      expect(await change({ ...f.context(itemId, outsider.actor), operation: "claim", claimId: crypto.randomUUID() })).toMatchObject({
+        ok: true,
+      });
+      expect((await get({ id: itemId }))?.assignees).toContainEqual(expect.objectContaining({ id: outsider.id, kind: "service_account" }));
+      expect(await listAssignableUsers({ spaceId: f.spaceId, search: outsider.name })).not.toContainEqual(
+        expect.objectContaining({ id: outsider.id }),
+      );
     });
   });
 
@@ -214,7 +231,7 @@ suite("Spaces service-account assignees", () => {
         );
       }
       for (const account of invalid) expect(listed.some((entry) => entry.id === account.id)).toBe(false);
-      expect(listed[0]).toMatchObject({ id: f.userId, kind: "user" });
+      expect(listed).toContainEqual(expect.objectContaining({ id: f.userId, kind: "user" }));
       expect(await listAssignableUsers({ spaceId: f.spaceId, search: f.agent.name.toUpperCase() })).toMatchObject([{ id: f.agent.id }]);
       expect(await listAssignableUsers({ spaceId: f.spaceId, search: f.agent.name, excludeUserIds: [f.agent.id] })).toEqual([]);
       const itemId = await f.task();
