@@ -4847,6 +4847,38 @@
 .k2b-ui .k2b-reference:is([data-reference="heading"], [data-reference="page"]) { --k2b-reference-icon: var(--k2b-reference-heading); }
 .k2b-ui .k2b-reference[data-reference="task"] { --k2b-reference-icon: var(--k2b-reference-task); }
 
+/* Typed chips (`ReferenceChip`) in a sentence: a little smaller than the
+   text around them. A short chip never breaks; a long one wraps inside its
+   fill. Only a link darkens on hover. A thing that is gone is struck
+   through and never a link. */
+.k2b-ui .k2b-reference-chip {
+  font-size: 0.94em;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-reference-chip[data-long="true"] {
+  white-space: normal;
+}
+
+.k2b-ui .k2b-reference-chip:not(a):hover {
+  background: var(--k2b-reference-surface);
+}
+
+.k2b-ui .k2b-reference-chip[data-gone="true"] {
+  color: var(--k2b-text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.k2b-ui .k2b-reference__avatar > .k2b-avatar[data-size] {
+  width: 2.35em;
+  height: 2.35em;
+  margin-inline: -0.3em 0.5em;
+  font-size: 0.6em;
+  line-height: 1;
+  vertical-align: 0.12em;
+}
+
 .k2b-ui :is(.k2b-reference__document, .k2b-reference__size) {
   color: var(--k2b-text-muted);
   font-weight: 400;

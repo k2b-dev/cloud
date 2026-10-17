@@ -1,10 +1,64 @@
+import type { JSX } from "solid-js";
 import type { EmojiSkinTone } from "../inputs/emoji/emoji-index";
 
 export type ChatRole = "user" | "assistant" | "system" | "tool";
 
 export type ChatMessageStatus = "pending" | "streaming" | "complete" | "error";
 
-export type ChatActivityTone = "neutral" | "ai" | "success" | "danger";
+/** `warning` marks a partial result or an outcome that is not yet known. */
+export type ChatActivityTone = "neutral" | "ai" | "success" | "warning" | "danger";
+
+/** `open` asks; `sending` while the answer is on its way; `decided` once answered; `expired` when it ran out. */
+export type ChatDecisionState = "open" | "sending" | "decided" | "expired";
+
+/** One answer of a question. Set the question's state in `onSelect` before awaiting anything, so it collapses at once. */
+export type ChatDecisionAnswer = {
+  label: string;
+  /** Icon class, for example `ti ti-send`. */
+  icon?: string;
+  onSelect: () => void | Promise<void>;
+};
+
+/** Why a question is asked, or why its main answer is off. */
+export type ChatDecisionReason = {
+  text: JSX.Element;
+  /** Icon class; the text after it starts 1.5rem from the edge. */
+  icon?: string;
+  /** `danger` for deletions, `warning` for outside content and limits. */
+  tone?: "neutral" | "danger" | "warning";
+};
+
+export type ChatOutcomeTone = "running" | "done" | "off" | "waiting" | "warning" | "error";
+
+/** One text of an outcome flow. */
+export type ChatOutcomeLine = {
+  tone: ChatOutcomeTone;
+  /** What happened, as one sentence, usually with `ReferenceChip`s. */
+  text: JSX.Element;
+  /** A quiet second sentence, such as "You declined." */
+  detail?: JSX.Element;
+  /** A formatted time after the text. */
+  time?: string;
+  /** Replaces the tone's icon, for example `ti ti-clock-x` for an expired question. */
+  icon?: string;
+  /** One text link after the line, such as "Ask again". */
+  action?: { label: string; onSelect: () => void | Promise<void> };
+  /** Small buttons under the line, shown only while this line is current. */
+  actions?: JSX.Element;
+};
+
+/** A person in a preview header: the name in the text colour, then the address the message really uses. */
+export type ChatPreviewPerson = { name?: string; address?: string };
+
+/** One header row, such as "To Lea Berg lea.berg@example.com". */
+export type ChatPreviewHeaderRow = {
+  label: string;
+  people?: readonly ChatPreviewPerson[];
+  /** Further content after the people, such as "and 2 more". */
+  value?: JSX.Element;
+  /** Draws the label stronger, for recipients others cannot see. */
+  emphasis?: boolean;
+};
 
 type ChatActionBase = {
   id: string;

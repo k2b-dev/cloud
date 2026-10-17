@@ -6,6 +6,7 @@ import { ChatTasks } from "./ChatTasks";
 export type { ChatTask, ChatTasksProps } from "./ChatTasks";
 
 import { ChatComposer } from "./ChatComposer";
+import { ChatDecision, ChatMark, ChatOutcome, ChatPreview } from "./ChatDecision";
 import { ChatActivity, ChatContextUsage, ChatMessage } from "./ChatPrimitives";
 import { ChatRoot } from "./ChatRoot";
 import { ChatTimeline } from "./ChatTimeline";
@@ -22,6 +23,17 @@ export type {
   ChatPasteHandler,
 } from "./ChatComposer";
 export type { ChatActivityProps, ChatContextUsageProps, ChatMessageProps } from "./ChatPrimitives";
+export type {
+  ChatDecisionProps,
+  ChatMarkProps,
+  ChatOutcomeProps,
+  ChatPreviewHeaderProps,
+  ChatPreviewLineProps,
+  ChatPreviewPeopleProps,
+  ChatPreviewProps,
+  ChatPreviewReadMoreProps,
+  ChatPreviewTitleProps,
+} from "./ChatDecision";
 export { formatChatTokens } from "./ChatPrimitives";
 export type { ChatRootProps } from "./ChatRoot";
 export type { ChatActivityItem, ChatMessageItem, ChatTimelineItem, ChatTimelineProps } from "./ChatTimeline";
@@ -33,10 +45,17 @@ export type {
   ChatComposerMicrophone,
   ChatComposerState,
   ChatContextUsageData,
+  ChatDecisionAnswer,
+  ChatDecisionReason,
+  ChatDecisionState,
   ChatDictationState,
   ChatMention,
   ChatMessageStatus,
   ChatModelOption,
+  ChatOutcomeLine,
+  ChatOutcomeTone,
+  ChatPreviewHeaderRow,
+  ChatPreviewPerson,
   ChatRole,
   ChatSubmitInput,
   ChatSubmitIntent,
@@ -56,6 +75,10 @@ export const Chat = Object.assign(ChatRoot, {
   ContextUsage: ChatContextUsage,
   ContextPopup: ChatContextPopup,
   ContextPanel: ChatContextPanel,
+  Decision: ChatDecision,
+  Outcome: ChatOutcome,
+  Preview: ChatPreview,
+  Mark: ChatMark,
 });
 
 export { matchesChatCommand } from "./command-search";

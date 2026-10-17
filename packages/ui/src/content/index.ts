@@ -86,6 +86,13 @@ export type { KbdProps } from "./Kbd";
 export { Kbd } from "./Kbd";
 export type { LabelChipProps } from "./LabelChip";
 export { LabelChip } from "./LabelChip";
+export type {
+  ReferenceChipObjectProps,
+  ReferenceChipPersonProps,
+  ReferenceChipProps,
+  ReferenceChipTimeProps,
+} from "./ReferenceChip";
+export { REFERENCE_CHIP_MAX_CHARACTERS, ReferenceChip, truncateMiddle } from "./ReferenceChip";
 export type { LightboxAction, LightboxImage } from "./Lightbox";
 export { default as Lightbox } from "./Lightbox";
 export type { LogTableEntry } from "./LogEntriesTable";
