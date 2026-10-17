@@ -14,7 +14,7 @@ const commands = defineCliCommands({
   name: "assistant",
   alias: "ai",
   shortcuts: { acp: "acp" },
-  summary: "Chat with the Cloud Assistant and manage chats, scheduled tasks, files, personalization, and Projects.",
+  summary: "Chat with the Cloud Assistant and manage chats, routines, files, personalization, and Projects.",
   groupSummaries: {
     code: "Build and manage Studio Apps and actions",
     "studio-admin": "Administer Studio resources, data and database settings",
@@ -33,7 +33,7 @@ const commands = defineCliCommands({
     "projects references": "Manage Project Cloud references",
     "projects skills": "Manage Skills linked to a Project",
     skills: "List Cloud Skills and move them to and from Agent Skills folders",
-    tasks: "Manage one-time and recurring chat tasks",
+    tasks: "Manage routines, called tasks in the CLI, that run once or repeatedly in a chat",
     turns: "Watch, steer, and stop Assistant turns",
   },
   commands: [

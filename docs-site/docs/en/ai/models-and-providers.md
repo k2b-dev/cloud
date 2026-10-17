@@ -173,7 +173,7 @@ Omitting it or clearing it preserves the model's default behavior.
 | Ollama | `think`; `none` maps to `false` |
 
 The profile level applies to chat and tool loops, including background agents,
-scheduled chat tasks and workflow chat actions. Structured calls, including
+Assistant routines and workflow chat actions. Structured calls, including
 titles, summaries and workflow calculations, and context compaction keep their
 previous reasoning requests: `low` for OpenAI, OpenRouter, vLLM and
 OpenAI-compatible profiles, a zero thinking budget for Gemini, and no thinking

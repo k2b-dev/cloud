@@ -234,7 +234,7 @@ signing-key rotation, KEK recovery and revocation. Keep these secrets independen
 `APP_SECRET` is not a signing key or an OAuth broker credential.
 
 Managed Assistant code hosts serve every Assistant turn that runs code,
-including API clients, `cld assistant --detach`, and scheduled tasks. They
+including API clients, `cld assistant --detach`, and routines (scheduled tasks). They
 validate `CLOUD_CORE_INTERNAL_ORIGIN` when a host is created, before launching
 Chromium. It must be an HTTP(S) origin reachable
 from the Assistant service. Each host also uses an authenticated ephemeral
@@ -629,7 +629,7 @@ Two behaviors change for people. More built-in Actions can be remembered, and
 chat did not supply, which means an address that is not in the person's
 message, a search result, or a link of a page read earlier. Search results and
 pages read before the update are not recorded, so reading one of their links
-in an existing chat asks once. A scheduled task cannot ask, so a task that
+in an existing chat asks once. A routine cannot ask, so a routine that
 reads such an address now fails with a message to run it in the normal chat;
 give it the address in its prompt instead.
 
@@ -979,15 +979,15 @@ for new rows; the table files shrink only after `VACUUM FULL` or a similar
 rewrite. See
 [Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
 
-### Expire scheduled task runs after 90 days
+### Expire routine runs after 90 days
 
-This release expires finished scheduled task runs after 90 days. It needs no
+This release expires finished routine runs after 90 days. It needs no
 configuration change. The first Core start adds the indexes
 `idx_ai_chat_task_occurrences_finished`, `idx_ai_chat_task_occurrences_turn`,
 and `idx_ai_turns_background_finished`.
 The latter uses a plain `CREATE INDEX` on `ai.turns`, briefly blocking writes
 to `ai.turns` while it builds; allow for a longer build on large installations.
-The scheduled task recovery tick then
+The routine recovery tick then
 deletes completed and failed runs older than 90 days, their background turns
 with tool calls, and their run transcripts (`ai.task_messages`) in batches of
 100 per minute. Queued and running runs, finished runs whose turns are still
@@ -1002,7 +1002,7 @@ same 90-day clock, measured from when the turn finished.
 
 An installation with a large backlog drains it over time. PostgreSQL reuses
 the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
-See [Scheduled task run history](/en/docs/ai/structured-and-background-ai#keep-scheduled-task-run-history-for-90-days).
+See [Routine run history](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days).
 
 ### End OAuth sign-ins sooner
 
@@ -1090,7 +1090,7 @@ Notebook, or application-schema upgrade checks.
    repairs run on startup; no blanket manual repair or database reset is needed.
    Apply each app's separate schema requirements before enabling it. Provision
    Mail's workload credential only if its background integrations are used;
-   scheduled AI tasks without a mandate require owner recreation. Neither is
+   routines without a mandate require owner recreation. Neither is
    an OAuth startup prerequisite.
 5. For the supplied platform Compose, run the read-only
    [fleet check](/en/docs/operations/build-and-deploy#deploy-the-service) against
