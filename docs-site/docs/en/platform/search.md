@@ -517,8 +517,10 @@ retry row that starts another opening. The row's `before(draft, signal)` must sa
 `draft.value` and `draft.mentions`, which already leave out `/…`, together with
 the attachments, through your revisioned draft path. Read `returnTo()` after
 saving, so a newly created chat can supply its path. The signal comes from the
-composer and aborts when the person closes the list. If `before` creates a chat
-first, preserve later edits once that signal aborts.
+composer and aborts when the opening ends without leaving the page: the person
+closed the list, or opening failed. The token is then still on screen, so save
+the live draft again. If `before` creates a chat first, preserve later edits
+once that signal aborts.
 
 `openComposerCommand(command, { before, returnTo, signal, locale })` provides
 the same save-then-open behavior for a custom row. A rejected `before()` reaches

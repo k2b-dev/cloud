@@ -1476,8 +1476,8 @@ export default function AssistantWorkspace(props: Props) {
         // A failed save answers null for a revision conflict and for any other failure alike; a conflict also
         // shows the composer's conflict notice.
         if (!(await saveComposer(key, target, override))) throw new Error("Draft not saved");
-        // The saved draft leaves out "/…", which a cancelled opening keeps on screen: then the live draft is saved
-        // again, so a reload shows what the person sees.
+        // The saved draft leaves out "/…", which an opening that fails or is cancelled keeps on screen; the composer's
+        // signal aborts then, and the live draft is saved again, so a reload shows what the person sees.
         if (override) {
           const savedKey = key;
           const savedTarget = target;

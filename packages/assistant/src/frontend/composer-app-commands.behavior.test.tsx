@@ -308,6 +308,9 @@ test("an unreachable app leaves the row, slash list, and original value availabl
   await waitFor(() => Boolean(h.row()?.textContent?.includes("Spaces ist gerade nicht erreichbar.")));
   expect(h.input.value).toBe("Plan /");
   expect(h.root.querySelector('[role="listbox"]')).not.toBeNull();
+  // What stays on screen is saved again, so a reload keeps the slash.
+  await waitFor(() => h.saves.length === 2);
+  expect(h.saves[1]).toEqual({ expectedRevision: 5, content: [{ type: "text", text: "Plan /" }] });
   h.choose();
   await waitFor(() => openCommand.mock.calls.length === 2);
 });
@@ -385,7 +388,8 @@ test("retrying from a project reuses its pending chat", async () => {
   h.choose();
   await waitFor(() => openCommand.mock.calls.length === 2);
   expect(h.creates).toHaveLength(1);
-  expect(events).toEqual(["create", "save", "save", "open"]);
+  // Saved without the token, saved again with it after the failure, then saved without it for the retry.
+  expect(events).toEqual(["create", "save", "save", "save", "open"]);
 });
 
 test("saving an app-opening draft preserves inline references and attachments through the revisioned path", async () => {

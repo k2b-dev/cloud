@@ -1870,6 +1870,7 @@ test("a pending last section ends with three placeholders in the overview, one w
 
 test("an open row keeps the token and the list while it runs, then removes the token in one undo step", async () => {
   let resolve!: () => void;
+  let openSignal: AbortSignal | undefined;
   const drafts: { value: string; mentions: readonly ChatMention[] }[] = [];
   let pasted = 0;
   const h = await slash({
@@ -1882,8 +1883,9 @@ test("an open row keeps the token and the list while it runs, then removes the t
         name: "task",
         label: "New task",
         description: "Spaces · Create a task",
-        open: (draft) => {
+        open: (draft, signal) => {
           drafts.push(draft);
+          openSignal = signal;
           return new Promise<void>((done) => {
             resolve = done;
           });
@@ -1920,6 +1922,8 @@ test("an open row keeps the token and the list while it runs, then removes the t
   await flush();
   expect(h.input.readOnly).toBe(false);
   expect(h.value()).toBe("Price ");
+  // A successful opening leaves, so its signal stays quiet.
+  expect(openSignal?.aborted).toBe(false);
   expect(h.rows()).toHaveLength(0);
   h.key("z", { ctrlKey: true });
   await flush();
@@ -1928,6 +1932,7 @@ test("an open row keeps the token and the list while it runs, then removes the t
 
 test("an open row that fails says why in its place, keeps the list and the draft, and tries again when chosen", async () => {
   let calls = 0;
+  const signals: AbortSignal[] = [];
   const h = await slash(
     {
       value: "/task",
@@ -1936,7 +1941,10 @@ test("an open row that fails says why in its place, keeps the list and the draft
           name: "task",
           label: "Neue Aufgabe",
           description: "Spaces · Aufgabe anlegen",
-          open: async () => (++calls === 1 ? { failed: "Spaces ist gerade nicht erreichbar." } : "cancelled"),
+          open: async (_draft, signal) => {
+            signals.push(signal);
+            return ++calls === 1 ? { failed: "Spaces ist gerade nicht erreichbar." } : "cancelled";
+          },
         },
       ],
     },
@@ -1952,6 +1960,8 @@ test("an open row that fails says why in its place, keeps the list and the draft
   expect(detail().children[1]!.textContent).toBe("Wird geöffnet …");
   // Announced once, not shown as a status line: the row already says it.
   expect(h.status().querySelector('[data-tone="error"]')).toBeNull();
+  // The opening ended without leaving, so its signal tells the opener to put the token back into what it saved.
+  expect(signals[0]?.aborted).toBe(true);
   h.key("Enter");
   await flush();
   expect(calls).toBe(2);

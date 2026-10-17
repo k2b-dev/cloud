@@ -144,7 +144,8 @@ export type ChatCommand = {
    * Leaves the composer, such as opening another app. Runs with the token and the list in place: the row shows
    * `busyLabel` (default "Opening …") with a spinner instead of its description, and editing waits. A rejection ends like
    * an action's: the token stays, the list closes and the status line names the reason. Closing the list, such as with
-   * Escape, cancels: `signal` aborts and the row ends at once. See `ChatCommandOpenResult`.
+   * Escape, cancels: `signal` aborts and the row ends at once. `signal` also aborts when the opening ends any other way
+   * than by success, so the opener can save the draft with its token again. See `ChatCommandOpenResult`.
    */
   open?: (draft: ChatCommandDraft, signal: AbortSignal) => Promise<ChatCommandOpenResult>;
   /** Selecting a reference inserts its display name and retains its opaque payload. */
@@ -1218,7 +1219,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setOpenFailures(({ [row]: _, ...rest }) => rest);
     setOpeningRow(row);
     setExecuting(true);
-    const finish = () => {
+    // An opening that ends without leaving, by failure, rejection or cancelling, also aborts `signal`, so the opener
+    // can put back what it saved without the token.
+    const finish = (left = false) => {
+      if (!left) controller.abort();
       if (openingRun === run) openingRun = undefined;
       if (commandStatus()?.tone === "busy") showCommandStatus();
       setOpeningRow(undefined);
@@ -1252,7 +1256,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           edit(nextValue, nextMentions);
           setDismissed(true);
         }
-        finish();
+        finish(true);
       });
       queueMicrotask(() => {
         if (disposed || props.draftKey !== key || props.value !== nextValue) return;

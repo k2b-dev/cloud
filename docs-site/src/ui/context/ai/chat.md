@@ -335,7 +335,9 @@ the status line. Escape, a press outside, or moving the caret away closes the
 list and cancels the opening: `signal` aborts, editing returns at once, and
 the token stays; a later result changes nothing. A new `draftKey` that the
 opener sets itself, such as a chat it creates to save into, does not cancel:
-the busy line moves to the status line, and Escape still cancels.
+the busy line moves to the status line, and Escape still cancels. `signal`
+also aborts when the opening ends in `{ failed }` or a rejection, so the opener
+can save the draft with its token again; it stays quiet only on success.
 
 Set `ChatCommandSection.pending` while local rows are loading. Put this section
 last. Its heading spins and its end holds three placeholders in the overview,
