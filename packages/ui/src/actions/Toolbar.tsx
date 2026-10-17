@@ -60,7 +60,8 @@ const ariaShortcut = (keys: string | undefined, platform: KeyboardPlatform): str
   const input = keys.trim().toLowerCase();
   const plus = input === "+" || input.endsWith("++");
   const parts = (plus ? input.slice(0, -1) : input).split("+");
-  const key = plus ? "+" : parts.pop() || "space";
+  // ARIA separates keys with "+", so the plus key itself is named "plus".
+  const key = plus ? "plus" : parts.pop() || "space";
   if (plus) parts.pop();
   const names: Record<string, string> = {
     mod: platform === "apple" ? "Meta" : "Control",
@@ -83,6 +84,7 @@ const ariaShortcut = (keys: string | undefined, platform: KeyboardPlatform): str
     end: "End",
     pageup: "PageUp",
     pagedown: "PageDown",
+    plus: "plus",
   };
   const final = key.length === 1 || /^f(?:[1-9]|1[0-2])$/.test(key) ? key.toUpperCase() : names[key];
   return final ? [...new Set(parts.map((part) => names[part])), final].join("+") : undefined;
@@ -335,8 +337,13 @@ export const Toolbar = Object.assign(
       );
       root.removeAttribute("data-overflow-pending");
       navigation?.sync();
-      // A focused action that moved, or a focused menu row whose action came back, hands focus to More.
-      if (next.some((action) => action.element === focused) || (focused instanceof HTMLElement && !focused.isConnected)) trigger?.focus();
+      // Focus on an action that moved, on a menu row whose action came back, or on a More that disappeared goes to
+      // More, or to the toolbar's tab stop when nothing is left in More.
+      const lost =
+        next.some((action) => action.element === focused) ||
+        (focused instanceof HTMLElement && !focused.isConnected) ||
+        (focused === trigger && !next.length);
+      if (lost) (next.length ? trigger : root.querySelector<HTMLElement>('[tabindex="0"]'))?.focus();
     };
     const register = (action: RegisteredAction) => {
       actions.add(action);
@@ -396,7 +403,13 @@ export const Toolbar = Object.assign(
             {props.children}
             <Show when={floating}>
               <div ref={more} class="k2b-toolbar__more" data-overflow="hidden">
-                <Dropdown.Root items={menuItems()} position="top-left" label={messages().moreActions}>
+                <Dropdown.Root
+                  items={menuItems()}
+                  position="top-left"
+                  label={messages().moreActions}
+                  // An open menu closes when its last row returns to the toolbar.
+                  disabled={moved().length === 0}
+                >
                   <Dropdown.Trigger ref={trigger} iconOnly label={messages().moreActions}>
                     <i class="ti ti-dots" aria-hidden="true" />
                   </Dropdown.Trigger>

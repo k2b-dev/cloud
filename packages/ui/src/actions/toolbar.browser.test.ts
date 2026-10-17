@@ -395,13 +395,13 @@ test("the synchronous mount decides overflow before yielding, while hidden ances
   }
 });
 
-test("floating More participates in roving focus, restores focus on Escape, and runs moved actions", async () => {
+// Split in two: one long keyboard walk with dozens of round trips can outgrow the per-test budget on a loaded machine.
+test("floating More is the last roving stop and moved actions are skipped", async () => {
   const page = await openFloating(340);
   try {
     const toolbar = selectionToolbar(page);
     const moved = await movedLabels(page);
     expect(moved.length).toBeGreaterThan(0);
-    const more = toolbar.getByRole("button", { name: "More actions", exact: true });
     // The focusable message list comes right before the toolbar.
     await page.locator("#selection-scroll").focus();
     await page.keyboard.press("Tab");
@@ -413,8 +413,22 @@ test("floating More participates in roving focus, restores focus on Escape, and 
       visited.push(await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null));
       await page.keyboard.press("ArrowRight");
     }
-    expect(visited).toContain("More actions");
+    expect(visited.at(-1)).toBe("More actions");
     expect(visited.some((name) => name && moved.includes(name))).toBe(false);
+    await page.keyboard.press("Tab");
+    expect(await focused(page)).toBe("floating-after");
+  } finally {
+    await page.close();
+  }
+});
+
+test("Escape from More returns focus to it, and a moved action runs from the menu", async () => {
+  const page = await openFloating(340);
+  try {
+    const toolbar = selectionToolbar(page);
+    const moved = await movedLabels(page);
+    const more = toolbar.getByRole("button", { name: "More actions", exact: true });
+    await toolbar.getByRole("button", { name: "Done", exact: true }).focus();
     await page.keyboard.press("End");
     expect(await more.evaluate((button) => button === document.activeElement)).toBe(true);
     await page.keyboard.press("Enter");
@@ -426,8 +440,6 @@ test("floating More participates in roving focus, restores focus on Escape, and 
     await page.getByRole("menuitem", { name: moved[0]!, exact: true }).click();
     expect(await page.evaluate(() => window.toolbarFixture.clicked)).toEqual([moved[0]!]);
     expect(await toolbar.locator('button[tabindex="0"]').count()).toBe(1);
-    await page.keyboard.press("Tab");
-    expect(await focused(page)).toBe("floating-after");
   } finally {
     await page.close();
   }
@@ -450,6 +462,25 @@ test("resizing while More is open keeps keyboard focus in the menu", async () =>
     expect(await page.evaluate(() => document.activeElement?.textContent)).toBe(focusedRow!);
     await page.keyboard.press("Escape");
     expect(await more.evaluate((button) => button === document.activeElement)).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
+test("widening until every action fits closes an open More and keeps focus in the toolbar", async () => {
+  const page = await openFloating(340);
+  try {
+    const toolbar = selectionToolbar(page);
+    await toolbar.getByRole("button", { name: "More actions", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem");
+    await resizeFloating(page, 575);
+    expect(await movedLabels(page)).toEqual([]);
+    expect(await page.getByRole("menu").count()).toBe(0);
+    expect(
+      await toolbar.evaluate((root) => root.contains(document.activeElement) && document.activeElement!.getClientRects().length > 0),
+    ).toBe(true);
+    expect(await toolbar.locator('button[tabindex="0"]').count()).toBe(1);
   } finally {
     await page.close();
   }
