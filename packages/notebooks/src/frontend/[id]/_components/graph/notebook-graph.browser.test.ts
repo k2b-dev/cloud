@@ -247,6 +247,11 @@ test(`${browserName}: pointing at a note keeps its neighbours, with incoming lin
       }
     }
     expect(await page.locator(".notebook-graph__status").textContent()).toContain("links to 7 · linked from 2");
+    // Notes that link to each other keep two separate lines, so the dashed one stays visible.
+    const [sperr, diff] = [HANDBOOK_IDS.sperr!, HANDBOOK_IDS.diff!];
+    const there = await page.locator(`.notebook-graph__edge[data-source="${sperr}"][data-target="${diff}"]`).getAttribute("d");
+    const back = await page.locator(`.notebook-graph__edge[data-source="${diff}"][data-target="${sperr}"]`).getAttribute("d");
+    expect(there).not.toBe(back?.replace(/M([^L]+)L(.+)/, "M$2L$1"));
   } finally {
     await close(page);
   }

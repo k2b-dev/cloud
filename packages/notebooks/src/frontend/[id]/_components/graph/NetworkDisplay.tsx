@@ -34,6 +34,7 @@ type Gesture =
   | { type: "pinch"; distance: number; k: number };
 
 const NEIGHBOUR_FOLLOW = 0.28;
+const RECIPROCAL_SHIFT = 2;
 const DRAG_THRESHOLD = 4;
 const COMPACT_WIDTH = 700;
 const f1 = (value: number) => value.toFixed(1);
@@ -492,10 +493,17 @@ export default function NetworkDisplay(props: Props) {
         <g aria-hidden="true">
           <For each={props.edges}>
             {(edge) => {
+              // Two notes that link to each other get two parallel lines, each shifted to its own right, so a
+              // dashed incoming line never hides under the solid outgoing one.
+              const shift = props.model.byId.get(edge.target)?.out.has(edge.source) ? RECIPROCAL_SHIFT : 0;
               const d = () => {
                 const a = screen().get(edge.source);
                 const b = screen().get(edge.target);
-                return a && b ? `M${f1(a.x)},${f1(a.y)}L${f1(b.x)},${f1(b.y)}` : "";
+                if (!a || !b) return "";
+                const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+                const nx = (-(b.y - a.y) / length) * shift;
+                const ny = ((b.x - a.x) / length) * shift;
+                return `M${f1(a.x + nx)},${f1(a.y + ny)}L${f1(b.x + nx)},${f1(b.y + ny)}`;
               };
               return (
                 <path class="notebook-graph__edge" data-source={edge.source} data-target={edge.target} data-near={edgeNear(edge)} d={d()} />
