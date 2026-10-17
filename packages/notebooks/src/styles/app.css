@@ -422,6 +422,10 @@
   max-width: 100%;
   height: auto;
 }
+/* A height-only size suffix keeps the image's proportions when the column is narrower than the image. */
+.notebook-book-content img[height]:not([width]) {
+  object-fit: contain;
+}
 /* Zoomable diagram: an inset frame shows the pan bounds without lifting the figure. */
 .notebook-book-content .notebook-book-diagram-view {
   margin: 1.25rem 0 0.5rem;

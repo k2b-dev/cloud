@@ -244,7 +244,7 @@ Im Editor erscheinen die Bedienelemente, wenn du auf das Diagramm zeigst oder es
 - **Notizlinks:** Die Markdown-Schreibweise lautet `[Label](note://shortId)`. Der Editor kann Links auch für dich einfügen.
 - **Link auf eine Überschrift:** Hänge den Namen der Überschrift in Kleinbuchstaben mit Bindestrichen an. `[Label](note://shortId#backup-restore)` öffnet die Überschrift „Backup & Restore“. Hat die Notiz keine solche Überschrift, öffnet sie sich oben.
 - **Tags:** Verwende Tags wie #garden, um Notizen im ganzen Notizbuch zu gruppieren. Tagfilter berücksichtigen erkannte Tags, nicht beliebige Wörter.
-- **Anhänge:** Bilder erscheinen direkt in der Notiz. Andere Dateien erscheinen als Links. Beide verwenden Verweise im Format attach://shortId.
+- **Anhänge:** Bilder erscheinen direkt in der Notiz. Andere Dateien erscheinen als Links. Beide verwenden Verweise im Format attach://shortId. Mit `=400x`, `=x300` oder `=400x300` nach der Adresse legst du die Größe eines Bildes fest.
 - **So sehen Links aus:** Links auf Notizen, Überschriften und Dateien sind hellgraue Marken mit einem farbigen Symbol für die Art. PDFs sind rot, Bilder violett, Designdateien orange, Notizen blaugrau und Überschriften grau.
 - **Überschrift in einer anderen Notiz:** Der Link zeigt zuerst diese Notiz, etwa „Farbsystem › Akzentfarbe“.
 - **Datei in einer eigenen Zeile:** Der Link zeigt zusätzlich die Dateigröße.

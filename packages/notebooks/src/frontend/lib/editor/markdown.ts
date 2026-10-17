@@ -14,6 +14,7 @@ import { xml } from "@codemirror/lang-xml";
 import { yaml } from "@codemirror/lang-yaml";
 import { LanguageDescription } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
+import { sizedImageSyntax } from "./image-syntax";
 
 const codeLanguages = [
   LanguageDescription.of({
@@ -85,4 +86,5 @@ export const markdownExtension: () => Extension = () =>
   markdownExt({
     base: markdownLanguage,
     codeLanguages,
+    extensions: [sizedImageSyntax],
   });

@@ -42,6 +42,13 @@ const notePaths = new Map([
 const noteFiles = new Map([...notePaths].map(([id, path]) => [path, id]));
 
 describe("mirror file format", () => {
+  test("round-trips an attachment image's size and title", () => {
+    const source = '![Plan](attach://att001 =400x "Ground floor")';
+    const rewritten = rewriteAttachmentLinks(source, 0, attachments);
+    expect(rewritten).toBe('![Plan](_attachments/att001-Plan-final-a.png =400x "Ground floor")');
+    expect(restoreAttachmentLinks(rewritten, 0)).toBe(source);
+  });
+
   test("round-trips server content through front matter and relative attachment links", () => {
     const content = "# Backup\n\n![Plan](attach://att001) and [missing](attach://gone01)\n";
     const text = renderMirrorFile(
