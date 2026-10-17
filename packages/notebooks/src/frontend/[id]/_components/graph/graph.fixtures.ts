@@ -173,6 +173,16 @@ export function unlinkedGraph(): NoteGraph {
   return toGraph(rows, [], Object.fromEntries(rows.map((row) => [row.id, row.id.padEnd(6, "0")])));
 }
 
+/** Two areas and one link across them: hiding the first area leaves the second note without visible links. */
+export function crossAreaGraph(): NoteGraph {
+  const rows = parseTree(`
+lager|Lager|5
+ regal|Regalplan|5
+hof|Hof|5
+ tor|Torbelegung|5`);
+  return toGraph(rows, [["regal", "tor"]], Object.fromEntries(rows.map((row) => [row.id, row.id.padEnd(6, "0")])));
+}
+
 export function bigGraph(): NoteGraph {
   const random = seededRandom(7);
   const sections: [string, string[]][] = [

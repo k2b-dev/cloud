@@ -4,7 +4,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { NoteGraph } from "../../../../service/links";
 import type { BookTreeNode } from "../book/BookNavigator.island";
-import { bigGraph, FIXTURE_NOW, HANDBOOK_IDS, handbookGraph, unlinkedGraph } from "./graph.fixtures";
+import { bigGraph, crossAreaGraph, FIXTURE_NOW, HANDBOOK_IDS, handbookGraph, unlinkedGraph } from "./graph.fixtures";
 import { NotebookGraphFixture, type NotebookGraphFixtureProps } from "./notebook-graph.browser-harness";
 import { parseGraphViewState } from "./view-state";
 
@@ -14,6 +14,7 @@ export const GRAPH_NOTEBOOKS: Record<string, { name: string; graph: () => NoteGr
   big001: { name: "Wissensbasis Standort Nord", graph: bigGraph, current: null },
   free01: { name: "Projekt Hallenumbau", graph: unlinkedGraph, current: null },
   none01: { name: "Leer", graph: () => ({ nodes: [], edges: [] }), current: null },
+  pair01: { name: "Zwei Bereiche", graph: crossAreaGraph, current: "regal0" },
 };
 
 const tree = (graph: NoteGraph): BookTreeNode[] => {

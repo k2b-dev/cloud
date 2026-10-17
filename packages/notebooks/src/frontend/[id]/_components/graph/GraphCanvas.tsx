@@ -40,7 +40,7 @@ export type GraphDisplayProps = {
 export type GraphCanvasProps = GraphDisplayProps &
   (
     | { layout: () => Promise<Map<string, NetPoint> | null>; neighborhood?: never }
-    | { layout?: never; neighborhood: { depth: 1 | 2; onCentre: (id: string) => void } }
+    | { layout?: never; neighborhood: { depth: 1 | 2; onCentre: (id: string, hadFocus: boolean) => void } }
   );
 
 type ScreenNode = { note: GraphNote; x: number; y: number; r: number };
@@ -318,18 +318,15 @@ export default function GraphCanvas(props: GraphCanvasProps) {
     nodeElement(id)?.focus({ preventScroll: true });
   };
 
-  const [announcement, setAnnouncement] = createSignal("");
   const centre = (id: string) => {
     if (!props.neighborhood || id === props.currentId) return;
     // Focus on the note, or on the selection bar that disappears now, moves to the new centre, never to the page.
+    // When the new centre shows the empty state instead, the display moves focus to its first action.
     const hadFocus = container.contains(document.activeElement);
     setSelected(null);
-    props.neighborhood.onCentre(id);
-    // The same counts as the note's own description, so the announcement and a later re-read agree.
-    const note = props.model.byId.get(id);
-    if (note) setAnnouncement(t().graphCentred({ title: note.title || t().untitled, out: note.out.size, incoming: note.in.size }));
+    props.neighborhood.onCentre(id, hadFocus);
     setTabStop(id);
-    if (hadFocus) queueMicrotask(() => focusNote(id));
+    if (hadFocus) queueMicrotask(() => container.isConnected && focusNote(id));
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -782,9 +779,6 @@ export default function GraphCanvas(props: GraphCanvasProps) {
         onClearSelection={() => setSelected(null)}
         onCentre={props.neighborhood ? centre : undefined}
       />
-      <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-centred-announcement>
-        {announcement()}
-      </span>
     </div>
   );
 }

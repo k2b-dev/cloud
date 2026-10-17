@@ -777,6 +777,21 @@ test(`${browserName}: isolated and filter-hidden centres offer a way out`, async
   }
 }, 30_000);
 
+test(`${browserName}: recentring onto a note whose links the filters hide focuses the way out`, async () => {
+  // Hiding Lager keeps its note Regalplan as the centre; its only link goes to Torbelegung, whose only link is back.
+  const page = await open(graphPath("pair01", "&display=neighborhood&hide=lager0"));
+  try {
+    await page.locator('[data-node="tor000"]').focus();
+    await page.keyboard.press("Space");
+    await page.getByText("No link of “Torbelegung” matches the filters", { exact: true }).waitFor();
+    expect(search(page).get("note")).toBe("tor000");
+    await page.waitForFunction(() => document.activeElement?.textContent === "Reset filters");
+    expect(await page.locator("[data-centred-announcement]").textContent()).toContain("“Torbelegung” is now in the center");
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
 test(`${browserName}: depth changes ring two without moving the toolbars`, async () => {
   const page = await open(graphPath("hand01", "&display=neighborhood"));
   try {
