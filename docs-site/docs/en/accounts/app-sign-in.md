@@ -68,7 +68,9 @@ when replacing an untrusted authenticator.
 3. Keep the login page open and open your authenticator, or tap its
    notification if you turned notifications on.
 4. Unlock the app, compare the request with the waiting login page, and approve
-   only if the codes match and you started the request.
+   only if the codes match and you started the request. The request also shows
+   when it started, in your phone's time zone, so you can tell it apart from a
+   sign-in you did not start.
 
 The waiting page signs you in after approval. Deny requests you do not recognize.
 If a request expires, start a new sign-in from Cloud.

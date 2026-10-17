@@ -38,18 +38,18 @@ Mit `cld acp` kannst du den Assistenten auch in Editoren wie T3 Code und Zed nut
 - **Bilder:** Ein Vision-Modell prüft neu angehängte Bilder direkt. Ein Modell mit Tool-Unterstützung kann stattdessen das konfigurierte Modell zur Bildanalyse verwenden. Anhänge bleiben Dateien der Unterhaltung. Dadurch wird der Dateikontext aktualisiert, ohne Bilddaten in der Nachricht zu speichern.
 - **Nützliche Chats wiederfinden:** Benenne den Chat um oder füge eine Beschreibung hinzu, wenn du ihn später leicht wiederfinden möchtest.
 - **Im Chat suchen:** Nutze `/search`, um sichtbare Nachrichten zu finden oder die strukturierten Cloud-Ressourcen zu prüfen, die in diesem oder anderen aktiven Chats verwendet wurden.
-- **Künftige Arbeit planen:** Bitte den Assistenten, einen Chat einmalig zu einem bestimmten lokalen Datum und Zeitpunkt oder nach einem wiederkehrenden Zeitplan fortzusetzen. Vor dem Erstellen oder Ändern der Aufgabe zeigt der Assistent eine Aktion zur Freigabe an.
+- **Künftige Arbeit planen:** Bitte den Assistenten um eine Routine. Sie setzt einen Chat einmalig zu einem bestimmten lokalen Datum und Zeitpunkt oder nach einem wiederkehrenden Zeitplan fort. Vor dem Anlegen oder Ändern der Routine zeigt der Assistent eine Aktion zur Freigabe an.
 - **Nächste Schritte:** Wenn ein konkreter nächster Schritt dir Arbeit spart, beendet der Assistent seine Antwort manchmal mit einem Angebot, etwa einen Antwortentwurf zu schreiben. Antworte mit Ja, um es anzunehmen. Möchtest du keine solchen Angebote, sag es dem Assistenten.
 - **Arbeitsdateien:** Zwischenstände legt der Assistent im Chat-Ordner `temp/` ab, Ergebnisse außerhalb davon, zusammen mit der Markdown- oder HTML-Quelle, aus der ein PDF entstanden ist.
 :::
 
-## Geplante Chat-Aufgaben {icon="clock"}
+## Routinen {icon="clock"}
 
-Geplante Aufgaben senden eine gespeicherte Anfrage zurück in einen Chat. Gehört dieser Chat zu einem Projekt, verwendet der Durchlauf die Zugriffsrechte, Anweisungen, Dateien, Wissenseinträge, Referenzen und das Standardmodell des Projekts, die zum Startzeitpunkt gelten.
+Eine Routine sendet eine gespeicherte Anfrage zur gewählten Zeit zurück in einen Chat. Gehört dieser Chat zu einem Projekt, verwendet der Durchlauf die Zugriffsrechte, Anweisungen, Dateien, Wissenseinträge, Referenzen und das Standardmodell des Projekts, die zum Startzeitpunkt gelten.
 
-Einmalige Zeitpläne verwenden einen genauen lokalen Zeitpunkt in der Zeitzone der Cloud-Anwendung. Wiederkehrende Zeitpläne verwenden einen Cron-Ausdruck mit fünf Feldern in derselben Zeitzone. Bitte den Assistenten, vorhandene Aufgaben aufzulisten oder zu lesen, oder verwalte sie über die CLI mit `cld assistant tasks`. Fehlgeschlagene Aufgaben wechseln in den Status **Eingriff erforderlich** und benachrichtigen dich. Beim Löschen eines Chats werden auch seine geplanten Aufgaben und deren Ausführungsverlauf gelöscht.
+Eine einmalige Routine verwendet einen genauen lokalen Zeitpunkt in der Zeitzone der Cloud-Anwendung. Eine wiederkehrende Routine verwendet einen Cron-Ausdruck mit fünf Feldern in derselben Zeitzone. Bitte den Assistenten, deine Routinen aufzulisten oder zu lesen. In der CLI heißen sie Tasks: `cld assistant tasks`. Schlägt eine Routine fehl, wechselt sie in den Status **Eingriff erforderlich** und benachrichtigt dich. Beim Löschen eines Chats werden auch seine Routinen und ihr Ausführungsverlauf gelöscht.
 
-Öffne **Kontext** in der Seitenleiste **In diesem Chat** und wähle eine geplante Aufgabe, um Aufgaben dieses Chats zu bearbeiten, zu pausieren, fortzusetzen, auszuführen oder zu löschen und ihren Ausführungsverlauf zu prüfen.
+Öffne **Kontext** in der Seitenleiste **In diesem Chat** und wähle eine Routine, um sie anzupassen, zu pausieren, fortzusetzen, auszuführen oder zu löschen oder um ihren Ausführungsverlauf zu prüfen.
 
 :::info Wenn der Assistent nicht verfügbar ist
 Wenn KI deaktiviert oder falsch konfiguriert ist oder kein auswählbares Streaming-Modell bereitsteht, ist das Eingabefeld deaktiviert und die Seite zeigt den aktuellen Statusfehler.

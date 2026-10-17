@@ -137,6 +137,7 @@ export default ssr<AuthContext>(async (c) => {
 
         <AppWorkspace.Content>
           <ContactsWorkspaceMain
+            scope="book"
             title={currentBook.name}
             description={currentBook.description ?? t.sharedBookDescription}
             total={contactsResult.total}

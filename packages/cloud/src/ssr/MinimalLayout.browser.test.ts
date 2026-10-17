@@ -466,3 +466,29 @@ describe("standalone page load in a browser", () => {
     }
   }, 120_000);
 });
+
+// @k2b/ui makes the root its default `k2b-app-area` container. Containment on the
+// root stops the body background from reaching the canvas, so the root paints it.
+describe("page color with a contained root", () => {
+  test("the root paints the body's color in both themes", async () => {
+    for (const theme of ["light", "dark"] as const) {
+      const tab = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+      try {
+        await tab.setContent(
+          `<!doctype html><html lang="en" class="${theme}"><head><style>${css}</style></head>` +
+            `<body class="k2b-ui">${render("short")}</body></html>`,
+        );
+        const colors = await tab.evaluate(() => ({
+          container: getComputedStyle(document.documentElement).containerName,
+          root: getComputedStyle(document.documentElement).backgroundColor,
+          body: getComputedStyle(document.body).backgroundColor,
+        }));
+        expect(colors.container, theme).toBe("k2b-app-area");
+        expect(colors.root, theme).toBe(colors.body);
+        expect(colors.root, theme).toBe(theme === "light" ? "rgb(250, 250, 250)" : "rgb(9, 9, 11)");
+      } finally {
+        await tab.close();
+      }
+    }
+  }, 30_000);
+});

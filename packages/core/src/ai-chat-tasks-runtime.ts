@@ -80,7 +80,7 @@ const processOccurrence = async (ctx: JobContext<{ occurrenceId: string }>) => {
     const status = await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Current Project access is unavailable" });
     return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
   }
-  const text = `Scheduled task ${task.shortId} (${occurrence.scheduledFor}):\n\n${task.prompt}`;
+  const text = `Routine ${task.shortId} (${occurrence.scheduledFor}):\n\n${task.prompt}`;
   const files = await listAiConversationFiles(conversation.id);
   const prepared = await prepareAiChatTurn({
     assistantChat: true,
@@ -257,7 +257,7 @@ export const aiChatTaskRuntime = {
         cron: "* * * * *",
         timezone,
         misfire: "latest",
-        meta: { appId: APP_ID, family: "ai:chat-task", label: "Scheduled chat task recovery" },
+        meta: { appId: APP_ID, family: "ai:chat-task", label: "Assistant routine recovery" },
         process: async () => {
           await recover();
         },

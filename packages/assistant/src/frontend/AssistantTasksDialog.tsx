@@ -14,7 +14,7 @@ import { assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-c
 const request = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(`/api/ai${path}`, init);
   const body = await response.json().catch(() => null);
-  if (!response.ok || !body) throw new Error(body?.message || assistantBrowserText("Scheduled task request failed"));
+  if (!response.ok || !body) throw new Error(body?.message || assistantBrowserText("Routine request failed"));
   return body;
 };
 export const openAssistantTask = (task: AssistantChatTask) =>
@@ -82,7 +82,7 @@ export function AssistantTasksView(props: {
       fallback={
         <Placeholder
           state={tasks.error() ? "error" : "loading"}
-          title={text(tasks.error() ? "Could not load tasks" : "Loading tasks")}
+          title={text(tasks.error() ? "Could not load routines" : "Loading routines")}
           description={tasks.error()?.message}
         />
       }
@@ -91,9 +91,7 @@ export function AssistantTasksView(props: {
         <div class="flex flex-col gap-2">
           <Show
             when={items().length}
-            fallback={
-              <Placeholder title={text("No scheduled tasks")} description={text("Ask in the chat for a reminder or a recurring task.")} />
-            }
+            fallback={<Placeholder title={text("No routines")} description={text("Ask in the chat for a reminder or a routine.")} />}
           >
             <For each={items()}>
               {(task) => (
@@ -131,7 +129,7 @@ export function AssistantTasksView(props: {
               )}
             </For>
           </Show>
-          <p class="mt-3 text-xs text-secondary">{text("Plan new tasks and make changes in the chat.")}</p>
+          <p class="mt-3 text-xs text-secondary">{text("Set up new routines and make changes in the chat.")}</p>
         </div>
       )}
     </Show>
@@ -184,26 +182,26 @@ export function AssistantTaskDetail(props: {
       });
       if (name === "run") {
         setTab("result");
-        toast.success(text("Task queued. The result will appear here and in the chat when it is ready."), {
-          title: text("Scheduled task"),
+        toast.success(text("Run queued. The result will appear here and in the chat when it is ready."), {
+          title: text("Routine"),
         });
       }
       if (name === "delete") setDeleted(true);
       else await detail.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : text("Could not update task"));
+      setError(e instanceof Error ? e.message : text("Could not update routine"));
     } finally {
       setBusy(null);
     }
   };
   return (
-    <Show when={!deleted()} fallback={<Placeholder title={text("Task deleted")} />}>
+    <Show when={!deleted()} fallback={<Placeholder title={text("Routine deleted")} />}>
       <Show
         when={detail.data()}
         fallback={
           <Placeholder
             state={detail.error() ? "error" : "loading"}
-            title={text(detail.error() ? "Task unavailable" : "Loading tasks")}
+            title={text(detail.error() ? "Routine unavailable" : "Loading routines")}
             description={detail.error()?.message}
           />
         }
@@ -247,7 +245,7 @@ export function AssistantTaskDetail(props: {
                   <NoticeCard
                     tone="warning"
                     title={text("Run needs attention")}
-                    detail={text("Review the result before retrying. The task may have completed some steps.")}
+                    detail={text("Review the result before retrying. The routine may have completed some steps.")}
                   />
                   <Button variant="secondary" size="sm" onClick={() => props.onEdit(task(), true)}>
                     {text("Resolve in chat")}
@@ -256,7 +254,7 @@ export function AssistantTaskDetail(props: {
 
                 <Tabs
                   variant="pill"
-                  ariaLabel={text("Scheduled task")}
+                  ariaLabel={text("Routine")}
                   value={tab}
                   onValueChange={setTab}
                   options={[
@@ -327,7 +325,7 @@ export function AssistantTaskDetail(props: {
                   </p>
                 </Show>
                 <Show when={error()}>
-                  {(message) => <NoticeCard tone="danger" title={text("Task action failed")} detail={message()} />}
+                  {(message) => <NoticeCard tone="danger" title={text("Routine action failed")} detail={message()} />}
                 </Show>
               </div>
               <div class="assistant-task-detail__actions">

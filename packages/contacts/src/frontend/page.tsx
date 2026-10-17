@@ -96,6 +96,7 @@ export default ssr<AuthContext>(async (c) => {
   const writableBooks = permissions.writableBooks
     .map((book) => ({ ...book, id: bookIds.get(book.id)! }))
     .filter((book) => Boolean(book.id));
+  const scope = books.length === 0 ? "noBooks" : queryOptions.favorites ? "favorites" : "all";
   const bookNames = Object.fromEntries(books.map((book) => [book.id, book.name]));
   const totalPages = Math.max(1, Math.ceil(contactsResult.total / perPage));
   const requestUrl = new URL(c.req.raw.url);
@@ -112,6 +113,7 @@ export default ssr<AuthContext>(async (c) => {
 
         <AppWorkspace.Content>
           <ContactsWorkspaceMain
+            scope={scope}
             title={queryOptions.favorites ? t.favoritesTitle : t.allContactsTitle}
             description={queryOptions.favorites ? t.favoritesDescription : t.allContactsDescription}
             total={contactsResult.total}

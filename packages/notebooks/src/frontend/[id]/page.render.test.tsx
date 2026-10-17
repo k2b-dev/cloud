@@ -812,7 +812,8 @@ test.each(["note02", "other1"])(
     expect(island).toBeDefined();
     const props = islandProps(island?.attributes["data-props"]);
     expect(props.selectedNoteId).toBe(queryNote === "note02" ? "note02" : "note01");
-    expect(props.view).toMatchObject({ display: "neighborhood", depth: 2 });
+    expect(props.view).toMatchObject({ display: "neighborhood", depth: 2, sort: null });
+    expect(props.timeZone).toBe("UTC");
     const [title] = await select(html, ".notebook-graph__title small");
     expect(title?.text).toContain(`von „${queryNote === "note02" ? "Team notes" : "Private folder"}“`);
     expect(html).not.toContain("Foreign note");

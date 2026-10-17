@@ -388,7 +388,7 @@ const createContactFormState = (
   initialValues: ContactUpsertInitialValues | undefined,
   rowLabels: ContactRowLabels,
 ) => {
-  const draft = initialContact ? contactToUpsertDraft(initialContact, rowLabels) : createContactUpsertDraft(initialValues, rowLabels);
+  const draft = initialContact ? contactToUpsertDraft(initialContact, rowLabels) : createContactUpsertDraft(initialValues ?? {}, rowLabels);
   const [label, setLabel] = createSignal(draft.label);
   const [firstName, setFirstName] = createSignal(draft.firstName);
   const [lastName, setLastName] = createSignal(draft.lastName);

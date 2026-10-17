@@ -2,6 +2,7 @@ import { i18n } from "@k2b/stdlib";
 import { Button, Chart, CopyButton, NoticeCard, useLocale } from "@k2b/ui";
 import { batch, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { formatSpeedTestReading, speedTestSparklineTooltip } from "./speed-test-format";
 import { ToolCodeBlock } from "./ToolOutput";
 
 export const speedTestMessages = i18n.define({
@@ -91,18 +92,6 @@ const phaseLabel = (t: SpeedTestMessages): Record<Phase, string> => ({
   done: t.phaseDone,
   error: t.phaseError,
 });
-
-const formatRate = (mbps: number | null): string => {
-  if (mbps === null) return "—";
-  if (mbps < 10) return mbps.toFixed(1);
-  return Math.round(mbps).toString();
-};
-
-const formatMs = (ms: number | null): string => {
-  if (ms === null) return "—";
-  if (ms < 10) return ms.toFixed(1);
-  return Math.round(ms).toString();
-};
 
 // crypto.getRandomValues caps at 65536 bytes per call (Web Crypto spec).
 const RANDOM_CHUNK = 64 * 1024;
@@ -337,7 +326,7 @@ export default function SpeedTest(props: SpeedTestProps) {
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Metric
             label="Download"
-            value={formatRate(download())}
+            value={formatSpeedTestReading(download(), locale())}
             unit="Mbps"
             icon="ti ti-download"
             active={phase() === "download"}
@@ -346,7 +335,7 @@ export default function SpeedTest(props: SpeedTestProps) {
           />
           <Metric
             label="Upload"
-            value={formatRate(upload())}
+            value={formatSpeedTestReading(upload(), locale())}
             unit="Mbps"
             icon="ti ti-upload"
             active={phase() === "upload"}
@@ -355,14 +344,20 @@ export default function SpeedTest(props: SpeedTestProps) {
           />
           <Metric
             label="Ping"
-            value={formatMs(ping())}
+            value={formatSpeedTestReading(ping(), locale())}
             unit="ms"
             icon="ti ti-activity"
             active={phase() === "ping"}
             series={pingHistory()}
             seriesColor="text-amber-500 dark:text-amber-400"
           />
-          <Metric label="Jitter" value={formatMs(jitter())} unit="ms" icon="ti ti-wave-square" active={phase() === "ping"} />
+          <Metric
+            label="Jitter"
+            value={formatSpeedTestReading(jitter(), locale())}
+            unit="ms"
+            icon="ti ti-wave-square"
+            active={phase() === "ping"}
+          />
         </div>
 
         <div class="flex items-center gap-3">
@@ -441,7 +436,8 @@ export default function SpeedTest(props: SpeedTestProps) {
   );
 }
 
-function Metric(props: {
+/** One reading with its unit and, while it has samples, a sparkline whose tooltip names the metric and unit. */
+export function Metric(props: {
   label: string;
   value: string;
   unit: string;
@@ -450,6 +446,8 @@ function Metric(props: {
   series?: number[];
   seriesColor?: string;
 }) {
+  const locale = useLocale();
+  const tooltip = createMemo(() => speedTestSparklineTooltip({ label: props.label, unit: props.unit, locale: locale() }));
   return (
     <div
       class="rounded-lg p-3 flex flex-col gap-1.5 transition-colors"
@@ -468,7 +466,7 @@ function Metric(props: {
       </div>
       <div class={`h-5 w-full ${props.seriesColor ?? ""}`}>
         <Show when={props.series && props.series.length > 1}>
-          <Chart kind="sparkline" class="w-full h-full" data={props.series!} smooth showLast />
+          <Chart kind="sparkline" class="w-full h-full" data={props.series!} smooth showLast tooltip={tooltip()} />
         </Show>
       </div>
     </div>

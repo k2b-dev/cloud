@@ -161,6 +161,16 @@ body {
   font-size: 0.9375rem;
   line-height: 1.5;
 }
+.auth-decision__started {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.auth-decision__started > i {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 1.125rem;
+}
 .auth-comparison {
   display: flex;
   justify-content: center;

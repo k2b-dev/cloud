@@ -85,6 +85,9 @@ function Decision(props: {
   createEffect(() => {
     if (ending()) queueMicrotask(() => done?.focus());
   });
+  // The device's own clock face: the person compares it with when they started the sign-in.
+  const started = () =>
+    dates.formatTime(props.request.createdAt, { locale: locale(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
   const groups = () => props.request.comparison.match(/.{1,3}/g) ?? [props.request.comparison];
   const off = () => busy() || error() || expired() || !props.auth.online();
   const Ending = (ending: { kind: keyof typeof endings }) => (
@@ -116,6 +119,10 @@ function Decision(props: {
             dialog keeps its height when the ending replaces the request. */}
         <div class="auth-decision" data-ended={ending() ? "" : undefined}>
           <div class="auth-decision__request" aria-hidden={ending() ? true : undefined}>
+            <p class="auth-decision__started">
+              <i class="ti ti-clock" aria-hidden="true" />
+              <time dateTime={props.request.createdAt}>{t().loginStarted({ time: started() })}</time>
+            </p>
             <p>{terminal() ? t().terminalComparison : t().loginComparison}</p>
             <output class="auth-comparison" aria-label={groups().join(" ")}>
               <For each={groups()}>{(group) => <span>{group}</span>}</For>

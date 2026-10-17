@@ -13,6 +13,8 @@ import type { GraphViewState } from "./view-state";
 type InitialFrame = {
   checked: string | null;
   depth: boolean;
+  timelineRows: (string | null)[];
+  timelineGroups: (string | null)[];
   boxes: (number[] | null)[];
 };
 export type NotebookGraphFixtureProps = {
@@ -20,12 +22,19 @@ export type NotebookGraphFixtureProps = {
   graph: NoteGraph;
   view: GraphViewState;
   now: string;
+  timeZone: string;
   from?: "book";
 };
 
 declare global {
   interface Window {
-    notebookGraphFixture?: { mounted: boolean; serverFrame: InitialFrame; clientFrame: InitialFrame; layoutMs: () => number };
+    notebookGraphFixture?: {
+      mounted: boolean;
+      serverFrame: InitialFrame;
+      clientFrame: InitialFrame;
+      firstFrameMs: number;
+      layoutMs: () => number;
+    };
   }
 }
 
@@ -47,6 +56,7 @@ export function NotebookGraphFixture(props: NotebookGraphFixtureProps) {
               backHref: props.navigator.graphBack,
               view: props.view,
               now: props.now,
+              timeZone: props.timeZone,
               navigationHidden: props.navigator.navigationHidden,
             })}
           </AppWorkspace.Main>
@@ -63,6 +73,8 @@ if (typeof document !== "undefined" && document.getElementById("graph-props")) {
     const visible = (element: Element) => element.getClientRects().length > 0;
     return {
       checked: [...root.querySelectorAll('[aria-label="Display"] [aria-checked="true"]')].find(visible)?.textContent ?? null,
+      timelineRows: [...root.querySelectorAll("[data-row]")].map((row) => row.getAttribute("data-row")),
+      timelineGroups: [...root.querySelectorAll(".notebook-graph__timeline-group")].map((group) => group.textContent),
       depth: [...root.querySelectorAll(".notebook-graph__depth")].some(visible),
       boxes: [".notebook-graph__head", ".notebook-graph__filters", ".notebook-graph__body"].map((selector) => {
         const box = root.querySelector(selector)?.getBoundingClientRect();
@@ -73,9 +85,11 @@ if (typeof document !== "undefined" && document.getElementById("graph-props")) {
   const serverFrame = frame();
   // @k2b/ssr mounts islands with render after clearing their server HTML; keep that seam.
   root.replaceChildren();
+  const started = performance.now();
   render(() => createComponent(NotebookGraphFixture, props), root);
   window.notebookGraphFixture = {
     mounted: true,
+    firstFrameMs: performance.now() - started,
     serverFrame,
     clientFrame: frame(),
     // The layout cost at 300 notes, measured in this engine.

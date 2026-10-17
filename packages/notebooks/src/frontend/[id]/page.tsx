@@ -57,6 +57,7 @@ export default ssr<AuthContext>(async (c) => {
           graph={graph}
           graphView={graphView}
           now={data.now}
+          timeZone={data.dateConfig.timeZone ?? "UTC"}
           backHref={data.graphBack}
           graphBack={data.graphBack}
           appUrl={data.appUrl}
@@ -177,6 +178,7 @@ export default ssr<AuthContext>(async (c) => {
                 backHref={data.graphBack}
                 view={data.graphView}
                 now={data.now}
+                timeZone={data.dateConfig.timeZone ?? "UTC"}
                 navigationHidden={ctx.navigationHidden}
               />
             ) : selectedNote ? (

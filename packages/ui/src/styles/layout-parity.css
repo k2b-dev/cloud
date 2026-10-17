@@ -800,6 +800,14 @@
   initial-value: 0px;
 }
 
+/* The fit threshold of the open detail in a narrowed host. Registered so it
+   leaves with the track after a closing slide, not before it. */
+@property --k2b-workspace-detail-fit {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 /* Typed so that it resolves where the tablet drawer sets it: in container
    units of its own workspace, not of a container inside `Main`. */
 @property --k2b-detail-space {
@@ -808,7 +816,15 @@
   initial-value: 0px;
 }
 
+/* The nearest named host supplies the app width; standalone pages use the
+   document root (its content width excludes a classic scrollbar). */
+html {
+  container: k2b-app-area / inline-size;
+}
+
 .k2b-ui .k2b-app-workspace {
+  --k2b-workspace-sidebar-form: hidden;
+  --k2b-workspace-level-class: 1;
   --k2b-workspace-resize-hit-size: 1.25rem;
   /* The detail panel's distance from the workspace's edges, and its gap to a
      surface beside it. */
@@ -1140,6 +1156,7 @@
 /* The host keeps 0.5rem and the panel's own gutter the other 0.5rem, so
    text sits 1rem from the edge and row hover fills have room to bleed. */
 .k2b-ui .k2b-app-workspace__detail {
+  --k2b-workspace-detail-waiting: 0;
   --k2b-detail-panel-scroll-inset: 0.5rem;
   position: fixed;
   z-index: 20;
@@ -1524,7 +1541,8 @@
   .k2b-ui .k2b-app-workspace[data-workspace-motion] {
     transition:
       --k2b-workspace-detail-track 0s linear 140ms,
-      --k2b-workspace-main-keep 0s linear 140ms;
+      --k2b-workspace-main-keep 0s linear 140ms,
+      --k2b-workspace-detail-fit 0s linear 140ms;
   }
 
   .k2b-ui
@@ -1703,6 +1721,13 @@
     flex: 0 0 24rem;
   }
 
+}
+
+@container k2b-app-area (min-width: 64rem) {
+  .k2b-ui .k2b-app-workspace {
+    --k2b-workspace-sidebar-form: column;
+  }
+
   /* Only a real sidebar creates the desktop sidebar track. Solid islands
      render a transparent custom-element wrapper around compound parts, so
      direct and island-wrapped sidebars must select the same grid. */
@@ -1749,7 +1774,7 @@
 
 /* From 48 rem the work area keeps its columns: panes side by side, the detail
    beside the main area, and resize handles. Only the sidebar track waits for
-   64 rem; in between the sidebar is an overlay (see the compact block below). */
+   64 rem of host width; in between the sidebar is an overlay (see the compact block below). */
 @media (min-width: 48rem) {
   .k2b-ui .k2b-app-workspace__resize {
     display: block;
@@ -1841,7 +1866,7 @@
   margin: 0;
 }
 
-@media (min-width: 64rem) {
+@container k2b-app-area (min-width: 64rem) {
   /* A sidebar that marks the current page already names it, so the head
      shows neither the title nor the way up beside it; Alt+Up still goes up.
      On a page without its own `h1` the head's heading stays for assistive
@@ -1930,100 +1955,108 @@
   }
 }
 
-/* Compact: from 48 to 64 rem the sidebar is an overlay over the work area,
-   opened from the head. The head, the overlay, and the scrim draw no border
+/* Compact: from a 48 rem viewport, below 64 rem host width the sidebar is an
+   overlay over the work area, opened from the head. The head, the overlay, and the scrim draw no border
    lines; the overlay is a raised surface with the shared float shadow. The
    shared controller sets `data-sidebar-overlay="open"` on the workspace root
    while it is open. A stacked sidebar is an overview's object list and stays
    above the content instead (see the stacked block below). */
-@media (min-width: 48rem) and (max-width: 63.999rem) {
-  .k2b-ui
-    .k2b-app-workspace:has(
-      > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
-    )
-    > .k2b-app-workspace__head {
-    display: flex;
-  }
+@media (min-width: 48rem) {
+  @container k2b-app-area (max-width: 63.999rem) {
+    .k2b-ui .k2b-app-workspace {
+      --k2b-workspace-sidebar-form: overlay;
+    }
 
-  .k2b-ui
-    .k2b-app-workspace:has(
-      > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
-    )
-    > .k2b-app-workspace__head
-    > .k2b-app-workspace__head-toggle {
-    display: inline-flex;
-  }
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head {
+      display: flex;
+    }
 
-  .k2b-ui .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]) {
-    position: absolute;
-    z-index: 30;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    display: flex;
-    width: min(17.5rem, calc(100% - 3rem));
-    visibility: hidden;
-    background: var(--k2b-surface-elevated);
-    box-shadow: var(--k2b-shadow-float);
-    transform: translateX(-100%);
-    transition:
-      transform 200ms ease-out,
-      visibility 0s linear 200ms;
-  }
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head
+      > .k2b-app-workspace__head-toggle {
+      display: inline-flex;
+    }
 
-  .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
-  .k2b-ui
-    .k2b-app-workspace[data-sidebar-overlay="open"]
-    > :is(solid-island, solid-client)
-    > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]) {
-    visibility: visible;
-    transform: none;
-    transition: transform 200ms ease-out;
-  }
+    .k2b-ui .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]) {
+      position: absolute;
+      z-index: 30;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      display: flex;
+      width: min(17.5rem, calc(100% - 3rem));
+      visibility: hidden;
+      background: var(--k2b-surface-elevated);
+      box-shadow: var(--k2b-shadow-float);
+      transform: translateX(-100%);
+      transition:
+        transform 200ms ease-out,
+        visibility 0s linear 200ms;
+    }
 
-  .k2b-ui .k2b-app-workspace__sidebar:not([data-mobile="stacked"]) > .k2b-app-workspace__sidebar-desktop {
-    display: flex;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.5rem;
-  }
+    .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+    .k2b-ui
+      .k2b-app-workspace[data-sidebar-overlay="open"]
+      > :is(solid-island, solid-client)
+      > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]) {
+      visibility: visible;
+      transform: none;
+      transition: transform 200ms ease-out;
+    }
 
-  .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"] {
-    display: none;
-  }
+    .k2b-ui .k2b-app-workspace__sidebar:not([data-mobile="stacked"]) > .k2b-app-workspace__sidebar-desktop {
+      display: flex;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 0.5rem;
+    }
 
-  .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"]::after {
-    position: absolute;
-    z-index: 25;
-    inset: 0;
-    content: "";
-    background: rgb(9 9 11 / 0.18);
-  }
+    .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"] {
+      display: none;
+    }
 
-  .k2b-ui[data-theme="dark"] .k2b-app-workspace[data-sidebar-overlay="open"]::after,
-  .k2b-ui.k2b-dark .k2b-app-workspace[data-sidebar-overlay="open"]::after,
-  .dark .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"]::after {
-    background: rgb(0 0 0 / 0.4);
+    .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"]::after {
+      position: absolute;
+      z-index: 25;
+      inset: 0;
+      content: "";
+      background: rgb(9 9 11 / 0.18);
+    }
+
+    .k2b-ui[data-theme="dark"] .k2b-app-workspace[data-sidebar-overlay="open"]::after,
+    .k2b-ui.k2b-dark .k2b-app-workspace[data-sidebar-overlay="open"]::after,
+    .dark .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"]::after {
+      background: rgb(0 0 0 / 0.4);
+    }
   }
 }
 
-@media (min-width: 48rem) and (max-width: 63.999rem) and (prefers-reduced-motion: reduce) {
-  .k2b-ui .k2b-app-workspace__sidebar:not([hidden]),
-  .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > .k2b-app-workspace__sidebar:not([hidden]),
-  .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) {
-    transition: none;
+@media (min-width: 48rem) and (prefers-reduced-motion: reduce) {
+  @container k2b-app-area (max-width: 63.999rem) {
+    .k2b-ui .k2b-app-workspace__sidebar:not([hidden]),
+    .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > .k2b-app-workspace__sidebar:not([hidden]),
+    .k2b-ui .k2b-app-workspace[data-sidebar-overlay="open"] > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) {
+      transition: none;
+    }
   }
 }
 
 /* An opt-in stacked sidebar keeps an overview's object list above the content
    until the sidebar gets its own column at 64 rem, instead of handing it to
    the host's mobile chrome or to the compact overlay. */
-@media (max-width: 63.999rem) {
+@container k2b-app-area (max-width: 63.999rem) {
   /* A viewport cap, not a percentage: the grid row is content-sized, so a
      percentage would be cyclic and collapse the list to one row. Above the
      content, the list is not on the bottom edge and keeps no bottom inset. */
@@ -2079,8 +2112,8 @@
   }
 }
 
-/* Ordered workspace levels (`Main level`). The width decides how many levels
-   show: one below 48 rem, two below 80 rem, three from 80 rem. The selection
+/* Ordered workspace levels (`Main level`). The viewport keeps one level
+   below 48 rem; otherwise the host shows two below 80 rem, three from 80 rem. The selection
    decides which: the deepest selected level and the ones above it. Each
    decision is an attribute of the server-rendered markup, so the first frame
    is already final and the controller moves nothing. Hidden levels stay
@@ -2211,44 +2244,53 @@
   }
 }
 
-@media (min-width: 48rem) and (max-width: 79.999rem) {
-  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown]:not([data-workspace-level-shown~="2"]) {
-    display: none;
-  }
+@media (min-width: 48rem) {
+  @container k2b-app-area (max-width: 79.999rem) {
+    .k2b-ui .k2b-app-workspace {
+      --k2b-workspace-level-class: 2;
+    }
 
-  .k2b-ui [data-workspace-level-first~="2"] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
-    display: inline-flex;
-  }
+    .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown]:not([data-workspace-level-shown~="2"]) {
+      display: none;
+    }
 
-  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="2"] {
-    width: auto;
-    min-width: min(320px, 100%);
-    flex: 1 1 0;
-  }
+    .k2b-ui [data-workspace-level-first~="2"] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+      display: inline-flex;
+    }
 
-  /* A fixed level without a separator keeps its width; when stored widths do
-     not fit, only levels a person can resize give way, so a step stays exact. */
-  .k2b-ui
-    .k2b-app-workspace__main[data-workspace-levels]
-    > [data-workspace-level-shown~="2"][data-workspace-resizable="false"]:not([data-workspace-level-last~="2"]) {
-    flex-shrink: 0;
-  }
+    .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="2"] {
+      width: auto;
+      min-width: min(320px, 100%);
+      flex: 1 1 0;
+    }
 
-  /* The last level is raised when another level shows before it. Its
-     margin box keeps the 320 px the flexible level keeps. */
-  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown~="2"] ~ [data-workspace-level-last~="2"] {
-    min-width: min(320px - 2 * var(--k2b-workspace-detail-inset), 100%);
-    margin: var(--k2b-workspace-detail-inset);
-    margin-bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
-    padding-top: 0;
-    border-bottom: 0;
-    border-radius: var(--k2b-radius-surface);
-    background: var(--k2b-surface-elevated);
-    box-shadow: var(--k2b-shadow-frame);
+    /* A fixed level without a separator keeps its width; when stored widths do
+       not fit, only levels a person can resize give way, so a step stays exact. */
+    .k2b-ui
+      .k2b-app-workspace__main[data-workspace-levels]
+      > [data-workspace-level-shown~="2"][data-workspace-resizable="false"]:not([data-workspace-level-last~="2"]) {
+      flex-shrink: 0;
+    }
+
+    /* The last level is raised when another level shows before it. Its
+       margin box keeps the 320 px the flexible level keeps. */
+    .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown~="2"] ~ [data-workspace-level-last~="2"] {
+      min-width: min(320px - 2 * var(--k2b-workspace-detail-inset), 100%);
+      margin: var(--k2b-workspace-detail-inset);
+      margin-bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
+      padding-top: 0;
+      border-bottom: 0;
+      border-radius: var(--k2b-radius-surface);
+      background: var(--k2b-surface-elevated);
+      box-shadow: var(--k2b-shadow-frame);
+    }
   }
 }
 
-@media (min-width: 80rem) {
+@container k2b-app-area (min-width: 80rem) {
+  .k2b-ui .k2b-app-workspace {
+    --k2b-workspace-level-class: 3;
+  }
   .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown]:not([data-workspace-level-shown~="3"]) {
     display: none;
   }
@@ -2295,24 +2337,265 @@
   }
 }
 
-@media (any-pointer: coarse) and (min-width: 48rem) and (max-width: 79.999rem) {
-  .k2b-ui
-    .k2b-app-workspace__main[data-workspace-levels]
-    > [data-workspace-level-shown~="2"]
-    ~ .k2b-app-workspace__resize
-    + [data-workspace-level-last~="2"] {
-    margin-inline-start: 0;
+@media (any-pointer: coarse) and (min-width: 48rem) {
+  @container k2b-app-area (max-width: 79.999rem) {
+    .k2b-ui
+      .k2b-app-workspace__main[data-workspace-levels]
+      > [data-workspace-level-shown~="2"]
+      ~ .k2b-app-workspace__resize
+      + [data-workspace-level-last~="2"] {
+      margin-inline-start: 0;
+    }
   }
 }
 
-@media (any-pointer: coarse) and (min-width: 80rem) {
-  .k2b-ui
-    .k2b-app-workspace__main[data-workspace-levels]
-    > [data-workspace-level-shown~="3"]
-    ~ .k2b-app-workspace__resize
-    + [data-workspace-level-last~="3"] {
-    margin-inline-start: 0;
+@media (any-pointer: coarse) {
+  @container k2b-app-area (min-width: 80rem) {
+    .k2b-ui
+      .k2b-app-workspace__main[data-workspace-levels]
+      > [data-workspace-level-shown~="3"]
+      ~ .k2b-app-workspace__resize
+      + [data-workspace-level-last~="3"] {
+      margin-inline-start: 0;
+    }
   }
+}
+
+/* Waiting details exist only when a desktop viewport gives the app a compact
+   host. Default hosts cannot enter this regime. */
+/* The toggle sits at the end of the head row, which the workspace reserves
+   while it has a Detail in this regime, so showing it moves nothing. */
+.k2b-ui .k2b-app-workspace__detail-toggle {
+  position: absolute;
+  z-index: 22;
+  top: 50%;
+  right: 0.5rem;
+  display: none;
+  grid-area: head;
+  transform: translateY(-50%);
+}
+
+@media (min-width: 64rem) {
+  @container k2b-app-area (max-width: 63.999rem) {
+    .k2b-ui .k2b-app-workspace {
+      container: k2b-workspace / inline-size;
+      /* The root cannot query itself. Track percentages and the query both
+         measure its content box. Layout widths use 1/64 px steps; half a step
+         makes the track jump at exactly the inclusive fit threshold. */
+      grid-template-columns:
+        minmax(var(--k2b-workspace-main-keep), 1fr)
+        minmax(0, clamp(0px, (100% - var(--k2b-workspace-detail-fit) + 0.0078125px) * 1000000, var(--k2b-workspace-detail-track)));
+    }
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__content > .k2b-app-workspace__detail,
+        > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail
+      )
+      > .k2b-app-workspace__head {
+      display: flex;
+      padding-inline-end: 7rem;
+    }
+
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__content > .k2b-app-workspace__detail[data-width="sm"]:not([hidden]),
+        > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-width="sm"]:not([hidden])
+      ) {
+      --k2b-workspace-detail-fit: 40.5rem;
+    }
+
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__content > .k2b-app-workspace__detail[data-width="md"]:not([hidden]),
+        > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-width="md"]:not([hidden])
+      ) {
+      --k2b-workspace-detail-fit: 46.5rem;
+    }
+
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__content > .k2b-app-workspace__detail[data-width="lg"]:not([hidden]),
+        > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-width="lg"]:not([hidden])
+      ) {
+      --k2b-workspace-detail-fit: 50.5rem;
+    }
+
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__content > .k2b-app-workspace__detail[data-width="xl"]:not([hidden]),
+        > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-width="xl"]:not([hidden])
+      ) {
+      --k2b-workspace-detail-fit: 54.5rem;
+    }
+  }
+}
+
+@container k2b-workspace (width < 40.5rem) {
+  .k2b-ui .k2b-app-workspace__detail[data-width="sm"]:not([hidden]) {
+    --k2b-workspace-detail-waiting: 1;
+    display: none;
+  }
+  /* Parking or starting to wait hides at once; the slide belongs to opening. */
+  .k2b-ui .k2b-app-workspace .k2b-app-workspace__detail[data-width="sm"]:not([hidden], [data-workspace-detail-drawer]) {
+    transition: none;
+  }
+  .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"]:has(+ .k2b-app-workspace__detail[data-width="sm"]:not([hidden])) {
+    display: none;
+  }
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail[data-width="sm"]:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-width="sm"]:not([hidden])
+    ) {
+    --k2b-workspace-detail-track: 0px;
+  }
+  .k2b-ui
+    .k2b-app-workspace__detail-toggle:has(
+      + .k2b-app-workspace__detail[data-width="sm"]:not([hidden]),
+      + .k2b-app-workspace__resize + .k2b-app-workspace__detail[data-width="sm"]:not([hidden])
+    ) {
+    display: inline-flex;
+  }
+  .k2b-ui .k2b-app-workspace__detail[data-width="sm"]:not([hidden])[data-workspace-detail-drawer="open"] {
+    display: flex;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: max(var(--k2b-workspace-panel-min), min(var(--k2b-workspace-panel-size), var(--k2b-workspace-panel-max), 100% - 21rem));
+    grid-row: 2 / -1;
+    grid-column: 1 / -1;
+    border-bottom: var(--k2b-workspace-inset-bottom) solid transparent;
+    border-radius: 0;
+    background-origin: border-box;
+    background-clip: border-box;
+  }
+}
+
+@container k2b-workspace (width < 46.5rem) {
+  .k2b-ui .k2b-app-workspace__detail[data-width="md"]:not([hidden]) {
+    --k2b-workspace-detail-waiting: 1;
+    display: none;
+  }
+  /* Parking or starting to wait hides at once; the slide belongs to opening. */
+  .k2b-ui .k2b-app-workspace .k2b-app-workspace__detail[data-width="md"]:not([hidden], [data-workspace-detail-drawer]) {
+    transition: none;
+  }
+  .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"]:has(+ .k2b-app-workspace__detail[data-width="md"]:not([hidden])) {
+    display: none;
+  }
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail[data-width="md"]:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-width="md"]:not([hidden])
+    ) {
+    --k2b-workspace-detail-track: 0px;
+  }
+  .k2b-ui
+    .k2b-app-workspace__detail-toggle:has(
+      + .k2b-app-workspace__detail[data-width="md"]:not([hidden]),
+      + .k2b-app-workspace__resize + .k2b-app-workspace__detail[data-width="md"]:not([hidden])
+    ) {
+    display: inline-flex;
+  }
+  .k2b-ui .k2b-app-workspace__detail[data-width="md"]:not([hidden])[data-workspace-detail-drawer="open"] {
+    display: flex;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: max(var(--k2b-workspace-panel-min), min(var(--k2b-workspace-panel-size), var(--k2b-workspace-panel-max), 100% - 21rem));
+    grid-row: 2 / -1;
+    grid-column: 1 / -1;
+    border-bottom: var(--k2b-workspace-inset-bottom) solid transparent;
+    border-radius: 0;
+    background-origin: border-box;
+    background-clip: border-box;
+  }
+}
+
+@container k2b-workspace (width < 50.5rem) {
+  .k2b-ui .k2b-app-workspace__detail[data-width="lg"]:not([hidden]) {
+    --k2b-workspace-detail-waiting: 1;
+    display: none;
+  }
+  /* Parking or starting to wait hides at once; the slide belongs to opening. */
+  .k2b-ui .k2b-app-workspace .k2b-app-workspace__detail[data-width="lg"]:not([hidden], [data-workspace-detail-drawer]) {
+    transition: none;
+  }
+  .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"]:has(+ .k2b-app-workspace__detail[data-width="lg"]:not([hidden])) {
+    display: none;
+  }
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail[data-width="lg"]:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-width="lg"]:not([hidden])
+    ) {
+    --k2b-workspace-detail-track: 0px;
+  }
+  .k2b-ui
+    .k2b-app-workspace__detail-toggle:has(
+      + .k2b-app-workspace__detail[data-width="lg"]:not([hidden]),
+      + .k2b-app-workspace__resize + .k2b-app-workspace__detail[data-width="lg"]:not([hidden])
+    ) {
+    display: inline-flex;
+  }
+  .k2b-ui .k2b-app-workspace__detail[data-width="lg"]:not([hidden])[data-workspace-detail-drawer="open"] {
+    display: flex;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: max(var(--k2b-workspace-panel-min), min(var(--k2b-workspace-panel-size), var(--k2b-workspace-panel-max), 100% - 21rem));
+    grid-row: 2 / -1;
+    grid-column: 1 / -1;
+    border-bottom: var(--k2b-workspace-inset-bottom) solid transparent;
+    border-radius: 0;
+    background-origin: border-box;
+    background-clip: border-box;
+  }
+}
+
+@container k2b-workspace (width < 54.5rem) {
+  .k2b-ui .k2b-app-workspace__detail[data-width="xl"]:not([hidden]) {
+    --k2b-workspace-detail-waiting: 1;
+    display: none;
+  }
+  /* Parking or starting to wait hides at once; the slide belongs to opening. */
+  .k2b-ui .k2b-app-workspace .k2b-app-workspace__detail[data-width="xl"]:not([hidden], [data-workspace-detail-drawer]) {
+    transition: none;
+  }
+  .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"]:has(+ .k2b-app-workspace__detail[data-width="xl"]:not([hidden])) {
+    display: none;
+  }
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail[data-width="xl"]:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-width="xl"]:not([hidden])
+    ) {
+    --k2b-workspace-detail-track: 0px;
+  }
+  .k2b-ui
+    .k2b-app-workspace__detail-toggle:has(
+      + .k2b-app-workspace__detail[data-width="xl"]:not([hidden]),
+      + .k2b-app-workspace__resize + .k2b-app-workspace__detail[data-width="xl"]:not([hidden])
+    ) {
+    display: inline-flex;
+  }
+  .k2b-ui .k2b-app-workspace__detail[data-width="xl"]:not([hidden])[data-workspace-detail-drawer="open"] {
+    display: flex;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: max(var(--k2b-workspace-panel-min), min(var(--k2b-workspace-panel-size), var(--k2b-workspace-panel-max), 100% - 21rem));
+    grid-row: 2 / -1;
+    grid-column: 1 / -1;
+    border-bottom: var(--k2b-workspace-inset-bottom) solid transparent;
+    border-radius: 0;
+    background-origin: border-box;
+    background-clip: border-box;
+  }
+}
+
+.k2b-ui .k2b-app-workspace__detail[data-workspace-detail-drawer="open"] {
+  --k2b-detail-space: 0px;
 }
 
 /* These containers clip their content, so focus rings inside them are drawn
@@ -3142,7 +3425,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 }
 
 /* The collapsed rail shows only the icon, at the size of the rail's other actions. */
-@media (min-width: 64rem) {
+@container k2b-app-area (min-width: 64rem) {
   .k2b-ui
     .k2b-app-workspace[data-sidebar-collapsed="true"]
     .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]

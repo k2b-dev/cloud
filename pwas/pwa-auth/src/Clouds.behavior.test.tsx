@@ -101,7 +101,7 @@ for (const scenario of [
         Array(queued ? 2 : 1).fill(scopes ? title : "Sign-in request"),
       );
       const context = dialog.querySelector(".auth-decision__request")!;
-      expect(context.querySelector("p")?.textContent).toBe(scopes ? t.terminalComparison : t.loginComparison);
+      expect(context.querySelector("p:not(.auth-decision__started)")?.textContent).toBe(scopes ? t.terminalComparison : t.loginComparison);
       if (scopes) {
         expect(dialog.querySelector(".k2b-panel-dialog__header p")?.textContent).toBe(queued ? `${binding.label} · 1 / 2` : binding.label);
         const labels = [...dialog.querySelectorAll("dl dt")];

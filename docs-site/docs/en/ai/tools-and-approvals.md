@@ -478,7 +478,7 @@ Tool-capable personal chats keep three bounded discovery tools available:
   | `unknown` | No tool has this exact name, or it names an optional built-in that is off, such as `memory` while memory is disabled |
   | `skill` | The name is an Assistant Skill this turn can load; `load_skill` loads it, not `load_tools` |
   | `not_offered_in_turn` | The tool exists, but this turn's client or task does not provide it, or the turn offers no app operations |
-  | `not_allowed` | The conversation's fixed tool scope or task grants exclude it |
+  | `not_allowed` | The conversation's fixed tool scope or routine grants exclude it |
   | `app_offline` | The operation was loaded earlier, or the registry cannot be read, and its app is not in the live registry now |
 
   The model looks up an unknown name once with `search_tools`, loads a skill
@@ -487,13 +487,13 @@ Tool-capable personal chats keep three bounded discovery tools available:
 - `list_apps` returns a bounded map of exact app IDs to their live descriptions
   when the owning app is unclear.
 
-Background runs use the task's mandate policy and grants for `search_tools`,
+A routine (scheduled task) uses its mandate policy and grants for `search_tools`,
 `load_tools`, `list_apps`, and resource readers. Tools outside that scope stay
 unavailable even if the interactive chat loaded them earlier. When the scope
 allows no app operations, `search_tools` says so instead of reporting an outage.
 Fixed inputs are checked per call; a rejected call returns a tool error the
 model can recover from. Broken authority or required interaction still makes
-the task need attention; see [Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-task).
+the routine need attention; see [Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-routine).
 
 A loaded built-in or app operation becomes an ordinary named tool on the next model turn.
 Cloud gives the model the operation's structure, required fields,
@@ -550,7 +550,7 @@ AI Core treats capability operation kinds as the approval boundary:
 | Capability kind | AI Core behavior |
 | --- | --- |
 | Query | Execute without interactive approval |
-| Action without `approval` | Require fresh approval for that call; it cannot be granted to a scheduled task |
+| Action without `approval` | Require fresh approval for that call; it cannot be granted to a routine |
 | Action with `approval: "rememberable"` | Offer one-time approval, **Approve for this chat**, or **Always approve** for the app-owned review scope |
 
 Capability manifests describe objective Action properties such as `openWorld`,
@@ -659,7 +659,7 @@ it. Users can list and revoke the choices that apply everywhere under
 **Assistant settings > Approvals**, and those of one chat under
 **Secrets & approvals** in the chat's context panel
 (`GET /api/ai/approval-preferences?conversation=<chat>`). Revocation is
-ownership-scoped and takes effect on the next matching call. A scheduled task
+ownership-scoped and takes effect on the next matching call. A routine
 or mandate never uses a remembered approval; it runs only on its own grants.
 
 ### Allow a website for a chat
@@ -699,8 +699,8 @@ asking only if all of these hold:
 - the request has the exact same origin, so scheme, host, and port match;
 - it is GET or HEAD without a body, with only the headers above and no secret
   reference;
-- a person started the turn in a signed-in browser session, not a scheduled
-  task, a mandate, `cld`, an API key, or another delegated credential;
+- a person started the turn in a signed-in browser session, not a
+  routine, a mandate, `cld`, an API key, or another delegated credential;
 - the code is the chat's own code or a Studio app the person manages, never an
   app they only use or HTML presented in the chat.
 
@@ -741,8 +741,8 @@ address must match one of these as a whole; a host and path that only appear
 inside a longer address do not count. A message another chat sent counts as
 none of these. Any other address, such as one the model built from other data
 or found in a mail, shows an approval card with the full URL and the same
-website choice as an HTTP request. A refused read fetches nothing. A scheduled
-task cannot ask, so such a read fails there; its own prompt counts as the
+website choice as an HTTP request. A refused read fetches nothing. A routine
+cannot ask, so such a read fails there; its own prompt counts as the
 person's message.
 
 Links of a page read earlier count as supplied, so a page can offer the model
