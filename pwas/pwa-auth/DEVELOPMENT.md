@@ -50,7 +50,8 @@ tablet width (48rem), through `bottomSheetAdaptiveOptions`. A sign-in shows when
 it started (its `createdAt`, on the device clock) and its code in groups of three,
 and requires an explicit choice after comparing it.
 `src/decision.browser.test.ts` checks in Chromium that the sheet and the dialog
-keep their height when an ending replaces the request.
+keep their height when an ending replaces the request. The image build has no
+browser and skips `*.browser.test.*`; the gate runs them in Chromium and WebKit.
 Actions appear per Cloud and open a review only on a tap or a tapped
 notification. The row's **Review** button loads a fresh SDK-checked view first
 and opens the review only with it, so it never grows after its first frame; a
