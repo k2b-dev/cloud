@@ -21,6 +21,12 @@ describe("OAuth contracts", () => {
               expect.objectContaining({
                 properties: expect.objectContaining({ ttl: expect.objectContaining({ type: "string", maxLength: 15 }) }),
               }),
+              expect.objectContaining({
+                properties: expect.objectContaining({
+                  grant_type: expect.objectContaining({ const: "refresh_token" }),
+                  ttl: expect.objectContaining({ description: "Not accepted for this grant; sending it returns invalid_request." }),
+                }),
+              }),
             ]),
           },
         },

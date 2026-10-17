@@ -122,11 +122,16 @@ const LoginLifetimeSchema = z
   .max(15)
   .regex(/^[1-9][0-9]*$/);
 
+const RejectedLoginLifetimeSchema = z.string().optional().describe("Not accepted for this grant; sending it returns invalid_request.");
+
 const capLoginLifetime = async (requested: number): Promise<number> => {
   const hours = await settings.get<number>("user.session.expiry_hours");
   if (!Number.isFinite(hours) || hours < 1) throw new Error("user.session.expiry_hours must be a positive number");
   return Math.min(requested, Math.floor(hours * 3600), DEFAULT_LOGIN_LIFETIME_SECONDS);
 };
+
+const resolveLoginLifetime = async (requested: number | null | undefined): Promise<number> =>
+  requested == null ? DEFAULT_LOGIN_LIFETIME_SECONDS : capLoginLifetime(requested);
 
 const TokenBodySchema = z.discriminatedUnion("grant_type", [
   z.object({
@@ -144,7 +149,7 @@ const TokenBodySchema = z.discriminatedUnion("grant_type", [
   }),
   z.object({
     grant_type: z.literal("client_credentials"),
-    ttl: z.string().optional(),
+    ttl: RejectedLoginLifetimeSchema,
     client_id: z.string().min(1).optional(),
     client_secret: z.string().optional(),
     scope: z.string().optional(),
@@ -152,7 +157,7 @@ const TokenBodySchema = z.discriminatedUnion("grant_type", [
   }),
   z.object({
     grant_type: z.literal("refresh_token"),
-    ttl: z.string().optional(),
+    ttl: RejectedLoginLifetimeSchema,
     refresh_token: z.string().min(1),
     client_id: z.string().min(1).optional(),
     client_secret: z.string().optional(),
@@ -161,7 +166,7 @@ const TokenBodySchema = z.discriminatedUnion("grant_type", [
   }),
   z.object({
     grant_type: z.literal(DEVICE_CODE_GRANT_TYPE),
-    ttl: z.string().optional(),
+    ttl: RejectedLoginLifetimeSchema,
     device_code: z.string().min(1).max(256),
     client_id: z.string().min(1).optional(),
     client_secret: z.string().optional(),
@@ -319,7 +324,7 @@ const issueUserGrant = async (
     resource: string | null;
     authorityGrant: OAuthUserGrantReference;
     grantName: "Authorization code" | "Device code";
-    loginLifetimeSeconds?: number | null;
+    loginLifetimeSeconds: number;
   },
 ) => {
   const { client } = grant;
@@ -351,10 +356,7 @@ const issueUserGrant = async (
       resource: grant.resource,
       authorityGrant: grant.authorityGrant,
       issueRefreshToken: true,
-      login: {
-        lifetimeSeconds:
-          grant.loginLifetimeSeconds == null ? DEFAULT_LOGIN_LIFETIME_SECONDS : await capLoginLifetime(grant.loginLifetimeSeconds),
-      },
+      login: { lifetimeSeconds: grant.loginLifetimeSeconds },
     });
 
     return c.json({
@@ -820,6 +822,17 @@ const app = new Hono<AuthContext>()
         if (body.resource) return tokenError(c, "invalid_target", "The device grant does not accept a resource");
         const result = await oauth.device.poll({ deviceCode: body.device_code, clientId: client.clientId });
         if (!result.ok) return tokenError(c, result.error, DEVICE_POLL_ERROR_DESCRIPTIONS[result.error]);
+        let loginLifetimeSeconds: number;
+        try {
+          loginLifetimeSeconds = await resolveLoginLifetime(result.loginLifetimeSeconds);
+        } catch (err) {
+          log.error("Failed to generate tokens", {
+            error: err instanceof Error ? err.message : String(err),
+            clientId: client.clientId,
+            userId: result.userId,
+          });
+          return tokenError(c, "server_error", "Token generation failed. Please try again or contact an administrator.", 500);
+        }
         return issueUserGrant(c, {
           client,
           userId: result.userId,
@@ -828,11 +841,22 @@ const app = new Hono<AuthContext>()
           resource: null,
           authorityGrant: result.authorityGrant,
           grantName: "Device code",
-          loginLifetimeSeconds: result.loginLifetimeSeconds,
+          loginLifetimeSeconds,
         });
       }
 
       const { code, redirect_uri, code_verifier } = body;
+
+      let loginLifetimeSeconds: number;
+      try {
+        loginLifetimeSeconds = await resolveLoginLifetime(body.ttl === undefined ? undefined : Number(body.ttl));
+      } catch (err) {
+        log.error("Failed to generate tokens", {
+          error: err instanceof Error ? err.message : String(err),
+          clientId: client_id,
+        });
+        return tokenError(c, "server_error", "Token generation failed. Please try again or contact an administrator.", 500);
+      }
 
       const result = await oauth.codes.consume({
         code,
@@ -855,7 +879,7 @@ const app = new Hono<AuthContext>()
         resource: result.resource,
         authorityGrant: result.authorityGrant,
         grantName: "Authorization code",
-        loginLifetimeSeconds: body.ttl === undefined ? undefined : Number(body.ttl),
+        loginLifetimeSeconds,
       });
     },
   )

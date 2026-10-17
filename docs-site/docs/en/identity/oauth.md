@@ -205,8 +205,8 @@ The request also accepts the optional `ttl` form parameter described under
 [Login lifetime](#login-lifetime). The requested scopes must be allowed for the
 client. Without `scope`, Cloud requests `openid`. The user code has eight
 characters from an alphabet without `0`, `O`, `1`, and `I`. It is displayed as
-`XXXX-XXXX` and accepted without the dash or in lowercase. Both codes expire after ten minutes. Cloud
-stores only SHA-256 hashes of both codes.
+`XXXX-XXXX` and accepted without the dash or in lowercase. Both codes expire
+after ten minutes. Cloud stores only SHA-256 hashes of both codes.
 
 The person opens the verification URI, enters the code, and sees the client
 name, client ID, the code again, the requested scopes, and a warning to approve
