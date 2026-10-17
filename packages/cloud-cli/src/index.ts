@@ -164,6 +164,8 @@ const CONFIG_PATH = configPath();
 const TOKEN_TIMEOUT_MS = 10_000;
 const OAUTH_REQUEST_TIMEOUT_MS = 15_000;
 const OAUTH_REFRESH_SKEW_MS = 60_000;
+/** The longest login a Cloud issues (docs: identity/oauth, Login lifetime). */
+const MAX_LOGIN_LIFETIME_SECONDS = 90 * 24 * 60 * 60;
 const PROFILE_LOCK_TIMEOUT_MS = 15_000;
 const PROFILE_LOCK_STALE_MS = 60_000;
 const BOOLEAN_FLAGS = new Set(["json", "jsonl"]);
@@ -3425,8 +3427,10 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   if (!refreshToken) throw new CliError("OAuth server did not issue a refresh token. Check the offline_access scope.");
 
   // A Cloud that accepted ttl but omits the remaining lifetime still ends the login no later than ttl.
+  // No Cloud login outlives 90 days, which also keeps the date in range for any ttl.
   const loginSeconds = token.refresh_token_expires_in ?? ttl;
-  const loginExpiresAt = loginSeconds !== undefined ? new Date(Date.now() + loginSeconds * 1000).toISOString() : undefined;
+  const loginExpiresAt =
+    loginSeconds !== undefined ? new Date(Date.now() + Math.min(loginSeconds, MAX_LOGIN_LIFETIME_SECONDS) * 1000).toISOString() : undefined;
   await storeOAuthLogin({
     name,
     server: normalizedServer,

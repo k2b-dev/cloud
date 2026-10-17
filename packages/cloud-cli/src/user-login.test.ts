@@ -759,7 +759,7 @@ describe("absolute login expiry", () => {
 
   test("an omitted refresh-token lifetime with --ttl still ends the login no later than ttl", async () => {
     const token = { access_token: "access-token-secret", token_type: "Bearer", expires_in: 3600, refresh_token: "refresh-token-secret" };
-    const { origin } = startServer(["approve"], { tokenResponse: token });
+    const { origin } = startServer(["approve", "approve"], { tokenResponse: token });
     const config = await configPath();
     const before = Date.now();
     const result = await runCli(config, [...userArgs(origin), "--ttl", "30m"]);
@@ -768,6 +768,14 @@ describe("absolute login expiry", () => {
     const session = (await readConfig(config)).profiles.portal?.oauth;
     expectExpiry(session?.loginExpiresAt, 1800, before, after);
     expect(result.stdout).toContain(`Login expires: ${session?.loginExpiresAt}`);
+
+    // The longest accepted ttl must not break the date: no Cloud login outlives 90 days.
+    const longest = await configPath();
+    const start = Date.now();
+    const capped = await runCli(longest, [...userArgs(origin), "--ttl", "999999999999999"]);
+    const end = Date.now();
+    expect(capped.exitCode).toBe(0);
+    expectExpiry((await readConfig(longest)).profiles.portal?.oauth.loginExpiresAt, 90 * 86400, start, end);
   });
 
   test("login refuses a profile with an agent's client credentials before any request", async () => {
