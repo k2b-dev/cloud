@@ -25,6 +25,9 @@ const tolerateKilledBrowserOnClose = (context: BrowserContext): BrowserContext =
       await close(options);
     } catch (error) {
       if (context.browser()?.isConnected() === false) return;
+      // A browser that Bun is killing can answer before it reports itself disconnected: Chromium then no longer
+      // knows the context. A context that no longer exists is closed, so the test reports the step that hung (#1367).
+      if (error instanceof Error && error.message.includes("Failed to find context")) return;
       throw error;
     }
   };
