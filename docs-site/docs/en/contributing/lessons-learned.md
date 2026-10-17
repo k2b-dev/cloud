@@ -393,6 +393,13 @@ convention still needs a check or a test.
 - **Error class:** Unreported export loss.
 - **Guard:** Notebooks renderer tests cover each fallback, omission order, and one block omission per diagnostic in English and German. Header tests check Unicode labels and the maximal prefix within 2048 bytes; service, API, and gateway tests check delivery.
 
+### Light app accents made identity text unreadable
+
+- **What happened:** The yellow Notebooks accent produced text below 4.5:1 contrast on light surfaces.
+- **Root cause:** Fixed CSS mixes adjusted every accent by the same amount without checking background contrast.
+- **Error class:** Derived theme text color without a contrast guarantee.
+- **Guard:** `app-color.test.ts` checks every declared app accent and edge colors against theme and selection surfaces, pins surface and default token values, and verifies the mildest passing clamp step. SSR and compiled stylesheet tests pin emission and scoped theme mappings.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
