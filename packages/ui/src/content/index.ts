@@ -134,6 +134,7 @@ export type { PdfPreviewProps, PdfPreviewRequest } from "./PdfPreview";
 export { default as PdfPreview } from "./PdfPreview";
 export type { RangeOption, RangePickerProps } from "./RangePicker";
 export { default as RangePicker } from "./RangePicker";
+export { ReactionBar, type ReactionBarItem, type ReactionBarProps } from "./ReactionBar";
 export type { StepsProps } from "./Steps";
 export { Steps } from "./Steps";
 export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredDataValue } from "./StructuredDataPreview";

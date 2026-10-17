@@ -274,6 +274,7 @@ const portableSections = [
         "ti ti-message-2",
         "Grouped conversation messages with safe Markdown, quotes, reactions, threads, and attachments that never move the layout.",
       ),
+      page("reaction-bar", "ReactionBar", "ti ti-mood-plus", "Emoji reactions with counts, names, and an optional picker anchor."),
       page("structured-data", "Structured data", "ti ti-braces", "Formatted and raw JSON-like data disclosure."),
       page("media", "Media previews", "ti ti-photo", "Image lightboxes, video, PDF previews, and zoomable content."),
       page("files", "Files", "ti ti-folders", "Generic file trees, browser composition, and content-aware previews."),
@@ -375,7 +376,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 139;
+export const portableUiComponentCount = 140;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
