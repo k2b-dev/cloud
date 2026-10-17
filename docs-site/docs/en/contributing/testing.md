@@ -179,8 +179,9 @@ Open each URL state that a test checks in its own page. Navigate a loaded page
 in place only when the test checks navigation itself: reload, Back, Forward,
 or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place
 `goto` on an idle Notebooks page stalled before load in two WebKit CI runs,
-and a Back to a graph page in a third; hundreds of local runs did not
-reproduce it, and first navigations of fresh pages never stalled.
+and a Back to a graph page in a third. The cause was a collapsed receive
+queue on the CI runner's kernel; see
+[When a page never fires load](#when-a-page-never-fires-load).
 
 When `goto`, `reload`, `goBack`, or `goForward` on a launcher page fails or
 times out, the error appends a navigation diagnosis. It names the call and how long it
@@ -314,7 +315,8 @@ media deadlock.
 ### When a page never fires load
 
 A navigation that commits but never fires load, or never commits, waits for a
-response that does not finish. When the test server wrote the whole response,
+response that does not finish. The navigation diagnosis lists that response
+under "Requests still open". When the test server wrote the whole response,
 look at the sockets on the server's port while the page waits:
 
 ```bash
@@ -329,7 +331,8 @@ window, is a collapsed receive queue. Rising `PruneCalled`, `TCPRcvQDrop`, and
 runners, this happens when the busy browser reads a large page, bundle, or
 font slowly. The receive buffer then shrinks, and the connection never
 recovers ([#1367](https://github.com/k2b-dev/cloud/issues/1367)). Every CI job
-sets an 8 MiB default receive buffer through `.github/actions/install`. When
+that installs dependencies sets an 8 MiB default receive buffer through
+`.github/actions/install`. When
 browser tests stall like this on a development machine, apply the CI setting
 until the next reboot:
 
