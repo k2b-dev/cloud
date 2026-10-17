@@ -11,6 +11,10 @@ test("Contacts shares one book permission decision (ACC-02)", async () => {
     const adminStart = file === "api/index.ts" ? source.indexOf("const adminApi = new Hono") : -1;
     const nextTopLevel = adminStart < 0 ? -1 : source.slice(adminStart + 1).search(/^const /m);
     const adminEnd = nextTopLevel < 0 ? source.length : adminStart + 1 + nextTopLevel;
+    // Universal search checks entry roles; book grants still govern its results.
+    const searchStart = file === "capabilities.ts" ? source.indexOf("const runSearch = async") : -1;
+    const nextSearchTopLevel = searchStart < 0 ? -1 : source.slice(searchStart + 1).search(/^const /m);
+    const searchEnd = nextSearchTopLevel < 0 ? source.length : searchStart + 1 + nextSearchTopLevel;
     const report = (pattern: RegExp, rule: string, allowed: (offset: number) => boolean = () => false) => {
       for (const match of source.matchAll(pattern)) {
         if (allowed(match.index)) continue;
@@ -19,6 +23,16 @@ test("Contacts shares one book permission decision (ACC-02)", async () => {
       }
     };
     if (file !== "service/access.ts") report(/\bhasRole\s*\(/g, "Only service/access.ts may decide administration authority with hasRole");
+    if (file !== "service/access.ts") {
+      report(
+        /\broles\s*\.\s*includes\s*\(\s*["']admin["']\s*\)/g,
+        "Only service/access.ts may decide administration authority with roles.includes",
+        (offset) => searchStart >= 0 && offset >= searchStart && offset < searchEnd,
+      );
+    }
+    if (file !== "service/access.ts" && file !== "service/index.ts") {
+      report(/\bisContactsAdministrator\b/g, "Contacts administration authority belongs only to service/access.ts and service/index.ts");
+    }
     report(/bypassAccess/g, "Book grants cannot be bypassed");
     if (file.startsWith("frontend/") || file === "capabilities.ts") {
       report(/\{\s*type:\s*["']user["']\s*,\s*userId\b/g, "Use the request accessSubject instead of constructing a user subject");

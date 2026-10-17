@@ -267,6 +267,33 @@ suite("Contacts book grants on every application surface (#1234 option B)", () =
     await expectAgreement(credential === "session" ? admin : delegatedAdmin, b, false);
   });
 
+  test("a Cloud admin without a book grant cannot open the in-app book settings, access, or API keys", async () => {
+    const base = `/api/contacts/books/${b.shortId}`;
+    const statuses = {
+      admin: {
+        settings: (await app.request(`${base}/settings-context`, { headers: admin.headers })).status,
+        access: (await app.request(`${base}/access`, { headers: admin.headers })).status,
+        updateAccess: (
+          await app.request(`${base}/access/${crypto.randomUUID()}`, {
+            method: "PATCH",
+            headers: { ...admin.headers, "content-type": "application/json" },
+            body: JSON.stringify({ permission: "read" }),
+          })
+        ).status,
+        apiKeys: (await app.request(`${base}/api-keys`, { headers: admin.headers })).status,
+      },
+      owner: {
+        settings: (await app.request(`${base}/settings-context`, { headers: owner.headers })).status,
+        access: (await app.request(`${base}/access`, { headers: owner.headers })).status,
+        apiKeys: (await app.request(`${base}/api-keys`, { headers: owner.headers })).status,
+      },
+    };
+    expect(statuses).toEqual({
+      admin: { settings: 403, access: 403, updateAccess: 403, apiKeys: 403 },
+      owner: { settings: 200, access: 200, apiKeys: 200 },
+    });
+  });
+
   test.each(["reader", "stranger", "admin reader", "owner"] as const)("a %s follows only their book grant", async (kind) => {
     const subject = { reader, stranger, "admin reader": adminReader, owner }[kind];
     await expectAgreement(subject, b, kind !== "stranger", kind === "owner");
