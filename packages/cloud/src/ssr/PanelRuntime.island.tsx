@@ -9,6 +9,14 @@ export default function PanelRuntime(props: { provider?: string }) {
     const deferred = new Set<ReturnType<typeof setTimeout>>();
     const embedded = window.parent !== window;
     let disposeTheme = () => {};
+    let resumeTheme = () => {};
+    // A page kept in the back/forward cache keeps following the host; only a removed iframe lets go.
+    const pageHide = (event: PageTransitionEvent) => {
+      if (!event.persisted) disposeTheme();
+    };
+    const pageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) resumeTheme();
+    };
     const close = () => window.parent.postMessage({ type: "cloud.panel.close" }, location.origin);
     const key = (event: KeyboardEvent) => {
       if (event.isComposing || event.defaultPrevented || event.altKey || event.shiftKey) return;
@@ -35,11 +43,13 @@ export default function PanelRuntime(props: { provider?: string }) {
         };
         parent.addEventListener("cloud:theme-preference", syncTheme);
         disposeTheme = () => parent.removeEventListener("cloud:theme-preference", syncTheme);
+        resumeTheme = syncTheme;
         syncTheme();
       } catch {
         // A cross-origin parent cannot share its document or theme events.
       }
-      window.addEventListener("pagehide", disposeTheme);
+      window.addEventListener("pagehide", pageHide);
+      window.addEventListener("pageshow", pageShow);
       // The shell reads this mark when its controller arrives after the message.
       if (props.provider) document.documentElement.dataset.cloudPanelReady = props.provider;
       window.parent.postMessage({ type: "cloud.panel.ready", v: 1, provider: props.provider }, location.origin);
@@ -48,7 +58,8 @@ export default function PanelRuntime(props: { provider?: string }) {
     onCleanup(() => {
       disposeInput();
       disposeTheme();
-      window.removeEventListener("pagehide", disposeTheme);
+      window.removeEventListener("pagehide", pageHide);
+      window.removeEventListener("pageshow", pageShow);
       window.removeEventListener("keydown", key);
       for (const timer of deferred) clearTimeout(timer);
     });

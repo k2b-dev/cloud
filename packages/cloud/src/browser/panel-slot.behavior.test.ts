@@ -273,6 +273,19 @@ else {
       }
     });
 
+  test("opening and closing keep a width another tab saved meanwhile", () => {
+    const h = setup(1440);
+    h.open();
+    expect(document.cookie).toBe("cloud_panel=1:fixture:24");
+    document.cookie = "cloud_panel=1:fixture:32; Path=/";
+    handlePanelRequest({ action: "close" });
+    expect(document.cookie).toBe("cloud_panel=0:fixture:32");
+    document.cookie = "cloud_panel=0:fixture:30; Path=/";
+    h.open();
+    expect(document.cookie).toBe("cloud_panel=1:fixture:30");
+    expect(h.canvas.style.getPropertyValue("--cloud-panel-width-set")).toBe("30rem");
+  });
+
   test("SSR-open keeps the server iframe and still hears its later ready", () => {
     const h = setup(1440, true);
     if (!h.serverFrame) throw new Error("Expected an SSR iframe");

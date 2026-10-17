@@ -1,5 +1,5 @@
 import { attachResizeSeparator, parkWorkspaceDetailDrawers } from "@k2b/ui";
-import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, serializePanelCookie } from "../_internal/panel-cookie";
+import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, readPanelCookie, serializePanelCookie } from "../_internal/panel-cookie";
 import { platformMessages } from "../ssr/platform-messages";
 import { readShellData } from "../ssr/shell-data";
 import type { PanelRequest } from "./panel";
@@ -51,6 +51,16 @@ export function installPanelSlot(): () => void {
     const measured = slot.getBoundingClientRect().width / rem();
     if (measured > 0) width = Math.min(PANEL_MAX_WIDTH_REM, Math.max(PANEL_MIN_WIDTH_REM, measured));
     separator?.setAttribute("aria-valuenow", String(Math.round(width * 100) / 100));
+  };
+  // Another tab may have saved a newer width; opening or closing keeps it instead of writing back an old one.
+  const adoptStoredWidth = (apply: boolean) => {
+    const stored = readPanelCookie(
+      document.cookie,
+      panel.providers.map((item) => item.id),
+    ).widthRem;
+    if (stored === undefined || stored === committedWidth) return;
+    committedWidth = stored;
+    if (apply) setWidth(stored);
   };
   const writeCookie = () => {
     if (isPhone()) return;
@@ -132,6 +142,7 @@ export function installPanelSlot(): () => void {
     disposeResize();
     disposeResize = attachResize();
     unload();
+    adoptStoredWidth(false);
     writeCookie();
     update();
     returnFocus();
@@ -146,6 +157,7 @@ export function installPanelSlot(): () => void {
     search = typeof nextSearch === "string" && nextSearch.length <= 2048 ? nextSearch : undefined;
     canvas.setAttribute(attribute(), "open");
     slot.dataset.provider = provider.id;
+    adoptStoredWidth(true);
     seedWidth();
     load();
     writeCookie();

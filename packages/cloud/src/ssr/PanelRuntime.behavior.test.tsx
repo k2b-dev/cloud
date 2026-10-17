@@ -54,6 +54,19 @@ else {
       expect(document.documentElement.className).toBe("provider dark");
     });
   }
+  test("a page kept in the back/forward cache keeps following the host theme", () => {
+    const h = mount();
+    const changeTheme = (theme: string) => {
+      h.parentDocument.documentElement.className = `${theme} host`;
+      h.parent.dispatchEvent(new h.dom.window.Event("cloud:theme-preference"));
+    };
+    window.dispatchEvent(Object.assign(new Event("pagehide"), { persisted: true }));
+    h.parentDocument.documentElement.className = "light host";
+    window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+    expect(document.documentElement.className).toBe("provider light");
+    changeTheme("dark");
+    expect(document.documentElement.className).toBe("provider dark");
+  });
   test("a cross-origin parent cannot throw during mount and keys still post to the provider origin", () => {
     const h = mount(true, true);
     expect(document.documentElement.className).toBe("light provider");
