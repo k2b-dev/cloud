@@ -246,7 +246,7 @@ In the editor, the controls appear when you point at the diagram or focus it. Af
 - **Point at a note:** The note and its neighbors stay visible, and the other notes fade. Links from the note are solid lines. Links to the note are dashed. The bottom-left corner shows the area, the number of links in each direction, and the last change.
 - **Filters and search:** Choose **All notes**, **Only linked**, or **Only unlinked**. Choose an area to hide or show it. **Find note** marks the notes with a matching title, and Enter goes to the first match. The address keeps these settings, so a reload or Back shows the same view.
 - **As list:** Shows the same notes and filters as a table: the area, the notes that a note links to, the notes that link to it, and the last change.
-- **Keyboard:** Press Tab to go into the graph. The arrow keys move to the next note in that direction. Enter opens the note, Home goes to the open note, + and − zoom, 0 fits the graph, and Esc clears the search.
+- **Keyboard:** Press Tab to go into the graph. The arrow keys move to the next note in that direction. Page Down and Page Up go through the notes in page order. Enter opens the note, Home goes to the open note, + and − zoom, 0 fits the graph, and Esc clears the search.
 - **Touch screens:** Choose a note to select it. A bar at the bottom shows the note. Choose **Open** to open it. Pinch with two fingers to zoom.
 - **Note links:** The Markdown form is `[Label](note://shortId)`. The editor can insert links for you.
 - **Link to a heading:** Add the heading name in lowercase with hyphens. `[Label](note://shortId#backup-restore)` opens the heading "Backup & Restore". If the note has no such heading, it opens at the top.

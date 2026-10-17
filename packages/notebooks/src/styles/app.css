@@ -1837,7 +1837,12 @@
 .notebook-graph__empty {
   position: absolute;
   inset: 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
+}
+.k2b-ui .notebook-graph__empty > .k2b-placeholder {
+  flex: 1 0 auto;
 }
 .notebook-graph__unlinked {
   display: flex;

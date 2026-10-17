@@ -36,6 +36,7 @@ export default function NotebookGraph(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const model = buildGraphModel(props.graph);
+  const hasLinks = model.edges.length > 0;
   const [state, setState] = createSignal<GraphViewState>(props.view);
   const navigationHidden = createNavigationHidden(props.navigationHidden);
   const [controls, setControls] = createSignal<GraphZoomControls | null>(null);
@@ -51,9 +52,10 @@ export default function NotebookGraph(props: Props) {
 
   // The search changes neither the visible notes nor the view; only the filters do.
   const filterKey = createMemo(() => `${state().links}|${state().hide.join(",")}`);
+  // Without links there are no filters to show, so a saved filter in the address does not apply either.
   const notes = createMemo(() => {
     filterKey();
-    return untrack(() => visibleNotes(model, { links: state().links, hide: state().hide }));
+    return hasLinks ? untrack(() => visibleNotes(model, { links: state().links, hide: state().hide })) : model.notes;
   });
   const visibleIds = createMemo(() => new Set(notes().map((note) => note.id)));
   const edges = createMemo(() => visibleEdges(model, visibleIds()));
@@ -61,7 +63,6 @@ export default function NotebookGraph(props: Props) {
   const hits = createMemo(() => (query().trim() ? notes().filter((note) => matchesQuery(note, query())) : []));
   const currentId = () => (props.selectedNoteId && model.byId.has(props.selectedNoteId) ? props.selectedNoteId : null);
   const current = () => (currentId() ? model.byId.get(currentId()!) : undefined);
-  const hasLinks = model.edges.length > 0;
   const noteHref = (id: string) => buildNoteUrl(props.notebookId, id, props.from);
   const open = (id: string) => navigateTo(noteHref(id));
   const closeHref = () =>
@@ -212,14 +213,13 @@ export default function NotebookGraph(props: Props) {
         <Switch>
           <Match when={model.notes.length === 0}>
             <div class="notebook-graph__empty">
-              <Placeholder class="min-h-full" variant="panel" icon="ti ti-affiliate" description={t().graphNoNotes} />
+              <Placeholder variant="panel" icon="ti ti-affiliate" description={t().graphNoNotes} />
             </div>
           </Match>
           <Match when={!hasLinks && !state().list}>
             {/* Many unlinked notes can be taller than the canvas, so this state scrolls. */}
             <div class="notebook-graph__empty">
               <Placeholder
-                class="min-h-full"
                 variant="panel"
                 icon="ti ti-affiliate"
                 title={t().graphNoLinks}
@@ -259,7 +259,6 @@ export default function NotebookGraph(props: Props) {
           <Match when={notes().length === 0}>
             <div class="notebook-graph__empty">
               <Placeholder
-                class="min-h-full"
                 variant="panel"
                 icon="ti ti-filter"
                 title={t().graphFilterEmpty}

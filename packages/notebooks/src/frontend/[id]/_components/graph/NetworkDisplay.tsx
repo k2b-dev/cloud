@@ -223,7 +223,16 @@ export default function NetworkDisplay(props: Props) {
 
   const onKeyDown = (event: KeyboardEvent) => {
     const id = (event.target as Element | null)?.closest<SVGGElement>("[data-node]")?.dataset.node;
-    if (!id) return;
+    // Modified keys stay with the browser, such as Ctrl/Cmd+- and Ctrl/Cmd+0 for page zoom.
+    if (!id || event.ctrlKey || event.metaKey || event.altKey) return;
+    // Page Down and Page Up go through the notes in page order, so every note is reachable, wherever it lies.
+    if (event.key === "PageDown" || event.key === "PageUp") {
+      event.preventDefault();
+      const index = props.notes.findIndex((note) => note.id === id);
+      const next = props.notes[(index + (event.key === "PageDown" ? 1 : -1) + props.notes.length) % props.notes.length];
+      if (next) focusNote(next.id);
+      return;
+    }
     const directions: Record<string, "left" | "right" | "up" | "down"> = {
       ArrowLeft: "left",
       ArrowRight: "right",

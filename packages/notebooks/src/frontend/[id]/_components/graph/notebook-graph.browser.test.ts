@@ -173,6 +173,21 @@ test(`${browserName}: the graph is one tab stop with arrows, Home and Enter insi
     expect(await page.locator('[data-node][tabindex="0"]').getAttribute("data-node")).toBe(moved);
     await page.keyboard.press("Home");
     expect(await activeNode()).toBe(WAREHOUSE);
+    // Page Down walks every note in page order, so no note is out of reach.
+    const visited = new Set<string | null>();
+    for (let step = 0; step < 49; step++) {
+      await page.keyboard.press("PageDown");
+      visited.add(await activeNode());
+    }
+    expect(visited.size).toBe(49);
+    expect(await activeNode()).toBe(WAREHOUSE);
+    // Modified keys stay with the browser: Ctrl+- is page zoom, not graph zoom.
+    const prevented = await page.evaluate(() => {
+      const event = new KeyboardEvent("keydown", { key: "-", ctrlKey: true, bubbles: true, cancelable: true });
+      document.activeElement!.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(prevented).toBe(false);
     await page.keyboard.press("ArrowDown");
     const target = await activeNode();
     await page.keyboard.press("Enter");
@@ -274,8 +289,13 @@ test(`${browserName}: filters, an area toggle and the search change the notes an
 test(`${browserName}: searching keeps the zoom, and the sidebar's view filter stays in the address`, async () => {
   const page = await open(graphPath("hand01", "&view=favorites"));
   try {
+    const fitted = await positions(page);
     await page.getByRole("toolbar", { name: "Graph filters" }).getByRole("button", { name: "Zoom in" }).click();
-    await page.waitForTimeout(100);
+    // Zoom redraws on the next frame; wait until it has.
+    await page.waitForFunction(([id, before]) => document.querySelector(`[data-node="${id}"]`)?.getAttribute("transform") !== before, [
+      WAREHOUSE,
+      fitted[WAREHOUSE],
+    ] as const);
     const zoomed = await positions(page);
     await page.getByRole("searchbox", { name: "Find a note in the graph" }).fill("Lager");
     await page.waitForFunction(() => document.querySelectorAll("[data-node][data-match]").length > 0);
@@ -346,6 +366,10 @@ test(`${browserName}: notebooks without links and filters that leave nothing sho
     expect(await page.getByRole("list", { name: "6 notes, not linked yet" }).locator("li").count()).toBe(6);
     expect(await page.getByRole("toolbar", { name: "Graph filters" }).count()).toBe(0);
     // The search still finds a note there: Enter focuses the first matching note link.
+    // A filter saved in the address while there were links does not hide notes here.
+    await page.goto(new URL(graphPath("free01", "&links=linked"), server.url).href);
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted === true);
+    expect(await page.getByRole("list", { name: "6 notes, not linked yet" }).locator("li").count()).toBe(6);
     await page.getByRole("searchbox", { name: "Find a note in the graph" }).fill("Kosten");
     await page.keyboard.press("Enter");
     expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Kosten");

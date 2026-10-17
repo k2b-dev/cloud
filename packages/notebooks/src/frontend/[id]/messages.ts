@@ -147,7 +147,7 @@ export const notebookWorkspaceMessages = i18n.define({
       graphKeyCurrent: "current note",
       graphKeyReset: "reset",
       graphGroupLabel: ({ notebook, display, count }: { notebook: string; display: string; count: number }) =>
-        `Links in ${notebook}, ${display} display, ${count === 1 ? "1 note" : `${count} notes`}. Arrow keys move between notes, Enter opens a note, Home goes to the current note.`,
+        `Links in ${notebook}, ${display} display, ${count === 1 ? "1 note" : `${count} notes`}. Arrow keys move between notes, Page Down and Page Up go through them in page order, Enter opens a note, Home goes to the current note.`,
       graphNodeLabel: ({
         title,
         area,
@@ -577,7 +577,7 @@ export const notebookWorkspaceMessages = i18n.define({
       graphKeyCurrent: "aktuelle Notiz",
       graphKeyReset: "zurücksetzen",
       graphGroupLabel: ({ notebook, display, count }) =>
-        `Verknüpfungen in ${notebook}, Darstellung ${display}, ${count === 1 ? "1 Notiz" : `${count} Notizen`}. Pfeiltasten wechseln die Notiz, Enter öffnet sie, Pos1 springt zur aktuellen Notiz.`,
+        `Verknüpfungen in ${notebook}, Darstellung ${display}, ${count === 1 ? "1 Notiz" : `${count} Notizen`}. Pfeiltasten wechseln die Notiz, Bild ab und Bild auf gehen sie in Seitenreihenfolge durch, Enter öffnet sie, Pos1 springt zur aktuellen Notiz.`,
       graphNodeLabel: ({ title, area, out, incoming, current }) =>
         `${title}, ${area === null ? "oberste Ebene" : `Bereich ${area}`}, verweist auf ${out}, verwiesen von ${incoming}${current ? ", aktuelle Notiz" : ""}`,
       graphSelected: "Ausgewählte Notiz",
