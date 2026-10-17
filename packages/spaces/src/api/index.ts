@@ -3265,6 +3265,8 @@ const calendarApp = new Hono<AuthContext>()
         ...access.data,
         from,
         to,
+        // An all-day deadline is a day in the reader's timezone, not the server's.
+        dateConfig: getDateConfig(c),
       });
       return respond(c, ok(await projectCalendarItems(result)));
     },

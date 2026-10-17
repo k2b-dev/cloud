@@ -142,6 +142,16 @@ suite("Spaces all-day deadline contract", () => {
         });
         expect(calendar.map((item) => item.title)).toEqual(["All-day today", "Timed today"]);
         expect(calendar[0]).toMatchObject({ deadline: "2026-10-24", deadlineAllDay: true });
+        // The HTTP calendar reads the day in the reader's timezone cookie, not the server's.
+        const range = new URLSearchParams({ from: instant("2026-10-24T00:00"), to: instant("2026-10-25T00:00") });
+        const calendarResponse = await spacesApi.request(`/calendar?${range}`, {
+          headers: { authorization: `Bearer ${token.data.token}`, cookie: `${TIMEZONE_COOKIE}=${encodeURIComponent(timeZone)}` },
+        });
+        expect(calendarResponse.status).toBe(200);
+        expect(((await calendarResponse.json()) as { title: string }[]).map((item) => item.title)).toEqual([
+          "All-day today",
+          "Timed today",
+        ]);
         setSystemTime(new Date(instant("2026-10-25T00:00")));
         expect(await titles({ deadlineFilter: "overdue" })).toEqual(["Yesterday", "All-day today", "Timed today"]);
         expect(await titles({ deadlineFilter: "today" })).toEqual(["Tomorrow"]);
