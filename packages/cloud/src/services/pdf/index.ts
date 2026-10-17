@@ -22,6 +22,15 @@ export {
   testGotenberg,
 } from "./gotenberg";
 export type {
+  PdfImageBox,
+  PdfImageErrorCode,
+  PdfImageVariant,
+  PreparePdfImageInput,
+  PreparePdfImageOptions,
+  PreparePdfImageResult,
+} from "./image";
+export { PDF_IMAGE_MAX_BOXES, PDF_IMAGE_MAX_INPUT_BYTES, preparePdfImage } from "./image";
+export type {
   BuildPresetPdfHtmlInput,
   MarkdownPdfErrorCode,
   MarkdownPdfTemplateId,
