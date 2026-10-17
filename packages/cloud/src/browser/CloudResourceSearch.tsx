@@ -44,6 +44,9 @@ export type CloudResourceSearchProps = {
   excludeRefs?: readonly CloudResourceRef[];
 };
 
+/** What `/api/search` accepts as `q`; a prefilled query is cut to it as typing is. */
+const MAX_QUERY_LENGTH = 500;
+
 const isLinkableCommand = (command: PaletteCommand) => typeof command.action !== "function" && "command" in command.action;
 
 const itemKey = (item: SearchItem) => `${item.ref.type}:${item.ref.id}`;
@@ -62,7 +65,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const locale = useLocale();
   const t = () => resourceSearchMessages.resolve([locale()]).t;
   const id = createUniqueId();
-  const [input, setInput] = createSignal(props.request?.query ?? "");
+  const [input, setInput] = createSignal((props.request?.query ?? "").slice(0, MAX_QUERY_LENGTH));
   const [tags, setTags] = createSignal<string[]>([]);
   const [scope, setScope] = createSignal<SearchScope | undefined>(
     props.request?.scope ?? (props.initialAppId ? { appId: props.initialAppId, label: props.initialAppId } : undefined),
@@ -77,8 +80,9 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     if (!request) return;
     setScope(request.scope ?? (props.initialAppId ? { appId: props.initialAppId, label: props.initialAppId } : undefined));
     if (request.query !== undefined) {
-      setInput(request.query);
-      setCaret(request.query.length);
+      const query = request.query.slice(0, MAX_QUERY_LENGTH);
+      setInput(query);
+      setCaret(query.length);
     }
     setTags([]);
     setBrowsingTags(false);
@@ -556,7 +560,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
             autocomplete="off"
             autocapitalize="off"
             spellcheck={false}
-            maxLength={500}
+            maxLength={MAX_QUERY_LENGTH}
           />
         </div>
       </label>

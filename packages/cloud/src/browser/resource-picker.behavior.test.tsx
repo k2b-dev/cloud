@@ -115,6 +115,33 @@ if (isServer) {
     });
   }
 
+  test("a prefilled query longer than the search accepts is cut to its 500 characters", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) => {
+        requests.push(String(input));
+        return stream();
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { dialogCore } = await import("@k2b/ui");
+    const { openCloudResourcePicker } = await import("./resource-picker");
+    try {
+      const result = openCloudResourcePicker({ scope: { appId: "notebooks", label: "Notes" }, query: "q".repeat(600) });
+      await waitFor(() => requests.length > 0, "the first search");
+      expect(new URL(requests[0]!, "http://localhost").searchParams.get("q")).toHaveLength(500);
+      expect(dom.document.querySelector<HTMLInputElement>('input[role="combobox"]')!.value).toHaveLength(500);
+      dom.document.querySelector<HTMLButtonElement>('[aria-label="Close search"]')!.click();
+      expect(await result).toBeUndefined();
+    } finally {
+      dialogCore.close();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
   test("an app scope starts searching with no query", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
