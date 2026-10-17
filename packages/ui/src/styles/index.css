@@ -9751,6 +9751,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-underline-offset: 3px;
 }
 
+/* Touch targets: the quiet answer often wraps under the two answers, closer
+   than its hit area reaches. On a coarse pointer it is a full 2.75rem row, so
+   its hit area stays inside it and a low tap on an answer stays an answer. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-button.k2b-chat-decision__remember {
+    min-height: 2.75rem;
+  }
+
+  .k2b-ui .k2b-button.k2b-chat-decision__remember::after {
+    inset-block: 0;
+  }
+}
+
 @media (max-width: 47.999rem) {
   .k2b-ui {
     --k2b-chat-decision-size: 1.0625rem;
@@ -9872,6 +9885,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.5rem;
+}
+
+/* Touch targets: buttons under an outcome line keep the documented 0.625rem
+   to the line's link above them and to each other when they wrap. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-chat-outcome__actions {
+    row-gap: 0.625rem;
+    margin-top: 0.625rem;
+  }
 }
 
 /* The preview: calm text in one column, no display face. */

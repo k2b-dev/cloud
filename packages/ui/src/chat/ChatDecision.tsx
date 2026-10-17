@@ -113,8 +113,12 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
           root?.querySelector<HTMLElement>(".k2b-chat-outcome")?.focus({ preventScroll: true });
         }
         if (state === "open" && previous !== undefined && previous !== "open") {
+          // A host that could not take an answer given here returns the question from `sending`; the outcome that held
+          // the focus is gone, so the focus goes back to the sentence instead of the page.
+          const active = document.activeElement;
+          const failedHere = answeredHere() && previous === "sending" && (!active || active === document.body);
           setAnsweredHere(false);
-          if (reopenedHere) {
+          if (reopenedHere || failedHere) {
             sentence?.focus({ preventScroll: true });
             setArrive(true);
           }
@@ -229,6 +233,7 @@ export function ChatOutcome(props: ChatOutcomeProps): JSX.Element {
   // Only a line that replaces a question just answered here fades in; history renders final.
   const entering = untrack(() => scope?.answered() ?? false);
   const [live, setLive] = createSignal("");
+  let root: HTMLDivElement | undefined;
   let cell: HTMLDivElement | undefined;
   let pending = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -254,13 +259,27 @@ export function ChatOutcome(props: ChatOutcomeProps): JSX.Element {
   onMount(() => {
     if (untrack(() => scope?.answered())) announce();
   });
-  createEffect(on(() => props.current, announce, { defer: true }));
+  createEffect(
+    on(
+      () => props.current,
+      () => {
+        // A link pressed in a line that is now hidden would leave the focus on an invisible button, which the browser
+        // then drops to the page. The line itself keeps it instead.
+        const active = document.activeElement;
+        const hidden = active && cell?.contains(active) && !active.closest('[data-current="true"]');
+        if (hidden || (pending && active === document.body)) root?.focus({ preventScroll: true });
+        announce();
+      },
+      { defer: true },
+    ),
+  );
   onCleanup(() => {
     if (timer) clearTimeout(timer);
   });
 
   return (
     <div
+      ref={root}
       class={`k2b-chat-outcome ${props.class ?? ""}`}
       data-tone={tone()}
       data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}

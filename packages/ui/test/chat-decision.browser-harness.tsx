@@ -20,6 +20,7 @@ declare global {
     __calls: number;
     __request: () => void;
     __reopen: () => void;
+    __sendFailed: () => void;
   }
 }
 
@@ -42,6 +43,10 @@ function Fixture() {
     setState("decided");
   };
   window.__reopen = () => setState("open");
+  window.__sendFailed = () => {
+    setCurrent("sendfail");
+    setState("decided");
+  };
   window.__fail = () => {
     setCurrent("failed");
     setState("decided");
@@ -86,6 +91,21 @@ function Fixture() {
         },
       },
     },
+    // A recovery that switches lines inside the outcome, as "Send again" does.
+    sendfail: {
+      tone: "error",
+      text: "The request was not sent.",
+      action: {
+        label: "Retry sending",
+        onSelect: async () => {
+          setCurrent("retrying");
+          await new Promise((settle) => setTimeout(settle, 300));
+          setCurrent("retried");
+        },
+      },
+    },
+    retrying: { tone: "running", text: "Sending the request again." },
+    retried: { tone: "waiting", text: "Asked the managers again." },
     expired: {
       tone: "off",
       text: "This question expired.",

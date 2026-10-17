@@ -275,3 +275,34 @@ test("a reopen from elsewhere after an unrelated outcome action leaves the focus
     await page.close();
   }
 });
+
+test("a line action that switches lines keeps the focus on the outcome instead of a hidden link", async () => {
+  const page = await open();
+  try {
+    await page.evaluate(() => window.__sendFailed());
+    await page.getByRole("button", { name: "Retry sending", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    expect(await activeOutcome(page).textContent()).toBe("Sending the request again.");
+    expect(await focusedOutcome(page)).toBe(true);
+    await spoken(page, "Asked the managers again.");
+    expect(await focusedOutcome(page)).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a question the host returns from sending to open gives the focus back to its sentence", async () => {
+  const page = await open();
+  try {
+    await page.getByRole("button", { name: "Send to Lea", exact: true }).click();
+    expect(await focusedOutcome(page)).toBe(true);
+    await page.evaluate(() => window.__reopen());
+    const sentence = page.locator(".k2b-chat-decision__sentence").first();
+    expect(await sentence.evaluate((e) => e === document.activeElement)).toBe(true);
+    // The answers work again.
+    await page.getByRole("button", { name: "Keep draft", exact: true }).click();
+    expect(await focusedOutcome(page)).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
