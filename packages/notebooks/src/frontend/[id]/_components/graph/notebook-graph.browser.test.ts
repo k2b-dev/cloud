@@ -657,6 +657,22 @@ for (const depth of [1, 2]) {
   }, 30_000);
 }
 
+test(`${browserName}: recentring a graph opened under a note path keeps the new centre on reload`, async () => {
+  const page = await open(`/app/notebooks/hand01/notes/${WAREHOUSE}?mode=graph&from=book&display=neighborhood`);
+  const target = HANDBOOK_IDS.kuehl!;
+  try {
+    await page.locator(`[data-node="${target}"]`).focus();
+    await page.keyboard.press("Space");
+    await page.waitForFunction((id) => new URL(location.href).searchParams.get("note") === id, target);
+    expect(new URL(page.url()).pathname).toBe("/app/notebooks/hand01");
+    await page.reload();
+    await settled(page);
+    expect(await page.locator("[data-node][data-current]").getAttribute("data-node")).toBe(target);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
 test(`${browserName}: touch selection offers Move to center and clears after recentering`, async () => {
   const page = await open(
     graphPath("hand01", "&display=neighborhood"),

@@ -84,7 +84,11 @@ export default function NotebookGraph(props: Props) {
     clearTimeout(urlTimer);
     urlTimer = undefined;
     const url = writeGraphViewState(new URL(window.location.href), state());
-    if (centreChanged && centreId()) url.searchParams.set("note", centreId()!);
+    if (centreChanged && centreId()) {
+      // A note in the path wins over `note` on the server, so a recentred graph moves to the notebook's graph address.
+      url.pathname = url.pathname.replace(/\/notes\/[^/]+\/?$/, "");
+      url.searchParams.set("note", centreId()!);
+    }
     try {
       window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
     } catch {

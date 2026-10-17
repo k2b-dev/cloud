@@ -92,12 +92,13 @@ export async function startGraphServer() {
           { headers: { "content-type": "text/html; charset=utf-8" } },
         );
       const note = /^\/app\/notebooks\/(\w{6})\/notes\/(\w{6})$/.exec(url.pathname);
-      if (note) return page(`<main><h1 id="note-page">${note[2]}</h1></main>`);
-      const notebookId = /^\/app\/notebooks\/(\w{6})$/.exec(url.pathname)?.[1];
+      if (note && url.searchParams.get("mode") !== "graph") return page(`<main><h1 id="note-page">${note[2]}</h1></main>`);
+      const notebookId = note?.[1] ?? /^\/app\/notebooks\/(\w{6})$/.exec(url.pathname)?.[1];
       const notebook = notebookId ? GRAPH_NOTEBOOKS[notebookId] : undefined;
       if (!notebookId || !notebook || url.searchParams.get("mode") !== "graph") return new Response("Not found", { status: 404 });
       const graph = notebook.graph();
-      const selected = url.searchParams.get("note") ?? notebook.current ?? graph.nodes[0]?.id ?? null;
+      // As on the page, a note in the path wins over the `note` parameter.
+      const selected = note?.[2] ?? url.searchParams.get("note") ?? notebook.current ?? graph.nodes[0]?.id ?? null;
       const props: NotebookGraphFixtureProps = {
         navigator: {
           notebookId,
