@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { RuntimeAppMeta } from "../contracts/app";
 import type { Role, User } from "../contracts/shared";
-import { hasDedicatedRuntimeRoute, resolveRuntimeRoute, visibleNavigationApps, visiblePwaParts } from "./app-navigation";
+import {
+  hasDedicatedRuntimeRoute,
+  resolveRuntimeRoute,
+  visibleNavigationApps,
+  visiblePwaParts,
+  visiblePanelProviders,
+} from "./app-navigation";
 
 const user = {
   id: "user-id",
@@ -132,5 +138,42 @@ describe("runtime route matching", () => {
     expect(hasDedicatedRuntimeRoute(routeApps, "/admin/gateway/apps", "core")).toBe(true);
     expect(hasDedicatedRuntimeRoute(routeApps, "/admin/missing", "core")).toBe(false);
     expect(hasDedicatedRuntimeRoute(routeApps, "/app/missing", "core")).toBe(false);
+  });
+});
+
+describe("visiblePanelProviders", () => {
+  const panelApp = (id: string, label: string, requiresRoles?: Role[]): RuntimeAppMeta => ({
+    id,
+    name: id,
+    description: "Fixture",
+    icon: "ti ti-box",
+    routes: [`/app/${id}`],
+    panel: { href: `/app/${id}/panel`, label, icon: "ti ti-box", requiresRoles },
+  });
+  const providers = [
+    panelApp("z", "Stock", ["user"]),
+    { ...panelApp("a", "Zeiten"), presentation: { baseLocale: "en", translations: { de: { panelLabel: "Arbeitszeit" } } } },
+    panelApp("ops", "Operations", ["admin"]),
+    panelApp("guest", "Guests", ["guest"]),
+    { ...panelApp("invalid", "Invalid"), routes: ["/other"] },
+    ...apps,
+  ];
+  test("filters roles and ownership, requires a user, and sorts by localized labels", () => {
+    expect(visiblePanelProviders(providers, undefined, "en")).toEqual([]);
+    expect(visiblePanelProviders(providers, user, "en").map((provider) => provider.id)).toEqual(["z", "a"]);
+    expect(visiblePanelProviders(providers, user, "de").map((provider) => provider.label)).toEqual(["Arbeitszeit", "Stock"]);
+    expect(visiblePanelProviders(providers, { ...user, roles: [...user.roles, "admin"] }, "en").map((provider) => provider.id)).toContain(
+      "ops",
+    );
+    expect(visiblePanelProviders(providers, { ...user, profile: "guest", roles: ["guest"] }, "en").map((provider) => provider.id)).toEqual([
+      "guest",
+      "a",
+    ]);
+  });
+  test("uses id to break label ties and returns only the small provider projection", () => {
+    expect(visiblePanelProviders([panelApp("b", "Same"), panelApp("a", "Same")], user, "en")).toEqual([
+      { id: "a", label: "Same", icon: "ti ti-box", href: "/app/a/panel" },
+      { id: "b", label: "Same", icon: "ti ti-box", href: "/app/b/panel" },
+    ]);
   });
 });

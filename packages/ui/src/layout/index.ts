@@ -214,3 +214,6 @@ export { default as TabBar } from "./TabBar";
 
 export type { TableOfContentsItem, TableOfContentsProps } from "./TableOfContents";
 export { TableOfContents } from "./TableOfContents";
+
+export { default as ResizeSeparator, type ResizeSeparatorProps } from "./ResizeSeparator";
+export { attachResizeSeparator, type ResizeSeparatorOptions } from "./resize-separator";

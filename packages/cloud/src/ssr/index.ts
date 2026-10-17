@@ -5,6 +5,8 @@ export { default as AdminLayout } from "./AdminLayout";
 export {
   hasDedicatedRuntimeRoute,
   resolveRuntimeRoute,
+  type PanelProvider,
+  visiblePanelProviders,
   type VisiblePwaPart,
   visibleNavigationApps,
   visiblePwaParts,

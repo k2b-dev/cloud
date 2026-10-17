@@ -3513,3 +3513,36 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 @media (any-pointer: coarse) {
   .k2b-ui .k2b-toc__link { min-height: 2.75rem; }
 }
+
+.k2b-ui .k2b-resize-separator {
+  position: relative;
+  flex: none;
+  width: 12px;
+  align-self: stretch;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.k2b-ui .k2b-resize-separator[data-orientation="horizontal"] {
+  width: auto;
+  height: 12px;
+  cursor: row-resize;
+}
+.k2b-ui .k2b-resize-separator > span {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(50% - 1px);
+  width: 2px;
+  background: var(--k2b-focus-ring);
+  opacity: 0;
+}
+.k2b-ui .k2b-resize-separator[data-orientation="horizontal"] > span {
+  inset-inline: 0;
+  inset-block-start: calc(50% - 1px);
+  height: 2px;
+  width: auto;
+}
+.k2b-ui .k2b-resize-separator:is(:hover, :focus-visible, [data-active="true"]) > span { opacity: 1; }
+.k2b-ui .k2b-resize-separator:focus-visible { outline: 2px solid var(--k2b-focus-ring); outline-offset: -2px; }

@@ -1,6 +1,7 @@
 import type { HelpDocumentManifest } from "@k2b/cloud/shared";
 import {
   followPageTrail,
+  keyboardPlatform,
   installAppWorkspaceController,
   installInputModeController,
   installPageTitleController,
@@ -11,6 +12,7 @@ import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { appWorkspaceCookieName, readAppWorkspaceLayoutCookie } from "../_internal/app-workspace-state";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
+import type { PanelRequest } from "../browser/panel";
 import { navigationSearchItems } from "../browser/navigation-search";
 import { importOnDemand } from "../browser/reload";
 import { registerGlobalSearchHost } from "../browser/search-bridge";
@@ -32,6 +34,8 @@ import { shellShortcuts } from "./shell-shortcuts";
 import { syncTimezoneCookie } from "./timezone-cookie";
 
 export type ShellRuntimeProps = {
+  /** This page has an authorized panel slot. */
+  panel?: boolean;
   /** Layout pages outside focus mode: keep the current app's workspace layout in its cookie. */
   workspace?: { appId?: string };
   /** Layout pages: page titles, the way up (Alt+Up) and its per-tab memory. */
@@ -69,6 +73,55 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
   const t = () => platformMessages.resolve([locale()]).t;
   onMount(() => syncTimezoneCookie(true));
   onMount(() => onCleanup(installInputModeController()));
+
+  const togglePanel = () => {
+    window.dispatchEvent(new CustomEvent<PanelRequest>("cloud.panel.request", { detail: { action: "toggle" } }));
+  };
+  if (props.panel) {
+    onMount(() => {
+      let stopped = false;
+      let dispose: (() => void) | undefined;
+      const load = async (request?: PanelRequest) => {
+        const panel = await importOnDemand(() => import("../browser/panel-slot"));
+        if (!panel || stopped) return;
+        dispose ??= panel.installPanelSlot();
+        if (request) panel.handlePanelRequest(request);
+      };
+      const request = (event: CustomEvent<PanelRequest>) => {
+        const detail = event.detail;
+        if (detail.action === "open") {
+          if (detail.accepted || !readShellData()?.panel?.providers.some((provider) => provider.id === detail.provider)) return;
+          detail.accepted = true;
+        }
+        void load(event.detail);
+      };
+      const key = (event: KeyboardEvent) => {
+        const apple = keyboardPlatform() === "apple";
+        if (
+          event.defaultPrevented ||
+          event.isComposing ||
+          event.repeat ||
+          event.altKey ||
+          event.shiftKey ||
+          event.key.toLowerCase() !== "j" ||
+          event.metaKey !== apple ||
+          event.ctrlKey !== !apple
+        )
+          return;
+        event.preventDefault();
+        togglePanel();
+      };
+      window.addEventListener("cloud.panel.request", request);
+      if (!props.commands) window.addEventListener("keydown", key);
+      if (document.querySelector('.cloud-app-canvas[data-panel="open"]')) void load();
+      onCleanup(() => {
+        stopped = true;
+        dispose?.();
+        window.removeEventListener("cloud.panel.request", request);
+        window.removeEventListener("keydown", key);
+      });
+    });
+  }
 
   if (props.workspace) {
     onMount(() => {
@@ -146,15 +199,17 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
       ),
     );
     createEffect(() => {
-      for (const command of shellShortcuts(t())) {
+      for (const command of shellShortcuts(t(), { panel: props.panel })) {
         onCleanup(
           registerContextAwareCommand({
             ...command,
             action:
-              command.id === "cloud.search"
-                ? { search: {} }
-                : // Returning the load keeps the Command busy until the dialog is open; a second press opens no second dialog.
-                  () => importOnDemand(() => import("./LayoutHelp")).then((help) => help?.openLayoutHelpDialog()),
+              command.id === "cloud.panel"
+                ? togglePanel
+                : command.id === "cloud.search"
+                  ? { search: {} }
+                  : // Returning the load keeps the Command busy until the dialog is open; a second press opens no second dialog.
+                    () => importOnDemand(() => import("./LayoutHelp")).then((help) => help?.openLayoutHelpDialog()),
           }),
         );
       }

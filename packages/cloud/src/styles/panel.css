@@ -1,0 +1,94 @@
+.cloud-panel {
+  --cloud-panel-width: var(--cloud-panel-width-set, 26rem);
+  position: relative;
+  display: none;
+  min-height: 0;
+  color: var(--k2b-text);
+}
+.cloud-panel__card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--cloud-card-radius, var(--k2b-radius-dialog));
+  background: var(--k2b-surface);
+  box-shadow: var(--k2b-shadow-frame);
+}
+.dark .cloud-panel__card { border-color: var(--k2b-border); }
+.cloud-panel__head { display: flex; align-items: center; gap: .5rem; padding: .5rem; flex: none; }
+.cloud-panel__title { display: flex; flex: 1; min-width: 0; align-items: center; gap: .5rem; font-size: .875rem; font-weight: 600; }
+.cloud-panel__title > span, .cloud-panel__tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cloud-panel__tabs { display: flex; flex: 1; min-width: 0; overflow-x: auto; gap: .25rem; }
+.cloud-panel__tab { display: flex; min-width: 0; align-items: center; gap: .375rem; padding: .5rem; border-radius: var(--k2b-radius-control); }
+.cloud-panel__tab[aria-selected="true"] { background: var(--k2b-surface-muted); }
+.cloud-panel__tab:focus-visible, .cloud-panel__grabber:focus-visible { outline: 2px solid var(--k2b-focus-ring); outline-offset: -2px; }
+.cloud-panel__body { position: relative; flex: 1; min-height: 0; }
+.cloud-panel__body > :is(.cloud-panel__skeleton, .cloud-panel__frame, .cloud-panel__fallback, .cloud-panel__shield, .cloud-panel__closing) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  visibility: hidden;
+  opacity: 0;
+}
+.cloud-panel__frame { border: 0; background: var(--k2b-surface); }
+.cloud-panel__skeleton { padding: 1rem; }
+.cloud-panel__skeleton > span { display: block; height: .75rem; margin-bottom: .75rem; border-radius: .25rem; background: var(--k2b-surface-muted); }
+.cloud-panel__skeleton > span:last-child { width: 65%; }
+.cloud-panel__fallback { display: flex; align-items: center; justify-content: center; }
+.cloud-panel[data-state="loading"] .cloud-panel__skeleton,
+.cloud-panel[data-state="ready"] .cloud-panel__frame,
+.cloud-panel[data-state="failed"] .cloud-panel__fallback,
+.cloud-panel[data-resizing="true"] .cloud-panel__shield,
+.cloud-panel[data-closing="true"] .cloud-panel__closing { visibility: visible; opacity: 1; }
+.cloud-panel__shield { z-index: 2; cursor: col-resize; }
+.cloud-panel__closing { z-index: 3; display: flex; gap: .5rem; align-items: center; justify-content: center; background: var(--k2b-surface); pointer-events: none; }
+.cloud-panel__grabber { display: none; }
+.cloud-panel__resize { position: absolute !important; inset-block: 0; inset-inline-start: calc(-6px - var(--cloud-card-inset, .5rem) / 2); z-index: 4; }
+
+@media (width < 1280px) {
+  .cloud-panel { --cloud-panel-width: var(--cloud-panel-width-set, 21.5rem); }
+}
+@media (min-width: 1024px) {
+  .cloud-app-canvas[data-panel="open"] > .cloud-panel {
+    display: block;
+    flex: none;
+    width: var(--cloud-panel-width);
+    margin-inline-start: var(--cloud-card-inset, .5rem);
+    align-self: stretch;
+  }
+  .cloud-app-canvas[data-panel="open"] > [data-cloud-app-area] { container: k2b-app-area / inline-size; }
+}
+@media (768px <= width < 1024px) {
+  .cloud-app-canvas[data-panel="open"] > .cloud-panel {
+    display: block;
+    position: absolute;
+    z-index: 20;
+    inset-block: .5rem;
+    inset-inline-end: .5rem;
+    width: min(var(--cloud-panel-width), calc(100% - 1rem));
+  }
+  .cloud-panel__card { box-shadow: var(--k2b-shadow-float); }
+  .cloud-panel__resize { display: none !important; }
+}
+@media (width < 768px) {
+  .cloud-app-canvas[data-panel-sheet="open"] > .cloud-panel {
+    display: block;
+    position: fixed;
+    z-index: 30;
+    inset-inline: 0;
+    bottom: 0;
+    height: 58dvh;
+  }
+  .cloud-panel[data-panel-size="full"] { height: calc(100dvh - 2.875rem - env(safe-area-inset-top, 0px)) !important; }
+  .cloud-panel__card { border-radius: var(--k2b-radius-dialog) var(--k2b-radius-dialog) 0 0; box-shadow: var(--k2b-shadow-float); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .cloud-panel__grabber { display: flex; flex: none; align-items: center; justify-content: center; height: 1.5rem; }
+  .cloud-panel__grabber > span { width: 2rem; height: .25rem; border-radius: 999px; background: var(--k2b-border); }
+  .cloud-panel__resize { display: none !important; }
+}
+@media print {
+  .cloud-panel { display: none !important; }
+}

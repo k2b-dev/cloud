@@ -50,6 +50,7 @@ import {
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { BottomSheetDemo, MobileShellDemo, NavigationDemo, TabBarDemo } from "./mobile-navigation";
+import { ResizeSeparatorDemo } from "./resize-separator";
 import { DemoGrid, type DemoSection } from "./types";
 import { LiveWorkspaceDemo } from "./workspace-live";
 
@@ -1908,6 +1909,7 @@ const items = [
       <WorkspaceDemo />
     </DemoGrid>
   ),
+  "resize-separator": () => <ResizeSeparatorDemo />,
   panes: () => (
     <DemoGrid columns="one">
       <PanesDemo />
