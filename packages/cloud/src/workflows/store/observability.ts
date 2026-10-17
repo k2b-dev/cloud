@@ -387,6 +387,7 @@ export type WorkflowRunDetail = WorkflowRunSummary & {
   source: string;
   eventId: string | null;
   eventData: Record<string, WorkflowJsonValue> | null;
+  eventPayloadExpired: boolean;
   steps: WorkflowStepSummary[];
   children: Record<WorkflowRunState, number>;
 };
@@ -412,10 +413,13 @@ export const getWorkflowRun = async (runId: string, options: { db?: SQL } = {}):
       source: string;
       event_id: string | null;
       event_data: Record<string, WorkflowJsonValue> | null;
+      event_payload_expired: boolean;
     })[]
   >`
     SELECT ${db.unsafe(RUN_SELECT)},
-           r.inputs, r.result, r.effects_used, v.effect_budget, v.source, r.event_id, e.data AS event_data
+           r.inputs, r.result, r.effects_used, v.effect_budget, v.source, r.event_id,
+           CASE WHEN e.payload_expired_at IS NULL THEN e.data END AS event_data,
+           (e.payload_expired_at IS NOT NULL) AS event_payload_expired
     ${db.unsafe(RUN_FROM)}
     WHERE r.id = ${runId}::uuid
   `;
@@ -438,6 +442,7 @@ export const getWorkflowRun = async (runId: string, options: { db?: SQL } = {}):
     source: row.source,
     eventId: row.event_id,
     eventData: row.event_data,
+    eventPayloadExpired: row.event_payload_expired,
     children,
     steps,
   };

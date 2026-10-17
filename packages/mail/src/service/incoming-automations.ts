@@ -1,8 +1,8 @@
 import { lazySync } from "@k2b/cloud";
 import { isAppSessionActor } from "@k2b/cloud/server";
-import { audit, mandates, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
+import { audit, logger, mandates, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
-import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
+import { emitWorkflowEvent, notifyWorkflowWorker, WorkflowEventTooLargeError } from "@k2b/cloud/workflows/store";
 import { err, fail, isServiceError, ok, type Result, unwrap } from "@k2b/stdlib";
 import type { PumpState, Worker } from "@k2b/sync";
 import { sql } from "bun";
@@ -51,7 +51,12 @@ import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { mailLive } from "./live";
 import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
 import type { SqlClient } from "./workflow-data";
-import { getWorkflowSnapshot, mailWorkflowEventContext } from "./workflow-data";
+import {
+  getWorkflowSnapshot,
+  type MailWorkflowTargetSnapshot,
+  mailWorkflowEventContext,
+  mailWorkflowSnapshotWithoutBody,
+} from "./workflow-data";
 import {
   replaceManagedWorkflowInTransaction,
   setManagedWorkflowEnabledInTransaction,
@@ -785,20 +790,43 @@ const incomingAutomationBackfillCandidateSql = (input: IncomingAutomationBackfil
     AND (
       remote_ref.id::text IN (
         SELECT latest.remote_message_ref_id FROM (
-          SELECT DISTINCT ON (event.context #>> '{preconditions,message,remoteMessageRefId}')
-            event.context #>> '{preconditions,message,remoteMessageRefId}' AS remote_message_ref_id,
-            run.state,
-            run.finished_at
-          FROM workflows.event_delivery delivery
-          JOIN workflows.event event ON event.id = delivery.event_id
-          LEFT JOIN workflows.run run
-            ON run.event_id = event.id AND run.workflow_id = delivery.workflow_id AND run.parent_run_id IS NULL
-          WHERE delivery.workflow_id = ${input.workflowId}::uuid
-            AND delivery.workflow_version_id = ${input.workflowVersionId}::uuid
-            AND event.app_id = ${MAIL_WORKFLOW_APP_ID}
-            AND event.scope_id = ${input.mailboxId}
-            AND event.type = ${MAIL_WORKFLOW_EVENT.messageReceived}
-          ORDER BY event.context #>> '{preconditions,message,remoteMessageRefId}', event.created_at DESC, event.id DESC
+          SELECT DISTINCT ON (remote_message_ref_id)
+            remote_message_ref_id, state, finished_at
+          FROM (
+            SELECT
+              event.context #>> '{preconditions,message,remoteMessageRefId}' AS remote_message_ref_id,
+              run.state,
+              run.finished_at,
+              event.created_at AS event_created_at,
+              event.id AS event_id
+            FROM workflows.event_delivery delivery
+            JOIN workflows.event event ON event.id = delivery.event_id
+            LEFT JOIN workflows.run run
+              ON run.event_id = event.id AND run.workflow_id = delivery.workflow_id AND run.parent_run_id IS NULL
+            WHERE delivery.workflow_id = ${input.workflowId}::uuid
+              AND delivery.workflow_version_id = ${input.workflowVersionId}::uuid
+              AND event.app_id = ${MAIL_WORKFLOW_APP_ID}
+              AND event.scope_id = ${input.mailboxId}
+              AND event.type = ${MAIL_WORKFLOW_EVENT.messageReceived}
+            UNION ALL
+            -- After 30 days retention empties event context and deletes deliveries; runs keep their own context.
+            SELECT
+              run.context #>> '{preconditions,message,remoteMessageRefId}' AS remote_message_ref_id,
+              run.state,
+              run.finished_at,
+              event.created_at AS event_created_at,
+              event.id AS event_id
+            FROM workflows.run run
+            JOIN workflows.event event ON event.id = run.event_id
+            WHERE event.payload_expired_at IS NOT NULL
+              AND run.workflow_id = ${input.workflowId}::uuid
+              AND run.workflow_version_id = ${input.workflowVersionId}::uuid
+              AND run.parent_run_id IS NULL
+              AND event.app_id = ${MAIL_WORKFLOW_APP_ID}
+              AND event.scope_id = ${input.mailboxId}
+              AND event.type = ${MAIL_WORKFLOW_EVENT.messageReceived}
+          ) attempts
+          ORDER BY remote_message_ref_id, event_created_at DESC, event_id DESC
         ) latest
         WHERE latest.state IN ('failed', 'canceled') AND latest.finished_at <= ${input.cutoffAt}
       )
@@ -809,6 +837,7 @@ const incomingAutomationBackfillCandidateSql = (input: IncomingAutomationBackfil
   }
 `;
 
+const log = logger("mail:incoming-automations");
 const BACKFILL_PUMP_ID = "mail:incoming-automation-backfill";
 const getIncomingAutomationBackfillPump = lazySync((sync) =>
   sync.pump<IncomingAutomationBackfillInput, never, IncomingAutomationBackfillItem>({
@@ -843,22 +872,36 @@ const getIncomingAutomationBackfillPump = lazySync((sync) =>
           db: tx,
         });
         if (!snapshot) return;
-        await emitWorkflowEvent(
-          {
-            appId: MAIL_WORKFLOW_APP_ID,
-            scopeId: input.mailboxId,
-            type: MAIL_WORKFLOW_EVENT.messageReceived,
-            targetWorkflowId: automation.workflowId,
-            data: {
-              message: snapshot.source.message as unknown as WorkflowJsonValue,
-              conversation: snapshot.source.conversation as unknown as WorkflowJsonValue,
+        const emitSnapshot = (eventSnapshot: MailWorkflowTargetSnapshot) =>
+          emitWorkflowEvent(
+            {
+              appId: MAIL_WORKFLOW_APP_ID,
+              scopeId: input.mailboxId,
+              type: MAIL_WORKFLOW_EVENT.messageReceived,
+              targetWorkflowId: automation.workflowId,
+              data: {
+                message: eventSnapshot.source.message as unknown as WorkflowJsonValue,
+                conversation: eventSnapshot.source.conversation as unknown as WorkflowJsonValue,
+              },
+              context: mailWorkflowEventContext(eventSnapshot),
+              dedupeKey: incomingAutomationBackfillDedupeKey(input, snapshot.targetKey),
+              occurredAt: new Date(snapshot.internalDate),
             },
-            context: mailWorkflowEventContext(snapshot),
-            dedupeKey: incomingAutomationBackfillDedupeKey(input, snapshot.targetKey),
-            occurredAt: new Date(snapshot.internalDate),
-          },
-          { db: tx },
-        );
+            { db: tx },
+          );
+        try {
+          await emitSnapshot(snapshot);
+        } catch (error) {
+          if (!(error instanceof WorkflowEventTooLargeError)) throw error;
+          log.info("Retrying oversized message workflow event without its body", {
+            mailboxId: input.mailboxId,
+            workflowId: automation.workflowId,
+            field: error.field,
+            bytes: error.bytes,
+          });
+          // If the body-less event also fails, the pump records Failed with lastError.
+          await emitSnapshot(mailWorkflowSnapshotWithoutBody(snapshot));
+        }
       });
       notifyWorkflowWorker(MAIL_WORKFLOW_APP_ID);
     },

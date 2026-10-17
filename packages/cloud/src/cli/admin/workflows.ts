@@ -55,6 +55,7 @@ export type WorkflowRunDetailRow = WorkflowRunRow & {
   effectsUsed: Record<string, number>;
   effectBudget: Record<string, number>;
   eventData: Record<string, unknown> | null;
+  eventPayloadExpired: boolean;
   steps: WorkflowStepRow[];
   children: Record<RunState, number>;
 };

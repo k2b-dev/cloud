@@ -156,7 +156,9 @@ const RunPayloads = (props: { detail: WorkflowRunDetail }) => {
       <div class="grid gap-3 lg:grid-cols-2">
         <StructuredDataPreview title={t.inputs} data={props.detail.inputs} empty={t.noInputs} />
         <StructuredDataPreview title={t.result} data={props.detail.result} empty={props.detail.resultMessage ?? t.noResult} />
-        {props.detail.eventData ? (
+        {props.detail.eventPayloadExpired ? (
+          <StructuredDataPreview title={t.eventPayload} data={null} empty={t.eventPayloadExpired} class="lg:col-span-2" />
+        ) : props.detail.eventData ? (
           <StructuredDataPreview title={t.eventPayload} data={props.detail.eventData} class="lg:col-span-2" />
         ) : null}
       </div>

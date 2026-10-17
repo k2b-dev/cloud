@@ -24,6 +24,7 @@ convention still needs a check or a test.
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
 | Paint outside a scrollport | An outline or outset shadow, such as a status ring, reaches past its element and a scrolling ancestor flush with it cuts it off. | Test: `packages/ui/src/layout/detail-panel-sections.browser.test.ts` checks that an avatar ring flush with the detail body paints inside the scrollport and keeps the avatar size. |
+| Unbounded storage growth | Durable payloads have no size bound or retention. | Tests: workflow event integration cases cover byte limits, payload retention, dedupe, and resumable runs; workflow observability integration cases cover expired payloads; Mail integration cases cover oversized messages ([#1183](https://github.com/k2b-dev/cloud/issues/1183)). |
 | Unreadable treated as missing | Startup replaces an unreadable or invalid stored value with an environment value. | Test: `packages/cloud/src/services/settings/bootstrap.integration.test.ts` preserves ciphertext and timestamps for undecryptable and invalid rows while reads use the environment fallback ([#1295](https://github.com/k2b-dev/cloud/issues/1295)). |
 | Motion choice ignored | JavaScript or a separate document animates despite the person's reduced-motion choice. | Tests: `MailConversationReader.behavior.test.tsx` checks the choice at jump time; `MailMessageBody.browser.test.ts` checks initial and live propagation into the sandboxed message and rejects frame-originated motion messages ([#1230](https://github.com/k2b-dev/cloud/issues/1230)). |
 | One Markdown dialect parsed differently by editor and renderer | Separate parsers disagree about documented source forms, so an image renders in one view and disappears in another. | Shared helper: Notebooks uses `parseSizedMarkdownImage` in Book and Lezer. Test: both views iterate `DOCUMENTED_IMAGE_FORMS` for attachment and HTTPS images with sizes and titles ([#1278](https://github.com/k2b-dev/cloud/issues/1278)). |
@@ -287,6 +288,13 @@ convention still needs a check or a test.
 - **Root cause:** CommonMark parsed only the image label when the destination contained a size suffix; Book and editor decorations also used separate size patterns.
 - **Error class:** One Markdown dialect parsed differently by editor and renderer.
 - **Guard:** Book and the editor's Lezer extension use `parseSizedMarkdownImage`. Their tests iterate the same `DOCUMENTED_IMAGE_FORMS` matrix for attachment and HTTPS images, dimensions, and titles; parser tests reject invalid forms and verify offsets.
+
+### Workflow event payloads grew without bounds
+
+- **What happened:** Workflow events kept payloads and deliveries indefinitely and accepted arbitrarily large JSON ([#1183](https://github.com/k2b-dev/cloud/issues/1183)).
+- **Root cause:** Emission had no byte limit, and finished events had no payload retention.
+- **Error class:** Unbounded storage growth.
+- **Guard:** Event integration cases cover UTF-8 size limits before SQL, retained dedupe rows, dispatch age, resumable runs, repeated retention batches, and concurrently built retention indexes. Observability integration cases distinguish expired payloads from missing events. Mail integration cases emit an oversized message without its body through sync and backfill, and retry failed runs after event expiry while excluding succeeded runs. Convention: emitters keep large content out of events and let runs read it by reference; history queries use retained run context when event context and deliveries expire.
 
 ## Add a lesson
 
