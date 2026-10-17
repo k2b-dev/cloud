@@ -701,6 +701,19 @@ x: Month
 y: Revenue
 :::`;
 
+test("document diagnostics reuse parsed blocks in query, toc, chart order", () => {
+  const { diagnostics } = renderNotebookBook({
+    markdown: ":::chart\ntype: stat\ntitle: Value\n:::\n\n:::toc\nmax-depth: 9\n:::\n\n:::query\nsource: secrets\n:::",
+    notebookId: "book01",
+    locale: "en",
+  });
+  expect(diagnostics).toEqual([
+    { code: "invalid-type", line: 11, path: "query.source" },
+    { code: "invalid-type", line: 7, path: "toc.max-depth" },
+    { code: "missing-key", line: 1, path: "chart.value" },
+  ]);
+});
+
 test("charts survive sanitizing in the document and per-line editor preview", () => {
   const result = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "en" });
   expect(result.html).toContain('<figure class="notebook-book-chart" data-kind="bar">');

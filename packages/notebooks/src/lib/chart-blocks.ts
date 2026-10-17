@@ -13,13 +13,13 @@ import {
   cloudAiChartTable,
   cloudAiChartTooltip,
 } from "@k2b/cloud/ai/browser";
-import { type EvalResult, evaluateTableCell, isTotalRow } from "@k2b/cloud/shared";
+import { type EvalResult, evaluateTableCell, isFormula, isTotalRow } from "@k2b/cloud/shared";
 import { highlight, text } from "@k2b/stdlib";
 import { prepareChartSnapshot } from "@k2b/ui";
 import { Lexer, type Tokens } from "marked";
 import { evaluatePrettyTable } from "../frontend/lib/pretty-table";
 import { bookRendererMessages } from "./book-renderer-messages";
-import { extractNamedBlocks, isNamedBlockHandle, namedBlockBody, parseNamedDataBlockResult } from "./named-blocks";
+import { extractNamedBlocks, isNamedBlockHandle, type NamedDataEntry, namedBlockBody, parseNamedDataBlockResult } from "./named-blocks";
 import {
   directives,
   type NotebookBlockDiagnostic,
@@ -34,7 +34,7 @@ export type ChartBlock = { line: number; input: CloudAiChartInput };
 type Frame = { kind: CloudAiChartInput["kind"]; area?: boolean; title: string; subtitle?: string };
 type Entry = { value: string; line: number };
 type Cell = { raw: string; result: EvalResult };
-type SourceData = { columns: string[]; rows: Cell[][]; implicit: boolean; keys?: string[] };
+type SourceData = { columns: string[]; rows: Cell[][]; implicit: boolean; entries?: NamedDataEntry[]; invalid?: boolean };
 const TYPES = new Set(["line", "area", "bar", "pie", "donut", "scatter", "stat"]);
 const escape = highlight.escape;
 const chartSchema = cloudAiChartSchema();
@@ -50,8 +50,12 @@ const scalarCell = (value: string | number | boolean): Cell => {
 };
 
 /** Reads only local note data. Markdown table tokens match the Book table renderer's cell text. */
-const namedSource = (markdown: string, name: string): SourceData | "duplicate" | null => {
-  const matches = extractNamedBlocks(markdown).filter((candidate) => candidate.name === name);
+const namedSource = (
+  markdown: string,
+  namedBlocks: ReturnType<typeof extractNamedBlocks>,
+  name: string,
+): SourceData | "duplicate" | null => {
+  const matches = namedBlocks.filter((candidate) => candidate.name === name);
   // Two blocks of one name would make the chart pick one silently; named data and queries reject them too.
   if (matches.length > 1) return "duplicate";
   const block = matches[0];
@@ -86,19 +90,24 @@ const namedSource = (markdown: string, name: string): SourceData | "duplicate" |
   }
   if (block.type === "data") {
     const parsed = parseNamedDataBlockResult(namedBlockBody(markdown, block));
-    if (parsed.diagnostics.length) return null;
+    if (parsed.diagnostics.length) return { columns: [], rows: [], implicit: true, invalid: true };
     const entries = parsed.entries.filter((entry) => typeof entry.value === "number");
     return {
       columns: ["label", "value"],
       implicit: true,
-      keys: entries.map((entry) => entry.key),
+      entries: parsed.entries,
       rows: entries.map((entry) => [scalarCell(text.humanize(entry.key)), scalarCell(typeof entry.value === "number" ? entry.value : "")]),
     };
   }
   return null;
 };
 
-const parseChart = (directive: ReturnType<typeof directives>[number], markdown: string) => {
+const parseChart = (
+  directive: ReturnType<typeof directives>[number],
+  markdown: string,
+  namedBlocks: ReturnType<typeof extractNamedBlocks>,
+  sources: Map<string, SourceData | "duplicate" | null>,
+) => {
   const diagnostics: NotebookBlockDiagnostic[] = [];
   const top = new Map<string, Entry>();
   const tooltip = new Map<string, Entry>();
@@ -174,9 +183,11 @@ const parseChart = (directive: ReturnType<typeof directives>[number], markdown: 
     const name = isNamedBlockHandle(top.get("data")!.value);
     if (!name) add("invalid-type", "data");
     else {
-      const source = namedSource(markdown, name);
+      if (!sources.has(name)) sources.set(name, namedSource(markdown, namedBlocks, name));
+      const source = sources.get(name);
       if (source === "duplicate") add("duplicate-block", "data", undefined, { name });
       else if (!source) add("unknown-block", "data", undefined, { name });
+      else if (source.invalid) add("invalid-source", "data", undefined, { name });
       else data = source;
     }
   } else if (top.has("columns") || top.has("rows")) {
@@ -186,9 +197,9 @@ const parseChart = (directive: ReturnType<typeof directives>[number], markdown: 
       !Array.isArray(columns) ||
       !columns.length ||
       !columns.every((column): column is string => typeof column === "string" && !!column.trim())
-    )
-      add("invalid-type", "columns");
-    else {
+    ) {
+      if (top.has("columns")) add("invalid-type", "columns");
+    } else {
       if (new Set(columns).size !== columns.length) add("duplicate-key", "columns");
       data = { columns, rows: rows.map((row) => row.cells), implicit: false };
       rows.forEach((row, index) => {
@@ -224,7 +235,7 @@ const parseChart = (directive: ReturnType<typeof directives>[number], markdown: 
   const labels = (name: string, key: string) =>
     cells(name).map((cell, index) => {
       if (cell.result.kind === "error") once("not-a-number", key, { name, row: index + 1 });
-      return cell.result.kind === "ok" ? String(cell.result.value) : cell.raw;
+      return isFormula(cell.raw) && cell.result.kind === "ok" ? String(cell.result.value) : cell.raw.trim();
     });
   let format: CloudAiNumberFormat | undefined;
   const formatName = string("format", tooltip);
@@ -240,11 +251,13 @@ const parseChart = (directive: ReturnType<typeof directives>[number], markdown: 
     const raw = top.get("value");
     const value = raw ? parseScalar(raw.value) : undefined;
     if (typeof value === "number") mapped = { ...common, kind: "stat", value, format };
-    else if (typeof value === "string" && data.keys?.includes(value)) {
-      const index = data.keys.indexOf(value);
+    else if (typeof value === "string" && data.entries?.some((entry) => entry.key === value)) {
+      const index = data.entries.findIndex((entry) => entry.key === value);
       valueLabel = text.humanize(value);
-      const cell = data.rows[index]![1]!;
-      mapped = { ...common, kind: "stat", value: cell.result.kind === "ok" ? cell.result.value : undefined, format };
+      const entry = data.entries[index]!;
+      if (typeof entry.value !== "number" || !Number.isFinite(entry.value))
+        add("not-a-number", "value", raw?.line, { name: value, row: index + 1 });
+      else mapped = { ...common, kind: "stat", value: entry.value, format };
     } else {
       const name = column("value", data.implicit ? "value" : undefined);
       if (name && !diagnostics.length) {
@@ -309,11 +322,21 @@ const parseChart = (directive: ReturnType<typeof directives>[number], markdown: 
   });
   if (diagnostics.length) return { diagnostics };
   if (!parsed.success) {
+    const unsupported = new Set<string>();
     for (const issue of parsed.error.issues) {
       const path = issue.path.map(String);
       const first = path[0];
-      const key =
-        first === "series"
+      const tooltipField =
+        first === "tooltip" || first === "format"
+          ? first === "tooltip" && path[1] === "label"
+            ? "label"
+            : path.includes("unit")
+              ? "unit"
+              : "format"
+          : undefined;
+      const key = tooltipField
+        ? `tooltip.${tooltipField}`
+        : first === "series"
           ? path.includes("x")
             ? "x"
             : "y"
@@ -323,10 +346,12 @@ const parseChart = (directive: ReturnType<typeof directives>[number], markdown: 
               ? "x"
               : first === "kind"
                 ? "type"
-                : first === "format"
-                  ? "tooltip"
-                  : (first ?? "");
-      add("chart-unsupported", key, top.get(key)?.line ?? directive.line);
+                : (first ?? "");
+      const line = (tooltipField ? (tooltip.get(tooltipField)?.line ?? top.get("tooltip")?.line) : top.get(key)?.line) ?? directive.line;
+      const id = `${line}:${key}`;
+      if (unsupported.has(id)) continue;
+      unsupported.add(id);
+      add("chart-unsupported", key, line);
     }
     return { diagnostics };
   }
@@ -347,15 +372,17 @@ export const parseNotebookChartBlocks = (
 ): { blocks: ChartBlock[]; diagnostics: NotebookBlockDiagnostic[] } => {
   const blocks: ChartBlock[] = [];
   const diagnostics: NotebookBlockDiagnostic[] = [];
+  const namedBlocks = extractNamedBlocks(markdown);
+  const sources = new Map<string, SourceData | "duplicate" | null>();
   for (const [index, directive] of directives(markdown)
     .filter((entry) => entry.type === "chart")
     .entries()) {
     if (options.line !== undefined && directive.line !== options.line) continue;
     if (index >= CHART_MAX_BLOCKS) {
-      diagnostics.push({ code: "too-many-items", line: directive.line, path: "chart", params: { limit: CHART_MAX_BLOCKS } });
+      diagnostics.push({ code: "too-many-items", line: directive.line, path: "chart" });
       continue;
     }
-    const result = parseChart(directive, markdown);
+    const result = parseChart(directive, markdown, namedBlocks, sources);
     diagnostics.push(...result.diagnostics);
     if (result.block) blocks.push(result.block);
   }

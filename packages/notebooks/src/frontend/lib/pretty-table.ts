@@ -2,6 +2,7 @@ import {
   type EvalError,
   type EvalResult,
   type EvalValue,
+  evaluateFormula,
   evaluateTableCell,
   formatValue,
   isFormula,
@@ -28,10 +29,11 @@ export type PrettyTableData = {
 export const evaluatePrettyTable = (data: PrettyTableData) =>
   data.rows.map((row, currentRow) => ({
     isTotalRow: isTotalRow(row),
-    cells: data.headers.map((_, currentCol) => ({
-      raw: row[currentCol] ?? "",
-      result: evaluateTableCell(currentRow, currentCol, { headers: data.headers, rows: data.rows, currentRow, currentCol }),
-    })),
+    cells: data.headers.map((_, currentCol) => {
+      const raw = row[currentCol] ?? "";
+      const ctx = { headers: data.headers, rows: data.rows, currentRow, currentCol };
+      return { raw, result: isFormula(raw) ? evaluateFormula(raw, ctx) : evaluateTableCell(currentRow, currentCol, ctx) };
+    }),
   }));
 
 const TAG_RE = /(^|\s)#([a-zA-Z][\w-]*(?:\/[\w-]+)*)/g;

@@ -20,7 +20,13 @@ import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "./ligatures";
 import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
 import { parseSizedMarkdownImage } from "./markdown-image";
 import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "./named-blocks";
-import { parseNotebookQueryBlocks, parseNotebookTocBlocks, type QueryBlock, type QueryField } from "./query-blocks";
+import {
+  type NotebookBlockDiagnostic,
+  parseNotebookQueryBlocks,
+  parseNotebookTocBlocks,
+  type QueryBlock,
+  type QueryField,
+} from "./query-blocks";
 
 export type BookHeading = { id: string; depth: number; text: string; line?: number };
 
@@ -83,6 +89,7 @@ export const renderNotebookBook = (
   html: string;
   headings: BookHeading[];
   blocks: { line: number; html: string }[];
+  diagnostics: NotebookBlockDiagnostic[];
 } => {
   const markdown = input.markdown.replace(/\r\n?/g, "\n");
   const { locale, t } = bookRendererMessages.resolve([input.locale]);
@@ -93,8 +100,10 @@ export const renderNotebookBook = (
   const blockHtml = new Map<number, string>();
   const linkMode = input.linkMode ?? "book";
   const usedIds = new Set<string>();
-  const queries = new Map(parseNotebookQueryBlocks(markdown).blocks.map((block) => [block.line, block]));
-  const tocs = new Map(parseNotebookTocBlocks(markdown).blocks.map((block) => [block.line, block]));
+  const queryResult = parseNotebookQueryBlocks(markdown);
+  const tocResult = parseNotebookTocBlocks(markdown);
+  const queries = new Map(queryResult.blocks.map((block) => [block.line, block]));
+  const tocs = new Map(tocResult.blocks.map((block) => [block.line, block]));
   const chartResult = parseNotebookChartBlocks(markdown);
   const charts = new Map(chartResult.blocks.map((block) => [block.line, block.input]));
   const chartSlots: string[] = [];
@@ -552,6 +561,7 @@ export const renderNotebookBook = (
     html.replace(new RegExp(`${prefix}CHART(\\d+)END`, "g"), (_raw, index: string) => chartSlots[Number(index)] ?? "");
   return {
     html: restoreCharts(html),
+    diagnostics: [...queryResult.diagnostics, ...tocResult.diagnostics, ...chartResult.diagnostics],
     headings,
     blocks: [...blockHtml].map(([line, html]) => ({ line, html: restoreCharts(sanitizeNotebookBookHtml(html, resolveUrl)) })),
   };

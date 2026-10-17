@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as prettyTable from "../frontend/lib/pretty-table";
 import { evaluatePrettyTable, renderPrettyTableHtml } from "../frontend/lib/pretty-table";
 import {
   CHART_MAX_BLOCKS,
@@ -21,6 +22,23 @@ const input = (markdown: string) => {
 };
 
 describe("notebook chart mapping", () => {
+  test("evaluates a named formula table once for twenty charts", () => {
+    const evaluate = spyOn(prettyTable, "evaluatePrettyTable");
+    try {
+      const markdown =
+        "@t\n| a | b | share |\n| --- | --- | --- |\n" +
+        Array.from({ length: 480 }, (_, i) => `| ${i} | ${i + 1} | =b/SUM(b) |`).join("\n") +
+        "\n\n" +
+        Array.from({ length: 20 }, () => chart("type: bar\ntitle: Shares\ndata: @t\nx: a\ny: share")).join("\n");
+      const result = parseNotebookChartBlocks(markdown);
+      expect(result.diagnostics).toEqual([]);
+      expect(result.blocks).toHaveLength(20);
+      expect(evaluate).toHaveBeenCalledTimes(1);
+    } finally {
+      evaluate.mockRestore();
+    }
+  });
+
   test("uses evaluated table cells and excludes totals from every series", () => {
     expect(input(table + chart(named))).toEqual({
       kind: "line",
@@ -55,6 +73,33 @@ describe("notebook chart mapping", () => {
       ],
       tooltip: { label: "Revenue" },
     });
+  });
+
+  test("keeps raw numeric-looking table labels and evaluates formula labels", () => {
+    const source = "@t\n| Label | Value |\n| --- | --- |\n| 007 | 1.50 |\n| 1.50 | 2 |\n| =2+3 | 4 |\n\n";
+    for (const type of ["bar", "pie", "donut"]) {
+      const columns = type === "bar" ? "x: Label\ny: Value" : "label: Label\nvalue: Value";
+      expect(input(source + chart(`type: ${type}\ntitle: Labels\ndata: @t\n${columns}`))).toMatchObject({
+        data: [
+          { label: "007", value: 1.5 },
+          { label: "1.50", value: 2 },
+          { label: "5", value: 4 },
+        ],
+      });
+    }
+    for (const type of ["line", "scatter"]) {
+      expect(input(source + chart(`type: ${type}\ntitle: Numbers\ndata: @t\nx: Label\ny: Value`))).toMatchObject({
+        series: [
+          {
+            data: [
+              { x: 7, y: 1.5 },
+              { x: 1.5, y: 2 },
+              { x: 5, y: 4 },
+            ],
+          },
+        ],
+      });
+    }
   });
 
   test("maps a named list to pie with implicit columns", () => {
@@ -128,6 +173,51 @@ describe("notebook chart mapping", () => {
 });
 
 describe("chart diagnostics point to the authored setting", () => {
+  test("missing columns reports only the missing key", () => {
+    expect(parseNotebookChartBlocks(chart(inline.replace("columns: [Month, Revenue]\n", ""))).diagnostics).toEqual([
+      { code: "missing-key", line: 1, path: "chart.columns" },
+    ]);
+  });
+
+  test("nested contract issues point at the tooltip entry once", () => {
+    for (const body of [inline, "type: stat\ntitle: Revenue\nvalue: 42"]) {
+      for (const field of ["unit", "label"]) {
+        const markdown = chart(body + `\ntooltip:\n  format: EUR\n  ${field}: ${"x".repeat(201)}`);
+        expect(parseNotebookChartBlocks(markdown).diagnostics).toEqual([
+          { code: "chart-unsupported", line: markdown.split("\n").length - 1, path: `chart.tooltip.${field}` },
+        ]);
+      }
+    }
+  });
+
+  test("a named data source with errors reports invalid-source at data", () => {
+    const markdown =
+      "@sales\n:::data\nrevenue: 12\nrevenue: 18\n:::\n\n" + chart("type: stat\ntitle: Revenue\ndata: @sales\nvalue: revenue");
+    expect(parseNotebookChartBlocks(markdown).diagnostics).toEqual([
+      { code: "invalid-source", line: 10, path: "chart.data", params: { name: "sales" } },
+    ]);
+  });
+
+  test("a stat's existing non-numeric data key reports not-a-number at value", () => {
+    for (const value of ["Ada", '"007"', "true"]) {
+      const markdown =
+        `@sales\n:::data\nrevenue: 12\nowner: ${value}\n:::\n\n` + chart("type: stat\ntitle: Owner\ndata: @sales\nvalue: owner");
+      expect(parseNotebookChartBlocks(markdown).diagnostics).toEqual([
+        { code: "not-a-number", line: 11, path: "chart.value", params: { name: "owner", row: 2 } },
+      ]);
+    }
+  });
+
+  test("implicit chart rows exclude non-numeric data entries", () => {
+    const source = '@sales\n:::data\nowner: Ada\nrevenue: 12\ncode: "007"\nactive: true\nprofit: 5\n:::\n\n';
+    for (const type of ["bar", "pie", "donut"]) {
+      const result = input(source + chart(`type: ${type}\ntitle: Sales\ndata: @sales`));
+      expect(result).toMatchObject({ data: [{ value: 12 }, { value: 5 }] });
+      if (result.kind === "bar" || result.kind === "pie" || result.kind === "donut") expect(result.data).toHaveLength(2);
+    }
+    expect(input(source + chart("type: stat\ntitle: Profit\ndata: @sales\nvalue: profit"))).toMatchObject({ value: 5 });
+  });
+
   for (const [body, code, line, path] of [
     [inline + "\nwat: nope", "unknown-key", 10, "chart.wat"],
     [inline.replace("title: Sales\n", ""), "missing-key", 1, "chart.title"],
@@ -183,7 +273,7 @@ describe("chart diagnostics point to the authored setting", () => {
     const markdown = Array.from({ length: CHART_MAX_BLOCKS + 2 }, () => chart("type: stat\ntitle: Value\nvalue: 12")).join("\n");
     const result = parseNotebookChartBlocks(markdown);
     expect(result.blocks).toHaveLength(20);
-    expect(result.diagnostics).toEqual([101, 106].map((line) => ({ code: "too-many-items", line, path: "chart", params: { limit: 20 } })));
+    expect(result.diagnostics).toEqual([101, 106].map((line) => ({ code: "too-many-items", line, path: "chart" })));
   });
   test("contract failures are owned diagnostics, never contract text", () => {
     expect(
@@ -250,6 +340,6 @@ test("one chart can be read alone, still within the note's block budget", () => 
   expect(parseNotebookChartBlocks(markdown, { line: 6 }).blocks.map((block) => block.line)).toEqual([6]);
   expect(parseNotebookChartBlocks(markdown, { line: 101 })).toEqual({
     blocks: [],
-    diagnostics: [{ code: "too-many-items", line: 101, path: "chart", params: { limit: 20 } }],
+    diagnostics: [{ code: "too-many-items", line: 101, path: "chart" }],
   });
 });

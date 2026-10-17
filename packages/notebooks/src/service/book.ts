@@ -1,7 +1,6 @@
 import { type BookReferences, renderNotebookBook } from "../lib/book-renderer";
 import { bookRendererMessages, notebookBlockDiagnosticMessage } from "../lib/book-renderer-messages";
-import { parseNotebookChartBlocks } from "../lib/chart-blocks";
-import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../lib/query-blocks";
+import { parseNotebookQueryBlocks } from "../lib/query-blocks";
 import * as attachments from "./attachments";
 import { type NoteQueryResult, resolveNoteQuery } from "./note-query";
 import * as notebooks from "./notebooks";
@@ -125,11 +124,7 @@ export const loadBookBlockPreview = async (params: {
     linkMode: params.markdown === undefined ? "readonly" : "write",
   });
   const t = bookRendererMessages.resolve([params.locale]).t;
-  const diagnostics = [
-    ...parseNotebookQueryBlocks(markdown).diagnostics,
-    ...parseNotebookTocBlocks(markdown).diagnostics,
-    ...parseNotebookChartBlocks(markdown).diagnostics,
-  ].map((diagnostic) => ({
+  const diagnostics = document.diagnostics.map((diagnostic) => ({
     line: diagnostic.line,
     message: `${t.invalidBlock({ line: diagnostic.line })} ${diagnostic.path}: ${notebookBlockDiagnosticMessage(diagnostic, params.locale)}`,
   }));
