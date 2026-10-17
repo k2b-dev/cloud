@@ -1473,12 +1473,20 @@
 
 /* The preview switch sits inline beside the restore action instead of filling the header row. On phones the
    actions take a row of their own, the switch at the start and the restore action at the end, and the switch drops
-   its icons so both fit one row in every language. */
+   its icons so both fit one row in every language. A locked note's label and copy action stay together and move
+   below the switch when a language needs more than the row. */
 .notebooks-version-actions {
   display: flex;
   width: 100%;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.notebooks-version-locked {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
 }
 

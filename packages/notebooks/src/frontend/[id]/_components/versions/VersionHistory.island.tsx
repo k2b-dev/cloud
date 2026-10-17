@@ -334,7 +334,7 @@ export default function VersionHistory(props: Props) {
             <Show
               when={!props.isLocked}
               fallback={
-                <>
+                <div class="notebooks-version-locked">
                   <span class="text-xs text-dimmed flex items-center gap-1">
                     <i class="ti ti-lock text-xs" />
                     {t().locked}
@@ -351,7 +351,7 @@ export default function VersionHistory(props: Props) {
                     <i class="ti ti-copy" aria-hidden="true" />
                     {t().restoreAsCopy}
                   </Button>
-                </>
+                </div>
               }
             >
               <SplitButton
