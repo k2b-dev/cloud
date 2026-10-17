@@ -87,7 +87,7 @@ export const list = async (config: { subject: AccessSubject; boundBookId?: strin
       a.permission IN ('read'::auth.permission_level, 'write'::auth.permission_level, 'admin'::auth.permission_level)
       AND ${principalMatch}
       AND ${bindingMatch}
-    ORDER BY b.name ASC
+    ORDER BY b.name ASC, b.id ASC
   `;
 
   return rows.map(mapBook);
@@ -254,7 +254,7 @@ export const listAdmin = async (params: {
       OR LOWER(COALESCE(b.description, '')) LIKE ${pattern}
     )
     GROUP BY b.id, b.name, b.description, b.created_at, b.updated_at
-    ORDER BY LOWER(b.name) ASC, b.created_at ASC
+    ORDER BY LOWER(b.name) ASC, b.created_at ASC, b.id ASC
     LIMIT ${params.pagination.limit}
     OFFSET ${params.pagination.offset}
   `;
