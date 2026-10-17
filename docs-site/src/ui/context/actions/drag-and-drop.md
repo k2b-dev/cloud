@@ -40,15 +40,20 @@ the host owns asynchronous feedback and recovery from a failed move.
 **Pointer.** A primary mouse press with button 0 starts dragging after moving
 at least `SLOP = 10` px. Releasing earlier keeps the normal click. Inputs,
 textareas, selects, editable content, and `[data-drag-ignore]` keep their own
-press and native drag behavior. Elsewhere in a source, native link and image
-dragging is prevented.
+press and native drag behavior. A source inside editable content, such as a
+paragraph in an editor, therefore drags only from a handle marked
+`contenteditable="false"`, and its text stays selectable on touch screens.
+Elsewhere in a source, native link and image dragging is prevented, and on
+touch-only screens its text is not selectable.
 The drag captures the mouse, so a release over an iframe such as a PDF
 preview still ends it. The source keeps its box and dims; a fixed preview
 with the icon, the label, and the count follows the pointer.
 
 **Touch and pen.** Hold still for `HOLD_MS = 500` ms, then move at least 10 px
 from the original point. Moving 10 px before the hold abandons the press and
-lets the browser scroll. Once held, the page stays still under the finger.
+lets the browser scroll. Once held, the page stays still under the finger,
+also for a source without a `GestureMenu`. A platform long press that arrives
+earlier, as on Android, counts as the hold.
 With [`GestureMenu`](../actions/gestures), the hold opens its menu first;
 continued movement closes it and starts the drag, with either nesting order.
 A lift after holding or dragging never clicks the row.
@@ -98,9 +103,11 @@ order. With no destination, it announces that no place takes the item.
 
 Pickup announces the instructions together with the first destination. Each
 further choice scrolls into view and announces its position. A pointer press
-or a dialog level that opens over the origin cancels the sequence. Focus then
+cancels the sequence. When a dialog level opens over the origin, the next key
+or press cancels it, and that key still reaches the dialog. Focus then
 returns to the origin, or to its nearest focusable ancestor such as the
-`GestureMenu` group, if it is still connected.
+`GestureMenu` group, if it is still connected. When a held finger turns a
+`GestureMenu` into a drag, focus returns from the closed menu to its group.
 Starting another keyboard pickup cancels the previous drag first.
 
 ## Hosts and far-away targets
@@ -127,8 +134,10 @@ space or an overlay so their appearance does not shift the list.
 page through native drag events; that behavior is unchanged.
 `CalendarController.dragIn` remains the [calendar's](../surfaces/calendar)
 own drop into free time, with `CalendarExternalDrag` unchanged.
-`DragSource` and `DropTarget` handle drops elsewhere. A `DragSource` row can
-still start `dragIn` itself; the application chooses the interaction it starts.
+`DragSource` and `DropTarget` handle drops elsewhere. Use either
+`DragSource` or `dragIn` on one press region, as both start on the same
+press. An item that offers both uses a separate handle for one of them, or
+disables its `DragSource` where `dragIn` starts.
 
 ## Accessibility
 

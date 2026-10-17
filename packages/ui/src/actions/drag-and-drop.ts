@@ -281,8 +281,21 @@ export const bindDragSource = (
   const win = doc.defaultView!;
   const engine = engineFor(doc);
   let abandon: (() => void) | undefined;
-  /** Fields, editable text, and marked regions inside the source keep their own press and native drag. */
+  /** Set while a held finger or a drag owns the touch, so the page must not scroll. */
+  let blockTouch = false;
+  /**
+   * Bound for the source's whole life: WebKit decides at touchstart whether a touch can still be kept from scrolling,
+   * and only a non-passive listener present by then lets the later hold do so.
+   */
+  const preventScroll = (event: TouchEvent) => {
+    if (blockTouch && event.cancelable) event.preventDefault();
+  };
+  /**
+   * Fields, editable text, and marked regions inside the source keep their own press and native drag, and so does a
+   * whole source inside editable content, such as a paragraph in an editor.
+   */
   const ignored = (target: EventTarget | null) => {
+    if (target instanceof HTMLElement && target.isContentEditable) return true;
     const found = target instanceof Element ? target.closest(IGNORE) : null;
     return found !== null && source.contains(found);
   };
@@ -313,10 +326,23 @@ export const bindDragSource = (
     let over: Target | undefined;
     let refused: Target | undefined;
     const overflowCache = new WeakMap<Element, { x: string; y: string }>();
-    const preventScroll = (event: TouchEvent) => {
-      if (event.cancelable) event.preventDefault();
+    const hold = () => {
+      if (held || finished) return;
+      win.clearTimeout(timer);
+      if (read().disabled) {
+        cancel();
+        return;
+      }
+      held = true;
+      blockTouch = true;
+      source.dataset.held = "";
     };
-    const preventContext = (event: Event) => event.preventDefault();
+    // Android reports a long press as a context-menu event, which may come before the timer and opens a GestureMenu
+    // around the source then. It counts as the hold, so the following move drags.
+    const preventContext = (event: Event) => {
+      event.preventDefault();
+      if (!session) hold();
+    };
     const clean = () => {
       if (finished) return;
       finished = true;
@@ -329,7 +355,7 @@ export const bindDragSource = (
       win.removeEventListener("blur", cancel);
       win.removeEventListener("keydown", key, true);
       win.removeEventListener("contextmenu", preventContext, true);
-      doc.removeEventListener("touchmove", preventScroll);
+      blockTouch = false;
       source.removeEventListener("lostpointercapture", lostCapture);
       if (source.hasPointerCapture?.(id)) source.releasePointerCapture(id);
       delete source.dataset.held;
@@ -509,25 +535,19 @@ export const bindDragSource = (
       // A held finger drags: it selects no text, and Android's long-press menu does not open, also before the hold fires.
       source.dataset.pressing = "";
       win.addEventListener("contextmenu", preventContext, true);
-      timer = win.setTimeout(() => {
-        if (read().disabled) {
-          cancel();
-          return;
-        }
-        held = true;
-        source.dataset.held = "";
-        doc.addEventListener("touchmove", preventScroll, { passive: false });
-      }, HOLD_MS);
+      timer = win.setTimeout(hold, HOLD_MS);
     }
   };
   announcerFor(source);
   source.addEventListener("pointerdown", down);
   source.addEventListener("dragstart", nativeDrag);
+  source.addEventListener("touchmove", preventScroll, { passive: false });
   return () => {
     abandon?.();
     if (engine.session && source.contains(engine.session.origin)) engine.session.cancel();
     source.removeEventListener("pointerdown", down);
     source.removeEventListener("dragstart", nativeDrag);
+    source.removeEventListener("touchmove", preventScroll);
   };
 };
 

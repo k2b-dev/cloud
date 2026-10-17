@@ -12,6 +12,13 @@ import { createSignal } from "solid-js";
 import { createComponent, insert, render } from "solid-js/web";
 import { DragSource, DropTarget, GestureMenu, LocaleProvider, useKeyboardDrag, activeDrag } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 window.drops = []; window.clicks = 0; window.announcements = []; window.shift = 0;
+// WebKit decides at touchstart whether a touch can be kept from scrolling, so record which touchmove listeners exist.
+window.touchListeners = [];
+const addListener = EventTarget.prototype.addEventListener;
+EventTarget.prototype.addEventListener = function (type, listener, options) {
+  if (type === "touchmove") window.touchListeners.push({ target: this, passive: typeof options === "object" ? options.passive : undefined });
+  return addListener.call(this, type, listener, options);
+};
 window.addEventListener("pointerdown", event => window.lastPointer = event.pointerId, true);
 const [removed, setRemoved] = createSignal(false);
 const [disabled, setDisabled] = createSignal(false);
@@ -44,6 +51,22 @@ render(() => createComponent(LocaleProvider, { locale: new URLSearchParams(locat
   insert(extra, () => activeDrag() && window.extraTarget ? target("Later", ["demo.row"]) : null);
   return [list, rail, extra];
 } }), document.getElementById("app"));
+// A source without a GestureMenu, and one inside editable content that drags only from its handle.
+window.mountBare = () => {
+  const host = document.createElement("div"); document.querySelector(".rail").append(host);
+  const row = document.createElement("div"); row.className = "row bare-row"; row.textContent = "Bare";
+  render(() => createComponent(LocaleProvider, { locale: "en", get children() {
+    return createComponent(DragSource, { class: "bare-source", payload: { type: "demo.row", value: "bare", label: "Bare" }, children: row });
+  } }), host);
+};
+window.mountEditable = () => {
+  const editor = document.createElement("div"); editor.contentEditable = "true"; document.querySelector(".rail").append(editor);
+  const paragraph = document.createElement("p"); paragraph.className = "row paragraph"; paragraph.textContent = "Paragraph text";
+  const handle = document.createElement("span"); handle.className = "handle"; handle.contentEditable = "false"; handle.textContent = "::";
+  render(() => createComponent(LocaleProvider, { locale: "en", get children() {
+    return createComponent(DragSource, { class: "paragraph-source", payload: { type: "demo.row", value: "paragraph", label: "Paragraph" }, children: [handle, paragraph] });
+  } }), editor);
+};
 // A modal dialog nested inside the Archive target, with its own source.
 window.openNested = () => {
   const dialog = document.createElement("dialog"); dialog.className = "nested"; dialog.style.padding = "40px";
@@ -273,6 +296,8 @@ describe(`drag and drop in ${browserName}`, () => {
         expect(await page.locator(".k2b-context-menu").count()).toBe(0);
         expect(await drops(page)).toEqual([{ target: "Archive", value: `row-${index}` }]);
         expect(await page.evaluate<number>("window.clicks")).toBe(0);
+        // The menu had focus; closed by the drag, it returns focus to its group instead of dropping it on the body.
+        expect(await page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("group");
       } finally {
         await context.close();
       }
@@ -300,6 +325,128 @@ describe(`drag and drop in ${browserName}`, () => {
       await clean(page);
       expect(await drops(page)).toEqual([{ target: "Archive", value: "row-2" }]);
       expect(await page.evaluate<number>("window.clicks")).toBe(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a source without a GestureMenu keeps a held touch from scrolling", async () => {
+    const { page, context } = await open({ viewport: { width: 834, height: 1194 }, hasTouch: true, isMobile: true });
+    try {
+      await page.evaluate("window.mountBare()");
+      // Present before any press, so WebKit lets the hold cancel the moves of a touch that started on the source.
+      expect(
+        await page.evaluate(() =>
+          (window as unknown as { touchListeners: { target: EventTarget; passive?: boolean }[] }).touchListeners.some(
+            (entry) => entry.target === document.querySelector(".bare-source") && entry.passive === false,
+          ),
+        ),
+      ).toBe(true);
+      // Chromium's input protocol drives the real touch; WebKit's has no held touch in Playwright.
+      if (browserName === "chromium") {
+        const point = await center(page, ".bare-row");
+        const target = await center(page, ".archive");
+        const cdp = await context.newCDPSession(page);
+        try {
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point] });
+          await page.locator("[data-held]").waitFor();
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: point.x, y: point.y + 20 }] });
+          await page.locator(".k2b-drag-preview").waitFor();
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [target] });
+          await until(page, `document.querySelector('.archive')?.dataset.drop === 'over'`);
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        } finally {
+          await cdp.detach();
+        }
+        await clean(page);
+        expect(await drops(page)).toEqual([{ target: "Archive", value: "bare" }]);
+        expect(await page.evaluate(() => [window.scrollX, window.scrollY])).toEqual([0, 0]);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a platform long press before the hold time counts as the hold", async () => {
+    const { page, context } = await open({ viewport: { width: 834, height: 1194 }, hasTouch: true, isMobile: true });
+    try {
+      const point = await center(page, ".row >> nth=2");
+      const target = await center(page, ".archive");
+      // Android sends contextmenu for a long press at about 400 ms, before the 500 ms timer; all of this runs well before it.
+      const seen = await page.evaluate(
+        async ({ point }) => {
+          const row = document.querySelectorAll(".row")[2]!;
+          const pointer = (type: string, x: number, y: number) =>
+            row.dispatchEvent(
+              new PointerEvent(type, {
+                pointerId: 7,
+                pointerType: "touch",
+                isPrimary: true,
+                button: 0,
+                bubbles: true,
+                cancelable: true,
+                clientX: x,
+                clientY: y,
+              }),
+            );
+          pointer("pointerdown", point.x, point.y);
+          row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: point.x, clientY: point.y }));
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          const menu = document.querySelector(".k2b-context-menu") !== null;
+          pointer("pointermove", point.x + 20, point.y);
+          return { menu, preview: document.querySelector(".k2b-drag-preview") !== null };
+        },
+        { point },
+      );
+      expect(seen).toEqual({ menu: true, preview: true });
+      await page.evaluate(
+        ({ target }) => {
+          const row = document.querySelectorAll(".row")[2]!;
+          for (const type of ["pointermove", "pointerup"])
+            row.dispatchEvent(
+              new PointerEvent(type, {
+                pointerId: 7,
+                pointerType: "touch",
+                isPrimary: true,
+                bubbles: true,
+                clientX: target.x,
+                clientY: target.y,
+              }),
+            );
+        },
+        { target },
+      );
+      await clean(page);
+      expect(await page.locator(".k2b-context-menu").count()).toBe(0);
+      expect(await drops(page)).toEqual([{ target: "Archive", value: "row-2" }]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a source inside editable content keeps its text and drags from a handle", async () => {
+    const { page, context } = await open();
+    try {
+      await page.evaluate("window.mountEditable()");
+      // The touch-only rule that turns off text selection skips editable sources through this selector.
+      expect(await page.locator(".paragraph-source").evaluate((el) => el.matches(":read-write"))).toBe(true);
+      const text = await center(page, ".paragraph");
+      await page.mouse.move(text.x, text.y);
+      await page.mouse.down();
+      await page.mouse.move(text.x + 30, text.y);
+      // Checked with the button still down, as a drag would end with the release.
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      expect(await page.locator(".k2b-drag-preview, [data-dragging]").count()).toBe(0);
+      await page.mouse.up();
+      const handle = await center(page, ".handle");
+      await page.mouse.move(handle.x, handle.y);
+      await page.mouse.down();
+      await page.mouse.move(handle.x + 15, handle.y);
+      await page.locator(".k2b-drag-preview").waitFor();
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+      await clean(page);
+      expect(await drops(page)).toEqual([]);
     } finally {
       await context.close();
     }

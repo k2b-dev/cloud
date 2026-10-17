@@ -171,7 +171,11 @@ export function ContextMenuBase(
   };
 
   props.openAt?.(open);
-  props.closeWith?.(close);
+  // A close from outside, such as a drag taking over the press, returns focus that sits in the menu to where it came from.
+  props.closeWith?.(() => {
+    if (isOpen() && menu?.contains(document.activeElement)) returnFocus(opener?.isConnected ? opener : host, hostRing);
+    close();
+  });
 
   onMount(() => {
     onCleanup(() => {

@@ -11212,8 +11212,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   -webkit-touch-callout: none;
 }
 
+/* Text in editable content stays selectable; there a handle drags. */
 @media (any-pointer: coarse) and (not (any-pointer: fine)) {
-  .k2b-ui .k2b-drag-source:not([data-drag-disabled]) {
+  .k2b-ui .k2b-drag-source:not([data-drag-disabled], :read-write) {
     -webkit-user-select: none;
     user-select: none;
   }
