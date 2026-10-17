@@ -1549,6 +1549,7 @@ export default function AssistantWorkspace(props: Props) {
             }),
           ]}
           searchCommands={async (query, signal, search) => {
+            void catalog.ready(search, locale());
             const [rows] = await Promise.all([
               assistantComposerCommands({
                 query,
@@ -1595,7 +1596,8 @@ export default function AssistantWorkspace(props: Props) {
                   ]);
                 },
               }),
-              catalog.ready(search, locale()),
+              // Only an unscoped search can turn into a tag scope; the Assistant's own scopes never wait for apps.
+              search.scope ? undefined : catalog.ready(search, locale()),
             ]);
             return rows;
           }}

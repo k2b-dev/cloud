@@ -261,7 +261,8 @@ const mount = async (
           }),
         ]}
         searchCommands={(query, signal, search) => {
-          // As the workspace does: every search of an opening waits for its catalog answer.
+          // As the workspace does: every unscoped search of an opening waits for its catalog answer.
+          void catalogTags.ready(search, locale);
           return Promise.all([
             assistantComposerCommands({
               query,
@@ -280,7 +281,7 @@ const mount = async (
               running: state() === "running",
               assignProject: async () => {},
             }),
-            catalogTags.ready(search, locale),
+            search.scope ? undefined : catalogTags.ready(search, locale),
           ]).then(([rows]) => rows);
         }}
       />
@@ -823,6 +824,13 @@ test("a slow first catalog keeps the search pending, so a space after /notiz nar
   await settled();
   expect(h.root.textContent).toContain("Notizen aus Notebooks");
   expect(h.row("„q3“ in Notizen suchen")).toBeDefined();
+});
+
+test("the Assistant's own scopes never wait for a catalog that does not answer", async () => {
+  const h = await mount({ locale: "de-LU", value: "/modell ", catalogGate: new Promise<void>(() => {}), skills: [], tasks: [] });
+  await settled();
+  expect(h.row("Alpha")).toBeDefined();
+  expect(h.row("Beta")).toBeDefined();
 });
 
 test("one successful catalog fetch serves two composers, keystrokes and later openings", async () => {

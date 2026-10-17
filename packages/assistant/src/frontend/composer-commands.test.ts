@@ -3,11 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AiChatTaskView, AiProject, AiSkillSummary } from "@k2b/cloud/ai";
-import type { CloudResourcePickerItem, CloudResourcePickerOptions } from "@k2b/cloud/browser/resource-picker";
 import { createConfig } from "@k2b/ssr";
 
-const picker = mock<(options?: CloudResourcePickerOptions) => Promise<CloudResourcePickerItem | undefined>>(async () => undefined);
-mock.module("@k2b/cloud/browser/resource-picker", () => ({ openCloudResourcePicker: picker }));
 const root = mkdtempSync(join(tmpdir(), "assistant-slash-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -15,6 +12,7 @@ const { assistantCopyFor } = await import("./ui-copy");
 const { assistantApi } = await import("../api/client");
 const {
   assistantInsertCommands,
+  assistantResourceMention,
   assistantBuiltInCommands: builtInCommands,
   assistantComposerCommands: searchCommands,
   assistantCommandScopes,
@@ -1036,25 +1034,17 @@ test("the empty Skill scope shows the full list while task discovery is still pe
 test("a Cloud insert mention preserves its identity through send and draft hydration", async () => {
   const { aiComposerDraft, aiComposerSendInput } = await import("@k2b/cloud/ai/ui");
   const ref = { type: "notebooks.note", id: "Q3note" };
-  picker.mockResolvedValue({
-    ref,
-    title: "Q3 plan",
-    appId: "notebooks",
-    appName: "Notebooks",
-    appIcon: "ti ti-notebook",
-    readable: true,
-    href: "/notebooks/Q3note",
-  });
-  const insert = assistantInsertCommands({
-    copy: assistantCopyFor("de"),
-    locale: "de",
-    tags: [],
-    partCount: 0,
-    excludeRefs: () => [],
-    fileSelectionDisabled: false,
-  });
-  const result = await insert.commands[0]!.action!(context);
-  if (!result || typeof result !== "object" || !("mention" in result)) throw new Error("Expected a mention");
+  const result = {
+    mention: assistantResourceMention({
+      ref,
+      title: "Q3 plan",
+      appId: "notebooks",
+      appName: "Notebooks",
+      appIcon: "ti ti-notebook",
+      readable: true,
+      href: "/notebooks/Q3note",
+    }),
+  };
   const sent = aiComposerSendInput({
     text: "Q3 plan",
     attachments: [],

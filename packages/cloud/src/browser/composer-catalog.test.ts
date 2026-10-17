@@ -54,7 +54,8 @@ test("shares one paginated catalog load across concurrent and later calls for a 
     "/api/capabilities/v1/catalog?cursor=library&limit=25",
   ]);
   expect(requests.every((request) => request.headers.get(LOCALE_HEADER) === "de-CH")).toBe(true);
-  expect(requests.every((request) => request.signal === undefined)).toBe(true);
+  // Each page has its own deadline, so a request that never answers ends as a failure the next opening retries.
+  expect(requests.every((request) => request.signal instanceof AbortSignal && !request.signal.aborted)).toBe(true);
   expect(catalog.tags.map((tag) => tag.appId)).toEqual(["library", "notebooks"]);
 });
 

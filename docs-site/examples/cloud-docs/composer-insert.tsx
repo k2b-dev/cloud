@@ -16,6 +16,7 @@ export function ResourceComposer() {
     }),
   );
   let opening: number | undefined;
+  let catalogReady: Promise<void> = Promise.resolve();
   return (
     <Chat.Composer
       value={text()}
@@ -29,12 +30,16 @@ export function ResourceComposer() {
       searchCommands={async (_query, _signal, search) => {
         if (opening !== search.opening) {
           opening = search.opening;
-          try {
-            setTags((await loadCloudComposerCatalog(locale())).tags);
-          } catch {
-            /* Keep the current tags; the next opening retries. */
-          }
+          // A failure keeps the current tags; the next opening asks again.
+          catalogReady = loadCloudComposerCatalog(locale()).then(
+            (catalog) => {
+              setTags(catalog.tags);
+            },
+            () => {},
+          );
         }
+        // Every search of the opening waits, so "/notiz" never reads as "nothing found" before its tag arrives.
+        await catalogReady;
         return [];
       }}
       onSubmit={(input) => {

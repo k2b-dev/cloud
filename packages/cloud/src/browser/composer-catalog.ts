@@ -14,6 +14,9 @@ export type CloudSearchTag = {
 /** What composers read from the page's one Capability catalog load. */
 export type CloudComposerCatalog = { tags: readonly CloudSearchTag[] };
 
+/** The budget of one Capability query (and of resolving a Command), applied to each catalog page. */
+const CATALOG_PAGE_TIMEOUT_MS = 15_000;
+
 const catalogs = new Map<string, Promise<CloudComposerCatalog>>();
 
 const loadCatalog = async (locale: string): Promise<CloudComposerCatalog> => {
@@ -21,7 +24,13 @@ const loadCatalog = async (locale: string): Promise<CloudComposerCatalog> => {
   const seen = new Set<string>();
   let cursor: string | undefined;
   do {
-    const result = await listCapabilityCatalog({ limit: 25, cursor, headers: { [LOCALE_HEADER]: locale } });
+    // A page that never answers fails like any other, so the load is forgotten and the next opening asks again.
+    const result = await listCapabilityCatalog({
+      limit: 25,
+      cursor,
+      headers: { [LOCALE_HEADER]: locale },
+      signal: AbortSignal.timeout(CATALOG_PAGE_TIMEOUT_MS),
+    });
     if (!result.ok) throw new Error(result.error.message);
     for (const app of result.data.apps) {
       for (const query of app.manifest.queries) {

@@ -493,7 +493,11 @@ and `excludeRefs` to omit resources already in it.
 `loadCloudComposerCatalog(locale)` shares one catalog load per page and locale.
 Load it on each new menu opening, identified by `search.opening`, rather than on
 every keystroke. Successful loads remain cached; failures can retry at the next
-opening. Keep the previous tags if loading fails.
+opening. Keep the previous tags if loading fails. Let each unscoped search of an
+opening wait for that load, so a typed tag word does not settle as **Nothing
+found** before its tag arrives. Searches in your own scopes need not wait. Each
+catalog page has a 15-second deadline, so a stalled load fails and the next
+opening retries it.
 
 ```tsx
 import { type CloudSearchTag, cloudInsertMenu, loadCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
@@ -514,6 +518,7 @@ export function ResourceComposer() {
     }),
   );
   let opening: number | undefined;
+  let catalogReady: Promise<void> = Promise.resolve();
   return (
     <Chat.Composer
       value={text()}
@@ -527,12 +532,16 @@ export function ResourceComposer() {
       searchCommands={async (_query, _signal, search) => {
         if (opening !== search.opening) {
           opening = search.opening;
-          try {
-            setTags((await loadCloudComposerCatalog(locale())).tags);
-          } catch {
-            /* Keep the current tags; the next opening retries. */
-          }
+          // A failure keeps the current tags; the next opening asks again.
+          catalogReady = loadCloudComposerCatalog(locale()).then(
+            (catalog) => {
+              setTags(catalog.tags);
+            },
+            () => {},
+          );
         }
+        // Every search of the opening waits, so "/notiz" never reads as "nothing found" before its tag arrives.
+        await catalogReady;
         return [];
       }}
       onSubmit={(input) => {

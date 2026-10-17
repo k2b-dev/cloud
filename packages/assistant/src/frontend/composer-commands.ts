@@ -6,8 +6,10 @@ import {
   cloudInsertMenu,
   loadCloudComposerCatalog,
 } from "@k2b/cloud/browser/composer-insert";
+import type { CloudResourcePickerItem } from "@k2b/cloud/browser/resource-picker";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import {
+  type ChatAttachment,
   type ChatMention,
   type ChatCommand,
   type ChatCommandResult,
@@ -52,9 +54,9 @@ export const assistantCommandScopes = (copy: AssistantCopy, locale: string): Cha
 
 /**
  * The page's search tags for one composer. Each menu opening asks once; the platform keeps a successful load for the
- * page, so only the first opening, or one after a failure, sends a request. Every search of an opening waits for that
- * answer, so "/notiz" never settles as "nothing found" (and closes on the next space) before the tags could match it.
- * A failure keeps the tags the composer had.
+ * page, so only the first opening, or one after a failure, sends a request. Unscoped searches wait for that answer,
+ * so "/notiz" never settles as "nothing found" (and closes on the next space) before the tags could match it; the
+ * Assistant's own scopes do not. A failure keeps the tags the composer had.
  */
 export function createAssistantCatalogTags(load: (locale: string) => Promise<CloudComposerCatalog> = loadCloudComposerCatalog) {
   const [tags, setTags] = createSignal<readonly CloudSearchTag[]>([]);
@@ -77,6 +79,24 @@ export function createAssistantCatalogTags(load: (locale: string) => Promise<Clo
     },
   };
 }
+
+/**
+ * The reference a chosen resource becomes in the text, with the id the saved draft rebuilds it with, so it keeps its
+ * identity across saving and reopening. Studio apps are read by the Assistant as `assistant.artifact`.
+ */
+export const assistantResourceMention = (item: CloudResourcePickerItem): ChatAttachment => {
+  const ref = item.ref.type === "assistant.app" ? { type: "assistant.artifact", id: item.ref.id } : item.ref;
+  return aiChatAttachments([
+    {
+      kind: "resource",
+      id: `resource:${ref.type}:${ref.id}`,
+      name: item.title,
+      ref,
+      icon: item.icon ?? item.appIcon ?? "ti ti-cloud",
+      href: item.href,
+    },
+  ])[0]!;
+};
 
 /** Resources the draft already holds, as attachments or references; the picker leaves them out. */
 export const assistantExcludedRefs = (attachments: readonly AiComposerAttachment[], mentions: readonly ChatMention[]): CloudResourceRef[] =>
@@ -124,19 +144,7 @@ export function assistantInsertCommands(input: {
     ownReaders: { "assistant:studio-app": "assistant.app" },
     reason: input.partCount >= AI_TURN_ATTACHMENT_MAX_ITEMS ? limit : undefined,
     excludeRefs: input.excludeRefs,
-    mention: (item) => {
-      const ref = item.ref.type === "assistant.app" ? { type: "assistant.artifact", id: item.ref.id } : item.ref;
-      return aiChatAttachments([
-        {
-          kind: "resource",
-          id: `resource:${ref.type}:${ref.id}`,
-          name: item.title,
-          ref,
-          icon: item.icon ?? item.appIcon ?? "ti ti-cloud",
-          href: item.href,
-        },
-      ])[0]!;
-    },
+    mention: assistantResourceMention,
   });
   const attach: ChatCommand = {
     id: "attach-files",
