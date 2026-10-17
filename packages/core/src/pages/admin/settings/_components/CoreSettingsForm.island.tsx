@@ -16,6 +16,7 @@ import { PermissionEditor } from "@k2b/cloud/access/ui";
 import type { AiEnrichmentOverview } from "@k2b/cloud/ai";
 import type { AiModelAccessDraft, AiModelAccessMap } from "@k2b/cloud/ai/admin";
 import { coreClient } from "@k2b/cloud/clients/core";
+import type { GeoIpAdminStatus } from "@k2b/cloud/contracts";
 import type { AccessEntry } from "@k2b/cloud/contracts/shared";
 import {
   ACCOUNT_ACTION_NOTICE_SAMPLE,
@@ -81,6 +82,7 @@ import { aiSettingsMessages } from "./ai-settings-messages";
 import DocumentationLink from "./DocumentationLink";
 import { LegacySettingsSection } from "./LegacySettingsSection";
 import { settingsMessages } from "./messages";
+import SignInLocations from "./SignInLocations";
 import { localizeSettingField } from "./setting-copy";
 import { UnreadableSettingBadge, UnreadableSettingsNotice, unreadableReplacements } from "./UnreadableSettings";
 
@@ -130,6 +132,8 @@ type Props = {
   entries: SettingFieldDef[];
   accountSection?: "sign-in" | "registration";
   approvalState?: ApprovalAvailability;
+  /** Present on the sign-in tab; `status` is null when the server could not read it. */
+  signInLocations?: { status: GeoIpAdminStatus | null };
   showTestPdfAction?: boolean;
   showTestFreeIpaAction?: boolean;
   showLegacySettings?: boolean;
@@ -719,6 +723,7 @@ export default function CoreSettingsForm(props: Props) {
               ))}
             </Show>
             {renderFieldSections(genericEntries())}
+            <Show when={props.signInLocations}>{(locations) => <SignInLocations initial={locations().status} />}</Show>
             <Show when={props.showLegacySettings}>
               <CacheNotice area="settings" />
               <LegacySettingsSection />

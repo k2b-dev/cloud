@@ -162,3 +162,221 @@ test("truncateUtf8 preserves complete code points at every boundary", () => {
   }
   expect(truncateUtf8("a\ud800b\udc00", 96)).toBe("ab");
 });
+
+const uploaded = (type = "GeoLite2-City", sha256 = "a".repeat(64)) => {
+  const database = openGeoIpDatabase("city", mmdbFixture("city", { databaseType: type }), "uploaded")!;
+  database.info.sha256 = sha256;
+  return database;
+};
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+};
+
+test("uploaded source wins and an absent row returns to the bundled snapshot", async () => {
+  let versions: { city?: string } = { city: "a".repeat(64) };
+  const geo = createGeoIp({
+    paths: paths(),
+    uploads: {
+      versions: async () => versions,
+      read: async () => mmdbFixture("city", { databaseType: "GeoLite2-City" }),
+    },
+  });
+  await geo.refresh();
+  expect(geo.status().city).toMatchObject({ source: "uploaded", databaseType: "GeoLite2-City", sha256: versions.city });
+  versions = {};
+  await geo.refresh();
+  expect(geo.status().city).toMatchObject({ source: "bundled", databaseType: "DBIP-City-Lite" });
+  expect(geo.status().city?.sha256).toBeUndefined();
+});
+
+test("lookups keep their current reader during a single-flight refresh", async () => {
+  const waiting = deferred<Uint8Array | null>();
+  let checks = 0;
+  let reads = 0;
+  const geo = createGeoIp({
+    paths: paths(),
+    uploads: {
+      versions: async () => {
+        checks++;
+        return { city: "a".repeat(64) };
+      },
+      read: async () => {
+        reads++;
+        return waiting.promise;
+      },
+    },
+  });
+  const refresh = geo.refresh();
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(reads).toBe(1);
+  for (let i = 0; i < 10; i++) expect(geo.lookup("8.8.8.8").city).toBe("Vienna");
+  expect(geo.refresh()).toBe(refresh);
+  expect(geo.status().city?.source).toBe("bundled");
+  waiting.resolve(mmdbFixture("city", { databaseType: "GeoLite2-City", cityName: "Uploaded City" }));
+  await refresh;
+  expect(geo.status().city?.source).toBe("uploaded");
+  expect(checks).toBe(1);
+  expect(reads).toBe(1);
+  expect(geo.lookup("8.8.8.8").city).toBe("Uploaded City");
+});
+
+test("a slow refresh cannot overwrite a newer install or reset, even while versions is pending", async () => {
+  for (const reset of [false, true]) {
+    for (const slowVersions of [false, true]) {
+      const version = deferred<{ city: string }>();
+      const bytes = deferred<Uint8Array | null>();
+      const geo = createGeoIp({
+        paths: paths(),
+        uploads: {
+          versions: () => (slowVersions ? version.promise : Promise.resolve({ city: "a".repeat(64) })),
+          read: () => (slowVersions ? Promise.resolve(mmdbFixture("city")) : bytes.promise),
+        },
+      });
+      geo.install("city", uploaded("New-City", "b".repeat(64)));
+      const refresh = geo.refresh();
+      await Promise.resolve();
+      geo.install("city", reset ? null : uploaded("Newest-City", "c".repeat(64)));
+      version.resolve({ city: "a".repeat(64) });
+      bytes.resolve(mmdbFixture("city"));
+      await refresh;
+      expect(geo.status().city?.databaseType).toBe(reset ? "DBIP-City-Lite" : "Newest-City");
+    }
+  }
+});
+
+test("versions and read failures preserve both readers and log only once", async () => {
+  let failing: "versions" | "read" = "versions";
+  const logs = quiet();
+  try {
+    const geo = createGeoIp({
+      paths: paths(),
+      uploads: {
+        versions: async () => {
+          if (failing === "versions") throw new Error("private");
+          return { city: "a".repeat(64) };
+        },
+        read: async () => {
+          throw new Error("private");
+        },
+      },
+    });
+    geo.install("city", uploaded());
+    await geo.refresh();
+    failing = "read";
+    geo.install("city", uploaded("New-City", "b".repeat(64)));
+    await geo.refresh();
+    await geo.refresh();
+    expect(geo.status().city?.databaseType).toBe("New-City");
+    expect(geo.status().asn?.source).toBe("bundled");
+    expect(logs.warn).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(logs.warn.mock.calls)).not.toContain("private");
+  } finally {
+    logs.restore();
+  }
+});
+
+test("two instances discover changes and resets only after the injected refresh interval", async () => {
+  let now = 0;
+  let sha256: string | undefined;
+  let checks = 0;
+  const source = {
+    versions: async () => {
+      checks++;
+      return sha256 ? { city: sha256 } : {};
+    },
+    read: async () => mmdbFixture("city", { databaseType: "GeoLite2-City" }),
+  };
+  const files = paths();
+  const first = createGeoIp({ paths: files, uploads: source, now: () => now });
+  const second = createGeoIp({ paths: files, uploads: source, now: () => now });
+  await first.refresh();
+  await second.refresh();
+  sha256 = "a".repeat(64);
+  first.install("city", uploaded());
+  now = 59_999;
+  second.lookup("8.8.8.8");
+  expect(checks).toBe(2);
+  expect(second.status().city?.source).toBe("bundled");
+  now++;
+  second.lookup("8.8.8.8");
+  await second.refresh();
+  expect(second.status().city?.source).toBe("uploaded");
+  sha256 = undefined;
+  first.install("city", null);
+  now += 60_000;
+  second.lookup("8.8.8.8");
+  await second.refresh();
+  expect(second.status().city?.source).toBe("bundled");
+  expect(checks).toBe(4);
+});
+
+test("failed version checks retry at a custom interval, including a synchronous source failure", async () => {
+  let now = 100;
+  let checks = 0;
+  const geo = createGeoIp({
+    paths: paths(),
+    now: () => now,
+    refreshIntervalMs: 50,
+    uploads: {
+      versions: () => {
+        checks++;
+        throw new Error("unavailable");
+      },
+      read: async () => null,
+    },
+  });
+  geo.lookup("8.8.8.8");
+  await geo.refresh();
+  expect(checks).toBe(1);
+  now += 49;
+  geo.lookup("8.8.8.8");
+  expect(checks).toBe(1);
+  now++;
+  geo.lookup("8.8.8.8");
+  await geo.refresh();
+  expect(checks).toBe(2);
+  expect(geo.status().city?.source).toBe("bundled");
+});
+
+test("a vanished or invalid upload read keeps the installed version", async () => {
+  for (const result of [null, new Uint8Array([1, 2, 3])]) {
+    const geo = createGeoIp({
+      paths: paths(),
+      uploads: {
+        versions: async () => ({ city: "a".repeat(64) }),
+        read: async () => result,
+      },
+    });
+    geo.install("city", uploaded("Current-City", "b".repeat(64)));
+    await geo.refresh();
+    expect(geo.status().city?.databaseType).toBe("Current-City");
+  }
+});
+
+test("an unreadable stored upload is read once per version, and the other type still refreshes", async () => {
+  let reads = 0;
+  let citySha = "a".repeat(64);
+  const geo = createGeoIp({
+    paths: paths(),
+    uploads: {
+      versions: async () => ({ city: citySha, asn: "c".repeat(64) }),
+      read: async (kind) => {
+        reads++;
+        return kind === "city" ? new Uint8Array([1, 2, 3]) : mmdbFixture("asn", { databaseType: "Uploaded-ASN" });
+      },
+    },
+  });
+  await geo.refresh();
+  await geo.refresh();
+  expect(reads).toBe(2);
+  expect(geo.status().asn).toMatchObject({ databaseType: "Uploaded-ASN", source: "uploaded" });
+  expect(geo.status().city?.source).toBe("bundled");
+  citySha = "d".repeat(64);
+  await geo.refresh();
+  expect(reads).toBe(3);
+});

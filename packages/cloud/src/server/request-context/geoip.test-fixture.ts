@@ -1,6 +1,6 @@
 // Minimal deterministic MMDB writer: 24-bit tree, maps, strings, uint32 and arrays.
 type Value = string | number | Value[] | { [key: string]: Value };
-const encode = (value: Value): Buffer => {
+const encode = (value: Value): Buffer<ArrayBuffer> => {
   const header = (type: number, size: number) => {
     const extra = size < 29 ? [] : size < 285 ? [size - 29] : [(size - 285) >> 8, (size - 285) & 255];
     return Buffer.from([
@@ -26,8 +26,16 @@ const encode = (value: Value): Buffer => {
 export const FIXTURE_EPOCH = 1790812800; // 2026-10-01T00:00:00.000Z
 export const mmdbFixture = (
   kind: "city" | "asn",
-  options?: { databaseType?: string; ipVersion?: number; corruptData?: boolean },
-): Buffer => {
+  options?: {
+    databaseType?: string;
+    ipVersion?: number;
+    corruptData?: boolean;
+    buildEpoch?: number | string;
+    description?: string;
+    cityName?: string;
+    languages?: string[];
+  },
+): Buffer<ArrayBuffer> => {
   type Node = { children: [Node | number | null, Node | number | null]; index: number };
   const root: Node = { children: [null, null], index: 0 };
   const nodes = [root];
@@ -53,7 +61,7 @@ export const mmdbFixture = (
   const city = (names: { [key: string]: Value }, country = "at"): Value => ({ city: { names }, country: { iso_code: country } });
   const network = { autonomous_system_number: 12345, autonomous_system_organization: "Example Net GmbH" };
   // IPv4 lives below ::/96 in the IPv6 search tree.
-  insert("0".repeat(96) + "000010000000100000001000", kind === "city" ? city({ de: "Wien", en: "Vienna" }) : network);
+  insert("0".repeat(96) + "000010000000100000001000", kind === "city" ? city({ de: "Wien", en: options?.cityName ?? "Vienna" }) : network);
   insert("00101010000000010000010011111000", kind === "city" ? city({ en: "Zürich" }, "ch") : network);
   insert(
     "0".repeat(96) + "000000010000000100000001",
@@ -78,11 +86,11 @@ export const mmdbFixture = (
       record_size: 24,
       ip_version: options?.ipVersion ?? 6,
       database_type: options?.databaseType ?? (kind === "city" ? "DBIP-City-Lite" : "DBIP-ASN-Lite (compat=GeoLite2-ASN)"),
-      languages: ["en", "de"],
+      languages: options?.languages ?? ["en", "de"],
       binary_format_major_version: 2,
       binary_format_minor_version: 0,
-      build_epoch: FIXTURE_EPOCH,
-      description: { en: "Synthetic test database" },
+      build_epoch: options?.buildEpoch ?? FIXTURE_EPOCH,
+      description: { en: options?.description ?? "Synthetic test database" },
     }),
   ]);
 };

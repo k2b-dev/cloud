@@ -1,4 +1,6 @@
 import { Reader } from "mmdb-lib";
+import type { GeoIpKind } from "../../contracts/geoip";
+import { geoIpUploads } from "../../services/geoip/store";
 import { logger } from "../../services/logging";
 import { publicClientAddress } from "./address";
 
@@ -6,16 +8,11 @@ export const BUNDLED_GEOIP_PATHS = {
   cityPath: "/app/geoip/dbip-city-lite.mmdb",
   asnPath: "/app/geoip/dbip-asn-lite.mmdb",
 } as const;
-export const DBIP_ATTRIBUTION = {
-  text: "IP Geolocation by DB-IP",
-  url: "https://db-ip.com",
-  license: "CC BY 4.0",
-  licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
-} as const;
+export { DBIP_ATTRIBUTION } from "../../contracts/geoip";
 
 // Both names fit the 512-byte request context budget of the later slice.
 const NAME_MAX_BYTES = 96;
-export type GeoIpDatabaseInfo = { databaseType: string; buildDate: Date; source: "bundled" };
+export type GeoIpDatabaseInfo = { databaseType: string; buildDate: Date; source: "bundled" | "uploaded"; sha256?: string };
 
 export const truncateUtf8 = (value: string, maxBytes: number): string => {
   let result = "";
@@ -47,7 +44,7 @@ const cleanName = (value: unknown): string | null => {
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {};
 
-export const openGeoIpDatabase = (kind: "city" | "asn", bytes: Uint8Array, source: "bundled" = "bundled") => {
+export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "bundled" | "uploaded" = "bundled") => {
   try {
     // This Buffer is a view: Buffer.from(bytes) would copy the entire mmap.
     const reader = new Reader(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
@@ -62,7 +59,7 @@ export const openGeoIpDatabase = (kind: "city" | "asn", bytes: Uint8Array, sourc
   }
 };
 
-type Database = NonNullable<ReturnType<typeof openGeoIpDatabase>>;
+export type GeoIpDatabase = NonNullable<ReturnType<typeof openGeoIpDatabase>>;
 export type GeoIpLookup = {
   cityDatabase: boolean;
   asnDatabase: boolean;
@@ -70,15 +67,33 @@ export type GeoIpLookup = {
   city: string | null;
   network: string | null;
 };
+export type GeoIpUploads = {
+  versions(): Promise<Partial<Record<GeoIpKind, string>>>;
+  read(kind: GeoIpKind, sha256: string): Promise<Uint8Array | null>;
+};
+
 export type GeoIp = {
+  refresh(): Promise<void>;
+  install(kind: GeoIpKind, database: GeoIpDatabase | null): void;
   lookup(address: string | null, locale?: string): GeoIpLookup;
   status(): { city: GeoIpDatabaseInfo | null; asn: GeoIpDatabaseInfo | null };
 };
 
-export const createGeoIp = (paths: { cityPath: string; asnPath: string } = BUNDLED_GEOIP_PATHS): GeoIp => {
-  let loaded = false;
-  let city: Database | null = null;
-  let asn: Database | null = null;
+type GeoIpPaths = { cityPath: string; asnPath: string };
+export const createGeoIp = (
+  options: { paths?: GeoIpPaths; uploads?: GeoIpUploads; refreshIntervalMs?: number; now?: () => number } | GeoIpPaths = {},
+): GeoIp => {
+  const {
+    paths = BUNDLED_GEOIP_PATHS,
+    uploads,
+    refreshIntervalMs = 60_000,
+    now = Date.now,
+  } = "cityPath" in options ? { paths: options } : options;
+  const databases: Partial<Record<GeoIpKind, GeoIpDatabase | null>> = {};
+  const generations = { city: 0, asn: 0 };
+  const unreadable: Partial<Record<GeoIpKind, string>> = {};
+  let lastCheck = -Infinity;
+  let pending: Promise<void> | undefined;
   const logged = new Set<string>();
   const logOnce = (key: string, message: string) => {
     if (logged.has(key)) return;
@@ -88,7 +103,7 @@ export const createGeoIp = (paths: { cityPath: string; asnPath: string } = BUNDL
       logger("request-context").warn(message);
     } catch {}
   };
-  const open = (kind: "city" | "asn", path: string): Database | null => {
+  const open = (kind: "city" | "asn", path: string): GeoIpDatabase | null => {
     try {
       // A private mapping: pages load on demand and a stray write never reaches the file.
       const database = openGeoIpDatabase(kind, Bun.mmap(path, { shared: false }));
@@ -104,13 +119,57 @@ export const createGeoIp = (paths: { cityPath: string; asnPath: string } = BUNDL
       return null;
     }
   };
-  const load = () => {
-    if (loaded) return;
-    loaded = true;
-    city = open("city", paths.cityPath);
-    asn = open("asn", paths.asnPath);
+  const load = (kind: GeoIpKind): GeoIpDatabase | null => {
+    if (databases[kind] === undefined) databases[kind] = open(kind, paths[kind === "city" ? "cityPath" : "asnPath"]);
+    return databases[kind] ?? null;
   };
-  const read = (kind: "city" | "asn", database: Database | null, address: string) => {
+  const install = (kind: GeoIpKind, database: GeoIpDatabase | null) => {
+    generations[kind]++;
+    // Undefined opens the bundled mapping lazily, without retaining a second reader.
+    if (database) databases[kind] = database;
+    else delete databases[kind];
+  };
+  const refresh = (): Promise<void> => {
+    if (!uploads) return Promise.resolve();
+    if (pending) return pending;
+    const started = { ...generations };
+    pending = Promise.resolve().then(async () => {
+      try {
+        const versions = await uploads.versions();
+        const replacements: Partial<Record<GeoIpKind, GeoIpDatabase | null>> = {};
+        for (const kind of ["city", "asn"] as const) {
+          if (started[kind] !== generations[kind]) continue;
+          const sha256 = versions[kind];
+          if (sha256 === databases[kind]?.info.sha256 || (sha256 && sha256 === unreadable[kind])) continue;
+          if (!sha256) replacements[kind] = null;
+          else {
+            const bytes = await uploads.read(kind, sha256);
+            if (!bytes) continue; // Replaced or reset during the sliced read; retry next interval.
+            const database = openGeoIpDatabase(kind, bytes, "uploaded");
+            if (!database) {
+              // Keep the current reader and do not read the same blob again every interval.
+              unreadable[kind] = sha256;
+              logOnce(`${kind}-stored`, `Stored GeoIP ${kind} upload could not be opened; keeping the current database`);
+              continue;
+            }
+            database.info.sha256 = sha256;
+            replacements[kind] = database;
+          }
+        }
+        for (const kind of ["city", "asn"] as const) {
+          if (started[kind] !== generations[kind] || !(kind in replacements)) continue;
+          install(kind, replacements[kind] ?? null);
+        }
+      } catch {
+        logOnce("uploads", "GeoIP uploads could not be refreshed; keeping current sign-in databases");
+      } finally {
+        lastCheck = now();
+        pending = undefined;
+      }
+    });
+    return pending;
+  };
+  const read = (kind: "city" | "asn", database: GeoIpDatabase | null, address: string) => {
     try {
       return record(database?.reader.get(address));
     } catch {
@@ -119,14 +178,19 @@ export const createGeoIp = (paths: { cityPath: string; asnPath: string } = BUNDL
     }
   };
   return {
+    refresh,
+    install,
     status() {
-      load();
-      const info = (database: Database | null): GeoIpDatabaseInfo | null =>
+      const city = load("city");
+      const asn = load("asn");
+      const info = (database: GeoIpDatabase | null): GeoIpDatabaseInfo | null =>
         database ? { ...database.info, buildDate: new Date(database.info.buildDate.getTime()) } : null;
       return { city: info(city), asn: info(asn) };
     },
     lookup(address, locale = "en") {
-      load();
+      if (now() - lastCheck >= refreshIntervalMs) void refresh();
+      const city = load("city");
+      const asn = load("asn");
       const result: GeoIpLookup = { cityDatabase: city !== null, asnDatabase: asn !== null, country: null, city: null, network: null };
       const publicAddress = publicClientAddress(address);
       if (!publicAddress) return result;
@@ -142,5 +206,5 @@ export const createGeoIp = (paths: { cityPath: string; asnPath: string } = BUNDL
   };
 };
 
-let bundled: GeoIp | undefined;
-export const getGeoIp = (): GeoIp => (bundled ??= createGeoIp());
+let instance: GeoIp | undefined;
+export const getGeoIp = (): GeoIp => (instance ??= createGeoIp({ uploads: geoIpUploads }));
