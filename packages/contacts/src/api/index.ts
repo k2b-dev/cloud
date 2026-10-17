@@ -58,6 +58,14 @@ import { exportBody } from "./export-stream";
 
 const documentRoute = (options: Parameters<typeof describeRoute>[0]) => describeRoute(options) as MiddlewareHandler<AuthContext>;
 
+// Every authenticated route can return 401; requireBookAccess adds 403/404.
+const authResponses = { 401: jsonResponse(ErrorResponseSchema, "Authentication required") };
+const bookScopedResponses = {
+  ...authResponses,
+  403: jsonResponse(ErrorResponseSchema, "Access denied"),
+  404: jsonResponse(ErrorResponseSchema, "Book not found"),
+};
+
 type ApiErrorResponse = TypedResponse<{ message: string; code?: string }, 400 | 401 | 403 | 404 | 409 | 500, "json">;
 const MAX_IMPORT_CONTACTS = contactsService.import.MAX_IMPORT_CONTACTS;
 const MAX_IMPORT_CONTENT_CHARS = contactsService.import.MAX_IMPORT_CONTENT_CHARS;
@@ -695,6 +703,7 @@ const resolveApi = new Hono<AuthContext>().use(auth.requireRole("authenticated")
       "Pass `book` (ID or exact name) alone for a book, `contact` (ID) alone or with `book` (ID or exact display name) for a contact, or `email` alone for the one readable contact with that address. Several matches return 409 with every candidate.",
     ...requiresAuth,
     responses: {
+      ...authResponses,
       200: jsonResponse(ResolveResponseSchema, "The book, and the contact when one was addressed"),
       403: jsonResponse(ErrorResponseSchema, "Access denied"),
       404: jsonResponse(ErrorResponseSchema, "Nothing matches"),
@@ -819,7 +828,11 @@ const app = new Hono<AuthContext>()
       tags: ["Contacts"],
       summary: "List personal contact favorites",
       ...requiresAuth,
-      responses: { 200: jsonResponse(z.array(ContactFavoriteSchema), "Visible personal favorites") },
+      responses: {
+        ...authResponses,
+        200: jsonResponse(z.array(ContactFavoriteSchema), "Visible personal favorites"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+      },
     }),
     async (c) => {
       const userResult = requireUserBackedActor(c);
@@ -839,8 +852,9 @@ const app = new Hono<AuthContext>()
       summary: "Get personal contact favorite state",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactFavoriteStateSchema, "Favorite state"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Book or contact not found"),
       },
     }),
     async (c) => {
@@ -871,9 +885,9 @@ const app = new Hono<AuthContext>()
       summary: "Set personal contact favorite state",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(MessageResponseSchema, "Favorite state updated"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Contact not found"),
+        404: jsonResponse(ErrorResponseSchema, "Book or contact not found"),
       },
     }),
     v("json", SetContactFavoriteSchema),
@@ -919,7 +933,9 @@ const app = new Hono<AuthContext>()
       description: "List persisted contact books visible to the current actor.",
       ...requiresAuth,
       responses: {
+        ...authResponses,
         200: jsonResponse(ContactBookListResponseSchema, "Paginated book list"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
       },
     }),
     v("query", ListBooksQuerySchema),
@@ -955,9 +971,8 @@ const app = new Hono<AuthContext>()
       description: "Load one contact book by ID.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactBookSchema, "Book details"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Book not found"),
       },
     }),
     async (c) => {
@@ -976,9 +991,8 @@ const app = new Hono<AuthContext>()
       description: "Load the context required by the lazy contact book settings dialog. Requires admin access to a manual book.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactBookSettingsContextSchema, "Contact book settings context"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Book not found"),
       },
     }),
     async (c) => {
@@ -1015,8 +1029,10 @@ const app = new Hono<AuthContext>()
       description: "Create a manual contact book.",
       ...requiresAuth,
       responses: {
+        ...authResponses,
         200: jsonResponse(ContactBookSchema, "Created book"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
       },
     }),
     v("json", CreateBookSchema),
@@ -1038,9 +1054,8 @@ const app = new Hono<AuthContext>()
       description: "Update one manual contact book. Requires admin book access.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactBookSchema, "Updated book"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Book not found"),
       },
     }),
     v("json", UpdateBookSchema),
@@ -1063,9 +1078,8 @@ const app = new Hono<AuthContext>()
       description: "Delete one manual contact book. Requires admin book access.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(MessageResponseSchema, "Book deleted"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Book not found"),
       },
     }),
     async (c) => {
@@ -1088,9 +1102,8 @@ const app = new Hono<AuthContext>()
       description: "List all access entries for a manual book. Requires admin book access.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(z.array(AccessEntrySchema), "Access entries"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Book not found"),
       },
     }),
     async (c) => {
@@ -1114,8 +1127,8 @@ const app = new Hono<AuthContext>()
       description: "Grant access to a user, group, or public principal for a manual book. Requires admin book access.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(AccessEntrySchema, "Created access entry"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Book or principal not found"),
         409: jsonResponse(ErrorResponseSchema, "Principal already has access"),
       },
@@ -1142,10 +1155,10 @@ const app = new Hono<AuthContext>()
       description: "Update one access permission for a manual book. Requires admin book access.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(MessageResponseSchema, "Access updated"),
         409: jsonResponse(ErrorResponseSchema, "The change would leave the book without a manager (LAST_MANAGER)"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Access entry not found"),
+        404: jsonResponse(ErrorResponseSchema, "Book or access entry not found"),
       },
     }),
     v("json", UpdateAccessSchema),
@@ -1182,11 +1195,11 @@ const app = new Hono<AuthContext>()
       description: "Delete one access entry from a manual book. Requires admin book access.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(MessageResponseSchema, "Access revoked"),
         400: jsonResponse(ErrorResponseSchema, "Cannot remove the last access entry"),
         409: jsonResponse(ErrorResponseSchema, "The change would leave the book without a manager (LAST_MANAGER)"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Access entry not found"),
+        404: jsonResponse(ErrorResponseSchema, "Book or access entry not found"),
       },
     }),
     async (c) => {
@@ -1223,9 +1236,8 @@ const app = new Hono<AuthContext>()
       description: "List active resource-bound API keys for this contact book. Requires admin book access.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(z.object({ items: z.array(ContactBookApiKeySchema) }), "Contact book API keys"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Book not found"),
       },
     }),
     async (c) => {
@@ -1250,10 +1262,9 @@ const app = new Hono<AuthContext>()
       description: "Create a resource-bound API key for this contact book. The raw token is returned once. Requires admin book access.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         201: jsonResponse(CreateContactBookApiKeyResponseSchema, "Contact book API key created"),
         400: jsonResponse(ErrorResponseSchema, "Failed to create API key"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Book not found"),
       },
     }),
     v("json", CreateContactBookApiKeySchema),
@@ -1292,9 +1303,9 @@ const app = new Hono<AuthContext>()
       description: "Revoke a resource-bound API key for this contact book. Requires admin book access.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(MessageResponseSchema, "Contact book API key revoked"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "API key not found"),
+        404: jsonResponse(ErrorResponseSchema, "Book or API key not found"),
       },
     }),
     async (c) => {
@@ -1322,9 +1333,10 @@ const app = new Hono<AuthContext>()
       description: "List contacts in a book with pagination and optional search filter.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactListResponseSchema, "Paginated contacts"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Book not found"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied or favorites require a user-backed actor"),
+        404: jsonResponse(ErrorResponseSchema, "Book or tag not found"),
       },
     }),
     v("query", ListContactsQuerySchema),
@@ -1374,7 +1386,10 @@ const app = new Hono<AuthContext>()
       tags: ["Contacts"],
       summary: "Find duplicate contacts",
       ...requiresAuth,
-      responses: { 200: jsonResponse(z.array(ContactDuplicateMatchSchema), "Duplicate candidates") },
+      responses: {
+        ...bookScopedResponses,
+        200: jsonResponse(z.array(ContactDuplicateMatchSchema), "Duplicate candidates"),
+      },
     }),
     async (c) => {
       const bookId = c.req.param("bookId") ?? "";
@@ -1390,7 +1405,11 @@ const app = new Hono<AuthContext>()
       tags: ["Contacts"],
       summary: "Merge duplicate contacts",
       ...requiresAuth,
-      responses: { 200: jsonResponse(ContactSchema, "Merged contact") },
+      responses: {
+        ...bookScopedResponses,
+        200: jsonResponse(ContactSchema, "Merged contact"),
+        404: jsonResponse(ErrorResponseSchema, "Book or contact not found"),
+      },
     }),
     v("json", MergeDuplicateSchema),
     async (c) => {
@@ -1417,7 +1436,11 @@ const app = new Hono<AuthContext>()
       tags: ["Contacts"],
       summary: "Add tags to contacts",
       ...requiresAuth,
-      responses: { 200: jsonResponse(BulkContactResultSchema, "Updated contact count") },
+      responses: {
+        ...bookScopedResponses,
+        200: jsonResponse(BulkContactResultSchema, "Updated contact count"),
+        404: jsonResponse(ErrorResponseSchema, "Book, contact, or tag not found"),
+      },
     }),
     v("json", BulkContactTagsSchema),
     async (c) => {
@@ -1441,7 +1464,11 @@ const app = new Hono<AuthContext>()
       tags: ["Contacts"],
       summary: "Move contacts to another book",
       ...requiresAuth,
-      responses: { 200: jsonResponse(BulkContactResultSchema, "Moved contact count") },
+      responses: {
+        ...bookScopedResponses,
+        200: jsonResponse(BulkContactResultSchema, "Moved contact count"),
+        404: jsonResponse(ErrorResponseSchema, "Source book, target book, or contact not found"),
+      },
     }),
     v("json", BulkContactMoveSchema),
     async (c) => {
@@ -1468,7 +1495,11 @@ const app = new Hono<AuthContext>()
       tags: ["Contacts"],
       summary: "Delete contacts",
       ...requiresAuth,
-      responses: { 200: jsonResponse(BulkContactResultSchema, "Deleted contact count") },
+      responses: {
+        ...bookScopedResponses,
+        200: jsonResponse(BulkContactResultSchema, "Deleted contact count"),
+        404: jsonResponse(ErrorResponseSchema, "Book or contact not found"),
+      },
     }),
     v("json", BulkContactSelectionSchema),
     async (c) => {
@@ -1489,7 +1520,11 @@ const app = new Hono<AuthContext>()
       tags: ["Contacts"],
       summary: "Export selected contacts as vCard",
       ...requiresAuth,
-      responses: { 200: { description: "vCard file" } },
+      responses: {
+        ...bookScopedResponses,
+        200: { description: "vCard file" },
+        404: jsonResponse(ErrorResponseSchema, "Book or contact not found"),
+      },
     }),
     v("json", BulkContactSelectionSchema),
     async (c) => {
@@ -1514,7 +1549,11 @@ const app = new Hono<AuthContext>()
       tags: ["Contacts"],
       summary: "Export contact as vCard",
       ...requiresAuth,
-      responses: { 200: { description: "vCard file" } },
+      responses: {
+        ...bookScopedResponses,
+        200: { description: "vCard file" },
+        404: jsonResponse(ErrorResponseSchema, "Book or contact not found"),
+      },
     }),
     async (c) => {
       const bookId = c.req.param("bookId") ?? "";
@@ -1539,9 +1578,9 @@ const app = new Hono<AuthContext>()
       description: "Load one contact from a specific book.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactSchema, "Contact"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Contact or book not found"),
+        404: jsonResponse(ErrorResponseSchema, "Book or contact not found"),
       },
     }),
     async (c) => {
@@ -1568,9 +1607,9 @@ const app = new Hono<AuthContext>()
       description: "Load the full hierarchy around one manual contact in a specific book.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactTreeSchema, "Contact hierarchy tree"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Contact tree not found"),
+        404: jsonResponse(ErrorResponseSchema, "Book or contact not found"),
       },
     }),
     async (c) => {
@@ -1597,10 +1636,10 @@ const app = new Hono<AuthContext>()
       description: "Create one contact with optional emails/phones/addresses.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactSchema, "Created contact"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Book not found"),
+        404: jsonResponse(ErrorResponseSchema, "Book, parent contact, or tag not found"),
       },
     }),
     v("json", CreateContactSchema),
@@ -1625,10 +1664,10 @@ const app = new Hono<AuthContext>()
       description: "Update one contact. Provided child arrays fully replace existing entries.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactSchema, "Updated contact"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Contact or book not found"),
+        404: jsonResponse(ErrorResponseSchema, "Book, contact, parent contact, or tag not found"),
       },
     }),
     v("json", UpdateContactSchema),
@@ -1655,10 +1694,10 @@ const app = new Hono<AuthContext>()
       description: "Move one contact from the current manual book to another writable manual book.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactSchema, "Moved contact"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Contact or book not found"),
+        404: jsonResponse(ErrorResponseSchema, "Source book, target book, or contact not found"),
       },
     }),
     v("json", MoveContactSchema),
@@ -1694,9 +1733,9 @@ const app = new Hono<AuthContext>()
       description: "Delete one contact from the selected book.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(MessageResponseSchema, "Contact deleted"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Contact or book not found"),
+        404: jsonResponse(ErrorResponseSchema, "Book or contact not found"),
       },
     }),
     async (c) => {
@@ -1722,7 +1761,9 @@ const app = new Hono<AuthContext>()
       description: "Returns a bounded page of notes attached to one contact, newest first.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactNotePageSchema, "Paginated notes timeline"),
+        404: jsonResponse(ErrorResponseSchema, "Book or contact not found"),
       },
     }),
     v("query", PaginationQuerySchema),
@@ -1750,7 +1791,9 @@ const app = new Hono<AuthContext>()
       description: "Returns the timeline of notes attached to one contact, newest first.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(z.array(ContactNoteSchema), "Notes timeline"),
+        404: jsonResponse(ErrorResponseSchema, "Book or contact not found"),
       },
     }),
     async (c) => {
@@ -1776,8 +1819,10 @@ const app = new Hono<AuthContext>()
       summary: "Add a note to a contact",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactNoteSchema, "Created note"),
         400: jsonResponse(ErrorResponseSchema, "Validation error"),
+        404: jsonResponse(ErrorResponseSchema, "Book or contact not found"),
       },
     }),
     v("json", ContactNoteInputSchema),
@@ -1811,8 +1856,10 @@ const app = new Hono<AuthContext>()
       description: "Only the original author may edit their own note within 10 minutes.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactNoteSchema, "Updated note"),
-        403: jsonResponse(ErrorResponseSchema, "Not the author"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied or not the note's author"),
+        404: jsonResponse(ErrorResponseSchema, "Book, contact, or note not found"),
       },
     }),
     v("json", ContactNoteInputSchema),
@@ -1850,8 +1897,10 @@ const app = new Hono<AuthContext>()
       description: "Only the original author may delete their own note within 10 minutes.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(MessageResponseSchema, "Note deleted"),
-        403: jsonResponse(ErrorResponseSchema, "Not authorized"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied or not the note's author"),
+        404: jsonResponse(ErrorResponseSchema, "Book, contact, or note not found"),
       },
     }),
     async (c) => {
@@ -1893,6 +1942,7 @@ const app = new Hono<AuthContext>()
       summary: "List tags for a book",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(z.array(ContactTagSchema), "Tags"),
       },
     }),
@@ -1911,6 +1961,7 @@ const app = new Hono<AuthContext>()
       summary: "Create a tag",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactTagSchema, "Created tag"),
         409: jsonResponse(ErrorResponseSchema, "Name already exists"),
       },
@@ -1932,7 +1983,9 @@ const app = new Hono<AuthContext>()
       summary: "Update a tag",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ContactTagSchema, "Updated tag"),
+        404: jsonResponse(ErrorResponseSchema, "Book or tag not found"),
       },
     }),
     v("json", ContactTagUpdateInputSchema),
@@ -1955,7 +2008,9 @@ const app = new Hono<AuthContext>()
       summary: "Delete a tag",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(MessageResponseSchema, "Tag deleted"),
+        404: jsonResponse(ErrorResponseSchema, "Book or tag not found"),
       },
     }),
     async (c) => {
@@ -1979,6 +2034,7 @@ const app = new Hono<AuthContext>()
       summary: "Export book as vCard",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: { description: "vCard file" },
       },
     }),
@@ -2004,6 +2060,7 @@ const app = new Hono<AuthContext>()
       summary: "Export book as CSV (flat — first email/phone/address only)",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: { description: "CSV file" },
       },
     }),
@@ -2031,6 +2088,7 @@ const app = new Hono<AuthContext>()
         "Returns the parsed candidates plus a match indicator (by email or by first+last name) so the client can present a checkbox list before commit.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(z.object({ candidates: z.array(z.unknown()) }), "Preview"),
       },
     }),
@@ -2059,6 +2117,7 @@ const app = new Hono<AuthContext>()
         "Caller passes back the candidates that should be created. The server creates them in order and returns the created ids.",
       ...requiresAuth,
       responses: {
+        ...bookScopedResponses,
         200: jsonResponse(ImportCommitResponseSchema, "Created count with per-contact failures"),
       },
     }),
@@ -2101,7 +2160,10 @@ const app = new Hono<AuthContext>()
       description: "Search across all readable contact books, returning paginated matches.",
       ...requiresAuth,
       responses: {
+        ...authResponses,
         200: jsonResponse(ContactListResponseSchema, "Search results"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied or favorites require a user-backed actor"),
+        404: jsonResponse(ErrorResponseSchema, "Tag not found"),
       },
     }),
     v("query", SearchContactsQuerySchema),
