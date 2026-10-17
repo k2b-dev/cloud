@@ -238,31 +238,39 @@ const rovingFocus = (root: HTMLDivElement, orientation: () => ToolbarOrientation
   };
 };
 
-/** All measurement writes are DOM attributes: reactive writes do not flush during onMount. */
+/**
+ * All measurement writes are DOM attributes: reactive writes do not flush during onMount. More is never toggled while
+ * measuring: hiding it, even for a moment, can make the browser drop focus from it or from its open menu. An idle More
+ * stays out of the flow but keeps its box, so its width is always known.
+ */
 const measureOverflow = (
   root: HTMLDivElement,
   more: HTMLDivElement,
   actions: RegisteredAction[],
   available: number,
 ): RegisteredAction[] => {
-  for (const element of root.querySelectorAll(`[${overflowAttribute}]`)) reveal(element);
-  hide(more);
-  const children = Array.from(root.children).filter((element): element is HTMLElement => element instanceof HTMLElement);
+  for (const element of root.querySelectorAll(`[${overflowAttribute}]`)) if (element !== more) reveal(element);
+  const children = Array.from(root.children).filter(
+    (element): element is HTMLElement => element instanceof HTMLElement && element !== more,
+  );
   const visible = (element: Element) => !element.matches("[popover]") && element.getClientRects().length > 0;
   const separator = (element: Element) => element.classList.contains("k2b-toolbar__separator");
   const item = (element: Element) => !separator(element) && !element.classList.contains("k2b-toolbar__spacer");
-  const tidy = () => {
+  // Separators are tidied in DOM order with More, the last control, counted as shown when `withMore` is set.
+  const all = Array.from(root.children).filter((element): element is HTMLElement => element instanceof HTMLElement);
+  const tidy = (withMore: boolean) => {
     for (const group of root.querySelectorAll(".k2b-toolbar__group")) {
       reveal(group);
       if (!Array.from(group.children).some(visible)) hide(group);
     }
     for (const child of children) if (separator(child)) reveal(child);
+    const shown = (element: HTMLElement) => (element === more ? withMore : visible(element));
     let preceding = false;
-    for (let index = 0; index < children.length; index++) {
-      const child = children[index]!;
-      if (!visible(child)) continue;
+    for (let index = 0; index < all.length; index++) {
+      const child = all[index]!;
+      if (!shown(child)) continue;
       if (separator(child)) {
-        const following = children.slice(index + 1).some((next) => item(next) && visible(next));
+        const following = all.slice(index + 1).some((next) => item(next) && shown(next));
         if (!preceding || !following) hide(child);
         else preceding = false;
       } else if (item(child)) preceding = true;
@@ -287,9 +295,10 @@ const measureOverflow = (
     const cap = Number.parseFloat(childStyle.maxWidth);
     return Math.max(box, Math.min(child.scrollWidth, Number.isNaN(cap) ? Number.POSITIVE_INFINITY : cap));
   };
-  const used = () => {
+  const moreWidth = width(more) + gap;
+  const used = (withMore: boolean) => {
     const shown = children.filter(visible);
-    return shown.reduce((sum, child) => sum + width(child), edges) + gap * Math.max(0, shown.length - 1);
+    return shown.reduce((sum, child) => sum + width(child), edges) + gap * Math.max(0, shown.length - 1) + (withMore ? moreWidth : 0);
   };
   // Stable sort retains DOM order for the menu, but removes later actions first on a priority tie.
   const candidates = actions
@@ -300,13 +309,17 @@ const measureOverflow = (
     )
     .reverse()
     .sort((a, b) => b.props.priority! - a.props.priority!);
-  tidy();
+  let movedAny = false;
+  tidy(false);
   for (const action of candidates) {
-    if (used() <= available) break;
+    if (used(movedAny) <= available) break;
     hide(action.element);
-    reveal(more);
-    tidy();
+    movedAny = true;
+    tidy(true);
   }
+  // More changes only here, and only when its state changes.
+  if (movedAny) reveal(more);
+  else if (!more.hasAttribute(overflowAttribute)) hide(more);
   return actions.filter((action) => action.element.hasAttribute(overflowAttribute));
 };
 

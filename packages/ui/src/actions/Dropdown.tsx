@@ -529,6 +529,9 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     // Before hiding, so the popover does not return focus on its own.
     if (restoreFocus) returnFocus(triggerRef, triggerRing);
     if (menuRef?.matches(":popover-open")) menuRef.hidePopover();
+    // Like `open`, expose the closed state now: the toggle event can arrive after the next key press, and a trigger
+    // that still reads as open would ignore Enter (Escape, then Enter at once, must reopen).
+    setInternalOpen(false);
     detachViewportListeners();
   };
   const open = (focus: "first" | "last" | false = "first") => {
@@ -627,7 +630,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
           onKeyDown={handleMenuKeyDown}
           onToggle={(event) => {
             const nextOpen = (event as ToggleEvent).newState === "open";
-            const wasOpen = internalOpen();
+            const wasOpen = (event as ToggleEvent).oldState === "open";
             setInternalOpen(nextOpen);
             if (nextOpen) attachViewportListeners();
             else detachViewportListeners();

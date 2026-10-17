@@ -42,6 +42,11 @@ test("floating Toolbar reserves height, uses the float shadow, and keeps hints o
   expect(strip.get("margin-block-start")).toEqual(["auto"]);
   expect(strip.get("pointer-events")).toEqual(["none"]);
   expect(declarations(".k2b-ui .k2b-toolbar .k2b-toolbar__hint").get("position")).toEqual(["absolute"]);
+  // Measuring never shows or hides More, which would drop focus from it: an idle More keeps its box out of the flow.
+  const idleMore = declarations('.k2b-ui .k2b-toolbar > .k2b-toolbar__more[data-overflow="hidden"]');
+  expect(idleMore.get("display")).toEqual(["block !important"]);
+  expect(idleMore.get("position")).toEqual(["absolute"]);
+  expect(idleMore.get("visibility")).toEqual(["hidden"]);
   expect(declarations(".k2b-ui .k2b-toolbar[data-overflow-pending]").get("visibility")).toEqual(["hidden"]);
   expect(declarations(".k2b-ui .k2b-toolbar[data-overflow-pending]").get("opacity")).toEqual(["0"]);
   expect(

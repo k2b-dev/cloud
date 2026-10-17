@@ -11073,6 +11073,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex-shrink: 0;
 }
 .k2b-ui .k2b-toolbar[data-variant="floating"] {
+  position: relative;
   pointer-events: auto;
   max-inline-size: 100%;
   block-size: 3.25rem;
@@ -11143,6 +11144,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-toolbar [data-overflow="hidden"] {
   display: none !important;
+}
+/* An idle More keeps its box out of the flow, so measuring never has to show
+   or hide it; toggling it could drop focus from its trigger or open menu. */
+.k2b-ui .k2b-toolbar > .k2b-toolbar__more[data-overflow="hidden"] {
+  display: block !important;
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 .k2b-ui .k2b-toolbar[data-overflow-pending] {
   visibility: hidden;

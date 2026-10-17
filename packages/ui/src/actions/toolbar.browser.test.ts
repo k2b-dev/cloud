@@ -110,6 +110,24 @@ test("open Dropdown menu keys keep their own focus", async () => {
   }
 });
 
+test("a Dropdown closed with Escape reopens on the very next Enter", async () => {
+  const page = await open();
+  try {
+    await page.locator("#menu").focus();
+    // Escape then Enter in one task: the popover toggle event has not arrived yet when Enter is handled.
+    await page.locator("#menu").evaluate(async (trigger) => {
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem");
+    expect(await page.locator("#menu").getAttribute("aria-expanded")).toBe("true");
+  } finally {
+    await page.close();
+  }
+});
+
 test("vertical and RTL orientations, modifiers and text-entry keys", async () => {
   const page = await open();
   try {
@@ -276,7 +294,7 @@ for (const [viewport, width] of [
       expect(
         await toolbar.evaluate((root) => {
           const children = Array.from(root.children).filter(
-            (child) => child.getClientRects().length && !child.matches("[popover], .k2b-toolbar__spacer"),
+            (child) => child.getClientRects().length && !child.matches("[popover], .k2b-toolbar__spacer, [data-overflow]"),
           );
           const separators = children.map((child) => child.classList.contains("k2b-toolbar__separator"));
           return !separators[0] && !separators.at(-1) && separators.every((separator, index) => !separator || !separators[index + 1]);
@@ -661,7 +679,7 @@ test("empty groups and redundant separators disappear, including beside a spacer
     });
     await page.waitForFunction(() => {
       const children = Array.from(document.querySelector('[aria-label="Selection actions"]')!.children).filter(
-        (child) => child.getClientRects().length && !child.matches("[popover], .k2b-toolbar__spacer"),
+        (child) => child.getClientRects().length && !child.matches("[popover], .k2b-toolbar__spacer, [data-overflow]"),
       );
       const separators = children.map((child) => child.matches(".k2b-toolbar__separator"));
       return !separators[0] && !separators.at(-1) && separators.every((value, index) => !value || !separators[index + 1]);
