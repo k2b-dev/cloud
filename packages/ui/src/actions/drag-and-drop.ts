@@ -536,7 +536,8 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
     const drop = target?.drop;
     clearSession(engine, session, source);
     announce(origin, result);
-    if (origin.isConnected) focusTarget(origin).focus({ preventScroll: true });
+    // Focus scrolls the origin back into view when choosing a destination scrolled it away.
+    if (origin.isConnected) focusTarget(origin).focus();
     drop?.(payload);
   };
   const cancel = () => end();
@@ -550,18 +551,28 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
     announce(origin, text);
   };
   const key = (event: KeyboardEvent) => {
-    const index = current ? targets.indexOf(current) : -1;
-    let next: number | undefined;
-    if (["ArrowDown", "ArrowRight", "Tab"].includes(event.key)) next = index + (event.key === "Tab" && event.shiftKey ? -1 : 1);
-    else if (["ArrowUp", "ArrowLeft"].includes(event.key)) next = index - 1;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = targets.length - 1;
-    else if (!["Enter", " ", "Escape"].includes(event.key)) return;
+    const backward = event.key === "ArrowUp" || event.key === "ArrowLeft" || (event.key === "Tab" && event.shiftKey);
+    const forward = !backward && (event.key === "ArrowDown" || event.key === "ArrowRight" || event.key === "Tab");
+    if (!backward && !forward && !["Home", "End", "Enter", " ", "Escape"].includes(event.key)) return;
     event.preventDefault();
     event.stopPropagation();
-    if (next !== undefined) choose(targets[(next + targets.length) % targets.length]!);
-    else if (event.key === "Escape") cancel();
-    else end(current && accepts(current, payload) && reachable(current, origin) ? current : undefined);
+    if (event.key === "Escape") {
+      cancel();
+      return;
+    }
+    // Destinations may have been hidden or shown since the last key, for example by a layout change.
+    targets = choices();
+    if (!targets.length) {
+      end(undefined, messages.noTarget(payload));
+      return;
+    }
+    const index = current ? targets.indexOf(current) : -1;
+    const count = targets.length;
+    if (forward) choose(targets[index < 0 ? 0 : (index + 1) % count]!);
+    else if (backward) choose(targets[index < 0 ? count - 1 : (index - 1 + count) % count]!);
+    else if (event.key === "Home") choose(targets[0]!);
+    else if (event.key === "End") choose(targets[count - 1]!);
+    else end(index >= 0 ? current : undefined);
   };
   /** Chooses the first destination and starts listening; without one, the sequence ends at once. */
   const settle = () => {

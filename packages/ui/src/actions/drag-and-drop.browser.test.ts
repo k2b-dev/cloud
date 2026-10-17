@@ -429,6 +429,30 @@ describe(`drag and drop in ${browserName}`, () => {
     }
   });
 
+  test("keyboard choices follow destinations that hide during the pickup", async () => {
+    const { page, context } = await open();
+    try {
+      await page.evaluate("window.extraTarget = true");
+      const row = page.getByRole("group", { name: "Row 2", exact: true });
+      await row.focus();
+      await page.keyboard.press("Shift+F10");
+      await until(page, `document.activeElement?.textContent === 'Reply'`);
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await until(page, `document.querySelector('.k2b-drag-announcer')?.textContent?.endsWith('Archive, 1 of 2.')`);
+      await page.locator(".later").evaluate((el) => {
+        (el as HTMLElement).style.visibility = "hidden";
+      });
+      await page.keyboard.press("ArrowDown");
+      await until(page, `document.querySelector('.k2b-drag-announcer')?.textContent === 'Archive, 1 of 1.'`);
+      await page.keyboard.press("Enter");
+      await clean(page);
+      expect(await drops(page)).toEqual([{ target: "Archive", value: "row-2" }]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("keyboard pickup skips a hidden destination", async () => {
     const { page, context } = await open();
     try {
