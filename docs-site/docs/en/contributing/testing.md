@@ -175,6 +175,26 @@ reports after the timeout names what it waited for, not the cleanup in
 kept across tests closes with its browser.
 `packages/ui/test/browser.browser.test.ts` guards this recovery.
 
+Open each URL state that a test checks in its own page. Navigate a loaded page
+in place only when the test checks navigation itself: reload, Back, Forward,
+or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place
+`goto` on an idle Notebooks page stalled before load in two WebKit CI runs;
+about 450 local runs did not reproduce it, and first navigations of fresh
+pages never stalled.
+
+When `goto`, `reload`, `goBack`, or `goForward` on a launcher page times out,
+the error appends a navigation diagnosis. It reports whether a document
+committed, the navigation response status, DOMContentLoaded and load events,
+open requests, and a main-thread probe. No commit with an open document
+request points to the server or network. A commit with an open subresource
+points to that request. A silent main thread after a commit points to a
+blocked page; see
+[When a WebKit page stops answering](#when-a-webkit-page-stops-answering).
+Before a commit, Chromium holds the probe until the navigation ends, so there
+silence alone proves nothing.
+`packages/ui/test/browser.browser.test.ts` guards the diagnosis for both an
+uncommitted navigation and a committed navigation whose load never fires.
+
 A step that scrolls the page, such as `focus()` on an element below the fold,
 dispatches its `scroll` event on the next frame. Chart inspection, popovers,
 and menus that close on scroll can then undo the result of the next step.

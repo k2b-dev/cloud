@@ -1,9 +1,79 @@
-import { expect, test } from "bun:test";
-import { browserName } from "../test/browser";
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { type Browser, errors } from "playwright";
+import { browserName, launchBrowser } from "../test/browser";
 
 if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
   await import("./browser-recovery.browser-suite");
 } else {
+  let browser: Browser;
+  let server: ReturnType<typeof Bun.serve>;
+  beforeAll(async () => {
+    server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        const path = new URL(request.url).pathname;
+        if (path === "/hang" || path === "/never") return new Promise<Response>(() => {});
+        return new Response(path === "/stalled" ? '<!doctype html><img src="/never">' : "<!doctype html><p>Start</p>", {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      },
+    });
+    browser = await launchBrowser();
+  });
+  afterAll(async () => {
+    try {
+      await browser?.close();
+    } finally {
+      await server?.stop(true);
+    }
+  });
+
+  test("a navigation whose document never answers says it did not commit", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      const start = new URL("/start", server.url).href;
+      const hang = new URL("/hang", server.url).href;
+      expect((await page.goto(start))?.status()).toBe(200);
+      const error = await page.goto(hang, { timeout: 1500 }).catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(errors.TimeoutError);
+      if (!(error instanceof errors.TimeoutError)) throw new Error("Expected a navigation timeout");
+      expect(error.message).toContain("Navigation diagnosis:");
+      expect(error.message).toContain(`No document committed; page still shows ${start}`);
+      expect(error.message).toContain("Navigation response: none");
+      expect(error.message).toContain("Requests still open:");
+      expect(error.message).toContain(`GET ${hang}`);
+      // Chromium holds page.evaluate until a pending navigation commits; WebKit answers from the old document.
+      expect(error.message).toContain(browserName === "chromium" ? "Main thread: did not answer within 2 s" : "Main thread: answered in ");
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
+  test("a committed navigation whose load never fires names the open request", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      const stalled = new URL("/stalled", server.url).href;
+      const never = new URL("/never", server.url).href;
+      const error = await page.goto(stalled, { timeout: 1500 }).catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(errors.TimeoutError);
+      if (!(error instanceof errors.TimeoutError)) throw new Error("Expected a navigation timeout");
+      expect(error.message).toContain("Navigation diagnosis:");
+      expect(error.message).toContain(`Document committed at ${stalled}`);
+      expect(error.message).toContain("Navigation response status: 200");
+      expect(error.message).toContain("DOMContentLoaded: fired");
+      expect(error.message).toContain("load: did not fire");
+      expect(error.message).toContain("Requests still open:");
+      expect(error.message).toContain(`GET ${never}`);
+      expect(error.message).toContain("Main thread: answered in ");
+      expect(error.message).toContain("readyState interactive");
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
   test(`the shared ${browserName} browser recovers after a test times out`, async () => {
     const child = Bun.spawn([process.execPath, "test", import.meta.path], {
       env: { ...process.env, UI_BROWSER_RECOVERY_CHILD: "1" },
