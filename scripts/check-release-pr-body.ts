@@ -259,6 +259,10 @@ async function selfTest(): Promise<boolean> {
     ["whitespace-only footer line", "feat(x): add y\n\nBREAKING CHANGE: migrate\n \t\nUse <dir>\n\nnext <a>", true],
     ["split commit header", "feat(x): add y\n\nSome text\n\nfeat(ui): extra <d>\nwith body\n\nend", true],
     ["nested commit header", "feat: add y\n\nBEGIN_NESTED_COMMIT\nfix(x): use <dir>\nEND_NESTED_COMMIT", true],
+    ["inline nested commit", "feat: add y\n\nText BEGIN_NESTED_COMMIT fix: use <dir> END_NESTED_COMMIT more", true],
+    ["header without a space", "feat(x): add y\n\nfix:`<dir>`", true],
+    ["header with a tab", "feat(x): add y\n\nfix:\t<dir>", true],
+    ["capitalized header", "feat(x): add y\n\nFix: cap <dir>", true],
     ["clean message", "feat(x): add y\n\nBREAKING CHANGE: migrate to DIR", false],
     ["markup only in prose and a bullet", "fix: add y\n\nUses `<Button>`\n\n- fix: x <c>", false],
   ] as const) {

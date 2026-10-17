@@ -40,9 +40,10 @@ release-please copies commit descriptions and `BREAKING CHANGE:` or
 Write placeholders without angle brackets: use `DIR` or `{dir}` instead of
 `<word>`, even inside backticks. The `check` job reads the live PR title and
 body on the PR and again in the merge queue. It refuses HTML-like markup in
-the title, Conventional Commit header lines in the body, and breaking-change
-paragraphs ([#1298](https://github.com/k2b-dev/cloud/issues/1298)). After fixing
-the title or footer, re-run the failed `check` job to check the new text.
+the title, Conventional Commit header lines in the body, breaking-change
+paragraphs, and `BEGIN_NESTED_COMMIT` or `BEGIN_COMMIT_OVERRIDE` blocks
+([#1298](https://github.com/k2b-dev/cloud/issues/1298)). After fixing the
+text, re-run the failed `check` job to check it again.
 
 A change to a runtime contract (configuration, routes, permissions, data
 format, deployment) needs a `feat` or `feat!` title and a note on the matching

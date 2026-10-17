@@ -118,11 +118,29 @@ describe("releaseNoteMarkup", () => {
     expect(findings[0]).not.toContain("<a>");
   });
 
-  test.each(["Some text\n", "Some text\n\n", "BEGIN_NESTED_COMMIT\n"])("checks body commit header lines after %j", (prefix) => {
-    const findings = releaseNoteMarkup("feat(x): add y", `${prefix}fix(cli): use <dir>\nEND_NESTED_COMMIT`);
+  test.each(["Some text\n", "Some text\n\n"])("checks body commit header lines after %j", (prefix) => {
+    const findings = releaseNoteMarkup("feat(x): add y", `${prefix}fix(cli): use <dir>`);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toContain("commit header line in the body");
     expect(findings[0]).toContain("<dir>");
+  });
+
+  test.each(["fix:`<dir>`", "fix:\t<dir>", "Fix: cap <dir>", "FEAT(cli)!: use <dir>"])("checks the header form %j", (line) => {
+    expect(releaseNoteMarkup("feat(x): add y", `Intro\n\n${line}`)).toHaveLength(1);
+  });
+
+  test.each([
+    ["BEGIN_NESTED_COMMIT\nfix(cli): use DIR\nBREAKING CHANGE: ok\n\nmore <dir>\nEND_NESTED_COMMIT", "BEGIN_NESTED_COMMIT block"],
+    ["Text BEGIN_NESTED_COMMIT fix: use <dir> END_NESTED_COMMIT more", "BEGIN_NESTED_COMMIT block"],
+    ["BEGIN_COMMIT_OVERRIDE\nfeat: use DIR\n\nnotes <dir>\nEND_COMMIT_OVERRIDE", "BEGIN_COMMIT_OVERRIDE block"],
+    ["BEGIN_NESTED_COMMIT\nfix: unterminated <dir>", "BEGIN_NESTED_COMMIT block"],
+  ])("checks the whole block in %j", (body, where) => {
+    const findings = releaseNoteMarkup("feat(x): add y", body);
+    expect(findings.some((finding) => finding.includes(where) && finding.includes("<dir>"))).toBe(true);
+  });
+
+  test("ignores markup after a block ends", () => {
+    expect(releaseNoteMarkup("feat(x): add y", "BEGIN_NESTED_COMMIT\nfix: use DIR\nEND_NESTED_COMMIT\n\nProse <dir>")).toEqual([]);
   });
 
   test.each(["feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore", "revert"])(

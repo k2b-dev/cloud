@@ -75,9 +75,13 @@ export function releaseNoteMarkup(title: string, body: string): string[] {
     `HTML-like markup in ${where}: ${JSON.stringify(snippet)}. Write placeholders without angle brackets (for example DIR or {dir}), because release-please parses release notes as HTML (#1298).`;
   const findings = snippets(title, false).map((snippet) => finding("title", snippet));
   const normalized = body.replace(/\r\n/g, "\n");
-  // A conservative superset of release-please's split and nested commit headers.
-  for (const header of normalized.matchAll(/^(?:feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(?:\(.*?\))?!?: [^\n]*/gm)) {
+  // A conservative superset of what release-please reads as extra commits: header lines in any
+  // case, with or without a space after the colon, and whole nested-commit and override blocks.
+  for (const header of normalized.matchAll(/^(?:feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(?:\(.*?\))?!?:[^\n]*/gim)) {
     findings.push(...snippets(header[0], false).map((snippet) => finding("commit header line in the body", snippet)));
+  }
+  for (const block of normalized.matchAll(/BEGIN_(NESTED_COMMIT|COMMIT_OVERRIDE)[\s\S]*?(?:END_\1|$)/g)) {
+    findings.push(...snippets(block[0], false).map((snippet) => finding(`BEGIN_${block[1]} block`, snippet)));
   }
   // Only a truly empty line ends a breaking note; spaces and tabs belong to it.
   for (const footer of normalized.matchAll(/^BREAKING(?: CHANGE|-CHANGE):[^\n]*(?:\n(?!\n)[^\n]+)*/gm)) {
