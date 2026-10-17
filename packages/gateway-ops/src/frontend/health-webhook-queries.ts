@@ -1,7 +1,8 @@
 import { query } from "@k2b/stdlib/solid";
 import { apiClient } from "@/api/client";
 
-export type SettingEntry = { key: string; value: unknown; default: unknown; description: string };
+/** `unreadable`: a saved value exists that this application cannot read; `value` is the one in use. */
+export type SettingEntry = { key: string; value: unknown; default: unknown; description: string; unreadable: boolean };
 
 export type HealthApp = {
   id: string;

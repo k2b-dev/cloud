@@ -364,8 +364,10 @@ export const artifactDatabase = {
       }
       if (next.url || token) result(await connection({ url: next.url, token }).namespaces.list({ limit: 1 }));
       if (testOnly) return { connected: true };
-      await app.settings.set("assistant.rsql_url", next.url);
-      if (next.token !== undefined) await app.settings.set("assistant.rsql_api_token", next.token);
+      // complete value from explicit admin input; nothing is merged over a read (#1303)
+      await app.settings.set("assistant.rsql_url", next.url, { replaceUnreadable: true });
+      // complete value from explicit admin input; nothing is merged over a read (#1303)
+      if (next.token !== undefined) await app.settings.set("assistant.rsql_api_token", next.token, { replaceUnreadable: true });
       return { url: next.url, tokenSet: Boolean(token) };
     });
   },

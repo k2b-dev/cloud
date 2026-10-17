@@ -44,6 +44,49 @@ test("a missing setting is inserted without an overwrite on conflict", async () 
   }
 });
 
+for (const attempt of [2, 3]) {
+  test(`a reset deleting the insert winner retries and inserts on attempt ${attempt}`, async () => {
+    const tx = transaction([...Array.from({ length: (attempt - 1) * 3 }, () => []), [], [{ key }]]);
+    try {
+      await writeKey(key, "https://replacement.test", tx.db);
+      expect(tx.queries).toHaveLength((attempt - 1) * 3 + 2);
+      expect(tx.queries.filter((query) => query.startsWith("INSERT"))).toHaveLength(attempt);
+      expect(tx.queries.some((query) => query.startsWith("UPDATE"))).toBe(false);
+    } finally {
+      await tx.close();
+    }
+  });
+}
+
+test("a retry still refuses an unreadable row after a reset deleted the first winner", async () => {
+  const tx = transaction([[], [], [], [{ value: "foreign-ciphertext" }]]);
+  try {
+    await expect(writeKey(key, "https://replacement.test", tx.db)).rejects.toBeInstanceOf(SettingUnreadableError);
+    expect(tx.queries).toHaveLength(4);
+    expect(tx.queries.some((query) => query.startsWith("UPDATE"))).toBe(false);
+  } finally {
+    await tx.close();
+  }
+});
+
+for (const replaceUnreadable of [false, true]) {
+  test(`repeated resets fail after three attempts (replaceUnreadable: ${replaceUnreadable})`, async () => {
+    const tx = transaction(Array.from({ length: 9 }, () => []));
+    try {
+      const error = await writeKey(key, "https://replacement.test", tx.db, { replaceUnreadable }).catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(Error);
+      if (!(error instanceof Error)) throw new Error("Expected a write failure");
+      expect(error.constructor).toBe(Error);
+      expect(error).toHaveProperty("message", expect.stringContaining(key));
+      expect(tx.queries).toHaveLength(9);
+      expect(tx.queries.filter((query) => query.startsWith("INSERT"))).toHaveLength(3);
+      expect(tx.queries.some((query) => query.startsWith("UPDATE"))).toBe(false);
+    } finally {
+      await tx.close();
+    }
+  });
+}
+
 for (const invalid of [false, true]) {
   test(`an insert conflict rechecks a ${invalid ? "decrypted but invalid" : "non-decryptable"} winner before updating`, async () => {
     const value = invalid ? await encryptValue("not a url") : "foreign-ciphertext";

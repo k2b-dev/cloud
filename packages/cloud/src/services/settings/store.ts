@@ -242,29 +242,34 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient, opti
     def.kind === "image" && typeof validated.value === "string" ? stripImageDataUrlMetadata(validated.value) : validated.value;
   const encrypted = await encryptValue(storedValue);
   const write = async (tx: SqlClient) => {
-    let [row] = await tx<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${key} FOR UPDATE`;
-    if (!row) {
-      const inserted = await tx<{ key: string }[]>`
-        INSERT INTO settings.entries (key, value, updated_at)
-        VALUES (${key}, ${encrypted}, now())
-        ON CONFLICT (key) DO NOTHING RETURNING key
-      `;
-      if (inserted.length > 0) return;
-      // A concurrent insert can win after the missing-row read; lock and check its value before updating.
-      [row] = await tx<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${key} FOR UPDATE`;
-    }
-    if (row && options?.replaceUnreadable !== true) {
-      let readable = false;
-      try {
-        readable = validateSettingValue(def, await decryptValue(row.value)).ok;
-      } catch {
-        // Only the key is exposed by the recovery error.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let [row] = await tx<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${key} FOR UPDATE`;
+      if (!row) {
+        const inserted = await tx<{ key: string }[]>`
+          INSERT INTO settings.entries (key, value, updated_at)
+          VALUES (${key}, ${encrypted}, now())
+          ON CONFLICT (key) DO NOTHING RETURNING key
+        `;
+        if (inserted.length > 0) return;
+        // A concurrent insert can win after the missing-row read; lock and check its value before updating.
+        [row] = await tx<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${key} FOR UPDATE`;
+        if (!row) continue;
       }
-      if (!readable) throw new SettingUnreadableError(key);
+      if (options?.replaceUnreadable !== true) {
+        let readable = false;
+        try {
+          readable = validateSettingValue(def, await decryptValue(row.value)).ok;
+        } catch {
+          // Only the key is exposed by the recovery error.
+        }
+        if (!readable) throw new SettingUnreadableError(key);
+      }
+      await tx`
+        UPDATE settings.entries SET value = ${encrypted}, updated_at = now() WHERE key = ${key}
+      `;
+      return;
     }
-    await tx`
-      UPDATE settings.entries SET value = ${encrypted}, updated_at = now() WHERE key = ${key}
-    `;
+    throw new Error(`Could not write setting "${key}" after 3 attempts`);
   };
   if (db) await write(db);
   else await sql.begin(write);
