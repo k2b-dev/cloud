@@ -46,6 +46,10 @@ describe("@k2b/ui portable chat family", () => {
       "ContextUsage",
       "ContextPopup",
       "ContextPanel",
+      "Decision",
+      "Outcome",
+      "Preview",
+      "Mark",
     ]);
     for (const legacyExport of ["ChatTimeline", "ChatMessage", "ChatActivity", "ChatComposer", "ChatContextUsage"]) {
       expect(legacyExport in publicUi).toBe(false);
@@ -713,7 +717,9 @@ describe("@k2b/ui portable chat family", () => {
   test("uses a text-color shimmer instead of a color pulse for busy activities", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
 
-    expect(css).toContain('.k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"])');
+    expect(css).toContain(
+      '.k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])',
+    );
     expect(css).toContain("background-clip: text;");
     expect(css).toMatch(/animation: k2b-chat-activity-shimmer [\d.]+s linear infinite;/);
     expect(css).toContain("@keyframes k2b-chat-activity-shimmer");
@@ -725,7 +731,9 @@ describe("@k2b/ui portable chat family", () => {
   test("keeps semantic activity tones stronger than an optional identity accent", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
 
-    expect(css).toContain('.k2b-chat-activity[data-accent="true"]:not([data-tone="success"]):not([data-tone="danger"])');
+    expect(css).toContain(
+      '.k2b-chat-activity[data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])',
+    );
     expect(css).toContain("var(--k2b-chat-activity-accent) 78%, black");
     expect(css).toContain("var(--k2b-chat-activity-accent) 58%, white");
     expect(css).toContain('.k2b-chat-activity[data-body-inset="false"] > .k2b-chat-activity__body');

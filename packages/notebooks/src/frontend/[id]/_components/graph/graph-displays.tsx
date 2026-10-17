@@ -10,6 +10,7 @@ export const GRAPH_DISPLAY_REGISTRY: readonly { id: GraphDisplay; icon: string; 
   { id: "network", icon: "ti ti-affiliate", label: (t) => t.graphDisplayNetwork },
   { id: "circle", icon: "ti ti-chart-donut-3", label: (t) => t.graphDisplayCircle },
   { id: "neighborhood", icon: "ti ti-topology-star-3", label: (t) => t.graphDisplayNeighborhood },
+  { id: "timeline", icon: "ti ti-timeline", label: (t) => t.graphDisplayTimeline },
 ];
 
 export const graphDisplayLabel = (id: GraphDisplay, t: Messages): string =>

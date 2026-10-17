@@ -11,7 +11,7 @@ import {
   writeGraphViewState,
 } from "./view-state";
 
-const defaults: GraphViewState = { display: null, depth: 2, list: false, links: "all", hide: [], q: "" };
+const defaults: GraphViewState = { display: null, sort: null, depth: 2, list: false, links: "all", hide: [], q: "" };
 const parse = (query: string) => parseGraphViewState(new URLSearchParams(query));
 test("empty and invalid view state falls back to defaults", () => {
   expect(parse("")).toEqual(defaults);
@@ -34,6 +34,7 @@ test("normalized states round trip without changing the URL or other params", ()
     { ...defaults, display: "circle", links: "linked", hide: ["top"], q: "Circle" } satisfies GraphViewState,
     {
       display: "network",
+      sort: "changed",
       depth: 1,
       list: true,
       links: "unlinked",
@@ -60,7 +61,7 @@ test("normalized states round trip without changing the URL or other params", ()
 });
 test("writing removes stale params and empty values, preserving unrelated duplicates in order", () => {
   const url = new URL(
-    "https://cloud.example/?mode=graph&display=local&view=favorites&tag=a&list=1&links=linked&hide=top&q=x&tag=b&view=tag&folder=a&folder=b&display=network",
+    "https://cloud.example/?mode=graph&display=local&view=favorites&tag=a&sort=changed&list=1&links=linked&hide=top&q=x&tag=b&view=tag&folder=a&folder=b&display=network",
   );
   const next = writeGraphViewState(url, { ...defaults, q: "   " });
   expect([...next.searchParams]).toEqual([
@@ -149,7 +150,7 @@ test("display absence round trips while explicit choices always survive every de
   expect(resolveGraphDisplay(null, null)).toBeNull();
   expect(resolveGraphDisplay(null, true)).toBe(PHONE_GRAPH_DISPLAY);
   expect(resolveGraphDisplay(null, false)).toBe(DEFAULT_GRAPH_DISPLAY);
-  for (const display of ["network", "circle", "neighborhood"] as const) {
+  for (const display of ["network", "circle", "neighborhood", "timeline"] as const) {
     const next = writeGraphViewState(new URL("https://cloud.example/?display=invalid"), { ...defaults, display });
     expect(next.searchParams.get("display")).toBe(display);
     expect(parseGraphViewState(next.searchParams).display).toBe(display);
@@ -167,4 +168,17 @@ test("only depth=1 selects one step; the default two steps serialize without a p
     expect(next.searchParams.get("depth")).toBe(depth === 1 ? "1" : null);
     expect(parseGraphViewState(next.searchParams).depth).toBe(depth);
   }
+});
+
+test("only the supported change sorts round trip, and null removes the sort", () => {
+  for (const sort of ["changed", "changed-asc"] as const) {
+    expect(parse(`sort=${sort}`)).toEqual({ ...defaults, sort });
+    const next = writeGraphViewState(new URL("https://cloud.example/"), { ...defaults, sort });
+    expect(parseGraphViewState(next.searchParams).sort).toBe(sort);
+  }
+  expect(parse("sort=oldest")).toEqual(defaults);
+  // @ts-expect-error Invalid runtime sort values normalize to tree order.
+  expect(normalizeGraphViewState({ ...defaults, sort: "oldest" })).toEqual(defaults);
+  expect(writeGraphViewState(new URL("https://cloud.example/?sort=changed"), defaults).searchParams.has("sort")).toBe(false);
+  expect(parse("display=timeline").display).toBe("timeline");
 });

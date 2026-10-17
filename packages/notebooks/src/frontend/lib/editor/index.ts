@@ -13,11 +13,12 @@ import { markdownExtension } from "./markdown";
 import { markupExtension } from "./markup";
 import { mermaidExtension } from "./mermaid";
 import { namedBlocksExtension } from "./named-blocks";
+import { noteScroller } from "./note-scroller";
 import { searchTheme } from "./search-theme";
 import { subSupExtension } from "./sub-sup";
 import { tablesExtension } from "./tables";
 import { tagPillExtension } from "./tag-pill";
-import { customDarkInit, customLightInit, noteScrollerTheme, rawDarkInit, rawLightInit } from "./theme";
+import { customDarkInit, customLightInit, rawDarkInit, rawLightInit } from "./theme";
 
 export {
   basicExtensions,
@@ -37,7 +38,7 @@ export {
   markupExtension,
   mermaidExtension,
   namedBlocksExtension,
-  noteScrollerTheme,
+  noteScroller,
   pointerSelectionMarkdownRefreshExtension,
   rawDarkInit,
   rawLightInit,
@@ -70,7 +71,7 @@ export const editor = {
   tagPillExtension,
   customDarkInit,
   customLightInit,
-  noteScrollerTheme,
+  noteScroller,
   rawDarkInit,
   rawLightInit,
 } as const;

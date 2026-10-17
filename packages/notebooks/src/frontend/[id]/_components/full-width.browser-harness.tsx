@@ -44,7 +44,7 @@ function Harness() {
             editor.markdownExtension(),
             editor.searchTheme(),
             fadeScrollMarginsExtension(() => port),
-            editor.noteScrollerTheme,
+            editor.noteScroller,
             editor.customLightInit(),
             listCommandsExtension(),
             editor.tablesExtension("book01"),

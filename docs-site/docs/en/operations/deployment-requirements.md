@@ -602,6 +602,15 @@ waiting verifications. After the next update, a verification that waited
 longer than 10 minutes fails with `SENDER_VERIFICATION_TIMEOUT`, and the person
 verifies the identity again.
 
+### Index Mail's per-message command lookups
+
+After its first start with this update, Mail builds `commands_message_target_idx`
+on `mail.commands` in the background with `CREATE INDEX CONCURRENTLY`, so
+command writes and Mail's start continue. No configuration change is needed.
+Until the index is valid, the lookups use the previous plan. One Mail process
+builds an index at a time, including the optional BM25 search index. An
+interrupted build is replaced on the next start.
+
 ### Update Assistant approvals for chats and websites
 
 This release lets people remember an approval for one chat and allow a website

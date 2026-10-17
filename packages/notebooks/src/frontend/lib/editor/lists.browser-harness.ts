@@ -60,7 +60,7 @@ const view = new EditorView({
       editor.searchTheme(),
       fadeScrollMarginsExtension(() => port),
       editor.customLightInit(),
-      editor.noteScrollerTheme,
+      editor.noteScroller,
       editor.tablesExtension("n1"),
       editor.imageExtension("n1"),
       editor.listsExtension(),

@@ -70,7 +70,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(html).toMatch(/<a[^>]*href="\/devices"[^>]*aria-current="page"/);
     const source = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
     expect(source).toMatch(
-      /@media \(min-width: 64rem\) \{[^}]*\[aria-current="page"\][^}]*> \.k2b-app-workspace__head\[data-trail="up"\] \{[^}]*clip-path: inset\(50%\)/,
+      /@container k2b-app-area \(min-width: 64rem\) \{[^}]*\[aria-current="page"\][^}]*> \.k2b-app-workspace__head\[data-trail="up"\] \{[^}]*clip-path: inset\(50%\)/,
     );
   });
 

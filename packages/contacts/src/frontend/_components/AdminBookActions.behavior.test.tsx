@@ -141,6 +141,7 @@ describe("Contacts administration access", () => {
             (button) => button.textContent?.trim() === "Retry reload",
           )!;
           expect(retry).toBeDefined();
+          expect(retry.closest('.k2b-inline-guidance[data-tone="warning"]')).not.toBeNull();
           retry.click();
           await waitFor(() => chip() !== null);
           expect(reads).toBe(3);

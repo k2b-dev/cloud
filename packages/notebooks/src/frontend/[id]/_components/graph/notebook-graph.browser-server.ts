@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
@@ -117,9 +118,17 @@ export async function startGraphServer() {
         graph,
         view: parseGraphViewState(url.searchParams),
         now: FIXTURE_NOW,
+        timeZone: "Europe/Berlin",
         from: url.searchParams.get("from") === "book" ? "book" : undefined,
       };
-      const html = renderToString(() => createComponent(NotebookGraphFixture, props));
+      const html = renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale: lang,
+          get children() {
+            return createComponent(NotebookGraphFixture, props);
+          },
+        }),
+      );
       return page(
         html,
         `<script id="graph-props" type="application/json">${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script src="/harness.js"></script>`,
