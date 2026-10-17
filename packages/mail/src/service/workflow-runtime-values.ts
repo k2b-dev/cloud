@@ -216,7 +216,9 @@ export const createMailWorkflowValueResolver = (params: {
       }
 
       const available =
-        candidate.field === "attachments" ? candidate.message.attachmentsAvailable === true : candidate.message.bodyAvailable === true;
+        candidate.field === "attachments"
+          ? candidate.message.attachmentsAvailable === true
+          : mailWorkflowBodyFieldLoaded(candidate.message, candidate.field);
       if (available) {
         const value = fallback();
         return value === undefined ? { state: "missing" } : { state: "resolved", value };

@@ -223,6 +223,21 @@ describe("Mail lazy workflow values", () => {
     }
   });
 
+  test("an aliased input reuses a body loaded under another input name without reading Mail", async () => {
+    const read = spyOn(publicResources, "resolveMailboxPublicId").mockImplementation(async () => {
+      throw new Error("A loaded alias must not read Mail");
+    });
+    try {
+      const { message, inputs, resolve } = fixture({ "inputs.message.bodyText": "" });
+      Object.assign(inputs, { second: message });
+      expect(await resolve("inputs.second.bodyText")).toEqual({ state: "resolved", value: "" });
+      expect(await resolve("inputs.second.body")).toEqual({ state: "resolved", value: "" });
+      expect(read).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   test("old events with available bodies retain their receipt-time values", async () => {
     const { message, resolve } = fixture({ "inputs.message.bodyText": "New frozen text" });
     Object.assign(message, { body: "Old plain text", bodyText: "Old plain text", bodyHtml: "<p>Old HTML</p>", bodyAvailable: true });
