@@ -48,7 +48,7 @@ export const isKeepProtectedDestination = (folderId: SqlFragment): SqlFragment =
 /**
  * Restore one last placement after the server disappears; run after hiding in the same transaction. With `folderId`,
  * the restored copy shows in that folder, such as the destination of a move whose new copy no sync has seen yet.
- * Commands call it once per moved or deleted message under the mailbox's provider lease. The candidates and the
+ * Commands call it for a move set or a deleted message under the mailbox's provider lease. The candidates and the
  * updated rows are limited to the given references, so no plan repeats its work for every placement of the
  * installation; with current statistics, it reads the given rows by index.
  */
@@ -69,11 +69,35 @@ export const keepLastKeptPlacements = async (db: SqlClient, remoteRefIds: readon
     ) restored
     WHERE placement.remote_message_ref_id = ANY(${ids}::uuid[]) AND placement.remote_message_ref_id = restored.remote_message_ref_id`;
 };
-export const retireKeptCopyPlacements = async (db: SqlClient, messageId: string, remoteRefId: string): Promise<void> => {
+export const retireKeptCopyPlacements = async (db: SqlClient, pairs: { messageId: string; remoteRefId: string }[]): Promise<void> => {
+  if (!pairs.length) return;
   await db`UPDATE mail.message_placements placement SET deleted_at = now(), updated_at = now()
-    FROM mail.remote_message_refs ref
-    WHERE placement.message_id = ${messageId}::uuid AND placement.remote_message_ref_id <> ${remoteRefId}::uuid
+    FROM mail.remote_message_refs ref, unnest(
+      ${toPgUuidArray(pairs.map((pair) => pair.messageId))}::uuid[],
+      ${toPgUuidArray(pairs.map((pair) => pair.remoteRefId))}::uuid[]
+    ) AS projected(message_id, remote_ref_id)
+    WHERE placement.message_id = projected.message_id AND placement.remote_message_ref_id <> projected.remote_ref_id
       AND placement.remote_message_ref_id = ref.id AND ref.stale_at IS NOT NULL AND placement.deleted_at IS NULL`;
+};
+
+/** The move check shared by single commands and sets with one destination. */
+export const checkMoveSetKeepProtection = async (
+  db: SqlClient,
+  destinationFolderId: string | null,
+  remoteRefIds: string[],
+): Promise<Set<string>> => {
+  const [destination] = await db<{ removes: boolean }[]>`
+    SELECT ${isKeepProtectedDestination(sql`${destinationFolderId}::uuid`)} AS removes
+  `;
+  if (!destination?.removes || !remoteRefIds.length) return new Set();
+  const blocked = await db<{ id: string }[]>`
+    SELECT DISTINCT placement.remote_message_ref_id AS id
+    FROM mail.message_placements placement
+    JOIN mail.conversation_messages link ON link.message_id = placement.message_id
+    JOIN mail.conversation_keeps keep ON keep.conversation_id = link.conversation_id
+    WHERE placement.remote_message_ref_id = ANY(${toPgUuidArray(remoteRefIds)}::uuid[])
+  `;
+  return new Set(blocked.map((row) => row.id));
 };
 
 /**
@@ -98,10 +122,8 @@ export const checkCommandKeepProtection = async (
   const folderId = typeof target.folderId === "string" ? target.folderId : null;
   if (kind === "move") {
     const destinationId = typeof target.destinationFolderId === "string" ? target.destinationFolderId : null;
-    const [destination] = await db<{ removes: boolean }[]>`
-      SELECT ${isKeepProtectedDestination(sql`${destinationId}::uuid`)} AS removes
-    `;
-    if (!destination?.removes) return ok();
+    const blocked = await checkMoveSetKeepProtection(db, destinationId, refId ? [refId] : []);
+    return blocked.size ? fail(keepError("CONVERSATION_KEPT")) : ok();
   }
   const [blocked] = await db`
     SELECT 1
