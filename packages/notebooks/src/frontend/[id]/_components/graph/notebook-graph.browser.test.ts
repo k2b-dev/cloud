@@ -376,27 +376,28 @@ test(`${browserName}: As list shows the same notes as a table as wide as Main, a
 }, 30_000);
 
 test(`${browserName}: a note opens like a link from the mouse, a modified click and assistive technology`, async () => {
+  const kuehl = HANDBOOK_IDS.kuehl!;
+  const start = HANDBOOK_IDS.start!;
+  // A click without a pointer gesture (screen reader, voice control) opens the note.
+  const assisted = await open(graphPath("hand01"));
+  try {
+    await assisted.locator(`[data-node="${start}"]`).dispatchEvent("click");
+    await assisted.waitForURL(`**/app/notebooks/hand01/notes/${start}?mode=book`);
+  } finally {
+    await close(assisted);
+  }
   const page = await open(graphPath("hand01"));
   try {
-    const kuehl = HANDBOOK_IDS.kuehl!;
-    const start = HANDBOOK_IDS.start!;
-    // A click without a pointer gesture (screen reader, voice control) opens the note.
-    await page.locator(`[data-node="${start}"]`).dispatchEvent("click");
-    await page.waitForURL(`**/app/notebooks/hand01/notes/${start}?mode=book`);
-    await page.goBack();
-    await page.waitForFunction(() => window.notebookGraphFixture?.mounted === true);
-    await settled(page);
     // Ctrl/Cmd+click keeps the graph and opens the note in a new tab.
+    // Locator clicks wait until the note stands still and is the element under the pointer.
     const graphUrl = page.url();
-    const point = await nodeCenter(page, kuehl);
-    await page.keyboard.down("Control");
-    const [tab] = await Promise.all([page.context().waitForEvent("page"), page.mouse.click(point.x, point.y)]);
-    await page.keyboard.up("Control");
+    const node = page.locator(`[data-node="${kuehl}"]`);
+    const [tab] = await Promise.all([page.context().waitForEvent("page"), node.click({ modifiers: ["Control"] })]);
     await tab.waitForURL(`**/app/notebooks/hand01/notes/${kuehl}?mode=book`);
     expect(page.url()).toBe(graphUrl);
     await tab.close();
     // A plain mouse click opens the note once, in place.
-    await page.mouse.click(point.x, point.y);
+    await node.click();
     await page.waitForURL(`**/app/notebooks/hand01/notes/${kuehl}?mode=book`);
     expect(page.context().pages()).toHaveLength(1);
   } finally {
@@ -440,11 +441,15 @@ test(`${browserName}: a touch tap selects a note and Open opens it`, async () =>
   const page = await open(graphPath("hand01"), { width: 820, height: 1180 }, { hasTouch: true, isMobile: browserName === "chromium" });
   try {
     const before = page.url();
+    // A mouse resting on another note does not keep the highlight from the tapped one.
+    const rest = await nodeCenter(page, HANDBOOK_IDS.start!);
+    await page.mouse.move(rest.x, rest.y);
     const point = await nodeCenter(page, HANDBOOK_IDS.kuehl!);
     await page.touchscreen.tap(point.x, point.y);
     const bar = page.getByRole("region", { name: "Selected note" });
     await bar.waitFor();
     expect(await bar.textContent()).toContain("Kühlkette");
+    expect(await page.locator(".notebook-graph__status strong").textContent()).toBe("Kühlkette");
     expect(page.url()).toBe(before);
     await bar.getByRole("button", { name: "Open" }).click();
     await page.waitForURL(`**/app/notebooks/hand01/notes/${HANDBOOK_IDS.kuehl}?mode=book`);

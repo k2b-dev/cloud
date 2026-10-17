@@ -33,7 +33,7 @@ for (const [name, fixture] of [
   ["big", bigGraph],
 ] as const) {
   test(`${name}: projected labels obey bounds, shared collision rules, node obstacles and budget`, () => {
-    const model = buildGraphModel(fixture());
+    const model = buildGraphModel(fixture(), "en");
     const positions = layoutNetwork(model);
     for (const [width, height, compact] of [
       [1440, 800, false],

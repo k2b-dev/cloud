@@ -39,7 +39,7 @@ type Props = {
 export default function NotebookGraph(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
-  const model = buildGraphModel(props.graph);
+  const model = buildGraphModel(props.graph, locale());
   const hasLinks = model.edges.length > 0;
   const [state, setState] = createSignal<GraphViewState>(props.view);
   const navigationHidden = createNavigationHidden(props.navigationHidden);

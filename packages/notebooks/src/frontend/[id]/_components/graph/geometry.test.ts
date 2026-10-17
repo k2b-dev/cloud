@@ -5,7 +5,7 @@ import { layoutNetwork, nodeRadius } from "./layout-net";
 import { buildGraphModel } from "./model";
 
 test("fit projects handbook positions inside both canvas sizes", () => {
-  const positions = layoutNetwork(buildGraphModel(handbookGraph()));
+  const positions = layoutNetwork(buildGraphModel(handbookGraph(), "en"));
   for (const [width, height, compact] of [
     [1440, 800, false],
     [390, 640, true],

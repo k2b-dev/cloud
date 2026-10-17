@@ -3,7 +3,7 @@ import type { NoteGraph } from "../../../../service/links";
 import { FIXTURE_NOW, HANDBOOK_IDS, handbookGraph, unlinkedGraph } from "./graph.fixtures";
 import { buildGraphModel, matchesQuery, TOP_LEVEL_AREA, visibleEdges, visibleNotes } from "./model";
 
-const model = buildGraphModel(handbookGraph());
+const model = buildGraphModel(handbookGraph(), "en");
 describe("graph model", () => {
   test("ports the handbook tree, areas and directed links", () => {
     expect(model.notes).toHaveLength(49);
@@ -40,7 +40,7 @@ describe("graph model", () => {
   });
   test("input order does not change any model ordering", () => {
     const graph = handbookGraph();
-    expect(buildGraphModel({ nodes: graph.nodes.toReversed(), edges: graph.edges.toReversed() })).toEqual(model);
+    expect(buildGraphModel({ nodes: graph.nodes.toReversed(), edges: graph.edges.toReversed() }, "en")).toEqual(model);
   });
   test("filters retain tree order and use degree across the whole graph", () => {
     expect(visibleNotes(model, { links: "all", hide: [] })).toHaveLength(49);
@@ -66,8 +66,8 @@ describe("graph model", () => {
     expect(matchesQuery(note, "Versand")).toBe(false);
   });
   test("empty and unlinked graphs keep a neutral area", () => {
-    expect(buildGraphModel({ nodes: [], edges: [] }).areas).toEqual([{ key: "top", title: null, index: 0, slot: 0, count: 0 }]);
-    const unlinked = buildGraphModel(unlinkedGraph());
+    expect(buildGraphModel({ nodes: [], edges: [] }, "en").areas).toEqual([{ key: "top", title: null, index: 0, slot: 0, count: 0 }]);
+    const unlinked = buildGraphModel(unlinkedGraph(), "en");
     expect(unlinked.notes).toHaveLength(6);
     expect(unlinked.notes.every((note) => note.orphan)).toBe(true);
     expect(unlinked.areas.map((area) => area.count)).toEqual([0, 6]);
@@ -77,7 +77,7 @@ describe("graph model", () => {
       { id: `root0${index}`, title: `Area ${index}`, parentId: null, position: index, inDegree: 0, updatedAt: FIXTURE_NOW },
       { id: `child${index}`, title: "Child", parentId: `root0${index}`, position: 0, inDegree: 0, updatedAt: FIXTURE_NOW },
     ]).flat();
-    expect(buildGraphModel({ nodes, edges: [] }).areas.map((area) => area.slot)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 1, 2]);
+    expect(buildGraphModel({ nodes, edges: [] }, "en").areas.map((area) => area.slot)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 1, 2]);
   });
   test("missing parents and cycle members become roots; sibling ties use public ids", () => {
     const node = (id: string, parentId: string | null) => ({ id, parentId, title: id, position: 0, inDegree: 99, updatedAt: FIXTURE_NOW });
@@ -98,7 +98,7 @@ describe("graph model", () => {
         { source: "cccccc", target: "aaaaaa" },
       ],
     };
-    const result = buildGraphModel(graph);
+    const result = buildGraphModel(graph, "en");
     expect(result.notes.map((note) => [note.id, note.parentId, note.depth])).toEqual([
       ["aaaaaa", null, 0],
       ["cccccc", "aaaaaa", 1],
@@ -109,6 +109,22 @@ describe("graph model", () => {
     expect(result.edges).toHaveLength(2);
     expect(result.byId.get("aaaaaa")?.deg).toBe(2);
     expect(result.byId.get("aaaaaa")?.neighbours.size).toBe(1);
-    expect(buildGraphModel({ nodes: graph.nodes.toReversed(), edges: graph.edges.toReversed() })).toEqual(result);
+    expect(buildGraphModel({ nodes: graph.nodes.toReversed(), edges: graph.edges.toReversed() }, "en")).toEqual(result);
+  });
+
+  test("siblings without a hand order follow the titles, as in the sidebar and the Book", () => {
+    const node = (id: string, title: string) => ({
+      id,
+      title,
+      inDegree: 0,
+      parentId: null,
+      position: 0,
+      updatedAt: "2026-10-16T12:00:00.000Z",
+    });
+    const graph = {
+      nodes: [node("aaaaaa", "Zulu"), node("bbbbbb", "Chapter 10"), node("cccccc", "Chapter 2"), node("zzzzzz", "Alpha")],
+      edges: [],
+    };
+    expect(buildGraphModel(graph, "en").notes.map((note) => note.title)).toEqual(["Alpha", "Chapter 2", "Chapter 10", "Zulu"]);
   });
 });

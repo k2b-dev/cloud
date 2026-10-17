@@ -61,7 +61,7 @@ if (typeof document !== "undefined" && document.getElementById("graph-props")) {
     mounted: true,
     // The layout cost at 300 notes, measured in this engine.
     layoutMs: () => {
-      const model = buildGraphModel(bigGraph());
+      const model = buildGraphModel(bigGraph(), "en");
       const start = performance.now();
       layoutNetwork(model);
       return performance.now() - start;

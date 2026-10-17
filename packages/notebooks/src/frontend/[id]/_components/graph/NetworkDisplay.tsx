@@ -373,6 +373,8 @@ export default function NetworkDisplay(props: Props) {
     }
     if (ended.pointerType === "mouse") props.onOpen(ended.id, event.metaKey || event.ctrlKey || event.shiftKey);
     else {
+      // A mouse resting on another note must not keep the highlight from the tapped one.
+      setHovered(null);
       setSelected(ended.id);
       setTabStop(ended.id);
     }

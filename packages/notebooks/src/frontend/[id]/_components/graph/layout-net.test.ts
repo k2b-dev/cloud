@@ -10,7 +10,7 @@ for (const [name, fixture] of [
   test(`${name}: deterministic, finite, collision-free layout independent of transport order`, () => {
     const graph = fixture();
     const snapshot = structuredClone(graph);
-    const model = buildGraphModel(graph);
+    const model = buildGraphModel(graph, "en");
     const before = structuredClone(model);
     const started = performance.now();
     const positions = layoutNetwork(model);
@@ -18,7 +18,7 @@ for (const [name, fixture] of [
     expect(model.notes).toHaveLength(name === "big" ? 300 : 49);
     expect([...positions]).toEqual([...layoutNetwork(model)]);
     expect([...positions]).toEqual([
-      ...layoutNetwork(buildGraphModel({ nodes: graph.nodes.toReversed(), edges: graph.edges.toReversed() })),
+      ...layoutNetwork(buildGraphModel({ nodes: graph.nodes.toReversed(), edges: graph.edges.toReversed() }, "en")),
     ]);
     expect(model).toEqual(before);
     expect(graph).toEqual(snapshot);
@@ -36,7 +36,7 @@ for (const [name, fixture] of [
   });
 }
 test("handbook areas stay clustered around their own centroids", () => {
-  const model = buildGraphModel(handbookGraph());
+  const model = buildGraphModel(handbookGraph(), "en");
   const positions = layoutNetwork(model);
   const groups = model.areas.map((area) =>
     model.notes
@@ -62,16 +62,16 @@ test("handbook areas stay clustered around their own centroids", () => {
 test("mulberry32 matches the prototype and empty/singleton layouts are finite", () => {
   const random = seededRandom(7);
   expect([random(), random(), random()]).toEqual([0.011704753153026104, 0.06195825757458806, 0.97690763277933]);
-  expect(layoutNetwork(buildGraphModel({ nodes: [], edges: [] }))).toEqual(new Map());
+  expect(layoutNetwork(buildGraphModel({ nodes: [], edges: [] }, "en"))).toEqual(new Map());
   const graph = handbookGraph();
   graph.nodes = graph.nodes.slice(0, 1);
   graph.edges = [];
-  const point = [...layoutNetwork(buildGraphModel(graph)).values()][0];
+  const point = [...layoutNetwork(buildGraphModel(graph, "en")).values()][0];
   expect(point && Number.isFinite(point.x) && Number.isFinite(point.y)).toBe(true);
 });
 
 test("the sliced layout yields to the page and still gives exactly the same positions", async () => {
-  const model = buildGraphModel(bigGraph());
+  const model = buildGraphModel(bigGraph(), "en");
   let yielded = 0;
   const counting = setInterval(() => yielded++, 0);
   const sliced = await layoutNetworkInSlices(model, new AbortController().signal);

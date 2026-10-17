@@ -1,3 +1,4 @@
+import { compareNoteOrder } from "../../../../lib/note-order";
 import type { GraphNode, NoteGraph } from "../../../../service/links";
 
 export const TOP_LEVEL_AREA = "top";
@@ -24,9 +25,8 @@ export type GraphModel = {
   areas: readonly GraphArea[];
 };
 
-const compareId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-
-export function buildGraphModel(graph: NoteGraph): GraphModel {
+/** Builds the graph model; siblings follow the notebook order of the sidebar and the Book in the reader's `locale`. */
+export function buildGraphModel(graph: NoteGraph, locale: string): GraphModel {
   const source = new Map(graph.nodes.map((node) => [node.id, node]));
   const parents = new Map(graph.nodes.map((node) => [node.id, node.parentId && source.has(node.parentId) ? node.parentId : null]));
   // Each cycle member becomes a root; branches attached to it keep their parent.
@@ -54,7 +54,8 @@ export function buildGraphModel(graph: NoteGraph): GraphModel {
     siblings.push(node);
     children.set(parent, siblings);
   }
-  for (const siblings of children.values()) siblings.sort((a, b) => a.position - b.position || compareId(a.id, b.id));
+  const compare = compareNoteOrder(locale, (node: GraphNode) => node.id);
+  for (const siblings of children.values()) siblings.sort(compare);
 
   const top: GraphArea = { key: TOP_LEVEL_AREA, index: 0, slot: 0, title: null, count: 0 };
   const areas = [top];
