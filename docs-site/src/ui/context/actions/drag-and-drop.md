@@ -62,7 +62,9 @@ again at the final pointer position.
 edge to keep scrolling. The first ancestor that can scroll in that direction
 moves by `Math.max(1, Math.ceil(12 * (1 - distanceToEdge / AUTOSCROLL_EDGE)))`
 px per animation frame, up to 12 px. Leaving the edge zone stops scrolling.
-The document uses the viewport edges.
+The document uses the viewport edges, and only while the page is not
+scroll-locked. Inside a dialog, scrolling and targets stop at the dialog, so
+nothing behind a modal moves or takes a drop.
 
 **Cancel.** Escape, pointer cancellation, window blur, a second pointer, or
 unmounting the source cancels without a drop. A button still held after
@@ -129,7 +131,8 @@ still start `dragIn` itself; the application chooses the interaction it starts.
 
 One shared polite live region announces pickup, choices, refusal, drop, and
 cancellation in the inherited locale (English or German). Inside an open
-modal dialog, the announcer lives in that dialog. Repeated
+modal dialog, the announcer lives in that dialog. The region exists from the
+first mounted source or target on, so the first announcement is read. Repeated
 identical announcements are refreshed for assistive technology.
 
 The refused state does not rely on colour alone: its announcement names the

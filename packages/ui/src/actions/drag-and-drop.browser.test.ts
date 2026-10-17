@@ -139,11 +139,11 @@ describe(`drag and drop in ${browserName}`, () => {
       expect(Math.abs(y! - target.y)).toBeLessThanOrEqual(1);
       // In the top layer, so a transformed or modal dialog neither offsets nor covers it.
       expect(await page.locator(".k2b-drag-preview").evaluate((el) => el.matches(":popover-open"))).toBe(true);
-      expect(await page.evaluate<boolean>("window.announcements.some(text => text.startsWith('Row 2 picked up.'))")).toBe(true);
+      await until(page, "window.announcements.some(text => text.startsWith('Row 2 picked up.'))");
       await page.mouse.up();
       await clean(page);
       expect(await drops(page)).toEqual([{ target: "Archive", value: "row-2" }]);
-      expect(await page.locator(".k2b-drag-announcer").textContent()).toBe("Row 2 dropped on Archive.");
+      await until(page, `document.querySelector('.k2b-drag-announcer')?.textContent?.endsWith('Row 2 dropped on Archive.')`);
       expect(await row.boundingBox()).toEqual(before);
       if (browserName === "chromium") expect(await page.evaluate<number>("window.shift")).toBe(0);
     } finally {
@@ -157,11 +157,11 @@ describe(`drag and drop in ${browserName}`, () => {
       await startMouse(page);
       await moveTo(page, ".calendar");
       await until(page, `document.querySelector('.calendar')?.dataset.drop === 'refused'`);
-      expect(await page.locator(".k2b-drag-announcer").textContent()).toBe("Calendar does not take Row 2.");
+      await until(page, `document.querySelector('.k2b-drag-announcer')?.textContent?.endsWith('Calendar does not take Row 2.')`);
       await page.mouse.up();
       await clean(page);
       expect(await drops(page)).toEqual([]);
-      expect(await page.locator(".k2b-drag-announcer").textContent()).toBe("Row 2 not moved.");
+      await until(page, `document.querySelector('.k2b-drag-announcer')?.textContent?.endsWith('Row 2 not moved.')`);
     } finally {
       await context.close();
     }
@@ -357,7 +357,7 @@ describe(`drag and drop in ${browserName}`, () => {
         await clean(page);
         await page.mouse.up();
         expect(await drops(page)).toEqual([]);
-        expect(await page.locator(".k2b-drag-announcer").textContent()).toBe("Row 2 not moved.");
+        await until(page, `document.querySelector('.k2b-drag-announcer')?.textContent?.endsWith('Row 2 not moved.')`);
         expect(await page.evaluate(() => document.documentElement.style.userSelect)).toBe("");
       } finally {
         await context.close();
@@ -374,16 +374,17 @@ describe(`drag and drop in ${browserName}`, () => {
       await page.keyboard.press("ArrowDown");
       await page.keyboard.press("Enter");
       await until(page, `document.querySelector('.archive')?.dataset.drop === 'over'`);
-      // Instructions and the first choice come as one announcement.
-      expect(await page.locator(".k2b-drag-announcer").textContent()).toBe(
-        "Row 2 picked up. 1 place takes it. Arrow keys choose a place, Enter drops, Escape cancels. Archive, 1 of 1.",
+      // Instructions and the first choice come as one announcement; texts from before the region was ready precede it.
+      await until(
+        page,
+        `document.querySelector('.k2b-drag-announcer')?.textContent?.endsWith('Row 2 picked up. 1 place takes it. Arrow keys choose a place, Enter drops, Escape cancels. Archive, 1 of 1.')`,
       );
       await page.keyboard.press("ArrowDown");
       await until(page, `document.querySelector('.k2b-drag-announcer')?.textContent === 'Archive, 1 of 1.'`);
       await page.keyboard.press("Enter");
       await clean(page);
       expect(await drops(page)).toEqual([{ target: "Archive", value: "row-2" }]);
-      expect(await page.locator(".k2b-drag-announcer").textContent()).toBe("Row 2 dropped on Archive.");
+      await until(page, `document.querySelector('.k2b-drag-announcer')?.textContent?.endsWith('Row 2 dropped on Archive.')`);
       expect(await row.evaluate((el) => el === document.activeElement)).toBe(true);
     } finally {
       await context.close();
@@ -419,7 +420,7 @@ describe(`drag and drop in ${browserName}`, () => {
       await page.keyboard.press("ArrowDown");
       await page.keyboard.press("Enter");
       await until(page, `document.querySelector('.later')?.dataset.drop === 'over'`);
-      expect(await page.locator(".k2b-drag-announcer").textContent()).toEndWith("Later, 1 of 1.");
+      await until(page, `document.querySelector(".k2b-drag-announcer")?.textContent?.endsWith("Later, 1 of 1.")`);
       await page.keyboard.press("Enter");
       await clean(page);
       expect(await drops(page)).toEqual([{ target: "Later", value: "row-2" }]);
@@ -441,7 +442,7 @@ describe(`drag and drop in ${browserName}`, () => {
       await until(page, `document.activeElement?.textContent === 'Reply'`);
       await page.keyboard.press("ArrowDown");
       await page.keyboard.press("Enter");
-      await until(page, `document.querySelector('.k2b-drag-announcer')?.textContent === 'No place here takes Row 2.'`);
+      await until(page, `document.querySelector('.k2b-drag-announcer')?.textContent?.endsWith('No place here takes Row 2.')`);
       await clean(page);
       expect(await row.evaluate((el) => el === document.activeElement)).toBe(true);
       await page.keyboard.press("Enter");
@@ -454,7 +455,7 @@ describe(`drag and drop in ${browserName}`, () => {
   test("a drag inside a modal dialog never reaches a target around the dialog", async () => {
     const { page, context } = await open();
     try {
-      await page.evaluate("window.openNested()");
+      await page.evaluate("document.body.style.height = '3000px'; window.openNested()");
       const row = (await page.locator(".inner-row").boundingBox())!;
       const dialog = (await page.locator("dialog.nested").boundingBox())!;
       await page.mouse.move(row.x + 10, row.y + row.height / 2);
@@ -464,6 +465,10 @@ describe(`drag and drop in ${browserName}`, () => {
       await page.mouse.move(dialog.x + 8, dialog.y + 8);
       await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
       expect(await page.locator(".archive").getAttribute("data-drop")).not.toBe("over");
+      // Resting at the viewport's edge over the backdrop never scrolls the page behind the modal.
+      await page.mouse.move(dialog.x + 8, page.viewportSize()!.height - 4);
+      await page.evaluate(() => new Promise((done) => setTimeout(done, 200)));
+      expect(await page.evaluate(() => window.scrollY)).toBe(0);
       await page.mouse.up();
       await clean(page);
       expect(await drops(page)).toEqual([]);

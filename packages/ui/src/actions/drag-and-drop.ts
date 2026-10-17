@@ -47,7 +47,6 @@ type Engine = {
   byElement: WeakMap<Element, Target>;
   session?: Session;
   abandonPress?: () => void;
-  announcer?: HTMLElement;
 };
 const engines = new WeakMap<Document, Engine>();
 const engineFor = (doc: Document): Engine => {
@@ -94,10 +93,16 @@ const containerFor = (origin: HTMLElement): HTMLElement => {
     return origin.closest<HTMLDialogElement>("dialog[open]") ?? origin.ownerDocument.body;
   }
 };
-const announce = (engine: Engine, origin: HTMLElement, text: string) => {
-  const doc = origin.ownerDocument;
-  if (!engine.announcer) {
-    const region = doc.createElement("div");
+/** A live region needs a moment between being inserted and being written to, or its first text goes unread. */
+const ANNOUNCE_DELAY_MS = 100;
+type Announcer = { region: HTMLElement; ready: number; queue: string[] };
+/** One live region per container: the body, or the modal dialog the drag happens in, as outside of it is inert. */
+const announcers = new WeakMap<Element, Announcer>();
+const announcerFor = (origin: HTMLElement): Announcer => {
+  const parent = containerFor(origin);
+  let announcer = announcers.get(parent);
+  if (!announcer || announcer.region.parentElement !== parent) {
+    const region = origin.ownerDocument.createElement("div");
     region.className = "k2b-drag-announcer";
     region.setAttribute("role", "status");
     region.setAttribute("aria-live", "polite");
@@ -110,17 +115,32 @@ const announce = (engine: Engine, origin: HTMLElement, text: string) => {
       overflow: "hidden",
       whiteSpace: "nowrap",
     });
-    engine.announcer = region;
+    parent.append(region);
+    announcer = { region, ready: performance.now() + ANNOUNCE_DELAY_MS, queue: [] };
+    announcers.set(parent, announcer);
   }
-  const region = engine.announcer;
-  const parent = containerFor(origin);
-  if (region.parentElement !== parent) parent.append(region);
-  region.textContent = region.textContent === text ? `${text}\u00a0` : text;
+  return announcer;
+};
+const announce = (origin: HTMLElement, text: string) => {
+  const announcer = announcerFor(origin);
+  const write = (next: string) => {
+    announcer.region.textContent = announcer.region.textContent === next ? `${next}\u00a0` : next;
+  };
+  const wait = announcer.ready - performance.now();
+  if (wait <= 0 && !announcer.queue.length) {
+    write(text);
+    return;
+  }
+  // Texts that come before the region is ready are read together once it is, so none replaces another unread.
+  if (announcer.queue.push(text) > 1) return;
+  origin.ownerDocument.defaultView!.setTimeout(() => write(announcer.queue.splice(0).join(" ")), Math.max(0, wait));
 };
 
 export const registerDropTarget = (element: HTMLElement, initial: Omit<Target, "element">) => {
   const engine = engineFor(element.ownerDocument);
   const entry: Target = { element, ...initial };
+  // The live region exists long before the first drag, so its first announcement is read.
+  announcerFor(element);
   engine.targets.add(entry);
   engine.byElement.set(element, entry);
   mark(entry, engine.session?.payload);
@@ -188,17 +208,40 @@ const swallowRelease = (doc: Document, pointerId?: number) => {
 };
 
 /** Walks ancestors only; neither hit testing nor scrolling scans the target registry. */
-const scrollAt = (doc: Document, hit: Element | null, x: number, y: number, cache: WeakMap<Element, { x: boolean; y: boolean }>) => {
+const SCROLLS = /^(auto|scroll|overlay)$/;
+const LOCKED = /^(hidden|clip)$/;
+/**
+ * Scrolls the first container under the pointer that can still scroll toward the edge the pointer rests near. The
+ * walk stops at a dialog, so the page behind a modal never scrolls, and the viewport scrolls only while the page is
+ * not locked, as `dialogCore` locks it with `overflow: hidden`.
+ */
+const scrollAt = (doc: Document, hit: Element | null, x: number, y: number, cache: WeakMap<Element, { x: string; y: string }>) => {
   const win = doc.defaultView!;
   const root = doc.scrollingElement;
-  for (let element = hit; element; element = element.parentElement) {
+  const overflowOf = (element: Element) => {
     let overflow = cache.get(element);
     if (!overflow) {
       const style = win.getComputedStyle(element);
-      overflow = { x: /^(auto|scroll|overlay)$/.test(style.overflowX), y: /^(auto|scroll|overlay)$/.test(style.overflowY) };
+      overflow = { x: style.overflowX, y: style.overflowY };
       cache.set(element, overflow);
     }
+    return overflow;
+  };
+  for (let element = hit; element; element = element.parentElement) {
     const viewport = element === root;
+    let canX: boolean;
+    let canY: boolean;
+    if (viewport) {
+      // The body's overflow applies to the viewport while the root's is visible.
+      const own = overflowOf(element);
+      const body = doc.body ? overflowOf(doc.body) : own;
+      canX = !LOCKED.test(own.x) && !(own.x === "visible" && LOCKED.test(body.x));
+      canY = !LOCKED.test(own.y) && !(own.y === "visible" && LOCKED.test(body.y));
+    } else {
+      const own = overflowOf(element);
+      canX = SCROLLS.test(own.x);
+      canY = SCROLLS.test(own.y);
+    }
     const rect = viewport ? { left: 0, top: 0, right: win.innerWidth, bottom: win.innerHeight } : element.getBoundingClientRect();
     const step = (point: number, start: number, end: number, position: number, max: number) => {
       if (point < start || point > end) return 0;
@@ -208,20 +251,20 @@ const scrollAt = (doc: Document, hit: Element | null, x: number, y: number, cach
       if (after < AUTOSCROLL_EDGE && position < max) return Math.max(1, Math.ceil(12 * (1 - after / AUTOSCROLL_EDGE)));
       return 0;
     };
-    const dx =
-      overflow.x || viewport
-        ? step(x, rect.left, rect.right, element.scrollLeft, element.scrollWidth - (viewport ? win.innerWidth : element.clientWidth))
-        : 0;
-    const dy =
-      overflow.y || viewport
-        ? step(y, rect.top, rect.bottom, element.scrollTop, element.scrollHeight - (viewport ? win.innerHeight : element.clientHeight))
-        : 0;
-    if (!dx && !dy) continue;
-    const beforeX = element.scrollLeft;
-    const beforeY = element.scrollTop;
-    element.scrollLeft += dx;
-    element.scrollTop += dy;
-    if (element.scrollLeft !== beforeX || element.scrollTop !== beforeY) return true;
+    const dx = canX
+      ? step(x, rect.left, rect.right, element.scrollLeft, element.scrollWidth - (viewport ? win.innerWidth : element.clientWidth))
+      : 0;
+    const dy = canY
+      ? step(y, rect.top, rect.bottom, element.scrollTop, element.scrollHeight - (viewport ? win.innerHeight : element.clientHeight))
+      : 0;
+    if (dx || dy) {
+      const beforeX = element.scrollLeft;
+      const beforeY = element.scrollTop;
+      element.scrollLeft += dx;
+      element.scrollTop += dy;
+      if (element.scrollLeft !== beforeX || element.scrollTop !== beforeY) return true;
+    }
+    if (element instanceof HTMLDialogElement) return false;
   }
   return false;
 };
@@ -241,6 +284,8 @@ export const bindDragSource = (
     const ignored = event.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), [data-drag-ignore]");
     if (ignored && source.contains(ignored)) return;
     engine.abandonPress?.();
+    // Ready before the drag starts, so its first announcement is read.
+    announcerFor(source);
     const id = event.pointerId;
     const start = { x: event.clientX, y: event.clientY };
     let point = start;
@@ -256,7 +301,7 @@ export const bindDragSource = (
     let timer: number | undefined;
     let over: Target | undefined;
     let refused: Target | undefined;
-    const overflowCache = new WeakMap<Element, { x: boolean; y: boolean }>();
+    const overflowCache = new WeakMap<Element, { x: string; y: string }>();
     const preventScroll = (event: TouchEvent) => {
       if (event.cancelable) event.preventDefault();
     };
@@ -289,7 +334,7 @@ export const bindDragSource = (
       if (finished) return;
       const payload = session?.payload;
       clean();
-      if (payload) announce(engine, source, messages.cancelled(payload));
+      if (payload) announce(source, messages.cancelled(payload));
     };
     const hitTest = () => {
       const payload = session!.payload;
@@ -315,10 +360,10 @@ export const bindDragSource = (
         refused = rejected;
         if (over) {
           over.element.dataset.drop = "over";
-          announce(engine, source, over.messages.over({ target: over.label }));
+          announce(source, over.messages.over({ target: over.label }));
         } else if (refused) {
           refused.element.dataset.drop = "refused";
-          announce(engine, source, refused.messages.refused({ target: refused.label, label: payload.label }));
+          announce(source, refused.messages.refused({ target: refused.label, label: payload.label }));
         }
       }
       if (over) over.element.dataset.drop = "over";
@@ -378,7 +423,7 @@ export const bindDragSource = (
       for (const target of engine.targets) mark(target, payload);
       setActiveDrag(payload);
       if (finished) return;
-      announce(engine, source, messages.pickedUp(payload));
+      announce(source, messages.pickedUp(payload));
       win.addEventListener("keydown", key, true);
     };
     const move = (event: PointerEvent) => {
@@ -407,7 +452,7 @@ export const bindDragSource = (
       const result = target ? target.messages.dropped({ label: payload.label, target: target.label }) : messages.cancelled(payload);
       const drop = target?.drop;
       clean();
-      announce(engine, source, result);
+      announce(source, result);
       drop?.(payload);
     };
     const cancelPointer = (event: PointerEvent) => {
@@ -446,6 +491,7 @@ export const bindDragSource = (
       }, HOLD_MS);
     }
   };
+  announcerFor(source);
   source.addEventListener("pointerdown", down);
   source.addEventListener("dragstart", nativeDrag);
   return () => {
@@ -489,7 +535,7 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
     const result = text ?? (target ? target.messages.dropped({ label: payload.label, target: target.label }) : messages.cancelled(payload));
     const drop = target?.drop;
     clearSession(engine, session, source);
-    announce(engine, origin, result);
+    announce(origin, result);
     if (origin.isConnected) focusTarget(origin).focus({ preventScroll: true });
     drop?.(payload);
   };
@@ -501,7 +547,7 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
     current = target;
     current.element.dataset.drop = "over";
     current.element.scrollIntoView({ block: "nearest", inline: "nearest" });
-    announce(engine, origin, text);
+    announce(origin, text);
   };
   const key = (event: KeyboardEvent) => {
     const index = current ? targets.indexOf(current) : -1;
