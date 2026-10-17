@@ -9539,8 +9539,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    less the top safe area when the viewport bounds it. Rows grow to 48 px with
    the name above its subtitle. Phone means touch only and narrow, or touch
    only and low (landscape). Emoji suggestions keep their floating list. */
-@media (any-pointer: coarse) and (not (any-pointer: fine)) and (max-width: 47.99rem),
-  (any-pointer: coarse) and (not (any-pointer: fine)) and (max-height: 31.25rem) {
+@media (any-pointer: coarse) and (not (any-pointer: fine)) and (max-width: 47.99rem), (any-pointer: coarse) and (not (any-pointer: fine)) and (max-height: 31.25rem) {
   .k2b-ui .k2b-chat-composer-accessory[data-commands] {
     right: calc(-1 * var(--k2b-chat-command-reach-right, 0px));
     bottom: -0.5rem;

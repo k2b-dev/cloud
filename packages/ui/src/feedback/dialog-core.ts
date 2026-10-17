@@ -144,7 +144,7 @@ export const createDialogCore = () => {
   let historyIds: number[] = [];
   const issued = new Set<number>();
   const ownMarker = (marker: unknown): marker is number => typeof marker === "number" && issued.has(marker);
-  let seen = typeof window !== "undefined" ? historySnapshot() : undefined;
+  let seen: ReturnType<typeof historySnapshot> | undefined;
   let traversalFrom: { href: string; marker: unknown } | undefined;
   let syntheticFrom: { href: string; marker: unknown } | undefined;
   const historyHolders = new Set<HistoryHolder>();
@@ -218,15 +218,24 @@ export const createDialogCore = () => {
     }
   };
 
-  // The shared core is created before islands mount and register application navigation listeners.
-  if (typeof window !== "undefined") window.addEventListener("popstate", onPopState, { capture: true });
-  if (typeof navigation !== "undefined") {
-    navigation.addEventListener("navigate", (event) => {
-      if (event.navigationType === "traverse") traversalFrom = { href: location.href, marker: historyMarker() };
-    });
-  }
+  const onNavigate = (event: NavigateEvent) => {
+    if (event.navigationType === "traverse") traversalFrom = { href: location.href, marker: historyMarker() };
+  };
+  /** The window whose history this core listens to; a test harness may replace the window between dialogs. */
+  let listening: { window: Window; navigation?: Navigation } | undefined;
+  // Capture at the target runs before application listeners on the window, whenever they were added.
+  const listen = () => {
+    if (listening?.window === window) return;
+    listening?.window.removeEventListener("popstate", onPopState, { capture: true });
+    listening?.navigation?.removeEventListener("navigate", onNavigate);
+    window.addEventListener("popstate", onPopState, { capture: true });
+    const current = typeof navigation !== "undefined" ? navigation : undefined;
+    current?.addEventListener("navigate", onNavigate);
+    listening = { window, navigation: current };
+  };
 
   const pushHistory = (entry: HistoryEntry) => {
+    listen();
     const previous = historyRecord();
     // A reload or Forward never brings back a dialog or its sensitive transient state.
     if (historyIds.length === 0 && previous[HISTORY_MARKER] !== undefined) {

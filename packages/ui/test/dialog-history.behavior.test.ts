@@ -87,11 +87,25 @@ for (const navigationApi of [true, false]) {
         }
       }
 
-      test("registers capture handling when created, before any entry is pushed", () => {
+      test("listens in the capture phase of the window that holds its first entry", async () => {
         const listen = spyOn(window, "addEventListener");
-        createDialogCore();
+        const core = createDialogCore();
+        expect(listen).not.toHaveBeenCalledWith("popstate", expect.any(Function), { capture: true });
+        const result = core.open(view("Sheet"), { history: true });
         expect(listen).toHaveBeenCalledWith("popstate", expect.any(Function), { capture: true });
         listen.mockRestore();
+        core.close();
+        await result;
+      });
+
+      test("an application listener added before the first entry still misses its same-URL Back", async () => {
+        const addresses: string[] = [];
+        window.addEventListener("popstate", () => addresses.push(location.href));
+        const core = createDialogCore();
+        const result = core.open(view("Sheet"), { history: true });
+        core.close();
+        await result;
+        expect(addresses).toEqual([]);
       });
 
       test("capture runs before an earlier non-capture listener for a real history traversal", async () => {
