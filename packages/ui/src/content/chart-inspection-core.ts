@@ -41,6 +41,14 @@ export function isChartDatum(value: unknown): value is ChartDatum {
   );
 }
 
+/** Adds or removes only the tooltip id, keeping descriptions the host put on the container. */
+const describe = (container: HTMLElement, id: string, on: boolean) => {
+  const ids = (container.getAttribute("aria-describedby") ?? "").split(/\s+/).filter((token) => token && token !== id);
+  if (on) ids.push(id);
+  if (ids.length) container.setAttribute("aria-describedby", ids.join(" "));
+  else container.removeAttribute("aria-describedby");
+};
+
 /** Enhances existing SVG nodes. Pointer/focus changes never rebuild the chart. */
 export function createChartInspector(options: {
   container: () => HTMLElement | undefined;
@@ -159,7 +167,9 @@ export function createChartInspector(options: {
     pinned = false;
     active = undefined;
     clearHighlight();
-    options.container()?.removeAttribute("aria-describedby");
+    const container = options.container(),
+      id = options.tooltip()?.id;
+    if (container && id) describe(container, id, false);
     options.container()?.removeAttribute("data-inspecting");
     const tooltip = options.tooltip();
     if (tooltip) {
@@ -258,7 +268,7 @@ export function createChartInspector(options: {
     updatePlotBounds();
     container.style.setProperty("--k2b-chart-inspection-x", `${point.x - rect.left}px`);
     container.setAttribute("data-inspecting", seriesChart() ? "series" : "datum");
-    container.setAttribute("aria-describedby", tooltip.id);
+    describe(container, tooltip.id, true);
     try {
       if (!tooltip.matches(":popover-open")) tooltip.showPopover();
       positionTooltipSurface(tooltip, anchor);

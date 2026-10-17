@@ -225,6 +225,27 @@ describe("framework-free chart inspection", () => {
     }
   });
 
+  test("keeps the host's own accessible description while inspecting", () => {
+    const container = mount();
+    container.setAttribute("aria-describedby", "chart-note");
+    const inspection = inspectChart(container, { kind: "bar", format: () => ({ rows: [] }) });
+    const tooltip = container.querySelector<HTMLElement>('[role="tooltip"]')!;
+    try {
+      inspection.close();
+      expect(container.getAttribute("aria-describedby")).toBe("chart-note");
+      focus(container);
+      expect(container.getAttribute("aria-describedby")).toBe(`chart-note ${tooltip.id}`);
+      key(container, "Escape");
+      expect(container.getAttribute("aria-describedby")).toBe("chart-note");
+      focus(container);
+      inspection.destroy();
+      expect(container.getAttribute("aria-describedby")).toBe("chart-note");
+    } finally {
+      inspection.destroy();
+      container.remove();
+    }
+  });
+
   test("preserves an existing tabindex and host attributes, and assigns distinct tooltip IDs", () => {
     const container = mount();
     const other = mount();
