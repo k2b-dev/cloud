@@ -130,7 +130,8 @@ type NoteActivityItem = {
   lastOccurredAt: string;
 };
 
-type ActivityPage = { data: NoteActivityItem[]; nextCursor: string | null };
+/** `noteId` is the note the page was read for: while another note loads, the old note's pages are still shown. */
+type ActivityPage = { data: NoteActivityItem[]; nextCursor: string | null; noteId: string };
 /** The actions that change a note's text, as the server's last-editor query counts them. */
 const EDIT_ACTIONS = new Set(["note.edited", "note.restored", "note.created"]);
 
@@ -203,7 +204,8 @@ export default function NotebookDetailPanel(props: Props) {
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(t().loadActivityFailed);
-      return (await response.json()) as ActivityPage;
+      const page = (await response.json()) as Omit<ActivityPage, "noteId">;
+      return { ...page, noteId: currentNoteId };
     },
     getNextCursor: (page) => page.nextCursor,
     // A comment or a saved change of this note adds to its log, so the log reads again, like the comments do.
@@ -236,7 +238,8 @@ export default function NotebookDetailPanel(props: Props) {
     (previous) => {
       const id = noteId();
       const kept = previous.noteId === id ? previous.item : undefined;
-      const onPage = noteActivity.pages()[0]?.data.find((item) => EDIT_ACTIONS.has(item.action));
+      const first = noteActivity.pages()[0];
+      const onPage = first?.noteId === id ? first.data.find((item) => EDIT_ACTIONS.has(item.action)) : undefined;
       const newer = onPage && (!kept || Date.parse(onPage.lastOccurredAt) >= Date.parse(kept.lastOccurredAt));
       return { noteId: id, item: newer ? onPage : kept };
     },

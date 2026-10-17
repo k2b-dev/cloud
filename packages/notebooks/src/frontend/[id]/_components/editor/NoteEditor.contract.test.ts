@@ -46,6 +46,6 @@ describe("Note editor surface", () => {
     // in the address and reset the reader's scroll.
     const source = await Bun.file(resolve(import.meta.dir, "NoteEditor.client.tsx")).text();
     const handler = source.match(/const onPopState = \(\) => \{([\s\S]*?)\n {4}\};/)?.[1] ?? "";
-    expect(handler).toMatch(/if \(restoringShownHref \|\| window\.location\.href === shownHref\) return;[\s\S]*navigateSoft/);
+    expect(handler).toMatch(/if \(window\.location\.href === shownHref\) \{\s*navigation\.cancel\(\);\s*return;\s*\}[\s\S]*navigateSoft/);
   });
 });

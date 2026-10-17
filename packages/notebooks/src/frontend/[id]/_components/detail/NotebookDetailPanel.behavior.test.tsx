@@ -24,7 +24,7 @@ describe("Notebook detail panel recovery and pagination", () => {
     return;
   }
   let dom: DomTestHarness;
-  let answer: (url: URL) => Response;
+  let answer: (url: URL) => Response | Promise<Response>;
   let requests: URL[];
   const originalFetch = globalThis.fetch;
   beforeAll(() => {
@@ -37,7 +37,7 @@ describe("Notebook detail panel recovery and pagination", () => {
           return Response.json({ items: [], page: 1, perPage: 30, total: 0, hasNext: false });
         expect(url.pathname).toBe("/api/notebooks/overview/activity");
         expect(url.searchParams.get("notebook")).toBe("Book01");
-        expect(url.searchParams.get("note")).toBe("Note01");
+        expect(["Note01", "Note02"]).toContain(url.searchParams.get("note") ?? "");
         requests.push(url);
         return answer(url);
       },
@@ -231,6 +231,61 @@ describe("Notebook detail panel recovery and pagination", () => {
       await until(() => authors().includes("Author 1"));
       expect(header()).toContain("Cleo Example");
     } finally {
+      dispose();
+    }
+  });
+
+  test("the header names the next note's editor, not the last edit of the note it came from", async () => {
+    const { NOTE_SOFT_NAVIGATED_EVENT } = await import("./events");
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    answer = async (url) => {
+      if (url.searchParams.get("note") === "Note01")
+        return Response.json({
+          data: [{ ...activity(0), actor: { ...activity(0).actor, displayName: "Alice Example" } }],
+          nextCursor: null,
+        });
+      // The next note's log arrives later and holds only a comment.
+      await gate;
+      return Response.json({ data: [{ ...activity(1), action: "comment.created" }], nextCursor: null });
+    };
+    const header = () => dom.root.querySelector(".k2b-detail-panel__supporting > p")?.textContent ?? "";
+    const dispose = await renderPanel();
+    try {
+      await until(() => header().includes("Alice Example"));
+      window.dispatchEvent(
+        new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, {
+          detail: {
+            noteId: "Note02",
+            noteTitle: "Lager",
+            contentMd: "# Lager",
+            historyIncomplete: false,
+            createdAt: "2026-10-12T10:00:00.000Z",
+            updatedAt: "2026-10-15T10:00:00.000Z",
+            lockedAt: null,
+            isLocked: false,
+            noteAuthors: {
+              createdBy: null,
+              lastEditedBy: { kind: "user", id: "dana", displayName: "Dana Example", avatarHash: null },
+            },
+            tocItems: [],
+            taskProgress: { done: 0, total: 0 },
+            backlinks: [],
+            attachments: [],
+            namedBlocks: [],
+          },
+        }),
+      );
+      // While the next note's log loads, the old note's rows are still there; the header already names Dana.
+      await until(() => header().includes("Dana Example"));
+      release();
+      await until(() => authors().includes("Author 1"));
+      expect(header()).toContain("Dana Example");
+      expect(header()).not.toContain("Alice Example");
+    } finally {
+      release();
       dispose();
     }
   });
