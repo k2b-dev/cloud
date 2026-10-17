@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { resolveObjectURL } from "node:buffer";
 import { runInNewContext } from "node:vm";
+import type { HeifOptions } from "./errors";
 import { HEIF_MAX_PIXELS } from "./formats";
 import { decodeHeif, disposeHeifDecoder } from "./heif-decoder";
-import type { HeifOptions } from "./intake";
 
 type Request = { id: number; bytes: ArrayBuffer; maxPixels: number };
 class FakeWorker {
@@ -245,15 +245,14 @@ async function workerRuntime(stride = 8) {
     heif_chroma: { heif_chroma_interleaved_RGBA: 1 },
     heif_channel: { heif_channel_interleaved: 1 },
   };
+  // In a worker, `self` is the global scope, so plain globals and `self.*` reach the same handlers.
   const self = {
     postMessage: (reply: unknown) => replies.push(reply),
     onmessage: async (_event: { data: Request }) => {},
     onerror: (_event: { preventDefault: () => void }) => {},
     onunhandledrejection: (_event: { preventDefault: () => void }) => {},
-  };
-  runInNewContext(source.slice(offset), {
+    self: undefined as unknown,
     libheif: () => heif,
-    self,
     ImageData: class {
       data = new Uint8ClampedArray(16);
     },
@@ -269,7 +268,9 @@ async function workerRuntime(stride = 8) {
         return new Blob(["png"], { type: "image/png" });
       }
     },
-  });
+  };
+  self.self = self;
+  runInNewContext(source.slice(offset), self);
   const run = () => self.onmessage({ data: { id: 42, bytes: new ArrayBuffer(0), maxPixels: 4 } });
   return {
     heif,

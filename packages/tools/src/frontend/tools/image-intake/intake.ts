@@ -1,16 +1,8 @@
+import { type HeifOptions, ImageIntakeError, type IntakeOptions } from "./errors";
 import { HEIF_MAX_BYTES, HEIF_MAX_PIXELS, IMAGE_ACCEPT, isHeif } from "./formats";
 
-export type ImageIntakeFailure = { reason: "unsupported" | "too-large" | "decode-failed" | "decoder-unavailable" };
-export class ImageIntakeError extends Error {
-  constructor(public readonly reason: ImageIntakeFailure["reason"]) {
-    super(reason);
-    this.name = "ImageIntakeError";
-  }
-}
-export type ImageIntakeStage = "waiting" | "loading-decoder" | "decoding";
-export type IntakeOptions = { signal: AbortSignal; onStage: (stage: ImageIntakeStage) => void };
+export { type HeifOptions, ImageIntakeError, type ImageIntakeFailure, type ImageIntakeStage, type IntakeOptions } from "./errors";
 export type PreparedImage = { source: Blob; width: number; height: number };
-export type HeifOptions = IntakeOptions & { maxPixels: number };
 export type ImageIntakeDeps = {
   decodeNative: (source: Blob, signal: AbortSignal) => Promise<{ width: number; height: number }>;
   decodeHeif: (file: File, options: HeifOptions) => Promise<Blob>;

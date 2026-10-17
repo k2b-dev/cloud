@@ -1,5 +1,5 @@
 import source from "libheif-js/libheif-wasm/libheif-bundle.js" with { type: "text" };
-import { type HeifOptions, ImageIntakeError } from "./intake";
+import { type HeifOptions, ImageIntakeError } from "./errors";
 
 // The UMD factory and its synchronous wasm compilation run only in this worker.
 const handler = `
@@ -61,7 +61,8 @@ async function decode(bytes, maxPixels) {
     }
   }
 }
-self.onmessage = async ({ data: { id, bytes, maxPixels } }) => {
+// A dedicated worker receives messages only from the page that created it, never from other windows.
+onmessage = async ({ data: { id, bytes, maxPixels } }) => {
   currentJobId = id;
   try {
     self.postMessage({ id, ...await decode(bytes, maxPixels) });
