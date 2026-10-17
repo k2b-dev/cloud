@@ -970,6 +970,31 @@ for new rows; the table files shrink only after `VACUUM FULL` or a similar
 rewrite. See
 [Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
 
+### Expire scheduled task runs after 90 days
+
+This release expires finished scheduled task runs after 90 days. It needs no
+configuration change. The first Core start adds the indexes
+`idx_ai_chat_task_occurrences_finished`, `idx_ai_chat_task_occurrences_turn`,
+and `idx_ai_turns_background_finished`.
+The latter uses a plain `CREATE INDEX` on `ai.turns`, briefly blocking writes
+to `ai.turns` while it builds; allow for a longer build on large installations.
+The scheduled task recovery tick then
+deletes completed and failed runs older than 90 days, their background turns
+with tool calls, and their run transcripts (`ai.task_messages`) in batches of
+100 per minute. Queued and running runs, finished runs whose turns are still
+active, and chat result messages stay.
+The run row holding a one-off task's scheduled time stays, even after
+completion, until the task gets a new time or is deleted, so that time never
+runs twice; its turn and transcript expire on the same clock.
+The same start relaxes `ai_memory_learning_runs_evidence_check` so a workflow
+memory learning run keeps its evidence key when its source turn is deleted.
+Background turns and transcripts of runs whose task was deleted expire on the
+same 90-day clock, measured from when the turn finished.
+
+An installation with a large backlog drains it over time. PostgreSQL reuses
+the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
+See [Scheduled task run history](/en/docs/ai/structured-and-background-ai#keep-scheduled-task-run-history-for-90-days).
+
 ## Coordinate an existing installation's identity upgrade
 
 Use one maintenance window for the gateway, Core, OAuth, applications, and

@@ -17,8 +17,12 @@ export type AssistantActivity = { task: AiChatTaskView; occurrence: AiChatTaskOc
 type ActivitiesPage = { items: AssistantActivity[]; hasMore: boolean };
 type RunDetail = { task: AiChatTaskView; occurrence: AiChatTaskOccurrenceView; messages: AiStoredMessage[] };
 
+/** Core deletes finished runs after 90 days and with their task; the chat keeps the result. */
+class RunUnavailableError extends Error {}
+
 async function read<T>(path: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(`/api/ai/tasks/${path}`, { signal });
+  if (response.status === 404) throw new RunUnavailableError(assistantBrowserText("This run is no longer available"));
   if (!response.ok) throw new Error(assistantBrowserText("Could not load background activity"));
   return response.json();
 }
@@ -69,16 +73,30 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
         : "";
     return content.replace(/^Scheduled task [^\n]+:\s*\n/u, "").trim() || value?.task.prompt || "";
   });
+  // A refresh after expiry answers 404 while the query keeps its last data; removal wins over that copy.
+  const unavailable = () => detail.error() instanceof RunUnavailableError;
+  const available = () => (unavailable() ? undefined : detail.data());
   return (
     <div class="assistant-activity-dialog">
       <div class="assistant-activity-dialog__body">
         <Show
-          when={detail.data()}
+          when={available()}
           fallback={
-            <Placeholder
-              state={detail.error() ? "error" : "loading"}
-              title={text(detail.error() ? "Could not load background activity" : "Loading background activity")}
-            />
+            <Show
+              when={unavailable()}
+              fallback={
+                <Placeholder
+                  state={detail.error() ? "error" : "loading"}
+                  title={text(detail.error() ? "Could not load background activity" : "Loading background activity")}
+                />
+              }
+            >
+              <Placeholder
+                icon="ti ti-history-off"
+                title={text("This run is no longer available")}
+                description={text("Run details are kept for 90 days after a run finishes. Its result stays in the chat.")}
+              />
+            </Show>
           }
         >
           {(value) => (
@@ -92,7 +110,19 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
                     onOpenReference: (title, ref) => void openAssistantCloudReference(title, ref),
                   }}
                 >
-                  <RunTranscript messages={value().messages} />
+                  {/* A one-off task keeps its run after 90 days, but its transcript expires. */}
+                  <Show
+                    when={value().messages.length}
+                    fallback={
+                      <Placeholder
+                        icon="ti ti-history-off"
+                        title={text("No run history")}
+                        description={text("Run details are kept for 90 days after a run finishes. Its result stays in the chat.")}
+                      />
+                    }
+                  >
+                    <RunTranscript messages={value().messages} />
+                  </Show>
                 </AiChatActionsProvider>
               }
             >
@@ -119,7 +149,7 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
           )}
         </Show>
       </div>
-      <Show when={detail.data()}>
+      <Show when={available()}>
         {(value) => (
           <div class="assistant-activity-dialog__actions">
             <Show when={!props.transcript}>
