@@ -1,8 +1,8 @@
 import { lazySync } from "@k2b/cloud";
 import { isAppSessionActor } from "@k2b/cloud/server";
-import { audit, logger, mandates, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
+import { audit, mandates, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
-import { emitWorkflowEvent, notifyWorkflowWorker, WorkflowEventTooLargeError } from "@k2b/cloud/workflows/store";
+import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
 import { err, fail, isServiceError, ok, type Result, unwrap } from "@k2b/stdlib";
 import type { PumpState, Worker } from "@k2b/sync";
 import { sql } from "bun";
@@ -832,7 +832,6 @@ const incomingAutomationBackfillCandidateSql = (input: IncomingAutomationBackfil
   }
 `;
 
-const log = logger("mail:incoming-automations");
 const BACKFILL_PUMP_ID = "mail:incoming-automation-backfill";
 const getIncomingAutomationBackfillPump = lazySync((sync) =>
   sync.pump<IncomingAutomationBackfillInput, never, IncomingAutomationBackfillItem>({
@@ -867,32 +866,24 @@ const getIncomingAutomationBackfillPump = lazySync((sync) =>
           db: tx,
         });
         if (!snapshot) return;
-        try {
-          await emitWorkflowEvent(
-            {
-              appId: MAIL_WORKFLOW_APP_ID,
-              scopeId: input.mailboxId,
-              type: MAIL_WORKFLOW_EVENT.messageReceived,
-              targetWorkflowId: automation.workflowId,
-              data: {
-                message: snapshot.source.message as unknown as WorkflowJsonValue,
-                conversation: snapshot.source.conversation as unknown as WorkflowJsonValue,
-              },
-              context: mailWorkflowEventContext(snapshot),
-              dedupeKey: incomingAutomationBackfillDedupeKey(input, snapshot.targetKey),
-              occurredAt: new Date(snapshot.internalDate),
+        // An oversized message is not skipped here: the pump fails the operation with the
+        // WorkflowEventTooLargeError message, so the backfill shows Failed instead of counting it as accepted.
+        await emitWorkflowEvent(
+          {
+            appId: MAIL_WORKFLOW_APP_ID,
+            scopeId: input.mailboxId,
+            type: MAIL_WORKFLOW_EVENT.messageReceived,
+            targetWorkflowId: automation.workflowId,
+            data: {
+              message: snapshot.source.message as unknown as WorkflowJsonValue,
+              conversation: snapshot.source.conversation as unknown as WorkflowJsonValue,
             },
-            { db: tx },
-          );
-        } catch (error) {
-          if (!(error instanceof WorkflowEventTooLargeError)) throw error;
-          log.warn("Skipped oversized backfill workflow event", {
-            mailboxId: input.mailboxId,
-            workflowId: automation.workflowId,
-            field: error.field,
-            bytes: error.bytes,
-          });
-        }
+            context: mailWorkflowEventContext(snapshot),
+            dedupeKey: incomingAutomationBackfillDedupeKey(input, snapshot.targetKey),
+            occurredAt: new Date(snapshot.internalDate),
+          },
+          { db: tx },
+        );
       });
       notifyWorkflowWorker(MAIL_WORKFLOW_APP_ID);
     },
