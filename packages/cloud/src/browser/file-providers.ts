@@ -6,12 +6,14 @@ import type { CapabilityCatalogApp, CapabilityClientError, CapabilityHttpOptions
 import { CapabilityErrorSchema, type CapabilityStream, capabilityResultSchema } from "../contracts/capabilities";
 import { CapabilityStreamStatusSchema } from "../contracts/capability-streams";
 import {
+  type FileProviderContext,
   type FileProviderEntry,
   type FileProviderIssue,
   FileProviderListDataSchema,
   FileProviderReadDataSchema,
   FileProviderSaveDataSchema,
   FileProviderSaveInputSchema,
+  fileProviderAcceptsContext,
   fileProviderIssues,
 } from "../contracts/file-provider";
 import { LOCALE_HEADER } from "../shared/locale";
@@ -25,6 +27,7 @@ export type FileProviderSource = {
   name: string;
   icon: string;
   list: string;
+  context: boolean;
   read: string;
   /** The provider's read limit; a consumer combines it with its own. */
   maxBytes: number;
@@ -61,6 +64,14 @@ const issuesOf = (app: CapabilityCatalogApp): FileProviderIssue[] | null => {
   }
 };
 
+const acceptsContext = (app: CapabilityCatalogApp): boolean => {
+  try {
+    return fileProviderAcceptsContext(app.manifest);
+  } catch {
+    return false;
+  }
+};
+
 /**
  * Keeps the catalog apps that offer files with a usable `list` and `read`. Core already drops invalid declarations;
  * the check repeats here because a manifest from another Cloud release may name an operation this reader left out.
@@ -81,6 +92,7 @@ export const fileProviderSources = (apps: readonly CapabilityCatalogApp[], local
           name: app.appName,
           icon: providerIcon(app.appIcon, "ti ti-folders"),
           list: declaration.list,
+          context: acceptsContext(app),
           read: declaration.read,
           maxBytes: read.stream.maxBytes,
           ...(save?.stream ? { save: { id: save.localId, maxBytes: save.stream.maxBytes } } : {}),
@@ -112,7 +124,7 @@ export type FileProviderPage = { items: FileProviderEntry[]; next: string | null
 /** One folder page. Without `parent` it is the provider's root. */
 export const listProviderFolder = async (
   provider: FileProviderSource,
-  input: { parent?: string; query?: string; cursor?: string },
+  input: { parent?: string; query?: string; cursor?: string; context?: FileProviderContext },
   caller: FileProviderCaller,
   signal?: AbortSignal,
 ): Promise<FileProviderPage> => {
@@ -125,6 +137,7 @@ export const listProviderFolder = async (
         ...(input.parent === undefined ? {} : { parent: input.parent }),
         ...(input.query ? { query: input.query } : {}),
         ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+        ...(provider.context === true && input.context !== undefined ? { context: input.context } : {}),
         limit: FILE_PROVIDER_PAGE_SIZE,
       },
       signal,

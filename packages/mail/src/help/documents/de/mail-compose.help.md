@@ -3,7 +3,7 @@ id: mail-compose
 title: E-Mails verfassen und senden
 icon: ti ti-pencil
 description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen nutzen, Dateien anhängen und die Zustellung steuern.
-updated: 2026-10-11
+updated: 2026-10-16
 order: 30
 ---
 
@@ -149,6 +149,8 @@ Mit Zugriff **Verwalten** änderst du Vorlagen und Standards unter **Einstellung
 ## Dateien anhängen {icon="paperclip"}
 
 Wähle **Dateien anhängen** und wähle eine oder mehrere Dateien aus, oder ziehe Dateien vom Desktop auf den Editor. Der Editor ist hervorgehoben, solange er die Dateien annehmen kann. Upload-Fortschritt und Fehler erscheinen neben den Anhängen des Entwurfs. Du kannst einen unvollständigen Upload wiederholen oder abbrechen und eine angehängte Datei vor dem Senden entfernen.
+
+Apps, die den Empfängerkontext verstehen, etwa eine Rechnungs-App, zeigen nur passende Dateien. Mail sucht die Empfänger in deinen Kontakt-Apps und gibt nur passende Kontaktreferenzen weiter, keine E-Mail-Adressen. Passt nichts, zeigt die App **Keine passenden Dateien für diese Empfänger**. Erreicht Mail deine Kontakt-Apps nicht, zeigt die App einen Fehler mit **Erneut versuchen**. Diese Referenzen geben keinen Zugriff auf Kontakte oder Dateien.
 
 Wurde die Seite während eines Uploads neu geladen oder geschlossen, zeigt der Entwurf diese Datei beim nächsten Öffnen als **Upload nicht abgeschlossen**. Brich den Upload ab und hänge die Datei erneut an.
 

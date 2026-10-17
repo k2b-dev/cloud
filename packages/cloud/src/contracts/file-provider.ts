@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CapabilityManifest } from "./capabilities";
+import { type CapabilityManifest, CloudResourceRefSchema } from "./capabilities";
 import { type CapabilityContract, type CapabilityContractIssue, capabilityContractIssues } from "./capability-compatibility";
 
 /**
@@ -33,6 +33,26 @@ export const FileProviderListInputSchema = z
     limit: z.number().int().min(1).max(100).default(50).describe("Maximum number of entries to return."),
   })
   .strict();
+
+/** Caller hints are bounded independently of provider pagination. */
+export const FILE_PROVIDER_CONTEXT_MAX_REFS = 20;
+export const FileProviderContextSchema = z
+  .object({
+    refs: z
+      .array(CloudResourceRefSchema)
+      .max(FILE_PROVIDER_CONTEXT_MAX_REFS)
+      .describe(
+        "Hints about what the caller works on, for example the contacts a mail goes to; never a permission. Empty means nothing resolved.",
+      ),
+  })
+  .strict()
+  .describe("Caller resource hints, never a permission or proof of access.");
+export const FileProviderContextListInputSchema = FileProviderListInputSchema.extend({
+  context: FileProviderContextSchema.optional().describe(
+    "Optional caller context; keep it unchanged with cursor like parent, query and limit.",
+  ),
+}).strict();
+export type FileProviderContext = z.output<typeof FileProviderContextSchema>;
 
 const entryFacts = {
   id: ProviderIdSchema,
@@ -122,6 +142,33 @@ export const fileProvider = {
     stream: "write",
   },
 } as const satisfies Record<string, CapabilityContract>;
+
+/** Optional context-aware list contract; the base provider contract stays unchanged. */
+export const fileProviderContextList = { ...fileProvider.list, input: FileProviderContextListInputSchema } satisfies CapabilityContract;
+
+/** Only explicitly named, compatible context inputs opt in; open input objects do not. */
+export const fileProviderAcceptsContext = (manifest: CapabilityManifest): boolean => {
+  if (!manifest.fileProvider) return false;
+  const operation = manifest.queries.find((query) => query.localId === manifest.fileProvider?.list);
+  if (!operation) return false;
+  const root = operation.inputSchema;
+  let schema: unknown = root;
+  const visited = new Set<unknown>();
+  const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+  while (object(schema) && typeof schema.$ref === "string") {
+    if (visited.has(schema)) return false;
+    visited.add(schema);
+    if (!schema.$ref.startsWith("#/$defs/")) return false;
+    const defs = root.$defs;
+    schema = object(defs) ? defs[schema.$ref.slice(8)] : undefined;
+  }
+  return (
+    object(schema) &&
+    object(schema.properties) &&
+    Object.hasOwn(schema.properties, "context") &&
+    capabilityContractIssues(fileProviderContextList, { kind: "query", operation }).length === 0
+  );
+};
 
 export type FileProviderFunction = keyof typeof fileProvider;
 export const FILE_PROVIDER_FUNCTIONS = ["list", "read", "save"] as const satisfies readonly FileProviderFunction[];

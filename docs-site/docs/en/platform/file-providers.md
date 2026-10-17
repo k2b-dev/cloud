@@ -5,7 +5,7 @@ section: Platform services
 order: 558
 description: Let people add files from any Cloud application with one chooser, save copies into applications such as Files, and implement the file-provider contract so your application can offer its files.
 tags: [capabilities, files, contracts, streams, upload]
-updated: 2026-10-09
+updated: 2026-10-16
 ---
 
 # Offer and choose files across applications
@@ -70,6 +70,19 @@ chats and Projects attach files this way.
 - **`multiple`** allows several files; it defaults to `false`. **`signal`**
   closes the chooser, or stops waiting for the device's dialog, and resolves
   `[]`.
+- **`context`** tells supporting providers what the person is working on:
+  `{ refs: [{ type: "customers.customer", id: "c1" }] }`. Pass an object or an
+  async function `(signal) => Promise<FileProviderContext>`. The function runs
+  lazily when someone opens a supporting provider. A successful result is kept
+  for this chooser. If the function cannot determine the context, it should
+  reject instead of returning empty refs, so the chooser shows **Try again**
+  and lets it run again instead of showing "No matching files".
+  The chooser drops invalid and duplicate refs (same type and ID), keeping the
+  first 20. Only providers whose `list` explicitly accepts compatible `context`
+  receive it; other providers keep listing as before. Refs are hints, never
+  access. Pass **`noMatchingFiles`** to title an empty provider root that
+  received context, for example "No matching files for these recipients".
+  It defaults to "No matching files" and offers **Choose another source**.
 - **Reads** run through the provider's read stream, at most two at a time,
   with progress per file. **Cancel** stops them. Each read checks the file's
   current size and type again before any byte moves, and a body that differs
@@ -224,7 +237,7 @@ A saved file is a copy. Later changes in your application do not reach it.
 
 | Function | Kind | Input schema | Result schema | Stream | Files ID |
 | --- | --- | --- | --- | --- | --- |
-| `list` | Query | `FileProviderListInputSchema` | `FileProviderListDataSchema` | none | `provider.list` |
+| `list` | Query | `FileProviderListInputSchema` or `FileProviderContextListInputSchema` | `FileProviderListDataSchema` | none | `provider.list` |
 | `read` | Query | `FileProviderReadInputSchema` | `FileProviderReadDataSchema` | read | `content.read` |
 | `save` | Action, optional | `FileProviderSaveInputSchema` | `FileProviderSaveDataSchema` | write | `provider.save` |
 
@@ -236,8 +249,8 @@ function, and `FILE_PROVIDER_FUNCTIONS` lists their names. `save` must declare
   `next`. Without `parent`, it returns your root. Folders may be virtual: Files
   shows a person's storage bases as root folders. `query` filters names inside
   the folder; `limit` is 1 to 100 and defaults to 50. `cursor` continues from
-  the previous page; send it with the same `parent`, `query`, and `limit`. A
-  provider may reject a cursor with other values; Files answers
+  the previous page; send it with the same `parent`, `query`, `limit`, and
+  optional `context`. A provider may reject a cursor with other values; Files answers
   `409 cursor_invalid`.
 - **Entries** are `folder` or `file`, with an opaque `id` of up to 2,048
   characters and a `name`. Files also carry `size` and may carry `mediaType`.
@@ -352,6 +365,51 @@ Keep these rules in every call:
 - Make `save` idempotent per key: a retry with the same key returns the same
   transfer, never a second file and never a conflict with itself.
 
+## Offer matching files
+
+Use `FileProviderContextListInputSchema` as your list Query's input to accept
+caller context. Keep your existing `fileProvider` declaration and read Query;
+only the list input changes:
+
+```ts
+import { defineCapabilities } from "@k2b/cloud";
+import { FileProviderContextListInputSchema, FileProviderListDataSchema } from "@k2b/cloud/contracts";
+import { ok } from "@k2b/stdlib";
+
+export const invoiceCapabilities = defineCapabilities({
+  protocolVersion: 2,
+  queries: {
+    "invoice.list": {
+      title: "Browse invoices",
+      description: "List the invoices the caller can read, only those of the customers in the caller's context.",
+      input: FileProviderContextListInputSchema,
+      data: FileProviderListDataSchema,
+      openWorld: false,
+      run: async (input, context) => ok({ data: await listReadableInvoices(context.accessSubject, input) }),
+    },
+    "invoice.read": { /* read Query with a read stream, as above */ },
+  },
+  fileProvider: { list: "invoice.list", read: "invoice.read" },
+});
+```
+
+`listReadableInvoices` stands for your own permission-aware service.
+`input.context?.refs` contains resource references such as
+`{ type: "customers.customer", id: "c1" }`. These may name another app's
+resource types, for example the contacts a mail goes to.
+
+Your provider decides how to use these hints. An invoice provider can show only
+invoices for matching customers and nothing without a matching customer. An
+empty `refs` array means the caller supplied context but nothing matched.
+When the root has no files or further pages, the chooser shows "No matching
+files". Name filters keep their own empty state, and empty subfolders still
+say "This folder is empty". Keep the context unchanged across cursor pages.
+Files does not accept context and keeps its ordinary folder browsing.
+
+Refs are hints, never permissions or proof. Authorize every list and read call
+with the signed-in caller's own access. Never reveal a resource or widen access
+because its ref was supplied, and never trust a ref as proof of access.
+
 ## Understand compatibility
 
 Your application checks the declaration when it starts. `app.start()` fails
@@ -373,6 +431,11 @@ A capability is compatible when:
 - **Result.** Every result you can return satisfies the contract data schema.
   Extra fields and narrower types are fine, and literal values must lie within
   the contract's bounds.
+
+Context support is read from the list input schema. `fileProviderAcceptsContext`
+checks that it explicitly names `context` and accepts the context list contract;
+a loose object that only allows extra properties does not opt in. The base
+`fileProviderIssues` check stays unchanged.
 
 Test a declaration with the same function Cloud uses:
 
@@ -406,6 +469,11 @@ they arrive. A failed catalog read shows **Try again** instead of an empty
 list.
 
 ## Roll out a provider
+
+Adding context support needs no catalog-reader update: it is declared in the
+list input, with no new field in `fileProvider`. Older consumers keep listing
+the provider without context. Context-aware consumers use
+`fileProviderAcceptsContext` before sending it.
 
 `fileProvider` is optional. A manifest without it keeps its earlier shape and
 hash, so nothing changes for applications that do not offer files.

@@ -3,7 +3,7 @@ id: mail-compose
 title: Write and send messages
 icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
-updated: 2026-10-11
+updated: 2026-10-16
 order: 30
 ---
 
@@ -149,6 +149,8 @@ With **Manage** access, you change templates and defaults in **Settings → Writ
 ## Attach files {icon="paperclip"}
 
 Choose **Attach files** and choose one or more files, or drag files from your desktop onto the composer. The composer is highlighted while it can accept the drop. Upload progress and failures appear next to the draft attachments. You can retry or cancel an incomplete upload, and remove an attached file before sending.
+
+Apps that understand recipient context, such as an invoice app, show only matching files. Mail looks up the recipients in your contact apps and passes only matching contact references, not email addresses. If nothing matches, the app shows **No matching files for these recipients**. If Mail cannot reach your contact apps, the app shows an error with **Try again**. These references give no access to contacts or files.
 
 If the page reloaded or closed during an upload, the draft shows that file as **Upload not finished** when you open it again. Cancel it and attach the file again.
 

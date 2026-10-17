@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-13
+updated: 2026-10-16
 ---
 
 # API surface
@@ -176,6 +176,12 @@ helpers support the signed `inbox`, `action`, and `act` commands.
 `appApproval` in the services barrel is a Core-owned maintainer service, not
 general application authentication. Use the
 [app approval HTTP contract](/en/docs/operations/app-approval) for external clients.
+
+For [matching files](/en/docs/platform/file-providers#offer-matching-files),
+`@k2b/cloud/contracts` exports `FileProviderContext`, `FileProviderContextSchema`,
+`FileProviderContextListInputSchema`, `FILE_PROVIDER_CONTEXT_MAX_REFS`,
+`fileProviderContextList`, and `fileProviderAcceptsContext`. The existing base
+file-provider contract stays unchanged.
 
 ## Share types with the browser
 
