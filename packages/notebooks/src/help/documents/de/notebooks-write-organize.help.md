@@ -241,6 +241,7 @@ Im Editor erscheinen die Bedienelemente, wenn du auf das Diagramm zeigst oder es
 ## Notizen mit Links, Tags und Anhängen verbinden {icon="link"}
 
 :::reference
+- **Verknüpfungen sehen:** Wähle **Verknüpfungen** unten in der Navigation. Der Graph zeigt, wie die Notizen des Notizbuchs miteinander verknüpft sind. Er startet bei der offenen Notiz. Das geht auch mit Zugriff **Ansehen** in der Buchansicht.
 - **Notizlinks:** Die Markdown-Schreibweise lautet `[Label](note://shortId)`. Der Editor kann Links auch für dich einfügen.
 - **Link auf eine Überschrift:** Hänge den Namen der Überschrift in Kleinbuchstaben mit Bindestrichen an. `[Label](note://shortId#backup-restore)` öffnet die Überschrift „Backup & Restore“. Hat die Notiz keine solche Überschrift, öffnet sie sich oben.
 - **Tags:** Verwende Tags wie #garden, um Notizen im ganzen Notizbuch zu gruppieren. Tagfilter berücksichtigen erkannte Tags, nicht beliebige Wörter.

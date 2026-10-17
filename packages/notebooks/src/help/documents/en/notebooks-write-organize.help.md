@@ -241,6 +241,7 @@ In the editor, the controls appear when you point at the diagram or focus it. Af
 ## Connect notes with links, tags, and attachments {icon="link"}
 
 :::reference
+- **See how notes link:** Choose **Links** at the bottom of the navigation. The graph shows how the notes of the notebook link to each other. It starts at the open note. This also works with **View** access, in Book view.
 - **Note links:** The Markdown form is `[Label](note://shortId)`. The editor can insert links for you.
 - **Link to a heading:** Add the heading name in lowercase with hyphens. `[Label](note://shortId#backup-restore)` opens the heading "Backup & Restore". If the note has no such heading, it opens at the top.
 - **Tags:** Use tags such as #garden to group notes across the notebook. Tag filters match parsed tags, not any word.

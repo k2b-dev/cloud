@@ -5,6 +5,8 @@ import { AppWorkspace, Placeholder } from "@k2b/ui";
 import { ssr } from "../../config";
 import { katexStylesHref } from "../../lib/katex-assets";
 import { notebooksPageMessages } from "../messages";
+import { buildNoteUrl } from "../params";
+import BookGraphSurface from "./_components/book/BookGraphSurface";
 import BookSurface from "./_components/book/BookSurface";
 import FloatingEditButton from "./_components/book/FloatingEditButton.island";
 import NotebookDetailPanel from "./_components/detail/NotebookDetailPanel.island";
@@ -28,6 +30,38 @@ export default ssr<AuthContext>(async (c) => {
     return ssr.error(c, 403, { description: t.accessDeniedDescription, action: { label: t.notebooks, href: "/app/notebooks" } });
 
   if (data.kind === "redirect") return c.redirect(data.href);
+
+  if (data.isGraphMode && data.graph && data.graphShell === "book") {
+    const graph = data.graph;
+    c.get("page").title = data.selectedNote?.title ?? data.notebook.name;
+    return () => (
+      <Layout c={c} fullPage fullWidth title={data.notebook.name}>
+        <RememberNotebook notebookId={data.notebook.id} />
+        <BookGraphSurface
+          userId={data.ctx.userId}
+          notebookId={data.notebook.id}
+          notebookName={data.notebook.name}
+          notebookIcon={data.notebook.icon}
+          selectedNoteId={data.selectedNote?.id ?? null}
+          tree={data.bookTree}
+          tags={data.ctx.tags}
+          currentHref={
+            data.selectedNote
+              ? buildNoteUrl(data.notebook.id, data.selectedNote.id, "book")
+              : `/app/notebooks/${data.notebook.id}?mode=book`
+          }
+          canWrite={data.canWrite}
+          locked={!!data.selectedNote?.lockedAt}
+          navigationHidden={data.ctx.navigationHidden}
+          graph={graph}
+          backHref={data.graphBack}
+          graphBack={data.graphBack}
+          appUrl={data.appUrl}
+          cursor={data.ctx.workspaceCursor}
+        />
+      </Layout>
+    );
+  }
 
   if (data.isBookMode) {
     c.get("page").title = data.selectedNote?.title ?? data.notebook.name;
@@ -109,7 +143,13 @@ export default ssr<AuthContext>(async (c) => {
         )}
 
         {/* The writable editor is the one with the toolbar and its navigation toggle. */}
-        <NotebookSidebar ctx={ctx} editorToolbar={editorOwnsWorkspaceSocket} />
+        <NotebookSidebar
+          ctx={ctx}
+          editorToolbar={editorOwnsWorkspaceSocket}
+          current={isGraphMode ? "graph" : undefined}
+          // Version history loads as a whole page, so its address is where Links returns to.
+          graphBack={isVersionsMode ? c.req.path + new URL(c.req.url).search : data.graphBack}
+        />
 
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false}>
@@ -125,7 +165,13 @@ export default ssr<AuthContext>(async (c) => {
                 initialTotal={versionHistory?.total}
               />
             ) : isGraphMode && graph ? (
-              <NotebookGraph notebookId={notebook.id} selectedNoteId={selectedNoteId} graph={graph} />
+              <NotebookGraph
+                notebookId={notebook.id}
+                selectedNoteId={selectedNoteId}
+                graph={graph}
+                from={ctx.presentationMode}
+                backHref={data.graphBack}
+              />
             ) : selectedNote ? (
               <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" data-full-width={ctx.fullWidth ? "" : undefined}>
                 {readonlyMode && (
@@ -182,6 +228,7 @@ export default ssr<AuthContext>(async (c) => {
 
           {showDetailPanel && selectedNote && (
             <NotebookDetailPanel
+              presentationMode={ctx.presentationMode}
               mode={readonlyMode ? "read" : "edit"}
               initiallyOpen={readonlyMode ? true : detailPanelOpen}
               fullWidth={ctx.fullWidth}

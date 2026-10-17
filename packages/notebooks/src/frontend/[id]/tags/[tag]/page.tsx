@@ -166,7 +166,7 @@ export default ssr<AuthContext>(async (c) => {
   const Content = () => (
     <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
       <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
-      <NotebookSidebar ctx={ctx} />
+      <NotebookSidebar ctx={ctx} graphBack={c.req.path + new URL(c.req.url).search} />
       <AppWorkspace.Content>
         <AppWorkspace.Main class="flex-col p-[var(--ui-space-shell)]" scroll={false}>
           {/* SearchBar (full width) + note counter on the right. The

@@ -2,6 +2,7 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { IconButton, IconButtonLink, suppressTextSelection, Tooltip, useLocale } from "@k2b/ui";
 import { forceCenter, forceLink, forceManyBody, forceSimulation, type Simulation } from "d3-force";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { NoteGraph } from "../../../../service/links";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -11,6 +12,8 @@ type Props = {
   /** Optional: id of the note the user came from — gets initial focus + highlight. */
   selectedNoteId: string | null;
   graph: NoteGraph;
+  from?: PresentationMode;
+  backHref?: string;
 };
 
 /**
@@ -95,8 +98,11 @@ export default function NotebookGraph(props: Props) {
   let clearPointerGesture: (() => void) | undefined;
 
   const closeHref = () => {
+    if (props.backHref) return props.backHref;
     const selected = simNodes.find((node) => node.id === props.selectedNoteId);
-    return selected ? buildNoteUrl(props.notebookId, selected.id) : `/app/notebooks/${props.notebookId}`;
+    return selected
+      ? buildNoteUrl(props.notebookId, selected.id, props.from)
+      : `/app/notebooks/${props.notebookId}${props.from ? `?mode=${props.from}` : ""}`;
   };
 
   const setClampedZoom = (next: number) => setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next)));
@@ -104,7 +110,7 @@ export default function NotebookGraph(props: Props) {
   const openNode = (node: SimNode) => {
     node.fx = null;
     node.fy = null;
-    navigateTo(buildNoteUrl(props.notebookId, node.id));
+    navigateTo(buildNoteUrl(props.notebookId, node.id, props.from));
   };
 
   const fitGraph = () => {
@@ -302,13 +308,13 @@ export default function NotebookGraph(props: Props) {
   return (
     // The graph is the workspace's own surface: no second border or corner inside the app card.
     <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+      {/* Close stays in the same place with or without notes, so an empty notebook's graph also leads back. */}
+      <Tooltip.Anchor content={t().closeGraph}>
+        <IconButtonLink tooltip={false} href={closeHref()} size="sm" class="absolute left-2 top-2 z-10" label={t().closeGraph}>
+          <i class="ti ti-x" />
+        </IconButtonLink>
+      </Tooltip.Anchor>
       <Show when={simNodes.length > 0} fallback={<EmptyState />}>
-        <Tooltip.Anchor content={t().closeGraph}>
-          <IconButtonLink tooltip={false} href={closeHref()} size="sm" class="absolute left-2 top-2 z-10" label={t().closeGraph}>
-            <i class="ti ti-x" />
-          </IconButtonLink>
-        </Tooltip.Anchor>
-
         <svg
           ref={svgRef}
           class="w-full h-full select-none touch-none cursor-grab active:cursor-grabbing"

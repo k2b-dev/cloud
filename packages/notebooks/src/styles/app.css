@@ -168,7 +168,7 @@
   font-size: 0.6875rem;
   font-weight: 400;
 }
-/* Attachments and settings stand below the tree as two rows of the sidebar's own items. */
+/* The footer items (links, and in the workspace attachments and settings) stand below the tree as rows of the sidebar's own items. */
 .notebook-sidebar-foot {
   display: flex;
   flex-direction: column;
