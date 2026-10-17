@@ -28,7 +28,7 @@ Pulse turns incoming data into browsable facts, query results, and dashboards. T
 6. **Write the dashboard:** Copy useful, stable queries into Dashboard DSL. Add descriptions when a chart needs interpretation.
 :::
 
-Point at, tap, or tab into a chart to see its values with time and unit.
+Point at a chart, choose it, or reach it with Tab to see its values with time and unit.
 
 :::note One naming rule
 Signal names describe the fact, such as `orders.created` or `system.cpu.usage`. Source, resource, and dimensions describe where that fact came from. This is why the same model works for servers, sales, websites, energy systems, and app workflows.
