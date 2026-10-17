@@ -610,9 +610,24 @@ for (const depth of [1, 2]) {
     const target = HANDBOOK_IDS.kuehl!;
     try {
       const length = await page.evaluate(() => history.length);
+      await page.evaluate(() => {
+        window.addEventListener(
+          "notebooks.note.softNavigated",
+          (event) => {
+            const detail = (event as CustomEvent<{ noteId: string; href: string }>).detail;
+            document.body.dataset.recentredNoteId = detail.noteId;
+            document.body.dataset.recentredHref = detail.href;
+          },
+          { once: true },
+        );
+      });
       await page.locator(`[data-node="${target}"]`).focus();
       await page.keyboard.press("Space");
       await page.waitForFunction((id) => new URL(location.href).searchParams.get("note") === id, target);
+      expect(await page.evaluate(() => document.body.dataset.recentredNoteId)).toBe(target);
+      expect(await page.evaluate(() => document.body.dataset.recentredHref)).toBe(
+        await page.evaluate(() => `${location.pathname}${location.search}`),
+      );
       expect(await page.evaluate(() => history.length)).toBe(length);
       expect(await page.evaluate(() => document.activeElement?.getAttribute("data-node"))).toBe(target);
       expect(await page.locator(`[data-node="${target}"]`).getAttribute("aria-label")).toEndWith(", current note");

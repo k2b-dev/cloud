@@ -1,7 +1,9 @@
 import { Button, NoticeCard, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
+import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
 import { BOOK_SNAPSHOT_EVENT, type BookMetadata, type BookSnapshot } from "./book-state";
 
@@ -22,19 +24,24 @@ export default function BookGraphLive(props: Props) {
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [failed, setFailed] = createSignal(false);
   const [retrying, setRetrying] = createSignal(false);
+  const [bookHref, setBookHref] = createSignal(props.bookHref);
   const refresh = async () => {
+    const href = bookHref();
     try {
-      const response = await apiClient[":id"].book.$get({ param: { id: props.notebookId }, query: { href: props.bookHref } });
+      const response = await apiClient[":id"].book.$get({ param: { id: props.notebookId }, query: { href } });
+      if (href !== bookHref()) return;
       if ([401, 403, 404].includes(response.status)) {
         window.location.assign(window.location.href);
         return;
       }
       if (!response.ok) throw new Error(`Book navigation could not be loaded (${response.status})`);
       const { html: _html, ...metadata }: BookSnapshot = await response.json();
+      // A recentre can overtake this request while its response is loading.
+      if (href !== bookHref()) return;
       window.dispatchEvent(new CustomEvent<BookMetadata>(BOOK_SNAPSHOT_EVENT, { detail: metadata }));
       setFailed(false);
     } catch (error) {
-      setFailed(true);
+      if (href === bookHref()) setFailed(true);
       throw error;
     }
   };
@@ -45,6 +52,12 @@ export default function BookGraphLive(props: Props) {
       .finally(() => setRetrying(false));
   };
   onMount(() => {
+    const onSoftNavigated = (raw: Event) => {
+      const noteId = (raw as CustomEvent<{ noteId?: string }>).detail?.noteId;
+      if (!noteId) return;
+      setBookHref(buildNoteUrl(props.notebookId, noteId, "book"));
+      refresh().catch(() => undefined);
+    };
     const onWorkspaceEvent = (raw: Event) => {
       const detail = (raw as CustomEvent<WorkspaceEventDetail>).detail;
       if (detail.event.notebookId !== props.notebookId) return;
@@ -53,7 +66,11 @@ export default function BookGraphLive(props: Props) {
       else detail.cover(refresh());
     };
     window.addEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
-    onCleanup(() => window.removeEventListener(WORKSPACE_EVENT, onWorkspaceEvent));
+    window.addEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
+    onCleanup(() => {
+      window.removeEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
+      window.removeEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
+    });
   });
   // Over the graph, not in its flow, so the notice moves nothing when it appears. It starts below the graph's two
   // toolbar rows, so it never covers Close, the search or the filters.

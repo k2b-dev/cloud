@@ -17,6 +17,7 @@ import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { NoteGraph } from "../../../../service/links";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
+import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
 import { createNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "../sidebar/navigation-visibility";
 import GraphList from "./GraphList";
 import { GraphDisplaySwitcher, graphDisplayLabel } from "./graph-displays";
@@ -111,6 +112,10 @@ export default function NotebookGraph(props: Props) {
     setCentreId(id);
     centreChanged = true;
     writeUrl();
+    // The shell must follow the graph's current note before a reload, too.
+    window.dispatchEvent(
+      new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: { noteId: id, href: `${location.pathname}${location.search}` } }),
+    );
   };
   onMount(() => {
     const media = window.matchMedia(PHONE_GRAPH_QUERY);
