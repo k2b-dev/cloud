@@ -89,6 +89,18 @@ export type MailWorkflowTargetSnapshot = {
   internalDate: string;
 };
 
+/**
+ * The run reads the body by reference through the lazy hydration resolver, so
+ * the event stays under the 16 MiB workflow event limit. Keep receipt-time preconditions.
+ */
+export const mailWorkflowSnapshotWithoutBody = (snapshot: MailWorkflowTargetSnapshot): MailWorkflowTargetSnapshot => ({
+  ...snapshot,
+  source: {
+    ...snapshot.source,
+    message: { ...snapshot.source.message, body: "", bodyText: "", bodyHtml: "", bodyAvailable: false },
+  },
+});
+
 export const mailWorkflowEventContext = (snapshot: MailWorkflowTargetSnapshot): Record<string, WorkflowJsonValue> => ({
   mailboxId: snapshot.mailboxShortId,
   source: snapshot.source as unknown as WorkflowJsonValue,

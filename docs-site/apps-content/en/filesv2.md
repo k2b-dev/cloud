@@ -547,13 +547,17 @@ the configured backend address; the Filegate token never leaves the backend.
 Every save replaces the file in Filegate, and the root's versioning policy
 decides which saves become versions. On managed roots, saves bind a fresh
 revision and Filegate atomically rejects a changed destination at publication.
-Cloud serializes document publication, private upload commits, moves, and
-version restores with the existing database root lock, shared with trash and
-administrative lifecycle operations. Busy publications return a retryable error;
-no process-local lock or extra lease state is required. Large upload commits
-hold both Filegate's root mutex and Cloud's root lock, so other changes in that
-storage wait or retry until [filegate#6](https://github.com/k2b-dev/filegate/issues/6)
-is fixed. WOPI timestamp checks
+Cloud serializes publications (upload commits, renames, moves, version restores,
+and document saves) with the root lock, shared with trash and administrative
+lifecycle operations. Publications and trash removal and restore wait up to five
+seconds per request for a busy root lock before returning a retryable busy error.
+A move or removal of several entries shares that one wait. Administrative
+lifecycle operations and background maintenance still answer busy at once;
+trash listings do not wait for the lock. The upload queue automatically retries
+such a busy commit with backoff. Public inbox commits do not take this lock.
+Large upload commits hold both Filegate's root mutex and Cloud's root lock, so
+other changes in that storage wait or retry until
+[filegate#6](https://github.com/k2b-dev/filegate/issues/6) is fixed. WOPI timestamp checks
 retain microsecond precision. Collabora's explicit **Overwrite** choice remains
 supported, while changes during that save still conflict. Unmanaged roots also
 recheck timestamp and size before writing. External NFS writers do not participate
