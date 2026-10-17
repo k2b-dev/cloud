@@ -1119,6 +1119,41 @@ for (const notebook of ["hand01", "big001"]) {
   }
 }
 
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`${browserName}: Circle titles the focused ring neighbour of the current note beside its title at ${viewport.width}`, async () => {
+    const page = await open(graphPath("hand01", "&display=circle"), viewport);
+    try {
+      const quad = (id: string) =>
+        page.locator(`[data-label="${id}"]`).evaluate((label: SVGTextElement) => {
+          const b = label.getBBox();
+          return [
+            [b.x, b.y],
+            [b.x + b.width, b.y],
+            [b.x + b.width, b.y + b.height],
+            [b.x, b.y + b.height],
+          ].map(([x, y]) => {
+            const p = new DOMPoint(x, y).matrixTransform(label.getScreenCTM()!);
+            return { x: p.x, y: p.y };
+          });
+        });
+      for (const key of ["ArrowRight", "ArrowLeft"]) {
+        await page.locator(`[data-node="${WAREHOUSE}"]`).focus();
+        await page.keyboard.press(key);
+        const neighbour = (await focusedNode(page))!;
+        expect(neighbour).not.toBe(WAREHOUSE);
+        await page.waitForSelector(`[data-label="${neighbour}"][data-kind="hover"]`, { timeout: 5_000 });
+        expect(await page.locator(`[data-label="${WAREHOUSE}"]`).getAttribute("data-kind")).toBe("current");
+        expect(labelQuadsOverlap(await quad(neighbour), await quad(WAREHOUSE))).toBe(false);
+      }
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
+
 test(`${browserName}: Circle area names read left to right, including the lower half`, async () => {
   const page = await open(graphPath("hand01", "&display=circle"));
   try {

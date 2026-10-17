@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { fitView, type Rect, rectsIntersect, screenRadius, toScreen } from "./geometry";
 import { bigGraph, handbookGraph } from "./graph.fixtures";
-import { fitText, LABEL_FONTS, type LabelNode, type Measure, placeLabels } from "./labels";
+import { fitText, LABEL_FONTS, type LabelNode, type Measure, type PlacedLabel, placeLabels } from "./labels";
 import { CIRCLE_STATUS_BAND, circleRadius, fitCircle, layoutCircle } from "./layout-circle";
 import { layoutNetwork } from "./layout-net";
 import { buildGraphModel } from "./model";
@@ -263,7 +263,8 @@ for (const [name, fixture] of [
         maxLabels: compact ? 60 : 400,
         maxWidth: compact ? 130 : 220,
       });
-      expect(result.labels.some((label) => label.id === model.notes[0]!.id)).toBe(true);
+      // The current and the pointed note are always labelled, also when they sit next to each other on the ring.
+      for (const forced of model.notes.slice(0, 2)) expect(result.labels.some((label) => label.id === forced.id)).toBe(true);
       expect(result.labels.length).toBeGreaterThan(0);
       expect(result.labels.length).toBeLessThanOrEqual(nodes.length);
       for (const [i, label] of result.labels.entries()) {
@@ -280,19 +281,26 @@ for (const [name, fixture] of [
     });
   }
 }
-test("a radial hover that clashes with current is dropped even with a higher degree", () => {
-  const radialNode = (th: number, kind: "current" | "hover"): LabelNode =>
-    node({
-      id: kind,
-      kind,
-      deg: kind === "hover" ? 10000 : 0,
-      x: 195 + 80 * Math.cos(th),
-      y: 300 + 80 * Math.sin(th),
-      radial: { cx: 195, cy: 300, th },
-    });
-  const result = place([radialNode(0.01, "hover"), radialNode(0, "current")]);
-  expect(result.labels.map((label) => label.id)).toEqual(["current"]);
-});
+for (const side of [1, -1]) {
+  test(`a radial hover next to the current note turns past its title instead of dropping (side ${side})`, () => {
+    const radialNode = (th: number, kind: "current" | "hover"): LabelNode =>
+      node({
+        id: kind,
+        kind,
+        deg: kind === "hover" ? 10000 : 0,
+        x: 195 + 80 * Math.cos(th),
+        y: 300 + 80 * Math.sin(th),
+        radial: { cx: 195, cy: 300, th },
+      });
+    const result = place([radialNode(0.01 * side, "hover"), radialNode(0, "current")]);
+    expect(result.labels.map((label) => label.id)).toEqual(["current", "hover"]);
+    const [current, hover] = result.labels as [PlacedLabel, PlacedLabel];
+    // The current title keeps its own ray; the pointed title moves to the side of its own note, clear of it.
+    expect(current.rotate).toBeCloseTo(0);
+    expect(Math.sign(hover.rotate!)).toBe(side);
+    expect(quadsIntersect(current.corners!, hover.corners!)).toBe(false);
+  });
+}
 test("radial labels fit all corners; off-canvas inner corners exclude forced labels", () => {
   const result = place([node({ kind: "current", x: 389, y: 320, radial: { cx: 195, cy: 320, th: 0 } })]);
   expect(result.labels).toEqual([]);

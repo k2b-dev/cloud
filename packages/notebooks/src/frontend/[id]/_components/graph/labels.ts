@@ -100,11 +100,26 @@ export function placeLabels(input: {
     if (!forced && count >= input.maxLabels) continue;
     const font = LABEL_FONTS[node.kind];
     if (node.radial) {
-      const { cx, cy, th } = node.radial;
-      const ux = Math.cos(th),
-        uy = Math.sin(th);
+      const { cx, cy } = node.radial;
       const h = font.size + 6;
       const rs = Math.hypot(node.x - cx, node.y - cy) + node.r + 6;
+      const half = Math.atan(h / (2 * rs));
+      const turn = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+      const clashes = (angle: number) => radial.some((other) => Math.abs(turn(angle, other.th)) < half + other.half);
+      let th = node.radial.th;
+      // The pointed note's title never drops for the current note's title next to it on the ring: it turns just
+      // past that title, on the side of its own note, so both stay readable and neither covers the other.
+      if (forced && clashes(th)) {
+        const own = th;
+        const turned = radial
+          .flatMap((other) => [other.th - other.half - half - 1e-6, other.th + other.half + half + 1e-6])
+          .filter((angle) => !clashes(angle))
+          .sort((a, b) => Math.abs(turn(a, own)) - Math.abs(turn(b, own)))[0];
+        if (turned !== undefined) th = turned;
+      }
+      if (clashes(th)) continue;
+      const ux = Math.cos(th),
+        uy = Math.sin(th);
       const x = cx + ux * rs,
         y = cy + uy * rs;
       const inner: [number, number][] = [
@@ -134,8 +149,6 @@ export function placeLabels(input: {
         x1: Math.max(...corners.map(([x]) => x)),
         y1: Math.max(...corners.map(([, y]) => y)),
       };
-      const half = Math.atan(h / (2 * rs));
-      if (radial.some((other) => Math.abs(Math.atan2(Math.sin(th - other.th), Math.cos(th - other.th))) < half + other.half)) continue;
       if (
         (input.obstacles ?? []).some((other) => rectsIntersect(bounds, other)) ||
         labels.some((other) => !other.corners && rectsIntersect(bounds, other.rect))
