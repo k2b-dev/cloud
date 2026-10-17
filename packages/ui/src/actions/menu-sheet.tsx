@@ -17,8 +17,28 @@ type SheetItem = SheetEntry | { items: readonly SheetEntry[] };
  * sheet after it left the history, and only then may an action navigate or open the next dialog.
  * A choice or action that keeps the menu open runs at once.
  */
+/**
+ * Follows a link the way a click on it would, so a page's own link handling, such as progressive navigation, still
+ * applies; it runs only after the sheet has left the history.
+ */
+const followLink = (href: string) => {
+  const link = document.createElement("a");
+  link.href = href;
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  link.remove();
+};
+
 const afterClose = <T extends DropdownItem>(items: readonly T[], run: (action: () => void) => void): T[] => {
   const entry = (item: SheetEntry): SheetEntry => {
+    // A plain link would navigate while the sheet's history entry is still being removed, and that Back could
+    // undo the navigation; a plain click instead follows it once the sheet is gone. Modified clicks and external
+    // links keep the browser's own behavior.
+    if (!item.action && "href" in item && item.href && !("external" in item && item.external)) {
+      const href = item.href;
+      return { ...item, action: () => run(() => followLink(href)) } as SheetEntry;
+    }
     const action = item.action;
     if (!action || ("closeOnSelect" in item && item.closeOnSelect === false)) return item;
     return { ...item, action: () => run(action) } as SheetEntry;

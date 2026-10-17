@@ -668,8 +668,10 @@ function EditorInstance(
       if (update.geometryChanged || update.viewportChanged) schedulePanelLocations();
     }),
   );
+  // A panel that mounts after the editor asks once for everything it mirrors, the text mode included.
   const onSyncStateRequest = () => {
     if (provider) syncState.request();
+    window.dispatchEvent(new CustomEvent(RICH_MODE_CHANGED_EVENT, { detail: { isRich: richMode() } }));
     lastActiveHeading = undefined;
     schedulePanelLocations();
   };

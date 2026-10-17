@@ -35,4 +35,10 @@ describe("Note editor surface", () => {
     expect(handler).toContain("target.line > view.state.doc.lines");
     expect(handler).not.toContain("headingLines.find");
   });
+  test("answers a late panel's state request with the text mode too", async () => {
+    // A panel that hydrates after the editor missed the first mode event and would invert Formatted and Markdown.
+    const source = await Bun.file(resolve(import.meta.dir, "NoteEditor.client.tsx")).text();
+    const handler = source.match(/const onSyncStateRequest = \(\) => \{([\s\S]*?)\n {2}\};/)?.[1] ?? "";
+    expect(handler).toContain("RICH_MODE_CHANGED_EVENT");
+  });
 });
