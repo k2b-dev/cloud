@@ -1,20 +1,39 @@
 import { sql } from "bun";
 import { backfillShortIds, type ShortIdTable } from "./lib/short-id";
 
-/** Repair existing user claims on every start; service-account claims have no assignee. */
+const claimHolder = sql`CASE WHEN tw.claim->'actor'->>'kind' = 'user' THEN (tw.claim->'actor'->>'id')::uuid END`;
+
+/**
+ * Assigns the person holding a claim where an older release left them unassigned; runs on every start. A start without
+ * such claims only reads. Each repair holds the item row lock that claims and assignee changes hold, and reads the
+ * claim again under it, so a replica starting while another releases or unassigns the holder cannot assign them back.
+ * Claims of deleted users and service accounts get no assignee.
+ */
 export const backfillClaimAssignees = async (db = sql): Promise<number> => {
-  const added = await db`
-    INSERT INTO spaces.item_assignees (item_id, user_id)
-    SELECT tw.item_id, u.id
+  const candidates = await db<{ item_id: string }[]>`
+    SELECT tw.item_id
     FROM spaces.task_work tw
-    JOIN auth.users u ON u.id = CASE
-      WHEN tw.claim->'actor'->>'kind' = 'user' THEN (tw.claim->'actor'->>'id')::uuid
-    END
-    WHERE tw.claim IS NOT NULL AND tw.claim->'actor'->>'kind' = 'user'
-    ON CONFLICT DO NOTHING
+    JOIN auth.users u ON u.id = ${claimHolder}
+    WHERE tw.claim IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = tw.item_id AND ia.user_id = u.id)
   `;
-  if (added.count > 0) console.log(`  ✓ spaces claim assignees backfill: ${added.count} task(s)`);
-  return added.count;
+  let added = 0;
+  for (const { item_id: itemId } of candidates) {
+    added += await db.begin(async (tx) => {
+      await tx`SELECT 1 FROM spaces.items WHERE id = ${itemId}::uuid FOR UPDATE`;
+      const inserted = await tx`
+        INSERT INTO spaces.item_assignees (item_id, user_id)
+        SELECT tw.item_id, u.id
+        FROM spaces.task_work tw
+        JOIN auth.users u ON u.id = ${claimHolder}
+        WHERE tw.item_id = ${itemId}::uuid AND tw.claim IS NOT NULL
+        ON CONFLICT DO NOTHING
+      `;
+      return inserted.count;
+    });
+  }
+  if (added > 0) console.log(`  ✓ spaces claim assignees backfill: ${added} task(s)`);
+  return added;
 };
 
 export const migrate = async (): Promise<void> => {

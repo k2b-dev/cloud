@@ -202,6 +202,37 @@ suite("Spaces user claim assignments", () => {
     });
   });
 
+  test("backfill reads the claim again under the item lock, so a release in flight is not undone", async () => {
+    await withFixture(async (f) => {
+      // An older release left this claim without its assignment; a release that has not committed yet ends it.
+      const claim = { id: f.claimId, actor: f.holder, claimedAt: CLAIMED_AT };
+      await sql`INSERT INTO spaces.task_work (item_id, claim) VALUES (${f.itemId}::uuid, ${claim}::jsonb)`;
+      let commit!: () => void;
+      const committed = new Promise<void>((resolve) => {
+        commit = resolve;
+      });
+      let locked!: () => void;
+      const holdsLock = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const release = sql.begin(async (tx) => {
+        await tx`SELECT 1 FROM spaces.items WHERE id = ${f.itemId}::uuid FOR UPDATE`;
+        await tx`UPDATE spaces.task_work SET claim = NULL WHERE item_id = ${f.itemId}::uuid`;
+        locked();
+        await committed;
+      });
+      await holdsLock;
+      const backfill = backfillClaimAssignees();
+      // Give the backfill time to see the claim before the release commits; it must then wait for the lock.
+      await Bun.sleep(200);
+      commit();
+      await release;
+      await backfill;
+      expect((await read(f.itemId)).claim).toBeNull();
+      expect(await f.assignees()).toEqual([]);
+    });
+  });
+
   test("backfill repairs user claims idempotently and skips deleted users and service accounts", async () => {
     await withFixture(async (f) => {
       const deletedItemId = await f.newTask();
