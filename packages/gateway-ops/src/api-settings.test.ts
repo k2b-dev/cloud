@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import * as server from "@k2b/cloud/server";
-import { settingsService, SettingUnreadableError } from "@k2b/cloud/services";
+import { SettingUnreadableError, settingsService } from "@k2b/cloud/services";
 import { session } from "@k2b/cloud/services/session";
 import { buildProjectedUser } from "@k2b/cloud/services/session/user";
 import { ok } from "@k2b/stdlib";

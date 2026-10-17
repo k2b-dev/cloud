@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import type { RequestActor } from "@k2b/cloud/server";
-import { accountIdentities, AccountIdentityError } from "@k2b/cloud/services";
+import { AccountIdentityError, accountIdentities } from "@k2b/cloud/services";
 import { bindings } from "../data/bases";
 import { createFilesService } from "./index";
 

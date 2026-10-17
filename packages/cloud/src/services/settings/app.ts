@@ -12,8 +12,8 @@ import { paginateItems } from "../../server/services";
 import { ImageMetadataError } from "../image-metadata";
 import type { SettingEntry } from ".";
 import * as settingsPrimitives from ".";
-import { SettingUnreadableError } from "./store";
 import { SETTINGS_MAP, validateSettingValue } from "./defaults";
+import { SettingUnreadableError } from "./store";
 
 /**
  * Redact secret-kind setting values before they leave the server.

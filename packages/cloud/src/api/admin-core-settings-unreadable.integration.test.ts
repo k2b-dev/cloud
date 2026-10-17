@@ -3,9 +3,9 @@ import { redis, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
+import * as settings from "../services/settings";
 import { encryptValue } from "../services/settings/crypto";
 import { registerSettings } from "../services/settings/defaults";
-import * as settings from "../services/settings";
 import routes from "./admin-core-settings";
 
 const suite = suiteFor("database", "valkey");

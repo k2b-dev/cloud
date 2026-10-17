@@ -202,8 +202,8 @@ export async function remove(key: string, db?: SqlClient): Promise<void> {
 import type { SettingEntry } from "../../contracts/shared";
 
 export type { SettingEntry } from "../../contracts/shared";
-export { invalidateSettingsCache, readStates, SettingUnreadableError } from "./store";
 export type { SettingRead, StoredSettingState } from "./store";
+export { invalidateSettingsCache, readStates, SettingUnreadableError } from "./store";
 
 export async function getAll(locale?: string): Promise<SettingEntry[]> {
   const allKeys = SETTINGS.map((def) => def.key);

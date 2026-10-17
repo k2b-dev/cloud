@@ -81,8 +81,8 @@ import { aiSettingsMessages } from "./ai-settings-messages";
 import DocumentationLink from "./DocumentationLink";
 import { LegacySettingsSection } from "./LegacySettingsSection";
 import { settingsMessages } from "./messages";
-import { UnreadableSettingBadge, UnreadableSettingsNotice, unreadableReplacements } from "./UnreadableSettings";
 import { localizeSettingField } from "./setting-copy";
+import { UnreadableSettingBadge, UnreadableSettingsNotice, unreadableReplacements } from "./UnreadableSettings";
 
 type SettingValueSource = "custom" | "env" | "default";
 
