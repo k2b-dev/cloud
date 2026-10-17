@@ -1455,6 +1455,16 @@ suite("Files service and durable bindings", () => {
     // An exhausted wait still tries once when the root is free.
     expect(await withRootLock(root, async () => "ran", spent)).toBe("ran");
   });
+  test("a caller signal never extends the root lock wait past the budget", async () => {
+    const root = `bounded-wait-${crypto.randomUUID()}`;
+    const neverAborts = new AbortController().signal;
+    await withRootLock(root, async () => {
+      const started = performance.now();
+      await expect(withRootLock(root, async () => "ran", neverAborts)).rejects.toThrow("operation_busy");
+      expect(performance.now() - started).toBeGreaterThanOrEqual(ROOT_LOCK_WAIT_MS - 100);
+      expect(performance.now() - started).toBeLessThan(ROOT_LOCK_WAIT_MS + 2_000);
+    });
+  }, 15_000);
   test("a commit whose response was lost is recovered from the Filegate session record", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");

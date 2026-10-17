@@ -1632,10 +1632,15 @@ export function createFilesService(
           .directSession({ url: session.url, expires: session.expires, operations: ["write"] });
         await uploadStreamChunks(body, row.size, session.chunkSize, (index, chunk) => direct.put(index, new Blob([chunk]), signal));
         signal.throwIfAborted();
-        return publish(current.root.name, async () => {
-          const fresh = await uploadRow(actor, input.baseId, input.id);
-          return { base: fresh.current.inspection.summary, entry: await commitSession(fresh.current, fresh.row, signal) };
-        });
+        // A disconnected client stops waiting at once and frees its upload slot.
+        return publish(
+          current.root.name,
+          async () => {
+            const fresh = await uploadRow(actor, input.baseId, input.id);
+            return { base: fresh.current.inspection.summary, entry: await commitSession(fresh.current, fresh.row, signal) };
+          },
+          AbortSignal.any([signal, rootLockWait()]),
+        );
       }).catch((error) => {
         if (error instanceof Error && error.message === "operation_busy") throw new FilesError("operation_busy", 409);
         throw error;

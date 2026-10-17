@@ -25,8 +25,11 @@ export type Operation = {
   created_at: Date;
   updated_at: Date;
 };
+/** `wait` can shorten the wait (a shared request budget, a client abort) but never extend it past ROOT_LOCK_WAIT_MS. */
 export const withRootLock = <T>(root: string, run: () => Promise<T>, wait?: AbortSignal) =>
-  wait && !wait.aborted ? withFilesLock(rootLocks(), `root:${root}`, run, wait) : withFilesLock(filesLocks(), `root:${root}`, run);
+  wait && !wait.aborted
+    ? withFilesLock(rootLocks(), `root:${root}`, run, AbortSignal.any([wait, rootLockWait()]))
+    : withFilesLock(filesLocks(), `root:${root}`, run);
 /**
  * One wait budget per request. A caller that locks several entries creates one
  * signal and passes it to every acquisition, waiting at most one budget in total.
