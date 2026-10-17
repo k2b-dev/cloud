@@ -262,6 +262,9 @@ const slash = async (options: Partial<ChatComposerProps> = {}, locale = "en") =>
         get commands() {
           return options.commands;
         },
+        get commandSections() {
+          return options.commandSections;
+        },
         get state() {
           return options.state;
         },
@@ -1825,4 +1828,162 @@ test("a synchronous file chooser failure restores the token and reaches onError"
   await flush();
   expect(h.value()).toBe("/attach");
   expect(h.errors).toEqual([error]);
+});
+
+test("a pending last section ends with three placeholders in the overview, one while searching, and holds Nothing found", async () => {
+  const [pending, setPending] = createSignal(true);
+  const [apps, setApps] = createSignal<ChatCommand[]>([]);
+  const h = await slash({
+    value: "/",
+    get commandSections() {
+      return [
+        { id: "chat", label: "This chat" },
+        { id: "apps", label: "Open in apps", pending: pending() },
+      ];
+    },
+    get commands() {
+      return [{ name: "compact", section: "chat", description: "Summarize" }, ...apps()];
+    },
+  });
+  const groups = () => [...h.root.querySelectorAll(".k2b-chat-composer__command-group")];
+  const placeholders = () => groups().at(-1)!.querySelectorAll(".k2b-chat-composer__command-placeholder").length;
+  expect(groups().map((group) => group.querySelector(".k2b-chat-composer__command-heading")?.textContent)).toEqual([
+    "This chat",
+    "Open in apps",
+  ]);
+  expect(placeholders()).toBe(3);
+  expect(groups().at(-1)!.querySelector(".k2b-chat-composer__command-heading .k2b-spin")).not.toBeNull();
+  // Placeholders are no options: the keyboard never lands on them.
+  expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual(["compact"]);
+  h.type("/xylo");
+  await flush();
+  expect(placeholders()).toBe(1);
+  expect(h.root.textContent).not.toContain("Nothing found");
+  batch(() => {
+    setApps([{ name: "xylophone", section: "apps", description: "Play" }]);
+    setPending(false);
+  });
+  await flush();
+  expect(placeholders()).toBe(0);
+  expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual(["xylophone"]);
+});
+
+test("an open row keeps the token and the list while it runs, then removes the token in one undo step", async () => {
+  let resolve!: () => void;
+  const drafts: { value: string; mentions: readonly ChatMention[] }[] = [];
+  const h = await slash({
+    value: "Price /task",
+    commands: [
+      {
+        name: "task",
+        label: "New task",
+        description: "Spaces · Create a task",
+        open: (draft) => {
+          drafts.push(draft);
+          return new Promise<void>((done) => {
+            resolve = done;
+          });
+        },
+      },
+    ],
+  });
+  const detail = () => h.rows()[0]!.querySelector(".k2b-chat-composer__command-detail")!;
+  h.key("Enter");
+  await flush();
+  expect(drafts).toEqual([{ value: "Price ", mentions: [] }]);
+  expect(h.value()).toBe("Price /task");
+  expect(h.rows()).toHaveLength(1);
+  expect(h.rows()[0]!.getAttribute("aria-busy")).toBe("true");
+  expect(detail().getAttribute("data-state")).toBe("busy");
+  // The description keeps its place, hidden, so the row's height does not change.
+  expect(detail().children[0]!.textContent).toBe("Spaces · Create a task");
+  expect(detail().children[1]!.textContent).toBe("Opening …");
+  // Choosing again while it runs does nothing.
+  h.key("Enter");
+  await flush();
+  expect(drafts).toHaveLength(1);
+  resolve();
+  await flush();
+  expect(h.value()).toBe("Price ");
+  expect(h.rows()).toHaveLength(0);
+  h.key("z", { ctrlKey: true });
+  await flush();
+  expect(h.value()).toBe("Price /task");
+});
+
+test("an open row that fails says why in its place, keeps the list and the draft, and tries again when chosen", async () => {
+  let calls = 0;
+  const h = await slash(
+    {
+      value: "/task",
+      commands: [
+        {
+          name: "task",
+          label: "Neue Aufgabe",
+          description: "Spaces · Aufgabe anlegen",
+          open: async () => (++calls === 1 ? { failed: "Spaces ist gerade nicht erreichbar." } : "cancelled"),
+        },
+      ],
+    },
+    "de",
+  );
+  h.key("Enter");
+  await flush();
+  const detail = () => h.rows()[0]!.querySelector(".k2b-chat-composer__command-detail")!;
+  expect(h.value()).toBe("/task");
+  expect(h.rows()).toHaveLength(1);
+  expect(detail().getAttribute("data-state")).toBe("failed");
+  expect(detail().children[0]!.textContent).toBe("Spaces ist gerade nicht erreichbar.");
+  expect(detail().children[1]!.textContent).toBe("Wird geöffnet …");
+  // Announced once, not shown as a status line: the row already says it.
+  expect(h.status().querySelector('[data-tone="error"]')).toBeNull();
+  h.key("Enter");
+  await flush();
+  expect(calls).toBe(2);
+  expect(detail().getAttribute("data-state")).toBeNull();
+  expect(detail().children[0]!.textContent).toBe("Spaces · Aufgabe anlegen");
+  expect(h.value()).toBe("/task");
+});
+
+test("an open row that rejects keeps the token, closes the list and names the reason in the status line", async () => {
+  const h = await slash({
+    value: "/task",
+    commands: [
+      {
+        name: "task",
+        description: "Opens Spaces",
+        open: async () => {
+          throw new Error("The draft changed elsewhere.");
+        },
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  expect(h.value()).toBe("/task");
+  expect(h.rows()).toHaveLength(0);
+  expect(h.status().querySelector('[data-tone="error"]')?.textContent).toBe("The draft changed elsewhere.");
+});
+
+test("an open row's failure after its draft moved goes to the status line", async () => {
+  let resolve!: (result: { failed: string }) => void;
+  const h = await slash({
+    value: "/task",
+    commands: [
+      {
+        name: "task",
+        description: "Opens Spaces",
+        open: () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  h.setDraftKey("second");
+  resolve({ failed: "Spaces is not reachable right now." });
+  await flush();
+  expect(h.status().querySelector('[data-tone="error"]')?.textContent).toBe("Spaces is not reachable right now.");
 });

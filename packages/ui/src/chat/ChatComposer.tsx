@@ -6,6 +6,7 @@ import {
   createSignal,
   createUniqueId,
   For,
+  Index,
   type JSX,
   onCleanup,
   onMount,
@@ -77,6 +78,15 @@ export type ChatCommandContext = {
  */
 export type ChatCommandResult = void | "cancelled" | { done: string } | { mention: ChatAttachment };
 
+/** The draft as a successful `open` leaves it: without the `/…` token, with its references moved along. Save this one. */
+export type ChatCommandDraft = { value: string; mentions: readonly ChatMention[] };
+
+/**
+ * How an `open` row ends: on success (`void`) the token leaves as for an action; `"cancelled"` changes nothing; `failed`
+ * keeps the list open and the draft unchanged, and its text replaces the row's description until the row runs again.
+ */
+export type ChatCommandOpenResult = void | "cancelled" | { failed: string };
+
 /** A fixed place in the slash list. Sections keep the given order, also while searching. */
 export type ChatCommandSection = {
   id: string;
@@ -85,6 +95,12 @@ export type ChatCommandSection = {
   searched?: boolean;
   /** Only while searching or narrowed: absent from the overview (empty query), including its loading placeholder. */
   searchOnly?: boolean;
+  /**
+   * Local rows still on their way, such as Commands from a catalog: the section ends with placeholder rows, three in
+   * the overview and one while searching, and its heading shows a spinner. Make it the last section, so rows that
+   * arrive only fill the end of the list and no visible row moves.
+   */
+  pending?: boolean;
 };
 /** First-word narrowing; Tab writes `words[0]` followed by a space. */
 export type ChatCommandScope = { id: string; title: string; words: readonly string[] };
@@ -106,6 +122,8 @@ export type ChatCommand = {
   selected?: boolean;
   /** Retry discovery in a new opening, retaining the token and currently displayed rows. */
   searchAgain?: boolean;
+  /** Stays in every search of its section, after the matches, such as a row that retries loading the section. */
+  persistent?: boolean;
   /** Application name, searchable but not displayed. */
   app?: string;
   /** Stable row key for option ids, marking and de-duplication. Defaults to `name`. */
@@ -121,6 +139,12 @@ export type ChatCommand = {
   busyLabel?: string;
   /** Failures restore an unchanged draft and appear once in the status line, without calling `onError`. */
   action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
+  /**
+   * Leaves the composer, such as opening another app. Runs with the token and the list in place: the row shows
+   * `busyLabel` (default "Opening …") with a spinner instead of its description, and editing waits. A rejection ends like
+   * an action's: the token stays, the list closes and the status line names the reason. See `ChatCommandOpenResult`.
+   */
+  open?: (draft: ChatCommandDraft) => Promise<ChatCommandOpenResult>;
   /** Selecting a reference inserts its display name and retains its opaque payload. */
   mention?: ChatAttachment;
   /**
@@ -304,6 +328,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     return `${commandListId}-c${commandIds.get(key)}`;
   };
   const [closedAt, setClosedAt] = createSignal<number>();
+  /** The `open` row running now, and why `open` rows failed in this opening, by row key. */
+  const [openingRow, setOpeningRow] = createSignal<string>();
+  const [openFailures, setOpenFailures] = createSignal<Readonly<Record<string, string>>>({});
   // Where the pending native edit starts; a selection replaced as a whole starts at its beginning.
   let inputStart: number | undefined;
   let inputEnd: number | undefined;
@@ -437,6 +464,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     props.draftKey;
     const start = openingStart();
     if (start !== undefined) setCommandOpening((opening) => opening + 1);
+  });
+  // A failed `open` row says so for the rest of its list opening.
+  createEffect(() => {
+    props.draftKey;
+    commandOpening();
+    setOpenFailures({});
   });
   const parsedCommandQuery = createMemo(() => parseChatCommandQuery(commandQuery()?.query ?? "", props.commandScopes ?? []));
   const commandFallbackRow = createMemo(() => {
@@ -1004,6 +1037,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       attachFilesFromCommand(token);
       return;
     }
+    if (command.open) {
+      await openFromCommand(command, command.open, token);
+      return;
+    }
     const previous = snapshot();
     const key = props.draftKey;
     const replacement = command.mention ? command.mention.name + " " : "";
@@ -1091,6 +1128,56 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       syncCaret();
       autoResize();
       focus();
+    });
+  };
+
+  /**
+   * Runs an `open` row with the token and the list in place. Success removes the token in one undo step; `failed`
+   * stays in the row while the list is still there, otherwise the status line says it, so it never ends in silence.
+   */
+  const openFromCommand = async (command: ChatCommand, open: NonNullable<ChatCommand["open"]>, token: { start: number; end: number }) => {
+    const key = props.draftKey;
+    const row = chatCommandKey(command);
+    const value = props.value;
+    const nextValue = value.slice(0, token.start) + value.slice(token.end);
+    const nextMentions = reconcileChatMentions(value, nextValue, mentions());
+    // Still the same draft and `/…`, so the row is where the person chose it.
+    const inPlace = () => !disposed && props.draftKey === key && props.value === value && commandQuery()?.start === token.start;
+    setOpenFailures(({ [row]: _, ...rest }) => rest);
+    setOpeningRow(row);
+    setExecuting(true);
+    let result: ChatCommandOpenResult;
+    try {
+      result = await open({ value: nextValue, mentions: nextMentions });
+    } catch (error) {
+      if (disposed) {
+        props.onError?.(error);
+        return;
+      }
+      if (inPlace()) setClosedAt(token.start);
+      showCommandStatus({ tone: "error", text: error instanceof Error && error.message ? error.message : chatMessages().commandFailed });
+      return;
+    } finally {
+      setOpeningRow(undefined);
+      setExecuting(false);
+    }
+    if (result === "cancelled") return;
+    if (result) {
+      if (inPlace()) {
+        setOpenFailures((failures) => ({ ...failures, [row]: result.failed }));
+        setAnnouncement({ text: result.failed });
+      } else if (disposed) props.onError?.(new Error(result.failed));
+      else showCommandStatus({ tone: "error", text: result.failed });
+      return;
+    }
+    if (disposed || props.draftKey !== key || props.value !== value) return;
+    edit(nextValue, nextMentions);
+    setDismissed(true);
+    queueMicrotask(() => {
+      if (props.draftKey !== key || props.value !== nextValue) return;
+      textareaRef?.setSelectionRange(token.start, token.start);
+      syncCaret();
+      autoResize();
     });
   };
 
@@ -1612,6 +1699,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const renderCommandRow = (command: ChatCommand) => {
     const highlight = () => commandRowMap().get(command)?.highlight;
     const title = () => command.label ?? command.name;
+    const opening = () => openingRow() === chatCommandKey(command);
+    const failure = () => openFailures()[chatCommandKey(command)];
     return (
       <button
         class="k2b-chat-composer__command"
@@ -1621,6 +1710,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         tabIndex={-1}
         aria-selected={selectedCommand() === command}
         aria-disabled={Boolean(command.disabled || command.reason)}
+        aria-busy={opening() ? "true" : undefined}
         aria-describedby={command.reason ? `${commandOptionId(command)}-reason` : undefined}
         data-reason={command.reason ? "true" : undefined}
         data-active={selectedCommand() === command ? "true" : undefined}
@@ -1643,8 +1733,24 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               )}
             </Show>
           </strong>
-          <Show when={command.reason ?? command.description}>
-            <small id={command.reason ? `${commandOptionId(command)}-reason` : undefined}>{command.reason ?? command.description}</small>
+          <Show
+            when={command.open && !command.reason}
+            fallback={
+              <Show when={command.reason ?? command.description}>
+                <small id={command.reason ? `${commandOptionId(command)}-reason` : undefined}>
+                  {command.reason ?? command.description}
+                </small>
+              </Show>
+            }
+          >
+            {/* The busy line shares the description's place, so the row keeps its height while it opens. */}
+            <span class="k2b-chat-composer__command-detail" data-state={opening() ? "busy" : failure() ? "failed" : undefined}>
+              <small aria-hidden={opening() ? "true" : undefined}>{failure() ?? command.description}</small>
+              <small aria-hidden={opening() ? undefined : "true"}>
+                <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
+                {command.busyLabel ?? chatMessages().commandOpening}
+              </small>
+            </span>
           </Show>
         </span>
         <Show when={command.selected}>
@@ -1723,15 +1829,17 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                             </Show>
                           </div>
                           <For each={rows()}>{renderCommandRow}</For>
-                          <Show when={group()?.placeholder}>
-                            <div class="k2b-chat-composer__command-placeholder" aria-hidden="true">
-                              <span />
-                              <span>
+                          <Index each={Array.from({ length: Math.max(group()?.placeholder ? 1 : 0, group()?.pendingRows ?? 0) })}>
+                            {() => (
+                              <div class="k2b-chat-composer__command-placeholder" aria-hidden="true">
                                 <span />
-                                <span />
-                              </span>
-                            </div>
-                          </Show>
+                                <span>
+                                  <span />
+                                  <span />
+                                </span>
+                              </div>
+                            )}
+                          </Index>
                         </div>
                       </Show>
                     );
@@ -1752,7 +1860,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     <i class="ti ti-alert-circle" /> {messages().error}
                   </div>
                 </Show>
-                <Show when={!searching() && !searchError() && foundCommandCount() === 0}>
+                <Show
+                  when={
+                    !searching() && !searchError() && foundCommandCount() === 0 && !commandModel().groups.some((group) => group.pendingRows)
+                  }
+                >
                   <div role="status">
                     {!parsedCommandQuery().query.trim()
                       ? messages().noResults
