@@ -140,7 +140,7 @@ describe("Assistant frontend contracts", () => {
   test("Attach files reads from Cloud apps only within what the draft can still take", async () => {
     const workspace = await read("./AssistantWorkspace.island.tsx");
 
-    expect(workspace).toContain("choose: () => chooseComposerFiles(sessionKey())");
+    expect(workspace).toContain("choose: () => trackComposerPicking(chooseComposerFiles(sessionKey()))");
     expect(workspace).toContain("aiComposerChooseMaxBytes(composerPartCount(sessionKey))");
     expect(workspace).toContain("chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxBytes })");
   });

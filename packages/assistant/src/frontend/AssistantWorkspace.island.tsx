@@ -389,8 +389,8 @@ export default function AssistantWorkspace(props: Props) {
   });
   const [sendingQueuedId, setSendingQueuedId] = createSignal<string | null>(null);
   const [composerSubmitting, setComposerSubmitting] = createSignal(false);
-  // A picker the slash list opened inserts into the draft it came from; saving a new chat meanwhile would move that
-  // draft to another key and lose the choice.
+  // A picker or file selection inserts into, or gives back the `/…` of, the draft it came from; saving a new chat
+  // meanwhile would move that draft to another key and lose the choice.
   const [composerPicking, setComposerPicking] = createSignal(0);
   const trackComposerPicking = <T,>(picking: Promise<T>): Promise<T> => {
     setComposerPicking((count) => count + 1);
@@ -1620,7 +1620,8 @@ export default function AssistantWorkspace(props: Props) {
           onPaste={(event) => pasteComposerContent(sessionKey(), event)}
           fileSelection={{
             onSelect: (files) => addComposerFiles(sessionKey(), files),
-            choose: () => chooseComposerFiles(sessionKey()),
+            // Called within the activation, as the device's file dialog needs; only its answer is tracked.
+            choose: () => trackComposerPicking(chooseComposerFiles(sessionKey())),
             accept: aiComposerFileAccept,
             disabled: !projectComposer() && chat.running(),
             label: t().attachFiles,
