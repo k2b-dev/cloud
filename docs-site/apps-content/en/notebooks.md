@@ -186,7 +186,7 @@ fail with the same messages.
 | Link and tag | Connections and searchable labels parsed from note content |
 | Attachment | Notebook-owned file referenced from Markdown |
 | Named data and query | User-defined Markdown properties and filtered lists of notes in this notebook |
-| Chart | A chart from this note's tables, lists, or named data; PDF includes its data table |
+| Chart | A chart from this note's data, with values, a table view, and spreadsheet copy; PDF includes its data table |
 | Activity | Durable, permission-aware semantic changes across a notebook or note |
 | Saved version | Recoverable note snapshot with the set of contributors represented by that version |
 
@@ -206,7 +206,15 @@ minutes after posting.
 
 ## Show data as a chart
 
-A chart reads only this note's data, including evaluated table formulas. Hover to see values. PDF export includes the chart and a data table.
+A chart reads only this note's data, including evaluated table formulas.
+Point at or tap a chart value to see its series, x label, and formatted value.
+You can also focus the chart and use the arrow keys to read each value.
+Press Escape to close the tooltip.
+
+**Show as table** shows the values as a table in the same place.
+**Copy data** copies the values as tab-separated text for a spreadsheet.
+These controls work in Book, Read-only, the editor's Rich-mode preview,
+and version history. PDF export keeps the chart and its data table.
 
 ```text
 @sales

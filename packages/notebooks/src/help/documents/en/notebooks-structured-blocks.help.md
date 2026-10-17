@@ -111,7 +111,15 @@ Leave out `value` for `exists` and `missing`. Membership operators take lists. O
 
 ## Charts {icon="chart-bar"}
 
-Type `:::` and choose **chart**. A chart reads only data from this note. Hover over a mark to see its values.
+Type `:::` and choose **chart**. A chart reads only data from this note.
+Point at a value or choose it to see its series, x label, and formatted value.
+You can also focus the chart and use the arrow keys to read each value.
+Press Escape to close the tooltip.
+
+**Show as table** shows the values as a table in the same place.
+**Copy data** copies them as tab-separated text for a spreadsheet.
+This works in Book, Read-only, the editor's Rich-mode preview, and version history.
+PDF export keeps the chart and its data table.
 
 ```text
 @sales

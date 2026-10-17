@@ -111,7 +111,15 @@ Lass `value` bei `exists` und `missing` weg. Operatoren für die Zugehörigkeit 
 
 ## Diagramme {icon="chart-bar"}
 
-Tippe `:::` und wähle **chart**. Ein Diagramm liest nur Daten aus dieser Notiz. Bewege den Zeiger über einen Datenpunkt, um seine Werte zu sehen.
+Tippe `:::` und wähle **chart**. Ein Diagramm liest nur Daten aus dieser Notiz.
+Zeige auf einen Wert oder tippe ihn an. Du siehst die Datenreihe, die x-Beschriftung und den formatierten Wert.
+Du kannst das Diagramm auch fokussieren und mit den Pfeiltasten jeden Wert lesen.
+Drücke Escape, um den Tooltip zu schließen.
+
+**Als Tabelle** zeigt die Werte als Tabelle an derselben Stelle.
+**Daten kopieren** kopiert sie als tabulatorgetrennten Text für eine Tabellenkalkulation.
+Das funktioniert in der Buchansicht, im schreibgeschützten Modus, in der Rich-Vorschau des Editors und im Versionsverlauf.
+Der PDF-Export behält das Diagramm und seine Datentabelle.
 
 ```text
 @sales
