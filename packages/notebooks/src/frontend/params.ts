@@ -33,6 +33,17 @@ export const buildNoteUrl = (notebookShortId: string, noteShortId: string, mode?
 export const buildVersionsUrl = (notebookShortId: string, noteShortId: string): string =>
   `/app/notebooks/${notebookShortId}/notes/${noteShortId}?${QueryParams.MODE}=versions`;
 
+/**
+ * Build URL for the link graph. `note` is the note it starts from; `from: "book"` keeps the Book
+ * presentation, so the graph opens in the Book shell and its links lead back into Book.
+ */
+export const buildGraphUrl = (notebookShortId: string, noteShortId: string | null, from?: "book"): string => {
+  const query = new URLSearchParams({ [QueryParams.MODE]: "graph" });
+  if (noteShortId) query.set("note", noteShortId);
+  if (from) query.set("from", from);
+  return `/app/notebooks/${notebookShortId}?${query}`;
+};
+
 /** Build URL for the attachments overview (path-based, NOT a query mode). */
 export const buildAttachmentsUrl = (notebookShortId: string, mode?: PresentationMode): string => {
   const href = `/app/notebooks/${notebookShortId}/attachments`;

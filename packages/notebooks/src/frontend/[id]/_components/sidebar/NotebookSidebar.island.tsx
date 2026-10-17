@@ -21,7 +21,7 @@ import { mayDeleteOrLockNotes } from "../../../../lib/note-delete-permission";
 import { parseSidebarFilter, type SidebarFilter, withSidebarFilter } from "../../../../lib/sidebar-filter";
 import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { extractTags } from "../../../lib/tag-extract";
-import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
+import { buildAttachmentsUrl, buildGraphUrl, buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { NOTE_SOFT_NAVIGATED_EVENT, SIDEBAR_FILTER_CHANGED_EVENT } from "../detail/events";
 import { resolveSameNotebookNoteTarget } from "../editor/note-navigation";
@@ -44,7 +44,7 @@ type Props = {
   /** The page's editor toolbar shows the navigation toggle, so the sidebar adds no control of its own. */
   editorToolbar?: boolean;
   /** The notebook page this sidebar stands beside, when it is one of the footer's items. */
-  current?: "attachments";
+  current?: "attachments" | "graph";
 };
 
 /** The filter in the address; showing a hidden navigation mounts the sidebar again after the address may have changed. */
@@ -89,6 +89,9 @@ export default function NotebookSidebar(props: Props) {
     writeSettings(notebook().id, { treeSort: value });
   };
   const attachmentsHref = () => buildAttachmentsUrl(notebook().id, props.ctx.presentationMode);
+  // The graph starts from the open note; while it shows, its footer item is the current page instead of that note.
+  const graphHref = () => buildGraphUrl(notebook().id, selectedNoteId());
+  const currentNoteId = () => (props.current === "graph" ? null : selectedNoteId());
   const openSettings = () =>
     openNotebookSettingsDialog({
       notebook: notebook(),
@@ -235,7 +238,7 @@ export default function NotebookSidebar(props: Props) {
     // The home icon takes the lock's place, so the homepage shows its lock at the row's end; the empty slot keeps the label in place.
     status: isHomepage(node) ? (node.lockedAt ? { icon: "ti ti-lock", label: t().locked } : null) : undefined,
     href: level ? buildNoteUrl(notebook().id, node.id, props.ctx.presentationMode) : listHref(node),
-    active: selectedNoteId() === node.id,
+    active: currentNoteId() === node.id,
     children: level ? node.children.map((child) => noteEntry(child, node.children)) : undefined,
     actions: phoneActions(node, level),
   });
@@ -327,6 +330,7 @@ export default function NotebookSidebar(props: Props) {
               ...sortedTree().map((node) => noteEntry(node, sortedTree())),
             ],
           },
+      { id: "graph", label: t().noteLinks, icon: "ti ti-affiliate", href: graphHref(), active: props.current === "graph" },
       {
         id: "attachments",
         label: t().attachments,
@@ -515,7 +519,7 @@ export default function NotebookSidebar(props: Props) {
                   <NoteTree
                     tree={sortedTree()}
                     notebookId={notebook().id}
-                    selectedNoteId={selectedNoteId()}
+                    selectedNoteId={currentNoteId()}
                     presentationMode={props.ctx.presentationMode}
                     homepageId={notebook().homepageNoteId}
                     onMove={orderable() ? (move) => actions.handlePlace(move.id, placementForMove(move)) : undefined}
@@ -544,7 +548,7 @@ export default function NotebookSidebar(props: Props) {
                 }
               >
                 <NoteRowsContextMenu menu={listMenu}>
-                  <AppWorkspace.NavTree ariaLabel={filterLabel()} selectedId={selectedNoteId()}>
+                  <AppWorkspace.NavTree ariaLabel={filterLabel()} selectedId={currentNoteId()}>
                     <For each={listedNotes()}>
                       {(note) => (
                         <AppWorkspace.NavTree.Item
@@ -565,8 +569,11 @@ export default function NotebookSidebar(props: Props) {
             </Show>
           </AppWorkspace.SidebarBody>
 
-          {/* Marking the attachments as the current page also names it, so the workspace head shows no way up beside it. */}
+          {/* Marking a footer item as the current page also names it, so the workspace head shows no way up beside it. */}
           <AppWorkspace.SidebarFooter class="notebook-sidebar-foot">
+            <AppWorkspace.SidebarItem icon="ti ti-affiliate" href={graphHref()} active={props.current === "graph"}>
+              {t().noteLinks}
+            </AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarItem
               icon="ti ti-paperclip"
               href={attachmentsHref()}

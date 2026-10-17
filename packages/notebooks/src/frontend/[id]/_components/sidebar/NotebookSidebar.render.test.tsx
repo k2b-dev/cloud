@@ -38,7 +38,7 @@ describe("Notebook workspace container head", () => {
     sidebarFilter: {},
   });
 
-  const renderSidebar = (value = ctx(), current?: "attachments", locale = "en") =>
+  const renderSidebar = (value = ctx(), current?: "attachments" | "graph", locale = "en") =>
     renderToString(() =>
       createComponent(LocaleProvider, {
         locale,
@@ -49,32 +49,36 @@ describe("Notebook workspace container head", () => {
     );
 
   test.each([
-    ["en", "Attachments", "Settings"],
-    ["de", "Anhänge", "Einstellungen"],
-  ])("the footer has two labelled sidebar rows (%s)", async (locale, attachments, settings) => {
+    ["en", "Links", "Attachments", "Settings"],
+    ["de", "Verknüpfungen", "Anhänge", "Einstellungen"],
+  ])("the footer has three labelled sidebar rows (%s)", async (locale, graph, attachments, settings) => {
     for (const presentationMode of [undefined, "write", "readonly"] as const) {
       const html = renderSidebar({ ...ctx(), presentationMode }, undefined, locale);
       const rows = await selectHtml(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
-      expect(rows.map((row) => row.text.trim())).toEqual([attachments, settings]);
+      expect(rows.map((row) => row.text.trim())).toEqual([graph, attachments, settings]);
       const links = await selectHtml(html, ".notebook-sidebar-foot a");
-      expect(links).toHaveLength(1);
-      expect(links[0]?.attributes.href).toBe(`/app/notebooks/Book01/attachments${presentationMode ? `?mode=${presentationMode}` : ""}`);
+      expect(links).toHaveLength(2);
+      expect(links[0]?.attributes.href).toBe("/app/notebooks/Book01?mode=graph");
+      expect(links[1]?.attributes.href).toBe(`/app/notebooks/Book01/attachments${presentationMode ? `?mode=${presentationMode}` : ""}`);
       const buttons = await selectHtml(html, ".notebook-sidebar-foot button");
       expect(buttons).toHaveLength(1);
       expect(buttons[0]?.text.trim()).toBe(settings);
-      expect(await selectHtml(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item-icon i")).toHaveLength(2);
+      expect(await selectHtml(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item-icon i")).toHaveLength(3);
     }
   });
 
-  test.each([undefined, "attachments"] as const)(
-    "only the attachments page marks its desktop and mobile destination current (%s)",
+  test.each([undefined, "attachments", "graph"] as const)(
+    "only the current page marks its desktop and mobile destination current (%s)",
     async (current) => {
       const html = renderSidebar(ctx(), current);
       const active = await selectHtml(html, '.notebook-sidebar-foot [aria-current="page"]');
-      expect(active.map((row) => row.text.trim())).toEqual(current ? ["Attachments"] : []);
+      expect(active.map((row) => row.text.trim())).toEqual(
+        current === "graph" ? ["Links"] : current === "attachments" ? ["Attachments"] : [],
+      );
       const snapshot = (await selectHtml(html, "script[data-cloud-workspace-navigation]"))[0]!.text;
       const navigation: { items: NavigationItem[] } = JSON.parse(snapshot);
       expect(navigation.items.find((item) => item.id === "attachments")?.active).toBe(current === "attachments");
+      expect(navigation.items.find((item) => item.id === "graph")?.active).toBe(current === "graph");
       expect(navigation.items.find((item) => item.id === "settings")?.active).toBeUndefined();
     },
   );

@@ -95,7 +95,7 @@ function fixtures(permission: PermissionLevel, defaultPresentationMode: Presenta
     perPage: 30,
     hasNext: false,
   });
-  const graph = track(spyOn(notebooksService.notebook, "graph"));
+  const graph = track(spyOn(notebooksService.notebook, "graph")).mockResolvedValue({ nodes: [], edges: [] });
   const versions = track(spyOn(notebooksService.note.versions, "list"));
   return { backlinks, comments, graph, versions };
 }
@@ -191,7 +191,7 @@ describe("notebook page presentation authorization", () => {
     });
   }
 
-  for (const mode of [undefined, "write", "readonly", "graph", "versions", "book"]) {
+  for (const mode of [undefined, "write", "readonly", "versions", "book"]) {
     test(`read grants always load Book instead of ${mode ?? "the Write default"}`, async () => {
       const calls = fixtures("read");
       const data = await load(mode);
@@ -276,3 +276,90 @@ describe("notebook page presentation authorization", () => {
     expect(data.showDetailPanel).toBe(true);
   });
 });
+
+for (const [permission, query, shell, from] of [
+  ["read", "graph", "book", "book"],
+  ["write", "graph", "workspace", undefined],
+  ["write", "graph&from=book", "book", "book"],
+  ["admin", "graph&from=other", "workspace", undefined],
+] as const) {
+  test(`${permission} graph (${query}) uses ${shell} with metadata only`, async () => {
+    const calls = fixtures(permission);
+    const content = track(spyOn(notebooksService.note, "getWithContentByShortId"));
+    const bookContent = track(spyOn(noteStore, "getWithContentByShortId"));
+    const data = await load(query, "/app/notebooks/book01");
+    expect(data.isGraphMode).toBe(true);
+    expect(data.isBookMode).toBe(false);
+    expect(data.graphShell).toBe(shell);
+    expect(data.graphFrom).toBe(from);
+    expect(data.bookTree).toHaveLength(shell === "book" ? 1 : 0);
+    if (shell === "book") expect(data.ctx.presentationMode).toBe("book");
+    expect(data.selectedNote).toMatchObject({ id: "note01", title: "Welcome", contentMd: null, yjsSnapshot: null });
+    expect(data.bookHtml).toBeNull();
+    expect(data.selectedRouteState).toBeNull();
+    expect(data.backlinks).toEqual([]);
+    expect(data.tocItems).toEqual([]);
+    expect(data.namedBlocks).toEqual([]);
+    expect(data.initialCommentsPage).toBeNull();
+    expect(data.showDetailPanel).toBe(false);
+    expect(data.graph).toEqual({ nodes: [], edges: [] });
+    expect(calls.graph).toHaveBeenCalledTimes(1);
+    expect(calls.graph).toHaveBeenCalledWith({ notebookId: notebook.id });
+    for (const call of [calls.backlinks, calls.comments, calls.versions, content, bookContent]) expect(call).not.toHaveBeenCalled();
+  });
+}
+
+test("no grant denies graph before reading its data", async () => {
+  const calls = fixtures("none");
+  expect(await requestPageData("graph", "/app/notebooks/book01")).toEqual({ kind: "access_denied" });
+  expect(calls.graph).not.toHaveBeenCalled();
+});
+
+for (const permission of ["read", "write"] as const) {
+  for (const queryNote of ["note02", "foreign", "missing"]) {
+    test(`${permission} graph note query ${queryNote} resolves before the notebook cookie`, async () => {
+      fixtures(permission);
+      track(spyOn(notebooksService.note, "getByShortId")).mockImplementation(async ({ shortId }) => {
+        if (shortId === "missing") return null;
+        return { ...note, shortId, notebookId: shortId === "foreign" ? "other-notebook" : notebook.id };
+      });
+      const data = await requestPageData(`graph&note=${queryNote}`, "/app/notebooks/book01", user, {
+        notebooks: { book01: { lastNoteId: "note03" } },
+      });
+      expect(data.kind).toBe("ok");
+      if (data.kind !== "ok") throw new Error("Expected graph data");
+      // The cookie names a third note, so neither the first note nor the foreign query can pass for it.
+      expect(data.selectedNoteId).toBe(queryNote === "note02" ? "note02" : "note03");
+      expect(data.selectedNote?.id).toBe(data.selectedNoteId ?? undefined);
+    });
+  }
+}
+
+test("a graph path note wins over the query, and invalid paths never fall back", async () => {
+  fixtures("read");
+  track(spyOn(notebooksService.note, "getByShortId")).mockImplementation(async ({ shortId }) =>
+    shortId === "note01" ? note : { ...note, shortId, notebookId: "other-notebook" },
+  );
+  const data = await load("graph&note=foreign");
+  expect(data.selectedNote?.id).toBe("note01");
+  expect(await requestPageData("graph&note=note01", "/app/notebooks/book01/notes/foreign")).toEqual({ kind: "not_found" });
+});
+
+for (const [permission, expected] of [
+  ["read", "note02"],
+  ["write", "note01"],
+] as const) {
+  test(`${permission} graph with a foreign query and no cookie starts at the shell's first note`, async () => {
+    fixtures(permission);
+    const pages = [
+      { ...note, shortId: "note01", title: "Kapitel 10" },
+      { ...note, id: "other-id", shortId: "note02", title: "Kapitel 2" },
+    ];
+    track(spyOn(notebooksService.note, "getTree")).mockResolvedValue(pages.map((page) => ({ ...page, children: [] })));
+    track(spyOn(notebooksService.note, "getByShortId")).mockImplementation(
+      async ({ shortId }) => pages.find((page) => page.shortId === shortId) ?? null,
+    );
+    const data = await load("graph&note=foreign", "/app/notebooks/book01");
+    expect(data.selectedNote?.id).toBe(expected);
+  });
+}

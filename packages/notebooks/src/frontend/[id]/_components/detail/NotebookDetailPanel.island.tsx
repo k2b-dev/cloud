@@ -26,7 +26,7 @@ import { notebookCommandMessages } from "../../../../commands";
 import type { NamedBlockSummary } from "../../../../lib/named-blocks";
 import type { Backlink } from "../../../../service/links";
 import { openAttachment } from "../../../lib/attachment-preview";
-import { buildNoteUrl, buildVersionsUrl } from "../../../params";
+import { buildGraphUrl, buildNoteUrl, buildVersionsUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { bookMessages } from "../book/messages";
 import type { Attachment } from "../editor/attachments-client";
@@ -475,12 +475,7 @@ export default function NotebookDetailPanel(props: Props) {
                 </IconButtonLink>
               </Tooltip.Anchor>
               <Tooltip.Anchor content={t().graphView}>
-                <IconButtonLink
-                  tooltip={false}
-                  href={`/app/notebooks/${props.notebookId}?mode=graph&note=${noteId()}`}
-                  size="sm"
-                  label={t().openGraphView}
-                >
+                <IconButtonLink tooltip={false} href={buildGraphUrl(props.notebookId, noteId())} size="sm" label={t().openGraphView}>
                   <i class="ti ti-affiliate" aria-hidden="true" />
                 </IconButtonLink>
               </Tooltip.Anchor>

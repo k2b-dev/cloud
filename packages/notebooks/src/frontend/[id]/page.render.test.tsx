@@ -329,8 +329,8 @@ const renderNotebookWithNotes = async (preferences: Record<string, unknown>, mod
     c.set("runtime", { apps: [] });
     await next();
   });
+  spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note("note01", "Private folder")));
   if (mode !== "graph") {
-    spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note("note01", "Private folder")));
     spies.push(
       spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue({
         note: { ...note("note01", "Private folder"), id: "note01", yjsSnapshot: null },
@@ -577,4 +577,109 @@ test("Book renders the full-width attribute in its first HTML", async () => {
     expect(surfaces).toHaveLength(1);
     expect(surfaces[0]?.attributes["data-full-width"]).toBe(fullWidth ? "" : undefined);
   }
+});
+
+const renderLinkedNotebook = async (permission: "read" | "write", query: string, locale = "en") => {
+  const note = {
+    id: "33333333-3333-4333-8333-333333333333",
+    shortId: "note01",
+    notebookId: notebook.id,
+    parentId: null,
+    title: "Welcome",
+    position: 0,
+    hasChildren: false,
+    historyIncomplete: false,
+    yjsSnapshotAt: timestamp,
+    contentMd: "# Welcome\n\nPrivate note body.",
+    createdBy: user.id,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    lockedAt: null,
+  };
+  spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
+  spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
+  spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
+  spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue(permission));
+  spies.push(spyOn(notebookStore, "canAccess").mockResolvedValue(true));
+  spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
+  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([{ ...note, children: [] }]));
+  spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
+  spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue({ ...note, yjsSnapshot: null }));
+  spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
+  spies.push(
+    spyOn(notebooksService.notebook, "graph").mockResolvedValue({
+      nodes: [{ id: "note01", title: "Welcome", inDegree: 0, parentId: null, position: 0, updatedAt: timestamp }],
+      edges: [],
+    }),
+  );
+  const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
+  app.use("*", async (c, next) => {
+    c.set("actor", { kind: "user", user });
+    c.set("user", user);
+    c.set("runtime", { apps: [] });
+    await next();
+  });
+  app.get("/app/notebooks/:id", ...handler);
+  app.get("/app/notebooks/:id/notes/:noteId", ...handler);
+  const path = query === "book" ? "/app/notebooks/book01/notes/note01?mode=book" : `/app/notebooks/book01?mode=${query}&note=note01`;
+  const response = await app.request(`https://cloud.example.test${path}`, { headers: { "accept-language": locale } });
+  expect(response.status).toBe(200);
+  return response.text();
+};
+
+for (const [locale, label] of [
+  ["en", "Links"],
+  ["de", "Verknüpfungen"],
+]) {
+  test(`reader graph renders the Book navigation and origin (${locale})`, async () => {
+    const html = await renderLinkedNotebook("read", "graph", locale);
+    expect(html).toContain("notebook-book-workspace");
+    expect(html).not.toContain("Private note body.");
+    expect(html).not.toContain("notebook-book-content");
+    const rows = await select(html, ".notebook-book-workspace .notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.text.trim()).toBe(label!);
+    expect(rows[0]?.attributes["aria-current"]).toBe("page");
+    expect(rows[0]?.attributes.href).toBe("/app/notebooks/book01?mode=graph&amp;note=note01&amp;from=book");
+    expect(html).toContain('href="/app/notebooks/book01?mode=graph&amp;note=note01&amp;from=book"');
+    const snapshot = JSON.parse((await select(html, "script[data-cloud-workspace-navigation]"))[0]!.text);
+    expect(snapshot.items.find((item: { id: string }) => item.id === "graph")).toMatchObject({ active: true });
+    expect(snapshot.items.some((item: { id: string }) => ["attachments", "settings"].includes(item.id))).toBe(false);
+    const close = await select(html, 'a[href="/app/notebooks/book01/notes/note01?mode=book"]');
+    expect(close.some((item) => item.attributes["aria-label"] === (locale === "de" ? "Graph schließen" : "Close graph"))).toBe(true);
+    expect(await select(html, '[role="tree"] [aria-current="page"]')).toEqual([]);
+  });
+
+  test(`reader Book note has a Links footer that is not current (${locale})`, async () => {
+    const html = await renderLinkedNotebook("read", "book", locale);
+    const rows = await select(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.text.trim()).toBe(label!);
+    expect(rows[0]?.attributes["aria-current"]).toBeUndefined();
+    expect(rows[0]?.attributes.href).toBe("/app/notebooks/book01?mode=graph&amp;note=note01&amp;from=book");
+  });
+}
+
+test("writer graph marks Links current in the workspace footer and phone navigation", async () => {
+  const html = await renderLinkedNotebook("write", "graph");
+  expect(html).not.toContain("notebook-book-workspace");
+  const rows = await select(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
+  expect(rows.map((item) => item.text.trim())).toEqual(["Links", "Attachments", "Settings"]);
+  expect(rows[0]?.attributes["aria-current"]).toBe("page");
+  expect(rows[1]?.attributes["aria-current"]).toBeUndefined();
+  expect(rows[0]?.attributes.href).toBe("/app/notebooks/book01?mode=graph&amp;note=note01");
+  const snapshot = JSON.parse((await select(html, "script[data-cloud-workspace-navigation]"))[0]!.text);
+  expect(snapshot.items.find((item: { id: string }) => item.id === "graph")).toMatchObject({ active: true });
+  const close = await select(html, 'a[aria-label="Close graph"]');
+  expect(close[0]?.attributes.href).toBe("/app/notebooks/book01/notes/note01");
+  expect(await select(html, '[role="tree"] [aria-current="page"]')).toEqual([]);
+});
+
+test("writer graph from Book keeps Write pointed at the selected note", async () => {
+  const html = await renderLinkedNotebook("write", "graph&from=book");
+  expect(html).toContain("notebook-book-workspace");
+  expect((await select(html, '#notebook-navigation a[href="/app/notebooks/book01/notes/note01?mode=write"]'))[0]?.text).toBe("Write");
+  expect((await select(html, 'a[aria-label="Close graph"]'))[0]?.attributes.href).toBe("/app/notebooks/book01/notes/note01?mode=book");
 });

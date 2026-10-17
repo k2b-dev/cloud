@@ -11,6 +11,7 @@ type Props = {
   /** Optional: id of the note the user came from — gets initial focus + highlight. */
   selectedNoteId: string | null;
   graph: NoteGraph;
+  from?: "book";
 };
 
 /**
@@ -96,7 +97,9 @@ export default function NotebookGraph(props: Props) {
 
   const closeHref = () => {
     const selected = simNodes.find((node) => node.id === props.selectedNoteId);
-    return selected ? buildNoteUrl(props.notebookId, selected.id) : `/app/notebooks/${props.notebookId}`;
+    return selected
+      ? buildNoteUrl(props.notebookId, selected.id, props.from)
+      : `/app/notebooks/${props.notebookId}${props.from === "book" ? "?mode=book" : ""}`;
   };
 
   const setClampedZoom = (next: number) => setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next)));
@@ -104,7 +107,7 @@ export default function NotebookGraph(props: Props) {
   const openNode = (node: SimNode) => {
     node.fx = null;
     node.fy = null;
-    navigateTo(buildNoteUrl(props.notebookId, node.id));
+    navigateTo(buildNoteUrl(props.notebookId, node.id, props.from));
   };
 
   const fitGraph = () => {

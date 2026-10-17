@@ -44,7 +44,9 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const canWrite = permission === "write" || isAdmin;
   const mode = c.req.query("mode");
   const isVersionsMode = canWrite && mode === "versions";
-  const isGraphMode = canWrite && mode === "graph";
+  const isGraphMode = mode === "graph";
+  const graphFrom = isGraphMode && (permission === "read" || c.req.query("from") === "book") ? "book" : undefined;
+  const graphShell = isGraphMode ? (graphFrom === "book" ? "book" : "workspace") : undefined;
   // Capture before the snapshot. Events published while the snapshot loads may
   // replay redundantly, but an event can never be skipped between SSR and the
   // browser subscription.
@@ -61,7 +63,8 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     resolvePresentationMode({ permission, requestedMode: mode, defaultPresentationMode: notebook.defaultPresentationMode }) === "book" &&
     !isVersionsMode &&
     !isGraphMode;
-  const bookTree = isBookMode ? orderBookTree(tree, { id: (node) => node.id, homeId: notebook.homepageNoteShortId, locale }) : [];
+  const bookTree =
+    isBookMode || graphShell === "book" ? orderBookTree(tree, { id: (node) => node.id, homeId: notebook.homepageNoteShortId, locale }) : [];
 
   const cookieHeader = c.req.header("Cookie");
   const settings = parseSettings(cookieHeader, notebook.shortId);
@@ -70,10 +73,11 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const selectedNoteId = await resolveSelectedNoteId({
     notebookId,
     noteParam,
+    graphNoteParam: isGraphMode ? c.req.query("note") : undefined,
     lastNoteId: settings.lastNoteId,
     homepageNoteId: notebook.homepageNoteShortId,
     // Book opens where its sidebar starts.
-    firstNoteId: (isBookMode ? bookTree : tree)[0]?.id ?? null,
+    firstNoteId: (isBookMode || graphShell === "book" ? bookTree : tree)[0]?.id ?? null,
   });
   if (noteParam && !selectedNoteId) return { kind: "not_found" as const };
 
@@ -159,7 +163,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     workspaceCursor,
     dateConfig: getDateConfig(c),
     sidebarFilter: parseSidebarFilter(new URL(c.req.url).searchParams),
-    presentationMode: requestedPresentationMode(new URL(c.req.url).searchParams),
+    presentationMode: graphShell === "book" ? "book" : requestedPresentationMode(new URL(c.req.url).searchParams),
   };
 
   const appUrl = await get<string>("app.url");
@@ -174,6 +178,8 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     canWrite,
     isVersionsMode,
     isGraphMode,
+    graphFrom,
+    graphShell,
     selectedNoteId,
     selectedNote: selected.note,
     selectedRouteState: selected.routeState,
@@ -201,6 +207,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
 async function resolveSelectedNoteId(params: {
   notebookId: string;
   noteParam: string | undefined;
+  graphNoteParam: string | undefined;
   lastNoteId: string | null;
   homepageNoteId: string | null;
   firstNoteId: string | null;
@@ -214,6 +221,8 @@ async function resolveSelectedNoteId(params: {
   const resolvedFromPath = await resolveNoteInNotebook(params.noteParam);
   // An explicit link must never display another note under the requested URL.
   if (params.noteParam) return resolvedFromPath;
+  const resolvedFromGraph = await resolveNoteInNotebook(params.graphNoteParam);
+  if (resolvedFromGraph) return resolvedFromGraph;
   const resolvedFromCookie = await resolveNoteInNotebook(params.lastNoteId);
   const resolvedHomepage = await resolveNoteInNotebook(params.homepageNoteId);
   return resolvedFromPath ?? resolvedFromCookie ?? resolvedHomepage ?? params.firstNoteId;
@@ -249,7 +258,7 @@ async function loadSelectedNote(params: {
     defaultPresentationMode: params.defaultPresentationMode,
     locked: false,
   });
-  if (presentationMode === "book" && !params.isVersionsMode && !(params.canWrite && params.requestedMode === "graph")) {
+  if (presentationMode === "book" && !params.isVersionsMode && params.requestedMode !== "graph") {
     const book = await loadBookNote({
       notebookId: params.notebookId,
       notebookShortId: params.notebookShortId,
@@ -277,6 +286,32 @@ async function loadSelectedNote(params: {
       tocItems: [],
       namedBlocks: [],
       bookHtml: book.document.html,
+    };
+  }
+
+  if (params.requestedMode === "graph") {
+    const note = await notebooksService.note.getByShortId({ shortId: params.selectedNoteId });
+    if (note?.notebookId !== params.notebookId) {
+      return { internalNoteId: null, note: null, routeState: null, tocItems: [], namedBlocks: [], bookHtml: null };
+    }
+    return {
+      internalNoteId: note.id,
+      note: {
+        id: note.shortId,
+        title: note.title,
+        lockedAt: note.lockedAt,
+        historyIncomplete: note.historyIncomplete,
+        createdAt: note.createdAt,
+        updatedAt: note.updatedAt,
+        createdBy: note.createdBy,
+        parentId: null,
+        contentMd: null,
+        yjsSnapshot: null,
+      },
+      routeState: null,
+      tocItems: [],
+      namedBlocks: [],
+      bookHtml: null,
     };
   }
 
