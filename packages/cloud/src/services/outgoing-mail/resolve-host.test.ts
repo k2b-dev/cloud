@@ -22,26 +22,44 @@ test("blocks SMTP/IMAP by default with a retryable operator-facing reason", asyn
 test("allows explicit IP and CIDR entries and omits IP TLS servername", async () => {
   for (const entry of ["127.0.0.1", "127.0.0.0/8"]) {
     process.env.OUTGOING_MAIL_ALLOWED_TARGETS = entry;
-    expect(await resolveMailHost("127.0.0.1")).toEqual({ address: "127.0.0.1", servername: undefined });
+    expect(await resolveMailHost("127.0.0.1")).toEqual({
+      host: "127.0.0.1",
+      addresses: [{ address: "127.0.0.1", family: 4 }],
+      servername: undefined,
+    });
   }
 });
-test("pins a hostname's first checked IPv4 answer and preserves TLS identity", async () => {
+test("returns every checked answer, IPv4 first with stable family order, and preserves TLS identity", async () => {
   process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "smtp.example.org";
   const lookup = mock(async () => [
     { address: "::1", family: 6 },
     { address: "127.0.0.1", family: 4 },
     { address: "127.0.0.2", family: 4 },
+    { address: "::2", family: 6 },
   ]);
   const resolve = (host: string, allowlist: ReturnType<typeof outgoingMailAllowlist>) =>
     resolveAllowedNetworkAddresses(host, allowlist, lookup);
-  expect(await resolveMailHost("SMTP.example.org", undefined, resolve)).toEqual({ address: "127.0.0.1", servername: "smtp.example.org" });
+  expect(await resolveMailHost("SMTP.example.org", undefined, resolve)).toEqual({
+    host: "smtp.example.org",
+    addresses: [
+      { address: "127.0.0.1", family: 4 },
+      { address: "127.0.0.2", family: 4 },
+      { address: "::1", family: 6 },
+      { address: "::2", family: 6 },
+    ],
+    servername: "smtp.example.org",
+  });
   expect(lookup).toHaveBeenCalledTimes(1);
 });
-test("falls back to the first IPv6 answer when no IPv4 answer exists", async () => {
+test("keeps IPv6 answers when no IPv4 answer exists", async () => {
   process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "smtp.example.org";
   const resolve = (host: string, allowlist: ReturnType<typeof outgoingMailAllowlist>) =>
     resolveAllowedNetworkAddresses(host, allowlist, async () => [{ address: "::1", family: 6 }]);
-  expect(await resolveMailHost("smtp.example.org", undefined, resolve)).toEqual({ address: "::1", servername: "smtp.example.org" });
+  expect(await resolveMailHost("smtp.example.org", undefined, resolve)).toEqual({
+    host: "smtp.example.org",
+    addresses: [{ address: "::1", family: 6 }],
+    servername: "smtp.example.org",
+  });
 });
 test("cancellation stops a pending resolver", async () => {
   const controller = new AbortController();

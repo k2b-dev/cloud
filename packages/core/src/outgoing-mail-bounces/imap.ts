@@ -1,3 +1,4 @@
+import { pinnedNetworkLookup } from "@k2b/cloud/services/network-security";
 import { resolveMailHost } from "@k2b/cloud/services/outgoing-mail/resolve-host";
 import { type ImapMailProfile, resolveImapMailCredentials } from "@k2b/cloud/services/outgoing-mail/store";
 import { ImapFlow } from "imapflow";
@@ -31,12 +32,12 @@ export const createImapBounceMailbox = (profile: ImapMailProfile, signal: AbortS
       const password = await resolveImapMailCredentials(profile);
       signal.throwIfAborted();
       client = new ImapFlow({
-        host: target.address,
+        host: target.host,
         servername: target.servername,
         port: profile.imap.port,
         secure: profile.imap.secure,
         ...(!profile.imap.secure ? { doSTARTTLS: true } : {}),
-        tls: { servername: target.servername },
+        tls: { servername: target.servername, lookup: pinnedNetworkLookup(target.addresses) },
         auth: { user: profile.imap.user, pass: password ?? undefined },
         logger: false,
         logRaw: false,

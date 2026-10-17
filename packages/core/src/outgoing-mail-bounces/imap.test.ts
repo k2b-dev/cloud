@@ -106,7 +106,9 @@ beforeEach(() => {
   originalAllowlist = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
   process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1";
   target = spyOn(endpoint, "resolveMailHost").mockImplementation((host, signal) =>
-    host === "imap.example.org" ? Promise.resolve({ address: "203.0.113.8", servername: host }) : resolveMailHost(host, signal),
+    host === "imap.example.org"
+      ? Promise.resolve({ host, addresses: [{ address: "203.0.113.8", family: 4 }], servername: host })
+      : resolveMailHost(host, signal),
   );
   // The sink's certificate names localhost, not the loopback IP. Trust its CA and check the
   // certificate against localhost, so validation stays on.
@@ -143,6 +145,32 @@ const pollSink = async (sink: ReturnType<typeof imapSink>) => {
   await pollProfileBounces(current, () => createImapBounceMailbox(current, signal), signal);
   return current;
 };
+test("real adapter falls back using only the pinned addresses", async () => {
+  const sink = imapSink({ implicitTls: true });
+  const addresses = [
+    { address: "::1", family: 6 as const },
+    { address: "127.0.0.1", family: 4 as const },
+  ];
+  target.mockResolvedValue({ host: "imap.example.org", addresses, servername: "imap.example.org" });
+  const mailbox = createImapBounceMailbox({ ...profile, imap: { ...profile.imap, port: sink.port } }, AbortSignal.timeout(3000));
+  try {
+    // The sink listens only on 127.0.0.1, so the first candidate cannot accept this connection.
+    expect(await mailbox.open("INBOX", { readOnly: true })).toEqual({ uidValidity: "42" });
+    const options = trust.mock.calls[0]?.[0];
+    if (!options || typeof options === "number") throw new Error("Expected TLS connection options");
+    expect(options).toMatchObject({ host: "imap.example.org", servername: "imap.example.org" });
+    let lookedUp = false;
+    options.lookup!("imap.example.org", { all: true }, (error, all) => {
+      lookedUp = true;
+      expect(error).toBeNull();
+      expect(all).toEqual(addresses);
+    });
+    expect(lookedUp).toBe(true);
+  } finally {
+    mailbox.close();
+    sink.stop();
+  }
+});
 test("real adapter skips an oversized BODYSTRUCTURE after reconnecting and collects both surrounding DSNs read-only", async () => {
   const oversized = `("TEXT" "PLAIN" ("NAME" "${"x".repeat(140 * 1024)}") NIL NIL "7BIT" 1 1)`;
   const sink = imapSink({ implicitTls: true, messages: [dsn(1), { uid: 2, bodyStructure: oversized, sections: {} }, dsn(3)] });
@@ -270,8 +298,17 @@ test("mocked adapter requires STARTTLS for non-implicit TLS and overrides server
       await mailbox.open("INBOX", { readOnly: true });
       mailbox.close();
     }
+    const lookup = captured[0]!.tls!.lookup!;
     expect(captured[0]).not.toHaveProperty("doSTARTTLS");
-    expect(captured[0]).toMatchObject({ host: "203.0.113.8", servername: "imap.example.org", tls: { servername: "imap.example.org" } });
+    expect(captured[0]).toMatchObject({
+      host: "imap.example.org",
+      servername: "imap.example.org",
+      tls: { servername: "imap.example.org", lookup: expect.any(Function) },
+    });
+    lookup("unvalidated.example", { all: true }, (error, addresses) => {
+      expect(error).toBeNull();
+      expect(addresses).toEqual([{ address: "203.0.113.8", family: 4 }]);
+    });
     expect(captured[1]).toMatchObject({ secure: true, tls: { servername: undefined } });
     expect(captured[1]).not.toHaveProperty("doSTARTTLS");
     expect(captured[2]).toMatchObject({ secure: false, doSTARTTLS: true, tls: { servername: undefined } });

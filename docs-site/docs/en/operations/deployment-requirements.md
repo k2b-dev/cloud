@@ -373,8 +373,12 @@ explicit value replaces the default. Empty Compose passthrough values use the
 default. Invalid entries, including `/0`, stop the owning process at startup.
 The HTTP transports for these endpoints never follow redirects; health
 webhooks previously followed them. They request identity encoding and reject
-compressed responses. SMTP and IMAP connect to the validated IP while keeping
-the original host name for TLS certificate verification.
+compressed responses. IMAP tries every validated address. SMTP connects to one
+validated address per delivery attempt; retries move to the next address, and a
+test send checks each address in turn on connection failure before sending once.
+The test send opens a separate connection to verify the selected address and
+authentication first. Both SMTP and IMAP preserve the original host name for TLS
+certificate verification.
 
 **After this update:** Existing installations whose health webhooks, outgoing
 mail SMTP/IMAP profiles, Geo URL, or rsql URL point at internal hosts other than

@@ -12,7 +12,7 @@ import { allowedMailProfile, type MessageRow, messageAttachmentRefs, messageReco
 import { OutgoingMailError, resolveMailCredentials } from "./store";
 import { mailAttachments, mailSettled } from "./sync";
 import { smtpFailureMessage } from "./test-send";
-import { buildMailTransport } from "./transport";
+import { resolveMailTransport } from "./transport";
 
 export const cleanupMailAttachments = async (id: string): Promise<void> => {
   const row = await outgoingMailMessages.read(id);
@@ -136,10 +136,12 @@ export const attemptOutgoingMail = async (row: MessageRow, signal?: AbortSignal)
       socket.once("connect", () => {
         if (attempt.signal.aborted) socket.destroy();
       });
-      const transport = await buildMailTransport(credentials, socket, attempt.signal).catch((error: unknown) => {
+      const resolved = await resolveMailTransport(credentials, attempt.signal).catch((error: unknown) => {
         socket.destroy();
         throw error;
       });
+      // Nodemailer cannot fall back across IP literals; each queued retry rotates to the next checked address.
+      const transport = resolved.build(Math.max(0, row.attempt_count - 1), socket);
       const stop = () => {
         socket.destroy();
         transport.close();

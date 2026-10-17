@@ -4,7 +4,7 @@ import { NetworkTargetBlockedError, resolveAllowedNetworkAddresses } from "../ne
 
 export const outgoingMailAllowlist = () => parseNetworkAllowlistEnv("OUTGOING_MAIL_ALLOWED_TARGETS", env.OUTGOING_MAIL_ALLOWED_TARGETS);
 
-/** One bounded lookup shared by SMTP and bounce IMAP; clients connect to the checked IP. */
+/** One bounded lookup shared by SMTP and bounce IMAP; clients use only the checked addresses. */
 export const resolveMailHost = async (host: string, signal?: AbortSignal, resolve = resolveAllowedNetworkAddresses) => {
   const hostname = normalizeNetworkHostname(host);
   const deadline = new AbortController();
@@ -21,9 +21,11 @@ export const resolveMailHost = async (host: string, signal?: AbortSignal, resolv
         if (cancellation.aborted) abort();
       }),
     ]);
-    // Nodemailer preferred IPv4 before it got a pinned literal; keep that so an AAAA-first answer on an IPv4-only host still connects.
-    const target = addresses.find((entry) => entry.family === 4) ?? addresses[0]!;
-    return { address: target.address, servername: networkAddressFamily(hostname) ? undefined : hostname };
+    return {
+      host: hostname,
+      addresses: [...addresses.filter((entry) => entry.family === 4), ...addresses.filter((entry) => entry.family === 6)],
+      servername: networkAddressFamily(hostname) ? undefined : hostname,
+    };
   } catch (error) {
     if (error instanceof NetworkTargetBlockedError)
       throw new NetworkTargetBlockedError(
