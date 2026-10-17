@@ -800,6 +800,14 @@
   initial-value: 0px;
 }
 
+/* The fit threshold of the open detail in a narrowed host. Registered so it
+   leaves with the track after a closing slide, not before it. */
+@property --k2b-workspace-detail-fit {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 /* Typed so that it resolves where the tablet drawer sets it: in container
    units of its own workspace, not of a container inside `Main`. */
 @property --k2b-detail-space {
@@ -1533,7 +1541,8 @@ html {
   .k2b-ui .k2b-app-workspace[data-workspace-motion] {
     transition:
       --k2b-workspace-detail-track 0s linear 140ms,
-      --k2b-workspace-main-keep 0s linear 140ms;
+      --k2b-workspace-main-keep 0s linear 140ms,
+      --k2b-workspace-detail-fit 0s linear 140ms;
   }
 
   .k2b-ui
@@ -2375,7 +2384,7 @@ html {
          makes the track jump at exactly the inclusive fit threshold. */
       grid-template-columns:
         minmax(var(--k2b-workspace-main-keep), 1fr)
-        minmax(0, clamp(0px, (100% - var(--k2b-workspace-detail-fit, 0px) + 0.0078125px) * 1000000, var(--k2b-workspace-detail-track)));
+        minmax(0, clamp(0px, (100% - var(--k2b-workspace-detail-fit) + 0.0078125px) * 1000000, var(--k2b-workspace-detail-track)));
     }
     .k2b-ui
       .k2b-app-workspace:has(

@@ -13,8 +13,8 @@ beforeAll(async () => {
 afterAll(async () => {
   await browser?.close();
 });
-const load = async (host: number | null = 860, options: FixtureOptions = {}, viewport = 1440, gutter = 64) => {
-  const page = await browser.newPage({ viewport: { width: viewport, height: 900 }, reducedMotion: "reduce" });
+const load = async (host: number | null = 860, options: FixtureOptions = {}, viewport = 1440, gutter = 64, motion = false) => {
+  const page = await browser.newPage({ viewport: { width: viewport, height: 900 }, reducedMotion: motion ? "no-preference" : "reduce" });
   await page.setContent(`<!doctype html><html><head><style>${css}</style></head>
     <body class="k2b-ui" style="margin:0;display:flex">
     <div id="host" style="flex:none;${host === null ? "width:100%" : `container:k2b-app-area / inline-size;width:${host}px`}">
@@ -274,6 +274,32 @@ test("a drawer removed with its panel leaves no space in Content", async () => {
     await aside(page).evaluate((element) => element.remove());
     await workspaceFrames(page);
     expect(await space()).toBe("");
+  } finally {
+    await page.close();
+  }
+});
+
+test("closing a waiting detail with motion never shows a column", async () => {
+  const page = await load(860, {}, 1440, 64, true);
+  try {
+    // Let the controller mark the workspace for motion.
+    await workspaceFrames(page);
+    await workspaceFrames(page);
+    expect(await root(page).getAttribute("data-workspace-motion")).not.toBeNull();
+    const widths = await page.evaluate(async () => {
+      const main = document.querySelector(".k2b-app-workspace__main")!;
+      const aside = document.querySelector(".k2b-app-workspace__detail")!;
+      const seen = [main.getBoundingClientRect().width];
+      aside.dispatchEvent(new CustomEvent("k2b-app-workspace-detail-close"));
+      const start = performance.now();
+      while (performance.now() - start < 260) {
+        await new Promise((done) => requestAnimationFrame(done));
+        seen.push(main.getBoundingClientRect().width);
+      }
+      return seen;
+    });
+    expect(await page.locator("body").getAttribute("data-closed")).toBe("1");
+    expect(Math.min(...widths)).toBe(widths[0]!);
   } finally {
     await page.close();
   }
