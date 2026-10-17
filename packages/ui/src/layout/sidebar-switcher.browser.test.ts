@@ -525,6 +525,30 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
   );
 
   test(
+    "a collapsed sidebar in a host narrower than 64 rem opens the panel below its expanded trigger",
+    async () => {
+      const page = await load(1366, "collapsed=1");
+      try {
+        await page.locator("#app").evaluate((app) => {
+          app.style.container = "k2b-app-area / inline-size";
+          app.style.width = "860px";
+        });
+        await page.locator("[data-app-workspace-sidebar-toggle]").click();
+        await prime(page);
+        await page.locator(trigger).click();
+        await page.locator(panel).waitFor({ state: "visible" });
+        const button = await page.locator(trigger).boundingBox();
+        const bounds = await page.locator(panel).boundingBox();
+        expect(bounds!.y).toBeGreaterThanOrEqual(button!.y + button!.height);
+        expect(bounds!.width).toBeGreaterThanOrEqual(button!.width);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "the phone navigation lets its host finish dismissing before a container opens or an action runs, and may cancel",
     async () => {
       const allowed = await load(390, "navigation=1&guard=allow", true);

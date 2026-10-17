@@ -246,3 +246,35 @@ test("focus in a column that starts waiting moves to its Details button", async 
     await page.close();
   }
 });
+
+test("a width token that fits again clears the drawer without any resize", async () => {
+  const page = await load();
+  try {
+    await toggle(page).click();
+    expect(await aside(page).getAttribute("data-workspace-detail-drawer")).toBe("open");
+    await aside(page).evaluate((element) => element.setAttribute("data-width", "sm"));
+    await workspaceFrames(page);
+    expect(await aside(page).getAttribute("data-workspace-detail-drawer")).toBeNull();
+    expect(await toggle(page).getAttribute("aria-expanded")).toBe("false");
+    await aside(page).evaluate((element) => element.setAttribute("data-width", "md"));
+    await workspaceFrames(page);
+    expect(await aside(page).isVisible()).toBe(false);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a drawer removed with its panel leaves no space in Content", async () => {
+  const page = await load();
+  try {
+    await toggle(page).click();
+    const space = () =>
+      page.locator(".k2b-app-workspace__content").evaluate((element) => element.style.getPropertyValue("--k2b-detail-space"));
+    expect(await space()).not.toBe("");
+    await aside(page).evaluate((element) => element.remove());
+    await workspaceFrames(page);
+    expect(await space()).toBe("");
+  } finally {
+    await page.close();
+  }
+});

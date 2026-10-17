@@ -548,7 +548,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const detailWasWaiting = new WeakMap<HTMLElement, boolean>();
   const syncHostState = () => {
     if (overlay && cssState(overlay.root, "--k2b-workspace-sidebar-form") !== "overlay") closeOverlay("none");
-    for (const root of allRoots())
+    for (const root of allRoots()) {
+      // A drawer removed with its panel leaves no space behind in Content.
+      for (const content of rootElements(root, ".k2b-app-workspace__content"))
+        if (content.style.getPropertyValue("--k2b-detail-space") && !content.querySelector(DETAIL_DRAWER_SELECTOR))
+          content.style.removeProperty("--k2b-detail-space");
       for (const aside of rootElements(root, detailSelector)) {
         if (aside.hidden) {
           detailWasWaiting.delete(aside);
@@ -562,6 +566,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         else if (detailDrawer(aside)) syncDetailDrawerSpace(aside);
         else if (before === false && aside.contains(ownerDocument.activeElement)) detailToggle(aside)?.focus({ preventScroll: true });
       }
+    }
   };
   const phone = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 47.999rem)") : null;
   const wide = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 48rem)") : null;
@@ -1609,6 +1614,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           );
           if (!changed) return;
           syncObservedRoots();
+          // A new width token or a removed panel can end waiting without any box resizing.
+          syncHostState();
           scheduleReconcile();
         });
 
@@ -1642,7 +1649,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   mutationObserver?.observe(eventRoot, {
     attributes: true,
     attributeOldValue: true,
-    attributeFilter: ["hidden", "data-workspace-level-shown"],
+    attributeFilter: ["hidden", "data-workspace-level-shown", "data-width"],
     childList: true,
     subtree: true,
   });
