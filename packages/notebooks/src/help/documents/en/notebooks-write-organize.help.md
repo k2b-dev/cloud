@@ -145,7 +145,7 @@ Hide the navigation to focus on the note. Hide it also when others can see your 
 - **Hide:** Choose **Hide navigation** at the far left of the editor toolbar. You can also press **Cmd/Ctrl+Alt+S**, or type `>` in the Cloud search and run **Hide notebook navigation**. You can also drag the edge of the navigation almost all the way to the left.
 - **What disappears:** The sidebar disappears completely, and so does the page list of Book view.
 - **Show:** Choose **Show navigation** in the same place, or press **Cmd/Ctrl+Alt+S** again. You can also type `>` in the Cloud search and run **Show notebook navigation**.
-- **No toolbar:** Some places show no editor toolbar: Book view, an empty notebook, **Read-only**, the graph, and the attachments. There, the button is in the bottom-left corner.
+- **No toolbar:** Some places show no editor toolbar: Book view, an empty notebook, **Read-only**, and the attachments. There, the button is in the bottom-left corner. The graph has the button at the left end of its own toolbar.
 - **Stays hidden:** This browser stores the choice. It applies to every notebook, even after a reload and in other open tabs. A notebook with hidden navigation opens without it, so its note titles do not appear while the page loads.
 - **Reading width:** On a large screen, the text stays in a column as wide as in Book view, also in the editor and in **Read-only**. When you hide the navigation, the column moves to the middle. The lines do not get longer.
 - **Full width:** For longer lines, turn on **Full width** in the detail panel, or type `>` in the Cloud search and run **Turn on full width**. The text then fills the free space in the editor, in **Read-only**, and in Book view. Only you see it, and this browser stores the choice for every notebook and open tab. Full width works only on large screens, where the switch shows. When the navigation and the detail panel leave less room than the column, the lines get longer only after you close the panel.
@@ -241,7 +241,13 @@ In the editor, the controls appear when you point at the diagram or focus it. Af
 ## Connect notes with links, tags, and attachments {icon="link"}
 
 :::reference
-- **See how notes link:** Choose **Links** at the bottom of the navigation. The graph shows how the notes of the notebook link to each other. It starts at the open note. This also works with **View** access, in Book view.
+- **See how notes link:** Choose **Links** at the bottom of the navigation. The network shows every note of the notebook and the links between them. The open note has a ring in the app color. This also works with **View** access, in Book view.
+- **Areas:** Each top-level page with sub-pages is an area with its own color. The other top-level pages are in **Top level**. The network does not move by itself. You can drag a note, and its neighbors follow a little.
+- **Point at a note:** The note and its neighbors stay visible, and the other notes fade. Links from the note are solid lines. Links to the note are dashed. The bottom-left corner shows the area, the number of links in each direction, and the last change.
+- **Filters and search:** Choose **All notes**, **Only linked**, or **Only unlinked**. Choose an area to hide or show it. **Find note** marks the notes with a matching title, and Enter goes to the first match. The address keeps these settings, so a reload or Back shows the same view.
+- **As list:** Shows the same notes and filters as a table: the area, the notes that a note links to, the notes that link to it, and the last change.
+- **Keyboard:** Press Tab to go into the graph. The arrow keys move to the next note in that direction. Page Down and Page Up go through the notes in page order. Enter opens the note, Home goes to the open note, + and − zoom, 0 fits the graph, and Esc clears the search.
+- **Touch screens:** Choose a note to select it. A bar at the bottom shows the note. Choose **Open** to open it. Pinch with two fingers to zoom.
 - **Note links:** The Markdown form is `[Label](note://shortId)`. The editor can insert links for you.
 - **Link to a heading:** Add the heading name in lowercase with hyphens. `[Label](note://shortId#backup-restore)` opens the heading "Backup & Restore". If the note has no such heading, it opens at the top.
 - **Tags:** Use tags such as #garden to group notes across the notebook. Tag filters match parsed tags, not any word.

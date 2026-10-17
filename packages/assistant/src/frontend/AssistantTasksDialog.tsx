@@ -26,6 +26,9 @@ export const occurrencePresentation = (state: AssistantChatTaskOccurrence["state
   return { label: text("Queued"), tone: "neutral" as const };
 };
 
+/** Core deletes finished runs 90 days after they end (`AI_CHAT_TASK_RUN_RETENTION_DAYS`). */
+const RUN_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
 const useTaskClock = () => {
   const [now, setNow] = createSignal(new Date());
   timed.interval(() => setNow(new Date()), 60_000);
@@ -207,7 +210,12 @@ export function AssistantTaskDetail(props: {
       >
         {(value) => {
           const task = () => value().task,
-            latest = () => value().occurrences[0];
+            latest = () => value().occurrences[0],
+            // An older task may have run before the retention window; "yet" would be wrong then.
+            noRuns = () =>
+              text(
+                Date.parse(task().createdAt) <= now().getTime() - RUN_RETENTION_MS ? "No runs in the last 90 days" : "No occurrences yet",
+              );
           return (
             <div class="assistant-task-detail">
               <div class="assistant-task-detail__body">
@@ -258,7 +266,7 @@ export function AssistantTaskDetail(props: {
                   ]}
                 />
                 <Show when={tab() === "result"}>
-                  <Show when={latest()} fallback={<Placeholder title={text("No occurrences yet")} />}>
+                  <Show when={latest()} fallback={<Placeholder title={noRuns()} />}>
                     {(run) => (
                       <>
                         <div class="flex items-center justify-between gap-2 text-xs text-secondary">
@@ -276,7 +284,7 @@ export function AssistantTaskDetail(props: {
                   </Show>
                 </Show>
                 <Show when={tab() === "history"}>
-                  <Show when={value().occurrences.length} fallback={<Placeholder title={text("No occurrences yet")} />}>
+                  <Show when={value().occurrences.length} fallback={<Placeholder title={noRuns()} />}>
                     <For each={value().occurrences}>
                       {(run) => (
                         <Button

@@ -134,6 +134,7 @@ export const contactsService = {
     changeAssignments: (config: Parameters<typeof tags.changeAssignments>[0]) => wake(tags.changeAssignments(config)),
   },
   contact: {
+    exportPages: (config: { bookId: string; signal: AbortSignal }) => contacts.exportPages(config),
     list: (config: { bookId: string; pagination?: PageParams; filter?: import("./types").ContactListFilter }) => contacts.list(config),
     get: (config: { bookId: string; id: string }) => contacts.get(config),
     findBookId: contacts.findBookId,

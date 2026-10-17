@@ -23,9 +23,12 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Silent truncation by a clamped page size | A caller asks for the whole collection with a page size above the helper's maximum and exports only the first page. | Check: `page-size` rejects oversized `pagination.perPage` literals. Tests: Contacts export pagination, cancellation, stream failure, serializer bytes, and the 1,001-contact integration case ([#1241](https://github.com/k2b-dev/cloud/issues/1241)). |
 | Claim and assignment diverge | A person works on a task while assignment-based lists still show it as unassigned, or a stale assignee replacement removes an active worker. | Tests: `packages/spaces/src/service/claim-assignment.integration.test.ts` checks transactional user claims, guarded assignee replacements, forced releases, completion, and idempotent backfill ([#1269](https://github.com/k2b-dev/cloud/issues/1269)). |
 | Paint outside a scrollport | An outline or outset shadow, such as a status ring, reaches past its element and a scrolling ancestor flush with it cuts it off. | Test: `packages/ui/src/layout/detail-panel-sections.browser.test.ts` checks that an avatar ring flush with the detail body paints inside the scrollport and keeps the avatar size. |
-| Unbounded storage growth | Durable payloads have no size bound or retention. | Tests: workflow event integration cases cover byte limits, payload retention, dedupe, and resumable runs; workflow observability integration cases cover expired payloads; Mail integration cases cover oversized messages ([#1183](https://github.com/k2b-dev/cloud/issues/1183)). |
+| Unbounded storage growth | Durable payloads have no size bound or retention. | Tests: workflow event integration cases cover byte limits, payload retention, dedupe, and resumable runs; workflow observability integration cases cover expired payloads; Mail integration cases cover oversized messages ([#1183](https://github.com/k2b-dev/cloud/issues/1183)); `chat-tasks.integration.test.ts` covers 90-day scheduled task run retention in bounded batches. |
+| Retention deletes a dedupe guard | Expiring a one-off task's current occurrence lets its scheduled time run twice after reactivation. | Test: `chat-tasks.integration.test.ts` keeps the current slot row through completion and timezone reactivation while its turn and transcript expire, rejects a duplicate slot, and removes the row after the scheduled time changes. |
+| Retention blocked by a dependent check | A row's `ON DELETE SET NULL` violates its own CHECK, so every delete of the referenced row fails and an oldest-first sweep stalls for good. | Test: `chat-tasks.integration.test.ts` expires a background turn that a workflow memory learning run points at. |
 | Unreadable treated as missing | Startup replaces an unreadable or invalid stored value with an environment value. | Test: `packages/cloud/src/services/settings/bootstrap.integration.test.ts` preserves ciphertext and timestamps for undecryptable and invalid rows while reads use the environment fallback ([#1295](https://github.com/k2b-dev/cloud/issues/1295)). |
 | Motion choice ignored | JavaScript or a separate document animates despite the person's reduced-motion choice. | Tests: `MailConversationReader.behavior.test.tsx` checks the choice at jump time; `MailMessageBody.browser.test.ts` checks initial and live propagation into the sandboxed message and rejects frame-originated motion messages ([#1230](https://github.com/k2b-dev/cloud/issues/1230)). |
 | One Markdown dialect parsed differently by editor and renderer | Separate parsers disagree about documented source forms, so an image renders in one view and disappears in another. | Shared helper: Notebooks uses `parseSizedMarkdownImage` in Book and Lezer. Test: both views iterate `DOCUMENTED_IMAGE_FORMS` for attachment and HTTPS images with sizes and titles ([#1278](https://github.com/k2b-dev/cloud/issues/1278)). |
@@ -61,6 +64,13 @@ convention still needs a check or a test.
 - **Root cause:** ImapFlow ends FETCH without rows when its throttle retries run out. SEARCH returns false on command failure. Mail treated these answers as absence.
 - **Error class:** Absence from an empty provider answer.
 - **Guard:** `%s confirms an empty FETCH answer before it reports a message as gone` in `packages/mail/src/service/connectors/imap-smtp.test.ts` drives real ImapFlow against a throttling server for every affected read. New reads that infer absence use the same confirmation helper. A source the provider lists but never delivers still uses the missing-source budget (`downloadSourceBatch skips a source the provider lists but never delivers and streams the rest`).
+
+### Contacts exports stopped at 1,000 contacts
+
+- **What happened:** CSV and vCard book exports silently omitted contacts after the first 1,000 ([#1241](https://github.com/k2b-dev/cloud/issues/1241)).
+- **Root cause:** The export requested `perPage: 100_000`, which `paginate()` silently clamped to 1,000.
+- **Error class:** Silent truncation by a clamped page size.
+- **Guard:** `page-size` rejects oversized pagination literals. Contacts unit tests cover keyset cursors, cancellation, serializer bytes, and failed streams; `export.integration.test.ts` checks both downloads with 1,001 contacts.
 
 ### A claimed Spaces task still appeared unassigned
 
