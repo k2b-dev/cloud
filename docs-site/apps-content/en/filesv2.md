@@ -259,6 +259,19 @@ in Postgres. Neither the password nor the verifier appears in share responses.
 Unlock attempts are rate-limited. The browser receives an encrypted, share-scoped
 HttpOnly cookie; transfers retain their existing short lease lifetime.
 
+Inbox upload requests (start, lease, commit and abort) are limited to 120 per
+minute per client address across all upload links. Requests with unknown or
+invalid links count against the same budget. IPv6 clients count per /64
+network. NAT64, Teredo and 6to4 addresses count per embedded IPv4 address. A
+client that controls a larger IPv6 prefix gets one budget per /64. Each file
+needs about two requests. When the limit is reached, the uploader waits for the
+time in `Retry-After` and then continues on its own. Other public share
+requests keep their limit of 10 per minute per client address.
+
+For operators: guests behind one shared address share the upload budget. This
+includes NAT, VPN and one IPv6 /64 network, such as campus Wi-Fi. Under heavy
+shared use, 429 responses with `Retry-After` on upload routes are expected and
+are not an outage.
 
 A share is either a download bundle of entries or an upload inbox for one
 folder, always inside one base. Download shares show the current contents,
