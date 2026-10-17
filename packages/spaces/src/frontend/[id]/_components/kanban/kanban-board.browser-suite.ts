@@ -62,8 +62,8 @@ const item = (id: string, columnId: string, title: string, extra: Partial<SpaceI
   tags: [],
   ...extra,
 });
-const me = { id: "11111111-1111-4111-8111-111111111111", displayName: "Robin Example", avatarHash: null };
-const kim = { id: "22222222-2222-4222-8222-222222222222", displayName: "Kim Example", avatarHash: null };
+const me = { id: "11111111-1111-4111-8111-111111111111", kind: "user" as const, displayName: "Robin Example", avatarHash: null };
+const kim = { id: "22222222-2222-4222-8222-222222222222", kind: "user" as const, displayName: "Kim Example", avatarHash: null };
 const items = [
   item("Item01", "Col001", "Order banners for the spring fair", { assignees: [me], priority: "high" }),
   item("Item02", "Col001", "Ask the bakery about a stand"),
@@ -151,7 +151,8 @@ const wormhole: SpaceWormhole = {
   createdAt: "2026-09-20T10:00:00.000Z",
   updatedAt: "2026-09-20T10:00:00.000Z",
 };
-const assignedToMe = () => bucketsFor((entry) => entry.assignees?.some((assignee) => assignee.id === me.id) ?? false);
+const assignedToMe = () =>
+  bucketsFor((entry) => entry.assignees?.some((assignee) => assignee.kind === "user" && assignee.id === me.id) ?? false);
 
 const workspaceColumns: SpaceColumn[] = Array.from({ length: 8 }, (_, index) => ({
   ...columns[index % columns.length]!,

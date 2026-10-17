@@ -415,7 +415,7 @@ const mapRelations = (item: SpaceItem) => ({
   reactions: item.reactions && boundReactionNames(item.reactions),
   assignees: (item.assignees ?? [])
     .slice(0, 100)
-    .map((entry) => ({ id: entry.id, displayName: truncateText(entry.displayName, 200).text })),
+    .map((entry) => ({ id: entry.id, kind: entry.kind, displayName: truncateText(entry.displayName, 200).text })),
   tags: (item.tags ?? [])
     .slice(0, 100)
     .map((entry) => ({ id: entry.id, name: truncateText(entry.name, 100).text, color: truncateText(entry.color, 100).text })),
@@ -430,7 +430,9 @@ const mapRelations = (item: SpaceItem) => ({
 const mapListRelations = (item: SpaceItem) => ({
   // Lists carry counts only; item.read names the people.
   reactions: item.reactions?.map(({ emoji, count, own }) => ({ emoji, count, own })),
-  assignees: (item.assignees ?? []).slice(0, 3).map((entry) => ({ id: entry.id, displayName: truncateText(entry.displayName, 100).text })),
+  assignees: (item.assignees ?? [])
+    .slice(0, 3)
+    .map((entry) => ({ id: entry.id, kind: entry.kind, displayName: truncateText(entry.displayName, 100).text })),
   assigneeCount: item.assignees?.length ?? 0,
   tags: (item.tags ?? [])
     .slice(0, 3)
@@ -856,6 +858,7 @@ const runSpaceAssigneeList = async (input: z.infer<typeof SpaceAssigneeListInput
   return ok({
     data: users.map((user) => ({
       id: user.id,
+      kind: user.kind,
       displayName: truncateText(user.displayName, 200).text,
       description: truncateText(user.description ?? "", 300).text,
     })),
@@ -1700,7 +1703,7 @@ const mapTemplate = (template: SpaceItemTemplate, timeZone: string, context: Cap
   description: template.description,
   priority: template.priority,
   tags: template.tags.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color })),
-  assignees: template.assignees.map((assignee) => ({ id: assignee.id, displayName: assignee.displayName })),
+  assignees: template.assignees.map((assignee) => ({ id: assignee.id, kind: assignee.kind, displayName: assignee.displayName })),
   assignCreator: template.assignCreator,
   checklist: template.checklist,
   estimatedDurationMinutes: template.estimatedDurationMinutes,
@@ -2334,7 +2337,7 @@ export const spacesCapabilities = defineCapabilities({
     "space.assignee.list": {
       title: "List assignable Space members",
       description:
-        "List people eligible for task or event assignment in one writable Space. Get spaceId from space.list or space.search and pass a returned user ID to an item Action.",
+        "List people and service accounts eligible for task or event assignment in one writable Space. Service accounts need their own direct access. Get spaceId from space.list or space.search and pass a returned ID to an item Action.",
       input: SpaceAssigneeListInputSchema,
       data: SpaceAssigneeListDataSchema,
       openWorld: false,
@@ -2452,7 +2455,7 @@ export const spacesCapabilities = defineCapabilities({
     "task.claim": {
       title: "Claim task work",
       description:
-        "Claim an open unblocked task for one worker. Claiming as a person also assigns you to the task. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict. Claims coordinate work and do not lock it: any writer can take one over, and progress, release or completion with the ended claimId then returns 409 'Task claim is no longer active'.",
+        "Claim an open unblocked task for one worker. Claiming as a person or a service account other than a personal automation key also assigns you to the task. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict. Claims coordinate work and do not lock it: any writer can take one over, and progress, release or completion with the ended claimId then returns 409 'Task claim is no longer active'.",
       input: ClaimTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
       data: TaskWorkSchema,
       destructive: false,
@@ -2484,7 +2487,7 @@ export const spacesCapabilities = defineCapabilities({
     "task.release": {
       title: "Release task work",
       description:
-        "Release your current claim using its exact claimId; you stay assigned. With force, release another worker's exact claim and remove them from the assignees if they are a person; any writer may, and task activity records who took it over. Progress and completion results remain available.",
+        "Release your current claim using its exact claimId; you stay assigned. With force, release another worker's exact claim and remove them from the assignees; any writer may, and task activity records who took it over. Progress and completion results remain available.",
       input: ReleaseTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
       data: TaskWorkSchema,
       destructive: false,

@@ -225,8 +225,8 @@ describe("Spaces List completion in a browser", () => {
   }
 
   test("a row puts the working assignee first in its avatar stack with one ring, in the server frame and hydrated", async () => {
-    const kim = { id: "22222222-2222-4222-8222-222222222222", displayName: "Kim Example", avatarHash: null };
-    const robin = { id: currentUserId, displayName: "Robin Example", avatarHash: null };
+    const kim = { id: "22222222-2222-4222-8222-222222222222", kind: "user" as const, displayName: "Kim Example", avatarHash: null };
+    const robin = { id: currentUserId, kind: "user" as const, displayName: "Robin Example", avatarHash: null };
     const claimed: SpaceItem = {
       ...tasks[1]!,
       assignees: [robin, kim],

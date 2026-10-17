@@ -133,7 +133,7 @@ function IconActionButton(props: { icon: string; title: string; onClick: () => v
   );
 }
 
-/** One people list: the assignees, with the person working on the task first and marked as working. */
+/** One assignee list, with the account working on the task first and marked as working. */
 function AssigneesSection(props: {
   spaceId: string;
   assignees: SpaceItemAssignee[];
@@ -426,7 +426,7 @@ export default function ItemDetailPanel(props: Props) {
    */
   const updateAssignees = async (assigneeIds: string[]) => {
     const itemId = props.item.id;
-    const claim = await resolveAssigneeClaim(props.item.claim, props.currentUserId, assigneeIds, t);
+    const claim = await resolveAssigneeClaim(props.item.claim, props.currentUserId, props.item.assignees ?? [], assigneeIds, t);
     if (claim && props.item.id === itemId) await updateMutation.mutate({ assigneeIds, ...claim });
   };
 
@@ -663,7 +663,7 @@ export default function ItemDetailPanel(props: Props) {
         },
       }),
     );
-    if (!props.item.assignees?.some((assignee) => assignee.id === props.currentUserId))
+    if (!props.item.assignees?.some((assignee) => assignee.kind === "user" && assignee.id === props.currentUserId))
       onCleanup(
         registerContextAwareCommand({
           scope: "selection",

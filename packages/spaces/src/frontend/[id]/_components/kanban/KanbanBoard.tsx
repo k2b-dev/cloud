@@ -1065,7 +1065,7 @@ export default function KanbanBoard(props: Props) {
   const assignCardMutation = mutations.create<SpaceItem, SpaceItem, { item: SpaceItem }>({
     onBefore: (item) => ({ item }),
     mutation: async (item) => {
-      if (item.assignees?.some((assignee) => assignee.id === props.currentUserId)) return item;
+      if (item.assignees?.some((assignee) => assignee.kind === "user" && assignee.id === props.currentUserId)) return item;
       const response = await apiClient[":id"].items[":itemId"].$patch({
         param: { id: props.spaceId, itemId: item.id },
         json: { assigneeIds: [...(item.assignees?.map((assignee) => assignee.id) ?? []), props.currentUserId] },
@@ -1074,7 +1074,9 @@ export default function KanbanBoard(props: Props) {
       return response.json();
     },
     onSuccess: (item) => {
-      const alreadyAssigned = findItemLocation(item.id)?.item.assignees?.some((assignee) => assignee.id === props.currentUserId);
+      const alreadyAssigned = findItemLocation(item.id)?.item.assignees?.some(
+        (assignee) => assignee.kind === "user" && assignee.id === props.currentUserId,
+      );
       setBuckets((current) =>
         current.map((bucket) => ({ ...bucket, items: bucket.items.map((candidate) => (candidate.id === item.id ? item : candidate)) })),
       );

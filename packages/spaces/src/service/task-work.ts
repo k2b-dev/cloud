@@ -158,15 +158,27 @@ export const change = async (params: {
       INSERT INTO spaces.task_work (item_id, claim, progress) VALUES (${params.itemId}::uuid, ${work.claim}::jsonb, ${work.progress}::jsonb)
       ON CONFLICT (item_id) DO UPDATE SET claim = EXCLUDED.claim, progress = EXCLUDED.progress
     `;
-    if (params.operation === "claim" && params.actor.kind === "user") {
-      await tx`
-        INSERT INTO spaces.item_assignees (item_id, user_id)
-        VALUES (${params.itemId}::uuid, ${params.actor.id}::uuid)
-        ON CONFLICT DO NOTHING
-      `;
+    if (params.operation === "claim") {
+      if (params.actor.kind === "user") {
+        await tx`
+          INSERT INTO spaces.item_assignees (item_id, user_id)
+          VALUES (${params.itemId}::uuid, ${params.actor.id}::uuid)
+          ON CONFLICT DO NOTHING
+        `;
+      } else {
+        await tx`
+          INSERT INTO spaces.item_assignees (item_id, service_account_id)
+          SELECT ${params.itemId}::uuid, id FROM auth.service_accounts
+          WHERE id = ${params.actor.id}::uuid AND kind <> 'user_delegated'
+          ON CONFLICT DO NOTHING
+        `;
+      }
     }
-    if (takenOver?.actor.kind === "user") {
-      await tx`DELETE FROM spaces.item_assignees WHERE item_id = ${params.itemId}::uuid AND user_id = ${takenOver.actor.id}::uuid`;
+    if (takenOver) {
+      await tx`DELETE FROM spaces.item_assignees WHERE item_id = ${params.itemId}::uuid AND (
+        (${takenOver.actor.kind} = 'user' AND user_id = ${takenOver.actor.id}::uuid)
+        OR (${takenOver.actor.kind} = 'service_account' AND service_account_id = ${takenOver.actor.id}::uuid)
+      )`;
     }
     if (takenOver)
       await recordTakeOver(

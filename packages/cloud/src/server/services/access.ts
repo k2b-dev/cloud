@@ -629,7 +629,11 @@ export const listUsersWithAccess = async (params: {
         OR LOWER(uid) LIKE ${pattern} ESCAPE '\\'
         OR LOWER(group_names) LIKE ${pattern} ESCAPE '\\'
       )
-    ORDER BY LOWER(display_name), id
+    -- A limit must never hide an exact login-name match.
+    ORDER BY
+      CASE WHEN LOWER(uid) = ${query || null}::text THEN 0 ELSE 1 END,
+      CASE WHEN LOWER(display_name) = ${query || null}::text THEN 0 ELSE 1 END,
+      LOWER(display_name), id
     LIMIT ${limit}
   `;
 

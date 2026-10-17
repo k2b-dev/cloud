@@ -55,7 +55,7 @@ const event: SpaceItem = {
   startsAt: "2026-08-10T10:00:00.000Z",
   endsAt: "2026-08-10T11:00:00.000Z",
   priority: "high",
-  assignees: [{ id: userId, displayName: "Valentin Kolb", avatarHash: null }],
+  assignees: [{ id: userId, kind: "user" as const, displayName: "Valentin Kolb", avatarHash: null }],
   tags: [{ id: "Tag001", spaceId, name: "Release", color: "#2563eb" }],
 };
 
@@ -639,8 +639,8 @@ test("renders work progress and preserved completion evidence in German", () => 
 
 describe("Spaces item detail groups", () => {
   const holderId = "44444444-4444-4444-8444-444444444444";
-  const mira = { id: holderId, displayName: "Mira Beck", avatarHash: null };
-  const valentin = { id: userId, displayName: "Valentin Kolb", avatarHash: null };
+  const mira = { id: holderId, kind: "user" as const, displayName: "Mira Beck", avatarHash: null };
+  const valentin = { id: userId, kind: "user" as const, displayName: "Valentin Kolb", avatarHash: null };
   const miraClaim = {
     id: "55555555-5555-4555-8555-555555555555",
     actor: { kind: "user" as const, id: holderId },
