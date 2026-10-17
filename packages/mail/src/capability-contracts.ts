@@ -1,9 +1,11 @@
 import { CapabilitySemanticLinkSchema, CloudResourceViewSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
+  completeConversationsSchema,
   composeFormattingWarningsSchema,
   composeSafetyApprovalSchema,
   composeSafetyReviewSchema,
+  conversationCompletionResultSchema,
   draftEditableContentInputSchema,
   folderDisplaySchema,
   MAIL_CONVERSATION_ASSIGNEE_LIMIT,
@@ -1026,6 +1028,15 @@ export const ConversationAssignBatchDataSchema = z
     ),
   })
   .strict();
+export const ConversationStatusUpdateBatchInputSchema = z
+  .object({
+    mailboxId: MailboxIdInputSchema,
+    conversationIds: completeConversationsSchema.shape.conversationIds,
+    status: z.enum(["done", "open"]).describe("Mark the conversations done or reopen them."),
+  })
+  .strict();
+export const ConversationStatusUpdateBatchDataSchema = conversationCompletionResultSchema;
+
 export const ConversationStatusUpdateInputSchema = z
   .object({
     ...CollaborationMutationBaseShape,

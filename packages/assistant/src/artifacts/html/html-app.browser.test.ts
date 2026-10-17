@@ -78,8 +78,11 @@ afterAll(async () => {
   listener?.stop(true);
 });
 
-async function open(files: AppFiles, options: { hash?: string; answers?: boolean[]; download?: "capture" | "save" } = {}) {
-  const context = await browser.newContext({ acceptDownloads: true });
+async function open(
+  files: AppFiles,
+  options: { hash?: string; answers?: boolean[]; download?: "capture" | "save"; hasTouch?: boolean } = {},
+) {
+  const context = await browser.newContext({ acceptDownloads: true, hasTouch: options.hasTouch });
   const page = await context.newPage();
   await page.goto(`http://127.0.0.1:${server.port}/`);
   await page.evaluate(([files, options]) => globalThis.harness.mount(files, options), [files, options] as const);
@@ -635,3 +638,122 @@ await photo.decode();`,
     await close();
   }
 });
+
+for (const hasTouch of [false, true])
+  test(`app chart tooltips support ${hasTouch ? "tap" : "hover and keyboard"}, redraws and replacement without consuming app clicks`, async () => {
+    const { page, close } = await open(
+      {
+        "index.html":
+          '<main><button id="before">Before</button><figure id="chart"></figure><button id="outside">Outside</button><button id="replace">Replace</button><output id="clicks">0</output><output id="document-clicks">0</output><output id="violations">0</output></main>',
+        "app.js": `
+const options = { kind: 'bar', title: 'Umsatz', data: [{ label: 'Jan', value: 1200 }, { label: 'Feb', value: 900 }], tooltip: { label: 'Umsatz', format: { style: 'currency', currency: 'EUR' } } };
+function draw() {
+  document.querySelector('#chart').innerHTML = cloud.chart(options);
+  document.querySelector('.k2b-chart').addEventListener('click', () => { document.querySelector('#clicks').textContent = Number(document.querySelector('#clicks').textContent) + 1; });
+}
+draw();
+document.querySelector('#replace').addEventListener('click', draw);
+document.addEventListener('click', () => { document.querySelector('#document-clicks').textContent = Number(document.querySelector('#document-clicks').textContent) + 1; });
+document.addEventListener('securitypolicyviolation', () => { document.querySelector('#violations').textContent = Number(document.querySelector('#violations').textContent) + 1; });
+`,
+      },
+      { hasTouch },
+    );
+    try {
+      await ready(page);
+      const chart = app(page).locator(".k2b-chart");
+      const bar = chart.locator(".stdlib-chart-bar").first();
+      const tooltip = chart.locator(".k2b-chart__tooltip");
+      const open = () => tooltip.evaluate((element) => element.matches(":popover-open"));
+      const title = () => tooltip.locator(".k2b-chart__tooltip-title").textContent();
+      const inspect = () => (hasTouch ? bar.tap() : bar.hover());
+      const width = () =>
+        chart.locator(".k2b-chart__svg").evaluate((element: HTMLElement) => element.style.getPropertyValue("--k2b-chart-width"));
+      expect(await eventually(width, (value) => value !== "480px")).not.toBe("480px");
+      expect(await chart.getAttribute("role")).toBe("group");
+      expect(await chart.getAttribute("aria-label")).toBe("Umsatz");
+      expect(await chart.getAttribute("aria-description")).toBe(
+        "Interaktives Diagramm. Mit den Pfeiltasten Werte ansehen, mit Escape schließen.",
+      );
+      await inspect();
+      expect(await eventually(open, Boolean)).toBe(true);
+      expect(await title()).toBe("Jan");
+      expect(await tooltip.locator(".k2b-chart__tooltip-row").textContent()).toBe("Umsatz: 1.200,00\u00a0€");
+      const clicks = Number(await text(page, "#clicks"));
+      const documentClicks = Number(await text(page, "#document-clicks"));
+      if (hasTouch) await bar.tap();
+      else await bar.click();
+      expect(Number(await text(page, "#clicks"))).toBe(clicks + 1);
+      expect(Number(await text(page, "#document-clicks"))).toBe(documentClicks + 1);
+      if (hasTouch) {
+        await app(page).locator("#outside").tap();
+        expect(await eventually(open, (value) => !value)).toBe(false);
+      } else {
+        await app(page).locator("#before").focus();
+        await page.keyboard.press("Tab");
+        expect(await chart.evaluate((element) => element === document.activeElement)).toBe(true);
+        expect(await title()).toBe("Jan");
+        await page.keyboard.press("ArrowRight");
+        expect(await title()).toBe("Feb");
+        await page.keyboard.press("Home");
+        expect(await title()).toBe("Jan");
+        await page.keyboard.press("End");
+        expect(await title()).toBe("Feb");
+        await page.keyboard.press("Escape");
+        expect(await open()).toBe(false);
+      }
+      const previousWidth = await width();
+      // The app frame keeps its own width; widening it resizes the app and redraws the chart.
+      await page.locator("iframe.studio-app-frame").evaluate((frame: HTMLElement) => {
+        frame.style.width = "720px";
+      });
+      expect(await eventually(width, (value) => value !== previousWidth)).not.toBe(previousWidth);
+      await app(page).locator("#outside").focus();
+      await inspect();
+      expect(await eventually(open, Boolean)).toBe(true);
+      expect(await title()).toBe("Jan");
+      const paint = () => tooltip.evaluate((element) => [getComputedStyle(element).backgroundColor, getComputedStyle(element).color]);
+      const light = await paint();
+      await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
+      expect(
+        await eventually(
+          () => app(page).locator("html").getAttribute("data-theme"),
+          (value) => value === "dark",
+        ),
+      ).toBe("dark");
+      expect(await eventually(paint, (value) => JSON.stringify(value) !== JSON.stringify(light))).not.toEqual(light);
+      // Retain the detached node to prove the old inspector removed its tooltip and tabindex.
+      await chart.evaluate((element) => {
+        Object.defineProperty(window, "previousChart", { value: element, configurable: true });
+      });
+      if (hasTouch) await app(page).locator("#replace").tap();
+      else await app(page).locator("#replace").click();
+      expect(
+        await eventually(
+          () => tooltip.count(),
+          (value) => value === 1,
+        ),
+      ).toBe(1);
+      expect(
+        await chart.evaluate(() => {
+          const old: unknown = Reflect.get(window, "previousChart");
+          return (
+            old instanceof HTMLElement && !old.isConnected && !old.querySelector(".k2b-chart__tooltip") && !old.hasAttribute("tabindex")
+          );
+        }),
+      ).toBe(true);
+      await inspect();
+      expect(await eventually(open, Boolean)).toBe(true);
+      expect(await title()).toBe("Jan");
+      expect(await chart.locator(":scope > .k2b-chart__tooltip").count()).toBe(1);
+      expect(await chart.locator(".k2b-chart__svg .k2b-chart__tooltip").count()).toBe(0);
+      expect(await text(page, "#violations")).toBe("0");
+      expect(
+        (await events(page)).filter(
+          (event) => event.type === "error" || (event.type === "log" && String(event.text).includes("Blocked by the app sandbox")),
+        ),
+      ).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 30_000);

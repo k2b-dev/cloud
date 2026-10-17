@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { renderNotebookBook } from "../lib/book-renderer";
+import * as charts from "../lib/chart-blocks";
 import { loadBookBlockPreview, loadBookNote, resolveBookQueries } from "./book";
 import * as query from "./note-query";
 import * as notebooks from "./notebooks";
@@ -59,6 +60,19 @@ function fixture(allowed = true, currentNote: notes.NoteWithContent | null = not
 }
 
 describe("authorized Book documents and server block previews", () => {
+  test("previews parse charts only once and preserve diagnostic order", async () => {
+    fixture();
+    const parse = track(spyOn(charts, "parseNotebookChartBlocks"));
+    const result = await loadBookBlockPreview({
+      ...params,
+      markdown: ":::chart\ntype: stat\ntitle: Value\n:::\n\n:::toc\nmax-depth: 9\n:::\n\n:::query\nsource: secrets\n:::",
+    });
+    expect(parse).toHaveBeenCalledTimes(1);
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.preview.diagnostics.map(({ line }) => line)).toEqual([11, 7, 1]);
+  });
+
   test("trusted platform admins retain Book and preview access without a notebook ACL", async () => {
     const calls = fixture(false, { ...note, contentMd: ":::query\nsource: notes\n:::" });
     expect(await loadBookNote({ ...params, bypassAccess: true })).not.toBeNull();
@@ -211,3 +225,41 @@ describe("authorized Book documents and server block previews", () => {
     if (result.kind === "ok") expect(result.preview.diagnostics).toEqual([{ line: 1, message: "Diese Abfrage ist nicht verfügbar." }]);
   });
 });
+
+for (const [locale, message] of [
+  ["en", "Invalid block at line 7. chart.y: Unknown column Kosen."],
+  ["de", "Ungültiger Block in Zeile 7. chart.y: Unbekannte Spalte Kosen."],
+] as const) {
+  test(`chart preview diagnoses the y line in ${locale}`, async () => {
+    fixture();
+    const result = await loadBookBlockPreview({
+      ...params,
+      locale,
+      markdown: ":::chart\ntype: bar\ntitle: Sales\ncolumns: [Month, Revenue]\nrows:\n  - [Jan, 12]\ny: Kosen\nx: Month\n:::",
+    });
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.preview.diagnostics).toEqual([{ line: 7, message }]);
+    expect(result.preview.blocks[0]?.html).toContain(locale === "en" ? "Unknown column Kosen." : "Unbekannte Spalte Kosen.");
+  });
+}
+
+for (const [locale, message] of [
+  ["en", "The block @sales has errors. Fix it first."],
+  ["de", "Der Block @sales enthält Fehler. Behebe sie zuerst."],
+] as const) {
+  test(`invalid chart sources have an actionable message in ${locale}`, async () => {
+    fixture();
+    const result = await loadBookBlockPreview({
+      ...params,
+      locale,
+      markdown: "@sales\n:::data\nrevenue: 12\nrevenue: 18\n:::\n\n:::chart\ntype: stat\ntitle: Revenue\ndata: @sales\nvalue: revenue\n:::",
+    });
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.preview.diagnostics).toEqual([
+      { line: 10, message: `${locale === "en" ? "Invalid block at line 10." : "Ungültiger Block in Zeile 10."} chart.data: ${message}` },
+    ]);
+    expect(result.preview.blocks[0]?.html).toContain(message);
+  });
+}

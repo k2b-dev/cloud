@@ -5,6 +5,7 @@ import { query, timed } from "@k2b/stdlib/solid";
 import { Button } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
+import { chartBlockFrame, notebookChartFrameHtml } from "../../../lib/chart-blocks";
 import { extractNotebookDirectiveRanges } from "../../../lib/query-blocks";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../../[id]/_components/sidebar/workspace-events";
 import {
@@ -23,6 +24,7 @@ export type BlockPreviewResult = {
 };
 
 type BlockRange = ReturnType<typeof extractNotebookDirectiveRanges>[number];
+type ChartFrame = NonNullable<ReturnType<typeof chartBlockFrame>>;
 type PreviewSnapshot = {
   result?: BlockPreviewResult;
   failed: boolean;
@@ -41,6 +43,8 @@ class QueryBlockWidget extends WidgetType {
     private html: string | undefined,
     private diagnostic?: string,
     private staleReadOnly = false,
+    /** A chart's title and kind from its source: the frame stands while its drawing loads or fails. */
+    private chart: ChartFrame | null = null,
   ) {
     super();
   }
@@ -53,6 +57,10 @@ class QueryBlockWidget extends WidgetType {
       other.html === this.html &&
       other.diagnostic === this.diagnostic &&
       other.staleReadOnly === this.staleReadOnly &&
+      other.chart?.kind === this.chart?.kind &&
+      other.chart?.area === this.chart?.area &&
+      other.chart?.title === this.chart?.title &&
+      other.chart?.subtitle === this.chart?.subtitle &&
       other.snapshot.failed === this.snapshot.failed &&
       other.snapshot.locale === this.snapshot.locale &&
       other.snapshot.result?.headings === this.snapshot.result?.headings
@@ -71,7 +79,15 @@ class QueryBlockWidget extends WidgetType {
     const content = document.createElement("div");
     content.className = "cm-query-block-preview notebook-book-content";
     if (this.html !== undefined && !this.snapshot.failed) content.innerHTML = this.html;
-    else {
+    else if (this.chart) {
+      // The frame keeps the drawn chart's height, so loading, a failure or a reload message never moves the note.
+      const status = document.createElement("p");
+      status.className = "notebook-book-chart__status text-sm text-dimmed";
+      status.setAttribute("role", "status");
+      status.textContent = this.snapshot.failed ? t.failed : this.staleReadOnly ? t.savedChanged : (this.diagnostic ?? t.loading);
+      content.innerHTML = notebookChartFrameHtml(this.chart, "");
+      content.querySelector(".notebook-book-chart__viewport")?.append(status);
+    } else {
       content.className += " text-sm text-dimmed";
       content.setAttribute("role", "status");
       content.textContent = this.snapshot.failed ? t.failed : this.staleReadOnly ? t.savedChanged : (this.diagnostic ?? t.loading);
@@ -133,6 +149,8 @@ class QueryBlockWidget extends WidgetType {
     return true;
   }
   override get estimatedHeight() {
+    // Widget margins, border, padding and controls (66px), the title row and the kind's fixed frame (app.css).
+    if (this.chart) return 66 + 24 + (this.chart.subtitle ? 20 : 0) + 8 + (this.chart.kind === "stat" ? 160 : 288);
     // Query tables have 14px / 21px text, 16px cell padding and row dividers;
     // controls, widget padding/border and table spacing add 65px.
     // The truncated count paragraph inherits 16px / 1.6 text (25.6px) in
@@ -182,14 +200,25 @@ export function createQueryBlockPreviews(options: {
     else previews.abort();
   }, 300);
   let snapshot: PreviewSnapshot = { failed: false, locale: options.locale(), retry: () => void previews.refresh() };
+  // The last drawing of each chart, by its source: an edit elsewhere keeps it in place until the new preview arrives.
+  let drawnCharts = new Map<string, string>();
   const build = (state: EditorState, next: PreviewSnapshot): BlockState => {
     const document = state.doc.toString();
     const result = next.result?.markdown === document ? next.result : undefined;
     const ranges: Range<Decoration>[] = [];
     const blocks = extractNotebookDirectiveRanges(document);
+    if (result)
+      drawnCharts = new Map(
+        blocks.flatMap((block) => {
+          const html = block.type === "chart" ? result.blocks.find((entry) => entry.line === block.line)?.html : undefined;
+          return html === undefined ? [] : [[document.slice(block.from, block.to), html] as const];
+        }),
+      );
     for (const block of blocks) {
       if (selectionIntersectsRange(state.selection.main, block.from, block.to)) continue;
-      const html = result?.blocks.find((entry) => entry.line === block.line)?.html;
+      const source = block.type === "chart" ? document.slice(block.from, block.to) : "";
+      const html = result?.blocks.find((entry) => entry.line === block.line)?.html ?? (source ? drawnCharts.get(source) : undefined);
+      const chart = block.type === "chart" ? chartBlockFrame(source.split("\n").slice(1, block.closed ? -1 : undefined)) : null;
       const diagnostic = result?.diagnostics
         .filter((entry) => entry.line >= block.line && entry.line <= state.doc.lineAt(block.to).number)
         .map((entry) => entry.message)
@@ -202,6 +231,7 @@ export function createQueryBlockPreviews(options: {
             html,
             diagnostic || undefined,
             options.readOnly && !!next.result && !result,
+            chart,
           ),
           block: true,
         }).range(block.from, block.to),
@@ -263,16 +293,8 @@ export function createQueryBlockPreviews(options: {
   return {
     extension: [
       field,
+      // The widget's box lives in app.css: the note's server preview reserves the same box for a chart.
       blockWidgetLineNavigationExtension(field, (value) => value.decorations),
-      EditorView.theme({
-        ".cm-query-block-widget": {
-          display: "block",
-          margin: "0.5rem 0",
-          padding: "0.5rem",
-          border: "1px solid var(--ui-border)",
-          borderRadius: "var(--radius-md)",
-        },
-      }),
     ],
     listener: EditorView.updateListener.of((event) => {
       if (!event.docChanged) return;

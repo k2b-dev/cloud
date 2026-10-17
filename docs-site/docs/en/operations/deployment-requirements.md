@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-14
+updated: 2026-10-17
 ---
 
 # Deployment requirements
@@ -257,7 +257,9 @@ axes in the viewer's wall-clock time, and stdlib-only options outside the chart
 contract, such as `padding`, being ignored. Renderer errors, such as a fixed
 domain that does not contain every value, now throw `invalid` instead of a plain
 error, and x strings must be ISO dates as documented. Chart groups and the
-additional chart kinds need no configuration or data migration. See
+additional chart kinds need no configuration or data migration. Studio and
+one-off HTML app charts show tooltips on hover, keyboard focus and tap without
+additional configuration. See
 [Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
 
 ### Assistant Chromium isolation
@@ -929,6 +931,30 @@ current permissions, including revocation after resolution. Missing access,
 offline apps and missing destinations show Core's 404 page. Existing readers
 without links keep working through capability calls. See
 [Resource links](/en/docs/platform/capabilities#resource-links).
+
+### Bound and expire workflow events
+
+This release limits workflow events and stops `workflows.event` from growing
+without bound. It needs no configuration change. Both limits are fixed:
+
+- An emit whose `data` or `context` is larger than 16 MiB fails with
+  `WORKFLOW_EVENT_TOO_LARGE`. Grids answers such a start with a bad-input
+  error. Mail emits an oversized message without its body, and the run reads
+  the body from Mail when a step needs it.
+- 30 days after dispatch or dead-lettering, Core deletes the event's
+  deliveries and empties its data, context, and authorization snapshot, once no
+  queued, running, waiting, or needs-attention run references it. The row and
+  its dedupe key stay, so deduplication keeps working. Run details show the
+  event payload as expired.
+
+The first Core start adds the column `workflows.event.payload_expired_at`.
+Core then builds two indexes for the retention sweep in the background with
+`CREATE INDEX CONCURRENTLY`, so event and run writes continue during the
+build. The first sweep starts when both indexes are valid and empties old
+payloads in batches of 1,000 every 6 hours. PostgreSQL reuses the freed space
+for new rows; the table files shrink only after `VACUUM FULL` or a similar
+rewrite. See
+[Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
 
 ## Coordinate an existing installation's identity upgrade
 

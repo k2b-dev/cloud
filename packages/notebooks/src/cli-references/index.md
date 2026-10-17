@@ -2,7 +2,7 @@
 
 ## What Notebooks is
 
-Notebooks are collaborative workspaces for structured, real-time synchronized notes. Notes remain readable Markdown while links, tags, attachments, named data blocks, queries, and formulas add navigation and summaries.
+Notebooks are collaborative workspaces for structured, real-time synchronized notes. Notes remain readable Markdown while links, tags, attachments, named data blocks, queries, charts, and formulas add navigation and summaries.
 
 Use `cld notebooks` to read and write notes by ID or path, keep a notebook as a local folder of Markdown files, search knowledge, manage access, and export data. Use the browser when a task depends on live collaborative editing or visual layout.
 
@@ -67,9 +67,9 @@ Preserve syntax you do not recognize when you edit a note rather than normalizin
 
 ## Declarative summaries
 
-Use `:::toc` for the current note's headings and `:::query` for lists or tables of notes. Both render in Book and in the editor preview. Their configuration remains Markdown, so `cat`, `write`, and `edit` manage it.
+Use `:::toc` for the current note's headings, `:::query` for lists or tables of notes, and `:::chart` for charts from this note's data. They render in Book and in the editor preview. Their configuration remains Markdown, so `cat`, `write`, and `edit` manage it.
 
-Place data, query, and TOC directives at document level, outside lists, quotes, code examples, and other blocks. Nested examples are not evaluated.
+Place data, query, TOC, and chart directives at document level, outside lists, quotes, code examples, and other blocks. Nested examples are not evaluated.
 
 ````markdown
 :::toc
@@ -136,7 +136,7 @@ cld notebooks preview <note> --json
 cld notebooks preview <note> --from ./draft.md --json
 ```
 
-Preview checks only query and TOC blocks; callouts, data values, and formulas are not validated. It needs an existing note: for a new note, `write` it first, preview the saved page, and correct it with `write --if-content-hash`. To test a draft before it exists, preview it against any note you can write in the same notebook; `children` and `descendants` scopes then refer to that note. Preview requires a user-backed sign-in credential; notebook resource-bound API keys are not supported. Without `--from` or `--content`, it previews the saved page with read access. With a draft it requires write access and an unlocked note, and it never saves. It evaluates queries against saved note data and builds the contents list from the draft headings.
+Preview checks query, TOC and chart blocks. It reports formula errors in cells used by charts. It does not validate every Markdown feature, data block or table formula. It needs an existing note: for a new note, `write` it first, preview the saved page, and correct it with `write --if-content-hash`. To test a draft before it exists, preview it against any note you can write in the same notebook; `children` and `descendants` scopes then refer to that note. Preview requires a user-backed sign-in credential; notebook resource-bound API keys are not supported. Without `--from` or `--content`, it previews the saved page with read access. With a draft it requires write access and an unlocked note, and it never saves. It evaluates queries against saved note data and builds the contents list from the draft headings. Charts read the draft's own tables, lists and data blocks.
 
 The JSON result contains `markdown`, rendered `blocks` (`line`, `html`), `headings` (`id`, `line`), and `diagnostics` (`line`, `message`). Source lines are 1-based. `headings` includes only headings with an exact source position. Diagnostics produce exit code 1 while retaining the JSON result; a clean preview returns 0. Check diagnostics before applying a draft with `write` or `edit`.
 
@@ -419,7 +419,7 @@ All commands support the global options `--json`, `--profile`, `--server`, and `
 | `search [query]` | Full-text, tag, and time search; `--notebook` narrows it. |
 | `write <note>` | Replace content or create the note; `--from`, `--content`, `--parents`, `--if-content-hash`. |
 | `edit <note>` | One precise edit with preconditions and `--dry-run`. |
-| `preview <note>` | Validate query and TOC blocks of the saved page or a draft. |
+| `preview <note>` | Validate query, TOC and chart blocks of the saved page or a draft. |
 | `mv <note> [target] [--before <note> \| --after <note> \| --first \| --last \| --position <n>]` | Move, rename, or order (position is 0-based). |
 | `cp <note> <notebook>[:<path>]` | Copy into another notebook. |
 | `rm <note>` | Delete with children; confirmation or `--yes`. |

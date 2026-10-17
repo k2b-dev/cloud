@@ -20,6 +20,7 @@ import {
   emitWorkflowEvent,
   listWorkflowRunSteps,
   requestWorkflowRunCancel,
+  WorkflowEventTooLargeError,
   type WorkflowStepSummary,
 } from "@k2b/cloud/workflows/store";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
@@ -821,29 +822,34 @@ const startFromEvent = async (
   tx: SqlClient,
 ): Promise<Result<{ runId: string; created: boolean }>> => {
   const locale = typeof input.context.locale === "string" ? input.context.locale : undefined;
-  const emission = await emitWorkflowEvent(
-    {
-      appId: GRIDS_APP_ID,
-      scopeId,
-      type: input.eventType,
-      data: input.inputs,
-      context: input.context,
-      authorization: snapshot as unknown as WorkflowJsonValue,
-      // Scoped to the workflow and the key the caller chose: two workflows in a
-      // base may legitimately be asked to run under the same caller-side key.
-      dedupeKey: `${input.workflow.id}:${input.idempotencyKey}`,
-      targetWorkflowId: input.workflow.id,
-      occurredAt,
-    },
-    { dispatch: "now", db: tx },
-  );
-  const runId = emission.runIds[0];
-  if (!runId) {
-    // No activation matched. A workflow is always listening for a direct
-    // invocation, so this means it was disabled between the check and here.
-    return fail(err.badInput(workflowServiceText(locale).workflowNotAcceptingRuns));
+  try {
+    const emission = await emitWorkflowEvent(
+      {
+        appId: GRIDS_APP_ID,
+        scopeId,
+        type: input.eventType,
+        data: input.inputs,
+        context: input.context,
+        authorization: snapshot as unknown as WorkflowJsonValue,
+        // Scoped to the workflow and the key the caller chose: two workflows in a
+        // base may legitimately be asked to run under the same caller-side key.
+        dedupeKey: `${input.workflow.id}:${input.idempotencyKey}`,
+        targetWorkflowId: input.workflow.id,
+        occurredAt,
+      },
+      { dispatch: "now", db: tx },
+    );
+    const runId = emission.runIds[0];
+    if (!runId) {
+      // No activation matched. A workflow is always listening for a direct
+      // invocation, so this means it was disabled between the check and here.
+      return fail(err.badInput(workflowServiceText(locale).workflowNotAcceptingRuns));
+    }
+    return ok({ runId, created: !emission.duplicate });
+  } catch (error) {
+    if (error instanceof WorkflowEventTooLargeError) return fail(err.badInput(workflowServiceText(locale).workflowInputTooLarge));
+    throw error;
   }
-  return ok({ runId, created: !emission.duplicate });
 };
 
 const startDryRun = async (
