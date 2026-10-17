@@ -80,6 +80,10 @@ const catalog = i18n.define({
       unassignBatchReview: ({ count }: { count: number }) =>
         `Remove the assignee from ${count} ${count === 1 ? "conversation" : "conversations"}.`,
       conversations: "Conversations",
+      statusBatchReview: ({ count, done }: { count: number; done: boolean }) =>
+        done ? `Mark ${count} conversation(s) done.` : `Reopen ${count} conversation(s).`,
+      statusBatchSummary: ({ count, missing, done }: { count: number; missing: number; done: boolean }) =>
+        `${done ? `Marked ${count} conversation(s) done.` : `Reopened ${count} conversation(s).`}${missing > 0 ? ` ${missing} not found.` : ""}`,
       moreConversations: ({ count }: { count: number }) => `${count} more`,
       statusReview: ({ subject, done }: { subject: string; done: boolean }) =>
         `${done ? "Mark" : "Reopen"} ${subject}${done ? " done" : ""}.`,
@@ -285,6 +289,10 @@ const catalog = i18n.define({
       assignBatchReview: ({ count, assignee }) => `${count} ${count === 1 ? "Unterhaltung" : "Unterhaltungen"} ${assignee} zuweisen.`,
       unassignBatchReview: ({ count }) => `Zuweisung von ${count} ${count === 1 ? "Unterhaltung" : "Unterhaltungen"} entfernen.`,
       conversations: "Unterhaltungen",
+      statusBatchReview: ({ count, done }) =>
+        done ? `${count} Unterhaltung(en) als erledigt markieren.` : `${count} Unterhaltung(en) wieder öffnen.`,
+      statusBatchSummary: ({ count, missing, done }) =>
+        `${done ? `${count} Unterhaltung(en) als erledigt markiert.` : `${count} Unterhaltung(en) wieder geöffnet.`}${missing > 0 ? ` ${missing} nicht gefunden.` : ""}`,
       moreConversations: ({ count }) => `${count} weitere`,
       statusReview: ({ subject, done }) => `${subject} als ${done ? "erledigt" : "offen"} markieren.`,
       keepReview: ({ subject }) => `„${subject}“ und spätere Antworten aufbewahren. Cloud schützt sie vor dem Löschen.`,

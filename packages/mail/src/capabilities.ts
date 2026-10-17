@@ -3338,6 +3338,65 @@ const actionDefinitions = {
       );
     },
   },
+  "conversation.status.update.batch": {
+    title: "Update the status of conversations",
+    description: "Mark up to 50 conversations of one mailbox done or reopen them. Reports ok or not_found for each conversation.",
+    input: c.ConversationStatusUpdateBatchInputSchema,
+    data: c.ConversationStatusUpdateBatchDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "none",
+    approval: "rememberable",
+    review: async (input: z.output<typeof c.ConversationStatusUpdateBatchInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
+      const scope = await resolveMailboxScope(input.mailboxId);
+      if (!scope.ok) return scope;
+      const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "write");
+      if (!access.ok) return access;
+      const shown = input.conversationIds.slice(0, 3);
+      const subjects = (
+        await Promise.all(shown.map((conversationId) => requireConversationForReview(input.mailboxId, conversationId, context)))
+      ).flatMap((conversation) => (conversation.ok ? [conversation.data.subject] : []));
+      const hidden = input.conversationIds.length - shown.length;
+      return ok({
+        message: t.statusBatchReview({ count: input.conversationIds.length, done: input.status === "done" }),
+        details: [
+          {
+            label: t.conversations,
+            value: i18n.formatList(hidden > 0 ? [...subjects, t.moreConversations({ count: hidden })] : subjects, context.locale),
+          },
+          { label: t.status, value: input.status === "done" ? t.done : t.open },
+        ],
+        approvalScope: mailboxApprovalScope(input.mailboxId),
+      });
+    },
+    run: async (input: z.output<typeof c.ConversationStatusUpdateBatchInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
+      const scope = await resolveMailboxScope(input.mailboxId);
+      if (!scope.ok) return scope;
+      return mapResult(
+        await collaboration.applyConversationCompletions({
+          context: requestContext(context),
+          mailboxId: scope.data.id,
+          conversationIds: input.conversationIds,
+          completion: input.status,
+        }),
+        (result) => result,
+        (result) => {
+          const count = result.results.filter((item) => item.status === "ok").length;
+          return {
+            refs: result.results
+              .filter((item) => item.status === "ok")
+              .map((item) => conversationRef(item.conversationId, undefined, undefined, context.locale)),
+            links: [openLink(mailboxHref(input.mailboxId))],
+            summary: capabilitySummary(
+              t.statusBatchSummary({ count, missing: result.results.length - count, done: input.status === "done" }),
+            ),
+          };
+        },
+      );
+    },
+  },
   "conversation.status.update": {
     title: "Update conversation status",
     description: "Mark one conversation done or reopen it.",
