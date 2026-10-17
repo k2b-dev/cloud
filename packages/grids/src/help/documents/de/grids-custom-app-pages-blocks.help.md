@@ -71,7 +71,7 @@ Kennzahlen verwenden normalerweise das Zahlenformat der ausgewählten Felder. F�
 - Kennzahlen akzeptiert eine nicht gruppierte Aggregatabfrage und zeigt bis zu 12 benannte skalare Ergebnisse.
 - Diagramm akzeptiert eine gruppierte Aggregatabfrage und zeigt ein Ring-, Balken- oder Liniendiagramm mit mindestens einer Reihe von Aggregatwerten. Ein Diagrammblock zeigt über sein `limit` höchstens 100 Gruppen.
 
-Balken- und Liniendiagramme zeigen die optionalen Beschriftungen der X- und Y-Achse. Ringdiagramme ignorieren sie. Kategorienamen und Achsenbeschriftungen, die neben oder unter dem Diagramm keinen Platz finden, werden gekürzt. Zeige mit der Maus darauf, um sie vollständig zu sehen. Bei mehr als 12 Gruppen zeigt das Diagramm höchstens 12 gleichmäßig verteilte Namen.
+Balken- und Liniendiagramme zeigen die optionalen Beschriftungen der X- und Y-Achse. Ringdiagramme ignorieren sie. Kategorienamen und Achsenbeschriftungen, die neben oder unter dem Diagramm keinen Platz finden, werden gekürzt. Zeige mit der Maus darauf, um sie vollständig zu sehen. Bei mehr als 12 Gruppen zeigt das Diagramm höchstens 12 gleichmäßig verteilte Namen. Wenn du mit der Maus auf einen Balken, Punkt oder Ringabschnitt zeigst, ihn mit der Tastatur fokussierst oder antippst, siehst du die Kategorie, den formatierten Wert und bei Ringdiagrammen den Anteil.
 
 Die veröffentlichte Capability hält die genauen Tabellen und Felder hinter dem Block fest. Personen, die die App verwenden, brauchen keinen Zugriff auf die Base. Die Laufzeit kann keine Quellen außerhalb dieser unveränderlichen Capability abfragen. Veröffentliche erneut, nachdem du die Quelle einer gespeicherten Ansicht geändert hast.
 

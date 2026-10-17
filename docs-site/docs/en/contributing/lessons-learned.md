@@ -65,8 +65,16 @@ convention still needs a check or a test.
 | Nested surface | A view fills its work area but draws its own rounded border, making a second card inside the app card, as in the Notebooks graph and attachments empty state. | Check: `workspace-surfaces` detects full-area framed elements, filling `Paper` elements, and paper panel placeholders. Convention: [UI-22](/en/docs/conventions/frontend#visual-ui-ui) and [Workspace surface hierarchy](/en/ui/layout/workspace) keep full-area views on Main's surface. |
 | Theme in print | The screen theme reaches paper: dark-theme text and surfaces print on white paper, or print rules show what the screen hides on purpose. | Test: the Mail printing browser test in `MailConversationList.browser.test.ts` prints a dark and a light conversation through Print conversation in Chromium and WebKit. It checks contrast against the printed surface, the sender rows, and the single quote label ([#1175](https://github.com/k2b-dev/cloud/issues/1175)). No shared guard yet: native printing still prints the dark theme on every other page ([#1274](https://github.com/k2b-dev/cloud/issues/1274)). |
 | Preference change escapes its audit transaction | A remembered approval changes without audit evidence, or global SQL inside a transaction callback commits the change despite an audit failure. | Test: `packages/cloud/src/ai/approvals.integration.test.ts` checks exact event metadata, no-op revocations, and rollback of remember, replacement, revoke, forget, and system changes when audit insertion fails. |
+| Inert server-rendered interaction | Interactive markup is rendered without an island, or browser inspection receives drawing labels instead of display labels. | Tests: Grids `page.render.test.tsx` checks display-only chart islands and SVG parity; `chart-tooltip.test.ts` checks named, formatted tooltips; `chart-tooltips.browser.test.ts` checks inspection and layout across mounting. |
 
 ## Lessons
+
+### Server-rendered charts need an island for inspection
+
+- **What happened:** Grids Custom App charts displayed their plots but offered no hover, keyboard, or tap inspection on published pages. The builder preview also lost category names in tooltips.
+- **Root cause:** The page rendered the chart outside an island. The plot deliberately suppressed category labels inside SVG, so default tooltips could not recover those names or the block's value format.
+- **Error class:** Inert server-rendered interaction.
+- **Guard:** Grids `chart-tooltip.test.ts` checks category and aggregation labels and value formatting. `page.render.test.tsx` checks the chart island, SVG parity, and display-only serialized props for signed-in and anonymous pages. `chart-tooltips.browser.test.ts` covers real island mounting, hover, keyboard, tap, and server/browser layout parity at desktop and phone widths.
 
 ### release-please skipped the Cloud release 0.44.0
 
