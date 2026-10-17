@@ -44,6 +44,21 @@ export type AvatarStackProps = {
 };
 
 const PersonRows = (props: { people: readonly AvatarStackPerson[]; choose: (person: AvatarStackPerson) => void }): JSX.Element => {
+  let list!: HTMLUListElement;
+  /**
+   * A focused row that stops being a button (the person can no longer be chosen) or leaves hands focus to the nearest
+   * row that still is one, else to the list, so focus never drops out of the open list.
+   */
+  const keepFocus = (button: HTMLButtonElement) => {
+    if (!button.contains(document.activeElement)) return;
+    const buttons = Array.from(list.querySelectorAll<HTMLButtonElement>("button.k2b-avatar-stack__row"));
+    const index = buttons.indexOf(button);
+    const candidates = [...buttons.slice(index + 1), ...buttons.slice(0, Math.max(0, index)).reverse()];
+    queueMicrotask(() => {
+      if (!list.isConnected) return;
+      (candidates.find((candidate) => candidate.isConnected) ?? list).focus();
+    });
+  };
   const others = () => props.people.filter((person) => !person.self);
   const selves = () => props.people.filter((person) => person.self);
   // A row reads its person through an accessor, so a live update changes the row in place and a focused row keeps focus.
@@ -73,9 +88,15 @@ const PersonRows = (props: { people: readonly AvatarStackPerson[]; choose: (pers
     return (
       <li data-self={person().self ? "true" : undefined}>
         <Show when={Boolean(person().onSelect)} fallback={<div class="k2b-avatar-stack__row">{content}</div>}>
-          <button type="button" class="k2b-avatar-stack__row" onClick={() => props.choose(person())}>
-            {content}
-          </button>
+          {(() => {
+            let button!: HTMLButtonElement;
+            onCleanup(() => keepFocus(button));
+            return (
+              <button ref={button} type="button" class="k2b-avatar-stack__row" onClick={() => props.choose(person())}>
+                {content}
+              </button>
+            );
+          })()}
         </Show>
       </li>
     );
@@ -85,7 +106,7 @@ const PersonRows = (props: { people: readonly AvatarStackPerson[]; choose: (pers
   const byId = createMemo(() => new Map(props.people.map((person) => [person.id, person])));
   const keyed = (id: string) => row(() => byId().get(id) ?? { id, name: "" });
   return (
-    <ul class="k2b-avatar-stack__rows">
+    <ul ref={list} class="k2b-avatar-stack__rows" tabIndex={-1}>
       <For each={others().map((person) => person.id)}>{keyed}</For>
       <For each={selves().map((person) => person.id)}>{keyed}</For>
     </ul>

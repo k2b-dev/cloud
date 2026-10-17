@@ -494,9 +494,8 @@ function DropdownTrigger(props: DropdownTriggerProps): JSX.Element {
 function DropdownRoot(props: DropdownProps): JSX.Element {
   const messages = useUiMessages();
   const locale = useLocale();
-  let sheetOpen = false;
-  /** Closes an open phone sheet when the menu goes, so no sheet outlives its owner. */
-  const disposed = new AbortController();
+  /** The open phone sheet's cancel switch: it closes when the menu goes or is disabled, as the popover does. */
+  let sheet: AbortController | undefined;
   const id = createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-");
   const menuId = `k2b-dropdown-${id}`;
   const [internalOpen, setInternalOpen] = createSignal(false);
@@ -571,8 +570,9 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
       return;
     }
     if (next && props.phone === "sheet" && prefersMenuSheet()) {
-      if (sheetOpen) return;
-      sheetOpen = true;
+      if (sheet) return;
+      const current = new AbortController();
+      sheet = current;
       // The sheet is this menu's open state: the trigger reports it and the owner hears both ends.
       setInternalOpen(true);
       props.onOpenChange?.(true);
@@ -580,9 +580,9 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
         items: props.items,
         label: props.label ?? messages().dropdownMenu,
         locale: locale(),
-        signal: disposed.signal,
+        signal: current.signal,
       }).finally(() => {
-        sheetOpen = false;
+        sheet = undefined;
         setInternalOpen(false);
         props.onOpenChange?.(false);
         props.onClose?.();
@@ -641,14 +641,16 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     if (!controlled && menuRef.matches(":popover-open")) close(false);
   });
   createEffect(() => {
-    if (mounted && props.disabled) close(false);
+    if (!props.disabled) return;
+    sheet?.abort();
+    if (mounted) close(false);
   });
   onMount(() => {
     mounted = true;
     if (props.open) open(false);
     onCleanup(detachViewportListeners);
   });
-  onCleanup(() => disposed.abort());
+  onCleanup(() => sheet?.abort());
 
   return (
     <DropdownContext.Provider value={context}>
