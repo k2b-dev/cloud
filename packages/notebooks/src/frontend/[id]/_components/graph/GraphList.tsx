@@ -57,7 +57,8 @@ export default function GraphList(props: Props) {
     { id: "area", header: t().graphColumnArea, class: "max-md:hidden" },
     { id: "out", header: t().graphLinksTo },
     { id: "in", header: t().graphLinkedFrom },
-    { id: "changed", header: t().graphColumnChanged, sortable: true, class: "max-md:hidden", nowrap: true },
+    // Phones hide Changed like the prototype, unless the address sorts by it: then the order stays explained.
+    { id: "changed", header: t().graphColumnChanged, sortable: true, class: props.sort ? undefined : "max-md:hidden", nowrap: true },
   ];
   return (
     <div class="notebook-graph__list">

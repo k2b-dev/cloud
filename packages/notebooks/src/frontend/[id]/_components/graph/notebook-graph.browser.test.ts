@@ -1458,6 +1458,60 @@ test(`${browserName}: Timeline renders every row and link at 300 notes`, async (
   }
 }, 30_000);
 
+test(`${browserName}: Timeline returns to the scrolled rows after opening a note and Back, and after a reload`, async () => {
+  const page = await open(graphPath("big001", "&display=timeline"));
+  const model = buildGraphModel(bigGraph(), "en");
+  const scrollTop = () => page.locator(".notebook-graph__timeline").evaluate((element) => element.scrollTop);
+  try {
+    await timelineReady(page, model.edges.length);
+    const opened = await page.locator(".notebook-graph__timeline").evaluate((element) => {
+      element.scrollTop = element.scrollHeight / 2;
+      const top = element.getBoundingClientRect().top;
+      return [...element.querySelectorAll<HTMLElement>("[data-row]")].find((row) => row.getBoundingClientRect().top > top + 40)!.dataset
+        .row!;
+    });
+    const scrolled = await scrollTop();
+    expect(scrolled).toBeGreaterThan(1000);
+    await page.locator(`[data-row="${opened}"]`).click();
+    await page.waitForURL(`**/app/notebooks/big001/notes/${opened}?mode=book`);
+    await page.goBack();
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
+    await timelineReady(page, model.edges.length);
+    expect(Math.abs((await scrollTop()) - scrolled)).toBeLessThanOrEqual(1);
+    await page.locator(".notebook-graph__timeline").evaluate((element) => {
+      element.scrollTop = 400;
+    });
+    // The position is saved once scrolling pauses.
+    await page.waitForFunction(() => history.state?.notebookGraphTimelineScroll === 400);
+    await page.reload();
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
+    await timelineReady(page, model.edges.length);
+    expect(Math.abs((await scrollTop()) - 400)).toBeLessThanOrEqual(1);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: a list sorted by Changed shows the Changed column on a phone, without horizontal overflow`, async () => {
+  const page = await open(graphPath("hand01", "&list=1&sort=changed"), { width: 390, height: 844 });
+  try {
+    const changed = page.getByRole("columnheader", { name: "Changed", exact: true });
+    expect(await changed.isVisible()).toBe(true);
+    expect(await changed.getAttribute("aria-sort")).toBe("descending");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+    const overflow = await page.locator(".notebook-graph__list").evaluate((element) => {
+      const table = element.querySelector("table")!.getBoundingClientRect();
+      return table.right - element.getBoundingClientRect().right;
+    });
+    expect(overflow).toBeLessThanOrEqual(0);
+    await changed.getByRole("button").click();
+    expect(search(page).get("sort")).toBe("changed-asc");
+    expect(await changed.getAttribute("aria-sort")).toBe("ascending");
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
 test(`${browserName}: Changed sorts the list through the URL and survives reload and Back`, async () => {
   const page = await open(graphPath("hand01", "&list=1"));
   const ids = () =>

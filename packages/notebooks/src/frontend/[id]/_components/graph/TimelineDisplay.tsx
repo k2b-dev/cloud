@@ -11,6 +11,10 @@ type Props = Omit<GraphDisplayProps, "displayName" | "filterKey"> & {
   noteHref: (id: string) => string;
 };
 type Geometry = { dotX: number; height: number; centres: ReadonlyMap<string, number> };
+/** The scroll position kept in the history entry, so Back and reload return to the same rows. */
+const SCROLL_KEY = "notebookGraphTimelineScroll";
+const SCROLL_SAVE_DELAY_MS = 150;
+const historyState = (): Record<string, unknown> => (typeof history.state === "object" && history.state !== null ? history.state : {});
 
 /** Rows own their geometry in CSS; only the decorative links need browser measurements. */
 export default function TimelineDisplay(props: Props) {
@@ -59,14 +63,31 @@ export default function TimelineDisplay(props: Props) {
       centres: new Map(rows.map((element) => [element.dataset.row!, element.offsetTop + element.offsetHeight / 2])),
     });
   };
+  let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+  const saveScroll = () => {
+    clearTimeout(scrollTimer);
+    try {
+      history.replaceState({ ...historyState(), [SCROLL_KEY]: scroller.scrollTop }, "");
+    } catch {
+      // Browsers limit history writes; the next scroll pause saves the position again.
+    }
+  };
+  // Saved after each scroll pause, which stays well inside the browsers' history write limits.
+  const onScroll = () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(saveScroll, SCROLL_SAVE_DELAY_MS);
+  };
   let mounted = false;
   onMount(() => {
     mounted = true;
     props.controls(null);
     measure();
     if (props.claimFocus() && tabTarget()) focusRow(tabTarget()!);
+    const saved = historyState()[SCROLL_KEY];
     const current = props.currentId ? row(props.currentId) : null;
-    if (current) scroller.scrollTop = Math.max(0, current.offsetTop + current.offsetHeight / 2 - scroller.clientHeight / 3);
+    if (typeof saved === "number") scroller.scrollTop = saved;
+    else if (current) scroller.scrollTop = Math.max(0, current.offsetTop + current.offsetHeight / 2 - scroller.clientHeight / 3);
+    scroller.addEventListener("scroll", onScroll, { passive: true });
     const observer = new ResizeObserver(measure);
     observer.observe(wrap);
     props.focusRequest((id) => {
@@ -77,6 +98,8 @@ export default function TimelineDisplay(props: Props) {
     onCleanup(() => {
       mounted = false;
       observer.disconnect();
+      clearTimeout(scrollTimer);
+      scroller.removeEventListener("scroll", onScroll);
     });
   });
   createEffect(() => {
@@ -197,6 +220,7 @@ export default function TimelineDisplay(props: Props) {
                     onClick={(event) => {
                       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                       event.preventDefault();
+                      saveScroll();
                       props.onOpen(note.id);
                     }}
                   >
