@@ -14,6 +14,7 @@ import { type ChartTooltip, inspectChart } from "@k2b/ui/chart-inspection";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { notebookChartTableHtml } from "../../lib/chart-blocks";
+import { chartTableText } from "./chart-copy";
 
 export const notebookChartMessages = i18n.define({
   baseLocale: "en",
@@ -60,17 +61,6 @@ const draw = (input: CloudAiChartInput, locale: string): Drawn => {
   return { tooltips: new Map(snapshot.marks.map((mark) => [mark.key, mark.tooltip])), table: rows.table() };
 };
 
-// Spreadsheets run text that starts like a formula; numbers stay numbers.
-const tsvCell = (value: string, numeric: boolean) => {
-  const safe = !numeric && /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return /[\t\r\n"]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
-};
-const tableText = (table: CloudAiChartTable) =>
-  [
-    table.columns.map((column) => tsvCell(column.label, false)).join("\t"),
-    ...table.rows.map((row) => table.columns.map((column) => tsvCell(row.cells[column.id] ?? "", column.numeric)).join("\t")),
-  ].join("\n");
-
 function ChartControls(props: { figure: HTMLElement; viewport: HTMLElement; drawn: () => Drawn; locale: string; onView: () => void }) {
   const t = () => notebookChartMessages.resolve([props.locale]).t;
   const [table, setTable] = createSignal(false);
@@ -101,7 +91,7 @@ function ChartControls(props: { figure: HTMLElement; viewport: HTMLElement; draw
   return (
     <LocaleProvider locale={props.locale}>
       <CopyButton
-        text={tableText(props.drawn().table)}
+        text={chartTableText(props.drawn().table)}
         label={t().copyData}
         iconOnly
         size="sm"
