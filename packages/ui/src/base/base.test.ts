@@ -74,6 +74,7 @@ describe("@k2b/ui base stylesheet", () => {
       '@media print input[type="file"]',
       "@media print nav",
       "@media print dialog",
+      "@media print .k2b-chart__table[hidden]",
     ]);
   });
 

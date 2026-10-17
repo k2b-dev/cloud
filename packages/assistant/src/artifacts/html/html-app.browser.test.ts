@@ -664,12 +664,21 @@ document.addEventListener('securitypolicyviolation', () => { document.querySelec
       const chart = app(page).locator(".k2b-chart");
       const bar = chart.locator(".stdlib-chart-bar").first();
       const tooltip = chart.locator(".k2b-chart__tooltip");
+      const table = app(page).locator(".k2b-chart__table");
+      const hiddenTable = async () => {
+        expect(await table.count()).toBe(await chart.count());
+        expect(await app(page).locator(".k2b-chart + .k2b-chart__table").count()).toBe(await chart.count());
+        expect(await chart.locator("table").count()).toBe(0);
+        expect(await table.evaluate((element) => getComputedStyle(element).display)).toBe("none");
+        expect(await table.boundingBox()).toBeNull();
+      };
       const open = () => tooltip.evaluate((element) => element.matches(":popover-open"));
       const title = () => tooltip.locator(".k2b-chart__tooltip-title").textContent();
       const inspect = () => (hasTouch ? bar.tap() : bar.hover());
       const width = () =>
         chart.locator(".k2b-chart__svg").evaluate((element: HTMLElement) => element.style.getPropertyValue("--k2b-chart-width"));
       expect(await eventually(width, (value) => value !== "480px")).not.toBe("480px");
+      await hiddenTable();
       expect(await chart.getAttribute("role")).toBe("group");
       expect(await chart.getAttribute("aria-label")).toBe("Umsatz");
       expect(await chart.getAttribute("aria-description")).toBe(
@@ -679,6 +688,7 @@ document.addEventListener('securitypolicyviolation', () => { document.querySelec
       expect(await eventually(open, Boolean)).toBe(true);
       expect(await title()).toBe("Jan");
       expect(await tooltip.locator(".k2b-chart__tooltip-row").textContent()).toBe("Umsatz: 1.200,00\u00a0€");
+      const tooltipValue = await tooltip.locator(".k2b-chart__tooltip-row b").textContent();
       const clicks = Number(await text(page, "#clicks"));
       const documentClicks = Number(await text(page, "#document-clicks"));
       if (hasTouch) await bar.tap();
@@ -708,6 +718,7 @@ document.addEventListener('securitypolicyviolation', () => { document.querySelec
         frame.style.width = "720px";
       });
       expect(await eventually(width, (value) => value !== previousWidth)).not.toBe(previousWidth);
+      await hiddenTable();
       await app(page).locator("#outside").focus();
       await inspect();
       expect(await eventually(open, Boolean)).toBe(true);
@@ -747,6 +758,16 @@ document.addEventListener('securitypolicyviolation', () => { document.querySelec
       expect(await title()).toBe("Jan");
       expect(await chart.locator(":scope > .k2b-chart__tooltip").count()).toBe(1);
       expect(await chart.locator(".k2b-chart__svg .k2b-chart__tooltip").count()).toBe(0);
+      await hiddenTable();
+      await page.emulateMedia({ media: "print" });
+      try {
+        expect(await table.evaluate((element) => getComputedStyle(element).display)).toBe("table");
+        expect(await table.locator("caption").textContent()).toBe("Umsatz");
+        expect(await table.locator("tbody tr").first().locator("td.num").textContent()).toBe(tooltipValue);
+        expect(await tooltip.isVisible()).toBe(false);
+      } finally {
+        await page.emulateMedia({ media: null });
+      }
       expect(await text(page, "#violations")).toBe("0");
       expect(
         (await events(page)).filter(

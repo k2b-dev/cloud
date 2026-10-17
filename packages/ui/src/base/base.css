@@ -6,7 +6,7 @@
    Every rule and token sits in `@layer k2b-base`, so any unlayered rule of
    the page wins without a specificity fight. Four state rules are
    `!important` on purpose and stay in force: `[hidden]`, the hidden label of
-   a busy button, reduced motion, and what print hides.
+   a busy button, reduced motion, and what print hides or shows.
    `<html data-theme="dark">` switches the theme; the default is light. The
    tokens carry the same names and values as the `.k2b-ui` scope (a parity
    test keeps them equal).
@@ -890,7 +890,10 @@
      tokens below. Cartesian geometry (`data-stretch`, with
      `preserveAspectRatio="none"` on the SVG and a `transform-origin` at each
      text's x and y) fills the width; text and markers keep their pixel size.
-     These rules mirror the `.k2b-chart` rules of styles.css. */
+     These rules mirror the `.k2b-chart` rules of styles.css. A
+     `<table class="k2b-chart__table" hidden>` right after `.k2b-chart` holds
+     the chart's values: `[hidden]` keeps it off the screen and out of the
+     accessibility tree, and print shows it (see print). */
   .k2b-chart {
     position: relative;
     display: block;
@@ -1217,6 +1220,23 @@
 
     .k2b-chart__svg {
       max-height: none;
+    }
+
+    /* The value table that chart markup carries as a `hidden` sibling of
+       `.k2b-chart`: paper shows it below the chart. A long table breaks
+       between rows and repeats its header row on every page. */
+    .k2b-chart__table[hidden] {
+      display: table !important;
+      break-inside: auto;
+    }
+
+    .k2b-chart__table tr {
+      break-inside: avoid;
+    }
+
+    /* Denser rows than an app table: a value list for reference on paper. */
+    .k2b-chart__table :is(th, td) {
+      padding-block: 0.25rem;
     }
   }
 }
