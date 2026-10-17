@@ -12,6 +12,7 @@ test("one error mapping preserves messages and covers transport codes", () => {
     ["INVALID_INPUT", "invalid"],
     ["HTTP_CONFLICT", "conflict"],
     ["DB_UNREACHABLE", "unavailable"],
+    ["DB_TARGET_BLOCKED", "unavailable"],
     ["DB_CANCELLED", "cancelled"],
   ]) {
     const error = cloudError({ code, message: "Please try a smaller batch." });

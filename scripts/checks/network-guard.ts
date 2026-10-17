@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { packageIds } from "../workspace";
 import { isTestFile, listFiles, sourceFilePattern } from "./files";
@@ -28,30 +28,59 @@ const httpImport = /from\s*["'](?:node:)?https?["']/;
 const pinnedCall = /\bpinnedNetworkLookup\(/g;
 const pinnedAlias = /\bpinnedNetworkLookup\s+as\b/g;
 const directAgent = /\bagent:\s*false\b/;
-const guardImport = /from\s*["']@k2b\/cloud\/services\/network-security["']|from\s*["'][./]+network-security["']/;
-const personChosenServerRoots = ["packages/pulse/src/", "packages/notebooks/src/"];
-const isPersonChosenServer = (path: string) =>
-  personChosenServerRoots.some((root) => path.startsWith(root)) &&
+const guardImport = /from\s*["'](?:@k2b\/cloud\/services\/network-security|\.[^"']*\/network-security)["']/;
+const mailGuardImport = /from\s*["'](?:@k2b\/cloud\/services\/outgoing-mail\/resolve-host|\.[^"']*\/resolve-host)["']/;
+const resolvingMailClient = /\bnew\s+ImapFlow\s*\(|\bcreateTransport\s*\(|\bnew\s+SMTPConnection\s*\(/g;
+export const guardedServerRoots = [
+  "packages/pulse/src/",
+  "packages/notebooks/src/",
+  "packages/gateway-ops/src/health-webhooks.ts",
+  "packages/cloud/src/server/services/geo.ts",
+  "packages/assistant/src/artifacts/database.ts",
+  // The shared transport behind the HTTP endpoints above: node:http there must keep its pinned lookup.
+  "packages/cloud/src/services/allowed-network-fetch.ts",
+];
+const isGuardedServer = (path: string) =>
+  guardedServerRoots.some((root) => (root.endsWith("/") ? path.startsWith(root) : path === root)) &&
   !path.includes("/frontend/") &&
   !path.endsWith(".tsx") &&
   !path.includes("/cli/");
 const globalFetch = /(?<![.\w])fetch\s*\(/g;
-const personChosenFetch = /(?<![.\w])(?:(?:Bun|globalThis|self)\.)?fetch\s*\(/g;
+const guardedFetch = /(?<![.\w])(?:(?:Bun|globalThis|self)\.)?fetch\s*\(/g;
 // Options of one request object stay within a few lines of each other.
 const SAME_REQUEST_LINES = 6;
 
 const lineOf = (source: string, index = 0) => source.slice(0, index).split("\n").length;
 
 /**
- * Person-chosen outbound requests resolve through `resolvePublicNetworkAddresses`
- * and connect through `pinnedNetworkLookup`. A second resolver in an app would
- * bring back its own address classifier and a gap between check and connect.
+ * Person- and administrator-chosen endpoints use the platform guard and pinned
+ * transports. Mail clients that resolve independently must import the guard or
+ * outgoing-mail resolver. Missing guarded paths fail rather than lose coverage.
  */
 export const rule: Rule = {
   name: "network-guard",
   description: "host names for outbound requests are resolved only by the platform network guard",
   run: async ({ workspaceRoot }) => {
     const findings: Finding[] = [];
+    for (const root of guardedServerRoots) {
+      if (!existsSync(join(workspaceRoot, root)))
+        findings.push({
+          file: join(workspaceRoot, root),
+          line: 1,
+          message: "Configured guarded path no longer exists; update network-guard coverage when moving it",
+        });
+    }
+    for (const file of listFiles(workspaceRoot, sourceFilePattern)) {
+      if (isTestFile(file)) continue;
+      const source = readFileSync(file, "utf8");
+      if (guardImport.test(source) || mailGuardImport.test(source)) continue;
+      for (const match of source.matchAll(resolvingMailClient))
+        findings.push({
+          file,
+          line: lineOf(source, match.index),
+          message: "Mail clients must import the platform network guard or outgoing-mail resolve-host and connect to checked addresses",
+        });
+    }
     const roots = packageIds(workspaceRoot).map((id) => join(workspaceRoot, "packages", id));
     for (const file of roots.flatMap((root) => listFiles(root, sourceFilePattern)).sort()) {
       const path = relative(workspaceRoot, file);
@@ -71,7 +100,7 @@ export const rule: Rule = {
       // node:http and node:https may send a request through an environment proxy, which resolves the name again.
       const httpMatch = source.match(httpImport);
       if (httpMatch) {
-        if (isPersonChosenServer(path) && !source.match(pinnedCall)) {
+        if (isGuardedServer(path) && !source.match(pinnedCall)) {
           findings.push({
             file,
             line: lineOf(source, httpMatch.index),
@@ -94,7 +123,7 @@ export const rule: Rule = {
       // presigning beside a pinned transport, with no SDK I/O methods in the file.
       // Any S3Client reference counts (aliased, destructured, namespace import), and so
       // do Bun's s3 client, s3:// files, and Bun.file with options.
-      if (isPersonChosenServer(path)) {
+      if (isGuardedServer(path)) {
         const s3 = /\bS3Client\b|\bBun\.s3\b|\bimport\s*\{[^}]*\bs3\b[^}]*\}\s*from\s*["']bun["']|s3:\/\/|\bBun\.file\s*\([^()]*,/g;
         const sdkIO = /\.(?:write|file|delete|exists|list|stat|size|unlink)\s*\(/;
         for (const match of source.matchAll(s3)) {
@@ -107,13 +136,13 @@ export const rule: Rule = {
         }
       }
       // fetch() resolves the name again after the check, so a checked host must not reach it.
-      if (guardImport.test(source) || isPersonChosenServer(path)) {
-        for (const match of source.matchAll(isPersonChosenServer(path) ? personChosenFetch : globalFetch)) {
+      if (guardImport.test(source) || isGuardedServer(path)) {
+        for (const match of source.matchAll(isGuardedServer(path) ? guardedFetch : globalFetch)) {
           findings.push({
             file,
             line: lineOf(source, match.index),
-            message: isPersonChosenServer(path)
-              ? "Server code requests person-chosen URLs; use a guarded transport (resolveAllowedNetworkAddresses + pinnedNetworkLookup), never fetch()"
+            message: isGuardedServer(path)
+              ? "Server code requests person- or administrator-chosen URLs; use a guarded transport (resolveAllowedNetworkAddresses + pinnedNetworkLookup), never fetch()"
               : "connect to checked addresses with requestPublicHttps or pinnedNetworkLookup; fetch() resolves the host again",
           });
         }

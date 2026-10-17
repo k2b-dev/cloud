@@ -1,6 +1,7 @@
 import { APP_REGISTRY_TTL_MS, listApps, watchAppRegistry } from "@k2b/cloud";
 import { logger, superviseRuntimeTask } from "@k2b/cloud/services";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
+import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
 /**
  * Core-specific lifecycle helpers.
  * Migrations, background jobs — nothing generic here.
@@ -125,6 +126,7 @@ export const startCoreServices = async (
   notificationSender: CoreNotificationSender,
   aiNotifications: ReturnType<typeof createAiNotificationService>,
 ): Promise<void> => {
+  outgoingMailAllowlist();
   try {
     await initializeIdentityAuthority();
     stopHelpMaintenance = startHelpMaintenance();

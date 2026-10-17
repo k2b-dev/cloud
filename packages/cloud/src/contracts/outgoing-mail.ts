@@ -96,7 +96,14 @@ export const MailErrorCodeSchema = z.enum([
   "smtp_failed",
 ]);
 export type MailErrorCode = z.infer<typeof MailErrorCodeSchema>;
-export const MailBounceErrorCodeSchema = z.enum(["open_failed", "search_failed", "apply_failed", "save_failed", "interrupted"]);
+export const MailBounceErrorCodeSchema = z.enum([
+  "open_failed",
+  "target_blocked",
+  "search_failed",
+  "apply_failed",
+  "save_failed",
+  "interrupted",
+]);
 export type MailBounceErrorCode = z.infer<typeof MailBounceErrorCodeSchema>;
 export const AdminMailProfileSchema = MailProfileInputSchema.omit({ smtpPassword: true, revision: true, imap: true }).extend({
   key: MailProfileKeySchema,

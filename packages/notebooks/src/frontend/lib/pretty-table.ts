@@ -1,8 +1,9 @@
 import {
-  type EvalContext,
   type EvalError,
+  type EvalResult,
   type EvalValue,
   evaluateFormula,
+  evaluateTableCell,
   formatValue,
   isFormula,
   isTotalRow,
@@ -23,6 +24,17 @@ export type PrettyTableData = {
   rows: string[][];
   align?: PrettyTableAlign[];
 };
+
+/** The table and its charts consume the same values, including formula failures. */
+export const evaluatePrettyTable = (data: PrettyTableData) =>
+  data.rows.map((row, currentRow) => ({
+    isTotalRow: isTotalRow(row),
+    cells: data.headers.map((_, currentCol) => {
+      const raw = row[currentCol] ?? "";
+      const ctx = { headers: data.headers, rows: data.rows, currentRow, currentCol };
+      return { raw, result: isFormula(raw) ? evaluateFormula(raw, ctx) : evaluateTableCell(currentRow, currentCol, ctx) };
+    }),
+  }));
 
 const TAG_RE = /(^|\s)#([a-zA-Z][\w-]*(?:\/[\w-]+)*)/g;
 const NOTE_LINK_RE = /\[([^\]]+)\]\((note:\/\/[0-9a-zA-Z]{6}(?:#[^)\s]*)?)\)/g;
@@ -148,7 +160,7 @@ export const formatFormulaError = (error: EvalError, locale?: string): string =>
 const renderBodyCell = (
   cell: string,
   alignCls: string,
-  ctx: EvalContext,
+  result: EvalResult,
   notebookId?: string,
   locale?: string,
   renderInline?: (raw: string) => string,
@@ -157,7 +169,6 @@ const renderBodyCell = (
     const content = renderInline ? (renderIsoDateTime(cell, locale) ?? renderInline(cell)) : renderInlineMarkdown(cell, notebookId, locale);
     return `<td><span class="md-table-cell${alignCls}">${content}</span></td>`;
   }
-  const result = evaluateFormula(cell, ctx);
   if (result.kind === "ok") {
     const progress = parseProgressValue(result.value);
     if (progress) return renderProgressCell(progress, alignCls, cell, locale ?? "en");
@@ -182,15 +193,14 @@ export const renderPrettyTableHtml = (
         `<th scope="col"><span class="md-table-cell${alignClass(align[i] ?? null)}">${options.renderInline?.(h) ?? escapeHtml(h)}</span></th>`,
     )
     .join("");
-  const bodyHtml = data.rows
-    .map((row, rowIdx) => {
-      const totalRow = isTotalRow(row);
+  const bodyHtml = evaluatePrettyTable(data)
+    .map((row) => {
+      const totalRow = row.isTotalRow;
       const cells = data.headers
         .map((_, colIdx) => {
-          const cell = row[colIdx] ?? "";
+          const cell = row.cells[colIdx]!;
           const alignCls = alignClass(align[colIdx] ?? null);
-          const ctx: EvalContext = { headers: data.headers, rows: data.rows, currentRow: rowIdx, currentCol: colIdx };
-          return renderBodyCell(cell, alignCls, ctx, options.notebookId, locale, options.renderInline);
+          return renderBodyCell(cell.raw, alignCls, cell.result, options.notebookId, locale, options.renderInline);
         })
         .join("");
       return totalRow ? `<tr class="md-table-total-row">${cells}</tr>` : `<tr>${cells}</tr>`;

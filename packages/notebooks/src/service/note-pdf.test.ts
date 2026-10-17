@@ -129,3 +129,15 @@ describe("note PDF HTML", () => {
     );
   });
 });
+
+test("note PDF includes the chart, data fallback and Cloud light palette", () => {
+  const html = build(":::chart\ntype: bar\ntitle: Sales\ncolumns: [Month, Revenue]\nrows:\n  - [Jan, 12]\nx: Month\ny: Revenue\n:::");
+  expect(html).toContain('<figure class="notebook-book-chart"');
+  expect(html).toContain("<svg");
+  expect(html).toContain('<table class="md-table">');
+  expect(html).toContain('<span class="md-align-right">12</span>');
+  expect(html).toContain(".notebook-book-chart .stdlib-chart");
+  expect(html).toContain("--stdlib-chart-c1:#14b8a6");
+  expect(html).toContain("--stdlib-chart-c8:#ef4444");
+  expect(html).toContain("aspect-ratio: 480 / 280");
+});

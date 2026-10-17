@@ -2,6 +2,7 @@ import { expect, setSystemTime, test } from "bun:test";
 import { evaluateFormula, markdown as sharedMarkdown } from "@k2b/cloud/shared";
 import { renderSafeMarkdown } from "@k2b/ui";
 import { renderNotebookBook } from "./lib/book-renderer";
+import { parseNotebookChartBlocks } from "./lib/chart-blocks";
 import { extractNamedDataProperties } from "./lib/named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "./lib/query-blocks";
 import { extractTags } from "./service/tags";
@@ -19,10 +20,12 @@ test("every Markdown example in the agent references renders as documented", asy
   expect(examples.length).toBeGreaterThan(10);
   for (const markdown of examples) {
     expect(parseNotebookQueryBlocks(markdown).diagnostics, markdown).toEqual([]);
+    expect(parseNotebookChartBlocks(markdown).diagnostics, markdown).toEqual([]);
     expect(parseNotebookTocBlocks(markdown).diagnostics, markdown).toEqual([]);
     expect(extractNamedDataProperties(markdown).diagnostics, markdown).toEqual([]);
     const { html } = renderNotebookBook({ markdown, notebookId: "Ab12Cd", locale: "en" });
     expect(html, markdown).not.toContain("md-formula-error");
+    if (markdown.includes(":::chart")) expect(html, markdown).toContain("<svg");
     expect(html.replace(/<pre>[\s\S]*?<\/pre>/g, ""), markdown).not.toContain(":::");
     const callouts = markdown.match(/^:::(?:note|info|success|warning|danger)(?:[ \t].*)?$/gm) ?? [];
     expect(html.match(/<aside /g)?.length ?? 0, markdown).toBe(callouts.length);

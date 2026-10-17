@@ -64,6 +64,7 @@ services:
     container_name: app-gateway-ops
     environment:
       <<: *env
+      GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS: ${GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS:-}
       APP_ID: gateway-ops
       NATS_ADMIN_SERVERS: nats://ipa_nats_1:4222
       NATS_ADMIN_NKEY_SEED_FILE: /run/secrets/nats-admin.seed
@@ -81,6 +82,7 @@ services:
     container_name: app-core
     environment:
       <<: *env
+      OUTGOING_MAIL_ALLOWED_TARGETS: ${OUTGOING_MAIL_ALLOWED_TARGETS:-}
       APP_ID: core
       ADMIN_LOGIN_TOKEN: dev-admin
       CLOUD_OAUTH_BROKER_SECRET: ${CLOUD_OAUTH_BROKER_SECRET:-abababababababababababababababababababababababababababababababab}
@@ -137,7 +139,11 @@ services:
       dockerfile: Dockerfile.dev
       args: { INSTALL_CHROMIUM: "true" }
     container_name: app-assistant
-    environment: { <<: *env, APP_ID: assistant, CLOUD_CLI_CHROMIUM: /usr/bin/chromium }
+    environment:
+      <<: *env
+      APP_ID: assistant
+      CLOUD_CLI_CHROMIUM: /usr/bin/chromium
+      ASSISTANT_RSQL_ALLOWED_TARGETS: ${ASSISTANT_RSQL_ALLOWED_TARGETS:-}
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
@@ -359,7 +365,10 @@ services:
   app-weather:
     <<: *app
     container_name: app-weather
-    environment: { <<: *env, APP_ID: weather }
+    environment:
+      <<: *env
+      APP_ID: weather
+      GEO_ALLOWED_TARGETS: ${GEO_ALLOWED_TARGETS:-}
     profiles: [extra]
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src

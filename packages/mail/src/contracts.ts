@@ -1979,6 +1979,43 @@ export const assignConversationsSchema = z
   .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one user");
 export type AssignConversations = z.infer<typeof assignConversationsSchema>;
 
+export const completeConversationsSchema = z
+  .object({
+    conversationIds: z
+      .array(ResourceShortIdSchema)
+      .min(1)
+      .max(MAIL_CONVERSATION_BATCH_LIMIT)
+      .refine((ids) => new Set(ids).size === ids.length, "Conversation ids must be unique")
+      .describe(`Up to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations of one mailbox.`),
+    completion: z.enum(["done", "open"]).describe("Mark the conversations done or reopen them."),
+  })
+  .strict();
+
+export const conversationCompletionResultSchema = z
+  .object({
+    completion: z.enum(["done", "open"]),
+    results: z.array(
+      z.discriminatedUnion("status", [
+        z
+          .object({
+            conversationId: ResourceShortIdSchema,
+            status: z.literal("ok"),
+            workStatus: conversationWorkStatusSchema,
+            revision: z.number().int().positive(),
+          })
+          .strict(),
+        z
+          .object({
+            conversationId: ResourceShortIdSchema,
+            status: z.literal("not_found").describe("The conversation is missing from this mailbox or not visible to the caller."),
+          })
+          .strict(),
+      ]),
+    ),
+  })
+  .strict();
+export type ConversationCompletionResult = z.infer<typeof conversationCompletionResultSchema>;
+
 export const updateConversationSummarySchema = z
   .object({
     expectedSummaryRevision: z.number().int().positive(),

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { notebooksPageMessages } from "../frontend/messages";
 import { renderNotebookBook } from "../lib/book-renderer";
+import { parseNotebookChartBlocks } from "../lib/chart-blocks";
 import { extractNamedDataProperties } from "../lib/named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../lib/query-blocks";
 import { notebookHelp } from ".";
@@ -99,12 +100,13 @@ describe("notebookHelp", () => {
     for (const locale of ["en", "de"]) {
       const markdown = notebookHelp.getMarkdown("notebooks-structured-blocks", locale)!;
       const examples = [...markdown.matchAll(/```text\n([\s\S]*?)```/g)].map((match) => match[1]!);
-      expect(examples).toHaveLength(3);
+      expect(examples).toHaveLength(5);
       for (const source of examples) {
         expect(extractNamedDataProperties(source).diagnostics).toEqual([]);
         const queries = parseNotebookQueryBlocks(source);
         expect(queries.diagnostics).toEqual([]);
         expect(parseNotebookTocBlocks(source).diagnostics).toEqual([]);
+        expect(parseNotebookChartBlocks(source).diagnostics).toEqual([]);
         const result = renderNotebookBook({
           markdown: source,
           notebookId: "ABC123",

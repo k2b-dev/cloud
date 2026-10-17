@@ -1374,8 +1374,8 @@ function notebooksCommands(locale?: string) {
       }),
       command("preview", {
         summary: t({
-          en: "Check query and TOC blocks without saving; diagnostics exit 1",
-          de: "Query- und TOC-Blöcke ohne Speichern prüfen; Diagnosen beenden mit 1",
+          en: "Check query, TOC and chart blocks without saving; diagnostics exit 1",
+          de: "Query-, TOC- und Diagrammblöcke ohne Speichern prüfen; Diagnosen beenden mit 1",
         }),
         args: noteArg,
         flags: inputFlags,

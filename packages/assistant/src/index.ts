@@ -5,7 +5,7 @@ import apiRoutes from "./api";
 import adminPages from "./artifacts/admin-page";
 import { agentHost } from "./artifacts/agent-host";
 import { codeToolRoutes } from "./artifacts/code-tool-routes";
-import { artifactDatabase } from "./artifacts/database";
+import { artifactDatabase, rsqlAllowlist } from "./artifacts/database";
 import { appChecks } from "./artifacts/html/check-service";
 import { httpService } from "./artifacts/http-service";
 import { migrateArtifacts } from "./artifacts/migrate";
@@ -45,6 +45,7 @@ const result = await app.start({
   lifecycle: {
     setup: migrateArtifacts,
     start: async () => {
+      rsqlAllowlist();
       hostTimer = setInterval(() => {
         hostSweep ??= agentHost
           .sweep()

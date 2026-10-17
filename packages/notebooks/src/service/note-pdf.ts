@@ -56,6 +56,17 @@ i.ti { display: none; }
 .notebook-book-image-label { font-style: italic; }
 .notebook-book-mermaid { margin: 0 0 1em; }
 .notebook-book-mermaid figcaption { margin-bottom: .3em; font-size: .85em; }
+.notebook-book-chart { margin: 0 0 1em; color: #0f172a; break-inside: avoid; }
+.notebook-book-chart__title { display: block; font-weight: 600; }
+.notebook-book-chart__subtitle { display: block; color: #475569; }
+.notebook-book-chart, .notebook-book-chart .stdlib-chart { --stdlib-chart-c1:#14b8a6; --stdlib-chart-c2:#f97316; --stdlib-chart-c3:#8b5cf6; --stdlib-chart-c4:#ec4899; --stdlib-chart-c5:#22c55e; --stdlib-chart-c6:#eab308; --stdlib-chart-c7:#06b6d4; --stdlib-chart-c8:#ef4444; }
+.notebook-book-chart .k2b-chart__svg { width:100%; aspect-ratio: 480 / 280; }
+/* A single number or a round chart needs no page width; a smaller box keeps the drawing's proportions. */
+.notebook-book-chart[data-kind="stat"] .k2b-chart__svg { max-width: 20em; }
+.notebook-book-chart:is([data-kind="pie"], [data-kind="donut"]) .k2b-chart__svg { max-width: 30em; }
+.notebook-book-chart svg { display: block; width: 100%; height: 100%; }
+.notebook-book-chart .k2b-chart-legend { display: flex; flex-wrap: wrap; gap: .4em 1em; padding: 0; list-style: none; color: #334155; }
+.notebook-book-chart .k2b-chart-legend__swatch { display: inline-block; width: .8em; height: .8em; margin-right: .3em; background: var(--k2b-chart-legend-color); }
 .md-align-right { display: block; text-align: right; }
 .md-align-center { display: block; text-align: center; }
 .md-table-total-row td { font-weight: 600; }

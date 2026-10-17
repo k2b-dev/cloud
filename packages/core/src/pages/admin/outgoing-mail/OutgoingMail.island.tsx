@@ -92,6 +92,7 @@ type BounceError = NonNullable<NonNullable<AdminMailProfile["bounces"]>["error"]
 const bounceReason = (error: BounceError, t: Messages): string =>
   ({
     open_failed: t.bounceOpenFailed,
+    target_blocked: t.bounceTargetBlocked,
     search_failed: t.bounceSearchFailed,
     apply_failed: t.bounceApplyFailed,
     save_failed: t.bounceSaveFailed,

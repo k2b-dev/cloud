@@ -101,6 +101,8 @@ cld mail assign <conversation-id> --to maria,me
 cld mail assign <conversation-id> --to maria --replace
 cld mail assign <conversation-id> --remove maria
 cld mail assign <conversation-id> --to none
+cld --json mail done <conversation-id> <second-conversation-id>
+cld mail reopen <conversation-id>
 cld --json mail archive <conversation-id> <second-conversation-id>
 cld --json mail mv <conversation-id> --to "Support:Projekte / 2025"
 cld --json mail read <conversation-id>
@@ -113,6 +115,7 @@ cld --json mail tag rm <conversation-id> --tag Priority
 ```
 
 - `assign --to` adds comma-separated user IDs, exact usernames from `conversation users`, or `me`. Add `--replace` to replace the complete set; `--remove` removes named users, and `--to none` clears all assignees. A conversation holds at most 20 assignees. The request needs no revision. Each newly added user gets one notification listing only the conversations they were added to; self-assignment, removals, and unchanged assignments send none. Eligibility or limit failures leave the entire batch unchanged.
+- `done` and `reopen` need no revision and take up to 50 IDs of one mailbox. Results are `{ "completion": "done" | "open", "results": [{ "conversationId", "status": "ok" | "not_found", ... }] }`; successful items include `workStatus` and `revision`. Missing IDs and IDs the caller cannot see report `not_found`. Partial results exit with status 1. Done covers messages Mail still loads; reopen derives Needs action or Waiting from the conversation.
 - `archive`, `mv`, `read`, `unread`, `flag`, `unflag`, and `rm` change the conversation's messages in one folder: the Inbox unless `--in <folder>` names another. `rm` moves them to the Trash and needs `--yes`. Each conversation becomes durable provider commands; pass `--wait` to wait for them.
 - `tag add` and `tag rm` take `--tag` once per tag. They change Cloud-local tags, not provider keywords.
 
@@ -128,6 +131,17 @@ A batch continues when one conversation fails and then exits with status 1. The 
 ```
 
 `assign` returns `{ "assignees": [...], "results": [{ "conversationId", "status": "ok" | "not_found" }] }`. The `assignees` array resolves the users named in the request, not the final set of each conversation. Read `conversation collaboration` to inspect that set. `tag add` returns `updatedConversationIds` and `unchangedConversationIds`; `tag rm` adds `failed`.
+
+Mark a page of Needs action conversations done in batches of 50. `mail use` selects the mailbox that `done` changes:
+
+```bash
+cld mail use <mailbox>
+cld --json mail ls <mailbox> --view needs_action --limit 100 | jq -r '.items[].id' | xargs -r -n 50 cld mail done
+```
+
+Done conversations leave the Needs action view, so re-running the pipeline
+continues with the next ones. For list pagination, pass `nextCursor` with
+`--cursor`.
 
 ## Keep conversations that must not be deleted
 
@@ -680,7 +694,7 @@ Use `cld mail <group> help` for all flags. The durable day-to-day surface is:
 
 | Area | Commands |
 | --- | --- |
-| Everyday | `ls`, `show`, `cat`, `assign`, `archive`, `mv`, `read`, `unread`, `flag`, `unflag`, `rm`, `keep`, `unkeep`, `tag add|rm`, `reply`, `forward`, `send`, `comments list|add|update|delete` |
+| Everyday | `ls`, `show`, `cat`, `assign`, `done`, `reopen`, `archive`, `mv`, `read`, `unread`, `flag`, `unflag`, `rm`, `keep`, `unkeep`, `tag add|rm`, `reply`, `forward`, `send`, `comments list|add|update|delete` |
 | Mailboxes | `ls`, `create`, `use`, `current`, `mailbox get`, `mailbox deleted list|get`, `mailbox restore`, `mailbox wait`, `mailbox preferences|pin|unpin|hide|unhide`, `configure`, `delete` |
 | Access | `access list|search-principals|grant|set|revoke` |
 | Discovery | `provider discover|list`, `binding list|attach`, `identity list|add|setup-default|configure|verify|disable`, `folders`, `status` |
