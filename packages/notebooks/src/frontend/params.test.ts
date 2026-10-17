@@ -19,3 +19,8 @@ test("graph URLs preserve the selected note and Book origin", () => {
   expect(buildGraphUrl("book01", null, "book")).toBe("/app/notebooks/book01?mode=graph&from=book");
   expect(buildGraphUrl("book01", "note01", "book")).toBe("/app/notebooks/book01?mode=graph&note=note01&from=book");
 });
+
+test.each(["write", "readonly"] as const)("graph URLs preserve the %s origin", (mode) => {
+  expect(buildGraphUrl("book01", "note01", mode)).toBe(`/app/notebooks/book01?mode=graph&note=note01&from=${mode}`);
+  expect(buildGraphUrl("book01", null, mode)).toBe(`/app/notebooks/book01?mode=graph&from=${mode}`);
+});

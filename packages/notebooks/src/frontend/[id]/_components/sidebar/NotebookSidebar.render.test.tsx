@@ -58,7 +58,7 @@ describe("Notebook workspace container head", () => {
       expect(rows.map((row) => row.text.trim())).toEqual([graph, attachments, settings]);
       const links = await selectHtml(html, ".notebook-sidebar-foot a");
       expect(links).toHaveLength(2);
-      expect(links[0]?.attributes.href).toBe("/app/notebooks/Book01?mode=graph");
+      expect(links[0]?.attributes.href).toBe(`/app/notebooks/Book01?mode=graph${presentationMode ? `&amp;from=${presentationMode}` : ""}`);
       expect(links[1]?.attributes.href).toBe(`/app/notebooks/Book01/attachments${presentationMode ? `?mode=${presentationMode}` : ""}`);
       const buttons = await selectHtml(html, ".notebook-sidebar-foot button");
       expect(buttons).toHaveLength(1);

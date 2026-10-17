@@ -5,6 +5,7 @@ import * as cloudServices from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { fromJSON } from "seroval";
 import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
+import type { PresentationMode } from "../../lib/presentation-mode";
 import { notebooksService } from "../../service";
 import * as notebookStore from "../../service/notebooks";
 import * as noteStore from "../../service/notes";
@@ -65,7 +66,7 @@ beforeEach(() => {
 });
 afterEach(() => railSnapshot.mockRestore());
 
-const renderEmptyNotebook = async (mode: "write" | "book" | "graph", preferences: Record<string, unknown> = {}) => {
+const renderEmptyNotebook = async (mode: "write" | "book" | "graph" | "graph&from=readonly", preferences: Record<string, unknown> = {}) => {
   spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
@@ -580,7 +581,13 @@ test("Book renders the full-width attribute in its first HTML", async () => {
   }
 });
 
-const renderLinkedNotebook = async (permission: "read" | "write", query: string, locale = "en") => {
+const renderLinkedNotebook = async (
+  permission: "read" | "write",
+  query: string,
+  locale = "en",
+  defaultPresentationMode: PresentationMode = "write",
+) => {
+  const linkedNotebook = { ...notebook, defaultPresentationMode };
   const note = {
     id: "33333333-3333-4333-8333-333333333333",
     shortId: "note01",
@@ -598,8 +605,8 @@ const renderLinkedNotebook = async (permission: "read" | "write", query: string,
     lockedAt: null,
   };
   spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
-  spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
-  spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
+  spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(linkedNotebook));
+  spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(linkedNotebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue(permission));
   spies.push(spyOn(notebookStore, "canAccess").mockResolvedValue(true));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
@@ -688,9 +695,26 @@ test("writer graph from Book keeps Write pointed at the selected note", async ()
   expect((await select(html, 'a[aria-label="Close graph"]'))[0]?.attributes.href).toBe("/app/notebooks/book01/notes/note01?mode=book");
 });
 
+test.each(["write", "readonly"] as const)("writer graph preserves %s origin over the Book default", async (mode) => {
+  const html = await renderLinkedNotebook("write", `graph&from=${mode}`, "en", "book");
+  expect(html).not.toContain("notebook-book-workspace");
+  const rows = await select(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
+  expect(rows[0]?.text.trim()).toBe("Links");
+  expect(rows[0]?.attributes.href).toBe(`/app/notebooks/book01?mode=graph&amp;note=note01&amp;from=${mode}`);
+  expect(rows[1]?.attributes.href).toBe(`/app/notebooks/book01/attachments?mode=${mode}`);
+  expect((await select(html, 'a[aria-label="Close graph"]'))[0]?.attributes.href).toBe(`/app/notebooks/book01/notes/note01?mode=${mode}`);
+  expect(await select(html, `[role="tree"] a[href="/app/notebooks/book01/notes/note01?mode=${mode}"]`)).toHaveLength(1);
+});
+
 test("an empty notebook's graph still offers Close back to the notebook", async () => {
   const html = await renderEmptyNotebook("graph");
   expect(html).toContain("Noch kein Graph");
   const close = await select(html, 'a[aria-label="Graph schließen"]');
   expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01"]);
+});
+
+test("an empty graph preserves the Read-only origin when closing to the notebook", async () => {
+  const html = await renderEmptyNotebook("graph&from=readonly");
+  const close = await select(html, 'a[aria-label="Graph schließen"]');
+  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01?mode=readonly"]);
 });

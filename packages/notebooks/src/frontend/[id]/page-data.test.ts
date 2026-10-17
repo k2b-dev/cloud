@@ -279,8 +279,11 @@ describe("notebook page presentation authorization", () => {
 
 for (const [permission, query, shell, from] of [
   ["read", "graph", "book", "book"],
+  ["read", "graph&from=write", "book", "book"],
   ["write", "graph", "workspace", undefined],
   ["write", "graph&from=book", "book", "book"],
+  ["write", "graph&from=write", "workspace", "write"],
+  ["write", "graph&from=readonly", "workspace", "readonly"],
   ["admin", "graph&from=other", "workspace", undefined],
 ] as const) {
   test(`${permission} graph (${query}) uses ${shell} with metadata only`, async () => {
@@ -293,7 +296,7 @@ for (const [permission, query, shell, from] of [
     expect(data.graphShell).toBe(shell);
     expect(data.graphFrom).toBe(from);
     expect(data.bookTree).toHaveLength(shell === "book" ? 1 : 0);
-    if (shell === "book") expect(data.ctx.presentationMode).toBe("book");
+    expect(data.ctx.presentationMode).toBe(from);
     expect(data.selectedNote).toMatchObject({ id: "note01", title: "Welcome", contentMd: null, yjsSnapshot: null });
     expect(data.bookHtml).toBeNull();
     expect(data.selectedRouteState).toBeNull();

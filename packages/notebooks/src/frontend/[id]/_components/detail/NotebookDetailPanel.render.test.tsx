@@ -90,6 +90,11 @@ const legacyDetailClasses = [
 ];
 
 describe("Notebook note detail panel", () => {
+  test.each(["write", "readonly", "book"] as const)("graph action preserves the explicit %s presentation", (presentationMode) => {
+    const html = renderPanel({ presentationMode });
+    expect(html).toContain(`href="/app/notebooks/book01?mode=graph&amp;note=note01&amp;from=${presentationMode}"`);
+  });
+
   for (const mode of ["edit", "read"] as const) {
     test(`${mode}: full width renders the personal SSR preference`, () => {
       for (const fullWidth of [false, true]) {

@@ -2,6 +2,7 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { IconButton, IconButtonLink, suppressTextSelection, Tooltip, useLocale } from "@k2b/ui";
 import { forceCenter, forceLink, forceManyBody, forceSimulation, type Simulation } from "d3-force";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { NoteGraph } from "../../../../service/links";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -11,7 +12,7 @@ type Props = {
   /** Optional: id of the note the user came from — gets initial focus + highlight. */
   selectedNoteId: string | null;
   graph: NoteGraph;
-  from?: "book";
+  from?: PresentationMode;
 };
 
 /**
@@ -99,7 +100,7 @@ export default function NotebookGraph(props: Props) {
     const selected = simNodes.find((node) => node.id === props.selectedNoteId);
     return selected
       ? buildNoteUrl(props.notebookId, selected.id, props.from)
-      : `/app/notebooks/${props.notebookId}${props.from === "book" ? "?mode=book" : ""}`;
+      : `/app/notebooks/${props.notebookId}${props.from ? `?mode=${props.from}` : ""}`;
   };
 
   const setClampedZoom = (next: number) => setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next)));

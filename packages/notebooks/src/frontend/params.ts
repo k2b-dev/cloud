@@ -34,10 +34,10 @@ export const buildVersionsUrl = (notebookShortId: string, noteShortId: string): 
   `/app/notebooks/${notebookShortId}/notes/${noteShortId}?${QueryParams.MODE}=versions`;
 
 /**
- * Build URL for the link graph. `note` is the note it starts from; `from: "book"` keeps the Book
- * presentation, so the graph opens in the Book shell and its links lead back into Book.
+ * Build URL for the link graph. `note` is the note it starts from; `from` preserves the
+ * origin presentation for navigation. Book origins also open the graph in the Book shell.
  */
-export const buildGraphUrl = (notebookShortId: string, noteShortId: string | null, from?: "book"): string => {
+export const buildGraphUrl = (notebookShortId: string, noteShortId: string | null, from?: PresentationMode): string => {
   const query = new URLSearchParams({ [QueryParams.MODE]: "graph" });
   if (noteShortId) query.set("note", noteShortId);
   if (from) query.set("from", from);

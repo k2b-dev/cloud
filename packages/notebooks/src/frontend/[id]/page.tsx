@@ -156,7 +156,7 @@ export default ssr<AuthContext>(async (c) => {
                 initialTotal={versionHistory?.total}
               />
             ) : isGraphMode && graph ? (
-              <NotebookGraph notebookId={notebook.id} selectedNoteId={selectedNoteId} graph={graph} />
+              <NotebookGraph notebookId={notebook.id} selectedNoteId={selectedNoteId} graph={graph} from={ctx.presentationMode} />
             ) : selectedNote ? (
               <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" data-full-width={ctx.fullWidth ? "" : undefined}>
                 {readonlyMode && (
@@ -213,6 +213,7 @@ export default ssr<AuthContext>(async (c) => {
 
           {showDetailPanel && selectedNote && (
             <NotebookDetailPanel
+              presentationMode={ctx.presentationMode}
               mode={readonlyMode ? "read" : "edit"}
               initiallyOpen={readonlyMode ? true : detailPanelOpen}
               fullWidth={ctx.fullWidth}

@@ -5,7 +5,7 @@ import type { Context } from "hono";
 import { toPublicNotebook, toPublicNoteComment } from "@/api/public-resources";
 import { orderBookTree } from "@/lib/book-tree";
 import { extractNamedBlockSummaries } from "@/lib/named-blocks";
-import { type PresentationMode, resolvePresentationMode } from "@/lib/presentation-mode";
+import { isPresentationMode, type PresentationMode, resolvePresentationMode } from "@/lib/presentation-mode";
 import { requestedPresentationMode } from "@/lib/presentation-url";
 import { parseSidebarFilter } from "@/lib/sidebar-filter";
 import { notebooksService } from "@/service";
@@ -45,7 +45,8 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const mode = c.req.query("mode");
   const isVersionsMode = canWrite && mode === "versions";
   const isGraphMode = mode === "graph";
-  const graphFrom = isGraphMode && (permission === "read" || c.req.query("from") === "book") ? "book" : undefined;
+  const from = c.req.query("from");
+  const graphFrom = isGraphMode ? (permission === "read" ? "book" : isPresentationMode(from) ? from : undefined) : undefined;
   const graphShell = isGraphMode ? (graphFrom === "book" ? "book" : "workspace") : undefined;
   // Capture before the snapshot. Events published while the snapshot loads may
   // replay redundantly, but an event can never be skipped between SSR and the
@@ -163,7 +164,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     workspaceCursor,
     dateConfig: getDateConfig(c),
     sidebarFilter: parseSidebarFilter(new URL(c.req.url).searchParams),
-    presentationMode: graphShell === "book" ? "book" : requestedPresentationMode(new URL(c.req.url).searchParams),
+    presentationMode: isGraphMode ? graphFrom : requestedPresentationMode(new URL(c.req.url).searchParams),
   };
 
   const appUrl = await get<string>("app.url");

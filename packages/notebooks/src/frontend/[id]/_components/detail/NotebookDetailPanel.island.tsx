@@ -24,6 +24,7 @@ import { apiClient } from "@/api/client";
 import type { PublicNoteComment } from "@/api/public-resources";
 import { notebookCommandMessages } from "../../../../commands";
 import type { NamedBlockSummary } from "../../../../lib/named-blocks";
+import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { Backlink } from "../../../../service/links";
 import { openAttachment } from "../../../lib/attachment-preview";
 import { buildGraphUrl, buildNoteUrl, buildVersionsUrl } from "../../../params";
@@ -59,6 +60,7 @@ import type { TaskProgress } from "./tasks";
 import type { TocItem } from "./toc";
 
 type Props = {
+  presentationMode?: PresentationMode;
   mode: "edit" | "read";
   initiallyOpen: boolean;
   fullWidth: boolean;
@@ -475,7 +477,12 @@ export default function NotebookDetailPanel(props: Props) {
                 </IconButtonLink>
               </Tooltip.Anchor>
               <Tooltip.Anchor content={t().graphView}>
-                <IconButtonLink tooltip={false} href={buildGraphUrl(props.notebookId, noteId())} size="sm" label={t().openGraphView}>
+                <IconButtonLink
+                  tooltip={false}
+                  href={buildGraphUrl(props.notebookId, noteId(), props.presentationMode)}
+                  size="sm"
+                  label={t().openGraphView}
+                >
                   <i class="ti ti-affiliate" aria-hidden="true" />
                 </IconButtonLink>
               </Tooltip.Anchor>

@@ -90,7 +90,7 @@ export default function NotebookSidebar(props: Props) {
   };
   const attachmentsHref = () => buildAttachmentsUrl(notebook().id, props.ctx.presentationMode);
   // The graph starts from the open note; while it shows, its footer item is the current page instead of that note.
-  const graphHref = () => buildGraphUrl(notebook().id, selectedNoteId());
+  const graphHref = () => buildGraphUrl(notebook().id, selectedNoteId(), props.ctx.presentationMode);
   const currentNoteId = () => (props.current === "graph" ? null : selectedNoteId());
   const openSettings = () =>
     openNotebookSettingsDialog({
