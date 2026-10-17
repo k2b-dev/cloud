@@ -109,6 +109,40 @@ suite("Spaces user claim assignments", () => {
     });
   });
 
+  test("assignee replacements keep broad-only claimers but reject new broad-only assignees", async () => {
+    await withFixture(async (f) => {
+      const otherId = crypto.randomUUID();
+      try {
+        // Replace only this space's holder grant; the fixture cleans it up with its other access rows.
+        await sql`UPDATE auth.access a
+          SET user_id = NULL, group_id = NULL, service_account_id = NULL, authenticated_only = true
+          FROM spaces.space_access sa
+          WHERE sa.access_id = a.id AND sa.space_id = ${f.spaceId}::uuid AND a.user_id = ${f.holder.id}::uuid`;
+        await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name)
+          VALUES (${otherId}::uuid, ${`claim-assignment-${otherId}`}, 'local', 'user', 'Broad-only user')`;
+
+        await f.claim();
+        expect(await f.assignees()).toEqual([f.holder.id]);
+        expect(await update({ id: f.itemId, data: { assigneeIds: [f.holder.id, f.writer.id] }, actor: f.writer })).toMatchObject({
+          ok: true,
+        });
+        expect(await f.assignees()).toEqual([f.holder.id, f.writer.id].sort());
+        expect(await setAssignees({ id: f.itemId, userIds: [f.holder.id], actor: f.holder })).toMatchObject({ ok: true });
+        expect(await f.assignees()).toEqual([f.holder.id]);
+
+        const before = await get({ id: f.itemId });
+        expect(
+          await update({ id: f.itemId, data: { assigneeIds: [f.holder.id, otherId], title: "Must not save" }, actor: f.writer }),
+        ).toEqual({ ok: false, status: 400, error: "Assignee must have access to this space" });
+        expect(await get({ id: f.itemId })).toEqual(before);
+        expect(await f.assignees()).toEqual([f.holder.id]);
+        expect((await read(f.itemId)).claim?.id).toBe(f.claimId);
+      } finally {
+        await sql`DELETE FROM auth.users WHERE id = ${otherId}::uuid`;
+      }
+    });
+  });
+
   test("setAssignees refuses removal of the holder without a claim ID", async () => {
     await withFixture(async (f) => {
       await f.claim();

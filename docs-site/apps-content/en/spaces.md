@@ -432,7 +432,9 @@ over someone else's claim. In the task details, **Take over** ends the exact
 observed claim and claims the task for you. For people, this moves the claim
 and assignment together: the previous holder is removed from the assignees,
 and you are assigned. Releasing someone else's claim with force also removes
-that person's assignment, even without a new claim.
+that person's assignment, even without a new claim. Completing, reopening,
+moving, or transferring a task with someone else's claim ends that claim but
+keeps the assignees as they are.
 
 Removing the working person from **Assigned** ends their claim. Removing
 someone else asks once, for example "Jana Berger is working on this – remove
