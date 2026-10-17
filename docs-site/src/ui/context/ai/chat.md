@@ -335,9 +335,9 @@ the status line.
 
 Set `ChatCommandSection.pending` while local rows are loading. Put this section
 last. Its heading spins and its end holds three placeholders in the overview,
-one while searching; **Nothing found** waits for it. When the rows arrive, the
-list keeps the height it had with the placeholders until the next keystroke and
-scrolls what does not fit, so no visible row moves. `persistent` keeps a row in every search of
+one while searching; **Nothing found** waits for it. When the rows arrive in the
+overview, the list keeps the height it had with the placeholders until the next
+keystroke and scrolls what does not fit, so no visible row moves. `persistent` keeps a row in every search of
 its section, after matching rows, so an explicit retry remains reachable.
 `searchAgain: true` starts a new opening and runs `searchCommands` again.
 

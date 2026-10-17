@@ -1898,12 +1898,16 @@ test("an open row keeps the token and the list while it runs, then removes the t
   // The description keeps its place, hidden, so the row's height does not change.
   expect(detail().children[0]!.textContent).toBe("Spaces · Create a task");
   expect(detail().children[1]!.textContent).toBe("Opening …");
+  // The field stays enabled and focused, only read-only: a disabled field would lose focus and close the list.
+  expect(h.input.disabled).toBe(false);
+  expect(h.input.readOnly).toBe(true);
   // Choosing again while it runs does nothing.
   h.key("Enter");
   await flush();
   expect(drafts).toHaveLength(1);
   resolve();
   await flush();
+  expect(h.input.readOnly).toBe(false);
   expect(h.value()).toBe("Price ");
   expect(h.rows()).toHaveLength(0);
   h.key("z", { ctrlKey: true });

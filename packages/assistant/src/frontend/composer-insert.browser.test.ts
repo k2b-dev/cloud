@@ -322,6 +322,48 @@ describe(`App Commands in the Assistant slash list in ${browserName}`, () => {
   );
 
   test.each(views)(
+    "at $width px, an app Command opens in place: the field keeps focus, the row shows progress, then why it failed",
+    async (view) => {
+      const { page, close } = await open(view, "?commands&text=");
+      await page.route("**/api/capabilities/v1/catalog?*", (route) => route.fulfill({ json: commandCatalog }));
+      let answer: () => Promise<void> = async () => {};
+      const resolving = new Promise<void>((resolve) => {
+        page.route("**/api/capabilities/v1/commands/**", async (route) => {
+          resolve();
+          await new Promise<void>((done) => {
+            answer = async () => {
+              await route.fulfill({ status: 503, json: { code: "APP_UNAVAILABLE", message: "Spaces is unavailable" } });
+              done();
+            };
+          });
+        });
+      });
+      try {
+        await page.keyboard.type("/neue auf");
+        const row = option(page, "Neue Aufgabe");
+        await row.waitFor();
+        const before = await box(page, '[role="listbox"] [role="option"]');
+        await page.keyboard.press("Enter");
+        await resolving;
+        // A disabled field would lose focus and close the list; it stays focused and the row says it is opening.
+        await expect(row.getAttribute("aria-busy")).resolves.toBe("true");
+        expect(await row.textContent()).toContain("Wird geöffnet …");
+        expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TEXTAREA");
+        expect(await box(page, '[role="listbox"] [role="option"]')).toEqual(before);
+        await answer();
+        await page.waitForFunction(() =>
+          document.querySelector('[role="listbox"]')?.textContent?.includes("Spaces ist gerade nicht erreichbar."),
+        );
+        expect(await page.locator("textarea").inputValue()).toBe("/neue auf");
+        expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TEXTAREA");
+      } finally {
+        await close();
+      }
+    },
+    60_000,
+  );
+
+  test.each(views)(
     "at $width px, the persistent error row retries exactly one catalog load",
     async (view) => {
       const { page, close } = await open(view, "?commands&text=");

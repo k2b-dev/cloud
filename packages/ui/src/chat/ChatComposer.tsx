@@ -511,20 +511,26 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   });
   const commandsOpen = () =>
     Boolean(!emojiOpen() && commandQuery() && (localCommands().length || props.searchCommands || commandFallbackRow()));
-  // Rows that arrive for a pending section never move a visible row: until the person types again, the list keeps the
-  // height it had with its placeholders and scrolls what does not fit. A list below its maximum height grows upward
-  // from the field, so a change of height alone would move its first row.
-  const commandsPending = createMemo(() => commandsOpen() && commandModel().groups.some((group) => group.pendingRows > 0));
-  let pendingListHeight: number | undefined;
-  const releaseCommandListHeight = () => {
-    commandListRef?.style.removeProperty("height");
-    commandListRef?.removeAttribute("data-held");
-  };
+  // Rows that arrive for a pending section never move a visible row of the overview: until the person types, the list
+  // keeps the height it had with its placeholders and scrolls what does not fit. A list below its maximum height grows
+  // upward from the field, so a change of height alone would move its first row. While searching, the rows arrive
+  // with the search's own answer, which changes the list anyway.
+  const commandsPending = createMemo(
+    () =>
+      commandsOpen() &&
+      !parsedCommandQuery().scope &&
+      !parsedCommandQuery().query.trim() &&
+      commandModel().groups.some((group) => group.pendingRows > 0),
+  );
+  // Typing, another opening or closing the list lets it size itself again.
+  const commandListSizeKey = createMemo(() => (commandsOpen() ? `${commandOpening()}\u0000${caretCommandToken()?.query}` : undefined));
+  // The list's height with its placeholders, for the size key it was measured under.
+  let pendingList: { height: number; key: string | undefined } | undefined;
   createEffect(() => {
     const list = commandListRef;
     if (!commandsPending() || !list || typeof ResizeObserver === "undefined") return;
     const measure = () => {
-      pendingListHeight = list.getBoundingClientRect().height;
+      pendingList = { height: list.getBoundingClientRect().height, key: untrack(commandListSizeKey) };
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -533,15 +539,26 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   });
   createEffect(
     on(commandsPending, (pending, wasPending) => {
-      if (pending || !wasPending || pendingListHeight === undefined || !commandListRef?.isConnected) return;
-      commandListRef.style.height = `${pendingListHeight}px`;
+      const held = pendingList;
+      pendingList = undefined;
+      // Only rows arriving hold the list; the person's typing or closing it does not.
+      if (pending || !wasPending || !held || held.key !== commandListSizeKey() || !commandListRef?.isConnected) return;
+      commandListRef.style.height = `${held.height}px`;
       commandListRef.setAttribute("data-held", "");
     }),
   );
-  // Typing, another opening or closing the list lets it size itself again.
-  const commandListSizeKey = createMemo(() => (commandsOpen() ? `${commandOpening()}\u0000${caretCommandToken()?.query}` : undefined));
-  createEffect(on(commandListSizeKey, releaseCommandListHeight, { defer: true }));
-  const commandSheetHeld = createMemo(() => commandsOpen() && isTouchOnly());
+  createEffect(
+    on(
+      commandListSizeKey,
+      () => {
+        commandListRef?.style.removeProperty("height");
+        commandListRef?.removeAttribute("data-held");
+      },
+      { defer: true },
+    ),
+  );
+  // An `open` row gives the sheet's Back entry up first, so it never races the navigation it starts.
+  const commandSheetHeld = createMemo(() => commandsOpen() && isTouchOnly() && openingRow() === undefined);
   createEffect(() => {
     if (!commandSheetHeld()) return;
     onCleanup(holdDialogHistory(() => setClosedAt(commandQuery()?.start)));
@@ -1174,11 +1191,16 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const nextMentions = reconcileChatMentions(value, nextValue, mentions());
     // Still the same draft and `/…`, so the row is where the person chose it.
     const inPlace = () => !disposed && props.draftKey === key && props.value === value && commandQuery()?.start === token.start;
+    const heldHistory = commandSheetHeld();
     setOpenFailures(({ [row]: _, ...rest }) => rest);
     setOpeningRow(row);
     setExecuting(true);
     let result: ChatCommandOpenResult;
     try {
+      if (heldHistory) {
+        await dialogHistorySettled();
+        if (!inPlace()) return;
+      }
       result = await open({ value: nextValue, mentions: nextMentions });
     } catch (error) {
       if (disposed) {
@@ -1661,7 +1683,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 }}
         rows={1}
         value={props.value}
-        disabled={editBlocked()}
+        // An `open` row keeps the field focused, so the list stays, and only read-only while it runs.
+        disabled={editBlocked() && openingRow() === undefined}
+        readOnly={openingRow() !== undefined}
         enterkeyhint={conversation() ? "enter" : undefined}
         placeholder={
           props.placeholder ??
