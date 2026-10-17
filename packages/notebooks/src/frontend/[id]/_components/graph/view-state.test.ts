@@ -31,6 +31,7 @@ test("normalized states round trip without changing the URL or other params", ()
   const original = url.href;
   for (const state of [
     defaults,
+    { ...defaults, display: "circle", links: "linked", hide: ["top"], q: "Circle" } satisfies GraphViewState,
     {
       display: "network",
       depth: 1,
@@ -148,7 +149,7 @@ test("display absence round trips while explicit choices always survive every de
   expect(resolveGraphDisplay(null, null)).toBeNull();
   expect(resolveGraphDisplay(null, true)).toBe(PHONE_GRAPH_DISPLAY);
   expect(resolveGraphDisplay(null, false)).toBe(DEFAULT_GRAPH_DISPLAY);
-  for (const display of ["network", "neighborhood"] as const) {
+  for (const display of ["network", "circle", "neighborhood"] as const) {
     const next = writeGraphViewState(new URL("https://cloud.example/?display=invalid"), { ...defaults, display });
     expect(next.searchParams.get("display")).toBe(display);
     expect(parseGraphViewState(next.searchParams).display).toBe(display);
