@@ -17,6 +17,16 @@
 }
 
 @media print {
+  /* Paper has no motion. A panel that animates its display would otherwise
+     still show while the page is printed. */
+  .k2b-ui,
+  .k2b-ui *,
+  .k2b-ui *::before,
+  .k2b-ui *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+
   /* Only the print target prints: the regions, or the fallback without one. */
   .k2b-ui:has([data-print-region]) :not([data-print-region], [data-print-region] *, :has([data-print-region])),
   .k2b-ui:not(:has([data-print-region])):has([data-print-fallback])
@@ -60,6 +70,12 @@
     overflow: visible !important;
     -webkit-mask-image: none !important;
     mask-image: none !important;
+  }
+
+  /* A scrollport that fills an overflow-hidden frame on screen joins the flow on paper. */
+  .k2b-ui [data-print-region] .k2b-scroll-area {
+    position: static !important;
+    inset: auto !important;
   }
 
   .k2b-ui [data-print-region] a[href] {

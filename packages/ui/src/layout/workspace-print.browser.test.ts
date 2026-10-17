@@ -34,6 +34,8 @@ render(() => createComponent(AppWorkspace, {
 }), document.getElementById("app"));`,
     },
     target: "browser",
+    // Solid's browser build: an SSR plugin that another test file registers must not change it.
+    conditions: ["browser"],
     format: "iife",
   });
   if (!build.success) throw new AggregateError(build.logs, "Workspace print fixture");

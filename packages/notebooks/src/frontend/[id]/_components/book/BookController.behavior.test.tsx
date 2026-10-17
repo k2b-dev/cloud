@@ -138,6 +138,7 @@ describe("Book controller", () => {
       expect(app.article.textContent).toBe("Newest");
       expect(app.article.hasAttribute("data-print-region")).toBe(true);
       expect(app.dom.root.querySelector<HTMLElement>("#notebook-book-history-warning")!.hidden).toBe(false);
+      expect(app.dom.root.querySelector("#notebook-book-history-warning")!.hasAttribute("data-print-region")).toBe(true);
       expect(location.pathname).toEndWith("/note03");
       expect(document.activeElement).toBe(app.article);
       app.requests[0]!.resolve(Response.json(snapshot("note02", "Obsolete")));

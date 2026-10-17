@@ -136,7 +136,24 @@ test("only regions print, with all 120 paragraphs and unclipped ancestors", asyn
         return failures;
       }),
     ).toEqual([]);
-    expect(await page.locator(".k2b-scroll-area").evaluate((el) => getComputedStyle(el).overflowY)).toBe("visible");
+    expect(await page.locator("[data-print-region] .k2b-scroll-area").evaluate((el) => getComputedStyle(el).overflowY)).toBe("visible");
+    // No element between the last paragraph and the page clips it.
+    expect(
+      await page
+        .locator(".print-paragraph")
+        .last()
+        .evaluate((paragraph) => {
+          const box = paragraph.getBoundingClientRect();
+          const clips: string[] = [];
+          for (let ancestor = paragraph.parentElement; ancestor; ancestor = ancestor.parentElement) {
+            const style = getComputedStyle(ancestor);
+            if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+            const frame = ancestor.getBoundingClientRect();
+            if (box.top < frame.top - 1 || box.bottom > frame.bottom + 1) clips.push(`${ancestor.tagName}.${ancestor.className}`);
+          }
+          return clips;
+        }),
+    ).toEqual([]);
     if (browserName === "chromium") {
       const pdf = await page.pdf({ format: "A4" });
       const pages = pdf.toString("latin1").match(/\/Type\s*\/Page\b/g) ?? [];

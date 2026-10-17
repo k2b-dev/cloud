@@ -47,6 +47,11 @@ describe("Book surface", () => {
   test("only a rendered note becomes a print region", async () => {
     expect(await selectHtml(render(), "article#notebook-book-content[data-print-region]")).toHaveLength(1);
     expect(await selectHtml(render(false, false, "en", null), "[data-print-region]")).toHaveLength(0);
+    // The incomplete-history warning prints with the note it qualifies.
+    expect(await selectHtml(render(false, false, "en", undefined, true), "#notebook-book-history-warning[data-print-region]")).toHaveLength(
+      1,
+    );
+    expect(await selectHtml(render(false, false, "en", null, true), "[data-print-region]")).toHaveLength(0);
   });
   test.each([
     ["en", "Switch notebook"],
