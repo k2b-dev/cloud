@@ -131,20 +131,30 @@ const focusUnclaimed = (dialog: HTMLDialogElement): boolean => {
   return !active || active === document.body || active === dialog;
 };
 
-export const createDialogCore = (): DialogCore => {
+type HistoryEntry = { historyId?: number };
+type HistoryHolder = HistoryEntry & { onBack: () => void };
+
+export const createDialogCore = () => {
   const state: DialogState = { stack: [] };
   /** Markers of this core's entries in the browser history, oldest first. */
   let historyIds: number[] = [];
+  const historyHolders = new Set<HistoryHolder>();
   let nextHistoryId = 0;
   let historySyncScheduled = false;
   let listeningToHistory = false;
   /** Settles when the synthetic Back that removes closed dialogs' entries has arrived. */
   let returning: Promise<void> | undefined;
 
-  /** Closed dialogs leave the history with one Back to the newest dialog that is still open, or to the page. */
+  /** Closed entries leave with one Back to the newest live dialog or holder, or to the page. */
   const syncHistory = () => {
+    if (returning) {
+      void returning.then(() => {
+        if (historySyncScheduled) syncHistory();
+      });
+      return;
+    }
     historySyncScheduled = false;
-    const openIds = new Set(state.stack.map((entry) => entry.historyId));
+    const openIds = new Set([...state.stack, ...historyHolders].map((entry) => entry.historyId));
     const current = historyIds.at(-1);
     let steps = 0;
     while (historyIds.length > 0 && !openIds.has(historyIds.at(-1))) {
@@ -161,22 +171,28 @@ export const createDialogCore = (): DialogCore => {
     history.go(-steps);
   };
 
-  const releaseHistory = (entry: DialogStackEntry) => {
+  const releaseHistory = (entry: HistoryEntry) => {
     if (entry.historyId === undefined || historySyncScheduled) return;
     historySyncScheduled = true;
     queueMicrotask(syncHistory);
   };
 
-  /** Back or Forward moved to another entry: close every dialog opened after the one it shows. */
+  /** Back or Forward moved to another entry: close dialogs and holders opened after the one it shows. */
   const onPopState = () => {
     const marker = historyMarker();
     const index = typeof marker === "number" ? historyIds.indexOf(marker) : -1;
     historyIds = historyIds.slice(0, index + 1);
     const gone = (entry: DialogStackEntry) => entry.historyId !== undefined && !historyIds.includes(entry.historyId);
     while (state.stack.some(gone)) popTop(undefined);
+    for (const holder of [...historyHolders].reverse()) {
+      if (holder.historyId === undefined || historyIds.includes(holder.historyId)) continue;
+      historyHolders.delete(holder);
+      releaseHistory(holder);
+      holder.onBack();
+    }
   };
 
-  const pushHistory = (entry: DialogStackEntry) => {
+  const pushHistory = (entry: HistoryEntry) => {
     if (!listeningToHistory) {
       window.addEventListener("popstate", onPopState);
       listeningToHistory = true;
@@ -190,6 +206,35 @@ export const createDialogCore = (): DialogCore => {
     entry.historyId = ++nextHistoryId;
     historyIds.push(entry.historyId);
     history.pushState({ ...previous, [HISTORY_MARKER]: entry.historyId }, "");
+  };
+
+  /** Internal non-dialog participation in the same history stack. Releasing never calls onBack. */
+  const holdHistory = (onBack: () => void): (() => void) => {
+    const holder: HistoryHolder = { onBack };
+    historyHolders.add(holder);
+    const pushWhenReady = () => {
+      if (!historyHolders.has(holder)) return;
+      // Just like open(): remove closed entries before adding another one.
+      if (historySyncScheduled) syncHistory();
+      if (returning) void returning.then(pushWhenReady);
+      else pushHistory(holder);
+    };
+    pushWhenReady();
+    return () => {
+      if (!historyHolders.delete(holder)) return;
+      releaseHistory(holder);
+    };
+  };
+
+  /**
+   * Settles once released entries have left the history. A caller that navigates or pushes an entry of its own waits
+   * for it, as a dialog's result waits: a Back still on its way would otherwise land behind the new entry.
+   */
+  const historySettled = async (): Promise<void> => {
+    while (historySyncScheduled || returning) {
+      if (!returning) syncHistory();
+      if (returning) await returning;
+    }
   };
 
   const ensureDialogElement = () => {
@@ -514,7 +559,15 @@ export const createDialogCore = (): DialogCore => {
     open,
     close,
     isOpen: () => state.stack.length > 0,
+    holdHistory,
+    historySettled,
   };
 };
 
-export const dialogCore = createDialogCore();
+const { holdHistory, historySettled, ...publicDialogCore } = createDialogCore();
+export const dialogCore: DialogCore = publicDialogCore;
+
+/** Internal: transient UI shares dialogs' Back handling without exposing another public dialog capability. */
+export const holdDialogHistory = holdHistory;
+/** Internal: waits until entries released through `holdDialogHistory` have left the history. */
+export const dialogHistorySettled = historySettled;

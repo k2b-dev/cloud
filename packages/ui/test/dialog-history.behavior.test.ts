@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { createDialogCore } from "../src/feedback/dialog-core";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
@@ -123,5 +123,176 @@ describe("dialogCore history option", () => {
     await back;
     expect(await answer).toBeUndefined();
     expect(marker()).toBeUndefined();
+  });
+});
+
+describe("dialogCore internal history holders", () => {
+  test("holders close once on Back and stay gone on Forward", async () => {
+    dom = createDomTestHarness();
+    history.replaceState({ sentinel: 1 }, "");
+    const core = createDialogCore();
+    let calls = 0;
+    const release = core.holdHistory(() => calls++);
+    expect(marker()).toBeNumber();
+    expect(core.isOpen()).toBe(false);
+    let back = popped();
+    history.back();
+    await back;
+    expect(calls).toBe(1);
+    expect(history.state).toEqual({ sentinel: 1 });
+    release();
+    release();
+    back = popped();
+    history.forward();
+    await back;
+    expect(calls).toBe(1);
+    back = popped();
+    history.back();
+    await back;
+    expect(calls).toBe(1);
+  });
+
+  test("releasing holders is idempotent and restores page state in one traversal", async () => {
+    dom = createDomTestHarness();
+    history.replaceState({ sentinel: 1 }, "");
+    const core = createDialogCore();
+    let calls = 0;
+    const first = core.holdHistory(() => calls++);
+    const second = core.holdHistory(() => calls++);
+    const go = spyOn(history, "go");
+    const back = popped();
+    first();
+    first();
+    second();
+    await back;
+    expect(go.mock.calls).toEqual([[-2]]);
+    expect(history.state).toEqual({ sentinel: 1 });
+    expect(calls).toBe(0);
+    go.mockRestore();
+  });
+
+  test("Back past the newest holder also removes an older released entry", async () => {
+    dom = createDomTestHarness();
+    history.replaceState({ sentinel: 1 }, "");
+    const core = createDialogCore();
+    const release = core.holdHistory(() => {
+      throw new Error("Already released");
+    });
+    let calls = 0;
+    core.holdHistory(() => calls++);
+    release();
+    await Promise.resolve();
+    const back = popped();
+    history.back();
+    await back;
+    await Promise.resolve();
+    expect(calls).toBe(1);
+    expect(history.state).toEqual({ sentinel: 1 });
+  });
+
+  test("releasing a holder leaves foreign history alone", async () => {
+    dom = createDomTestHarness();
+    const core = createDialogCore();
+    const release = core.holdHistory(() => {});
+    history.pushState({ foreign: true }, "");
+    const go = spyOn(history, "go");
+    release();
+    await Promise.resolve();
+    expect(go).not.toHaveBeenCalled();
+    expect(history.state).toEqual({ foreign: true });
+    go.mockRestore();
+  });
+
+  for (const inFlight of [false, true]) {
+    test(`a new holder waits for ${inFlight ? "returning" : "a pending release"}`, async () => {
+      dom = createDomTestHarness();
+      history.replaceState({ sentinel: 1 }, "");
+      const core = createDialogCore();
+      let calls = 0;
+      const first = core.holdHistory(() => calls++);
+      const firstMarker = marker();
+      const push = spyOn(history, "pushState");
+      const back = popped();
+      first();
+      if (inFlight) await Promise.resolve();
+      const release = core.holdHistory(() => calls++);
+      expect(push).not.toHaveBeenCalled();
+      await back;
+      // The deferred push is a reaction to returning, after this popstate.
+      await Promise.resolve();
+      expect(marker()).toBeNumber();
+      expect(marker()).not.toBe(firstMarker);
+      expect(history.length).toBe(2);
+      expect(push).toHaveBeenCalledTimes(1);
+      push.mockRestore();
+      expect(calls).toBe(0);
+      const done = popped();
+      release();
+      await done;
+      expect(history.state).toEqual({ sentinel: 1 });
+    });
+  }
+
+  test("releasing a deferred holder prevents its entry being pushed", async () => {
+    dom = createDomTestHarness();
+    history.replaceState({ sentinel: 1 }, "");
+    const core = createDialogCore();
+    const first = core.holdHistory(() => {});
+    const back = popped();
+    first();
+    const cancel = core.holdHistory(() => {
+      throw new Error("Already released");
+    });
+    cancel();
+    await back;
+    await Promise.resolve();
+    expect(history.state).toEqual({ sentinel: 1 });
+  });
+
+  test("a dialog replaces a released holder without leaving an extra entry", async () => {
+    dom = createDomTestHarness();
+    history.replaceState({ sentinel: 1 }, "");
+    const core = createDialogCore();
+    const release = core.holdHistory(() => {});
+    const back = popped();
+    release();
+    const result = core.open(view("Command dialog"), { history: true });
+    expect(core.isOpen()).toBe(false);
+    await back;
+    await Promise.resolve();
+    expect(core.isOpen()).toBe(true);
+    expect(history.length).toBe(2);
+    core.close();
+    await result;
+    expect(history.state).toEqual({ sentinel: 1 });
+  });
+
+  test("a holder waits for a closing dialog and interleaves with dialogs", async () => {
+    dom = createDomTestHarness();
+    history.replaceState({ sentinel: 1 }, "");
+    const core = createDialogCore();
+    const outer = core.open(view("Outer"), { history: true });
+    const closing = core.open(view("Closing"), { history: true });
+    const top = core.open(view("Top"));
+    // Closing the stack leaves a synthetic Back in flight before the holder.
+    core.close();
+    let calls = 0;
+    core.holdHistory(() => calls++);
+    await Promise.all([outer, closing, top]);
+    await Promise.resolve();
+    expect(marker()).toBeNumber();
+    expect(history.length).toBe(2);
+    const dialog = core.open(view("Above holder"), { history: true });
+    let back = popped();
+    history.back();
+    await back;
+    await dialog;
+    expect(calls).toBe(0);
+    expect(marker()).toBeNumber();
+    back = popped();
+    history.back();
+    await back;
+    expect(calls).toBe(1);
+    expect(history.state).toEqual({ sentinel: 1 });
   });
 });

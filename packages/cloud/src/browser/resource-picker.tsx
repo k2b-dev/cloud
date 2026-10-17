@@ -22,6 +22,11 @@ export const openCloudResourcePicker = (options: CloudResourcePickerOptions = {}
     (close) => (
       <CloudResourceSearch {...options} title={options.title ?? t.chooseResource} selectionMode onSelect={close} onClose={() => close()} />
     ),
-    resourceSearchDialogOptions(options.title ?? t.chooseResource),
+    // A phone shows the picker as a full-screen sheet, which Back closes like any sheet.
+    {
+      ...resourceSearchDialogOptions(options.title ?? t.chooseResource),
+      panelClassName: "cloud-search-dialog cloud-search-dialog--picker",
+      history: true,
+    },
   );
 };

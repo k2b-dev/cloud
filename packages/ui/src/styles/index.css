@@ -115,6 +115,7 @@
   --k2b-shadow-workspace-edge: -3px 0 6px -5px rgb(0 0 0 / 0.1), 3px 0 6px -5px rgb(0 0 0 / 0.1);
   --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
   --k2b-shadow-toast: 0 8px 24px -12px rgb(9 9 11 / 0.28);
+  --k2b-shadow-sheet: 0 -14px 36px rgb(9 9 11 / 0.16); /* a sheet rising from the bottom edge */
 
   --stdlib-chart-c1: var(--k2b-accent-500);
   --stdlib-chart-c2: var(--k2b-success-500);
@@ -243,6 +244,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-shadow-workspace-edge: -3px 0 6px -5px rgb(0 0 0 / 0.28), 3px 0 6px -5px rgb(0 0 0 / 0.28);
   --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
   --k2b-shadow-toast: 0 10px 28px -14px rgb(0 0 0 / 0.58);
+  --k2b-shadow-sheet: 0 -16px 40px rgb(0 0 0 / 0.5);
   color-scheme: dark;
   --k2b-chart-highlight-mix: white;
 }
@@ -9528,6 +9530,64 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   animation: k2b-chat-command-placeholder 1.4s ease-in-out infinite;
 }
 @keyframes k2b-chat-command-placeholder { 50% { opacity: 0.45; } }
+
+/* On a phone the command list is a sheet directly above the field and the
+   keyboard: as wide as the composer's column (the script measures how far it
+   reaches past the composer), rounded at the top, flush with the composer's
+   top edge (the shell's gap below the slot), no side borders. Its height is
+   the measured space up to the scroll container or the visual viewport,
+   less the top safe area when the viewport bounds it. Rows grow to 48 px with
+   the name above its subtitle. Phone means touch only and narrow, or touch
+   only and low (landscape). Emoji suggestions keep their floating list. */
+@media (any-pointer: coarse) and (not (any-pointer: fine)) and (max-width: 47.99rem),
+  (any-pointer: coarse) and (not (any-pointer: fine)) and (max-height: 31.25rem) {
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] {
+    right: calc(-1 * var(--k2b-chat-command-reach-right, 0px));
+    bottom: -0.5rem;
+    left: calc(-1 * var(--k2b-chat-command-reach-left, 0px));
+  }
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] > .k2b-chat-composer__commands {
+    max-height: calc(var(--k2b-chat-command-space, 24rem) - var(--k2b-chat-command-safe-top, 0px));
+    padding: 0 max(0.5rem, env(safe-area-inset-right, 0px)) 0.5rem max(0.5rem, env(safe-area-inset-left, 0px));
+    border-width: 1px 0 0;
+    border-radius: var(--k2b-radius-dialog) var(--k2b-radius-dialog) 0 0;
+    box-shadow: var(--k2b-shadow-sheet);
+    overscroll-behavior: contain;
+    animation: k2b-chat-command-sheet-enter var(--k2b-motion-sheet) var(--k2b-ease-out);
+  }
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] > .k2b-chat-composer__commands:not(:has(> .k2b-chat-composer__command-group)) {
+    padding-top: 0.5rem;
+  }
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-heading {
+    padding: 0.75rem 0.5rem 0.25rem;
+  }
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__commands :is(button, .k2b-chat-composer__command-placeholder),
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__commands > [role="status"] {
+    min-height: 3rem;
+    padding: 0.625rem 0.5rem;
+  }
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__commands .k2b-chat-composer__command {
+    align-items: flex-start;
+  }
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command > i {
+    font-size: 1.125rem;
+    line-height: 1.25rem;
+  }
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-text > strong {
+    font-size: 0.9375rem;
+    line-height: 1.25rem;
+  }
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-text > small {
+    font-size: 0.8125rem;
+    line-height: 1.125rem;
+  }
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-end {
+    height: 1.25rem;
+  }
+}
+@keyframes k2b-chat-command-sheet-enter {
+  from { opacity: 0; transform: translateY(0.75rem); }
+}
 
 .k2b-ui .k2b-chat-composer__attachments {
   display: flex;

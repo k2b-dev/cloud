@@ -13,6 +13,7 @@ import {
   untrack,
 } from "solid-js";
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
+import { dialogHistorySettled, holdDialogHistory } from "../feedback/dialog-core";
 import { Tooltip } from "../feedback/Tooltip";
 import { replaceTextareaRange } from "../inputs/editor-dom";
 import {
@@ -237,6 +238,30 @@ const isTouchOnly = () => typeof matchMedia === "function" && matchMedia(touchOn
 const microphoneHoldMs = 500;
 /** Keeps the field focused (and a phone's keyboard open) when a composer button is pressed with a mouse or finger. */
 const keepFieldFocus = (event: MouseEvent) => event.preventDefault();
+/**
+ * Keeps one tap from reaching the page: its pointer, touch and mouse events stop at the window, and neither focus nor a
+ * click happens. A finger's tap ends with `touchend`, a scroll with `pointercancel`, a mouse's press with `click`.
+ */
+const swallowTap = (down: PointerEvent) => {
+  const blocked = ["pointerup", "pointercancel", "touchstart", "touchend", "mousedown", "mouseup", "click", "contextmenu"] as const;
+  const stop = () => {
+    window.removeEventListener("pointerdown", next, true);
+    for (const type of blocked) window.removeEventListener(type, block, true);
+  };
+  const block = (event: Event) => {
+    event.stopPropagation();
+    if (event.type !== "pointercancel" && event.type !== "touchstart" && event.type !== "pointerup") event.preventDefault();
+    if (event.type === "click" || event.type === "touchend" || event.type === "pointercancel") stop();
+  };
+  // The next press is a new gesture, whatever became of this one.
+  const next = (event: Event) => {
+    if (event !== down) stop();
+  };
+  down.stopPropagation();
+  down.preventDefault();
+  window.addEventListener("pointerdown", next, true);
+  for (const type of blocked) window.addEventListener(type, block, { capture: true, passive: false });
+};
 
 const attachmentIcon = (attachment: ChatAttachment): string =>
   attachment.icon ?? (attachment.kind === "image" ? "ti ti-photo" : attachment.kind === "resource" ? "ti ti-link" : "ti ti-file");
@@ -287,6 +312,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   });
   const [addingFiles, setAddingFiles] = createSignal(false);
   const [submitting, setSubmitting] = createSignal(false);
+  let shellRef: HTMLDivElement | undefined;
   let composerRef: HTMLElement | undefined;
   let textareaRef: HTMLTextAreaElement | undefined;
   let fileInputRef: HTMLInputElement | undefined;
@@ -429,20 +455,42 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setCommandMoved(false);
   });
   const commandsOpen = () => Boolean(!emojiOpen() && commandQuery() && (localCommands().length || props.searchCommands));
+  const commandSheetHeld = createMemo(() => commandsOpen() && isTouchOnly());
+  createEffect(() => {
+    if (!commandSheetHeld()) return;
+    onCleanup(holdDialogHistory(() => setClosedAt(commandQuery()?.start)));
+  });
   const suggestionsOpen = () => commandsOpen() || emojiOpen();
   createEffect(() => {
     if (!suggestionsOpen()) return;
     let disposed = false;
     const measure = () => {
       if (disposed || !commandListRef) return;
-      let top = window.visualViewport?.offsetTop ?? 0;
-      for (let parent = commandListRef.parentElement; parent; parent = parent.parentElement) {
-        if (/(auto|scroll|hidden|clip)/.test(window.getComputedStyle(parent).overflowY)) {
+      const accessory = commandListRef.parentElement!;
+      const viewportTop = window.visualViewport?.offsetTop ?? 0;
+      let top = viewportTop;
+      // The column a phone sheet spans: the nearest ancestor that clips sideways, or the page.
+      let column: { left: number; right: number } | undefined;
+      for (let parent = accessory.parentElement; parent; parent = parent.parentElement) {
+        const style = window.getComputedStyle(parent);
+        if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) {
           top = Math.max(top, parent.getBoundingClientRect().top);
         }
+        if (!column && /(auto|scroll|hidden|clip)/.test(style.overflowX)) {
+          const left = parent.getBoundingClientRect().left + parent.clientLeft;
+          column = { left, right: left + parent.clientWidth };
+        }
       }
-      const bottom = commandListRef.parentElement!.getBoundingClientRect().bottom;
+      const page = document.documentElement.clientWidth;
+      const left = Math.max(0, column?.left ?? 0);
+      const right = Math.min(page, column?.right ?? page);
+      const slot = accessory.parentElement!.getBoundingClientRect();
+      const bottom = accessory.getBoundingClientRect().bottom;
       commandListRef.style.setProperty("--k2b-chat-command-space", `${Math.max(40, bottom - top - 8)}px`);
+      // Only a list that reaches the screen's top edge keeps clear of a notch or the status bar.
+      commandListRef.style.setProperty("--k2b-chat-command-safe-top", top === viewportTop ? "env(safe-area-inset-top, 0px)" : "0px");
+      accessory.style.setProperty("--k2b-chat-command-reach-left", `${Math.max(0, slot.left - left)}px`);
+      accessory.style.setProperty("--k2b-chat-command-reach-right", `${Math.max(0, right - slot.right)}px`);
     };
     queueMicrotask(measure);
     window.addEventListener("resize", measure);
@@ -454,6 +502,20 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       window.removeEventListener("scroll", measure, true);
       window.visualViewport?.removeEventListener("resize", measure);
     });
+  });
+  // A press outside the command list and the field closes the list, as Escape does; the text stays. With a mouse or a
+  // trackpad the press then acts as usual. On a touch-only device a tap outside the composer closes only the list: it
+  // reaches nothing beneath, and the field keeps focus, so the keyboard stays open.
+  createEffect(() => {
+    if (!commandsOpen()) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || commandListRef?.contains(target) || textareaRef?.parentElement?.contains(target)) return;
+      setClosedAt(commandQuery()?.start);
+      if (isTouchOnly() && !shellRef?.contains(target)) swallowTap(event);
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    onCleanup(() => window.removeEventListener("pointerdown", onPointerDown, true));
   });
   createEffect(() => {
     props.draftKey;
@@ -831,6 +893,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   };
   const executeCommand = async (command: ChatCommand, tab = false) => {
     const token = commandQuery();
+    const heldHistory = commandSheetHeld();
     if (!token || blocked()) return;
     if (command.disabled || command.reason) {
       // A new object each time, so choosing the same row again inserts and announces its reason again.
@@ -868,6 +931,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     };
     showCommandStatus(command.busyLabel ? { tone: "busy", text: command.busyLabel } : undefined);
     try {
+      // The sheet's Back entry leaves first, so an action that navigates or opens a dialog finds the history settled.
+      if (heldHistory && command.action) await dialogHistorySettled();
       const result = await command.action?.({
         setValue: (value) => edit(value),
         submit: () => {
@@ -1437,7 +1502,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         aria-describedby={command.reason ? `${commandOptionId(command)}-reason` : undefined}
         data-reason={command.reason ? "true" : undefined}
         data-active={selectedCommand() === command ? "true" : undefined}
-        onPointerDown={(event) => event.preventDefault()}
+        onMouseDown={keepFieldFocus}
         onClick={(event) => {
           event.preventDefault();
           void executeCommand(command);
@@ -1470,7 +1535,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     );
   };
   return (
-    <div class="k2b-chat-composer-shell">
+    <div ref={shellRef} class="k2b-chat-composer-shell">
       <Show when={suggestionsOpen() || hasAccessory()}>
         {/* Suggestions alone float above the composer; a row of the shell's grid would add its gap and move the composer. */}
         <div class="k2b-chat-composer-slot" data-overlay={hasAccessory() ? undefined : "true"}>
@@ -1496,7 +1561,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                       aria-selected={index() === selectedCommandIndex()}
                       aria-label={emojiName(entry, locale())}
                       data-active={index() === selectedCommandIndex() ? "true" : undefined}
-                      onPointerDown={(event) => event.preventDefault()}
+                      onMouseDown={keepFieldFocus}
                       onClick={() => pickEmojiSuggestion(index())}
                     >
                       <span class="k2b-chat-composer__emoji-glyph" aria-hidden="true">
@@ -1511,7 +1576,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             </div>
           </Show>
           <Show when={commandsOpen()}>
-            <div class="k2b-chat-composer-accessory">
+            <div class="k2b-chat-composer-accessory" data-commands="">
               <div
                 ref={commandListRef}
                 id={commandListId}

@@ -27,6 +27,22 @@ const [draft, setDraft] = createSignal("");
 const [hint, setHint] = createSignal(undefined);
 const [dictation, setDictation] = createSignal(null);
 window.sent = [];
+window.outsideClicks = { native: 0, onclick: 0 };
+if (options.viewportHeight) {
+  const header = document.createElement("header");
+  header.id = "outside-header";
+  const headerButton = document.createElement("button");
+  headerButton.textContent = "Header action";
+  header.append(headerButton);
+  const feedButton = document.createElement("button");
+  feedButton.id = "outside-feed";
+  feedButton.textContent = "Feed action";
+  for (const button of [headerButton, feedButton]) {
+    button.addEventListener("click", () => window.outsideClicks.native++);
+    button.onclick = () => window.outsideClicks.onclick++;
+  }
+  document.body.append(header, feedButton);
+}
 let resolveSearch;
 let searches = 0;
 window.fixture = { setHint, setDictation, setDraft,
@@ -62,6 +78,8 @@ render(
               { id: "blocked", name: "blocked", label: "Blocked", description: "Unused", keywords: ["q", "qu"], reason: "Available after the first response" },
               { name: "fail", description: "Reject this action", action: async () => { throw new Error("Please try again"); } },
               { name: "done", description: "Finish this action", action: async () => ({ done: "All done" }) },
+              // An action that navigates within the page at once, as an application's router does.
+              ...(options.navigate ? [{ name: "go", label: "Go", description: "Open the next page", action: () => { history.pushState({ page: 2 }, "", "#next"); } }] : []),
             ] : undefined,
             searchCommands: options.mode === "slash" ? () => new Promise((resolve) => { searches++; resolveSearch = resolve; }) : undefined,
             get value() {
@@ -126,6 +144,10 @@ const open = async (
   options: {
     mode?: "slash";
     sections?: boolean;
+    /** Places the composer at the screen bottom, including in phone landscape. */
+    viewportHeight?: boolean;
+    /** Adds a command whose action pushes a history entry, as a router's navigation does. */
+    navigate?: boolean;
     /** Installs Playwright's clock before the page loads; it follows real time until a test moves it. */
     clock?: boolean;
     width?: number;
@@ -142,17 +164,23 @@ const open = async (
   await page.route(`${assets}**`, (route) =>
     route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)) }),
   );
-  await page.setContent(
-    `<!doctype html><html lang="${options.locale ?? "en"}"><head><meta name="viewport" content="width=device-width">` +
-      `<style>${css}</style><style>${fonts}</style>` +
-      `<style>*,*::before,*::after{transition:none!important}
+  const documentHtml =
+    `<!doctype html><html lang="${options.locale ?? "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">` +
+    `<style>${css}</style><style>${fonts}</style>` +
+    `<style>*,*::before,*::after{transition:none!important}
 html, body { margin: 0; height: 100%; }
-#app { display: flex; flex-direction: column; height: ${height}px; container-type: size; padding: 0 0.5rem 0.5rem; box-sizing: border-box; }
+#app { display: flex; flex-direction: column; height: ${options.viewportHeight ? "100dvh" : `${height}px`}; container-type: size; padding: 0 0.5rem 0.5rem; box-sizing: border-box; }
 .k2b-virtual-feed { flex: 1; min-height: 0; }
+#outside-header { position: fixed; top: 4px; left: 12px; }
+#outside-header button, #outside-feed { height: 24px; padding: 0 8px; }
+#outside-feed { position: fixed; top: 36px; right: 12px; }
 .row { margin: 0; padding: 6px 12px; font: 14px/20px sans-serif; }
 </style></head>` +
-      `<body class="k2b-ui${options.dark ? " k2b-dark" : ""}" style="background:var(--k2b-surface)"><div id="app"></div></body></html>`,
-  );
+    `<body class="k2b-ui${options.dark ? " k2b-dark" : ""}" style="background:var(--k2b-surface)"><div id="app"></div></body></html>`;
+  // A real origin lets same-URL history entries behave equally in Chromium and WebKit.
+  const documentUrl = `${assets}chat-composer`;
+  await page.route(documentUrl, (route) => route.fulfill({ contentType: "text/html; charset=utf-8", body: documentHtml }));
+  await page.goto(documentUrl);
   await page.evaluate(async () => {
     await Promise.all(["400 14px 'IBM Plex Sans'", "16px tabler-icons"].map((font) => document.fonts.load(font)));
   });
@@ -604,3 +632,259 @@ test(`section headings stick while scrolled and arriving server rows preserve th
     }
   }
 }, 30_000);
+
+const phones: { name: string; context: BrowserContextOptions }[] = [
+  { name: "portrait", context: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 } },
+  { name: "landscape", context: { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true } },
+];
+
+const finishListAnimation = async (page: Page) => {
+  await frames(page, 2);
+  await page.locator(".k2b-chat-composer__commands").evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished));
+  });
+};
+
+const listGeometry = (page: Page) =>
+  page.evaluate(() => {
+    const list = document.querySelector<HTMLElement>(".k2b-chat-composer__commands")!;
+    const rect = list.getBoundingClientRect();
+    const style = getComputedStyle(list);
+    const shell = document.querySelector(".k2b-chat-composer-shell")!.getBoundingClientRect();
+    return {
+      left: rect.left,
+      right: rect.right,
+      bottom: rect.bottom,
+      composerTop: document.querySelector(".k2b-chat-composer")!.getBoundingClientRect().top,
+      shellLeft: shell.left,
+      shellRight: shell.right,
+      width: innerWidth,
+      corners: [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomLeftRadius, style.borderBottomRightRadius].map(
+        parseFloat,
+      ),
+      sides: [style.borderLeftWidth, style.borderRightWidth].map(parseFloat),
+      pageOverflow: document.documentElement.scrollWidth - innerWidth,
+      listOverflow: list.scrollWidth - list.clientWidth,
+      rows: [...list.querySelectorAll(".k2b-chat-composer__command")].map((row) => {
+        const name = row.querySelector("strong")!;
+        const description = row.querySelector("small");
+        return {
+          height: row.getBoundingClientRect().height,
+          descriptionTop: description?.getBoundingClientRect().top,
+          nameBottom: name.getBoundingClientRect().bottom,
+        };
+      }),
+    };
+  });
+
+const expectPageHistory = async (page: Page) => {
+  await page.waitForFunction(() => history.state?.sentinel === 1 && history.state?.k2bDialog === undefined);
+  expect(await page.evaluate(() => history.state)).toEqual({ sentinel: 1 });
+};
+
+const outsideClicks = (page: Page) => page.evaluate(() => window.outsideClicks);
+
+declare global {
+  interface Window {
+    outsideClicks: { native: number; onclick: number };
+  }
+}
+
+describe(`slash command phone sheet in ${browserName}`, () => {
+  for (const { name, context } of phones) {
+    test(`the ${name} sheet spans the column, joins the composer and keeps the field still`, async () => {
+      const page = await open({ mode: "slash", viewportHeight: true }, context);
+      try {
+        const field = page.locator("textarea").first();
+        await field.tap();
+        const before = await field.boundingBox();
+        await page.keyboard.type("/");
+        await page.locator(".k2b-chat-composer__commands").waitFor();
+        expect(await field.boundingBox()).toEqual(before);
+        await finishListAnimation(page);
+        expect(await field.boundingBox()).toEqual(before);
+        const box = await listGeometry(page);
+        expect(Math.abs(box.left)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box.right - box.width)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box.bottom - box.composerTop)).toBeLessThanOrEqual(1);
+        expect(box.corners[0]).toBeGreaterThan(0);
+        expect(box.corners[1]).toBeGreaterThan(0);
+        expect(box.corners.slice(2)).toEqual([0, 0]);
+        expect(box.sides).toEqual([0, 0]);
+        expect(box.rows.length).toBeGreaterThan(0);
+        for (const row of box.rows) {
+          expect(row.height).toBeGreaterThanOrEqual(48);
+          if (row.descriptionTop !== undefined) expect(row.descriptionTop).toBeGreaterThanOrEqual(row.nameBottom - 1);
+        }
+        expect(box.rows.some((row) => row.descriptionTop !== undefined)).toBe(true);
+        expect(box.pageOverflow).toBeLessThanOrEqual(0);
+        expect(box.listOverflow).toBeLessThanOrEqual(0);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    for (const target of ["#outside-header button", "#outside-feed"]) {
+      test(`a ${name} tap on ${target} dismisses only the sheet and the next tap acts normally`, async () => {
+        const page = await open({ mode: "slash", viewportHeight: true }, context);
+        try {
+          await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+          const field = page.locator("textarea").first();
+          await field.tap();
+          await page.keyboard.type("/al");
+          await finishListAnimation(page);
+          expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+          const button = page.locator(target);
+          // The test taps an exposed button, not a command covering it.
+          expect(
+            await button.evaluate((element) => {
+              const box = element.getBoundingClientRect();
+              return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+            }),
+          ).toBe(true);
+          await button.tap();
+          expect(await page.locator(".k2b-chat-composer__commands").count()).toBe(0);
+          expect(await outsideClicks(page)).toEqual({ native: 0, onclick: 0 });
+          expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
+          expect(await field.inputValue()).toBe("/al");
+          await expectPageHistory(page);
+          await button.tap();
+          expect(await outsideClicks(page)).toEqual({ native: 1, onclick: 1 });
+        } finally {
+          await page.close();
+        }
+      }, 30_000);
+    }
+
+    test(`Back closes the ${name} sheet first, preserving URL, focus and slash text`, async () => {
+      const page = await open({ mode: "slash", viewportHeight: true }, context);
+      try {
+        const url = page.url();
+        await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+        const length = await page.evaluate(() => history.length);
+        const field = page.locator("textarea").first();
+        await field.tap();
+        await page.keyboard.type("/al");
+        await finishListAnimation(page);
+        expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+        expect(await page.evaluate(() => history.length)).toBe(length + 1);
+        await page.evaluate(
+          () =>
+            new Promise<void>((done) => {
+              window.addEventListener("popstate", () => done(), { once: true });
+              history.back();
+            }),
+        );
+        await page.waitForFunction(() => !document.querySelector(".k2b-chat-composer__commands"));
+        await expectPageHistory(page);
+        expect(page.url()).toBe(url);
+        expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
+        expect(await field.inputValue()).toBe("/al");
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`choosing a command and Escape both remove the ${name} sheet history entry`, async () => {
+      const page = await open({ mode: "slash", viewportHeight: true }, context);
+      try {
+        await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+        const field = page.locator("textarea").first();
+        for (const close of ["choose", "escape"]) {
+          await field.fill("");
+          await field.tap();
+          await page.keyboard.type("/al");
+          await finishListAnimation(page);
+          expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+          if (close === "choose") await page.locator(".k2b-chat-composer__command").filter({ hasText: "First local command" }).tap();
+          else await field.press("Escape");
+          expect(await page.locator(".k2b-chat-composer__commands").count()).toBe(0);
+          await expectPageHistory(page);
+          expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
+          expect(await field.inputValue()).toBe(close === "choose" ? "" : "/al");
+        }
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`an action that navigates finds the ${name} sheet's history entry gone`, async () => {
+      const page = await open({ mode: "slash", viewportHeight: true, navigate: true }, context);
+      try {
+        await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+        const field = page.locator("textarea").first();
+        await field.tap();
+        await page.keyboard.type("/go");
+        await finishListAnimation(page);
+        expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+        await page.locator(".k2b-chat-composer__command").filter({ hasText: "Open the next page" }).tap();
+        await page.waitForFunction(() => history.state?.page === 2);
+        // One Back returns to the page as it was before the sheet opened, not to a leftover sheet entry.
+        await page.evaluate(
+          () =>
+            new Promise<void>((done) => {
+              window.addEventListener("popstate", () => done(), { once: true });
+              history.back();
+            }),
+        );
+        expect(await page.evaluate(() => history.state)).toEqual({ sentinel: 1 });
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`emoji suggestions keep their floating list and leave history alone in ${name}`, async () => {
+      const page = await open({ mode: "slash", viewportHeight: true }, context);
+      try {
+        await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+        const field = page.locator("textarea").first();
+        await field.tap();
+        await page.keyboard.type(":smi");
+        await page.locator(".k2b-chat-composer__commands").waitFor();
+        await finishListAnimation(page);
+        expect(await page.locator(".k2b-chat-composer-accessory[data-commands]").count()).toBe(0);
+        const box = await listGeometry(page);
+        expect(Math.abs(box.bottom - (box.composerTop - 8))).toBeLessThanOrEqual(1);
+        expect(Math.abs(box.left - box.shellLeft)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box.right - box.shellRight)).toBeLessThanOrEqual(1);
+        for (const corner of box.corners) expect(corner).toBeGreaterThan(0);
+        for (const side of box.sides) expect(side).toBeGreaterThan(0);
+        await expectPageHistory(page);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+
+  test("desktop commands keep floating geometry and an outside click closes them and acts normally", async () => {
+    const page = await open({ mode: "slash", viewportHeight: true }, { viewport: { width: 1440, height: 900 }, hasTouch: false });
+    try {
+      await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+      const length = await page.evaluate(() => history.length);
+      const field = page.locator("textarea").first();
+      await field.click();
+      await page.keyboard.type("/");
+      await finishListAnimation(page);
+      const box = await listGeometry(page);
+      expect(Math.abs(box.bottom - (box.composerTop - 8))).toBeLessThanOrEqual(1);
+      expect(Math.abs(box.left - box.shellLeft)).toBeLessThanOrEqual(1);
+      expect(Math.abs(box.right - box.shellRight)).toBeLessThanOrEqual(1);
+      for (const corner of box.corners) expect(corner).toBeGreaterThan(0);
+      for (const side of box.sides) expect(side).toBeGreaterThan(0);
+      // Desktop rows keep their compact type; only the phone sheet takes the larger sizes.
+      expect(
+        await page
+          .locator(".k2b-chat-composer__command strong")
+          .first()
+          .evaluate((name) => getComputedStyle(name).fontSize),
+      ).toBe("13px");
+      await expectPageHistory(page);
+      expect(await page.evaluate(() => history.length)).toBe(length);
+      await page.locator("#outside-header button").click();
+      expect(await page.locator(".k2b-chat-composer__commands").count()).toBe(0);
+      expect(await outsideClicks(page)).toEqual({ native: 1, onclick: 1 });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+});
