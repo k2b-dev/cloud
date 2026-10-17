@@ -5,6 +5,8 @@ outside the page are dragged over the window. A calm overlay covers the area
 and says in one sentence what dropping does. The parent owns validation beyond
 the declared limits, uploads, progress, and persistence.
 
+`FileDropTarget` accepts files from outside the page through native drag events. For rows, tasks, or paragraphs already inside the page, use [`DragSource` and `DropTarget`](../actions/drag-and-drop). The two paths are independent.
+
 ## Use FileDropTarget
 
 Use it wherever a page or dialog can receive files: a chat composer, a folder

@@ -241,7 +241,12 @@ In the editor, the controls appear when you point at the diagram or focus it. Af
 ## Connect notes with links, tags, and attachments {icon="link"}
 
 :::reference
-- **See how notes link:** Choose **Links** at the bottom of the navigation. The network shows every note of the notebook and the links between them. The open note has a ring in the app color. This also works with **View** access, in Book view.
+- **See how notes link:** Choose **Links** at the bottom of the navigation. **Network** shows every note of the notebook and the links between them. The open note has a ring in the app color. This also works with **View** access, in Book view.
+- **Neighborhood:** The current note is in the middle. Notes it links to are on the right. Notes linking to it are on the left. The second step is on the outer ring. On a tall, narrow screen such as a phone, incoming links are above and outgoing links are below.
+- **Depth:** Choose **1 step** or **2 steps** in **Neighborhood**.
+- **Move to center:** Focus a note and press **Space**. On a touchscreen, select a note and choose **Move to center**. This note becomes the middle.
+- **On a phone:** Links opens in **Neighborhood** unless you choose **Network**. Your choice stays in the address.
+- **No links here:** Choose **Show whole notebook** to see **Network**. If filters hide all links of the current note, choose **Reset filters**.
 - **Areas:** Each top-level page with sub-pages is an area with its own color. The other top-level pages are in **Top level**. The network does not move by itself. You can drag a note, and its neighbors follow a little.
 - **Point at a note:** The note and its neighbors stay visible, and the other notes fade. Links from the note are solid lines. Links to the note are dashed. The bottom-left corner shows the area, the number of links in each direction, and the last change.
 - **Filters and search:** Choose **All notes**, **Only linked**, or **Only unlinked**. Choose an area to hide or show it. **Find note** marks the notes with a matching title, and Enter goes to the first match. The address keeps these settings, so a reload or Back shows the same view.

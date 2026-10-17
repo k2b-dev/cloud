@@ -1,17 +1,40 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { Button, ButtonLink, IconButton, IconButtonLink, Placeholder, SelectChip, TextInput, Toolbar, Tooltip, useLocale } from "@k2b/ui";
+import {
+  Button,
+  ButtonLink,
+  IconButton,
+  IconButtonLink,
+  Placeholder,
+  SegmentedControl,
+  SelectChip,
+  TextInput,
+  Toolbar,
+  Tooltip,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { NoteGraph } from "../../../../service/links";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
+import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
 import { createNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "../sidebar/navigation-visibility";
 import GraphList from "./GraphList";
 import { GraphDisplaySwitcher, graphDisplayLabel } from "./graph-displays";
 import { layoutNetworkInSlices, type NetPoint } from "./layout-net";
 import { buildGraphModel, type GraphArea, type GraphLinksFilter, matchesQuery, visibleEdges, visibleNotes } from "./model";
+import NeighborhoodDisplay from "./NeighborhoodDisplay";
 import NetworkDisplay, { type GraphZoomControls } from "./NetworkDisplay";
-import { GRAPH_QUERY_MAX, type GraphViewState, normalizeGraphViewState, writeGraphViewState } from "./view-state";
+import {
+  DEFAULT_GRAPH_DISPLAY,
+  GRAPH_QUERY_MAX,
+  type GraphViewState,
+  normalizeGraphViewState,
+  PHONE_GRAPH_DISPLAY,
+  PHONE_GRAPH_QUERY,
+  resolveGraphDisplay,
+  writeGraphViewState,
+} from "./view-state";
 
 const SEARCH_URL_DELAY_MS = 300;
 const URL_RETRY_MS = 1000;
@@ -42,9 +65,17 @@ export default function NotebookGraph(props: Props) {
   const model = buildGraphModel(props.graph, locale());
   const hasLinks = model.edges.length > 0;
   const [state, setState] = createSignal<GraphViewState>(props.view);
+  const [centreId, setCentreId] = createSignal(
+    props.selectedNoteId && model.byId.has(props.selectedNoteId) ? props.selectedNoteId : (model.notes[0]?.id ?? null),
+  );
+  let centreChanged = false;
+  const [phone, setPhone] = createSignal<boolean | null>(
+    typeof window === "undefined" ? null : window.matchMedia(PHONE_GRAPH_QUERY).matches,
+  );
+  const display = createMemo(() => resolveGraphDisplay(state().display, phone()));
   const navigationHidden = createNavigationHidden(props.navigationHidden);
   const [controls, setControls] = createSignal<GraphZoomControls | null>(null);
-  let focusNote: ((id: string) => void) | undefined;
+  let focusNote: ((id?: string) => void) | undefined;
   let navigationToggle: HTMLDivElement | undefined;
 
   // The address follows the state. Typing in the search writes it once the typing pauses, since Safari limits how
@@ -54,6 +85,11 @@ export default function NotebookGraph(props: Props) {
     clearTimeout(urlTimer);
     urlTimer = undefined;
     const url = writeGraphViewState(new URL(window.location.href), state());
+    if (centreChanged && centreId()) {
+      // A note in the path wins over `note` on the server, so a recentred graph moves to the notebook's graph address.
+      url.pathname = url.pathname.replace(/\/notes\/[^/]+\/?$/, "");
+      url.searchParams.set("note", centreId()!);
+    }
     try {
       window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
     } catch {
@@ -71,7 +107,21 @@ export default function NotebookGraph(props: Props) {
       urlTimer = setTimeout(writeUrl, SEARCH_URL_DELAY_MS);
     } else writeUrl();
   };
+  const recenter = (id: string) => {
+    if (!model.byId.has(id) || id === centreId()) return;
+    setCentreId(id);
+    centreChanged = true;
+    writeUrl();
+    // The shell must follow the graph's current note before a reload, too.
+    window.dispatchEvent(
+      new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: { noteId: id, href: `${location.pathname}${location.search}` } }),
+    );
+  };
   onMount(() => {
+    const media = window.matchMedia(PHONE_GRAPH_QUERY);
+    const changed = () => setPhone(media.matches);
+    media.addEventListener("change", changed);
+    onCleanup(() => media.removeEventListener("change", changed));
     window.addEventListener("pagehide", flushUrl);
     onCleanup(() => {
       window.removeEventListener("pagehide", flushUrl);
@@ -90,7 +140,7 @@ export default function NotebookGraph(props: Props) {
   const edges = createMemo(() => visibleEdges(model, visibleIds()));
   const query = () => state().q;
   const hits = createMemo(() => (query().trim() ? notes().filter((note) => matchesQuery(note, query())) : []));
-  const currentId = () => (props.selectedNoteId && model.byId.has(props.selectedNoteId) ? props.selectedNoteId : null);
+  const currentId = centreId;
   const current = () => (currentId() ? model.byId.get(currentId()!) : undefined);
   const noteHref = (id: string) => buildNoteUrl(props.notebookId, id, props.from);
   const open = (id: string, newTab = false) => {
@@ -115,7 +165,21 @@ export default function NotebookGraph(props: Props) {
     (current()
       ? buildNoteUrl(props.notebookId, current()!.id, props.from)
       : `/app/notebooks/${props.notebookId}${props.from ? `?mode=${props.from}` : ""}`);
-  const resetFilters = () => update({ links: "all", hide: [] });
+  // A way out of an empty state replaces the button that had focus. Focus moves to the graph that replaces it, or to
+  // the next empty state's first action, never to the page start.
+  let root!: HTMLDivElement;
+  let focusGraph = false;
+  const claimFocus = () => focusGraph;
+  const leaveEmpty = (patch: Partial<GraphViewState>) => {
+    focusGraph = !!document.activeElement?.closest(".notebook-graph__empty");
+    update(patch);
+    if (!focusGraph) return;
+    focusGraph = false;
+    queueMicrotask(() => {
+      if (!root.contains(document.activeElement)) root.querySelector<HTMLElement>(".notebook-graph__empty :is(button, a[href])")?.focus();
+    });
+  };
+  const resetFilters = () => leaveEmpty({ links: "all", hide: [] });
   const linkOptions = () => [
     { value: "all" as const, label: t().graphLinksAll, icon: "ti ti-circles" },
     { value: "linked" as const, label: t().graphLinksLinked, icon: "ti ti-affiliate" },
@@ -127,10 +191,79 @@ export default function NotebookGraph(props: Props) {
   };
   const areaName = (area: GraphArea) => (area.index === 0 ? t().graphTopLevel : area.title || t().untitled);
   const navigationLabel = () => (navigationHidden() ? t().showNavigation : t().hideNavigation);
-  const showsGraph = () => !state().list && hasLinks && notes().length > 0;
+  const showsGraph = () =>
+    !state().list &&
+    hasLinks &&
+    notes().length > 0 &&
+    (display() !== "neighborhood" || notes().some((note) => current()?.neighbours.has(note.id)));
+
+  const depthSegment = () => (
+    <>
+      <Toolbar.Separator />
+      <div class="notebook-graph__depth">
+        <span>{t().graphDepth}</span>
+        <SegmentedControl<"1" | "2">
+          size="sm"
+          ariaLabel={t().graphDepth}
+          value={state().depth === 1 ? "1" : "2"}
+          options={[
+            { value: "1", label: t().graphDepthOne },
+            { value: "2", label: t().graphDepthTwo },
+          ]}
+          onValueChange={(depth) => update({ depth: depth === "1" ? 1 : 2 })}
+        />
+      </div>
+    </>
+  );
+  const network = () => (
+    <NetworkDisplay
+      model={model}
+      notes={notes()}
+      edges={edges()}
+      currentId={currentId()}
+      query={query()}
+      notebookName={props.notebookName}
+      displayName={graphDisplayLabel("network", t())}
+      now={props.now}
+      filterKey={filterKey()}
+      layout={networkLayout}
+      onOpen={open}
+      onClearQuery={() => update({ q: "" })}
+      controls={setControls}
+      focusRequest={(focus) => {
+        focusNote = focus;
+      }}
+      claimFocus={claimFocus}
+    />
+  );
+  const neighborhood = () => (
+    <NeighborhoodDisplay
+      model={model}
+      notes={notes()}
+      edges={edges()}
+      currentId={currentId()}
+      query={query()}
+      notebookName={props.notebookName}
+      displayName={graphDisplayLabel("neighborhood", t())}
+      now={props.now}
+      filterKey={filterKey()}
+      depth={state().depth}
+      onCentre={recenter}
+      onNetwork={() => leaveEmpty({ display: "network" })}
+      onResetFilters={resetFilters}
+      noteHref={noteHref}
+      onOpen={open}
+      onClearQuery={() => update({ q: "" })}
+      controls={setControls}
+      focusRequest={(focus) => {
+        focusNote = focus;
+      }}
+      claimFocus={claimFocus}
+    />
+  );
 
   return (
-    <div class="notebook-graph" data-display={state().display} data-list={state().list ? "" : undefined}>
+    <div ref={root} class="notebook-graph" data-display={display() ?? undefined} data-list={state().list ? "" : undefined}>
       <Toolbar label={t().graphTools} class="notebook-graph__head">
         {/* The navigation sidebar sits beside the graph from lg up; between md and lg the toggle only brings a hidden
             navigation back, as the editor's does. Phones keep the header's menu. */}
@@ -178,7 +311,19 @@ export default function NotebookGraph(props: Props) {
           </small>
           <strong>{t().graphTitle}</strong>
         </div>
-        <GraphDisplaySwitcher value={state().display} onChange={(display) => update({ display })} />
+        <div class="notebook-graph__display-switcher">
+          <Show
+            when={display() === null}
+            fallback={<GraphDisplaySwitcher value={display() ?? DEFAULT_GRAPH_DISPLAY} onChange={(display) => update({ display })} />}
+          >
+            <div class="notebook-graph__desktop-default">
+              <GraphDisplaySwitcher value={DEFAULT_GRAPH_DISPLAY} onChange={(display) => update({ display })} />
+            </div>
+            <div class="notebook-graph__phone-default">
+              <GraphDisplaySwitcher value={PHONE_GRAPH_DISPLAY} onChange={(display) => update({ display })} />
+            </div>
+          </Show>
+        </div>
         <Show when={model.notes.length > 0}>
           <TextInput
             type="search"
@@ -200,10 +345,10 @@ export default function NotebookGraph(props: Props) {
             // Enter jumps to the first match. Esc clears a search field natively, which reports an empty value.
             onSubmit={() => {
               const first = hits()[0];
-              if (!first) return;
+              if (!first && (state().list || !hasLinks)) return;
               if (state().list) document.querySelector<HTMLAnchorElement>(".notebook-graph__list-title")?.focus();
               else if (!hasLinks) document.querySelector<HTMLAnchorElement>(".notebook-graph__unlinked a[data-match]")?.focus();
-              else focusNote?.(first.id);
+              else focusNote?.(first?.id);
             }}
           />
           <Tooltip.Anchor content={t().graphAsList}>
@@ -237,6 +382,15 @@ export default function NotebookGraph(props: Props) {
             options={linkOptions()}
             onValueChange={(links) => update({ links })}
           />
+          <Show when={!state().list && display() === "neighborhood"}>{depthSegment()}</Show>
+          <Show when={!state().list && display() === null}>
+            <div class="notebook-graph__desktop-default">
+              <Show when={DEFAULT_GRAPH_DISPLAY === "neighborhood"}>{depthSegment()}</Show>
+            </div>
+            <div class="notebook-graph__phone-default">
+              <Show when={PHONE_GRAPH_DISPLAY === "neighborhood"}>{depthSegment()}</Show>
+            </div>
+          </Show>
           <Toolbar.Separator />
           <div class="notebook-graph__areas" role="group" aria-label={t().graphAreas}>
             <For each={model.areas.filter((area) => area.count > 0)}>
@@ -351,24 +505,10 @@ export default function NotebookGraph(props: Props) {
             />
           </Match>
           <Match when={true}>
-            <NetworkDisplay
-              model={model}
-              notes={notes()}
-              edges={edges()}
-              currentId={currentId()}
-              query={query()}
-              notebookName={props.notebookName}
-              displayName={graphDisplayLabel(state().display, t())}
-              now={props.now}
-              filterKey={filterKey()}
-              layout={networkLayout}
-              onOpen={open}
-              onClearQuery={() => update({ q: "" })}
-              controls={setControls}
-              focusRequest={(focus) => {
-                focusNote = focus;
-              }}
-            />
+            <Show when={display() === null} fallback={display() === "neighborhood" ? neighborhood() : network()}>
+              <div class="notebook-graph__desktop-default">{DEFAULT_GRAPH_DISPLAY === "network" ? network() : neighborhood()}</div>
+              <div class="notebook-graph__phone-default">{PHONE_GRAPH_DISPLAY === "neighborhood" ? neighborhood() : network()}</div>
+            </Show>
           </Match>
         </Switch>
       </div>

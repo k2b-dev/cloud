@@ -3,6 +3,7 @@ import { useLocale } from "../intl/locale";
 import { prefersReducedMotion } from "../motion";
 import { ContextMenuBase } from "./ContextMenu";
 import { type DropdownAction, type DropdownActionBase, type DropdownChoice, DropdownItems, type DropdownSection } from "./Dropdown";
+import { onPointerDragStart } from "./drag-and-drop";
 import { openMenuSheet } from "./menu-sheet";
 
 /** A finger held this long without moving opens the menu, as the platforms' own long press does. */
@@ -134,6 +135,8 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
   const [swipe, setSwipe] = createSignal<Swipe>();
   let surface!: HTMLDivElement;
   let openMenuAt: ((x: number, y: number) => void) | undefined;
+  let closeMenu: (() => void) | undefined;
+  let sheetController: AbortController | undefined;
   let press: Press | undefined;
   let lastTap: { x: number; y: number; at: number } | undefined;
   let lastPointer = "mouse";
@@ -175,6 +178,10 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
   const openSheet = () => {
     if (sheetOpen || !active()) return;
     sheetOpen = true;
+    const controller = new AbortController();
+    sheetController = controller;
+    const abortSheet = () => controller.abort();
+    disposed.signal.addEventListener("abort", abortSheet, { once: true });
     props.onOpen?.();
     void openMenuSheet({
       Items: DropdownItems,
@@ -182,9 +189,13 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
       label: props.label,
       locale: locale(),
       top: props.sheetTop,
-      signal: disposed.signal,
+      signal: controller.signal,
     }).finally(() => {
-      sheetOpen = false;
+      disposed.signal.removeEventListener("abort", abortSheet);
+      if (sheetController === controller) {
+        sheetController = undefined;
+        sheetOpen = false;
+      }
     });
   };
 
@@ -269,7 +280,7 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
   const onPointerMove = (event: PointerEvent) => {
     const current = press;
     if (!current || event.pointerId !== current.id) return;
-    // A later "hold, then drag" gesture takes over the pointer here.
+    // Hold-then-drag hands this press to DragSource through onPointerDragStart.
     if (current.long) return;
     const dx = event.clientX - current.x;
     const dy = event.clientY - current.y;
@@ -379,6 +390,14 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
   };
 
   onMount(() => {
+    const unsubscribeDrag = onPointerDragStart((pointerId) => {
+      if (press?.id !== pointerId) return;
+      consumed = true;
+      lastTap = undefined;
+      closeMenu?.();
+      sheetController?.abort();
+      endPress();
+    });
     surface.addEventListener("pointerdown", onPointerDown);
     surface.addEventListener("pointermove", onPointerMove);
     surface.addEventListener("pointerup", onPointerUp);
@@ -390,6 +409,7 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     surface.addEventListener("mousedown", onMouseDown);
     surface.addEventListener("dblclick", onDoubleClick);
     onCleanup(() => {
+      unsubscribeDrag();
       disposed.abort();
       endPress();
       clearTimeout(settleTimer);
@@ -409,6 +429,7 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
   return (
     <ContextMenuBase
       openAt={(open) => (openMenuAt = open)}
+      closeWith={(close) => (closeMenu = close)}
       title={props.label}
       items={props.items}
       label={props.label}

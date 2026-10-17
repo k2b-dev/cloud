@@ -217,7 +217,6 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                     )}
                   </Show>
                   <Show
-                    keyed
                     when={access.data()}
                     fallback={
                       <NoticeCard
@@ -231,7 +230,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                   >
                     {(entries) => (
                       <PermissionEditor
-                        initialEntries={entries}
+                        initialEntries={entries()}
                         canEdit
                         grantAccess={grantAccess}
                         updateAccess={updateAccess}

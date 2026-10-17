@@ -22,7 +22,7 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
       "```mermaid\ngraph TD; Tent-->Stakes\n```",
     ].join("\n\n");
     for (const templateId of ["document", "report", "compact", undefined] as const) {
-      const html = buildNotePdfHtml({
+      const { html } = buildNotePdfHtml({
         markdown,
         notebookShortId: "ABC123",
         locale: "en",
@@ -46,7 +46,7 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
   test("a link to the exported note jumps within the PDF, to its heading or to its top", async () => {
     const markdown =
       "# Guide\n\n[Restore steps](note://DEF456#restore) [Missing](note://DEF456#nope) [Top](note://DEF456)\n\n## Restore\n\nDone.";
-    const html = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", noteShortId: "DEF456", locale: "en" });
+    const { html } = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", noteShortId: "DEF456", locale: "en" });
     const raw = Buffer.from((await renderHtmlToPdfWithConfig({ html, title: "Guide" }, config)).pdf).toString("latin1");
     // Chromium writes link annotations uncompressed; a named destination is a link inside the document.
     const links = raw.match(/\/Subtype \/Link\b[^>]*>/g) ?? [];
@@ -67,7 +67,7 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
       attachments: new Map([["PDF001", { filename: "Markenrichtlinien-2026.pdf", sizeBytes: 4_200_000 }]]),
     };
     for (const templateId of ["document", "report", "compact"] as const) {
-      const html = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "de", templateId, references });
+      const { html } = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "de", templateId, references });
       const text = await pdfText((await renderHtmlToPdfWithConfig({ html, title: "Brand" }, config)).pdf);
       expect(text).toContain("Farbsystem › Akzentfarbe");
       expect(text).toMatch(/Affinity Designer ?↗/u);
@@ -84,7 +84,7 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
     ].join("\n\n");
     // In Gotenberg, Noto Sans (document) and Noto Serif (report body) form f-ligatures.
     for (const templateId of ["document", "report"] as const) {
-      const html = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "en", templateId });
+      const { html } = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "en", templateId });
       const pdf = (await renderHtmlToPdfWithConfig({ html, title: "Ligatures" }, config)).pdf;
       // The ligature glyphs are really there, so the plain-letter checks below cover them.
       expect(pdfLigatures(pdf)).toEqual(expect.arrayContaining(["ffi", "ffl", "fi", "fl"]));

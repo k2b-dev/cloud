@@ -5,9 +5,10 @@ import type { GraphDisplay } from "./view-state";
 
 type Messages = ReturnType<typeof notebookWorkspaceMessages.resolve>["t"];
 
-/** Every display the graph offers, in switcher order. Network is the default; later displays register here. */
+/** Every display the graph offers, in switcher order. Device defaults live in view-state. */
 export const GRAPH_DISPLAY_REGISTRY: readonly { id: GraphDisplay; icon: string; label: (t: Messages) => string }[] = [
   { id: "network", icon: "ti ti-affiliate", label: (t) => t.graphDisplayNetwork },
+  { id: "neighborhood", icon: "ti ti-topology-star-3", label: (t) => t.graphDisplayNeighborhood },
 ];
 
 export const graphDisplayLabel = (id: GraphDisplay, t: Messages): string =>
@@ -24,7 +25,11 @@ export function GraphDisplaySwitcher(props: { value: GraphDisplay; onChange: (va
         ariaLabel={t().graphDisplay}
         value={props.value}
         onValueChange={props.onChange}
-        options={GRAPH_DISPLAY_REGISTRY.map((display) => ({ value: display.id, icon: display.icon, label: display.label(t()) }))}
+        options={GRAPH_DISPLAY_REGISTRY.map((display) => ({
+          value: display.id,
+          icon: display.icon,
+          label: <span class="notebook-graph__display-label">{display.label(t())}</span>,
+        }))}
       />
     </Show>
   );
