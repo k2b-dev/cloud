@@ -2,7 +2,7 @@
  * Mail owns everything in the `mail` schema. `src/schema.sql` is its baseline:
  * a fresh installation runs that file once inside one transaction and records
  * version 1 (`baseline`) in `mail.schema_migrations`. Objects added after the
- * baseline live in `applyAdditions` below.
+ * baseline live in `applyAdditions` below or the background index builders.
  *
  * The historical 1..126 migration chain was collapsed into that baseline before
  * Mail was first deployed; a developer machine that still holds the old chain
@@ -423,13 +423,87 @@ export const migrate = async (): Promise<void> => {
 };
 
 /**
- * One Mail process builds at a time: a second build on the same table deadlocks with the first, and
- * Postgres cancels one of them. The lease is renewed while the build runs.
+ * One Mail process builds any index at a time: concurrent expression/partial index builds can
+ * wait on each other's snapshots, and Postgres cancels one of them. The lease is renewed while
+ * the build runs.
  */
-const BM25_INDEX_LEASE_MS = 60_000;
-const searchIndexBuildMutex = lazySync((sync) =>
-  sync.mutex({ id: "mail:search-index-build", ttlMs: BM25_INDEX_LEASE_MS, retry: { maxAttempts: 1 } }),
-);
+const INDEX_BUILD_LEASE_MS = 60_000;
+const indexBuildMutex = lazySync((sync) => sync.mutex({ id: "mail:index-build", ttlMs: INDEX_BUILD_LEASE_MS, retry: { maxAttempts: 1 } }));
+
+const readCommandTargetIndexState = async () => {
+  const [state] = await sql<{ present: boolean; valid: boolean; building: boolean }[]>`
+    SELECT to_regclass('mail.commands_message_target_idx') IS NOT NULL AS present,
+      EXISTS (
+        SELECT 1 FROM pg_index
+        WHERE indexrelid = to_regclass('mail.commands_message_target_idx')
+          AND indisvalid AND indisready AND indislive
+      ) AS valid,
+      EXISTS (
+        SELECT 1 FROM pg_stat_progress_create_index progress
+        WHERE progress.datname = current_database()
+          AND (progress.relid = to_regclass('mail.commands') OR progress.relid IS NULL)
+      ) AS building
+  `.simple();
+  return state ?? { present: false, valid: false, building: false };
+};
+
+const dropCommandTargetIndex = async (): Promise<void> => {
+  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.commands_message_target_idx`.simple();
+};
+
+/**
+ * Builds the per-message command index after migration, without blocking command writes or startup.
+ * Lookups use the older index until this one is valid. The shared Mail index lease serializes builds;
+ * interrupted builds are replaced on the next start. Each database step is one statement without
+ * session state, so transaction pooling is safe. Never throws.
+ */
+export const buildCommandTargetIndex = async (): Promise<"ready" | "busy" | "built" | "failed"> => {
+  try {
+    if ((await readCommandTargetIndexState()).valid) return "ready";
+    const mutex = indexBuildMutex();
+    const lease = await mutex.acquire({ resource: "mail-indexes" });
+    if (!lease) return "busy";
+    const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), INDEX_BUILD_LEASE_MS / 3);
+    renewal.unref();
+    try {
+      const before = await readCommandTargetIndexState();
+      if (before.valid) return "ready";
+      if (before.building) return "busy";
+      // IF NOT EXISTS would keep an invalid index left by an interrupted build.
+      if (before.present) await dropCommandTargetIndex();
+      log.info("Building the per-message command index");
+      const startedAt = performance.now();
+      try {
+        await sql`
+          CREATE INDEX CONCURRENTLY IF NOT EXISTS commands_message_target_idx
+          ON mail.commands USING btree (mailbox_id, ((target ->> 'remoteMessageRefId'::text)), kind)
+          WHERE (target ? 'remoteMessageRefId'::text)
+        `.simple();
+      } catch (error) {
+        const after = await readCommandTargetIndexState();
+        if (after.valid) return "ready";
+        if (after.building) return "busy";
+        log.warn("Per-message command index was not built; lookups use the older index until the next start", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await dropCommandTargetIndex();
+        return "failed";
+      }
+      // IF NOT EXISTS may have skipped an index that another process was still building.
+      if (!(await readCommandTargetIndexState()).valid) return "busy";
+      log.info("Built the per-message command index", { durationMs: Math.round(performance.now() - startedAt) });
+      return "built";
+    } finally {
+      clearInterval(renewal);
+      await mutex.release(lease).catch(() => false);
+    }
+  } catch (error) {
+    log.warn("Per-message command index is unavailable; lookups use the older index", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return "failed";
+  }
+};
 
 /**
  * The index behind BM25 ranking. Its expression is the text that search ranks, subject twice and
@@ -489,10 +563,10 @@ export const buildOptionalSearchIndex = async (): Promise<"unavailable" | "ready
     const before = await readBm25IndexState();
     if (!before.installed) return "unavailable";
     if (before.valid) return "ready";
-    const mutex = searchIndexBuildMutex();
-    const lease = await mutex.acquire({ resource: "message-contents-bm25" });
+    const mutex = indexBuildMutex();
+    const lease = await mutex.acquire({ resource: "mail-indexes" });
     if (!lease) return "busy";
-    const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), BM25_INDEX_LEASE_MS / 3);
+    const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), INDEX_BUILD_LEASE_MS / 3);
     renewal.unref();
     try {
       return await buildBm25Index();

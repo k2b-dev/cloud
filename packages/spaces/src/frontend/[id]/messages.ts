@@ -446,6 +446,11 @@ export const spaceMessages = i18n.define({
       details: "Details",
       itemMetadata: "Item metadata",
       commentRefreshAfterSaveFailed: "Comment saved, but comments could not be refreshed.",
+      reactionSaveFailed: "The reaction could not be saved.",
+      reactionRetry: "Try again",
+      reactionLimitReached: ({ count }: { count: number }) =>
+        `An item can have up to ${count} different reactions. React with one that is already there.`,
+      moreReactionsInItem: ({ count }: { count: number }) => `${count} more ${count === 1 ? "reaction" : "reactions"}, shown in the item`,
       addCommentFailed: "Failed to add comment",
       deleteCommentFailed: "Failed to delete comment",
       updateCommentFailed: "Failed to update comment",
@@ -1207,6 +1212,11 @@ export const spaceMessages = i18n.define({
       details: "Details",
       itemMetadata: "Eintragsmetadaten",
       commentRefreshAfterSaveFailed: "Der Kommentar wurde gespeichert, aber die Kommentare konnten nicht aktualisiert werden.",
+      reactionSaveFailed: "Reaktion konnte nicht gespeichert werden.",
+      reactionRetry: "Erneut versuchen",
+      reactionLimitReached: ({ count }) =>
+        `Ein Eintrag kann bis zu ${count} verschiedene Reaktionen haben. Reagiere mit einer, die schon da ist.`,
+      moreReactionsInItem: ({ count }) => `${count} ${count === 1 ? "weitere Reaktion" : "weitere Reaktionen"}, im Eintrag sichtbar`,
       addCommentFailed: "Der Kommentar konnte nicht hinzugefügt werden",
       deleteCommentFailed: "Der Kommentar konnte nicht gelöscht werden",
       updateCommentFailed: "Der Kommentar konnte nicht aktualisiert werden",

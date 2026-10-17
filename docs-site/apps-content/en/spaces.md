@@ -112,6 +112,17 @@ inactive marker. An item holds at most 20 different emoji, ordered by the first
 remaining reaction. Counts do not change this order. A reaction on a series belongs
 to the series item. Generated occurrences have none; saved overrides have their own.
 
+Kanban card footers show up to three reaction chips and "+n" for further emoji.
+Select a chip to add or remove your reaction. With a mouse, the card's add button
+shows on hover or focus; on touch screens the card has none, so open the item.
+The item shows all reactions above the comments, with an add button that is
+always visible for people who can edit the item.
+Readers see read-only chips. Generated occurrences show no reactions. Recent
+emoji are stored per browser under `spaces:recent-emoji`. If saving fails, a
+toast offers **Try again** to repeat the failed action. When the item already has
+20 different emoji, a new one is not sent; the toast says to react with one that is
+already there and offers no **Try again**.
+
 Item reads include `reactions`: each summary has an `emoji`, `count`, `own`, and
 up to three other `people` in reaction order. Responses to other item changes
 leave `reactions` out, so keep the summary you already have. Add your reaction with
@@ -125,7 +136,7 @@ The item details read top to bottom. A task starts with **Planning**: due date,
 estimate, priority, and tags, plus a hint that jumps to the first active blocker
 while any remain. The description, checklist, and attachments follow; then
 **Assigned**, **Latest status**, and **Last result**; then **Blocked by**,
-**Blocks**, **Related tasks**, and **Links & resources**; then comments and the
+**Blocks**, **Related tasks**, and **Links & resources**; then reactions, comments, and the
 collapsed **Details**. An event shows its schedule under **Planning**, then its
 location, link, and invitations, its content, the assignees, links,
 comments, and details. Parts without content stay hidden unless you can edit

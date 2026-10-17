@@ -45,6 +45,7 @@ import {
 import { reconcileChangedSettings } from "../settings-contract";
 import { createVenueSwitcher } from "./venue-switcher";
 import { CalendarSubscriptionDialog } from "./venue-workspace/calendar-subscription";
+import { feedbackCountTooltip, feedbackRatingTooltip, formatFeedbackRating } from "./venue-workspace/feedback-chart-tooltips";
 import { openVenuePublicDisplayDialog } from "./venue-workspace/public-display";
 import { PublicPageEditor } from "./venue-workspace/public-page-editor";
 import { ProgressBar, SlotStateLabel, slotStaffingLabel, slotState } from "./venue-workspace/schedule";
@@ -166,8 +167,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     url.searchParams.set("page", "");
     return `${url.pathname}?${url.searchParams.toString()}`;
   };
-  const formatAverage = (value: number) =>
-    `${new Intl.NumberFormat(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)}/5`;
+  const formatAverage = (value: number) => formatFeedbackRating(value, locale());
   const feedbackChartLabels = createMemo(() => feedbackBuckets().map((bucket) => formatDateKey(bucket.date, locale())));
   const feedbackCountData = createMemo(() =>
     feedbackBuckets().map((bucket, index) => ({ label: feedbackChartLabels()[index] ?? bucket.date, value: bucket.count })),
@@ -194,6 +194,10 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     };
   });
   const feedbackChartYAxis = { domain: [1, 5] as [number, number], ticks: 5, format: (value: number) => `${value}/5` };
+  const feedbackRatingChartTooltip = createMemo(() =>
+    feedbackRatingTooltip({ dayLabels: feedbackChartLabels(), label: t().averageRating, locale: locale() }),
+  );
+  const feedbackCountChartTooltip = createMemo(() => feedbackCountTooltip({ label: t().ratings, locale: locale() }));
   // Shift sign-up needs staff access and a Venue that takes sign-ups for its shifts; the server enforces both.
   const canJoinShifts = () => canWrite(venue()) && venue().signupMode !== "free";
   /** Midday of the first and last day the calendar grid shows (weeks start on Monday). */
@@ -887,6 +891,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                           series={[{ label: t().averageRating, data: feedbackChartData() }]}
                           xAxis={feedbackChartXAxis()}
                           yAxis={feedbackChartYAxis}
+                          tooltip={feedbackRatingChartTooltip()}
                         />
                       }
                     >
@@ -896,6 +901,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                         series={[{ label: t().averageRating, data: feedbackChartData() }]}
                         xAxis={feedbackChartXAxis()}
                         yAxis={feedbackChartYAxis}
+                        tooltip={feedbackRatingChartTooltip()}
                         smooth={false}
                       />
                     </Show>
@@ -907,6 +913,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       class="min-h-0 flex-1"
                       data={feedbackCountData()}
                       yAxis={{ ticks: 3, format: (value) => (Number.isInteger(value) ? String(value) : "") }}
+                      tooltip={feedbackCountChartTooltip()}
                     />
                   </div>
 

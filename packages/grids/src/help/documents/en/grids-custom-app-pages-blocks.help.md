@@ -71,7 +71,7 @@ Metrics normally take the number formatting from the selected fields. For aggreg
 - Metrics accepts an ungrouped aggregate query and shows up to 12 named scalar results.
 - Chart accepts a grouped aggregate query and shows a donut, bar, or line chart with at least one series of aggregate values. A Chart block shows at most 100 groups through its `limit`.
 
-Bar and line charts show the optional x-axis and y-axis labels. Donut charts ignore them. Category names and axis labels that do not fit beside or below the chart are shortened. Hover over one to see it in full. With more than 12 groups, the chart shows at most 12 evenly spaced names.
+Bar and line charts show the optional x-axis and y-axis labels. Donut charts ignore them. Category names and axis labels that do not fit beside or below the chart are shortened. Hover over one to see it in full. With more than 12 groups, the chart shows at most 12 evenly spaced names. Hover over, focus, or choose a bar, point, or slice to see its category and formatted value, plus its share in donut charts.
 
 The published capability records the exact tables and fields behind the block. People who use the app need no access to the base. The runtime cannot query sources outside that immutable capability. Publish again after you change the source of a saved view.
 

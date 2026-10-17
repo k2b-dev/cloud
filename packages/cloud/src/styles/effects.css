@@ -880,14 +880,15 @@
   flex-direction: column;
   gap: 0.5rem;
   border-radius: var(--ui-radius-surface);
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 9%, var(--ui-surface-subtle));
+  /* Both fills are computed with the app ink, so its label stays at AA. */
+  background: var(--ui-app-selected);
   padding: 1.25rem 1.25rem 1.375rem;
   text-decoration: none;
   transition: background-color 140ms ease;
 }
 
 .help-article-next:hover {
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 15%, var(--ui-surface-subtle));
+  background: var(--ui-app-selected-nav);
 }
 
 .help-article-next-label {

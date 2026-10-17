@@ -183,11 +183,11 @@ host access, or network access beyond the explicit web tools. See
 The default tool source also offers the server-run Code Mode tools `code_run`,
 `code_action`, `code_inspect`, `code_stop`, `code_export`, `code_present`, and `code_check`
 in every turn, whichever client submits it, including API
-clients, `cld assistant --detach`, and scheduled tasks. They load on demand
+clients, `cld assistant --detach`, and routines (scheduled tasks). They load on demand
 and run JavaScript in an isolated Assistant-owned host. That code can call
 Cloud capabilities, databases, and external HTTPS endpoints with the user's
-permissions; each call keeps its normal approvals or, in a scheduled task, its
-task grants. See
+permissions; each call keeps its normal approvals or, in a routine, its
+routine grants. See
 [Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode)
 and [Advertise connected client tools](/en/docs/ai/chat-interface#advertise-connected-client-tools).
 
@@ -292,7 +292,7 @@ it does not infer resource identity from prose.
 ## Runtime ownership
 
 Core mounts `/api/ai`, migrates the AI schema, and exclusively owns the
-conversation workers, maintenance, scheduled chat tasks, and durable
+conversation workers, maintenance, routines, and durable
 continuations. Applications must not start a second AI conversation runtime.
 They publish domain Capabilities, launch a personal conversation through
 `launchAssistant()`, or use `runAiStructured()` for bounded server/workflow AI.
@@ -393,7 +393,7 @@ event. The client then reconnects and continues from a fresh state snapshot.
 The controller folds the stream into one projection and exposes the
 active conversation's history, send, steer, abort, retry, fork, compaction,
 approval, and frontend-tool actions. Do not put conversation and Project lists,
-metadata, Sources, files, scheduled tasks, Project context, or access changes
+metadata, Sources, files, routines, Project context, or access changes
 into turn events. Those are durable server projections and refresh through
 [Realtime UI](/en/docs/frontend/realtime-ui).
 
@@ -560,19 +560,19 @@ audio, or transcripts in logs. Filter Logs by `ai:transcription` or `ai:dictatio
 dictation worker entries also include the dictation ID, model profile, attempt,
 and retry decision. Dictations are not workflow runs.
 
-### Scheduled chat tasks
+### Assistant routines
 
-A scheduled task belongs to one chat and runs as that chat's owner. Creating
+A routine belongs to one chat and runs as that chat's owner. Creating
 it stores a confirmed [mandate](/en/docs/identity/background-mandates) whose
-`grants` list names every capability the task may call. In a background run,
+`grants` list names every capability the routine may call. In a background run,
 every app capability needs a matching grant, Queries included, such as the
-reader Query behind a Project reference. A task without grants can use only
+reader Query behind a Project reference. A routine without grants can use only
 built-in tools such as chat files. Fixed input values must
 match exactly, and the owner's current access still applies to each call.
 
 A background run cannot ask for approval. Remembered approvals from the chat
 do not apply, and an operation that needs an approval or a browser fails the
-run, which moves the task to `needs_attention`. A display-only `clientView()`
+run, which moves the routine to `needs_attention`. A display-only `clientView()`
 tool such as `chart` needs neither: Cloud answers it, and the run's transcript
 shows it. Action grants are accepted only
 for Actions whose manifest declares `approval: "rememberable"` or `"none"`;
@@ -580,15 +580,15 @@ Actions that ask for every call cannot be scheduled. Before each run, Core
 checks that the owner is active, the chat is not archived, and the mandate is
 confirmed and unchanged.
 
-Finished scheduled task runs and their run evidence expire after
-[90 days](/en/docs/ai/structured-and-background-ai#keep-scheduled-task-run-history-for-90-days);
+Finished routine runs and their run evidence expire after
+[90 days](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days);
 the result messages delivered into the chat stay.
 
 ### Scheduled Code Mode
 
 Scheduled turns can run Code Mode without a user tab. Core binds each call and
-capability callback to the persisted turn and its confirmed task mandate.
-Foreground activity in the same chat does not share the scheduled host. Task
+capability callback to the persisted turn and its confirmed routine mandate.
+Foreground activity in the same chat does not share the scheduled host. Routine
 revocation, expiry, revision changes and cancellation deny subsequent requests.
 The normal capability dispatcher still checks current user access, fixed inputs
 and action approval policy; remembered foreground approvals never authorize a

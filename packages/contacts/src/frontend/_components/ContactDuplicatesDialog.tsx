@@ -1,5 +1,5 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, dialogCore, PanelDialog, Placeholder, panelDialogOptions, prompts, toast, useLocale } from "@k2b/ui";
+import { Button, dialogCore, InlineGuidance, PanelDialog, Placeholder, panelDialogOptions, prompts, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactDuplicateMatch } from "../../service";
@@ -169,17 +169,15 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
           </Show>
         </Show>
         <Show when={reconciling()}>
-          <p class="text-xs text-dimmed" role="status">
-            {t().reloadingMatches}
-          </p>
+          <InlineGuidance loading>{t().reloadingMatches}</InlineGuidance>
         </Show>
         <Show when={reconcileError()}>
-          <div class="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300" role="status">
-            <span>{reconcileError()}</span>
-            <Button type="button" variant="secondary" size="xs" onClick={() => void reconcile()} disabled={reconciling()}>
+          <InlineGuidance tone="warning" icon="ti ti-alert-triangle" role="status">
+            {reconcileError()}{" "}
+            <Button type="button" variant="text" size="xs" onClick={() => void reconcile()} disabled={reconciling()}>
               {t().retryReload}
             </Button>
-          </div>
+          </InlineGuidance>
         </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>

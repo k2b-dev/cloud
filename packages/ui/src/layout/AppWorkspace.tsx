@@ -16,7 +16,7 @@ import {
   useContext,
 } from "solid-js";
 import { isServer } from "solid-js/web";
-import { IconButton, IconButtonLink } from "../actions/Button";
+import { Button, IconButton, IconButtonLink } from "../actions/Button";
 import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
   APP_WORKSPACE_DETAIL_STEP_EVENT,
@@ -827,6 +827,17 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
   return (
     <>
       <style innerHTML={workspaceRule()} />
+      <Button
+        type="button"
+        variant="ghost"
+        aria-controls={domId()}
+        aria-expanded="false"
+        data-app-workspace-detail-toggle=""
+        class="k2b-app-workspace__detail-toggle"
+      >
+        <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
+        {workspaceMessages().details}
+      </Button>
       <Show when={resizable()}>
         <ResizeHandle
           kind="detail"

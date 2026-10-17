@@ -134,8 +134,8 @@ test("task list opens the selected task without a manual form; details expose ac
       .click();
     await tick();
     await tick();
-    expect(confirmation).toHaveBeenCalledWith("Task queued. The result will appear here and in the chat when it is ready.", {
-      title: "Scheduled task",
+    expect(confirmation).toHaveBeenCalledWith("Run queued. The result will appear here and in the chat when it is ready.", {
+      title: "Routine",
     });
   } finally {
     dispose();
@@ -170,5 +170,44 @@ test("a task older than the 90-day run window says no runs in that window instea
     dispose();
     fetchMock.mockRestore();
     dom.cleanup();
+  }
+});
+
+test("the chat's routine list names routines in English and German", async () => {
+  const { AssistantTasksView } = await import("./AssistantTasksDialog");
+  const { LocaleProvider } = await import("@k2b/ui");
+  const expected = {
+    en: ["No routines", "Ask in the chat for a reminder or a routine.", "Set up new routines and make changes in the chat."],
+    de: [
+      "Keine Routinen",
+      "Bitte den Assistenten im Chat um eine Erinnerung oder eine Routine.",
+      "Neue Routinen und Änderungen planst du im Chat.",
+    ],
+  };
+  for (const [locale, [empty, hint, footer]] of Object.entries(expected)) {
+    const dom = createDomTestHarness();
+    const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(async () => Response.json([]), { preconnect: globalThis.fetch.preconnect }),
+    );
+    const dispose = render(
+      () => (
+        <LocaleProvider locale={locale}>
+          <AssistantLiveProvider value={createAssistantLiveHub()}>
+            <AssistantTasksView chatId="chat01" onOpenRun={() => {}} />
+          </AssistantLiveProvider>
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
+    try {
+      await tick();
+      expect(dom.root.textContent).toContain(empty!);
+      expect(dom.root.textContent).toContain(hint!);
+      expect(dom.root.textContent).toContain(footer!);
+    } finally {
+      dispose();
+      fetchMock.mockRestore();
+      dom.cleanup();
+    }
   }
 });

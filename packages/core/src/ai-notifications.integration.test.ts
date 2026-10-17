@@ -257,7 +257,7 @@ suite("Core AI completion notifications", () => {
       `;
       expect(events).toEqual([
         {
-          title: `Scheduled task ${task!.shortId} needs attention`,
+          title: `Routine ${task!.shortId} needs attention`,
           target_href: `/app/assistant?conversation=${conversation.shortId}`,
           idempotency_key: `occurrence:${occurrence!.id}`,
         },

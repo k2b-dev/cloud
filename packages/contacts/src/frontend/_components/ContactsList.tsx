@@ -1,5 +1,5 @@
-import { Placeholder, Tag, Tooltip, useLocale } from "@k2b/ui";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { Checkbox, IconButtonLink, Placeholder, Tag, useLocale } from "@k2b/ui";
+import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import type { Contact } from "../../service";
 import { resolveContactInitials, resolveContactName } from "../../shared";
 import ContactFavoriteButton from "./ContactFavoriteButton";
@@ -22,6 +22,7 @@ type Props = {
   initialSelectedBookId: string | null;
   emptyTitle?: string;
   emptyDescription?: string;
+  emptyAction?: JSX.Element;
   detailBaseHref: string;
   initialFavoriteKeys: string[];
   selectionMode?: boolean;
@@ -103,6 +104,7 @@ export default function ContactsList(props: Props) {
           icon="ti ti-address-book"
           title={props.emptyTitle ?? t().noContacts}
           description={props.emptyDescription ?? t().noContactsInView}
+          action={props.emptyAction}
           variant="panel"
           class="h-full min-h-56 justify-center"
         />
@@ -128,19 +130,17 @@ export default function ContactsList(props: Props) {
             return (
               <li class="group/contact relative">
                 <Show when={props.selectionMode}>
-                  <label class="absolute left-3 top-1/2 z-10 flex -translate-y-1/2 cursor-pointer items-center">
-                    <input
-                      type="checkbox"
-                      class="h-4 w-4"
-                      checked={isChecked()}
+                  <span class="absolute left-3 top-1/2 z-10 flex -translate-y-1/2 items-center">
+                    <Checkbox
+                      value={isChecked()}
                       aria-label={t().selectContact({ name: name() })}
-                      onChange={() => props.onToggleSelection?.(contact.id)}
+                      onValueChange={() => props.onToggleSelection?.(contact.id)}
                     />
-                  </label>
+                  </span>
                 </Show>
                 <a
                   href={buildContactDetailHref(props.detailBaseHref, contact.id, contact.bookId)}
-                  class="flex w-full min-w-0 items-center gap-3 rounded-[var(--ui-radius-control)] py-2.5 pl-3 pr-[3rem] text-left focus-ui [@media(min-width:640px)]:pr-[7rem]"
+                  class="flex w-full min-w-0 items-center gap-3 rounded-[var(--ui-radius-control)] py-2.5 pl-3 pr-[3rem] text-left focus-visible:outline-[length:var(--k2b-focus-width)] focus-visible:outline-solid focus-visible:outline-[var(--k2b-focus-ring)] focus-visible:outline-offset-[var(--k2b-focus-offset)] [@media(min-width:640px)]:pr-[7rem]"
                   classList={{ "pl-10": props.selectionMode }}
                   aria-label={t().openContact({ name: name() })}
                   aria-current={isSelected() ? "true" : undefined}
@@ -219,35 +219,27 @@ export default function ContactsList(props: Props) {
                 <span class="absolute right-3 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 sm:right-4">
                   <Show when={phone()}>
                     {(number) => (
-                      <Tooltip.Anchor content={t().callContact({ name: name() })}>
-                        <a
-                          href={`tel:${number()}`}
-                          class="focus-ui hidden h-7 w-7 items-center justify-center rounded text-dimmed hover:bg-[var(--ui-hover)] hover:text-primary sm:flex"
-                          aria-label={t().callContact({ name: name() })}
-                        >
-                          <i class="ti ti-phone text-sm" />
-                        </a>
-                      </Tooltip.Anchor>
+                      <IconButtonLink href={`tel:${number()}`} size="sm" class="max-sm:!hidden" label={t().callContact({ name: name() })}>
+                        <i class="ti ti-phone text-sm" aria-hidden="true" />
+                      </IconButtonLink>
                     )}
                   </Show>
                   <Show when={email()}>
                     {(address) => (
-                      <Tooltip.Anchor content={t().emailContact({ name: name() })}>
-                        <a
-                          href={`mailto:${address()}`}
-                          class="focus-ui hidden h-7 w-7 items-center justify-center rounded text-dimmed hover:bg-[var(--ui-hover)] hover:text-primary sm:flex"
-                          aria-label={t().emailContact({ name: name() })}
-                        >
-                          <i class="ti ti-mail text-sm" />
-                        </a>
-                      </Tooltip.Anchor>
+                      <IconButtonLink
+                        href={`mailto:${address()}`}
+                        size="sm"
+                        class="max-sm:!hidden"
+                        label={t().emailContact({ name: name() })}
+                      >
+                        <i class="ti ti-mail text-sm" aria-hidden="true" />
+                      </IconButtonLink>
                     )}
                   </Show>
                   <ContactFavoriteButton
                     bookId={contact.bookId}
                     contactId={contact.id}
                     initialFavorite={favoriteProjection.favoriteFor(contact)}
-                    class="focus-ui flex h-7 w-7 items-center justify-center rounded hover:bg-[var(--ui-hover)]"
                   />
                 </span>
               </li>

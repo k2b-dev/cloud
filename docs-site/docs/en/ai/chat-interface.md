@@ -136,7 +136,7 @@ Opening a chat that is gone shows the same reason. Reopening or refreshing the
 chat, or acting in it, subscribes again; the error clears once the new stream
 connects.
 
-Lists, Sources, files, tasks, dictations, and Project context refresh through
+Lists, Sources, files, routines, dictations, and Project context refresh through
 [AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates)
 on `/api/ai/live`, not through the conversation stream.
 
@@ -271,13 +271,13 @@ order:
    the step saw, the image description or the answer to its prompt. With the
    host's `onOpenFile`, the thumbnail is a button that opens the file larger;
    its name is that action, and the alt text describes it. Without `fileUrl`
-   the step shows no thumbnail. The run history of a scheduled task passes the
-   file route of the task's chat, so its thumbnails, files and views load with
+   the step shows no thumbnail. The run history of a routine passes the
+   file route of the routine's chat, so its thumbnails, files and views load with
    the viewer's access as in the chat. Run details and run history are kept
    for 90 days after the run finished. Afterwards the run's details show
    **This run is no longer available**, and the result stays in the chat. A
-   one-off task keeps its run, but its run history then shows **No run
-   history**. A task older than 90 days without a newer run shows **No runs
+   one-off routine keeps its run, but its run history then shows **No run
+   history**. A routine older than 90 days without a newer run shows **No runs
    in the last 90 days** instead of **No occurrences yet**.
 2. **Results.** Presented files and code views, `code_present` apps, charts, cards, and
    capability tables in the order they were made. A later result with the same
@@ -523,7 +523,7 @@ each web search with its query, and the Cloud items a tool call read, bundled
 per call, without stored previews), **Working files** (everything below
 `/temp/`, grouped by folder, with the storage used once it passes 70 % of the
 limit), and **Context** (Project, Skills the chat used, memories remembered
-from it, scheduled tasks, and Secrets). Sources, Working files, and Context
+from it, routines, and Secrets). Sources, Working files, and Context
 start collapsed; collapsed content is not rendered.
 
 The newest results stay on top: all results of the latest turn that delivered
@@ -671,7 +671,7 @@ runtime monitoring and production checks.
 Every turn with the default tool source offers the server-run code tools
 `code_run`, `code_action`, `code_inspect`, `code_stop`, `code_export`, and
 `code_present`, and `code_check`, whichever client submits it: the web app,
-`cld assistant` with or without `--detach`, an API client, or a scheduled task.
+`cld assistant` with or without `--detach`, an API client, or a routine.
 Cloud runs them in an Assistant-owned host, so they need no client.
 
 Only tools that a client must run wait for that client. A frontend handler alone
@@ -686,7 +686,7 @@ hint. The local client tools `local_bash`, `local_list`, `local_read`,
 `load_local_skill` also need a client that declares and handles them.
 See [local client tools](/en/docs/ai/tools-and-approvals#run-an-optional-tool-in-a-local-cli)
 for execution and approval boundaries. Detached CLI
-turns, API clients without a code host, and scheduled tasks never get `code_open` or
+turns, API clients without a code host, and routines never get `code_open` or
 `code_secret`. The other code tool names are still accepted in `clientToolIds`
 and have no effect. Unknown names are ignored so older clients keep working
 after a tool is retired. Turn and draft submissions accept at most 64 distinct
@@ -777,7 +777,7 @@ to, or focused for `press`.
 ```
 
 Both desktop (1280×800) and phone (390×844, touch) replay the steps, in opposite
-themes with the viewer's locale/time zone. Background checks use the task time
+themes with the viewer's locale/time zone. Background checks use the routine time
 zone and the default locale/light theme when no preferences are available.
 CLI checks use a light desktop theme and the service locale/time zone.
 For a saved app, each run uses a separate disposable copy
@@ -785,7 +785,7 @@ of the app database, shared KV/files and only the checking user's personal KV.
 Reads and writes use the normal services; real app data stays unchanged. A
 database above 1000 rows or 16 MiB uses schema only and reports a warning.
 Storage copies are limited to 250 MiB. In a background turn, checking a saved
-app with a connected database requires a task grant that allows `export` for
+app with a connected database requires a routine grant that allows `export` for
 that app; otherwise the start is refused with `BACKGROUND_ACCESS_DENIED`.
 One-off apps have no storage or database, as in their chat card: `cloud.kv`,
 `cloud.files` and `cloud.db` reject with `unavailable`.
@@ -980,16 +980,16 @@ input still use `needs_attention`. Running-list filters include browser work.
 ### Inspect background results
 
 Delivered background results use ordinary assistant prose with
-`meta.scheduledTask` identifying the task and occurrence. The timeline displays a
+`meta.scheduledTask` identifying the routine and occurrence. The timeline displays a
 **Background run** control above the result. Hosts provide
 `AiChatActions.onOpenScheduledTaskRun(taskId, occurrenceId)` to open their
 permission-checked run detail view. Assistant shows the result, execution history,
-and controls for returning to the chat or managing the task.
+and controls for returning to the chat or managing the routine.
 
 ### Open chat content beside the conversation
 
 The context panel is the entry point for apps, files, images, sources, project
-knowledge, and scheduled tasks. Compact sections show a preview; View all opens
+knowledge, and routines. Compact sections show a preview; View all opens
 a searchable overview beside the conversation. Apps appear as cards with their
 name and optional description. The overview includes apps referenced by that
 conversation, rather than a global library.
@@ -1008,7 +1008,7 @@ The context column responds to the available width of the chat pane, including
 when a neighboring workspace is resized. Below 56rem it is hidden and the chat
 header exposes an Open (+) menu, even with no workspace tabs open. This menu and
 the workspace tab menu offer the same chat apps, files (including images and
-voice inputs), sources and references, project knowledge, and scheduled tasks
+voice inputs), sources and references, project knowledge, and routines
 when available. Hiding the column preserves its loaded context and the composer
 draft; it does not unmount the chat.
 
@@ -1154,7 +1154,7 @@ tasks restore the plan automatically; switching chats resets the disclosure.
 
 Assistant recognizes `/` at a word boundary anywhere in the composer. Its
 sections stay in this order: **Skills**, **Files in this chat**, **Studio apps**,
-**This chat**, **Scheduled tasks**. Files appear when searching or narrowing to
+**This chat**, **Routines**. Files appear when searching or narrowing to
 files. Type a name, or narrow by typing one of these words followed by a space:
 
 | List | German and English words |
@@ -1164,7 +1164,7 @@ files. Type a name, or narrow by typing one of these words followed by a space:
 | Projects | `projekt`, `projekte`, `project`, `projects` |
 | Studio apps | `app`, `apps`, `studio` |
 | Models | `model`, `models`, `modell`, `modelle` |
-| Scheduled tasks | `routine`, `routinen` |
+| Routines | `routine`, `routinen` |
 
 The full words also list their category without a trailing space, including
 `/project` and `/projekt` for Projects.
@@ -1212,29 +1212,29 @@ label turns it into ordinary text; undo restores its identity. Saving and
 reopening a draft preserves references, including versioned conversation files.
 Project file references name a read-only path in the current Project.
 
-**Scheduled tasks** offers **New scheduled task** and your own scheduled tasks.
-New scheduled task inserts a reference to Assistant's scheduled-tasks Skill;
+**Routines** offers **New routine** and your own routines.
+New routine inserts a reference to Assistant's scheduled-tasks Skill;
 send it with your request to describe what should happen and when. If you
 turned off that Skill, or it is unavailable to you, the row explains why and
 inserts nothing.
 
-Choosing an active task runs it now. The composer shows a starting status while
+Choosing an active routine runs it now. The composer shows a starting status while
 the request is pending and a running status only after the server accepts the
-run. The result arrives in the scheduled task's chat. A failed request restores
-`/…` and explains the failure in plain words: the task already runs, no longer
+run. The result arrives in the routine's chat. A failed request restores
+`/…` and explains the failure in plain words: the routine already runs, no longer
 exists, was started too often, or was not accepted. If the server is
 unreachable or gives no clear answer, the composer says it cannot tell whether
-the task started. Choosing the task again in the same browser tab, also after a
+the routine started. Choosing the routine again in the same browser tab, also after a
 reload, checks the earlier start instead of starting it a second time. If that
-run already finished, the status says so and points to the task's chat. Paused tasks ask you to resume them first;
-tasks that need attention explain that you must intervene before they can run.
+run already finished, the status says so and points to the routine's chat. Paused routines say **Paused. Resume the routine first.**
+Routines that need attention explain that you must intervene before they can run.
 Selecting either sends no run request.
 
-Tasks load once per menu opening. The overview shows up to five tasks, newest
-first, after New scheduled task. Searching or narrowing with `routine` or
-`routinen` shows all matching loaded tasks, including paused tasks and those
-that need attention; completed tasks are excluded. If task loading fails,
-**Scheduled tasks could not be loaded** with **Try again** replaces the task
+Routines load once per menu opening. The overview shows up to five routines, newest
+first, after New routine. Searching or narrowing with `routine` or
+`routinen` shows all matching loaded routines, including paused routines and those
+that need attention; completed routines are excluded. If routine loading fails,
+**Routines could not be loaded** with **Try again** replaces the routine
 rows. Choosing it reloads the list and preserves `/…` while results load.
 
 Selecting a Project permanently assigns a previously unassigned chat. Future
