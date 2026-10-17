@@ -13,11 +13,6 @@ type SheetEntry = DropdownAction | DropdownChoice;
 type SheetItem = SheetEntry | { items: readonly SheetEntry[] };
 
 /**
- * The sheet's items hand their action to `run` instead of running it while the sheet closes: `dialogCore` settles the
- * sheet after it left the history, and only then may an action navigate or open the next dialog.
- * A choice or action that keeps the menu open runs at once.
- */
-/**
  * Follows a link the way a click on it would, so a page's own link handling, such as progressive navigation, still
  * applies; it runs only after the sheet has left the history.
  */
@@ -30,6 +25,11 @@ const followLink = (href: string) => {
   link.remove();
 };
 
+/**
+ * The sheet's items hand their action to `run` instead of running it while the sheet closes: `dialogCore` settles the
+ * sheet after it left the history, and only then may an action navigate or open the next dialog.
+ * A choice or action that keeps the menu open runs at once.
+ */
 const afterClose = <T extends DropdownItem>(items: readonly T[], run: (action: () => void) => void): T[] => {
   const entry = (item: SheetEntry): SheetEntry => {
     // A plain link would navigate while the sheet's history entry is still being removed, and that Back could

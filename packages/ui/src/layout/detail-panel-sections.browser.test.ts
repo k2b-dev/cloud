@@ -156,6 +156,29 @@ const hosted = () =>
     }),
   )}</div>`;
 
+// The narrowest panel with a wide three-part header meta, like a read-only recurring event.
+const narrow = () =>
+  `<div class="k2b-app-workspace" style="height:20rem;--k2b-detail-size:320px;--k2b-detail-min:320px;--k2b-detail-max:640px"><div class="k2b-app-workspace__content"><div class="k2b-app-workspace__main"></div><aside id="narrow" class="k2b-app-workspace__detail" style="--k2b-workspace-panel-size:320px;--k2b-workspace-panel-min:320px;--k2b-workspace-panel-max:640px">${renderToString(
+    () =>
+      createComponent(DetailPanel, {
+        get children() {
+          return createComponent(DetailPanel.Header, {
+            title: "Weekly planning",
+            subtitle: "Event",
+            get meta() {
+              return ["Blocked by 3", "Read only", "This event only"].map((label) =>
+                createComponent(Button, { variant: "ghost", size: "xs", children: label }),
+              );
+            },
+          });
+        },
+      }),
+  )}</aside></div></div>`;
+
+// A section outside a panel, such as a form section in an editor dialog, keeps its full width.
+const loose = () =>
+  `<div id="loose" style="padding:1rem;width:20rem">${renderToString(() => section("Appearance", "ti ti-palette"))}</div>`;
+
 // Outside a detail panel the discussion keeps its own card, and `bare` stays bare.
 const standalone = () =>
   `<div id="standalone" style="padding:1rem">${renderToString(() => discussion("one", false))}</div>` +
@@ -210,6 +233,8 @@ const open = async (viewport: { width: number; height: number }, theme: "light" 
           panel("composer", "one", true) +
           nested() +
           hosted() +
+          narrow() +
+          loose() +
           standalone()) +
       `</body></html>`,
   );
@@ -295,8 +320,19 @@ const measure = () => {
     headerMeta: (() => {
       const meta = document.querySelector("#one .k2b-detail-panel__meta")!;
       const subtitle = document.querySelector("#one .k2b-detail-panel__heading p")!;
-      return [style(meta).fontSize, style(subtitle).fontSize];
+      return [style(meta).fontSize, style(subtitle).fontSize, box(meta).top === box(subtitle).top ? "one line" : "wrapped"];
     })(),
+    narrowHeader: (() => {
+      const header = box(document.querySelector("#narrow .k2b-detail-panel__header")!);
+      const subtitle = box(document.querySelector("#narrow .k2b-detail-panel__supporting > p")!);
+      const meta = box(document.querySelector("#narrow .k2b-detail-panel__meta")!);
+      return {
+        subtitleWidth: subtitle.width,
+        metaInside: meta.left >= header.left && meta.right <= header.right,
+        metaBelow: meta.top >= subtitle.bottom,
+      };
+    })(),
+    looseIndent: style(document.querySelector("#loose .k2b-detail-panel__section-body")!).paddingInlineStart,
     standalone: card("standalone"),
     bare: card("bare"),
     hosted: (() => {
@@ -444,6 +480,8 @@ describe("DetailPanel sections and Discussion share one frame", () => {
 
           // Plain header meta reads like the subtitle beside it.
           expect(result.headerMeta[0]).toBe(result.headerMeta[1]);
+          // A meta that fits stays on the subtitle's line.
+          expect(result.headerMeta[2]).toBe("one line");
 
           // The comment action is text, so it keeps 4.5:1 on its frame in both themes.
           expect(result.actionContrast).toBeGreaterThanOrEqual(4.5);
@@ -463,6 +501,15 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           expect(result.hosted.grouped).not.toBe(result.hosted.frame);
           expect(result.hosted.lone).toBe(result.hosted.grouped);
           expect(result.hosted.composer).toBe(result.hosted.grouped);
+
+          // A meta too wide for the line moves below the subtitle and stays inside the header; the
+          // subtitle keeps its text.
+          expect(result.narrowHeader.subtitleWidth).toBeGreaterThanOrEqual(90);
+          expect(result.narrowHeader.metaInside).toBe(true);
+          expect(result.narrowHeader.metaBelow).toBe(true);
+
+          // The one text edge belongs to panels: a section outside one keeps its full width.
+          expect(result.looseIndent).toBe("0px");
 
           // Outside a detail panel the default discussion is its own card; bare draws nothing.
           expect(result.standalone.border).toBe("1px");

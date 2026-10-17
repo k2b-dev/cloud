@@ -11,6 +11,7 @@ import {
   splitProps,
   useContext,
 } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useLocale } from "../intl/locale";
@@ -67,6 +68,7 @@ export type DropdownChoice = DropdownActionBase & {
   action: () => void;
   checked: boolean | (() => boolean);
   choice: "checkbox" | "radio";
+  href?: string;
   closeOnSelect?: boolean;
   color?: string;
 };
@@ -290,9 +292,10 @@ function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
   const menu = useContext(MenuContext);
   const checked = () => (typeof props.checked === "function" ? props.checked() : props.checked);
   return (
-    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the runtime role is always menuitemcheckbox or menuitemradio, both of which support aria-checked.
-    <button
-      type="button"
+    <Dynamic
+      component={!props.disabled && props.href ? "a" : "button"}
+      href={!props.disabled ? props.href : undefined}
+      type={!props.disabled && props.href ? undefined : "button"}
       role={props.choice === "checkbox" ? "menuitemcheckbox" : "menuitemradio"}
       aria-label={props.ariaLabel}
       aria-checked={checked()}
@@ -301,7 +304,11 @@ function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
       class={`k2b-dropdown__item ${props.class ?? ""}`}
       data-selected={checked() ? "true" : undefined}
       disabled={props.disabled}
-      onClick={(event) => {
+      onClick={(event: MouseEvent) => {
+        if (props.href && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
+          menu?.close(false);
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         if (props.closeOnSelect !== false) menu?.close();
@@ -329,7 +336,7 @@ function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
       <Show when={props.choice === "radio"}>
         <i class="ti ti-check k2b-dropdown__check" data-hidden={checked() ? undefined : "true"} aria-hidden="true" />
       </Show>
-    </button>
+    </Dynamic>
   );
 }
 

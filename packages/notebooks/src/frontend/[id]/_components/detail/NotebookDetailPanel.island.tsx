@@ -35,6 +35,7 @@ import { buildGraphUrl, buildVersionsUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import type { Attachment } from "../editor/attachments-client";
 import { formatBytes } from "../editor/attachments-client";
+import { CONNECT_SETTLE_MS } from "../editor/sync-state";
 import { setDetailPanelOpen } from "../settings/NotebookSettingsStore";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
 import { useDuplicateNote } from "./duplicate-note";
@@ -134,8 +135,6 @@ type ActivityPage = { data: NoteActivityItem[]; nextCursor: string | null };
 /** Activity rows before "n more": enough to see what happened lately without pushing the panel's end away. */
 const NEWEST_ACTIVITY = 4;
 const ACTIVITY_PAGE_SIZE = 10;
-/** How long a manual reconnect shows progress before the button can be used again. */
-const RECONNECT_SETTLE_MS = 5_000;
 const NO_AUTHORS: NoteAuthors = { createdBy: null, lastEditedBy: null };
 const REFERENCE_ICONS: Partial<Record<NamedBlockSummary["type"], string>> = {
   table: "ti-table",
@@ -388,7 +387,7 @@ export default function NotebookDetailPanel(props: Props) {
   const reconnect = () => {
     setReconnecting(true);
     clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(() => setReconnecting(false), RECONNECT_SETTLE_MS);
+    reconnectTimer = setTimeout(() => setReconnecting(false), CONNECT_SETTLE_MS);
     window.dispatchEvent(new CustomEvent(RECONNECT_EVENT));
   };
   createEffect(() => {

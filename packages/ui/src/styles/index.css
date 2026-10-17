@@ -2746,26 +2746,31 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-column: -3 / -2;
 }
 
-/* One line that never wraps: the subtitle ends with an ellipsis, and `meta`
-   keeps its place at the end. The line keeps a 20 px avatar's height, so a
-   stack that arrives after the first render moves nothing. */
+/* One line: the subtitle ends with an ellipsis, and `meta` keeps its place at
+   the end. The subtitle keeps at least 6rem; only a `meta` too wide for that
+   moves to its own line, still on the trailing edge, and wraps inside the
+   header. The line keeps a 20 px avatar's height, so a stack that arrives
+   after the first render moves nothing. */
 .k2b-ui .k2b-detail-panel__supporting {
   display: flex;
   grid-row: 2;
   grid-column: -3 / -1;
   min-width: 0;
   min-height: 1.25rem;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.125rem 0.5rem;
 }
 
 .k2b-ui .k2b-detail-panel__supporting > p {
-  min-width: 0;
-  flex: 1 1 auto;
+  min-width: min(6rem, 100%);
+  flex: 1 1 0;
 }
 
 .k2b-ui .k2b-detail-panel__supporting > .k2b-detail-panel__meta {
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   margin-inline-start: auto;
 }
 
@@ -3488,15 +3493,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
 }
 
-/* One text edge: in a section with an icon, content starts where the title
-   does. Rows with their own leading column (actions and discussion entries
-   with an avatar) step back, so their icon or avatar sits in the section's
-   icon column and their text on the same edge. */
-.k2b-ui .k2b-detail-panel__section[data-icon="true"] > .k2b-detail-panel__section-body {
+/* One text edge: in a panel section with an icon, content starts where the
+   title does. Rows with their own leading column (actions and discussion
+   entries with an avatar) step back, so their icon or avatar sits in the
+   section's icon column and their text on the same edge. Sections outside a
+   panel, such as the form sections of an editor dialog, keep their full
+   width. */
+.k2b-ui .k2b-detail-panel .k2b-detail-panel__section[data-icon="true"] > .k2b-detail-panel__section-body {
   padding-inline-start: 1.875rem;
 }
 
 .k2b-ui
+  .k2b-detail-panel
   .k2b-detail-panel__section[data-icon="true"]
   > .k2b-detail-panel__section-body
   :is(.k2b-button.k2b-detail-panel__action, .k2b-detail-panel__action-row):not(.k2b-detail-panel__action-row > .k2b-detail-panel__action) {
@@ -3505,7 +3513,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-inline-start: -1.875rem;
 }
 
-.k2b-ui .k2b-detail-panel__section[data-icon="true"] > .k2b-detail-panel__section-body .k2b-discussion__item[data-has-avatar="true"] {
+.k2b-ui .k2b-detail-panel .k2b-detail-panel__section[data-icon="true"] > .k2b-detail-panel__section-body .k2b-discussion__item[data-has-avatar="true"] {
   margin-inline-start: -1.875rem;
 }
 

@@ -33,6 +33,11 @@ else
     try {
       const choice = (label: string) =>
         [...dom.document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((item) => item.textContent?.trim() === label)!;
+      expect(["Bearbeiten", "Lesen", "Buch"].map((label) => [choice(label).tagName, choice(label).getAttribute("href")])).toEqual([
+        ["A", "/app/notebooks/Book01/notes/Note01?mode=write"],
+        ["A", "/app/notebooks/Book01/notes/Note01?mode=readonly"],
+        ["A", "/app/notebooks/Book01/notes/Note01?mode=book"],
+      ]);
       // The editor and its unsent text stay: no navigation for the current mode.
       choice("Bearbeiten").click();
       expect(visits).toEqual([]);

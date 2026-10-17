@@ -33,7 +33,9 @@ their [tap areas](/en/ui/actions/buttons#touch-targets) stay clear of a
 `meta` action or the line above.
 The title wraps to at most two lines, with the full string in its native hint.
 The subtitle stays on one line and ends with an ellipsis; `meta` sits at its
-trailing edge instead of competing with the title; plain
+trailing edge instead of competing with the title. The subtitle keeps at least
+6rem, so a `meta` too wide for that moves below it, still on the trailing edge,
+and wraps inside the header instead of hiding the subtitle; plain
 text in `meta` uses the subtitle's size and color, while badges and buttons keep
 their own.
 `DetailPanel.Body` is the single scrolling element and accepts a
@@ -131,8 +133,10 @@ semantics; omit it for a native button. `leading`, `title`, optional
 `description`, and `trailing` keep row geometry and interaction states
 consistent. Action rows align their optional leading icon with the section
 icon column and keep their titles at the section title's text edge, even
-without `leading`. All other content of a section with an icon starts at that
-same text edge: comment authors, static text, progress, and row titles. Do not
+without `leading`. All other content of a section with an icon inside a
+`DetailPanel` starts at that same text edge: comment authors, static text,
+progress, and row titles. A section used outside a panel, such as a form
+section in an editor dialog, keeps its full width. Do not
 add a second indent around action rows. Hover fill extends 0.5rem into the
 panel gutter without moving the row. `current` marks the current destination
 in the panel accent and sets `aria-current` (`location` for links, `true` for

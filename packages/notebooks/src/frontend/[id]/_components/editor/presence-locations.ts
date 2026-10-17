@@ -32,12 +32,12 @@ export const participantCursors = (awareness: Awareness, ytext: Y.Text): Map<str
 
 export const presenceLocations = (
   positions: ReadonlyMap<string, ParticipantCursor>,
-  markdown: string,
+  lineAt: (position: number) => number,
   headings: readonly HeadingLine[],
 ): PresenceLocationsEventDetail => {
   return Object.fromEntries(
     [...positions].map(([userId, { position, writing }]) => {
-      const heading = position === null ? null : headingAtLine(headings, markdown.slice(0, position).split("\n").length);
+      const heading = position === null ? null : headingAtLine(headings, lineAt(position));
       return [userId, { writing, headingId: heading?.id ?? null, headingText: heading?.text ?? null }];
     }),
   );

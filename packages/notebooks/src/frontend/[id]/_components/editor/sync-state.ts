@@ -1,8 +1,12 @@
 import type { SyncStateEventDetail } from "../detail/events";
 
-/** Shares the toolbar's one-second disconnect grace; save times require replay confirmation. */
+/** How long one connect attempt gets before the panel calls it failed. */
+export const CONNECT_SETTLE_MS = 5_000;
+
+/** After connecting, shares the toolbar's disconnect grace; save times require replay confirmation. */
 export const createSyncStateBridge = (options: { hasUnsentChanges: () => boolean; emit: (detail: SyncStateEventDetail) => void }) => {
   let connected = false;
+  let hasConnected = false;
   let ready = false;
   let reportedConnected = true;
   let lastSavedAt: string | null = null;
@@ -19,14 +23,18 @@ export const createSyncStateBridge = (options: { hasUnsentChanges: () => boolean
     ready = false;
     clearTimeout(offlineTimer);
     if (value) {
+      hasConnected = true;
       reportedConnected = true;
       ended = false;
       emit();
     } else {
-      offlineTimer = setTimeout(() => {
-        reportedConnected = false;
-        emit();
-      }, 1_000);
+      offlineTimer = setTimeout(
+        () => {
+          reportedConnected = false;
+          emit();
+        },
+        hasConnected ? 1_000 : CONNECT_SETTLE_MS,
+      );
     }
   };
   connectionChanged(false);

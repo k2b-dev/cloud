@@ -76,6 +76,8 @@ Both components accept `DropdownItem[]`. An item is one of:
 - a radio or checkbox choice with `choice`, `checked`, and `action`;
 - a section with optional `sectionLabel` and nested actions or choices.
 
+A choice can also take `href`: a plain click runs its action, while modified clicks can open the link in a new tab.
+
 A section with `layout: "row"` sets a few short radio choices side by side as
 one segmented row, such as a sort direction or a color mode. Give it a
 `sectionLabel`: the label names the choice above the row and for screen
@@ -160,7 +162,7 @@ type DropdownAction =
 
 type DropdownChoice = DropdownActionBase & {
   action: () => void; checked: boolean | (() => boolean); choice: "checkbox" | "radio";
-  closeOnSelect?: boolean; color?: string;
+  href?: string; closeOnSelect?: boolean; color?: string;
 };
 
 type DropdownSection = {

@@ -641,6 +641,9 @@ function EditorInstance(
   let headingLines = extractHeadingLines(ytext.toString());
   let panelFrame: number | undefined;
   let lastActiveHeading: string | null | undefined;
+  let presencePending = false;
+  let forcePresence = false;
+  let lastPresence: string | undefined;
   const emitPanelLocations = () => {
     panelFrame = undefined;
     if (disposed) return;
@@ -655,17 +658,31 @@ function EditorInstance(
         window.dispatchEvent(new CustomEvent<ActiveHeadingEventDetail>(ACTIVE_HEADING_EVENT, { detail: { id } }));
       }
     }
-    window.dispatchEvent(
-      new CustomEvent(PRESENCE_LOCATIONS_EVENT, {
-        detail: presenceLocations(participantCursors(awareness, ytext), ytext.toString(), headingLines),
-      }),
-    );
+    if (presencePending && view) {
+      const detail = presenceLocations(
+        participantCursors(awareness, ytext),
+        (position) => view.state.doc.lineAt(Math.min(position, view.state.doc.length)).number,
+        headingLines,
+      );
+      const serialized = JSON.stringify(Object.entries(detail).sort(([a], [b]) => a.localeCompare(b)));
+      if (forcePresence || serialized !== lastPresence) {
+        lastPresence = serialized;
+        window.dispatchEvent(new CustomEvent(PRESENCE_LOCATIONS_EVENT, { detail }));
+      }
+      presencePending = false;
+      forcePresence = false;
+    }
+    // Without a view yet, the request stays pending; the view's first geometry update sends it.
   };
   const schedulePanelLocations = () => {
     if (disposed) return;
     if (panelFrame === undefined) panelFrame = requestAnimationFrame(emitPanelLocations);
   };
-  awareness.on("change", schedulePanelLocations);
+  const schedulePresenceLocations = () => {
+    presencePending = true;
+    schedulePanelLocations();
+  };
+  awareness.on("change", schedulePresenceLocations);
   addExtension(
     EditorView.updateListener.of((update) => {
       if (update.geometryChanged || update.viewportChanged) schedulePanelLocations();
@@ -676,7 +693,8 @@ function EditorInstance(
     if (provider) syncState.request();
     window.dispatchEvent(new CustomEvent(RICH_MODE_CHANGED_EVENT, { detail: { isRich: richMode() } }));
     lastActiveHeading = undefined;
-    schedulePanelLocations();
+    forcePresence = true;
+    schedulePresenceLocations();
   };
   const onReconnect = () => provider?.reconnectNow();
   const onJumpToParticipant = (event: Event) => {
@@ -700,7 +718,7 @@ function EditorInstance(
   const emitDerivedDocState = () => {
     const md = ytext.toString();
     headingLines = extractHeadingLines(md);
-    schedulePanelLocations();
+    schedulePresenceLocations();
     const title = deriveNoteTitle(md);
     if (title !== lastDerivedTitle) {
       lastDerivedTitle = title;
@@ -985,7 +1003,7 @@ function EditorInstance(
     printCopy?.dispose();
     syncState.dispose();
     if (panelFrame !== undefined) cancelAnimationFrame(panelFrame);
-    awareness.off("change", schedulePanelLocations);
+    awareness.off("change", schedulePresenceLocations);
     scrollPort?.removeEventListener("scroll", schedulePanelLocations);
     window.removeEventListener(SYNC_STATE_REQUEST_EVENT, onSyncStateRequest);
     window.removeEventListener(RECONNECT_EVENT, onReconnect);
