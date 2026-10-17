@@ -383,7 +383,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 143;
+export const portableUiComponentCount = 144;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -423,6 +423,8 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  truncateMiddle: "Documented ReferenceChip helper for shortening titles by whole graphemes.",
+  REFERENCE_CHIP_MAX_CHARACTERS: "Documented ReferenceChip maximum visible title length.",
   prefersReducedMotion: "Documented OS and host preference helper in the Motion guide (/en/ui/motion).",
   formatShortcut: "Documented Kbd formatter for plain text labels and spoken names.",
   keyboardPlatform: "Documented Kbd platform detection for browser and server hosts.",
