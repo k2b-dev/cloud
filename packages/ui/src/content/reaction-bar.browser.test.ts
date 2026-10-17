@@ -14,7 +14,7 @@ import { ReactionBar, reactionPeople } from ${JSON.stringify(resolve(ui, "dist/b
 const options = window.fixtureOptions;
 const [reactions, setReactions] = createSignal(Array.from({ length: 20 }, (_, index) => ({
   key: String(index), emoji: index === 0 ? "👍" : "🎉", count: 5, own: index === 0,
-  label: reactionPeople({ names: ["Nora Brandt", "Tobias", "Lea", "Jonas"], own: true, count: 5 }),
+  label: window.fixtureOptions.unlabeled ? undefined : reactionPeople({ names: ["Nora Brandt", "Tobias", "Lea", "Jonas"], own: true, count: 5 }),
 })));
 const listeners = [];
 for (const target of [document, window]) {
@@ -91,6 +91,7 @@ const open = async (
     readOnly?: boolean;
     touch?: boolean;
     add?: boolean;
+    unlabeled?: boolean;
   } = {},
 ): Promise<Page> => {
   context = await browser.newContext({ viewport: { width: 500, height: 600 }, hasTouch: options.touch ?? false });
@@ -203,6 +204,24 @@ describe("ReactionBar in the browser", () => {
     30_000,
   );
   chromiumTest(
+    "a hold on a chip without names stays an ordinary press",
+    async () => {
+      const page = await open({ touch: true, unlabeled: true });
+      const input = await touch(page);
+      try {
+        await input.send("touchStart", await point(page));
+        await page.waitForTimeout(650);
+        await input.send("touchEnd");
+        await page.waitForTimeout(100);
+        expect(await isOpen(page)).toBe(false);
+        expect(await page.evaluate(() => toggled)).toEqual(["0"]);
+      } finally {
+        await input.close();
+      }
+    },
+    30_000,
+  );
+  chromiumTest(
     "movement over 8px and pointer cancellation abandon the hold without blocking scrolling",
     async () => {
       const page = await open({ touch: true });
@@ -292,7 +311,10 @@ describe("ReactionBar in the browser", () => {
       Array.from(document.querySelectorAll<HTMLElement>("[data-reaction-key]"))
         .filter((element) => {
           const box = element.getBoundingClientRect();
-          return document.elementFromPoint(box.x + box.width / 2, box.bottom - 1)?.closest("[data-reaction-key]") !== element;
+          // The chip also takes taps in its half of the gap below it.
+          return [box.bottom - 1, box.bottom + 4].some(
+            (y) => document.elementFromPoint(box.x + box.width / 2, y)?.closest("[data-reaction-key]") !== element,
+          );
         })
         .map((element) => element.dataset.reactionKey),
     );

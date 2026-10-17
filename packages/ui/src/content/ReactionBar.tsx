@@ -96,17 +96,18 @@ export function ReactionBar(props: ReactionBarProps): JSX.Element {
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") close();
     };
-    const open = (chip: HTMLElement, fromTouch: boolean) => {
+    /** Opens the names hint over a chip; false when the chip has no names to show. */
+    const open = (chip: HTMLElement, fromTouch: boolean): boolean => {
       clearTimer();
       const reaction = byKey().get(chip.dataset.reactionKey ?? "");
-      if (!reaction?.label?.trim() || !chip.isConnected) return;
+      if (!reaction?.label?.trim() || !chip.isConnected) return false;
       setHintKey(reaction.key);
       setTouch(fromTouch);
       if (!tooltip.matches(":popover-open")) {
         try {
           tooltip.showPopover();
         } catch {
-          return;
+          return false;
         }
       }
       openChip = chip;
@@ -115,6 +116,7 @@ export function ReactionBar(props: ReactionBarProps): JSX.Element {
       document.addEventListener("keydown", escape);
       window.addEventListener("scroll", close, true);
       window.addEventListener("resize", close);
+      return true;
     };
     // An open hint follows its reaction: new names show at once, and it closes when the reaction, its names, or its
     // chip go away.
@@ -183,8 +185,8 @@ export function ReactionBar(props: ReactionBarProps): JSX.Element {
       timer = setTimeout(() => {
         timer = undefined;
         if (!press || press.moved) return;
-        press.held = true;
-        open(press.chip, true);
+        // Only a hold that shows names takes the press; on a chip without names it stays an ordinary press.
+        press.held = open(press.chip, true);
       }, HOLD_MS);
       document.addEventListener("pointermove", move, true);
       document.addEventListener("pointerup", up, true);

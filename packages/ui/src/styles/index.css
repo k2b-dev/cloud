@@ -8793,6 +8793,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     row-gap: 0.625rem;
   }
 
+  /* Wrapping chips and "Add reaction" take taps in half of the gaps around them, so neighbouring chips and lines split
+     the room and no area reaches over another. */
+  .k2b-ui .k2b-reaction-bar[data-overflow="wrap"] button.k2b-reaction-bar__chip {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-reaction-bar[data-overflow="wrap"] button.k2b-reaction-bar__chip::after {
+    position: absolute;
+    content: "";
+    inset: -0.3125rem -0.125rem;
+  }
+
+  .k2b-ui .k2b-reaction-bar[data-overflow="wrap"] .k2b-reaction-bar__add > .k2b-button::after {
+    inset-block: -0.3125rem;
+  }
+
   .k2b-ui .k2b-reaction-bar__scroll {
     position: relative;
     margin-block: -0.5625rem;
