@@ -492,7 +492,7 @@ in those pages using `comments list` and `deps`; use `activity --cursor` to read
 older work notes. Pages are fresh reads and may change during collaboration.
 The `comments list` output and the `blocks` field of `deps` are paginated objects.
 
-Agents use `reaction.add` and `reaction.remove` with `{ itemId, emoji }` for the same reaction intents. Item read and list capabilities include reactions.
+Agents use `reaction.add` and `reaction.remove` with `{ itemId, emoji }` for the same reaction intents. `item.read` includes the full reaction summary; list capabilities include each emoji with its `count` and `own` state.
 
 For capabilities, use `task.work.read`, `task.claim`, `task.release` and
 `task.progress`; `task.release` and `task.set-completed` accept `force` to take

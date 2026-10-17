@@ -407,7 +407,8 @@ const mapRelations = (item: SpaceItem) => ({
 });
 
 const mapListRelations = (item: SpaceItem) => ({
-  reactions: item.reactions,
+  // Lists carry counts only; item.read names the people.
+  reactions: item.reactions?.map(({ emoji, count, own }) => ({ emoji, count, own })),
   assignees: (item.assignees ?? []).slice(0, 3).map((entry) => ({ id: entry.id, displayName: truncateText(entry.displayName, 100).text })),
   assigneeCount: item.assignees?.length ?? 0,
   tags: (item.tags ?? [])
@@ -912,9 +913,10 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
           item.descriptionTruncated = true;
           shortened = true;
         }
-        if (item.assignees.length || item.tags.length) {
+        if (item.assignees.length || item.tags.length || item.reactions?.length) {
           item.assignees = item.assignees.slice(0, -1);
           item.tags = item.tags.slice(0, -1);
+          item.reactions = item.reactions?.slice(0, -1);
           item.relationsTruncated = true;
           shortened = true;
         }

@@ -7,6 +7,7 @@ import {
   EstimatedDurationMinutesSchema,
   ItemTemplateKindSchema,
   LocalDateSchema,
+  MAX_ITEM_REACTION_EMOJI,
   MAX_ITEM_TEMPLATES_PER_KIND,
   MAX_TASK_ATTACHMENTS,
   MAX_TASK_CHECKLIST_ENTRIES,
@@ -14,6 +15,7 @@ import {
   ReactionEmojiSchema,
   ResourceShortIdSchema,
   SpaceItemAttachmentSchema,
+  SpaceItemReactionSchema,
   SpaceItemReactionsResponseSchema,
   SpaceItemResourceReferenceInputSchema,
   SpaceItemResourceReferenceSchema,
@@ -292,7 +294,11 @@ const ItemListBaseDataShape = {
   assigneeCount: z.number().int().nonnegative().describe("Total number of assignees; assignees may contain fewer entries."),
   tags: z.array(z.object({ id: ResourceShortIdSchema, name: z.string().min(1).max(50), color: z.string().min(1).max(20) }).strict()).max(3),
   relationsTruncated: z.boolean(),
-  reactions: SpaceItemReactionsResponseSchema.shape.reactions.optional(),
+  reactions: z
+    .array(SpaceItemReactionSchema.pick({ emoji: true, count: true, own: true }).strict())
+    .max(MAX_ITEM_REACTION_EMOJI)
+    .optional()
+    .describe("Reaction counts in first-reaction order; item.read names the people. relationsTruncated marks a shortened list."),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
   links: ResourceLinksSchema,

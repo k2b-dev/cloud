@@ -405,6 +405,32 @@ test("task list fits escaped maximum previews without skipping rows", async () =
   expect(capabilityResultSchema(TaskListDataSchema).safeParse(result.data).success).toBeTrue();
 });
 
+test.each(["task.list", "event.list"] as const)("%s keeps a full page of maximum reactions within the result budget", async (id) => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  spyOn(spacesService.column, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false });
+  const people = Array.from({ length: 3 }, () => ({ kind: "user" as const, id: userId, displayName: "\u0001".repeat(200) }));
+  spyOn(spacesService.item, "listFiltered").mockResolvedValue({
+    items: Array.from({ length: 100 }, () => ({
+      ...(id === "task.list" ? task : event),
+      description: "\u0001".repeat(1000),
+      reactions: Array.from({ length: 20 }, (_, index) => ({ emoji: String.fromCodePoint(0x1f600 + index), count: 99, own: true, people })),
+    })),
+    page: 1,
+    pageSize: 100,
+    total: 100,
+    totalPages: 1,
+  });
+  const query = spacesCapabilities.queries[id];
+  const result = await query.run(query.input.parse({ spaceId, limit: 100 }), userContext);
+  if (!result.ok) throw new Error("Expected bounded item page");
+  expect(result.data.data).toHaveLength(100);
+  // Lists carry counts only; item.read names the people.
+  expect(result.data.data[0]?.reactions?.[0]).toEqual({ emoji: "😀", count: 99, own: true });
+  expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+  expect(capabilityResultSchema(query.data).safeParse(result.data).success).toBeTrue();
+});
+
 test.each(["task.list", "event.list"] as const)("%s reports total assignees independently of the relation preview", async (id) => {
   spyOn(spacesService.space, "get").mockResolvedValue(space);
   spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
