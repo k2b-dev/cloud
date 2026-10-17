@@ -1072,7 +1072,7 @@ export default function MailConversationReader(props: {
     <div
       class="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-surface-raised)]"
       data-mail-print-root
-      data-print-region={props.messages.length > 0 ? "" : undefined}
+      data-print-region={printing() ? "" : undefined}
     >
       <Show when={props.error}>
         {(error) => {

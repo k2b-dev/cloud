@@ -37,7 +37,13 @@ export default ssr<AuthContext>(async (c) => {
       : "";
 
   return () => (
-    <Layout c={c} fullPage focusMode title={[{ title: t.breadcrumbMail, href: "/app/mail" }, { title: t.newMessage }]}>
+    <Layout
+      c={c}
+      printHint={t.printHint}
+      fullPage
+      focusMode
+      title={[{ title: t.breadcrumbMail, href: "/app/mail" }, { title: t.newMessage }]}
+    >
       <MailComposeIntentPage
         mailboxes={writableMailboxes}
         initialMailboxId={initialMailboxId}

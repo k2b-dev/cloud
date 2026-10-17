@@ -8,6 +8,7 @@ import { createComponent, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { codeFenceLanguage } from "../../../lib/markdown-fences";
 import { deriveNoteTitle, hasUsableNoteTitle } from "../../../lib/note-title";
+import { renderMermaid } from "../mermaid-render";
 import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
@@ -143,9 +144,8 @@ class MermaidWidget extends WidgetType {
   private async renderDiagram(setState: (state: MermaidPreviewState) => void) {
     try {
       const cacheKey = svgCacheKey(this.code);
-      mermaid.initialize(mermaidConfig({ dark: isDarkTheme() }));
       const renderId = `${this.id}-${Date.now()}`;
-      const { svg } = await mermaid.render(renderId, this.code);
+      const { svg } = await renderMermaid(mermaid, mermaidConfig({ dark: isDarkTheme() }), renderId, this.code);
 
       globalSvgCache.set(cacheKey, { svg, timestamp: Date.now() });
 
@@ -158,15 +158,10 @@ class MermaidWidget extends WidgetType {
   }
 
   /** Exports need SVG text labels: HTML labels (foreignObject) taint a canvas and
-   *  render poorly outside a browser. Restore the preview config afterwards. */
+   *  render poorly outside a browser. */
   private async renderExportSvg(): Promise<string> {
     const config = mermaidConfig({ dark: isDarkTheme() });
-    mermaid.initialize({ ...config, htmlLabels: false });
-    try {
-      return (await mermaid.render(`${this.id}-export-${Date.now()}`, this.code)).svg;
-    } finally {
-      mermaid.initialize(config);
-    }
+    return (await renderMermaid(mermaid, { ...config, htmlLabels: false }, `${this.id}-export-${Date.now()}`, this.code)).svg;
   }
 
   override ignoreEvent() {

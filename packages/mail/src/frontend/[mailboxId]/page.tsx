@@ -43,6 +43,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout
       c={c}
+      printHint={t.printHint}
       fullPage
       workspaceSidebarCollapsible={false}
       title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail, href: "/app/mail" }, { title: data.mailbox.name }]}

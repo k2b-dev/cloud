@@ -1,4 +1,5 @@
 import type { renderNotebookBook } from "../../../../lib/book-renderer";
+import { renderMermaid } from "../../../lib/mermaid-render";
 import { createPrintDiagrams } from "./note-print-diagrams";
 
 type Options = {
@@ -11,8 +12,6 @@ type Options = {
 async function loadDiagrams() {
   const [{ default: mermaid }, { mermaidConfig }] = await Promise.all([import("mermaid"), import("@k2b/cloud/browser/mermaid")]);
   return async (source: string, signal: AbortSignal) => {
-    // Other Mermaid consumers may change its global configuration between renders.
-    mermaid.initialize({ ...mermaidConfig({ dark: false }), htmlLabels: false });
     const scratch = document.createElement("div");
     scratch.style.cssText = "position:absolute;left:-100000px";
     scratch.setAttribute("aria-hidden", "true");
@@ -20,7 +19,15 @@ async function loadDiagrams() {
     const remove = () => scratch.remove();
     signal.addEventListener("abort", remove, { once: true });
     try {
-      return (await mermaid.render(`note-print-${crypto.randomUUID()}`, source, scratch)).svg;
+      return (
+        await renderMermaid(
+          mermaid,
+          { ...mermaidConfig({ dark: false }), htmlLabels: false },
+          `note-print-${crypto.randomUUID()}`,
+          source,
+          scratch,
+        )
+      ).svg;
     } finally {
       signal.removeEventListener("abort", remove);
       remove();

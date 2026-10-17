@@ -59,7 +59,14 @@ export default ssr<AuthContext>(async (c) => {
   const popout = c.req.query("window") === "1";
   const initialPanes = readMailComposerPanesFromCookieHeader(c.req.header("cookie"));
   return () => (
-    <Layout c={c} fullPage focusMode flushCanvas={popout} title={[{ title: t.breadcrumbMail, href: returnHref }, { title: t.newMessage }]}>
+    <Layout
+      c={c}
+      printHint={t.printHint}
+      fullPage
+      focusMode
+      flushCanvas={popout}
+      title={[{ title: t.breadcrumbMail, href: returnHref }, { title: t.newMessage }]}
+    >
       <MailDraftSeedComposerPage
         mailboxId={mailboxShortId}
         currentActor={currentActor}

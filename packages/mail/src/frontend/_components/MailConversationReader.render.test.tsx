@@ -136,10 +136,10 @@ const renderReader = (
 };
 
 describe("Mail conversation reader", () => {
-  test("marks a conversation for printing but leaves the empty reader to the shell fallback", () => {
+  test("leaves conversations and empty readers to the shell print fallback until prepared", () => {
     setSystemTime(new Date(now));
     try {
-      expect(renderReader([])).toMatch(/data-mail-print-root[^>]*data-print-region/);
+      expect(renderReader([])).not.toContain("data-print-region");
       expect(renderReader([], { messages: [] })).not.toContain("data-print-region");
     } finally {
       setSystemTime();

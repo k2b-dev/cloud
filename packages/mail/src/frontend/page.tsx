@@ -94,7 +94,7 @@ export default ssr<AuthContext>(async (c) => {
   ]);
   const initialFocus = focusResult.ok ? await projectSsrFocusOverview(focusResult.data) : null;
   return () => (
-    <Layout c={c} title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail }]}>
+    <Layout c={c} printHint={t.printHint} title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail }]}>
       <MailOverview
         mailboxes={publicMailboxes}
         initialFocus={initialFocus}

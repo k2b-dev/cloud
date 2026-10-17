@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-16
+updated: 2026-10-17
 ---
 
 # Lessons learned
@@ -26,6 +26,7 @@ convention still needs a check or a test.
 | Unreadable treated as missing | Startup replaces an unreadable or invalid stored value with an environment value. | Test: `packages/cloud/src/services/settings/bootstrap.integration.test.ts` preserves ciphertext and timestamps for undecryptable and invalid rows while reads use the environment fallback ([#1295](https://github.com/k2b-dev/cloud/issues/1295)). |
 | Motion choice ignored | JavaScript or a separate document animates despite the person's reduced-motion choice. | Tests: `MailConversationReader.behavior.test.tsx` checks the choice at jump time; `MailMessageBody.browser.test.ts` checks initial and live propagation into the sandboxed message and rejects frame-originated motion messages ([#1230](https://github.com/k2b-dev/cloud/issues/1230)). |
 | One Markdown dialect parsed differently by editor and renderer | Separate parsers disagree about documented source forms, so an image renders in one view and disappears in another. | Shared helper: Notebooks uses `parseSizedMarkdownImage` in Book and Lezer. Test: both views iterate `DOCUMENTED_IMAGE_FORMS` for attachment and HTTPS images with sizes and titles ([#1278](https://github.com/k2b-dev/cloud/issues/1278)). |
+| Shared renderer configuration race | Concurrent Mermaid consumers overwrite singleton configuration before a queued render reads it. | Test: Notebooks `mermaid-render.test.ts` checks serialized configuration and rendering, call order, and recovery after rejection. Convention: all Notebooks Mermaid consumers use `renderMermaid`. |
 | Screen-only layout printed as-is | Browser printing includes navigation, toolbars and detail panels, or clips content at a fixed-height scrollport. | Tests: `packages/cloud/src/ssr/print.browser.test.ts`, `packages/ui/src/layout/workspace-print.browser.test.ts`, and Notebooks `note-print-copy.browser.test.ts` emulate print and check complete content. Convention: every view supplies printable content or an export hint; see [Browser printing](/en/ui/layout/print) ([#1281](https://github.com/k2b-dev/cloud/issues/1281)). |
 | Workspace-only export | A published package imports code that exists only in the workspace copy of a pinned sibling; workspace links hide the missing export. | Check: the `packed` CI job runs with `--release` on the release pull request and in the merge queue, resolving already published sibling pins from npm. Convention: [refresh the release PR after the last feature PR merges](/en/docs/contributing/release-process#let-release-please-cut-the-release). |
 | Time | A test or a render depends on today's date, the time zone, or randomness, so it passes on one day and fails on another. | Test: the Assistant sidebar test from [#1121](https://github.com/k2b-dev/cloud/pull/1121) freezes its clock. No repository check finds other tests that compare fixed dates with the real clock yet. |
