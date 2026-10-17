@@ -53,9 +53,9 @@ import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
 import type { SqlClient } from "./workflow-data";
 import {
   getWorkflowSnapshot,
+  type MailWorkflowTargetSnapshot,
   mailWorkflowEventContext,
   mailWorkflowSnapshotWithoutBody,
-  type MailWorkflowTargetSnapshot,
 } from "./workflow-data";
 import {
   replaceManagedWorkflowInTransaction,

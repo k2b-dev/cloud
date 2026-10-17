@@ -58,9 +58,9 @@ import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
 import { reconcileMailStorageUsage } from "./storage-observability";
 import {
   getWorkflowSnapshot,
+  type MailWorkflowTargetSnapshot,
   mailWorkflowEventContext,
   mailWorkflowSnapshotWithoutBody,
-  type MailWorkflowTargetSnapshot,
 } from "./workflow-data";
 
 const log = logger("mail:sync");

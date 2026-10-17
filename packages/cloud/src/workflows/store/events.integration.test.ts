@@ -6,8 +6,9 @@
  * stops firing with no error anywhere is the bug this whole slice exists to
  * make impossible.
  */
-import { Buffer } from "node:buffer";
+
 import { expect, test } from "bun:test";
+import { Buffer } from "node:buffer";
 import { sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "../../../../core/src/migrate/core/workflows";

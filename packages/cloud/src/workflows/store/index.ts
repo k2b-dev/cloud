@@ -44,11 +44,11 @@ export {
   dispatchPendingWorkflowEvents,
   emitWorkflowEvent,
   listUndispatchedWorkflowEvents,
-  WORKFLOW_EVENT_MAX_PAYLOAD_BYTES,
-  WorkflowEventTooLargeError,
   type UndispatchedWorkflowEvent,
+  WORKFLOW_EVENT_MAX_PAYLOAD_BYTES,
   type WorkflowEmission,
   type WorkflowEventInput,
+  WorkflowEventTooLargeError,
 } from "./events";
 export {
   getWorkflowRun,
