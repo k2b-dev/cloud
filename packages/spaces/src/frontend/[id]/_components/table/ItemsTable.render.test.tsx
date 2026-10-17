@@ -55,6 +55,7 @@ test("colors each status tag with its column color and falls back to green only 
             task({ id: "Item03", columnId: "Done02", title: "Cancel the alternative booking", completedAt: "2026-08-21T10:00:00.000Z" }),
             task({ id: "Item04", columnId: "Open02", title: "Send the agenda", completedAt: "2026-08-21T10:00:00.000Z" }),
           ],
+          currentUserId: "33333333-3333-4333-8333-333333333333",
           spaceId: "Space1",
           columns: [
             { id: "Open01", spaceId: "Space1", name: "In progress", color: "#3b82f6", rank: "1024", isDone: false },
@@ -79,4 +80,43 @@ test("colors each status tag with its column color and falls back to green only 
   // A completed item in an open column without a color stays untinted, as in List and Kanban.
   expect(statusTag("Backlog")).toBeDefined();
   expect(statusTag("Backlog")).not.toContain("--k2b-choice-color");
+});
+
+const renderTable = (item: SpaceItem) =>
+  renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "en",
+      get children() {
+        return createComponent(ItemsTable, {
+          items: [item],
+          spaceId: "Space1",
+          columns: [],
+          tags: [],
+          currentUserId: "33333333-3333-4333-8333-333333333333",
+          baseUrl: "/app/spaces/Space1",
+        });
+      },
+    }),
+  );
+
+test("shows the working assignee once, first, with one green ring", () => {
+  const mira = { id: "44444444-4444-4444-8444-444444444444", displayName: "Mira Beck", avatarHash: null };
+  const html = renderTable(
+    task({
+      assignees: [{ id: "33333333-3333-4333-8333-333333333333", displayName: "Valentin Kolb", avatarHash: null }, mira],
+      claim: {
+        id: "55555555-5555-4555-8555-555555555555",
+        actor: { kind: "user", id: mira.id },
+        displayName: mira.displayName,
+        avatarHash: null,
+        claimedAt: "2026-10-02T07:12:00.000Z",
+      },
+    }),
+  );
+  expect(html.match(/data-ring="success"/g)).toHaveLength(1);
+  expect(html.match(/aria-label="Mira Beck is on it"/g)).toHaveLength(1);
+  expect(html).not.toContain('aria-label="Mira Beck avatar"');
+  expect(html.indexOf('aria-label="Mira Beck is on it"')).toBeLessThan(html.indexOf('aria-label="Valentin Kolb avatar"'));
+  expect(html).toContain('title="Mira Beck, Valentin Kolb"');
+  expect(html).toContain(">Mira Beck, Valentin Kolb</span>");
 });

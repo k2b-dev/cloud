@@ -82,9 +82,10 @@ const items = [
   item("Item06", "Col003", "Proofread the flyer"),
   item("Item07", "Col004", "Reserve the town square"),
 ];
+let claimedItem: SpaceItem | null = null;
 const bucketsFor = (filter?: (entry: SpaceItem) => boolean): KanbanBucketInitial[] =>
   columns.map((column) => {
-    const all = items.filter((entry) => entry.columnId === column.id);
+    const all = items.map((entry) => (entry.id === claimedItem?.id ? claimedItem : entry)).filter((entry) => entry.columnId === column.id);
     const shown = filter ? all.filter(filter) : all;
     return {
       key: `column:${column.id}`,
@@ -220,6 +221,20 @@ beforeAll(async () => {
       const url = new URL(request.url);
       if (url.pathname.startsWith("/_ssr/")) return new Response(Bun.file(join(root, url.pathname)));
       if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(join(ui, url.pathname.slice(4))));
+      if (url.pathname === "/api/spaces/Space1/items/Item01/claim" && request.method === "POST") {
+        const { claimId } = await request.json();
+        claimedItem = {
+          ...items[0]!,
+          claim: {
+            id: claimId,
+            actor: { kind: "user", id: me.id },
+            displayName: me.displayName,
+            avatarHash: null,
+            claimedAt: "2026-10-02T08:00:00.000Z",
+          },
+        };
+        return Response.json(claimedItem);
+      }
       const move = /^\/api\/spaces\/Space1\/items\/(\w+)\/move$/.exec(url.pathname);
       if (move && request.method === "POST") {
         const body = (await request.json()) as { columnId: string; completed?: boolean };
@@ -1977,6 +1992,60 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
       } finally {
         await page.context().close();
       }
+    }
+  }, 60_000);
+
+  test("the assigned worker leads one avatar stack in the server frame, after hydration, and after reload", async () => {
+    const scenario: Scenario = { locale: "en" };
+    /** The stack of "Book the stage" (Kim works on it, Robin is assigned too): avatar names, rings, overflow, and box. */
+    const stackOf = async (page: Page) => {
+      const stack = page.locator('[data-spaces-kanban-card][data-item-id="Item04"] [class="flex shrink-0 -space-x-1"]');
+      expect(await stack.count()).toBe(1);
+      return {
+        avatars: await stack
+          .locator(".k2b-avatar")
+          .evaluateAll((avatars) => avatars.map((avatar) => [avatar.getAttribute("aria-label"), avatar.getAttribute("data-ring")])),
+        overflow: (await stack.textContent())?.includes("+") ?? false,
+        box: await stack.boundingBox(),
+      };
+    };
+    const expected = [
+      ["Kim Example is on it", "success"],
+      ["Robin Example avatar", null],
+    ];
+    const before = await open(desktop, scenario, { javaScript: false });
+    const server = await stackOf(before);
+    await before.context().close();
+    expect(server.avatars).toEqual(expected);
+    expect(server.overflow).toBe(false);
+    const page = await open(desktop, scenario);
+    try {
+      expect(await stackOf(page)).toEqual(server);
+      await page.reload();
+      await rendered(page);
+      expect(await stackOf(page)).toEqual(server);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("claiming a card refreshes its assigned avatar with one ring and keeps its height", async () => {
+    claimedItem = null;
+    const page = await open(desktop, { locale: "en" });
+    try {
+      const card = page.locator("article", { has: page.locator('[data-spaces-kanban-card][data-item-id="Item01"]') });
+      const height = (await card.boundingBox())!.height;
+      expect(await card.locator('[data-ring="success"]').count()).toBe(0);
+      await card.hover();
+      await card.getByRole("button", { name: "I'm on it", exact: true }).click();
+      await card.locator('[data-ring="success"]').waitFor();
+      expect(await card.locator('[data-ring="success"]').count()).toBe(1);
+      expect(await card.getByRole("img", { name: "You're on it", exact: true }).count()).toBe(1);
+      expect(await card.getByRole("img", { name: "Robin Example avatar", exact: true }).count()).toBe(0);
+      expect((await card.boundingBox())!.height).toBe(height);
+    } finally {
+      claimedItem = null;
+      await page.context().close();
     }
   }, 60_000);
 

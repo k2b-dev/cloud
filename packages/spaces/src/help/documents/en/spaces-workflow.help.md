@@ -104,9 +104,11 @@ Choose **I'm on it** on a board card or in the task details to claim a task. Cho
 
 While a task is claimed, other people see who works on it:
 
-- The card shows the avatar of the holder with a green ring, first among the assignees, in any column.
+- Board cards, list rows, and table cells show the working person first in the avatar stack with a green ring. They appear once and never in the `+N` overflow.
 - The **In progress** filter lists claimed tasks.
-- In the details, the holder leads the **Assigned** list with the same ring, the label **working on it**, and the time they started. A service account is marked as not assigned.
+- In the details, **Assigned** is one list. The working person's row comes first with the green ring, **working on it**, and the time they started working.
+
+A holder outside the assignees, such as a service account or an account that was deleted, still appears first as a working row. This row has no remove action.
 
 Claiming a task also assigns it to you. The claim shows which assignee works on it now. Releasing your own claim keeps you assigned. The column does not change. **Assigned to me** includes tasks you claimed. **Unassigned** excludes tasks a person claimed. Service accounts can claim tasks but cannot be assignees.
 

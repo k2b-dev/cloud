@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
@@ -105,10 +105,13 @@ const detail = (item: SpaceItem, attachments: SpaceItemAttachment[] = []): Space
   links: [],
   attachments,
   checklist: [],
-  blockedBy: [
-    { blocker: dependency("Itm002", "Rename the computers"), createdAt: now },
-    { blocker: dependency("Itm005", "Order toner", now), createdAt: now },
-  ],
+  blockedBy:
+    item.activeBlockerCount === 0
+      ? []
+      : [
+          { blocker: dependency("Itm002", "Rename the computers"), createdAt: now },
+          { blocker: dependency("Itm005", "Order toner", now), createdAt: now },
+        ],
   blocks: [
     { dependent: dependency("Itm003", "Hand out the devices"), createdAt: now },
     { dependent: dependency("Itm004", "Close the inventory list"), createdAt: now },
@@ -140,6 +143,11 @@ const writes: Array<{ method: string; path: string; body: unknown }> = [];
 /** What the server holds: saved properties come back with the next detail snapshot, as from the real route. */
 let stored: SpaceItem = task;
 let browser: Browser;
+
+beforeEach(() => {
+  stored = structuredClone(task);
+  writes.length = 0;
+});
 
 beforeAll(async () => {
   const built = await Promise.all(styleEntries.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
@@ -185,8 +193,45 @@ beforeAll(async () => {
         if (request.method === "GET") return Response.json([]);
         const body = request.headers.get("content-type")?.includes("json") ? await request.json() : null;
         writes.push({ method: request.method, path: url.pathname, body });
-        if (url.pathname === `/api/spaces/${spaceId}/items/Item01` && request.method === "PATCH") {
-          stored = { ...stored, ...(body as Partial<SpaceItem>) };
+        const itemPath = `/api/spaces/${spaceId}/items/Item01`;
+        if (url.pathname === `${itemPath}/claim` && request.method === "POST") {
+          stored = {
+            ...stored,
+            claim: { id: body.claimId, actor: { kind: "user", id: me }, displayName: tom.displayName, avatarHash: null, claimedAt: now },
+            assignees: stored.assignees?.some((person) => person.id === me) ? stored.assignees : [...(stored.assignees ?? []), tom],
+          };
+          return Response.json(stored);
+        }
+        if (url.pathname === `${itemPath}/release` && request.method === "POST") {
+          const claim = stored.claim;
+          stored = {
+            ...stored,
+            claim: null,
+            assignees:
+              body.force && claim?.actor.kind === "user" && claim.actor.id !== me
+                ? stored.assignees?.filter((person) => person.id !== claim.actor.id)
+                : stored.assignees,
+          };
+          return Response.json(stored);
+        }
+        if (url.pathname === `${itemPath}/progress` && request.method === "POST") return Response.json({ message: "ok" });
+        if (url.pathname === itemPath && request.method === "PATCH") {
+          const { assigneeIds, claimId, force, ...patch } = body as Partial<SpaceItem> & {
+            assigneeIds?: string[];
+            claimId?: string;
+            force?: boolean;
+          };
+          const claim = stored.claim;
+          const removesWorker = assigneeIds && claim?.actor.kind === "user" && !assigneeIds.includes(claim.actor.id);
+          if (removesWorker && (claimId !== claim.id || (claim.actor.id !== me && !force))) {
+            return Response.json({ message: "Task claim is no longer active" }, { status: 409 });
+          }
+          stored = {
+            ...stored,
+            ...patch,
+            ...(assigneeIds ? { assignees: assigneeIds.map((id) => [lena, tom].find((person) => person.id === id)!) } : {}),
+            ...(removesWorker ? { claim: null } : {}),
+          };
           return Response.json(stored);
         }
         return Response.json({ message: "ok" });
@@ -254,6 +299,7 @@ const hostLoad = (from: ReturnType<typeof hostCpu>, to: ReturnType<typeof hostCp
 };
 
 const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "light") => {
+  stored = structuredClone(scenario.item ?? task);
   const id = `case${++caseCounter}`;
   pages.set(id, pageHtml(scenario, theme));
   const context = await browser.newContext({
@@ -373,7 +419,184 @@ const writesReach = async (count: number) => {
 const shot = (page: Page, name: string) =>
   page.locator(".k2b-detail-panel").screenshot({ path: `/tmp/spaces-detail-${browserName}-${name}.png`, animations: "disabled" });
 
+/** The whole Assigned section, including its heading and add-assignee combobox. */
+const peopleSection = (page: Page) =>
+  page.locator(".k2b-detail-panel__section").filter({ has: page.getByRole("heading", { name: "Zuständig", exact: true }) });
+const peopleRows = (page: Page) => peopleSection(page).locator("[data-spaces-assignee-row]");
+const peopleSizes = (page: Page) =>
+  peopleRows(page).evaluateAll((rows) =>
+    rows.map((row) => {
+      const box = row.getBoundingClientRect();
+      return { name: row.querySelector("span.truncate[title]")?.getAttribute("title"), width: box.width, height: box.height };
+    }),
+  );
+const peopleListHeight = (page: Page) =>
+  peopleRows(page)
+    .first()
+    .evaluate((row) => row.parentElement!.getBoundingClientRect().height);
+
 describe("Spaces item detail in a browser", () => {
+  test("claiming and releasing keeps the working assignee in one row without changing the list size", async () => {
+    const page = await open(desktop, { locale: "de", item: { ...task, claim: null, activeBlockerCount: 0 } });
+    try {
+      const sizes = await peopleSizes(page);
+      const height = await peopleListHeight(page);
+      expect(sizes.map((row) => row.name)).toEqual([lena.displayName, tom.displayName]);
+      await page.getByRole("button", { name: "Ich übernehme", exact: true }).click();
+      const holder = peopleRows(page).first();
+      await holder.locator('[data-ring="success"]').waitFor();
+      expect(await peopleRows(page).count()).toBe(2);
+      expect(await peopleSection(page).getByText(tom.displayName, { exact: true }).count()).toBe(1);
+      expect(await holder.getByText(tom.displayName, { exact: true }).count()).toBe(1);
+      expect(await holder.getByText("arbeitet daran", { exact: true }).count()).toBe(1);
+      expect(await holder.locator("time").getAttribute("datetime")).toBe(now);
+      expect(await holder.locator("time").evaluate((time) => time.parentElement!.textContent)).toMatch(/^seit /);
+      expect(await page.locator(".k2b-detail-panel").textContent()).not.toContain("nicht zugewiesen");
+      expect(writes).toEqual([{ method: "POST", path: `/api/spaces/${spaceId}/items/Item01/claim`, body: { claimId: stored.claim!.id } }]);
+      expect(await peopleSizes(page)).toEqual([sizes[1]!, sizes[0]!]);
+      expect(await peopleListHeight(page)).toBe(height);
+
+      await page.getByRole("button", { name: "Freigeben", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Freigeben", exact: true }).click();
+      await holder.locator('[data-ring="success"]').waitFor({ state: "detached" });
+      expect(await peopleSection(page).getByText(tom.displayName, { exact: true }).count()).toBe(1);
+      expect(await peopleSection(page).getByText("arbeitet daran", { exact: true }).count()).toBe(0);
+      expect(await peopleSizes(page)).toEqual(sizes);
+      expect(await peopleListHeight(page)).toBe(height);
+      expect(writes).toHaveLength(2);
+      expect(writes[1]).toEqual({
+        method: "POST",
+        path: `/api/spaces/${spaceId}/items/Item01/release`,
+        body: { claimId: (writes[0]!.body as { claimId: string }).claimId },
+      });
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("removing another working person asks once, cancel keeps them, and confirm ends their claim", async () => {
+    const page = await open(desktop, { locale: "de" });
+    try {
+      const holder = peopleRows(page).first();
+      const remove = async () => {
+        await holder.hover();
+        await holder.getByRole("button", { name: "Lena Example entfernen", exact: true }).click();
+      };
+      await remove();
+      const dialog = page.getByRole("dialog");
+      expect(await dialog.getByText("Lena Example arbeitet daran – entfernen und die Übernahme beenden?", { exact: true }).count()).toBe(1);
+      await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+      expect(writes).toEqual([]);
+      expect(await holder.getByText(lena.displayName, { exact: true }).count()).toBe(1);
+      expect(await holder.locator('[data-ring="success"]').count()).toBe(1);
+      await remove();
+      await dialog.getByRole("button", { name: "Entfernen und Übernahme beenden", exact: true }).click();
+      await peopleSection(page).getByText(lena.displayName, { exact: true }).waitFor({ state: "detached" });
+      expect(writes).toEqual([
+        {
+          method: "PATCH",
+          path: `/api/spaces/${spaceId}/items/Item01`,
+          body: { assigneeIds: [tom.id], claimId: task.claim!.id, force: true },
+        },
+      ]);
+      expect(await peopleRows(page).count()).toBe(1);
+      expect(await peopleSection(page).locator('[data-ring="success"]').count()).toBe(0);
+      expect(await peopleRows(page).first().getByText(tom.displayName, { exact: true }).count()).toBe(1);
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("shows a service account outside the assignees as a working row without a remove action", async () => {
+    const page = await open(desktop, {
+      locale: "de",
+      item: {
+        ...task,
+        assignees: [tom],
+        claim: {
+          ...task.claim!,
+          actor: { kind: "service_account", id: "55555555-5555-4555-8555-555555555555" },
+          displayName: "Label printer",
+        },
+      },
+    });
+    try {
+      const holder = peopleRows(page).first();
+      expect(await peopleRows(page).count()).toBe(2);
+      expect(await holder.getByText("Label printer", { exact: true }).count()).toBe(1);
+      expect(await holder.locator('[data-ring="success"]').count()).toBe(1);
+      expect(await holder.getByText("arbeitet daran", { exact: true }).count()).toBe(1);
+      expect(await holder.locator("time").getAttribute("datetime")).toBe(task.claim!.claimedAt);
+      expect(await holder.getByRole("button").count()).toBe(0);
+      expect(await page.locator(".k2b-detail-panel").textContent()).not.toContain("nicht zugewiesen");
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  for (const theme of ["light", "dark"] as const) {
+    for (const width of [320, 480, "phone"] as const) {
+      test(`people: assigned worker at ${width} in ${theme}`, async () => {
+        const page = await open(width === "phone" ? phone : desktop, { locale: "de" }, theme);
+        try {
+          const panel = page.locator(".k2b-detail-panel");
+          if (width !== "phone") {
+            // The workspace sizes its detail region, as a resize would, so the panel measures the requested width.
+            await panel.evaluate((panel, width) => {
+              const workspace = panel.closest<HTMLElement>(".k2b-app-workspace")!;
+              const size = (value: number) => {
+                for (const name of ["--k2b-detail-size", "--k2b-detail-min", "--k2b-detail-max"])
+                  workspace.style.setProperty(name, `${value}px`);
+              };
+              size(width);
+              size(2 * width - panel.getBoundingClientRect().width);
+            }, width);
+            expect((await panel.boundingBox())!.width).toBe(width);
+          }
+          expect(await peopleRows(page).first().locator('[data-ring="success"]').count()).toBe(1);
+          await peopleSection(page).screenshot({
+            path: `/tmp/spaces-detail-${browserName}-people-assigned-${width}-${theme}.png`,
+            animations: "disabled",
+          });
+          // The claim time shows whole or not at all, never cut off; from 480 px on it always fits.
+          const time = await peopleRows(page)
+            .first()
+            .locator("time")
+            .evaluate((time) => {
+              const text = time.parentElement!.getBoundingClientRect();
+              const line = time.parentElement!.parentElement!.getBoundingClientRect();
+              return {
+                whole:
+                  text.left >= line.left - 0.5 &&
+                  text.right <= line.right + 0.5 &&
+                  text.top >= line.top - 0.5 &&
+                  text.bottom <= line.bottom + 0.5,
+                clipped: text.top >= line.bottom - 0.5,
+              };
+            });
+          expect(time.whole || time.clipped).toBe(true);
+          if (width !== 320) expect(time.whole).toBe(true);
+          if (width === 320) {
+            const rows = await peopleRows(page).evaluateAll((rows) =>
+              rows.map((row) => ({
+                height: row.getBoundingClientRect().height,
+                avatarHeight: row.querySelector(".k2b-avatar")!.getBoundingClientRect().height,
+                scroll: row.scrollWidth,
+                client: row.clientWidth,
+              })),
+            );
+            for (const row of rows) {
+              expect(row.height).toBe(row.avatarHeight);
+              expect(row.scroll).toBeLessThanOrEqual(row.client);
+            }
+          }
+        } finally {
+          await page.context().close();
+        }
+      }, 60_000);
+    }
+  }
+
   for (const [name, view] of [
     ["desktop", desktop],
     ["phone", phone],

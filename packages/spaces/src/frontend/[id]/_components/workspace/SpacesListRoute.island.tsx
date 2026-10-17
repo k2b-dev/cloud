@@ -116,6 +116,7 @@ export default function SpacesListRoute(props: Props) {
           spaceId={props.spaceId}
           columns={props.columns}
           tags={props.tags}
+          currentUserId={props.currentUserId}
           selectedItemId={selectedItemId()}
           baseUrl={baseUrl()}
           scrollPreserveKey={`spaces-table-${props.spaceId}`}
