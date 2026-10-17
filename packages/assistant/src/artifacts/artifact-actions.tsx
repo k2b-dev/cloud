@@ -72,10 +72,10 @@ export function createArtifactActions(props: {
             <NoticeCard tone="warning" title={t().unpublishedAccess} detail={t().unpublishedAccessHelp} />
           </Show>
           <Show when={!access.loading} fallback={<Placeholder state="loading" title={t().loading} />}>
-            <Show when={!access.error && access()} keyed fallback={<Placeholder state="error" title={t().loadFailed} />}>
+            <Show when={!access.error && access()} fallback={<Placeholder state="error" title={t().loadFailed} />}>
               {(entries) => (
                 <StudioPermissions
-                  entries={entries}
+                  entries={entries()}
                   loadProjects={() => artifactClient.projects(item.id)}
                   grant={(principal, level) => artifactClient.grant(item.id, principal, level)}
                   change={(id, level) => artifactClient.changeGrant(item.id, id, level)}

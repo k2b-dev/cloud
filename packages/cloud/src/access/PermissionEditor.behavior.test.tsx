@@ -1,4 +1,5 @@
 import { describe, expect, setSystemTime, test } from "bun:test";
+import { createSignal, Show } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
@@ -1026,6 +1027,138 @@ describe("PermissionEditor pending controls", () => {
         expect(view.rows[index]!.querySelector("button.k2b-select-chip") === view.triggers[index]!).toBe(true);
         expect(view.triggers[index]!.disabled).toBe(false);
       }
+    } finally {
+      view.done();
+    }
+  });
+});
+
+describe("PermissionEditor caller refreshes", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  const setup = async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    setSystemTime(new Date("2026-10-17T12:00:00.000Z"));
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    const initial = [
+      grant("lea", { type: "user", userId: "lea" }, "read", "Lea Sommer"),
+      grant("jonas", { type: "user", userId: "jonas" }, "read", "Jonas Weber"),
+    ];
+    const [data, setData] = createSignal(initial);
+    let finishUpdate!: () => void;
+    delegateEvents(["click"], dom.document);
+    const dispose = render(
+      () => (
+        <Show when={data()}>
+          {(entries) => (
+            <PermissionEditor
+              initialEntries={entries().filter(() => true)}
+              grantAccess={async () => {
+                throw new Error("Not used");
+              }}
+              updateAccess={() =>
+                new Promise<void>((resolve) => {
+                  finishUpdate = resolve;
+                })
+              }
+              revokeAccess={async () => {}}
+            />
+          )}
+        </Show>
+      ),
+      dom.root,
+    );
+    const chips = () => Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button.k2b-select-chip"));
+    const chooseEdit = () => {
+      const row = chips()[0]!.closest(".group\\/access-row")!;
+      Array.from(row.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+        .find((item) => item.textContent?.startsWith("Edit"))!
+        .click();
+    };
+    return {
+      initial,
+      data,
+      setData,
+      chips,
+      chooseEdit,
+      finishUpdate: () => finishUpdate(),
+      done: () => {
+        dispose();
+        setSystemTime();
+        dom.cleanup();
+      },
+    };
+  };
+
+  test("fresh caller objects merge changed and added entries without replacing existing chips", async () => {
+    const view = await setup();
+    try {
+      const originals = view.chips();
+      view.setData([
+        ...view.initial.map((entry, index) => ({ ...entry, permission: index === 1 ? ("write" as const) : entry.permission })),
+        grant("mara", { type: "user", userId: "mara" }, "admin", "Mara Lind"),
+      ]);
+      await waitFor(() => view.chips().length === 3, "the refetched entries");
+      originals.forEach((chip, index) => expect(view.chips()[index] === chip).toBe(true));
+      expect(view.chips().map((chip) => chip.textContent)).toEqual(["View", "Edit", "Manage"]);
+    } finally {
+      view.done();
+    }
+  });
+
+  test("defers the latest caller list until an update finishes without undoing the saved level", async () => {
+    const view = await setup();
+    try {
+      const originals = view.chips();
+      view.chooseEdit();
+      const refetched = view.initial.map((entry) => ({ ...entry, permission: "write" as const }));
+      view.setData(refetched);
+      await Promise.resolve();
+      expect(view.chips()[0]!.disabled).toBe(true);
+      expect(view.chips()[1]!.textContent).toBe("View");
+      view.setData([...refetched, grant("mara", { type: "user", userId: "mara" }, "read", "Mara Lind")]);
+      expect(view.chips()).toHaveLength(2);
+      view.finishUpdate();
+      await waitFor(() => view.chips().length === 3 && !view.chips()[0]!.disabled, "the idle merge");
+      originals.forEach((chip, index) => expect(view.chips()[index] === chip).toBe(true));
+      expect(view.chips().map((chip) => chip.textContent)).toEqual(["Edit", "Edit", "View"]);
+      expect(refetched.map((entry) => entry.permission)).toEqual(["write", "write"]);
+    } finally {
+      view.done();
+    }
+  });
+
+  test("re-evaluating an unchanged caller list does not revert a successful local update", async () => {
+    const view = await setup();
+    try {
+      view.chooseEdit();
+      view.finishUpdate();
+      await waitFor(() => !view.chips()[0]!.disabled, "the saved local update");
+      view.setData(view.initial.map((entry) => ({ ...entry })));
+      await Promise.resolve();
+      expect(view.chips()[0]!.textContent).toBe("Edit");
+    } finally {
+      view.done();
+    }
+  });
+
+  test("never writes local changes into mount or subsequently applied caller objects", async () => {
+    const view = await setup();
+    try {
+      const initialSnapshot = JSON.stringify(view.initial);
+      const refetched = view.initial.map((entry) => ({ ...entry, displayName: `${entry.displayName} refreshed` }));
+      const refetchedSnapshot = JSON.stringify(refetched);
+      view.setData(refetched);
+      view.chooseEdit();
+      view.finishUpdate();
+      await waitFor(() => !view.chips()[0]!.disabled, "the saved update after a merge");
+      expect(view.chips()[0]!.textContent).toBe("Edit");
+      expect(JSON.stringify(view.initial)).toBe(initialSnapshot);
+      expect(JSON.stringify(refetched)).toBe(refetchedSnapshot);
     } finally {
       view.done();
     }

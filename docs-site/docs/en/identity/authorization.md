@@ -455,6 +455,18 @@ available by default; `allowAuthenticated={false}` removes that option.
 Public and service-account selection require `allowPublic` and
 `allowServiceAccounts` respectively. This picker grants no access itself.
 
+### Keep the editor mounted across refetches
+
+`PermissionEditor` mounts from `initialEntries` and keeps its own copy after
+successful changes. It keeps rows by entry id and merges a later changed
+`initialEntries` list once no change is saving. Callers can pass refetched data;
+a list equal to the last applied caller list does not undo local changes.
+
+Keep the editor mounted during a refresh. Do not wrap it in a keyed `Show` or
+`Match`, or hide it while a query is refreshing: remounting drops keyboard
+focus and closes open group member lists. The `access-editor-mounts`
+repository check enforces these mounting rules.
+
 ### Restrict editor levels by principal
 
 `PermissionEditor` from `@k2b/cloud/access/ui` accepts either an `allowedLevels`

@@ -1,6 +1,6 @@
 import { mutation } from "@k2b/stdlib/solid";
 import { announce, IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind } from "../contracts/shared";
@@ -27,9 +27,9 @@ export type GrantableLevel = Exclude<PermissionLevel, "none">;
 export type AllowedLevel = GrantableLevel | { level: GrantableLevel; scope?: string; label?: string; icon?: string; description?: string };
 
 type PermissionEditorProps = {
-  /** Initial access entries — caller stays the source of truth for
-   *  what's stored on the resource; the editor updates its local copy
-   *  after successful mutations. */
+  /** The editor mounts from this list and keeps its own copy after successful changes. A later
+   *  changed list merges by entry id once no change is saving. Keep the editor
+   *  mounted (no keyed Show or unmount during refresh) and pass refetched data. */
   initialEntries: AccessEntry[];
 
   /** Whether the current user can edit permissions. When `false`, the
@@ -179,7 +179,9 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   const t = () => accessMessages.resolve([locale()]).t;
   // A store keeps each row's identity across level changes, so an expanded member list stays open. It holds
   // copies: store writes go into the objects themselves, and the caller's entries are not the editor's to change.
-  const [entries, setEntries] = createStore<AccessEntry[]>(props.initialEntries.map((entry) => ({ ...entry })));
+  const initialEntries = props.initialEntries;
+  let appliedCallerSnapshot = JSON.stringify(initialEntries);
+  const [entries, setEntries] = createStore<AccessEntry[]>(initialEntries.map((entry) => ({ ...entry })));
   const [pending, setPending] = createSignal<string | null>(null);
   const grantPending = () => pending() !== null;
   let disposed = false;
@@ -281,6 +283,18 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     },
   });
   const busy = () => grantPending() || updateMut.loading() || revokeMut.loading();
+  createEffect(() => {
+    const next = props.initialEntries;
+    const snapshot = JSON.stringify(next);
+    if (busy() || snapshot === appliedCallerSnapshot) return;
+    setEntries(
+      reconcile(
+        next.map((entry) => ({ ...entry })),
+        { key: "id" },
+      ),
+    );
+    appliedCallerSnapshot = snapshot;
+  });
   // The service refuses to remove the last manager; the row says so up front.
   const lastManagerId = createMemo(() => {
     // A grant on part of the resource never manages it.
