@@ -296,9 +296,35 @@ for (const navigationApi of [true, false]) {
         await outer;
       });
 
+      test("closing the outer dialog after Forward onto a retired entry also removes that entry", async () => {
+        const core = createDialogCore();
+        const outer = core.open(view("A"), { history: true });
+        let closeInner = () => {};
+        const inner = core.open(
+          (close) => {
+            closeInner = close;
+            return view("B")();
+          },
+          { history: true },
+        );
+        closeInner();
+        await inner;
+        await core.historySettled();
+        const forward = popped();
+        history.forward();
+        await forward;
+        expect(marker()).toBeNumber();
+        core.close();
+        await outer;
+        await core.historySettled();
+        expect(core.isOpen()).toBe(false);
+        expect(marker()).toBeUndefined();
+      });
+
       test("Back onto a retired nested marker closes a newer dialog and preserves its parent", async () => {
         const core = createDialogCore();
         const outer = core.open(view("A"), { history: true });
+        const parent = marker();
         let closeInner = () => {};
         const inner = core.open(
           (close) => {
@@ -318,7 +344,9 @@ for (const navigationApi of [true, false]) {
         const back = popped();
         history.back();
         await back;
-        expect(marker()).toBe(retired);
+        await core.historySettled();
+        // The retired entry leaves with the newer dialog's.
+        expect(marker()).toBe(parent);
         expect(core.isOpen()).toBe(true);
         expect(document.querySelector("dialog")?.textContent).toBe("A");
         await newer;

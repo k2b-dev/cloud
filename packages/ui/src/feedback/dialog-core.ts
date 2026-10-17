@@ -201,7 +201,9 @@ export const createDialogCore = () => {
       if (from && from.href === location.href && from.marker !== marker && (ownMarker(from.marker) || ownMarker(marker))) {
         event.stopImmediatePropagation();
       }
-      historyIds = ownMarker(marker) ? historyIds.filter((id) => id <= marker) : [];
+      // Own entries are ordered by id. A retired entry reached by Forward stays tracked, so closing the dialogs
+      // beneath it also removes it.
+      historyIds = ownMarker(marker) ? [...historyIds.filter((id) => id < marker), marker] : [];
       const gone = (entry: DialogStackEntry) => entry.historyId !== undefined && !historyIds.includes(entry.historyId);
       while (state.stack.some(gone)) popTop(undefined);
       for (const holder of [...historyHolders].reverse()) {
