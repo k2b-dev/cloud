@@ -299,4 +299,50 @@ suite("batch conversation completion", () => {
       { conversationId: assigned.short_id, status: "ok", workStatus: "needs_action", revision: before!.revision + 2 },
     ]);
   });
+  test("an assigned-only writer cannot complete a conversation unassigned while the batch waited for its lock", async () => {
+    const target = await conversation();
+    unwrap(
+      await applyConversationAssignments({
+        context: contextFor(owner),
+        mailboxId,
+        conversationIds: [target.short_id],
+        assigneeUserIds: [writer.id],
+        mode: "add",
+      }),
+    );
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked = () => {};
+    const holding = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    // Another person removes the writer and holds the conversation lock until the batch waits behind it.
+    const unassignment = sql.begin(async (tx) => {
+      await tx`SELECT id FROM mail.conversations WHERE id = ${target.id}::uuid FOR UPDATE`;
+      await tx`DELETE FROM mail.conversation_assignees WHERE conversation_id = ${target.id}::uuid AND user_id = ${writer.id}::uuid`;
+      await tx`UPDATE mail.conversations SET revision = revision + 1 WHERE id = ${target.id}::uuid`;
+      locked();
+      await gate;
+    });
+    await holding;
+    const batch = complete([target.short_id], "done", writer);
+    let waiting = false;
+    for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+      const [row] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'
+          AND query LIKE '%jsonb_array_elements_text%' AND query LIKE '%FOR UPDATE%'
+      `;
+      waiting = (row?.count ?? 0) > 0;
+      if (!waiting) await Bun.sleep(50);
+    }
+    release();
+    await unassignment;
+    expect(waiting).toBeTrue();
+    expect(unwrap(await batch)).toEqual({ completion: "done", results: [{ conversationId: target.short_id, status: "not_found" }] });
+    const after = await state(target.id);
+    expect(after?.work_status).toBe("needs_action");
+  });
 });

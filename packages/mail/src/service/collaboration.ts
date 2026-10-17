@@ -1012,13 +1012,28 @@ export const applyConversationCompletions = async (params: {
       });
       if (!execution.ok) return execution;
       // Share the stable lock order with bulk assignment.
-      const rows = await tx<{ id: string; short_id: string; revision: string | number }[]>`
+      const locked = await tx<{ id: string; short_id: string; revision: string | number }[]>`
         SELECT id, short_id, revision FROM mail.conversations
         WHERE mailbox_id = ${params.mailboxId}::uuid
           AND short_id IN (SELECT value FROM jsonb_array_elements_text(${requestedIds}::jsonb))
           AND ${conversationVisibleTo(access.data, sql`id`)}
         ORDER BY id FOR UPDATE
       `;
+      // A row lock that waited for a concurrent unassignment still judged visibility on the old snapshot,
+      // and the revision it returns is already the new one. Recheck visibility now that the locks are held.
+      const visibleIds =
+        access.data.scope === "mailbox" || locked.length === 0
+          ? null
+          : new Set(
+              (
+                await tx<{ id: string }[]>`
+                  SELECT id FROM mail.conversations
+                  WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${locked.map((row) => row.id)}::jsonb))
+                    AND ${conversationVisibleTo(access.data, sql`id`)}
+                `
+              ).map((row) => row.id),
+            );
+      const rows = visibleIds ? locked.filter((row) => visibleIds.has(row.id)) : locked;
       const collaborations = new Map<string, ConversationCollaboration>();
       let changed = false;
       for (const row of rows) {
