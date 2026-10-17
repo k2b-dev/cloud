@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import type { AiChatTaskView, AiSkillSummary } from "@k2b/cloud/ai";
 import type { AiComposerAttachment } from "@k2b/cloud/ai/ui";
-import type { CloudSearchTag } from "@k2b/cloud/browser/composer-insert";
 import type { CloudResourcePickerItem, CloudResourcePickerOptions } from "@k2b/cloud/browser/resource-picker";
 import { currentLibrary } from "../../../cloud/test/future-capability-manifest";
 import type { ChatMention } from "@k2b/ui";
@@ -118,6 +117,8 @@ const mount = async (
     mentions?: ChatMention[];
     choose?: () => Promise<readonly File[]>;
     catalogFail?: () => boolean;
+    /** The catalog answers only once this settles. */
+    catalogGate?: Promise<void>;
     empty?: boolean;
     skills?: AiSkillSummary[];
     tasks?: AiChatTaskView[];
@@ -146,10 +147,10 @@ const mount = async (
     assistantComposerCommands,
     assistantExcludedRefs,
     assistantInsertCommands,
+    createAssistantCatalogTags,
     createAssistantCommandSession,
     createAssistantTaskRunKeys,
   } = await import("./composer-commands");
-  const { loadCloudComposerCatalog } = await import("@k2b/cloud/browser/composer-insert");
   const { assistantCopyFor } = await import("./ui-copy");
   const requests: { url: URL; init?: RequestInit }[] = [];
   const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
@@ -157,8 +158,10 @@ const mount = async (
       async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
         const url = new URL(String(input), "http://localhost");
         requests.push({ url, init });
-        if (url.pathname === "/api/capabilities/v1/catalog")
+        if (url.pathname === "/api/capabilities/v1/catalog") {
+          await options.catalogGate;
           return options.catalogFail?.() ? Response.json({ message: "Offline" }, { status: 500 }) : Response.json(catalog);
+        }
         if (url.pathname.endsWith("/run")) return options.post ? options.post() : Response.json({});
         if (url.pathname === "/api/ai/tasks")
           return options.tasksFail?.()
@@ -202,13 +205,12 @@ const mount = async (
     { id: "beta", label: "Beta" },
   ];
   const copy = assistantCopyFor(locale);
-  const [tags, setTags] = createSignal<readonly CloudSearchTag[]>([]);
-  let opening: number | undefined;
+  const catalogTags = createAssistantCatalogTags();
   const insert = createMemo(() =>
     assistantInsertCommands({
       copy,
       locale,
-      tags: tags(),
+      tags: catalogTags.tags(),
       partCount: (options.attachments ?? []).length + mentions().length,
       excludeRefs: () => assistantExcludedRefs(options.attachments ?? [], mentions()),
       fileSelectionDisabled: state() === "running",
@@ -259,30 +261,27 @@ const mount = async (
           }),
         ]}
         searchCommands={(query, signal, search) => {
-          if (opening !== search.opening) {
-            opening = search.opening;
-            void loadCloudComposerCatalog(locale).then(
-              (value) => setTags(value.tags),
-              () => {},
-            );
-          }
-          return assistantComposerCommands({
-            query,
-            signal,
-            session: search.opening,
-            scope: search.scope,
-            sessionLoader: loader,
-            runKeys,
-            models,
-            selectedModelId: selectedModel(),
-            chooseModel,
-            isRunning: () => state() === "running",
-            locale,
-            conversationId: "chat-1",
-            projects: [],
-            running: state() === "running",
-            assignProject: async () => {},
-          });
+          // As the workspace does: every search of an opening waits for its catalog answer.
+          return Promise.all([
+            assistantComposerCommands({
+              query,
+              signal,
+              session: search.opening,
+              scope: search.scope,
+              sessionLoader: loader,
+              runKeys,
+              models,
+              selectedModelId: selectedModel(),
+              chooseModel,
+              isRunning: () => state() === "running",
+              locale,
+              conversationId: "chat-1",
+              projects: [],
+              running: state() === "running",
+              assignProject: async () => {},
+            }),
+            catalogTags.ready(search, locale),
+          ]).then(([rows]) => rows);
         }}
       />
     ),
@@ -806,6 +805,24 @@ test("attached and mentioned resources are excluded from the picker", async () =
   h.key("Enter");
   await flush();
   expect(picker.mock.calls.at(-1)?.[0]?.excludeRefs).toEqual([{ type: "notebooks.note", id: "attached" }, attachment.ref]);
+});
+
+test("a slow first catalog keeps the search pending, so a space after /notiz narrows once the tags arrive", async () => {
+  let answer!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const h = await mount({ locale: "de-LI", value: "/notiz", catalogGate: gate, skills: [], tasks: [] });
+  await settled();
+  // Not "nothing found" yet: the tags that could match have not arrived.
+  expect(h.root.textContent).not.toContain("Nichts gefunden");
+  h.type("/notiz ");
+  answer();
+  await settled();
+  h.type("/notiz q3");
+  await settled();
+  expect(h.root.textContent).toContain("Notizen aus Notebooks");
+  expect(h.row("„q3“ in Notizen suchen")).toBeDefined();
 });
 
 test("one successful catalog fetch serves two composers, keystrokes and later openings", async () => {

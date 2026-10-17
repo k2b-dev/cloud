@@ -31,7 +31,6 @@ import {
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { type CloudSearchTag, loadCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
@@ -118,6 +117,7 @@ import {
   assistantComposerCommands,
   assistantExcludedRefs,
   assistantInsertCommands,
+  createAssistantCatalogTags,
   createAssistantCommandSession,
   createAssistantTaskRunKeys,
 } from "./composer-commands";
@@ -1383,15 +1383,14 @@ export default function AssistantWorkspace(props: Props) {
     const projectComposer = () => Boolean(composerProps.projectId);
     // A Project composer starts new chats; a response still running in the previous chat does not block it.
     const composerRunning = () => !projectComposer() && chat.running();
-    const [catalogTags, setCatalogTags] = createSignal<readonly CloudSearchTag[]>([]);
-    let catalogOpening: number | undefined;
+    const catalog = createAssistantCatalogTags();
     const attachmentCount = createMemo(() => composerAttachmentsFor(sessionKey()).length);
     const mentionCount = createMemo(() => mentionsFor(sessionKey()).length);
     const insert = createMemo(() =>
       assistantInsertCommands({
         copy: commandCopy(),
         locale: locale(),
-        tags: catalogTags(),
+        tags: catalog.tags(),
         partCount: attachmentCount() + mentionCount(),
         excludeRefs: () => assistantExcludedRefs(composerAttachmentsFor(sessionKey()), mentionsFor(sessionKey())),
         fileSelectionDisabled: composerRunning(),
@@ -1549,59 +1548,56 @@ export default function AssistantWorkspace(props: Props) {
               },
             }),
           ]}
-          searchCommands={(query, signal, search) => {
-            if (catalogOpening !== search.opening) {
-              catalogOpening = search.opening;
-              void loadCloudComposerCatalog(locale()).then(
-                (catalog) => setCatalogTags(catalog.tags),
-                () => {},
-              );
-            }
-            return assistantComposerCommands({
-              query,
-              scope: search.scope,
-              session: search.opening,
-              sessionLoader: commandSession,
-              runKeys,
-              models: aiChatModelOptions(props.models),
-              selectedModelId: selectedModelId(),
-              chooseModel: setSelectedModelId,
-              isRunning: () => composerRunning(),
-              signal,
-              locale: locale(),
-              conversationId: projectComposer() ? undefined : (chat.activeConversationId() ?? undefined),
-              projectId: composerProps.projectId ?? chat.conversation()?.projectId,
-              projects: projects(),
-              running: composerRunning(),
-              assignProject: async (projectId) => {
-                const key = sessionKey();
-                const text = composerDraft(key),
-                  attachments = composerAttachmentsFor(key),
-                  mentions = mentionsFor(key);
-                const existing = chat.activeConversationId();
-                const created = existing ? null : await createConversation(false);
-                const conversationId = existing ?? created?.id;
-                if (!conversationId) throw new Error(t().chatActionFailed);
-                if (created) {
-                  setComposerDraft(conversationId, text);
-                  setComposerAttachmentsFor(conversationId, attachments);
-                  setMentionsFor(conversationId, mentions);
-                  session(conversationId).baseRevision = created.draft.revision;
-                }
-                if (!(await saveComposer(conversationId, conversationId))) throw new Error(t().chatActionFailed);
-                if (chat.activeConversationId() !== conversationId) return;
-                const updated = await assistantApi.assignProject(conversationId, projectId);
-                if (chat.activeConversationId() === conversationId) setEmptyProjectId(updated.projectId);
-                await Promise.all([
-                  chat.refreshActiveConversation(),
-                  sidebar.invalidate({
-                    domains: new Set(["conversation-list"]),
-                    conversationIds: new Set([updated.id]),
-                    projectIds: null,
-                  }),
-                ]);
-              },
-            });
+          searchCommands={async (query, signal, search) => {
+            const [rows] = await Promise.all([
+              assistantComposerCommands({
+                query,
+                scope: search.scope,
+                session: search.opening,
+                sessionLoader: commandSession,
+                runKeys,
+                models: aiChatModelOptions(props.models),
+                selectedModelId: selectedModelId(),
+                chooseModel: setSelectedModelId,
+                isRunning: () => composerRunning(),
+                signal,
+                locale: locale(),
+                conversationId: projectComposer() ? undefined : (chat.activeConversationId() ?? undefined),
+                projectId: composerProps.projectId ?? chat.conversation()?.projectId,
+                projects: projects(),
+                running: composerRunning(),
+                assignProject: async (projectId) => {
+                  const key = sessionKey();
+                  const text = composerDraft(key),
+                    attachments = composerAttachmentsFor(key),
+                    mentions = mentionsFor(key);
+                  const existing = chat.activeConversationId();
+                  const created = existing ? null : await createConversation(false);
+                  const conversationId = existing ?? created?.id;
+                  if (!conversationId) throw new Error(t().chatActionFailed);
+                  if (created) {
+                    setComposerDraft(conversationId, text);
+                    setComposerAttachmentsFor(conversationId, attachments);
+                    setMentionsFor(conversationId, mentions);
+                    session(conversationId).baseRevision = created.draft.revision;
+                  }
+                  if (!(await saveComposer(conversationId, conversationId))) throw new Error(t().chatActionFailed);
+                  if (chat.activeConversationId() !== conversationId) return;
+                  const updated = await assistantApi.assignProject(conversationId, projectId);
+                  if (chat.activeConversationId() === conversationId) setEmptyProjectId(updated.projectId);
+                  await Promise.all([
+                    chat.refreshActiveConversation(),
+                    sidebar.invalidate({
+                      domains: new Set(["conversation-list"]),
+                      conversationIds: new Set([updated.id]),
+                      projectIds: null,
+                    }),
+                  ]);
+                },
+              }),
+              catalog.ready(search, locale()),
+            ]);
+            return rows;
           }}
           submitTools={<dictation.Control />}
           footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}

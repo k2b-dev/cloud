@@ -1,6 +1,11 @@
 import type { AiChatTaskView, AiProject, AiSkillSummary } from "@k2b/cloud/ai";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS, type AiComposerAttachment, aiChatAttachments, aiComposerAttachmentRecords } from "@k2b/cloud/ai/ui";
-import { cloudInsertMenu, type CloudSearchTag } from "@k2b/cloud/browser/composer-insert";
+import {
+  type CloudComposerCatalog,
+  type CloudSearchTag,
+  cloudInsertMenu,
+  loadCloudComposerCatalog,
+} from "@k2b/cloud/browser/composer-insert";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import {
   type ChatMention,
@@ -11,6 +16,7 @@ import {
   type ChatModelOption,
   matchesChatCommand,
 } from "@k2b/ui";
+import { createSignal } from "solid-js";
 import { AssistantTaskRunError, assistantApi } from "../api/client";
 import { assistantMessages } from "./messages";
 import { assistantTaskTitle, formatAssistantTaskScheduleInline } from "./scheduled-task-format";
@@ -43,6 +49,34 @@ export const assistantCommandScopes = (copy: AssistantCopy, locale: string): Cha
   },
   { id: "task", title: copy.commandTasks, words: ["routine", "routinen"] },
 ];
+
+/**
+ * The page's search tags for one composer. Each menu opening asks once; the platform keeps a successful load for the
+ * page, so only the first opening, or one after a failure, sends a request. Every search of an opening waits for that
+ * answer, so "/notiz" never settles as "nothing found" (and closes on the next space) before the tags could match it.
+ * A failure keeps the tags the composer had.
+ */
+export function createAssistantCatalogTags(load: (locale: string) => Promise<CloudComposerCatalog> = loadCloudComposerCatalog) {
+  const [tags, setTags] = createSignal<readonly CloudSearchTag[]>([]);
+  let opening: number | undefined;
+  let settled: Promise<void> = Promise.resolve();
+  return {
+    tags,
+    /** Starts this opening's load once and resolves when it has settled, successfully or not. */
+    ready(search: { opening: number }, locale: string): Promise<void> {
+      if (opening !== search.opening) {
+        opening = search.opening;
+        settled = load(locale).then(
+          (catalog) => {
+            setTags(catalog.tags);
+          },
+          () => {},
+        );
+      }
+      return settled;
+    },
+  };
+}
 
 /** Resources the draft already holds, as attachments or references; the picker leaves them out. */
 export const assistantExcludedRefs = (attachments: readonly AiComposerAttachment[], mentions: readonly ChatMention[]): CloudResourceRef[] =>

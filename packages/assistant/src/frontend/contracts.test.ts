@@ -95,7 +95,8 @@ describe("Assistant frontend contracts", () => {
 
     expect(workspace).not.toContain("type ChatCommand");
     expect(workspace).not.toContain("const slashCommands");
-    expect(workspace).toMatch(/searchCommands=\{\(query, signal, search\) => \{[\s\S]*?return assistantComposerCommands\(/);
+    expect(workspace).toMatch(/searchCommands=\{async \(query, signal, search\) => \{[\s\S]*?assistantComposerCommands\(/);
+    expect(workspace).toContain("catalog.ready(search, locale())");
     expect(workspace).toContain("commandFallback={insert().fallback}");
     expect(workspace).not.toContain("type / ...");
     expect(workspace).toContain('id: "attach-resource"');
