@@ -104,6 +104,8 @@ Ctrl+J, or Cmd+J on Apple devices, opens or closes the panel. It also closes the
 panel from inside a provider. Escape closes it when focus is inside the slot or
 provider. A provider's menu, dialog, or search field can keep Escape by calling
 `preventDefault()`; the provider runtime checks after event dispatch finishes.
+While a modal dialog is open in the provider page, Escape belongs to that
+dialog and never closes the panel.
 The close button also closes it. `closePanel()` works both in the host app and
 inside the provider page. Focus returns to the opener, or to the app's main area
 if the opener is gone or hidden. Opening a workspace Detail does not close the

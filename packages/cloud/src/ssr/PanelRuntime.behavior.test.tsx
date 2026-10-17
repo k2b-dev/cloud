@@ -54,6 +54,20 @@ else {
       expect(document.documentElement.className).toBe("provider dark");
     });
   }
+  test("Escape while a modal dialog is open belongs to the dialog, not to the panel", () => {
+    jest.useFakeTimers();
+    const h = mount();
+    const dialog = document.createElement("dialog");
+    dialog.setAttribute("open", "");
+    h.dom.root.append(dialog);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+    jest.runAllTimers();
+    expect(h.postMessage.mock.calls.some(([message]) => JSON.stringify(message).includes("cloud.panel.close"))).toBe(false);
+    dialog.remove();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+    jest.runAllTimers();
+    expect(h.postMessage.mock.calls.at(-1)).toEqual([{ type: "cloud.panel.close" }, "http://localhost"]);
+  });
   test("a page kept in the back/forward cache keeps following the host theme", () => {
     const h = mount();
     const changeTheme = (theme: string) => {

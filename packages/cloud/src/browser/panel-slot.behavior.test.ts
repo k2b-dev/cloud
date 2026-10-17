@@ -280,6 +280,11 @@ else {
     document.cookie = "cloud_panel=1:fixture:32; Path=/";
     handlePanelRequest({ action: "close" });
     expect(document.cookie).toBe("cloud_panel=0:fixture:32");
+    // Reopening shows the width the cookie holds, also when close already adopted it.
+    h.open();
+    expect(h.canvas.style.getPropertyValue("--cloud-panel-width-set")).toBe("32rem");
+    expect(h.slot.querySelector(".cloud-panel__resize")?.getAttribute("aria-valuenow")).toBe("32");
+    handlePanelRequest({ action: "close" });
     document.cookie = "cloud_panel=0:fixture:30; Path=/";
     h.open();
     expect(document.cookie).toBe("cloud_panel=1:fixture:30");

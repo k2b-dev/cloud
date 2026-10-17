@@ -28,7 +28,8 @@ type Environment = { Variables: { runtime: RuntimeContext; page: PageOptions } }
 const Child = () => `Inherited locale: ${useLocale()()}`;
 const server = new Hono<Environment>()
   .use(async (c, next) => {
-    c.set("runtime", { apps: [options] });
+    // A trailing slash is a valid declaration; the gateway and the panel check read it canonically.
+    c.set("runtime", { apps: [{ ...options, routes: c.req.query("slash") ? ["/app/fixture/"] : options.routes }] });
     await next();
   })
   .get(
@@ -67,3 +68,8 @@ for (const locale of ["en", "de"])
     ])
       expect(html).not.toContain(absent);
   });
+
+test("PanelLayout names its provider when the app declares its route with a trailing slash", async () => {
+  const response = await server.request("/app/fixture/panel?slash=1");
+  expect(await response.text()).toMatch(/data-panel-provider="fixture"/);
+});

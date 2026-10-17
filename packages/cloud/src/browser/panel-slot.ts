@@ -58,9 +58,9 @@ export function installPanelSlot(): () => void {
       document.cookie,
       panel.providers.map((item) => item.id),
     ).widthRem;
-    if (stored === undefined || stored === committedWidth) return;
+    if (stored === undefined) return;
     committedWidth = stored;
-    if (apply) setWidth(stored);
+    if (apply && stored !== width) setWidth(stored);
   };
   const writeCookie = () => {
     if (isPhone()) return;

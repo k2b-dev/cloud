@@ -25,6 +25,8 @@ export default function PanelRuntime(props: { provider?: string }) {
         event.preventDefault();
         if (!event.repeat) close();
       } else if (event.key === "Escape" && !event.metaKey && !event.ctrlKey) {
+        // An open modal dialog takes Escape through its cancel event, without preventing this keydown.
+        if (document.querySelector("dialog[open], [aria-modal='true']")) return;
         const timer = setTimeout(() => {
           deferred.delete(timer);
           if (!event.defaultPrevented) close();
