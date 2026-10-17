@@ -82,6 +82,30 @@ describe("Image Processor crop drag", () => {
     }
   });
 
+  test("below the desktop width a failed file closes the inspector that would cover the failure notice", async () => {
+    const dom = createDomTestHarness();
+    Object.defineProperty(dom.window, "matchMedia", {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    });
+    const mocks = [...mockImages(), spyOn(defaultDeps, "decodeNative").mockRejectedValue(new Error("Damaged PNG"))];
+    const { ImageProcessorView } = await import("./ImageProcessor.island.tsx");
+    const dispose = render(() => createComponent(ImageProcessorView, { initialImages: [image] }), dom.root);
+    const inspector = () => dom.root.querySelector("#k2b-workspace-detail-image-processor-inspector");
+    try {
+      await settle();
+      expect(inspector()?.hasAttribute("hidden")).toBe(false);
+      drop(dom.root, [new File(["x"], "broken.png", { type: "image/png" })]);
+      await waitFor(() => !!dom.root.querySelector('[aria-label="Files that could not be added"]'));
+      expect(dom.root.querySelector('[aria-label="Files that could not be added"]')?.textContent).toContain("broken.png");
+      expect(inspector()?.hasAttribute("hidden")).toBe(true);
+    } finally {
+      dispose();
+      for (const mock of mocks) mock.mockRestore();
+      dom.cleanup();
+    }
+  });
+
   test("files dropped during crop get visible per-file refusals, cleared by the next fresh load", async () => {
     const dom = createDomTestHarness();
     const mocks = [...mockImages(), spyOn(defaultDeps, "decodeNative").mockResolvedValue({ width: 1200, height: 800 })];

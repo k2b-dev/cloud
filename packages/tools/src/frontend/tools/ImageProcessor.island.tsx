@@ -226,6 +226,11 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   // File Loading
   // ====================================
 
+  // Below the desktop width the inspector covers the canvas, where the failure notice lives; step aside to show it.
+  const revealLoadFailures = () => {
+    if (!window.matchMedia("(min-width: 1024px)").matches) setInspectorOpen(false);
+  };
+
   let loadingFiles: File[] = [];
   const loadMutation = mutations.create<void, File[]>({
     mutation: async (files, { abortSignal }) => {
@@ -268,6 +273,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             abortSignal.throwIfAborted();
             const reason = loadError instanceof ImageIntakeError ? loadError.reason : "decode-failed";
             setLoadFailures((current) => [...current, { file, reason }]);
+            revealLoadFailures();
           }
         }
         abortSignal.throwIfAborted();
@@ -292,6 +298,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     if (files.length === 0) return;
     if (cropActive() || cropBusy()) {
       setLoadFailures((current) => [...current, ...files.map((file) => ({ file, reason: "crop-active" as const }))]);
+      revealLoadFailures();
       return;
     }
     if (loadMutation.loading()) {
