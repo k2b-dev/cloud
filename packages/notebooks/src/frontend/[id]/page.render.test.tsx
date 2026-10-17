@@ -653,6 +653,7 @@ for (const [locale, label] of [
     expect(await select(html, '[role="tree"] [aria-current="page"]')).toEqual([]);
     // Like Book, the reading graph follows revoked access and ended sessions.
     expect(await select(html, 'solid-island[data-file="WorkspaceEventBridge.island.tsx"]')).toHaveLength(1);
+    expect(await select(html, 'solid-island[data-file="BookGraphLive.island.tsx"]')).toHaveLength(1);
   });
 
   test(`reader Book note has a Links footer that is not current (${locale})`, async () => {
