@@ -76,6 +76,10 @@ The component stylesheet declares `html { container: k2b-app-area / inline-size;
 by default. Standalone pages therefore follow the window. A classic document
 scrollbar reduces the root's content width; overlay scrollbars do not.
 
+Cloud provides this host from 1024 px when its panel column is open: the app
+area beside the panel becomes the nearest `k2b-app-area` container from the
+first server frame. Drawer and phone sheet modes keep the app's width.
+
 A host that puts another column beside the app declares the same container
 around the app area:
 
@@ -102,9 +106,10 @@ do. A `body` that alone sets `overflow: hidden` clips its own box and leaves
 the document scrollable.
 
 Declare a host's container name in its stylesheet or markup from the first
-paint and keep it there. Change the host's width, not its name: the
-controller finds each workspace's host once and follows that element's
-resizes.
+paint. Keep it stable while the workspace's width stays the same. The name
+may change together with the workspace's own width, as Cloud's panel does:
+the controller follows both the initial host and the workspace's own resizes.
+Changing only the name without a resize does not trigger that update.
 
 ## Levels
 

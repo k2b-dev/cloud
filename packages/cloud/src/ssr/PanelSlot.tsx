@@ -86,8 +86,10 @@ export default function PanelSlot(props: { panel: NonNullable<ShellData["panel"]
           </div>
           <div class="cloud-panel__shield" aria-hidden="true" />
           <div class="cloud-panel__closing" aria-hidden="true">
-            <i class="ti ti-x" />
-            <span>{t.releaseClosesPanel}</span>
+            <span>
+              <i class="ti ti-x" />
+              {t.releaseClosesPanel}
+            </span>
           </div>
         </div>
       </div>

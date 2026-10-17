@@ -3514,12 +3514,16 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   .k2b-ui .k2b-toc__link { min-height: 2.75rem; }
 }
 
+/* A standalone separator draws like the workspace's own resize handles: an
+   invisible hit area, and on hover, focus, or drag a 1 px line with a short
+   grip in its middle. Nothing moves or changes size. */
 .k2b-ui .k2b-resize-separator {
   position: relative;
   flex: none;
   width: 12px;
   align-self: stretch;
   cursor: col-resize;
+  outline: 0;
   background: transparent;
   touch-action: none;
   -webkit-user-select: none;
@@ -3530,19 +3534,38 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   height: 12px;
   cursor: row-resize;
 }
+.k2b-ui .k2b-resize-separator::before,
 .k2b-ui .k2b-resize-separator > span {
   position: absolute;
-  inset-block: 0;
-  inset-inline-start: calc(50% - 1px);
-  width: 2px;
-  background: var(--k2b-focus-ring);
+  top: 50%;
+  left: 50%;
   opacity: 0;
+  background: var(--k2b-border-strong);
+  transform: translate(-50%, -50%);
+  transition: opacity 120ms ease-out;
+}
+.k2b-ui .k2b-resize-separator::before {
+  width: 1px;
+  height: 100%;
+  content: "";
+}
+.k2b-ui .k2b-resize-separator > span {
+  width: 3px;
+  height: 2rem;
+  border-radius: 999px;
+}
+.k2b-ui .k2b-resize-separator[data-orientation="horizontal"]::before {
+  width: 100%;
+  height: 1px;
 }
 .k2b-ui .k2b-resize-separator[data-orientation="horizontal"] > span {
-  inset-inline: 0;
-  inset-block-start: calc(50% - 1px);
-  height: 2px;
-  width: auto;
+  width: 2rem;
+  height: 3px;
 }
-.k2b-ui .k2b-resize-separator:is(:hover, :focus-visible, [data-active="true"]) > span { opacity: 1; }
-.k2b-ui .k2b-resize-separator:focus-visible { outline: 2px solid var(--k2b-focus-ring); outline-offset: -2px; }
+.k2b-ui .k2b-resize-separator:is(:hover, :focus-visible, [data-active="true"])::before,
+.k2b-ui .k2b-resize-separator:is(:hover, :focus-visible, [data-active="true"]) > span {
+  opacity: 1;
+}
+.k2b-ui .k2b-resize-separator:is(:focus-visible, [data-active="true"]) > span {
+  background: var(--k2b-focus-ring);
+}

@@ -296,6 +296,20 @@ as Help. Guests no longer see the Skills of apps that require a full account,
 such as Grids, Mail, Contacts, Spaces, and Weather. See
 [Ship Assistant Skills](/en/docs/platform/assistant-skills#who-can-use-an-app-skill).
 
+## Enable panel providers
+
+Registry entries now accept optional `panel` metadata, and signed-in pages show
+a panel slot when a running application declares one. Nothing changes for
+readers until an application does. During a mixed rollout, pages served by an
+application built against an older `@k2b/cloud` show no slot; they ignore the
+new field.
+
+Keep same-origin iframes allowed on provider routes. An operator's reverse
+proxy or security headers must not set `X-Frame-Options: DENY` or a
+`frame-ancestors` policy that blocks `'self'`. The provider remains responsible
+for authorization: panel visibility grants no route or resource access.
+See [Offer a panel](/en/docs/platform/panels).
+
 ## Roll out a release
 
 Render and inspect the deployment before changing platform containers:
