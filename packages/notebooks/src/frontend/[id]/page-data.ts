@@ -13,6 +13,7 @@ import { loadBookNote } from "@/service/book";
 import { loadSelectedNoteRouteState, type SelectedNoteRouteState } from "@/service/route-state";
 import { buildNoteUrl } from "../params";
 import { extractTocFromMarkdown } from "./_components/detail/toc";
+import { parseGraphViewState } from "./_components/graph/view-state";
 import { parseDetailPanelOpen, parseFullWidth, parseNavigationHidden, parseSettings } from "./_components/settings/NotebookSettingsStore";
 import type { NotebookContext } from "./_components/sidebar/types";
 
@@ -183,6 +184,9 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     graphFrom,
     graphShell,
     graphBack,
+    graphView: isGraphMode ? parseGraphViewState(new URL(c.req.url).searchParams) : undefined,
+    /** One base for relative dates, so the server render and the browser show the same text. */
+    now: new Date().toISOString(),
     selectedNoteId,
     selectedNote: selected.note,
     selectedRouteState: selected.routeState,

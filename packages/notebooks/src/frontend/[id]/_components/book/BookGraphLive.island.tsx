@@ -55,9 +55,10 @@ export default function BookGraphLive(props: Props) {
     window.addEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
     onCleanup(() => window.removeEventListener(WORKSPACE_EVENT, onWorkspaceEvent));
   });
-  // Over the graph, not in its flow, so the notice moves nothing when it appears.
+  // Over the graph, not in its flow, so the notice moves nothing when it appears. It starts below the graph's two
+  // toolbar rows, so it never covers Close, the search or the filters.
   return (
-    <div aria-live="polite" class="pointer-events-none absolute inset-x-0 top-2 z-20 flex justify-center px-12">
+    <div aria-live="polite" class="pointer-events-none absolute inset-x-0 top-[6.25rem] z-20 flex justify-center px-12">
       <Show when={failed()}>
         <NoticeCard role="alert" tone="danger" title={t().updateLoadFailed} class="pointer-events-auto max-w-md">
           <Button variant="secondary" size="xs" loading={retrying()} onClick={retry}>

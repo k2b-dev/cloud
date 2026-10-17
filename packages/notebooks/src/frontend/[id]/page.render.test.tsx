@@ -385,7 +385,7 @@ test("a hidden navigation is server-rendered without the note tree", async () =>
   expect(await select(html, "aside.k2b-app-workspace__sidebar *")).toEqual([]);
   expect(await select(html, '[data-app-workspace-resize="sidebar"]')).toEqual([]);
   expect(await select(html, "[data-workspace-main-region=notebook-notes]")).toEqual([]);
-  // The graph has no editor toolbar, so the sidebar offers its own show control.
+  // The graph's own toolbar offers the show control, so the sidebar adds none in a corner.
   expect((await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => button.attributes["aria-label"])).toEqual([
     "Navigation einblenden",
   ]);
@@ -733,15 +733,16 @@ test.each(["write", "readonly"] as const)("writer graph preserves %s origin over
 
 test("an empty notebook's graph still offers Close back to the notebook", async () => {
   const html = await renderEmptyNotebook("graph");
-  expect(html).toContain("Noch kein Graph");
+  expect(html).toContain("Dieses Notizbuch hat noch keine Notizen.");
+  // The graph toolbar renders Close twice: a back chevron on phones and a close button from md up.
   const close = await select(html, 'a[aria-label="Graph schließen"]');
-  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01"]);
+  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01", "/app/notebooks/book01"]);
 });
 
 test("an empty graph preserves the Read-only origin when closing to the notebook", async () => {
   const html = await renderEmptyNotebook("graph&from=readonly");
   const close = await select(html, 'a[aria-label="Graph schließen"]');
-  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01?mode=readonly"]);
+  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01?mode=readonly", "/app/notebooks/book01?mode=readonly"]);
 });
 
 for (const permission of ["write", "read"] as const) {
