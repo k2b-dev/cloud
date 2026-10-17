@@ -97,6 +97,8 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
   const loading = createMemo(() => items().some((item) => item.status === "loading"));
   const failedCount = createMemo(() => items().filter((item) => item.status === "failed").length);
   const loadingCount = createMemo(() => items().filter((item) => item.status === "loading").length);
+  // One lookup per update, so every card finds its item without scanning the whole batch.
+  const itemsById = createMemo(() => new Map(items().map((item) => [item.id, item])));
   const intakeController = new AbortController();
   let processing = false;
   const [format, setFormat] = createSignal<ImageConverterFormat>("webp");
@@ -414,7 +416,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                 <For each={items().map((item) => item.id)}>
                   {(id) => {
                     // A removed card can read the list once more before it is disposed.
-                    const item = createMemo(() => items().find((item) => item.id === id));
+                    const item = createMemo(() => itemsById().get(id));
                     const file = () => item()?.file;
                     const ready = () => {
                       const value = item();
