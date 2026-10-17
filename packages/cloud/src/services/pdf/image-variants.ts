@@ -105,10 +105,16 @@ export async function prepareImageVariants(
   } catch (error) {
     const message = error instanceof Error ? error.message.toLowerCase() : "";
     // Codec allocation errors can also mention a corrupt header or unsupported format. Memory takes precedence.
+    // Thread stacks count against the data limit.
     // Unidentified byte streams are unreadable; a recognized but missing codec is unsupported.
-    const code = ["out of memory", "insufficient memory", "memory allocation", "cannot allocate", "pixel limit"].some((part) =>
-      message.includes(part),
-    )
+    const code = [
+      "out of memory",
+      "insufficient memory",
+      "memory allocation",
+      "cannot allocate",
+      "pixel limit",
+      "error creating thread",
+    ].some((part) => message.includes(part))
       ? "too_large"
       : (identified && message.includes("unsupported image format")) || message.includes("compression format has not been built in")
         ? "unsupported_format"

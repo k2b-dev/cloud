@@ -266,33 +266,37 @@ test("validates before pass-through writes and awaits each write before encoding
   }
 });
 
-test.each(["out of memory", "insufficient memory", "memory allocation failed", "cannot allocate", "pixel limit exceeded"])(
-  "classifies %s before corrupt-header or unsupported-format messages",
-  async (message) => {
-    const metadata = spyOn(Object.getPrototypeOf(sharp()), "metadata").mockRejectedValueOnce(
-      new Error(`Input buffer has corrupt header: ${message}; unsupported image format`),
-    );
-    let writes = 0;
-    try {
-      expect(
-        await prepareImageVariants(
-          new Uint8Array([1]),
-          {
-            boxes: [{ width: 8, height: 8 }],
-            maxBytes: 1000,
-            timeoutMs: 30_000,
-          },
-          async () => {
-            writes++;
-          },
-        ),
-      ).toEqual({ ok: false, code: "too_large" });
-      expect(writes).toBe(0);
-    } finally {
-      metadata.mockRestore();
-    }
-  },
-);
+test.each([
+  "out of memory",
+  "insufficient memory",
+  "memory allocation failed",
+  "cannot allocate",
+  "pixel limit exceeded",
+  "glib: error creating thread: resource temporarily unavailable",
+])("classifies %s before corrupt-header or unsupported-format messages", async (message) => {
+  const metadata = spyOn(Object.getPrototypeOf(sharp()), "metadata").mockRejectedValueOnce(
+    new Error(`Input buffer has corrupt header: ${message}; unsupported image format`),
+  );
+  let writes = 0;
+  try {
+    expect(
+      await prepareImageVariants(
+        new Uint8Array([1]),
+        {
+          boxes: [{ width: 8, height: 8 }],
+          maxBytes: 1000,
+          timeoutMs: 30_000,
+        },
+        async () => {
+          writes++;
+        },
+      ),
+    ).toEqual({ ok: false, code: "too_large" });
+    expect(writes).toBe(0);
+  } finally {
+    metadata.mockRestore();
+  }
+});
 
 test("a corrupt JPEG writes no pass-through records, even with several fitting boxes", async () => {
   const jpeg = await sharp({ create: { width: 800, height: 600, channels: 3, background: "red" } })
