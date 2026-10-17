@@ -388,7 +388,8 @@ const loadBankAccounts = async (contactIds: string[]): Promise<Map<string, Conta
  * Emails / phones / addresses keep their batched loaders because they live in
  * separate child tables and are already efficient.
  */
-const getManualContactsByIds = async (ids: string[]): Promise<Map<string, Contact>> => {
+const getManualContactsByIds = async (ids: string[], signal?: AbortSignal): Promise<Map<string, Contact>> => {
+  signal?.throwIfAborted();
   const validIds = ids.filter(isUuid);
   if (validIds.length === 0) return new Map();
 
@@ -467,6 +468,7 @@ const getManualContactsByIds = async (ids: string[]): Promise<Map<string, Contac
   `;
 
   const contactIds = rows.map((row) => row.id);
+  signal?.throwIfAborted();
   const [emailsByContact, phonesByContact, addressesByContact, websitesByContact, bankAccountsByContact] = await Promise.all([
     loadEmails(contactIds),
     loadPhones(contactIds),
@@ -475,6 +477,7 @@ const getManualContactsByIds = async (ids: string[]): Promise<Map<string, Contac
     loadBankAccounts(contactIds),
   ]);
 
+  signal?.throwIfAborted();
   const mapped = new Map<string, Contact>();
   for (const row of rows) {
     mapped.set(
@@ -962,6 +965,44 @@ export const list = async (config: {
     hasNext: page * perPage < total,
   };
 };
+
+// Equals the documented paginate() maximum: perPage is limited to 1000.
+export const EXPORT_PAGE_SIZE = 1000;
+
+type ExportPageConfig = { bookId: string; after: string | null; signal: AbortSignal };
+
+const loadExportPage = async ({ bookId, after, signal }: ExportPageConfig) => {
+  signal.throwIfAborted();
+  const rows = await sql<{ id: string }[]>`
+    SELECT c.id FROM contacts.contacts c
+    WHERE c.book_id = ${bookId}::uuid
+      AND (${after}::uuid IS NULL OR c.id > ${after}::uuid)
+    ORDER BY c.id
+    LIMIT ${EXPORT_PAGE_SIZE}
+  `;
+  const ids = rows.map((row) => row.id);
+  signal.throwIfAborted();
+  return { ids, contacts: await getManualContactsByIds(ids, signal) };
+};
+
+/** Reads a book in bounded ID order, even when contacts disappear during hydration. */
+export async function* exportPages(config: { bookId: string; signal: AbortSignal }, loadPage = loadExportPage): AsyncGenerator<Contact[]> {
+  if (!isUuid(config.bookId)) return;
+  let after: string | null = null;
+  while (true) {
+    config.signal.throwIfAborted();
+    const { ids, contacts } = await loadPage({ ...config, after });
+    config.signal.throwIfAborted();
+    if (ids.length === 0) return;
+    const page = ids.flatMap((id) => {
+      const contact = contacts.get(id);
+      return contact?.bookId === config.bookId ? [contact] : [];
+    });
+    if (page.length > 0) yield page;
+    if (ids.length < EXPORT_PAGE_SIZE) return;
+    after = ids[ids.length - 1]!;
+  }
+}
 
 /**
  * Returns one contact from one specific book.

@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-12
+updated: 2026-10-16
 ---
 
 # Notebooks
@@ -154,6 +154,23 @@ Notebook admins choose **Default view** under **Settings → Notebook → View &
 behavior**. The initial default for editors and admins is Write. An explicit
 view in the page URL overrides this default; read permission still forces
 Book. Locked notes open in Read-only instead of Write.
+
+## Use the note side panel
+
+In Write and Read-only, the panel header shows the last editor and edit time
+on one line, with locked, read-only, or offline state when applicable. The
+avatar stack opens **Here now** with the people present and their current
+sections; select a person to scroll to their cursor.
+
+The action row contains **Edit with AI** and **View**. View offers **Open as**
+(Edit, Read, Book), **Text** (Formatted, Markdown), and **Full width**. The
+**⋯** menu contains Copy content, Download as Markdown, Export as PDF,
+Version history, Show in graph, and Duplicate, subject to the note's permissions.
+
+Sections appear in this order: Comments, Tasks, Contents (from two headings),
+References, Attachments, Linked from, and Activity. Activity uses translated
+sentences and ends with who created the note. Hover or focus a timestamp for
+its exact date; use the versions link to open saved history.
 
 ## Reserve deleting and locking notes for admins
 

@@ -1,4 +1,4 @@
-import { describe, expect, mock, spyOn, test } from "bun:test";
+import { describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { EditorView } from "@codemirror/view";
 import { createCodeMirror } from "solid-codemirror";
 import { Show } from "solid-js";
@@ -8,7 +8,17 @@ import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import type { YjsProviderOptions } from "../../../lib/yjs";
 import type { YjsProviderError } from "../../../lib/yjs/provider";
 import { notebookWorkspaceMessages } from "../../messages";
-import { SIDEBAR_FILTER_CHANGED_EVENT } from "../detail/events";
+import {
+  ACTIVE_HEADING_EVENT,
+  JUMP_TO_PARTICIPANT_EVENT,
+  PRESENCE_LOCATIONS_EVENT,
+  type PresenceLocationsEventDetail,
+  RECONNECT_EVENT,
+  SIDEBAR_FILTER_CHANGED_EVENT,
+  SYNC_STATE_EVENT,
+  SYNC_STATE_REQUEST_EVENT,
+  type SyncStateEventDetail,
+} from "../detail/events";
 
 const refreshCurrentPath = mock(() => {});
 const load = async () => {
@@ -31,6 +41,7 @@ const load = async () => {
   }
 };
 const detail = (id: string) => ({
+  noteAuthors: { createdBy: null, lastEditedBy: null },
   noteId: id,
   noteTitle: id,
   contentMd: null,
@@ -153,17 +164,18 @@ const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = 
   const dom = createDomTestHarness();
   delegateEvents(["click"], dom.document);
   const previousBindings = new Map<string, PropertyDescriptor | undefined>();
-  for (const name of ["sessionStorage", "HTMLAnchorElement", "PopStateEvent"] as const) {
+  for (const name of ["sessionStorage", "HTMLAnchorElement", "PopStateEvent", "Window"] as const) {
     previousBindings.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
     Object.defineProperty(globalThis, name, { configurable: true, value: dom.window[name] });
   }
   window.history.replaceState({ shown: true }, "", editorHref);
   const { NoteEditor, LocaleProvider, yjs, prompts } = loaded!;
-  const providers: Array<{ opts: YjsProviderOptions; dispose: ReturnType<typeof mock> }> = [];
+  const providers: Array<{ opts: YjsProviderOptions; dispose: ReturnType<typeof mock>; reconnectNow: ReturnType<typeof mock> }> = [];
   const provider = spyOn(yjs, "createYjsProvider").mockImplementation((opts) => {
     const dispose = mock(() => {});
-    providers.push({ opts, dispose });
-    return { connect: () => {}, resume: () => {}, dispose, hasUnsentChanges: () => pending };
+    const reconnectNow = mock(() => {});
+    providers.push({ opts, dispose, reconnectNow });
+    return { reconnectNow, connect: () => {}, resume: () => {}, dispose, hasUnsentChanges: () => pending };
   });
   const confirmed = spyOn(prompts, "confirm").mockResolvedValue(false);
   routeGet.mockClear();
@@ -236,6 +248,65 @@ describe("sync ended editor recovery", () => {
     test.skip("runs with browser export conditions", () => {});
     return;
   }
+
+  test("a late panel receives sync and presence, requests reconnect and jumps without moving selection", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    const instance = editor.providers[0]!;
+    setSystemTime(new Date("2026-10-01T10:00:00.000Z"));
+    const { opts } = instance;
+    expect(opts.awareness.getLocalState()?.user.userId).toBe("User01");
+    const syncStates: SyncStateEventDetail[] = [];
+    const locations: PresenceLocationsEventDetail[] = [];
+    const active: Array<string | null> = [];
+    const onSync = (event: Event) => syncStates.push((event as CustomEvent<SyncStateEventDetail>).detail);
+    const onLocations = (event: Event) => locations.push((event as CustomEvent<PresenceLocationsEventDetail>).detail);
+    const onActive = (event: Event) => active.push((event as CustomEvent<{ id: string | null }>).detail.id);
+    window.addEventListener(SYNC_STATE_EVENT, onSync);
+    window.addEventListener(PRESENCE_LOCATIONS_EVENT, onLocations);
+    window.addEventListener(ACTIVE_HEADING_EVENT, onActive);
+    try {
+      opts.onConnectionChange?.(true);
+      opts.onReady?.();
+      const saved = syncStates.at(-1);
+      expect(saved?.connected).toBe(true);
+      expect(saved?.lastSavedAt).toEqual(expect.any(String));
+      const text = opts.doc.getText("codemirror");
+      const remoteId = opts.doc.clientID + 1;
+      opts.awareness.getStates().set(remoteId, {
+        user: { userId: "jana" },
+        cursor: { head: Y.createRelativePositionFromTypeIndex(text, text.length) },
+      });
+      window.dispatchEvent(new Event(SYNC_STATE_REQUEST_EVENT));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      expect(syncStates.at(-1)).toEqual(saved);
+      expect(locations.at(-1)?.jana).toEqual({ writing: true, headingId: "keep-me", headingText: "Keep me" });
+      expect(active).toHaveLength(1);
+      const view = editor.view();
+      const before = view.state.selection;
+      const scroll = spyOn(EditorView, "scrollIntoView");
+      try {
+        window.dispatchEvent(new CustomEvent(JUMP_TO_PARTICIPANT_EVENT, { detail: { userId: "jana" } }));
+        expect(scroll).toHaveBeenCalledWith(text.length, { y: "center" });
+        expect(view.state.selection.eq(before)).toBe(true);
+        window.dispatchEvent(new CustomEvent(JUMP_TO_PARTICIPANT_EVENT, { detail: { userId: "missing" } }));
+        expect(scroll).toHaveBeenCalledTimes(1);
+      } finally {
+        scroll.mockRestore();
+      }
+      window.dispatchEvent(new Event(RECONNECT_EVENT));
+      expect(instance.reconnectNow).toHaveBeenCalledTimes(1);
+      opts.awareness.getStates().set(remoteId, { user: { userId: "jana" }, cursor: null });
+      opts.awareness.emit("change", [{ added: [], updated: [remoteId], removed: [] }, "test"]);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      expect(locations.at(-1)?.jana?.writing).toBe(false);
+    } finally {
+      setSystemTime();
+      window.removeEventListener(SYNC_STATE_EVENT, onSync);
+      window.removeEventListener(PRESENCE_LOCATIONS_EVENT, onLocations);
+      window.removeEventListener(ACTIVE_HEADING_EVENT, onActive);
+    }
+  });
 
   test("the storage notice survives retries until pending changes are saved", () => {
     using editor = mountNoteEditor();

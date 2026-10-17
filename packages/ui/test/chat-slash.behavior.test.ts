@@ -323,6 +323,119 @@ const compactCommand: ChatCommand = {
   keywords: ["compact", "kompaktieren", "zusammenfassen"],
 };
 
+test.each(["Ctrl+Enter", "Cmd+Enter", "send before Back", "send during Back", "desktop", "another draft", "disabled meanwhile"])(
+  "%s submits only after the phone sheet's history entry has left, keeping desktop synchronous",
+  async (activation) => {
+    const dom = createHarness();
+    slashCleanups.push(dom.cleanup);
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "matchMedia");
+    Object.defineProperty(globalThis, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({ matches: activation !== "desktop" && query === "(any-pointer: coarse) and (not (any-pointer: fine))" }),
+    });
+    slashCleanups.push(() => {
+      if (descriptor) Object.defineProperty(globalThis, "matchMedia", descriptor);
+      else Reflect.deleteProperty(globalThis, "matchMedia");
+    });
+    const historyModule = await import("../src/feedback/dialog-core");
+    const core = historyModule.createDialogCore();
+    // The shared core belongs to the first test window; use a core created for this window.
+    const hold = spyOn(historyModule, "holdDialogHistory").mockImplementation(core.holdHistory);
+    const settled = spyOn(historyModule, "dialogHistorySettled").mockImplementation(core.historySettled);
+    const go = spyOn(history, "go");
+    slashCleanups.push(() => {
+      hold.mockRestore();
+      settled.mockRestore();
+      go.mockRestore();
+    });
+    history.replaceState({ page: "chat" }, "");
+    const { ChatComposer } = await import("../src/chat/ChatComposer");
+    const [value, setValue] = createSignal("/");
+    const [draftKey, setDraftKey] = createSignal("first");
+    const [disabled, setDisabled] = createSignal(false);
+    const submissions: ChatSubmitInput[] = [];
+    const submissionStates: unknown[] = [];
+    let resolveSubmitted!: () => void;
+    const submitted = new Promise<void>((resolve) => {
+      resolveSubmitted = resolve;
+    });
+    const dispose = render(
+      () =>
+        createComponent(ChatComposer, {
+          get value() {
+            return value();
+          },
+          onValueChange: setValue,
+          get draftKey() {
+            return draftKey();
+          },
+          get disabled() {
+            return disabled();
+          },
+          commands: [compactCommand],
+          variant: "conversation",
+          onSubmit(input) {
+            submissionStates.push(history.state);
+            submissions.push(input);
+            history.pushState({ page: "sent" }, "", "/sent");
+            resolveSubmitted();
+          },
+        }),
+      dom.root,
+    );
+    slashCleanups.push(dispose);
+    const input = dom.root.querySelector("textarea")!;
+    input.setSelectionRange(1, 1);
+    input.click();
+    expect(dom.root.querySelector('[role="listbox"]')).not.toBeNull();
+    if (activation !== "desktop") expect(history.state.k2bDialog).toBeNumber();
+    if (activation.startsWith("send")) {
+      const send = dom.root.querySelector<HTMLButtonElement>(".k2b-chat-composer__send")!;
+      send.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      expect(dom.root.querySelector('[role="listbox"]')).toBeNull();
+      if (activation === "send during Back") {
+        await flush();
+        expect(go).toHaveBeenCalledTimes(1);
+      } else expect(go).not.toHaveBeenCalled();
+      send.click();
+    } else
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          ctrlKey: activation !== "Cmd+Enter",
+          metaKey: activation === "Cmd+Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    expect(submissions).toHaveLength(activation === "desktop" ? 1 : 0);
+    if (activation === "another draft" || activation === "disabled meanwhile") {
+      // Another conversation's draft replaces this one, or the composer is disabled, while the sheet's Back is on its
+      // way: nothing is sent.
+      if (activation === "another draft") setDraftKey("second");
+      else setDisabled(true);
+      await core.historySettled();
+      await flush();
+      expect(submissions).toEqual([]);
+      expect(value()).toBe("/");
+      return;
+    }
+    // Text typed while the sheet's Back is on its way goes out with the message instead of being cleared.
+    if (activation !== "desktop") setValue("/ more");
+    await submitted;
+    expect(submissionStates).toEqual([{ page: "chat" }]);
+    expect(submissions).toEqual([{ intent: "send", text: activation === "desktop" ? "/" : "/ more", mentions: [], attachments: [] }]);
+    expect(value()).toBe("");
+    expect(dom.root.querySelector('[role="listbox"]')).toBeNull();
+    expect(location.pathname).toBe("/sent");
+    const back = new Promise<void>((resolve) => window.addEventListener("popstate", () => resolve(), { once: true }));
+    history.back();
+    await back;
+    expect(location.pathname).toBe("/");
+    expect(history.state).toEqual({ page: "chat" });
+  },
+);
+
 test("slash discovery matches labels, names, keywords and accents", async () => {
   const h = await slash({ commands: [compactCommand] });
   for (const query of ["kompakt", "compact", "zusammenfassen", "alter"]) {

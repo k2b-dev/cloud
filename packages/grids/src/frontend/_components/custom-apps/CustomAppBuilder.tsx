@@ -2478,7 +2478,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       ? text("Start pages open without a record. Make another page the start page before adding a required record.")
                       : text("Required record IDs supplied by links, rows, Forms, or actions.")
                   }
-                  meta={`${Object.keys(selectedPage().parameters).length}`}
+                  count={Object.keys(selectedPage().parameters).length}
                   collapsible
                   defaultOpen={Object.keys(selectedPage().parameters).length > 0}
                 >

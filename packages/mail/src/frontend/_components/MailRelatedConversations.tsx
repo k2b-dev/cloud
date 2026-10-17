@@ -20,7 +20,7 @@ export function MailRelatedConversationsView(props: {
   const reasonLabel = (reason: RelatedConversationSummary["reasons"][number]): string =>
     reason.kind === "subject" ? t().sameSubject : t().alsoWith({ value: reason.value });
   return (
-    <DetailPanel.Section title={t().relatedMail} icon="ti ti-mail-search" tone="neutral" meta={props.items?.length}>
+    <DetailPanel.Section title={t().relatedMail} icon="ti ti-mail-search" tone="neutral" count={props.items?.length}>
       <Show when={!props.loading} fallback={<Placeholder state="loading" variant="compact" align="center" title={t().findingRelated} />}>
         <Show
           when={!props.error}

@@ -100,10 +100,18 @@ export const createNoteNavigationCoordinator = (options: Options) => {
     return true;
   };
 
+  /** Drops a note request still loading and keeps the committed note, without a heading jump or history entry. */
+  const cancel = () => {
+    if (!pending) return;
+    pending.resolve({ kind: "superseded" });
+    pending = undefined;
+    options.setSource(committedSource);
+  };
+
   const dispose = () => {
     pending?.resolve({ kind: "superseded" });
     pending = undefined;
   };
 
-  return { navigate, apply, fail, dispose };
+  return { navigate, apply, fail, cancel, dispose };
 };
