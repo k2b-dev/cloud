@@ -54,6 +54,16 @@ const data = (result: Awaited<ReturnType<typeof mail.send>>): MailRecord => {
 };
 
 suiteFor("database", "nats")("outgoing mail acceptance and Core delivery", () => {
+  let originalTargets: string | undefined;
+  beforeEach(() => {
+    originalTargets = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
+    process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1";
+  });
+  afterEach(() => {
+    if (originalTargets === undefined) delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
+    else process.env.OUTGOING_MAIL_ALLOWED_TARGETS = originalTargets;
+  });
+
   let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
   let connection: Awaited<ReturnType<typeof connectTestNats>>;
   let sync: Sync;
@@ -131,6 +141,22 @@ suiteFor("database", "nats")("outgoing mail acceptance and Core delivery", () =>
     await processOutgoingMail(record.id);
     return (await outgoingMailMessages.read(record.id))!;
   };
+
+  test("internal SMTP is refused without an allowlist and delivered after operator approval", async () => {
+    delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
+    const record = await accept();
+    const blocked = await delivery(record);
+    expect(blocked).toMatchObject({ status: "queued", error_code: "smtp_failed" });
+    expect(blocked.error_message).toContain("OUTGOING_MAIL_ALLOWED_TARGETS");
+    expect(sink.connections).toBe(0);
+    expect(sink.messages).toHaveLength(0);
+    process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1";
+    // Keep the deadline and retry policy; make the existing backoff due without sleeping.
+    await sql`UPDATE outgoing_mail.messages SET next_attempt_at = now() WHERE id = ${record.id}::uuid`;
+    expect((await delivery(record)).status).toBe("sent");
+    expect(sink.connections).toBe(1);
+    expect(sink.messages).toHaveLength(1);
+  });
 
   test("custom headers deliver and message JSON columns store objects and arrays", async () => {
     const record = await accept({

@@ -615,8 +615,9 @@ or otherwise Original-Recipient, must match a message recipient
 case-insensitively; stored failures retain the message's recipient spelling.
 
 `bounces.error` is a code or null. For `open_failed`, check credentials, folder,
-TLS, required STARTTLS, egress, and mailbox UIDVALIDITY. For `search_failed`,
-check IMAP availability and UID search support. For `apply_failed` or
+TLS, required STARTTLS, egress, and mailbox UIDVALIDITY. For `target_blocked`, allow
+the IMAP host, address or range with `OUTGOING_MAIL_ALLOWED_TARGETS`, then restart
+Core. For `search_failed`, check IMAP availability and UID search support. For `apply_failed` or
 `save_failed`, check database availability. `interrupted` means shutdown or the
 processing budget expired; the next tick resumes from saved progress. A
 successful check clears the error. See

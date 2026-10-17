@@ -36,3 +36,9 @@ describe("shared directive source geometry", () => {
     expect(queryBlockMessages.check()).toEqual([]);
   });
 });
+
+test("chart ranges include rows, protect handles and preserve the opener line", () => {
+  const markdown = "# Note\n\n:::chart\ntype: bar\nrows:\n  - [Jan, 12]\ndata: @sales\n:::\n";
+  expect(extractNotebookDirectiveRanges(markdown)).toEqual([{ type: "chart", line: 3, from: 8, to: markdown.length - 1, closed: true }]);
+  expect(extractNotebookDirectiveRanges("```\n" + markdown + "```\n")).toEqual([]);
+});

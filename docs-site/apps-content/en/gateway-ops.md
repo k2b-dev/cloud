@@ -56,6 +56,10 @@ error percentages retain one decimal place.
 | Job or workflow run | State and history of background execution |
 | Health webhook | Scoped delivery of gateway health changes to an HTTP endpoint |
 
+Health webhooks allow public targets by default and never follow redirects; the
+operator can allow internal hosts with `GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` in
+the Gateway Ops container (an explicit value replaces the empty default).
+
 Postgres shows sequential and index scan counts for each table, deadlocks, and
 the age of the oldest transaction and active query. Scan and deadlock counts
 accumulate since the corresponding statistics were reset; a sequential scan

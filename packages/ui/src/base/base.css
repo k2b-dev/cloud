@@ -64,6 +64,8 @@
     --k2b-danger-text: light-dark(#b91c1c, #fca5a5);
     /* light-dark() only takes colors, so the shadow switches with the theme attribute. */
     --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
+    /* What an inspected mark's color mixes with: darker in light, lighter in dark. */
+    --k2b-chart-highlight-mix: light-dark(black, white);
   }
 
   :root[data-theme="dark"] {
@@ -1007,6 +1009,129 @@
   .stdlib-chart-gauge-value { font-size: 28px; font-weight: 700; fill: currentColor; }
   .stdlib-chart-gauge-label { font-size: 12px; fill: currentColor; opacity: 0.72; }
   .stdlib-chart-gauge-unit { font-size: 11px; fill: currentColor; opacity: 0.6; }
+
+  /* Chart inspection as @k2b/ui/chart-inspection adds it to a `.k2b-chart`:
+     a tab stop on the chart, an invisible measuring anchor and a tooltip
+     popover next to `.k2b-chart__svg`. Inspection only paints marks and
+     shows the tooltip in the top layer, so nothing in the page moves.
+     These rules mirror the inspection and chart tooltip rules of styles.css. */
+  .k2b-chart[tabindex]:focus-visible {
+    border-radius: var(--k2b-radius-control);
+    outline-offset: 0;
+  }
+
+  .k2b-chart[tabindex][data-chart-kind="line"],
+  .k2b-chart[tabindex] [data-chart-datum] {
+    cursor: crosshair;
+  }
+
+  /* Labels and guide strokes leave hit testing to the data geometry below. */
+  .k2b-chart[tabindex] .k2b-chart__svg :is(.stdlib-chart-heatmap-label, .stdlib-chart-box-median, .stdlib-chart-box-whisker, .stdlib-chart-box-cap) {
+    pointer-events: none;
+  }
+
+  .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
+    stroke: var(--k2b-chart-inspection-color);
+    stroke-width: 2px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .k2b-chart [data-inspected] > .stdlib-chart-inspection-point {
+    fill: var(--k2b-chart-inspection-color);
+  }
+
+  .k2b-chart [data-inspected][data-chart-role="value"] > :is(.stdlib-chart-gauge-value, .stdlib-chart-stat-value) {
+    text-decoration: underline;
+  }
+
+  /* Line charts: a dashed guide at the inspected x and at the pointer's y. */
+  .k2b-chart[data-inspecting="series"]::after {
+    content: "";
+    position: absolute;
+    top: var(--k2b-chart-plot-top, 0);
+    bottom: var(--k2b-chart-plot-bottom, 0);
+    left: var(--k2b-chart-inspection-x);
+    border-left: 1px dashed currentColor;
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  .k2b-chart[data-cursor-source="true"][data-inspecting="series"]::before {
+    content: "";
+    position: absolute;
+    left: var(--k2b-chart-plot-left, 0);
+    right: var(--k2b-chart-plot-right, 0);
+    top: var(--k2b-chart-inspection-y);
+    border-top: 1px dashed currentColor;
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  .k2b-chart__anchor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    pointer-events: none;
+  }
+
+  .k2b-chart__tooltip[popover] {
+    position: fixed;
+    inset: auto;
+    z-index: 100;
+    max-width: min(24rem, calc(100vw - 1rem));
+    max-height: calc(100dvh - 1rem);
+    margin: 0;
+    padding: 0.625rem 0.75rem;
+    overflow: auto;
+    border: 1px solid var(--k2b-border);
+    border-radius: 0.5rem;
+    background: var(--k2b-surface-elevated);
+    color: var(--k2b-text);
+    box-shadow: var(--k2b-shadow-float);
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+  }
+
+  .k2b-chart__tooltip:popover-open {
+    display: block;
+  }
+
+  .k2b-chart__tooltip-title {
+    display: block;
+    padding-bottom: 0.375rem;
+    font-weight: 600;
+  }
+
+  .k2b-chart__tooltip-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    line-height: 1.6;
+  }
+
+  .k2b-chart__tooltip-row > i {
+    flex: none;
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 0.125rem;
+  }
+
+  .k2b-chart__tooltip-row > span {
+    flex: 1;
+    opacity: 0.75;
+  }
+
+  .k2b-chart__tooltip-row > b {
+    margin-left: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
 
   /* ---------------------------------------------------------------- states */
 

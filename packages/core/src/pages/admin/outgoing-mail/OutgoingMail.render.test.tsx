@@ -223,6 +223,13 @@ test("each profile shows whether Cloud checks its mailbox for bounces, with a vi
       bounces: { checkedAt: "2026-10-08T10:00:00.000Z", error: "open_failed" },
     }),
     profile({
+      key: "blocked",
+      name: "Blocked",
+      isDefault: false,
+      imap,
+      bounces: { checkedAt: "2026-10-08T10:00:00.000Z", error: "target_blocked" },
+    }),
+    profile({
       key: "slow",
       name: "Slow",
       isDefault: false,
@@ -236,9 +243,14 @@ test("each profile shows whether Cloud checks its mailbox for bounces, with a vi
   expect(en).toContain("Bounce check failed: The check ran out of time and continues with the next one.");
   // Stable codes are a transport contract, never the text an administrator reads.
   expect(en).not.toContain("open_failed");
+  expect(en).toContain("OUTGOING_MAIL_ALLOWED_TARGETS");
+  expect(en).not.toContain("target_blocked");
   // Phones and tablets get the same line in the profile column; the server column only appears from lg.
   expect(en.match(/Bounce check failed: Cloud could not open the mailbox/g)).toHaveLength(2);
   const de = render("de", { ...state, profiles });
+  expect(de).toContain("Der Mailserver liegt in einem internen Netzwerk");
+  expect(de).toContain("OUTGOING_MAIL_ALLOWED_TARGETS");
+  expect(de).not.toContain("target_blocked");
   for (const label of [
     "Keine Prüfung auf unzustellbare Mails",
     "Prüfung auf unzustellbare Mails ausstehend",

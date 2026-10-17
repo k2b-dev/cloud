@@ -5,7 +5,7 @@ section: Automation
 order: 730
 description: Inspect workflow runs and verify application actions without hiding runtime failures.
 tags: [workflows, testing, observability]
-updated: 2026-07-27
+updated: 2026-10-17
 ---
 
 # Workflow observability and testing
@@ -36,7 +36,10 @@ const detail = latest ? await getWorkflowRun(latest.id) : null;
 
 The list filter accepts app, scope, workflow, parent, state, mode, start time,
 limit, and offset. Run detail adds inputs, result, source, steps, effect usage,
-event data, and child-state counts.
+event data, and child-state counts. Once event retention expires the payload,
+`eventData` is `null` and `eventPayloadExpired` is `true`. The operations UI
+shows it as expired. Runs keep their own inputs and context. See
+[Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
 
 Use run families and timelines for grouped operations views. Use stranded
 effects, undispatched events, and application health for recovery queues.

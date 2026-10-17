@@ -5,6 +5,7 @@ import { serveStatic } from "hono/bun";
 import { apiRoutes } from "./api";
 import { app, ssr } from "./config";
 import gatewayPage from "./frontend/page";
+import { webhookAllowlist } from "./health-webhooks";
 import { gatewayOpsHelp } from "./help";
 import { gatewayOpsLifecycle } from "./lifecycle";
 import { gatewayOpsApiErrorMessage } from "./messages";
@@ -107,7 +108,13 @@ export default await app.start({
   help: gatewayOpsHelp,
   openapi: apiRoutes,
   widgets: { health: gatewayHealthWidgetHandler, errors: loggingErrorsWidgetHandler },
-  lifecycle: gatewayOpsLifecycle,
+  lifecycle: {
+    ...gatewayOpsLifecycle,
+    start: async (context) => {
+      webhookAllowlist();
+      await gatewayOpsLifecycle.start?.(context);
+    },
+  },
 });
 
 export type { ApiType } from "./api";

@@ -325,6 +325,29 @@ Use `parseNetworkAllowlistEnv(variable, entries)` from `@k2b/cloud/shared`
 for env registry values. It applies the same parser and prefixes errors with
 the variable name, so invalid operator configuration is clear at startup.
 
+For HTTP targets, use `createAllowedNetworkFetch(allowlist, deps?)` from
+`@k2b/cloud/services`. It returns `(input: string | URL | Request, init?: RequestInit)
+=> Promise<Response>`, normalizes method, headers and body through `Request`,
+and supports streaming uploads and responses, including SSE and exports.
+A body of known size goes out with `Content-Length`, like `fetch()`; only a
+`ReadableStream` body is sent chunked.
+Only HTTP and HTTPS are accepted; URL user information is refused before I/O.
+Each request resolves once through the guard and connects through
+`pinnedNetworkLookup` with `agent: false`, preserving the URL Host header and
+HTTPS server name. A `NetworkTargetBlockedError` propagates unchanged; failed
+and empty DNS lookups also refuse.
+
+The transport never follows redirects: `redirect: "error"` rejects a 3xx;
+otherwise it returns that response unchanged, even with `redirect: "follow"`.
+It sends `Accept-Encoding: identity` and rejects any non-identity response
+encoding. The returned real `Response` preserves status, status text and all
+headers, including repeated values; HEAD, 204 and 304 have null bodies.
+`init.signal` or the input Request's signal covers lookup, connection and body
+streaming; abort or body cancellation destroys the socket. Callers own deadlines,
+byte limits and retries: the helper adds none. Consume or cancel each response
+body. Optional `deps.lookup`, `deps.resolve` and `deps.request` support focused
+tests without changing the transport policy.
+
 Pass the parsed `NetworkAllowlist` to
 `resolveAllowedNetworkAddresses(hostname, allowlist, lookup?)` from
 `@k2b/cloud/services/network-security`, then connect through

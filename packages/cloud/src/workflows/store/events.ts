@@ -10,10 +10,27 @@
  * A schedule tick is an event. A button press is an event. An inbound message
  * is an event. Nothing needs its own registration path.
  */
+import { Buffer } from "node:buffer";
 import { type SQL, sql } from "bun";
 import type { WorkflowJsonValue } from "../contracts";
 import { createWorkflowRun } from "./runs";
 import { withTransaction } from "./transaction";
+
+/** UTF-8 bytes of serialized JSON, independently for data and context. */
+export const WORKFLOW_EVENT_MAX_PAYLOAD_BYTES = 16 * 1024 * 1024;
+
+export class WorkflowEventTooLargeError extends Error {
+  readonly code = "WORKFLOW_EVENT_TOO_LARGE";
+  readonly limitBytes = WORKFLOW_EVENT_MAX_PAYLOAD_BYTES;
+
+  constructor(
+    readonly field: "data" | "context",
+    readonly bytes: number,
+  ) {
+    super(`Workflow event ${field} is ${bytes} bytes; the limit is ${WORKFLOW_EVENT_MAX_PAYLOAD_BYTES} bytes (16 MiB).`);
+    this.name = "WorkflowEventTooLargeError";
+  }
+}
 
 export type WorkflowEventInput = {
   appId: string;
@@ -172,6 +189,13 @@ export const emitWorkflowEvent = async (
   const data = event.data ?? {};
   const context = event.context ?? {};
   const authorization = event.authorization ?? {};
+
+  // Validate before even opening a savepoint: callers may catch this inside
+  // their own transaction and continue writing domain state.
+  for (const field of ["data", "context"] as const) {
+    const bytes = Buffer.byteLength(JSON.stringify(field === "data" ? data : context), "utf8");
+    if (bytes > WORKFLOW_EVENT_MAX_PAYLOAD_BYTES) throw new WorkflowEventTooLargeError(field, bytes);
+  }
 
   return withTransaction(options.db, async (tx) => {
     const inserted = await tx<{ id: string }[]>`

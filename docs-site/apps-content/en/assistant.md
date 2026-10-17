@@ -699,6 +699,11 @@ code and names the startup step that stalled, such as launching Chromium.
 The Assistant administration page lists all saved Apps, their shared
 file and key/value counts, and whether they have a database. Administrators can
 manage access, delete resources, and configure or test the rsql connection.
+The rsql endpoint allows public targets and the shipped `rsql` host by default;
+the operator can replace this list with `ASSISTANT_RSQL_ALLOWED_TARGETS` in the
+Assistant container to allow another internal host. A blocked target reports
+`DB_TARGET_BLOCKED` without changing stored configuration.
+
 The stored API token is never returned. Removing or changing the server is
 blocked while databases or queued database cleanup still depend on it.
 
@@ -837,13 +842,13 @@ for the same user and chat or app before using the CLI.
 
 Assistant computes with scripts and shows the result as an HTML app: key
 figures, tables and charts from `cloud.chart`, which draws in Cloud colors and
-redraws at the real width, so axes fit phones. Filters, tabs and forms are
-ordinary HTML controls. The `assistant-data-analysis` Skill guides source
-inspection, metric definitions, reconciliation, chart choice, and delivery. The
-API is available without loading the Skill. An app states when its data was
-retrieved and whether it is a snapshot, partial, or a fixture. A live loader is
-explicit; publishing source does not create a frozen data snapshot or a
-continuously refreshing dashboard.
+redraws at the real width, so axes fit phones. Hover, focus or tap a chart value
+to see it. Filters, tabs and forms are ordinary HTML controls. The
+`assistant-data-analysis` Skill guides source inspection, metric definitions,
+reconciliation, chart choice, and delivery. The API is available without
+loading the Skill. An app states when its data was retrieved and whether it is
+a snapshot, partial, or a fixture. A live loader is explicit; publishing source
+does not create a frozen data snapshot or a continuously refreshing dashboard.
 
 Shared access and published source versions use the normal Studio lifecycle.
 Personal secrets remain personal. External loads still follow HTTP approval and
