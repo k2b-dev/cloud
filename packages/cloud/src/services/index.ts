@@ -198,7 +198,14 @@ export type {
 
 export { latestTopicCursor } from "./topic-cursor";
 export { readAccountCategoryPolicy, isAccountCategoryAllowed } from "./account-category-policy";
-export { AppApprovalError, appApproval, type AppDeviceAdministrator, type AppDeviceEnrollmentNotice } from "./app-approval";
+export {
+  AppApprovalError,
+  appApproval,
+  type AppDeviceAdministrator,
+  type AppDeviceEnrollmentNotice,
+  type AppTerminalLogins,
+  type AppTerminalLoginInput,
+} from "./app-approval";
 export { PwaError, pwaDevices, type PwaDeviceAdministrator, type PwaDevicePairedNotice } from "./pwa-devices";
 export { legalConsent } from "./legal-consent";
 

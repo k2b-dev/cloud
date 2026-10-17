@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   APP_APPROVAL_PROTOCOL,
+  APP_APPROVAL_LIMITS,
+  AppDeviceCommandSchema,
+  AppDeviceInboxSchema,
+  AppPendingLoginSchema,
   type AppActionView,
   AppActionViewSchema,
   type AppDeviceProof,
@@ -189,4 +193,41 @@ test("Action views reject bidi overrides and newlines in every shown text field"
     ])
       expect(AppActionViewSchema.safeParse({ ...actionView, ...change }).success).toBe(false);
   }
+});
+
+test("inbox opt-in has a single nested signing appendix and strict unique capabilities", () => {
+  const base = `["cloud-app-approval-v1","device","https://cloud.example","${id}","${id}",100,160,"inbox"`;
+  expect(appDeviceProofMessage({ ...proof, command: { operation: "inbox" } })).toBe(`${base}]`);
+  expect(appDeviceProofMessage({ ...proof, command: { operation: "inbox", accept: ["terminal-logins"] } })).toBe(
+    `${base},["terminal-logins"]]`,
+  );
+  for (const accept of [[], ["unknown"], ["terminal-logins", "terminal-logins"]])
+    expect(AppDeviceCommandSchema.safeParse({ operation: "inbox", accept }).success).toBe(false);
+});
+
+test("terminal consent is strict, plain and bounded within a five-login inbox", () => {
+  const terminal = {
+    client: { id: "c".repeat(256), name: "😀".repeat(60) },
+    scopes: Array.from({ length: 16 }, (_, i) => `s${i}`.padEnd(40, "x")),
+    lifetimeSeconds: 7_776_000,
+  };
+  const login = {
+    requestId: id,
+    challenge: coordinate,
+    comparison: "000123",
+    createdAt: "2026-10-11T10:00:00.000Z",
+    expiresAt: "2026-10-11T10:05:00.000Z",
+    terminal,
+  };
+  expect(AppPendingLoginSchema.parse(login)).toEqual(login);
+  for (const change of [
+    { ...terminal, extra: true },
+    { ...terminal, client: { ...terminal.client, extra: true } },
+    { ...terminal, client: { id: "cli", name: "client\u202e" } },
+    { ...terminal, scopes: ["admin scope"] },
+    { ...terminal, lifetimeSeconds: 0 },
+  ])
+    expect(AppPendingLoginSchema.safeParse({ ...login, terminal: change }).success).toBe(false);
+  const inbox = AppDeviceInboxSchema.parse({ logins: Array(5).fill(login), actions: [], moreActions: 0, pollAfterSeconds: 5 });
+  expect(new TextEncoder().encode(JSON.stringify(inbox)).length).toBeLessThanOrEqual(APP_APPROVAL_LIMITS.bodyBytes);
 });

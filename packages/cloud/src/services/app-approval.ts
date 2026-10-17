@@ -3,6 +3,7 @@ import { lazySync } from "../_internal/process-sync";
 import { env } from "../config/env";
 import { type AccountCategory, accountCategory } from "../contracts/account-categories";
 import {
+  APP_ACTION_LIMITS,
   APP_APPROVAL_FEATURES,
   APP_APPROVAL_PATH,
   APP_APPROVAL_PROTOCOL,
@@ -19,9 +20,11 @@ import {
 } from "../contracts/app-approval";
 import { publicCloudOrigin } from "../shared/app-url";
 import { isAccountCategoryAllowed } from "./account-category-policy";
+import { appApprovalText } from "./approvals/device";
 import { audit } from "./audit";
 import { logger } from "./logging";
 import { pairingSecret } from "./pairing-secret";
+import { toPgTextArray } from "./postgres";
 import { requireEligibleAccount, requireRecentWebSession } from "./session/recent";
 import { CORE_SETTINGS } from "./settings/core-settings";
 import { decryptValue } from "./settings/crypto";
@@ -127,6 +130,11 @@ type PairingRow = {
   comparison: string | null;
 };
 type LoginRow = {
+  kind: "browser" | "terminal";
+  device_authorization_id: string | null;
+  client_id: string | null;
+  scopes: string[] | null;
+  lifetime_seconds: number | null;
   id: string;
   user_id: string | null;
   auth_epoch: string | null;
@@ -164,9 +172,30 @@ export type AppDeviceActions = {
     approved: boolean;
   }): Promise<boolean>;
 };
-// Bundle Action wake-ups for 30 seconds while the previously woken request is still open.
+export type AppTerminalLoginInput = {
+  deviceAuthorizationId: string;
+  identifier: string;
+  clientId: string;
+  scopes: string[];
+  lifetimeSeconds: number;
+};
+export type AppTerminalLogins = {
+  /** Live pending authorizations whose registry client still allows the device grant. */
+  describe(tx: SQL, ids: string[]): Promise<Map<string, { id: string; name: string }>>;
+  /** In the sign-in decision transaction; false aborts both decisions and their audits. */
+  decide(
+    tx: SQL,
+    input: {
+      deviceAuthorizationId: string;
+      clientId: string;
+      user: Pick<AccountRow, "id" | "uid" | "provider" | "profile">;
+      decision: "approve" | "deny";
+    },
+  ): Promise<boolean>;
+};
+// Bundle sign-in and Action wake-ups for 30 seconds while the previously woken request is still open.
 // Cloud Login gives Actions a separate 30-per-token budget in five minutes, preserving the full sign-in budget.
-const ACTION_WAKE_SECONDS = 30;
+const WAKE_SECONDS = 30;
 /** Best-effort sign-in wake-ups through the trusted authenticator; returns the HTTP status. */
 export type AppLoginPushSender = (
   appOrigin: string,
@@ -247,7 +276,7 @@ export const createAppApprovalService = (
     // Bounded opportunistic maintenance: each accepted write retires up to 100
     // expired rows per table, so bursts cannot trigger an unbounded sweep.
     await db`DELETE FROM auth.app_pairings WHERE id IN (SELECT id FROM auth.app_pairings WHERE expires_at < now() ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
-    await db`DELETE FROM auth.app_logins WHERE id IN (SELECT id FROM auth.app_logins WHERE expires_at < now() ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
+    await db`DELETE FROM auth.app_logins WHERE id IN (SELECT id FROM auth.app_logins WHERE expires_at < now() AND NOT (kind='terminal' AND state='approved') ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
     await db`DELETE FROM auth.app_device_proofs WHERE (device_id,jti) IN (SELECT device_id,jti FROM auth.app_device_proofs WHERE expires_at < now() ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
   };
   const authorizePairing = async (tx: SQL, actor: AppApprovalActor, pairing: PairingRow, cfg: AppApprovalConfig) => {
@@ -269,12 +298,18 @@ export const createAppApprovalService = (
 
   /** Runs after the login commit and never delays or fails it. The body names only
    * this Cloud and the request id; a 410 means the phone's subscription is gone. */
-  const wake = async (cfg: AppApprovalConfig, userId: string, requestId: string) => {
+  const wake = async (cfg: AppApprovalConfig, userId: string, requestId: string, options?: { terminal: boolean }) => {
     try {
-      const rows = await db<{ push_token: string }[]>`SELECT DISTINCT push_token FROM auth.app_devices
-        WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND revoked_at IS NULL AND push_token IS NOT NULL LIMIT ${limits.devicesPerAccount}`;
+      const rows = await db<{ push_token: string }[]>`
+        UPDATE auth.app_devices d SET login_wake_at=now(), login_wake_ref=${requestId}::uuid
+        WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND revoked_at IS NULL AND push_token IS NOT NULL
+          AND (${options?.terminal ?? false}=false OR 'terminal-logins'=ANY(d.accepts))
+          AND (d.login_wake_at IS NULL OR d.login_wake_at <= now() - ${WAKE_SECONDS} * interval '1 second'
+            OR NOT EXISTS (SELECT 1 FROM auth.app_logins w
+              WHERE w.id=d.login_wake_ref AND w.state='pending' AND w.expires_at > now()))
+        RETURNING push_token`;
       await Promise.all(
-        rows.map(async ({ push_token: token }) => {
+        Array.from(new Set(rows.map((row) => row.push_token)), async (token) => {
           const status = await push(cfg.appOrigin, { token, cloudOrigin: cfg.issuer, requestRef: requestId });
           if (status === 410)
             await db`UPDATE auth.app_devices SET push_token=NULL WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND push_token=${token}`;
@@ -283,6 +318,32 @@ export const createAppApprovalService = (
     } catch (error) {
       log.warn("App login push wake-up failed", { error: error instanceof Error ? error.name : "UnknownError" });
     }
+  };
+
+  const loginCandidate = async (tx: SQL, identifier: string, category?: AccountCategory) => {
+    const candidates = await tx<AccountRow[]>`
+      SELECT id,uid,provider,profile,auth_epoch,account_expires FROM auth.users
+      WHERE lower(uid)=lower(${identifier}) OR lower(btrim(mail))=lower(${identifier}) LIMIT 2`;
+    let candidate = candidates.length === 1 ? candidates[0] : undefined;
+    if (candidate) {
+      // Re-read under the account lock: starts share one budget, and epoch changes cannot race the snapshot.
+      const [locked] = await tx<AccountRow[]>`SELECT id,uid,provider,profile,auth_epoch,account_expires
+        FROM auth.users WHERE id=${candidate.id}::uuid FOR UPDATE`;
+      candidate = locked;
+    }
+    if (
+      candidate &&
+      ((category !== undefined && accountCategory(candidate) !== category) ||
+        (candidate.account_expires && new Date(candidate.account_expires).getTime() <= Date.now()) ||
+        !(await isAccountCategoryAllowed(candidate, tx)))
+    )
+      return undefined;
+    return candidate;
+  };
+  const loginBudget = async (tx: SQL, issuer: string, userId: string) => {
+    const [count] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM auth.app_logins
+      WHERE issuer=${issuer} AND user_id=${userId}::uuid AND expires_at > now() AND state IN ('pending','approved')`;
+    return (count?.count ?? 0) < limits.pendingPerAccount;
   };
 
   return {
@@ -303,7 +364,7 @@ export const createAppApprovalService = (
               AND device.issuer=${cfg.issuer} AND device.revoked_at IS NULL AND device.push_token IS NOT NULL
               AND device.actions_at IS NOT NULL
             LIMIT ${limits.devicesPerAccount}
-          ) AND (d.action_wake_at IS NULL OR d.action_wake_at <= now() - ${ACTION_WAKE_SECONDS} * interval '1 second'
+          ) AND (d.action_wake_at IS NULL OR d.action_wake_at <= now() - ${WAKE_SECONDS} * interval '1 second'
             OR NOT EXISTS (SELECT 1 FROM approvals.requests w
               WHERE w.id=d.action_wake_ref AND w.status='pending' AND w.expires_at > now()))
           RETURNING d.push_token,d.user_id`;
@@ -505,24 +566,8 @@ export const createAppApprovalService = (
         expiresAt = future(limits.loginSeconds);
       let owner: string | undefined;
       await db.begin(async (tx) => {
-        const candidates = await tx<
-          AccountRow[]
-        >`SELECT id,uid,provider,profile,auth_epoch,account_expires FROM auth.users WHERE lower(uid)=lower(${identifier}) OR lower(btrim(mail))=lower(${identifier}) LIMIT 2`;
-        let candidate = candidates.length === 1 ? candidates[0] : undefined;
-        if (
-          candidate &&
-          (accountCategory(candidate) !== category ||
-            (candidate.account_expires && new Date(candidate.account_expires).getTime() <= Date.now()) ||
-            !(await isAccountCategoryAllowed(candidate, tx)))
-        )
-          candidate = undefined;
-        if (candidate) {
-          await tx`SELECT id FROM auth.users WHERE id=${candidate.id}::uuid FOR UPDATE`;
-          const [count] = await tx<
-            { count: number }[]
-          >`SELECT count(*)::int AS count FROM auth.app_logins WHERE issuer=${cfg.issuer} AND user_id=${candidate.id}::uuid AND expires_at > now() AND state IN ('pending','approved')`;
-          if ((count?.count ?? 0) >= limits.pendingPerAccount) candidate = undefined;
-        }
+        let candidate = await loginCandidate(tx, identifier, category);
+        if (candidate && !(await loginBudget(tx, cfg.issuer, candidate.id))) candidate = undefined;
         // Unknown, ambiguous, disabled and throttled accounts have the identical
         // public shape and a decoy pending transaction; no account enumeration.
         await tx`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,expires_at)
@@ -533,7 +578,38 @@ export const createAppApprovalService = (
       if (owner) void wake(cfg, owner, id);
       return { requestId: id, browserSecret, comparison: code, expiresAt: iso(expiresAt), pollAfterSeconds: limits.pollSeconds };
     },
-    deviceCommand: async (request: AppDeviceRequest, actions: AppDeviceActions) => {
+    startTerminalLogin: async (
+      input: AppTerminalLoginInput,
+      access: (tx: SQL, account: Pick<AccountRow, "id" | "profile">) => Promise<boolean>,
+    ) => {
+      const cfg = await config();
+      await cleanup();
+      const id = crypto.randomUUID(),
+        code = comparison(),
+        expiresAt = future(limits.loginSeconds);
+      let owner: string | undefined;
+      await db.begin(async (tx) => {
+        let candidate = await loginCandidate(tx, input.identifier);
+        const subject = candidate ?? { id: crypto.randomUUID(), profile: "user" as const };
+        // Even a decoy performs the client-access, device and shared-budget queries.
+        const allowed = await access(tx, subject);
+        const devices = await tx`SELECT id FROM auth.app_devices WHERE issuer=${cfg.issuer}
+          AND user_id=${subject.id}::uuid AND revoked_at IS NULL LIMIT 1`;
+        const budget = await loginBudget(tx, cfg.issuer, subject.id);
+        if (!allowed || !devices.length || !budget) candidate = undefined;
+        const inserted = await tx`INSERT INTO auth.app_logins
+          (id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,expires_at,kind,device_authorization_id,client_id,scopes,lifetime_seconds)
+          VALUES (${id}::uuid,${cfg.issuer},${candidate?.id ?? null}::uuid,${candidate?.auth_epoch ?? null},
+            ${candidate ? accountCategory(candidate) : "login"},${hash(secret())},${secret()},${code},${expiresAt},'terminal',
+            ${input.deviceAuthorizationId}::uuid,${input.clientId},${toPgTextArray(input.scopes)}::text[],${input.lifetimeSeconds})
+          ON CONFLICT (device_authorization_id) WHERE device_authorization_id IS NOT NULL DO NOTHING RETURNING id`;
+        if (!inserted.length) return reject("CONFLICT", 409);
+        owner = candidate?.id;
+      });
+      if (owner) void wake(cfg, owner, id, { terminal: true });
+      return { comparison: code, expiresAt: iso(expiresAt) };
+    },
+    deviceCommand: async (request: AppDeviceRequest, actions: AppDeviceActions, terminal?: AppTerminalLogins) => {
       const cfg = await config();
       const { proof, signature } = request;
       const now = Math.floor(Date.now() / 1000);
@@ -580,20 +656,40 @@ export const createAppApprovalService = (
           return { operation: command.operation, userId: device.user_id, deviceId: device.id };
         if (command.operation === "pending" || command.operation === "inbox") {
           const user = await eligible(tx, device.user_id);
+          const acceptsTerminal =
+            command.operation === "inbox" && command.accept?.includes("terminal-logins") === true && terminal !== undefined;
           const rows = await tx<
             LoginRow[]
-          >`SELECT * FROM auth.app_logins WHERE issuer=${cfg.issuer} AND user_id=${device.user_id}::uuid AND state='pending' AND expires_at>now() AND auth_epoch=${user.auth_epoch} AND category=${accountCategory(user)} ORDER BY created_at LIMIT ${limits.pendingPerAccount}`;
-          const requests = rows.map(
-            (row): AppPendingLogin => ({
+          >`SELECT * FROM auth.app_logins WHERE (kind='browser' OR ${acceptsTerminal}) AND issuer=${cfg.issuer} AND user_id=${device.user_id}::uuid AND state='pending' AND expires_at>now() AND auth_epoch=${user.auth_epoch} AND category=${accountCategory(user)} ORDER BY created_at LIMIT ${limits.pendingPerAccount}`;
+          const clients =
+            acceptsTerminal && terminal
+              ? await terminal.describe(
+                  tx,
+                  rows.flatMap((row) => (row.device_authorization_id ? [row.device_authorization_id] : [])),
+                )
+              : new Map<string, { id: string; name: string }>();
+          const requests: AppPendingLogin[] = [];
+          for (const row of rows) {
+            const login: AppPendingLogin = {
               requestId: row.id,
               challenge: row.challenge,
               comparison: row.comparison,
               createdAt: iso(row.created_at),
               expiresAt: iso(row.expires_at),
-            }),
-          );
+            };
+            if (row.kind === "terminal") {
+              const client = row.device_authorization_id ? clients.get(row.device_authorization_id) : undefined;
+              if (!client || client.id !== row.client_id || !row.scopes || !row.lifetime_seconds) continue;
+              login.terminal = {
+                client: { id: client.id, name: appApprovalText(client.name || client.id, APP_ACTION_LIMITS.nameChars) || "OAuth" },
+                scopes: row.scopes,
+                lifetimeSeconds: row.lifetime_seconds,
+              };
+            }
+            requests.push(login);
+          }
           if (command.operation === "inbox") {
-            await tx`UPDATE auth.app_devices SET actions_at=now() WHERE id=${device.id}::uuid`;
+            await tx`UPDATE auth.app_devices SET actions_at=now(), accepts=${toPgTextArray(command.accept ?? [])}::text[] WHERE id=${device.id}::uuid`;
             return { operation: "inbox" as const, userId: device.user_id, logins: requests };
           }
           return { requests, pollAfterSeconds: limits.pollSeconds };
@@ -612,9 +708,30 @@ export const createAppApprovalService = (
           row.category !== accountCategory(user)
         )
           return reject("CONFLICT", 409);
+        if (
+          row.kind === "terminal" &&
+          (!terminal ||
+            !row.device_authorization_id ||
+            !row.client_id ||
+            !(await terminal.decide(tx, {
+              deviceAuthorizationId: row.device_authorization_id,
+              clientId: row.client_id,
+              user,
+              decision: command.decision,
+            })))
+        )
+          return reject("CONFLICT", 409);
         const state = command.decision === "approve" ? "approved" : "denied";
-        await tx`UPDATE auth.app_logins SET state=${state},approved_by=${device.id}::uuid WHERE id=${row.id}::uuid`;
-        await record(tx, `login.${command.decision}`, device.user_id, device.id, { requestId: row.id });
+        // A hook may wait on another transaction. Expiry still wins before either decision commits.
+        const decided = await tx`UPDATE auth.app_logins SET state=${state},approved_by=${device.id}::uuid
+          WHERE id=${row.id}::uuid AND expires_at > clock_timestamp() RETURNING id`;
+        if (!decided.length) return reject("CONFLICT", 409);
+        await record(tx, `login.${command.decision}`, device.user_id, device.id, {
+          requestId: row.id,
+          ...(row.kind === "terminal"
+            ? { kind: "terminal", clientId: row.client_id, deviceAuthorizationId: row.device_authorization_id }
+            : {}),
+        });
         return { state };
       });
       if (outcome.operation !== undefined) {
@@ -655,7 +772,7 @@ export const createAppApprovalService = (
     browserStatus: async (id: string, token: string, hold?: { ms: number; signal?: AbortSignal }) => {
       const cfg = await config();
       const read = async () => {
-        const [row] = await db<LoginRow[]>`SELECT * FROM auth.app_logins WHERE id=${id}::uuid AND issuer=${cfg.issuer}`;
+        const [row] = await db<LoginRow[]>`SELECT * FROM auth.app_logins WHERE kind='browser' AND id=${id}::uuid AND issuer=${cfg.issuer}`;
         if (!row || !matches(token, row.browser_hash)) return reject("UNAVAILABLE", 404);
         const expiresIn = new Date(row.expires_at).getTime() - Date.now();
         return { state: expiresIn <= 0 ? "expired" : row.state, expiresIn };
@@ -686,10 +803,14 @@ export const createAppApprovalService = (
       const cfg = await config();
       return db.begin(async (tx) => {
         // Lock order is device -> request for both approval and completion.
-        const [snapshot] = await tx<LoginRow[]>`SELECT * FROM auth.app_logins WHERE id=${id}::uuid AND issuer=${cfg.issuer}`;
+        const [snapshot] = await tx<
+          LoginRow[]
+        >`SELECT * FROM auth.app_logins WHERE kind='browser' AND id=${id}::uuid AND issuer=${cfg.issuer}`;
         if (!snapshot || !snapshot.approved_by || !matches(token, snapshot.browser_hash)) return reject("CONFLICT", 409);
         const device = await activeDevice(tx, snapshot.approved_by, cfg.issuer);
-        const [row] = await tx<LoginRow[]>`SELECT * FROM auth.app_logins WHERE id=${id}::uuid AND issuer=${cfg.issuer} FOR UPDATE`;
+        const [row] = await tx<
+          LoginRow[]
+        >`SELECT * FROM auth.app_logins WHERE kind='browser' AND id=${id}::uuid AND issuer=${cfg.issuer} FOR UPDATE`;
         const user = await eligible(tx, device.user_id);
         if (
           !row ||

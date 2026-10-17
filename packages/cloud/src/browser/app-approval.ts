@@ -9,6 +9,7 @@ import {
   APP_APPROVAL_PATH,
   APP_APPROVAL_PROTOCOL,
   type AppActionView,
+  type AppApprovalAccept,
   AppActionViewSchema,
   AppDeviceCommandSchema,
   AppDeviceProofSchema,
@@ -223,9 +224,13 @@ const connect = async (options: {
     },
     /** Whether this Cloud serves `inbox`, `action` and `act`. Older Clouds answer those commands with HTTP 400. */
     actions: info.features?.includes("actions") === true,
+    /** Whether this Cloud can include terminal consent in an explicitly opted-in inbox. */
+    terminalLogins: info.features?.includes("terminal-logins") === true,
     /** Pending sign-ins and the newest open Action approvals in one call; use it instead of `pending` where `actions` is true. */
-    inbox: async (device: AppApprovalDevice, signal?: AbortSignal) => {
-      const result = await command(device, { operation: "inbox" }, signal);
+    inbox: async (device: AppApprovalDevice, signal?: AbortSignal, options?: { accept?: AppApprovalAccept[] }) => {
+      // SDK upgrades alone must not expose consent the app cannot show. Old Clouds never see the new key.
+      const accept = options?.accept?.filter((entry) => info.features?.includes(entry));
+      const result = await command(device, { operation: "inbox", ...(accept?.length ? { accept } : {}) }, signal);
       if (!("actions" in result)) throw new AppApprovalClientError("INVALID_RESPONSE");
       return result;
     },

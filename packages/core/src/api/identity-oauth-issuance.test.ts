@@ -687,3 +687,96 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
     }
   });
 });
+
+withDatabase("Core terminal approval issuance boundary", () => {
+  test("rechecks device ownership and epoch, consumes approval, and preserves browser grants", async () => {
+    const { migrate } = await import("../migrate/core/app-approval");
+    await migrate();
+    const { privateKey } = await generateKeyPair("RS256");
+    const routes = createIdentityOAuthIssuanceRoutes({
+      authenticate: () => true,
+      withActiveSigner: async (_purpose, callback) =>
+        sql.begin((db) =>
+          callback(
+            {
+              kid: crypto.randomUUID(),
+              key: privateKey,
+              signUntil: new Date(Date.now() + 60_000),
+              issuer: "https://cloud.example.test",
+            },
+            db,
+          ),
+        ),
+      issuer: async () => "https://cloud.example.test",
+    });
+    for (const scenario of [
+      "happy",
+      "browser",
+      "revoked",
+      "epoch",
+      "device-owner",
+      "login-owner",
+      "missing-device",
+      "expired-ui",
+    ] as const) {
+      const userId = crypto.randomUUID(),
+        otherUser = crypto.randomUUID(),
+        clientId = `issuance-terminal-${crypto.randomUUID()}`;
+      const deviceId = crypto.randomUUID(),
+        authorizationId = crypto.randomUUID(),
+        loginId = crypto.randomUUID(),
+        nonce = crypto.randomUUID();
+      try {
+        for (const id of [userId, otherUser])
+          await sql`INSERT INTO auth.users(id,uid,provider,profile)
+          VALUES (${id}::uuid,${`terminal-issuance-${id}`},'local','user')`;
+        await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes,audiences,allowed_profiles,access_mode,registration_kind,is_public,allow_device_grant)
+          VALUES ('Issuance test',${clientId},'{}',ARRAY['openid','profile'],ARRAY['cloud'],ARRAY['user'],'profiles','managed',true,true)`;
+        await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,expires_at,authority_nonce)
+          VALUES (${authorizationId}::uuid,${authorizationId},${authorizationId},${clientId},ARRAY['openid','profile'],ARRAY['cloud'],
+            'consumed',${userId}::uuid,now()+interval '10 minutes',${nonce}::uuid)`;
+        if (scenario !== "browser") {
+          await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted)
+            VALUES (${deviceId}::uuid,'https://cloud.example.test',${scenario === "device-owner" ? otherUser : userId}::uuid,'Phone','{}',false)`;
+          await sql`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,state,approved_by,expires_at,
+            kind,device_authorization_id,client_id,scopes,lifetime_seconds)
+            SELECT ${loginId}::uuid,'https://cloud.example.test',u.id,u.auth_epoch,'login','unusable','unusable','000123','approved',${deviceId}::uuid,
+              now()+interval '5 minutes','terminal',${authorizationId}::uuid,${clientId},ARRAY['openid','profile'],3600
+            FROM auth.users u WHERE u.id=${scenario === "login-owner" ? otherUser : userId}::uuid`;
+          if (scenario === "revoked") await sql`UPDATE auth.app_devices SET revoked_at=now() WHERE id=${deviceId}::uuid`;
+          if (scenario === "epoch") await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${userId}::uuid`;
+          if (scenario === "missing-device") await sql`DELETE FROM auth.app_devices WHERE id=${deviceId}::uuid`;
+          if (scenario === "expired-ui") {
+            await sql`UPDATE auth.app_logins SET expires_at=now()-interval '1 second' WHERE id=${loginId}::uuid`;
+            // Cleanup must retain the evidence needed by issuance after the sign-in UI closes.
+            const { appApproval } = await import("@k2b/cloud/services");
+            await appApproval.cleanup();
+          }
+        }
+        const response = await routes.request("/oauth/token", {
+          method: "POST",
+          headers: { authorization: "Bearer broker", "content-type": "application/json" },
+          body: JSON.stringify({
+            tokens: [
+              { kind: "user_access", grant: { kind: "device_code", deviceAuthorizationId: authorizationId, nonce }, expiresIn: 3600 },
+            ],
+          }),
+        });
+        const allowed = ["happy", "browser", "expired-ui"].includes(scenario);
+        expect(response.status).toBe(allowed ? 200 : 403);
+        const result = await response.json();
+        if (allowed) expect(z.object({ tokens: z.array(z.string()).length(1) }).parse(result).tokens).toHaveLength(1);
+        else expect(result).toEqual({ message: "Forbidden" });
+        const [grant] = await sql`SELECT authority_issued_at FROM oauth.device_authorizations WHERE id=${authorizationId}::uuid`;
+        expect(grant.authority_issued_at !== null).toBe(allowed);
+        if (scenario !== "browser") {
+          const [login] = await sql`SELECT state FROM auth.app_logins WHERE id=${loginId}::uuid`;
+          expect(login.state).toBe(allowed ? "consumed" : "approved");
+        }
+      } finally {
+        await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+        for (const id of [userId, otherUser]) await sql`DELETE FROM auth.users WHERE id=${id}::uuid`;
+      }
+    }
+  });
+});
