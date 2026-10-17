@@ -3006,7 +3006,12 @@ export const spacesCapabilities = defineCapabilities({
           if (!actor) return capabilityFail(context, err.forbidden("Reactions require a user-backed actor"), "reactionsNeedUser");
           const resolved = await requireItem(input.itemId, context, "write");
           if (!resolved.ok) return resolved;
-          const result = await spacesService.item.reactions.add({ itemId: resolved.data.internalId, emoji: input.emoji, actor });
+          const result = await spacesService.item.reactions.add({
+            itemId: resolved.data.internalId,
+            spaceId: resolved.data.internalSpaceId,
+            emoji: input.emoji,
+            actor,
+          });
           if (!result.ok) return fail(localizeSpacesError(result.error, context.locale));
           return ok({ data: result.data, summary: spacesMessages(context.locale).addedReaction({ title: resolved.data.item.title }) });
         }),
@@ -3042,7 +3047,12 @@ export const spacesCapabilities = defineCapabilities({
           if (!actor) return capabilityFail(context, err.forbidden("Reactions require a user-backed actor"), "reactionsNeedUser");
           const resolved = await requireItem(input.itemId, context, "write");
           if (!resolved.ok) return resolved;
-          const result = await spacesService.item.reactions.remove({ itemId: resolved.data.internalId, emoji: input.emoji, actor });
+          const result = await spacesService.item.reactions.remove({
+            itemId: resolved.data.internalId,
+            spaceId: resolved.data.internalSpaceId,
+            emoji: input.emoji,
+            actor,
+          });
           if (!result.ok) return fail(localizeSpacesError(result.error, context.locale));
           return ok({ data: result.data, summary: spacesMessages(context.locale).removedReaction({ title: resolved.data.item.title }) });
         }),

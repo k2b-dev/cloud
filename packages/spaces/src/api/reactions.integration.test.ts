@@ -231,6 +231,17 @@ suite("Spaces reactions", () => {
       expect(await reactions.listForItem(f.itemId, { kind: "user", id: f.users[0]!.id })).toHaveLength(20);
     }));
 
+  test("an intent authorized for another Space finds no item", () =>
+    fixture(async (f) => {
+      // A transfer between the permission check and the write moves the item out of the authorized Space.
+      const otherSpaceId = crypto.randomUUID();
+      for (const operation of [reactions.add, reactions.remove])
+        expect(
+          await operation({ itemId: f.itemId, spaceId: otherSpaceId, emoji: "👍", actor: { kind: "user", id: f.users[0]!.id } }),
+        ).toMatchObject({ ok: false, error: { status: 404 } });
+      expect(await reactions.listForItem(f.itemId, { kind: "user", id: f.users[0]!.id })).toEqual([]);
+    }));
+
   test("invalid emoji are 400, empty route segments are missing, service also validates", () =>
     fixture(async (f) => {
       for (const emoji of ["❤", "ab", "👍👍", " "]) {
@@ -240,7 +251,9 @@ suite("Spaces reactions", () => {
       expect((await f.users[0]!.call(reactionPath(f.itemPath, ""), "PUT")).status).toBe(404);
       for (const operation of [reactions.add, reactions.remove])
         for (const emoji of ["", " ", "❤", "ab", "👍👍"]) {
-          expect(await operation({ itemId: f.itemId, emoji, actor: { kind: "user", id: f.users[0]!.id } })).toMatchObject({
+          expect(
+            await operation({ itemId: f.itemId, spaceId: f.spaceId, emoji, actor: { kind: "user", id: f.users[0]!.id } }),
+          ).toMatchObject({
             ok: false,
             error: { status: 400 },
           });
@@ -278,7 +291,9 @@ suite("Spaces reactions", () => {
         { count: number }[]
       >`SELECT count(*)::int AS count FROM spaces.item_reactions WHERE item_id = ${f.itemId}`;
       expect(remaining?.count).toBe(0);
-      expect(await reactions.remove({ itemId: f.itemId, emoji: "👍", actor: { kind: "user", id: f.users[0]!.id } })).toMatchObject({
+      expect(
+        await reactions.remove({ itemId: f.itemId, spaceId: f.spaceId, emoji: "👍", actor: { kind: "user", id: f.users[0]!.id } }),
+      ).toMatchObject({
         ok: false,
         error: { status: 404 },
       });

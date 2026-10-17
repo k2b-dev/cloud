@@ -8,6 +8,7 @@ import {
   EventCreateInputSchema,
   EventListItemDataSchema,
   EventUpdateInputSchema,
+  ReactionDataSchema,
   ReactionInputSchema,
   SpaceBrowseDataSchema,
   TaskChecklistListDataSchema,
@@ -185,4 +186,13 @@ test("reaction capability requires one emoji and an item, without recurrence sco
     expect(ReactionInputSchema.safeParse({ itemId: "Item01", emoji }).success).toBe(true);
   for (const emoji of ["❤", "ab", "👍👍", "", " "]) expect(ReactionInputSchema.safeParse({ itemId: "Item01", emoji }).success).toBe(false);
   expect(ReactionInputSchema.safeParse({ itemId: "Item01", emoji: "👍", recurrenceId: "2026-10-17T10:00:00Z" }).success).toBe(false);
+});
+
+test("reaction schemas keep accepting emoji after the JSON Schema round trip Core validates with", () => {
+  const input = z.fromJSONSchema(z.toJSONSchema(ReactionInputSchema));
+  const data = z.fromJSONSchema(z.toJSONSchema(ReactionDataSchema));
+  for (const emoji of ["👍", "👍🏽", "❤️", "👩‍💻", "🇩🇪"]) {
+    expect(input.safeParse({ itemId: "Item01", emoji }).success).toBe(true);
+    expect(data.safeParse({ reactions: [{ emoji, count: 1, own: true, people: [] }] }).success).toBe(true);
+  }
 });

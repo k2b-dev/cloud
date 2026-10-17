@@ -112,9 +112,12 @@ export type SpaceItemClaim = z.infer<typeof SpaceItemClaimSchema>;
 
 // The detail panel shows every chip in wrapping rows at 26 px; keep card payloads small too.
 export const MAX_ITEM_REACTION_EMOJI = 20;
+const RGI_EMOJI = /^\p{RGI_Emoji}$/v;
+/** A refinement, not a pattern: JSON Schema drops the `v` flag, so a published pattern would reject every emoji. */
 export const ReactionEmojiSchema = z
   .string()
-  .regex(/^\p{RGI_Emoji}$/v, "Expected one fully-qualified RGI emoji")
+  .min(1)
+  .refine((value) => RGI_EMOJI.test(value), "Expected one fully-qualified RGI emoji")
   .describe("Exactly one fully-qualified RGI emoji, including any skin tone or presentation selector");
 export const SpaceItemReactionSchema = z.object({
   emoji: ReactionEmojiSchema,

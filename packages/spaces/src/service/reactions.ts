@@ -11,6 +11,8 @@ export type ReactionActor = { kind: "user" | "service_account"; id: string };
  */
 export type ReactionViewer = ReactionActor;
 type ReactionsResponse = { reactions: SpaceItemReaction[] };
+/** `spaceId` is the Space whose write access the caller holds. */
+type ReactionIntent = { itemId: string; spaceId: string; emoji: string; actor: ReactionActor };
 
 /** One query for the whole page; only the first three other reactors enter the payload. */
 export const getReactionsByItemIds = async (itemIds: string[], viewer: ReactionViewer): Promise<Map<string, SpaceItemReaction[]>> => {
@@ -49,15 +51,16 @@ export const listForItem = async (itemId: string, viewer: ReactionViewer): Promi
 
 const mutate = async (
   operation: "add" | "remove",
-  { itemId, emoji, actor }: { itemId: string; emoji: string; actor: ReactionActor },
+  { itemId, spaceId, emoji, actor }: ReactionIntent,
 ): Promise<Result<ReactionsResponse>> => {
   if (!ReactionEmojiSchema.safeParse(emoji).success) return fail(err.badInput("Expected one fully-qualified RGI emoji"));
   const userId = actor.kind === "user" ? actor.id : null;
   const serviceAccountId = actor.kind === "service_account" ? actor.id : null;
   const result = await sql.begin(async (tx): Promise<Result<{ changed: boolean }>> => {
-    // Item first, then reactions: also compatible with comments' FOR SHARE and item.move.
+    // Item first, then reactions: also compatible with comments' FOR SHARE and item.move. The Space is the one the
+    // caller was authorized for; an item moved to another Space since then is not found here.
     const [item] = await tx<{ space_id: string }[]>`
-      SELECT space_id FROM spaces.items WHERE id = ${itemId} FOR NO KEY UPDATE
+      SELECT space_id FROM spaces.items WHERE id = ${itemId} AND space_id = ${spaceId} FOR NO KEY UPDATE
     `;
     if (!item) return fail(err.notFound("Item"));
     let changed: boolean;
@@ -98,5 +101,5 @@ const mutate = async (
   return ok({ reactions: await listForItem(itemId, actor) });
 };
 
-export const add = (params: { itemId: string; emoji: string; actor: ReactionActor }) => mutate("add", params);
-export const remove = (params: { itemId: string; emoji: string; actor: ReactionActor }) => mutate("remove", params);
+export const add = (params: ReactionIntent) => mutate("add", params);
+export const remove = (params: ReactionIntent) => mutate("remove", params);

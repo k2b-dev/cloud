@@ -2303,7 +2303,12 @@ test("reaction actions enforce write permission, use actor identity and preserve
   expect(remove).not.toHaveBeenCalled();
   permission.mockResolvedValue("write");
   expect((await spacesCapabilities.actions["reaction.add"].run(input, userContext)).ok).toBe(true);
-  expect(add).toHaveBeenLastCalledWith({ itemId: itemUuid, emoji: input.emoji, actor: { kind: "user", id: userId } });
+  expect(add).toHaveBeenLastCalledWith({
+    itemId: itemUuid,
+    spaceId: spaceUuid,
+    emoji: input.emoji,
+    actor: { kind: "user", id: userId },
+  });
   const agent = {
     ...serviceAccountContext,
     actor: {
@@ -2321,6 +2326,7 @@ test("reaction actions enforce write permission, use actor identity and preserve
   expect((await spacesCapabilities.actions["reaction.remove"].run(input, agent)).ok).toBe(true);
   expect(remove).toHaveBeenLastCalledWith({
     itemId: itemUuid,
+    spaceId: spaceUuid,
     emoji: input.emoji,
     actor: { kind: "service_account", id: serviceAccountId },
   });
@@ -2328,7 +2334,12 @@ test("reaction actions enforce write permission, use actor identity and preserve
   // A delegated call uses the person even though its access principal is an account.
   const delegated = { ...agent, actor: { ...agent.actor, delegatedUser: user }, user };
   expect((await spacesCapabilities.actions["reaction.add"].run(input, delegated)).ok).toBe(true);
-  expect(add).toHaveBeenLastCalledWith({ itemId: itemUuid, emoji: input.emoji, actor: { kind: "user", id: userId } });
+  expect(add).toHaveBeenLastCalledWith({
+    itemId: itemUuid,
+    spaceId: spaceUuid,
+    emoji: input.emoji,
+    actor: { kind: "user", id: userId },
+  });
   add.mockResolvedValue({
     ok: false,
     error: { code: "REACTION_LIMIT_REACHED", status: 409, message: "An item can have at most 20 different emoji reactions" },

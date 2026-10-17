@@ -3389,7 +3389,7 @@ function discussionRoutes() {
           if (!item.ok) return respond(c, item);
           const actor = getCommentAuthor(c);
           if (!actor.ok) return respond(c, actor);
-          return respond(c, spacesService.item.reactions.add({ itemId: item.data.id, emoji, actor: actor.data }));
+          return respond(c, spacesService.item.reactions.add({ itemId: item.data.id, spaceId: spaceId!, emoji, actor: actor.data }));
         },
       )
 
@@ -3418,7 +3418,7 @@ function discussionRoutes() {
           if (!item.ok) return respond(c, item);
           const actor = getCommentAuthor(c);
           if (!actor.ok) return respond(c, actor);
-          return respond(c, spacesService.item.reactions.remove({ itemId: item.data.id, emoji, actor: actor.data }));
+          return respond(c, spacesService.item.reactions.remove({ itemId: item.data.id, spaceId: spaceId!, emoji, actor: actor.data }));
         },
       )
 
