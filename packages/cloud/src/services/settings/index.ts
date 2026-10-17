@@ -3,8 +3,8 @@
  *
  * Resolution order: DB value -> env fallback -> code default.
  *
- * Custom DB values are encrypted at rest using APP_SECRET. All read/write
- * goes through the Redis cache-aside layer in `./store.ts` (5-minute TTL).
+ * Custom DB values are encrypted at rest using APP_SECRET. Value reads use
+ * Redis cache-aside in `./store.ts` (5-minute TTL); stored-state reads use DB.
  * `loadCache()` runs once at boot to normalize legacy rows and bootstrap
  * env-backed entries into Postgres. Startup never replaces an existing row;
  * env bootstrap only fills missing keys.
@@ -162,8 +162,8 @@ const bootstrapEnvBackedEntries = async (config: {
 
 /**
  * Boot-time normalization + env-bootstrap. Runs once at startup. Does NOT
- * populate any in-process cache — every read goes through Redis cache-aside
- * (`store.ts`) at request time.
+ * populate any in-process cache — value reads use Redis cache-aside
+ * (`store.ts`), and stored-state reads go directly to Postgres.
  */
 export async function loadCache(): Promise<void> {
   getAppSecret();

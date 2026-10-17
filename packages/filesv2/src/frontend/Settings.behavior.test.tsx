@@ -17,16 +17,18 @@ const configuration = (unreadable: boolean): PublicConfiguration => ({
   unreadable,
 });
 
-async function setup(unreadable: boolean) {
+async function setup(unreadable: boolean, hold?: Promise<void>) {
   const dom = createDomTestHarness();
   const { default: Settings } = await import("./Settings");
   const { dialogCore } = await import("@k2b/ui");
   const requests: Array<{ method: string; url: string }> = [];
   let saved = 0;
+  let dirty = { dirty: false, saving: false };
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: unknown, init?: RequestInit) => {
         requests.push({ method: init?.method ?? "GET", url: String(input instanceof Request ? input.url : input) });
+        await hold;
         return Response.json({ reset: true });
       },
       { preconnect: globalThis.fetch.preconnect },
@@ -40,7 +42,9 @@ async function setup(unreadable: boolean) {
         onSaved: async () => {
           saved += 1;
         },
-        onDirtyChange: () => {},
+        onDirtyChange: (value: boolean, saving: boolean) => {
+          dirty = { dirty: value, saving };
+        },
       }),
     dom.root,
   );
@@ -52,6 +56,7 @@ async function setup(unreadable: boolean) {
     button,
     requests,
     saved: () => saved,
+    dirty: () => dirty,
     cleanup: () => {
       dialogCore.close();
       dispose();
@@ -106,6 +111,46 @@ describe("Files settings with an unreadable saved configuration", () => {
         expect(new URL(ui.requests[0]!.url, "http://cloud.test").pathname).toBe("/api/filesv2/admin/configuration");
         expect(ui.saved()).toBe(1);
       } finally {
+        ui.cleanup();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "while a reset is pending the form cannot save over it",
+    async () => {
+      let release!: () => void;
+      const ui = await setup(
+        true,
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+      );
+      try {
+        const url = ui.document.querySelector<HTMLInputElement>('input[name="filegate-url"]')!;
+        url.value = "http://filegate:4000";
+        url.dispatchEvent(new Event("input", { bubbles: true }));
+        await tick();
+        const notice = ui.document.querySelector<HTMLElement>('.k2b-notice-card[data-tone="warning"]')!;
+        ui.button("Reset configuration", notice)!.click();
+        await tick();
+        Array.from(ui.document.querySelector("dialog")!.querySelectorAll<HTMLButtonElement>("button")).at(-1)!.click();
+        await tick();
+        expect(ui.requests.map((request) => request.method)).toEqual(["DELETE"]);
+        expect(ui.dirty()).toEqual({ dirty: true, saving: true });
+        expect(ui.document.querySelectorAll("fieldset:disabled").length).toBe(ui.document.querySelectorAll("fieldset").length);
+        ui.document.querySelector("form")!.requestSubmit();
+        ui.button("Save changes")?.click();
+        await tick();
+        expect(ui.requests.map((request) => request.method)).toEqual(["DELETE"]);
+        release();
+        await tick();
+        await tick();
+        expect(ui.saved()).toBe(1);
+        expect(ui.dirty().saving).toBe(false);
+      } finally {
+        release();
         ui.cleanup();
       }
     },

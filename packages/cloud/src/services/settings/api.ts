@@ -12,8 +12,9 @@
  *     `services/weather/forecast.ts`, OpenAPI middleware, cron callbacks).
  *     Loosely typed (caller provides the value type via the `T` generic).
  *
- * Backend: cache-aside via `store.ts` (Redis 5min TTL + DB fallback). All
- * functions are async — sync render-time access uses the per-request snapshot
+ * Backend: value reads use cache-aside via `store.ts` (Redis 5min TTL + DB
+ * fallback); stored-state reads use Postgres. All functions are async — sync
+ * render-time access uses the per-request snapshot
  * exposed via `c.get("settings")`.
  */
 

@@ -1,7 +1,7 @@
 /**
  * Settings store — Redis cache-aside read/write primitives.
  *
- * Pattern: each key is cached in Redis with a 5-minute TTL. Reads try Redis
+ * Pattern: each key is cached in Redis with a 5-minute TTL. Value reads try Redis
  * first, fall back to DB on miss, and populate Redis. Writes update DB and
  * delete the Redis key (next reader repopulates with fresh DB state).
  *
@@ -83,14 +83,15 @@ const resolveFallback = (def: SettingDef | undefined): unknown => {
  */
 export const readKey = async (key: string): Promise<unknown> => (await bulkRead([key])).get(key);
 
-export const readKeyState = async (key: string): Promise<SettingRead> => (await readStates([key])).get(key)!;
-
-export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unknown>> =>
-  new Map([...(await readStates(keys))].map(([key, read]) => [key, read.value]));
+export const readKeyState = async (key: string): Promise<SettingRead> => {
+  const state = (await readStates([key])).get(key);
+  if (!state) throw new Error(`Missing read state for setting "${key}"`);
+  return state;
+};
 
 /** One warm MGET; missing rows are cached independently of local env/defaults. */
-export const readStates = async (keys: readonly string[]): Promise<Map<string, SettingRead>> => {
-  const result = new Map<string, SettingRead>();
+export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unknown>> => {
+  const result = new Map<string, unknown>();
   if (keys.length === 0) return result;
   let cached: Array<string | null>;
   try {
@@ -104,12 +105,12 @@ export const readStates = async (keys: readonly string[]): Promise<Map<string, S
   for (const [i, key] of keys.entries()) {
     const value = cached[i] ?? null;
     if (value === MISSING_SETTING) {
-      result.set(key, { value: resolveFallback(SETTINGS_MAP.get(key)), stored: "none" });
+      result.set(key, resolveFallback(SETTINGS_MAP.get(key)));
       continue;
     }
     if (value !== null) {
       try {
-        result.set(key, { value: JSON.parse(value), stored: "readable" });
+        result.set(key, JSON.parse(value));
         continue;
       } catch {
         /* An old/corrupt value or another reader's fill lease. */
@@ -132,13 +133,12 @@ export const readStates = async (keys: readonly string[]): Promise<Map<string, S
           await completeCacheFill(REDIS_KEY(key), fills.get(key) ?? null, MISSING_SETTING, REDIS_TTL_SEC);
           return;
         }
-        result.set(key, { value: resolveFallback(SETTINGS_MAP.get(key)), stored: "unreadable" });
         try {
           const value = await decryptValue(row.value);
           const def = SETTINGS_MAP.get(key);
           const validated = def ? validateSettingValue(def, value) : { ok: true as const, value };
           if (!validated.ok) return;
-          result.set(key, { value: validated.value, stored: "readable" });
+          result.set(key, validated.value);
           await completeCacheFill(REDIS_KEY(key), fills.get(key) ?? null, JSON.stringify(validated.value), REDIS_TTL_SEC);
         } catch {
           /* Preserve legacy undecryptable-row fallback behavior. */
@@ -146,7 +146,33 @@ export const readStates = async (keys: readonly string[]): Promise<Map<string, S
       }),
     );
   }
-  for (const key of keys) if (!result.has(key)) result.set(key, { value: resolveFallback(SETTINGS_MAP.get(key)), stored: "none" });
+  for (const key of keys) if (!result.has(key)) result.set(key, resolveFallback(SETTINGS_MAP.get(key)));
+  return result;
+};
+
+/**
+ * Stored state is per process (APP_SECRET), but the plaintext cache is shared.
+ * State reads go directly to Postgres without reading or filling the cache;
+ * value reads (`get`, snapshot) keep using the cache.
+ */
+export const readStates = async (keys: readonly string[]): Promise<Map<string, SettingRead>> => {
+  const result = new Map<string, SettingRead>();
+  if (keys.length === 0) return result;
+  const rows = await sql<StoredRow[]>`SELECT key, value FROM settings.entries WHERE key = ANY(${toPgTextArray([...keys])}::text[])`;
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+  for (const key of keys) {
+    const row = byKey.get(key);
+    const def = SETTINGS_MAP.get(key);
+    result.set(key, { stored: row ? "unreadable" : "none", value: resolveFallback(def) });
+    if (!row) continue;
+    try {
+      const value = await decryptValue(row.value);
+      const validated = def ? validateSettingValue(def, value) : { ok: true as const, value };
+      if (validated.ok) result.set(key, { stored: "readable", value: validated.value });
+    } catch {
+      // Keep this process's fallback without changing the stored row or cache.
+    }
+  }
   return result;
 };
 

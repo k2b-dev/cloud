@@ -72,11 +72,13 @@ export default function Settings(props: {
       await props.onSaved();
     },
   });
+  // Save and reset write the same stored value; one at a time keeps their order.
+  const busy = () => save.loading() || reset.loading();
   const confirmReset = async () => {
-    if (reset.loading() || save.loading()) return;
+    if (busy()) return;
     if (await prompts.confirm(a().resetConfigurationConfirm, { title: a().resetConfiguration, variant: "danger" })) void reset.mutate();
   };
-  createEffect(() => props.onDirtyChange(dirty(), save.loading()));
+  createEffect(() => props.onDirtyChange(dirty(), busy()));
   onCleanup(() => {
     save.abort();
     reset.abort();
@@ -101,7 +103,7 @@ export default function Settings(props: {
   const available = (area: Area) => (area === "cloud" ? props.availability.localLinuxEnabled : props.availability.freeipaEnabled);
   const submit = (event: SubmitEvent) => {
     event.preventDefault();
-    if (save.loading() || !dirty()) return;
+    if (busy() || !dirty()) return;
     setSaved(false);
     void save.mutate({
       url: configuration.url,
@@ -120,6 +122,7 @@ export default function Settings(props: {
         <SettingsPanelFooter
           changeCount={() => (dirty() ? 1 : 0)}
           loading={save.loading}
+          saveDisabled={reset.loading}
           saveLabel={t().save}
           onDiscard={discard}
           onSave={() => form.requestSubmit()}
@@ -151,7 +154,7 @@ export default function Settings(props: {
           </NoticeCard>
         </Show>
         <SettingsSection title={t().connection} icon="ti ti-plug-connected">
-          <fieldset class="grid min-w-0 gap-4 md:grid-cols-2" disabled={save.loading()}>
+          <fieldset class="grid min-w-0 gap-4 md:grid-cols-2" disabled={busy()}>
             <TextInput
               name="filegate-url"
               type="url"
@@ -179,7 +182,7 @@ export default function Settings(props: {
           </fieldset>
         </SettingsSection>
         <SettingsSection title={a().collabora} icon="ti ti-file-text">
-          <fieldset class="flex min-w-0 flex-col gap-4" disabled={save.loading()}>
+          <fieldset class="flex min-w-0 flex-col gap-4" disabled={busy()}>
             <NoticeCard tone="info" title={a().collaboraPurpose} detail={a().collaboraExplanation} />
             <div class="grid min-w-0 gap-4 md:grid-cols-2">
               <TextInput
@@ -229,7 +232,7 @@ export default function Settings(props: {
         <For each={areas}>
           {(area) => (
             <SettingsSection title={t()[area]} icon={area === "cloud" ? "ti ti-cloud" : "ti ti-server"}>
-              <fieldset class="flex min-w-0 flex-col gap-4" disabled={save.loading()}>
+              <fieldset class="flex min-w-0 flex-col gap-4" disabled={busy()}>
                 <NoticeCard
                   tone="info"
                   title={area === "cloud" ? a().cloudPurpose : a().freeipaPurpose}

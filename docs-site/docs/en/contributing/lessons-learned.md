@@ -426,7 +426,7 @@ convention still needs a check or a test.
 - **What happened:** Settings reads returned a fallback for undecryptable or invalid rows. Files token retention, VAPID bootstrap, and the AI credential split could then write over data that another process could still read ([#1303](https://github.com/k2b-dev/cloud/issues/1303)).
 - **Root cause:** A fallback value carried no stored-state information, and writes trusted it as a readable value.
 - **Error class:** Read fallback written back.
-- **Guard:** The settings store locks and checks the existing row in the write transaction and refuses unreadable rows with `setting_unreadable` unless replacement is explicit. `packages/cloud/src/services/settings/unreadable.integration.test.ts` preserves ciphertext and timestamps, checks read/list state and secret redaction, and covers replacement and reset. Files configuration unit and integration tests refuse token retention over unreadable data and verify recovery.
+- **Guard:** The settings store locks and checks the existing row in the write transaction and refuses unreadable rows with `setting_unreadable` unless replacement is explicit. `packages/cloud/src/services/settings/unreadable.integration.test.ts` preserves ciphertext and timestamps, checks read/list state even with shared plaintext cache entries, checks secret redaction, and covers replacement and reset. Stored-state reads bypass the shared cache because decryption depends on each process's `APP_SECRET`. Files configuration unit and integration tests refuse token retention over unreadable data and verify recovery.
 
 ## Add a lesson
 

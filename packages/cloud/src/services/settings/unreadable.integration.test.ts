@@ -71,10 +71,34 @@ suite("unreadable settings preserve stored data", () => {
       expect((await settings.getAll()).find((entry) => entry.key === key)).toMatchObject({ unreadable: false, valueSource: "custom" });
       await insert(ciphertext);
       await settings.remove(key);
-      // Repeat to cover the cached missing marker as well as the database miss.
-      for (let attempt = 0; attempt < 2; attempt++) expect(await settings.read(key)).toEqual({ stored: "none", value: fallback });
+      expect(await settings.read(key)).toEqual({ stored: "none", value: fallback });
       expect((await settings.getAll()).find((entry) => entry.key === key)).toMatchObject({ unreadable: false, isCustom: false });
     });
+
+  test("shared plaintext cache cannot hide an unreadable stored row", async () => {
+    const ciphertext = await foreignCiphertext();
+    await insert(ciphertext);
+    const cacheKey = `settings:${key}`;
+    const cached = JSON.stringify("https://saved.test");
+    try {
+      // A process with the right APP_SECRET can populate the shared value cache.
+      await redis.set(cacheKey, cached);
+      expect(await settings.get<string>(key)).toBe("https://saved.test");
+      expect(await settings.read(key)).toEqual({ stored: "unreadable", value: fallback });
+      expect((await settings.getAll()).find((entry) => entry.key === key)).toMatchObject({
+        unreadable: true,
+        isCustom: true,
+        valueSource: "env",
+        value: fallback,
+      });
+      await expect(settings.set(key, "https://replacement.test")).rejects.toBeInstanceOf(settings.SettingUnreadableError);
+      expect((await row())?.value).toBe(ciphertext);
+      expect((await row())?.updated_at.toISOString()).toBe(stamp);
+      expect(await redis.get(cacheKey)).toBe(cached);
+    } finally {
+      await redis.del(cacheKey);
+    }
+  });
 
   test("secret lists expose neither fallback plaintext nor ciphertext", async () => {
     const plaintext = "secret-probe-plaintext";

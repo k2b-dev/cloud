@@ -97,6 +97,9 @@ await app.settings.remove("inventory.low_stock_threshold");
 
 Use `app.settings.read(key)` when the stored state matters. It returns
 `{ value, stored }`, where `stored` is `"none"`, `"readable"`, or `"unreadable"`.
+Each call reads the stored row from Postgres and reports this process's view
+under its `APP_SECRET`, without reading or filling the shared cache. Use `get()`
+for hot paths that only need a value.
 For an unreadable row, `value` is the environment fallback or default in use.
 The administration list marks it with `unreadable: true` and `isCustom: true`;
 `valueSource` describes the fallback actually in use.
@@ -154,9 +157,10 @@ to accept fractions. Validation applies to administration and API writes.
 
 ## Cache behavior and recovery
 
-Stored settings use shared Valkey entries with a five-minute TTL. A warm request
-loads its settings with one bulk cache read. Missing database rows are cached
-too; each application still resolves its own environment fallback and default.
+`get()` and request snapshots use shared Valkey entries with a five-minute TTL.
+A warm request loads its settings with one bulk cache read. Missing database
+rows are cached too; each application still resolves its own environment
+fallback and default.
 Saving or removing an override invalidates that key after the database commit.
 A concurrent reader cannot refill an invalidated entry with its older value.
 After a Valkey connection is lost, request-cache commands fail without queuing
