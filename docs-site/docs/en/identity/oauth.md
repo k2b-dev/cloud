@@ -270,6 +270,8 @@ First-party clients can send `login_hint` to request approval in the person's
 paired Cloud Login. Today this is available to the Cloud CLI's `cloud-cli`
 registration. [Cloud Login approval](/en/docs/operations/app-approval) must be
 turned on, and the paired app must support terminal sign-ins.
+The account must have accepted the terms once in the browser.
+Until then, the request behaves like an unknown account and expires.
 
 ```http
 POST /oauth/device_authorization

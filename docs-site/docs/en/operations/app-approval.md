@@ -348,7 +348,8 @@ Reload the inbox after a conflict. Do not retry an uncertain decision.
 Browser and terminal sign-ins share five outstanding requests per account.
 Each request expires after 300 seconds. Unknown, ambiguous, unpaired, expired,
 category-disabled, client-disallowed and over-budget accounts receive the same
-response shape and no wake-up.
+response shape and no wake-up. So do accounts that have not yet accepted the
+legal documents.
 
 Before token issuance, Core checks that the approving device still exists,
 is active and belongs to the account, and that the account's authentication
