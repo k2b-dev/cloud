@@ -305,12 +305,13 @@ export default function NotebookGraph(props: Props) {
   return (
     // The graph is the workspace's own surface: no second border or corner inside the app card.
     <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+      {/* Close stays in the same place with or without notes, so an empty notebook's graph also leads back. */}
+      <Tooltip.Anchor content={t().closeGraph}>
+        <IconButtonLink tooltip={false} href={closeHref()} size="sm" class="absolute left-2 top-2 z-10" label={t().closeGraph}>
+          <i class="ti ti-x" />
+        </IconButtonLink>
+      </Tooltip.Anchor>
       <Show when={simNodes.length > 0} fallback={<EmptyState />}>
-        <Tooltip.Anchor content={t().closeGraph}>
-          <IconButtonLink tooltip={false} href={closeHref()} size="sm" class="absolute left-2 top-2 z-10" label={t().closeGraph}>
-            <i class="ti ti-x" />
-          </IconButtonLink>
-        </Tooltip.Anchor>
 
         <svg
           ref={svgRef}

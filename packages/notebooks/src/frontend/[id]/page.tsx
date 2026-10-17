@@ -54,6 +54,8 @@ export default ssr<AuthContext>(async (c) => {
           locked={!!data.selectedNote?.lockedAt}
           navigationHidden={data.ctx.navigationHidden}
           graph={graph}
+          appUrl={data.appUrl}
+          cursor={data.ctx.workspaceCursor}
         />
       </Layout>
     );

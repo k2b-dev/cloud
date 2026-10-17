@@ -65,7 +65,7 @@ beforeEach(() => {
 });
 afterEach(() => railSnapshot.mockRestore());
 
-const renderEmptyNotebook = async (mode: "write" | "book", preferences: Record<string, unknown> = {}) => {
+const renderEmptyNotebook = async (mode: "write" | "book" | "graph", preferences: Record<string, unknown> = {}) => {
   spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
@@ -75,6 +75,7 @@ const renderEmptyNotebook = async (mode: "write" | "book", preferences: Record<s
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
+  spies.push(spyOn(notebooksService.notebook, "graph").mockResolvedValue({ nodes: [], edges: [] }));
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
@@ -650,6 +651,8 @@ for (const [locale, label] of [
     const close = await select(html, 'a[href="/app/notebooks/book01/notes/note01?mode=book"]');
     expect(close.some((item) => item.attributes["aria-label"] === (locale === "de" ? "Graph schließen" : "Close graph"))).toBe(true);
     expect(await select(html, '[role="tree"] [aria-current="page"]')).toEqual([]);
+    // Like Book, the reading graph follows revoked access and ended sessions.
+    expect(await select(html, 'solid-island[data-file="WorkspaceEventBridge.island.tsx"]')).toHaveLength(1);
   });
 
   test(`reader Book note has a Links footer that is not current (${locale})`, async () => {
@@ -682,4 +685,11 @@ test("writer graph from Book keeps Write pointed at the selected note", async ()
   expect(html).toContain("notebook-book-workspace");
   expect((await select(html, '#notebook-navigation a[href="/app/notebooks/book01/notes/note01?mode=write"]'))[0]?.text).toBe("Write");
   expect((await select(html, 'a[aria-label="Close graph"]'))[0]?.attributes.href).toBe("/app/notebooks/book01/notes/note01?mode=book");
+});
+
+test("an empty notebook's graph still offers Close back to the notebook", async () => {
+  const html = await renderEmptyNotebook("graph");
+  expect(html).toContain("Noch kein Graph");
+  const close = await select(html, 'a[aria-label="Graph schließen"]');
+  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01"]);
 });

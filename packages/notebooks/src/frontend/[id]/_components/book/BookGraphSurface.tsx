@@ -1,9 +1,13 @@
 import { AppWorkspace } from "@k2b/ui";
 import type { NoteGraph } from "../../../../service/links";
 import NotebookGraph from "../graph/NotebookGraph.island";
+import WorkspaceEventBridge from "../sidebar/WorkspaceEventBridge.island";
 import BookNavigator, { type BookNavigatorProps } from "./BookNavigator.island";
 
-export default function BookGraphSurface(props: BookNavigatorProps & { graph: NoteGraph }) {
+type Props = BookNavigatorProps & { graph: NoteGraph; appUrl: string; cursor: string | null };
+
+/** The graph inside the Book shell, for readers and for people who open it from Book. */
+export default function BookGraphSurface(props: Props) {
   return (
     <div class="notebook-book-shell">
       <AppWorkspace mobileSurface="flush" class="notebook-book-workspace">
@@ -23,6 +27,8 @@ export default function BookGraphSurface(props: BookNavigatorProps & { graph: No
         />
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false}>
+            {/* Like Book and the workspace, a revoked grant or an ended session reloads the page instead of staying open. */}
+            <WorkspaceEventBridge notebookId={props.notebookId} appUrl={props.appUrl} initialCursor={props.cursor} />
             <NotebookGraph notebookId={props.notebookId} selectedNoteId={props.selectedNoteId} graph={props.graph} from="book" />
           </AppWorkspace.Main>
         </AppWorkspace.Content>
