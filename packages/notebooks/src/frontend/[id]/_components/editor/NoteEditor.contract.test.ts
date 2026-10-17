@@ -41,4 +41,11 @@ describe("Note editor surface", () => {
     const handler = source.match(/const onSyncStateRequest = \(\) => \{([\s\S]*?)\n {2}\};/)?.[1] ?? "";
     expect(handler).toContain("RICH_MODE_CHANGED_EVENT");
   });
+  test("ignores a Back that stays on the shown address, such as a closing phone sheet", async () => {
+    // A sheet leaves its same-address history entry with a Back; handling it as note navigation jumped to the heading
+    // in the address and reset the reader's scroll.
+    const source = await Bun.file(resolve(import.meta.dir, "NoteEditor.client.tsx")).text();
+    const handler = source.match(/const onPopState = \(\) => \{([\s\S]*?)\n {4}\};/)?.[1] ?? "";
+    expect(handler).toMatch(/if \(restoringShownHref \|\| window\.location\.href === shownHref\) return;[\s\S]*navigateSoft/);
+  });
 });

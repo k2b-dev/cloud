@@ -558,8 +558,9 @@ export default function NotebookDetailPanel(props: Props) {
   const moreItems = (): DropdownItem[] => [
     {
       items: [
-        { label: t().copyContent, icon: "ti ti-copy", action: copyContent },
-        { label: t().downloadAsMarkdown, icon: "ti ti-download", action: downloadContent },
+        // Immediate: on a phone the clipboard and a download accept the request only during the tap.
+        { label: t().copyContent, icon: "ti ti-copy", action: copyContent, immediate: true },
+        { label: t().downloadAsMarkdown, icon: "ti ti-download", action: downloadContent, immediate: true },
         { label: t().exportAsPdf, icon: "ti ti-file-type-pdf", action: downloadPdf },
       ],
     },

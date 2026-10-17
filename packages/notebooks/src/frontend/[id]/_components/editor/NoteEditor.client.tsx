@@ -320,7 +320,9 @@ export default function NoteEditor(props: Props) {
     };
 
     const onPopState = () => {
-      if (restoringShownHref) return;
+      // A Back that lands on the address already shown, such as a closing sheet leaving its history entry, moves
+      // nothing: no heading jump, no reload.
+      if (restoringShownHref || window.location.href === shownHref) return;
       void navigateSoft(window.location.href, false, true).then((result) => {
         if (result.kind === "fallback") window.location.reload();
       });

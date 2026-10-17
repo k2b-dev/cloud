@@ -28,7 +28,7 @@ const followLink = (href: string) => {
 /**
  * The sheet's items hand their action to `run` instead of running it while the sheet closes: `dialogCore` settles the
  * sheet after it left the history, and only then may an action navigate or open the next dialog.
- * A choice or action that keeps the menu open runs at once.
+ * A choice or action that keeps the menu open, or an `immediate` action, runs at once.
  */
 const afterClose = <T extends DropdownItem>(items: readonly T[], run: (action: () => void) => void): T[] => {
   const entry = (item: SheetEntry): SheetEntry => {
@@ -40,7 +40,7 @@ const afterClose = <T extends DropdownItem>(items: readonly T[], run: (action: (
       return { ...item, action: () => run(() => followLink(href)) } as SheetEntry;
     }
     const action = item.action;
-    if (!action || ("closeOnSelect" in item && item.closeOnSelect === false)) return item;
+    if (!action || ("closeOnSelect" in item && item.closeOnSelect === false) || ("immediate" in item && item.immediate)) return item;
     return { ...item, action: () => run(action) } as SheetEntry;
   };
   return items.map((item) => {

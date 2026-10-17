@@ -47,6 +47,12 @@ export type DropdownAction =
        * the focus stays on the row. Defaults to `true`.
        */
       closeOnSelect?: boolean;
+      /**
+       * In a phone sheet, run while the tap still counts as the person's gesture, before the sheet closes, as browsers
+       * require for clipboard writes. Other actions run after the sheet has left the history. Such an action must
+       * not navigate or open a dialog.
+       */
+      immediate?: boolean;
       href?: never;
       external?: never;
     })

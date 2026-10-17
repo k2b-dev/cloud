@@ -64,6 +64,10 @@ A controlled dropdown (`open` supplied) always stays a menu. Choices with
 `closeOnSelect: false` keep the sheet open, with reactive checked state, just
 as they do in the desktop menu. The inherited UI locale follows into the sheet.
 Like the menu, the sheet closes when the dropdown becomes disabled or unmounts.
+Other actions run after the sheet has left the history, so they may navigate
+or open a dialog. Set `immediate: true` on an action that needs the tap itself,
+such as a clipboard write or a download; it runs during the tap and must not
+navigate or open a dialog.
 
 ## Items and sections
 
@@ -146,6 +150,7 @@ type DropdownAction =
   | (DropdownActionBase & {
       action: () => void;
       closeOnSelect?: boolean;
+      immediate?: boolean;
       href?: never;
       external?: never;
     })
