@@ -86,6 +86,12 @@ window.stackDialogs = () => {
   void prompts.confirm("Wirklich löschen?");
 };
 window.closeDialogs = () => dialogCore.close();
+/** Adds a compact area, as a file field in a form is, whose sentence wraps. */
+window.addShortArea = () => {
+  const field = html("div", { id: "short", style: "position:fixed;right:16px;bottom:16px;width:220px;height:60px" }, "Datei");
+  document.getElementById("app").append(field);
+  render(() => createComponent(FileDropTarget, { for: field, label: "Ablegen, um die Datei an diesen Datensatz anzuhängen", onDrop: record("short") }), field);
+};
 
 const files = (list) => {
   const transfer = new DataTransfer();
@@ -123,6 +129,18 @@ window.overlays = () =>
       const box = overlay.getBoundingClientRect();
       return { state: overlay.dataset.state, text: overlay.textContent, box: [box.left, box.top, box.width, box.height].map(Math.round) };
     });
+/** How the shown overlay looks: its frame, and the chip that says what dropping does. */
+window.look = () => {
+  const open = [...document.querySelectorAll(".k2b-file-drop")].filter((element) => element.matches(":popover-open"));
+  const overlay = open.find((element) => element.dataset.state !== "available") ?? open[0];
+  const chip = overlay.querySelector(".k2b-file-drop__message");
+  const box = chip.getBoundingClientRect();
+  return {
+    frame: getComputedStyle(overlay).boxShadow,
+    message: overlay.dataset.message,
+    chip: [box.left, box.top, box.width, box.height].map(Math.round),
+  };
+};
 window.box = (selector) => {
   const box = document.querySelector(selector).getBoundingClientRect();
   return [box.left, box.top, box.width, box.height].map(Math.round);
@@ -147,8 +165,10 @@ type FixtureWindow = Window & {
   startPageDrag: (selector: string) => void;
   stackDialogs: () => void;
   closeDialogs: () => void;
+  addShortArea: () => void;
   overlays: () => Overlay[];
   box: (selector: string) => number[];
+  look: () => { frame: string; message: string; chip: number[] };
   announced: () => string;
 };
 
@@ -191,6 +211,7 @@ const drag = (page: Page, type: string, selector: string, kind: "files" | "text"
   ] as const);
 const overlays = (page: Page) => page.evaluate(() => (window as unknown as FixtureWindow).overlays());
 const drops = (page: Page) => page.evaluate(() => (window as unknown as FixtureWindow).drops);
+const look = (page: Page) => page.evaluate(() => (window as unknown as FixtureWindow).look());
 const box = (page: Page, selector: string) => page.evaluate((selector) => (window as unknown as FixtureWindow).box(selector), selector);
 const dropEffect = (page: Page) => page.evaluate(() => (window as unknown as FixtureWindow).dropEffect);
 const startPageDrag = (page: Page, selector: string) =>
@@ -326,6 +347,45 @@ describe(`FileDropTarget in ${browserName}`, () => {
       { target: "row", names: ["rechnung.exe"] },
       { target: "zone", names: ["foto.png"] },
     ]);
+    await page.close();
+  });
+
+  test("one calm overlay: no frame, one chip at the bottom of the area, never twice the same sentence", async () => {
+    const page = await open();
+    await drag(page, "dragenter", "#text");
+    const main = await box(page, "#main");
+    const over = await look(page);
+    expect(over.frame).toBe("none");
+    expect(over.message).toBe("shown");
+    // The chip sits centered at the bottom of the area, below content such as a centered empty state.
+    const [left, top, width, height] = over.chip;
+    expect(Math.abs(left! + width! / 2 - (main[0]! + main[2]! / 2))).toBeLessThanOrEqual(1);
+    expect(main[1]! + main[3]! - (top! + height!)).toBe(24);
+    // Over the sidebar the area only shows its tint; nothing says to drop there.
+    await drag(page, "dragenter", "#sidebar");
+    await drag(page, "dragleave", "#text");
+    expect((await look(page)).message).toBe("hidden");
+    // A FileDropzone says the sentence itself, so the area's chip stays hidden instead of repeating it.
+    await drag(page, "dragenter", "#zone button");
+    expect((await look(page)).message).toBe("hidden");
+    expect(await page.textContent("#zone button strong")).toBe("Zum Hochladen ablegen");
+    // A folder row says nothing itself; the chip names it.
+    await drag(page, "dragenter", "#row");
+    expect((await look(page)).message).toBe("shown");
+    await page.close();
+  });
+
+  test("in a short area the chip stays whole, centered instead of at the bottom", async () => {
+    const page = await open();
+    await page.evaluate(() => (window as unknown as FixtureWindow).addShortArea());
+    await drag(page, "dragenter", "#short");
+    const area = await box(page, "#short");
+    const { chip, message } = await look(page);
+    expect(message).toBe("shown");
+    // The sentence wraps in 220px, and the whole chip stays inside the area.
+    expect(chip[3]!).toBeGreaterThan(30);
+    expect(chip[1]!).toBeGreaterThanOrEqual(area[1]!);
+    expect(chip[1]! + chip[3]!).toBeLessThanOrEqual(area[1]! + area[3]!);
     await page.close();
   });
 

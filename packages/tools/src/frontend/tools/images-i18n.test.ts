@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { imageConverterMessages } from "./image-converter/messages";
+import { imageIntakeMessages } from "./image-intake/messages";
 import { imageProcessorMessages } from "./image-processor/messages";
 
 describe("image tools i18n", () => {
-  test("both catalogs ship a complete German locale", () => {
+  test("all image catalogs ship a complete German locale", () => {
     expect(imageConverterMessages.check()).toEqual([]);
     expect(imageProcessorMessages.check()).toEqual([]);
+    expect(imageIntakeMessages.check()).toEqual([]);
   });
 
   test("resolves German converter messages including plural pairs", () => {
@@ -16,7 +18,7 @@ describe("image tools i18n", () => {
     expect(t.downloadedImages({ count: 1 })).toBe("1 konvertiertes Bild heruntergeladen");
     expect(t.downloadedImages({ count: 4 })).toBe("4 konvertierte Bilder heruntergeladen");
     expect(t.selectImage({ name: "team-photo.png" })).toBe("team-photo.png auswählen");
-    expect(t.clearConfirm({ count: 2 })).toBe("Alle 2 Bilder aus dem Konverter entfernen?");
+    expect(t.clearConfirm({ count: 2 })).toBe("Alle 2 Dateien aus dem Konverter entfernen?");
   });
 
   test("resolves German processor messages including aria labels", () => {

@@ -10,7 +10,8 @@ Use `ImageInput` for one image with an immediate transformed preview.
 
 Use `FileDropTarget` to let a whole page area or dialog receive files. A
 `FileDropzone` inside such an area is the more specific target: it takes the
-files dropped on it, and the area's overlay shows its sentence meanwhile. That
+files dropped on it, and its title shows its sentence meanwhile; the area's
+overlay then keeps its chip hidden, so the sentence appears once. That
 sentence is "Drop to upload" unless `dropLabel` says what dropping does here,
 such as "Drop to convert the document to Markdown". Pass it whenever dropping
 does something other than upload.

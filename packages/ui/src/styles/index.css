@@ -7574,7 +7574,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* FileDropTarget: a top-layer overlay over its area while files are dragged over the window. It never takes the
-   pointer, so the area below still reports where a drop lands. */
+   pointer, so the area below still reports where a drop lands. No frame: a faint tint marks every area that takes
+   files, a stronger one the area under the pointer, and one solid chip at its bottom says what dropping does. The
+   chip sits below centered content such as an empty state's FileDropzone instead of covering it. */
 .k2b-ui [popover].k2b-file-drop {
   position: fixed;
   inset: auto;
@@ -7583,27 +7585,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: hidden;
   border: 0;
   color: var(--k2b-text);
-  background: color-mix(in srgb, var(--k2b-action) 4%, transparent);
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--k2b-action) 35%, transparent);
+  background: color-mix(in srgb, var(--k2b-action) 3%, transparent);
   pointer-events: none;
-  transition:
-    background-color 120ms ease,
-    box-shadow 120ms ease;
+  transition: background-color var(--k2b-motion-fast) ease;
+  /* The chip asks the overlay's own size: a short area, such as a compact file field, centers it instead. */
+  container-type: size;
 }
 
 .k2b-ui [popover].k2b-file-drop[data-state="over"] {
-  background: color-mix(in srgb, var(--k2b-action) 8%, transparent);
-  box-shadow: inset 0 0 0 2px var(--k2b-action);
+  background: color-mix(in srgb, var(--k2b-action) 7%, transparent);
 }
 
 .k2b-ui [popover].k2b-file-drop[data-state="invalid"] {
   background: color-mix(in srgb, var(--k2b-danger-500) 6%, transparent);
-  box-shadow: inset 0 0 0 2px var(--k2b-danger-500);
 }
 
 .k2b-ui .k2b-file-drop__message {
   position: absolute;
-  top: 50%;
+  bottom: 1.5rem;
   left: 50%;
   display: flex;
   width: max-content;
@@ -7611,28 +7610,54 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.875rem;
-  border-radius: var(--k2b-radius-control);
-  background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--k2b-action-solid);
   font-size: 0.875rem;
   font-weight: 500;
   line-height: 1.25rem;
   text-align: center;
-  transform: translate(-50%, -50%);
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity var(--k2b-motion-fast) ease;
+}
+
+.k2b-ui .k2b-file-drop[data-message="shown"] .k2b-file-drop__message {
+  opacity: 1;
+}
+
+@container (max-height: 10rem) {
+  .k2b-ui .k2b-file-drop__message {
+    bottom: auto;
+    top: 50%;
+    padding: 0.25rem 0.625rem;
+    border-radius: var(--k2b-radius-control);
+    font-size: 0.8125rem;
+    line-height: 1.125rem;
+    transform: translate(-50%, -50%);
+  }
+
+  /* Two lines at most, so the chip fits a one-row file field. */
+  .k2b-ui .k2b-file-drop__message > span {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
+.k2b-ui .k2b-file-drop[data-state="invalid"] .k2b-file-drop__message {
+  background: var(--k2b-danger-600);
 }
 
 .k2b-ui .k2b-file-drop__message > i {
   flex: none;
-  color: var(--k2b-action);
   font-size: 1rem;
 }
 
-.k2b-ui .k2b-file-drop[data-state="invalid"] .k2b-file-drop__message > i {
-  color: var(--k2b-danger-text);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .k2b-ui [popover].k2b-file-drop {
+  .k2b-ui [popover].k2b-file-drop,
+  .k2b-ui .k2b-file-drop__message {
     transition: none;
   }
 }
