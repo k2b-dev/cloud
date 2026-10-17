@@ -5,7 +5,7 @@ import { type FetchMessageObject, ImapFlow, type ListResponse } from "imapflow";
 import nodemailer from "nodemailer";
 import SMTPConnection from "nodemailer/lib/smtp-connection";
 import type { ProviderConnectionInput } from "../../contracts";
-import { isProviderTimeout } from "../provider-errors";
+import { isProviderTimeout, isTransientProviderFailure } from "../provider-errors";
 import { EndpointPolicyError } from "./endpoint-policy";
 import {
   assertProviderKeywordsSupported,
@@ -508,6 +508,196 @@ describe("Shared IMAP sessions", () => {
   });
 });
 
+describe("IMAP reads under throttling", () => {
+  const config: ProviderConnectionInput = {
+    name: "Throttling fixture",
+    email: "throttle@example.test",
+    username: "throttle@example.test",
+    imap: { host: "imap.example.test", port: 993, tlsMode: "implicit" },
+    smtp: { host: "smtp.example.test", port: 587, tlsMode: "starttls" },
+    secret: { kind: "password", password: "fixture" },
+  };
+  const target = { folderPath: "INBOX", uidValidity: "10", uid: 7 };
+  const request = { folderPath: "INBOX", folderStableKey: "inbox", uidValidity: "10", lowUid: 1, highUid: 9, limit: 10 };
+  const sourceRequest = (uid: number) => ({ key: `message-${uid}`, uidValidity: "10", uid });
+  const messageId = "<throttle@example.test>";
+  const messageIdFor = (uid: number) => (uid === 7 ? messageId : `<other-${uid}@example.test>`);
+  const reads: Array<[string, (session: ProviderConnectionInput) => Promise<unknown>]> = [
+    ["getMessageState", (session) => imapSmtpConnector.getMessageState(session, target)],
+    ["getMessageStates", (session) => imapSmtpConnector.getMessageStates(session, { ...target, uids: [7] })],
+    ["findMessageById", (session) => imapSmtpConnector.findMessageById(session, "INBOX", messageId)],
+    ["downloadSourceBatch", (session) => imapSmtpConnector.downloadSourceBatch(session, "INBOX", [sourceRequest(7)], async () => {})],
+    ["fetchEnvelopeBatch", (session) => imapSmtpConnector.fetchEnvelopeBatch(session, { ...request, uids: [7] })],
+    ["fetchUidWindow", (session) => imapSmtpConnector.fetchUidWindow(session, "INBOX", "10", 1, 9)],
+  ];
+  const serverFor = (options: { throttleFetch: boolean; throttleSearch?: boolean; uids?: number[] }) => {
+    const uids = options.uids ?? [7];
+    const commands: string[] = [];
+    const matches = (set: string, uid: number): boolean =>
+      set.split(",").some((part) => {
+        const [low, high] = part.split(":").map(Number);
+        return uid >= low! && uid <= (high ?? low!);
+      });
+    const server = Bun.listen<{ buffer: string }>({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        open(socket) {
+          socket.data = { buffer: "" };
+          socket.write("* OK [CAPABILITY IMAP4rev1] fixture ready\r\n");
+        },
+        data(socket, data) {
+          socket.data.buffer += data.toString();
+          while (true) {
+            const end = socket.data.buffer.indexOf("\r\n");
+            if (end === -1) break;
+            const line = socket.data.buffer.slice(0, end);
+            socket.data.buffer = socket.data.buffer.slice(end + 2);
+            const [tag, ...words] = line.split(" ");
+            const command = (words[0] === "UID" ? `UID ${words[1]}` : words[0]) ?? "";
+            commands.push(words.join(" "));
+            const throttle = () => socket.write(`${tag} BAD Request is throttled. Suggested Backoff Time: 1 milliseconds\r\n`);
+            if (command === "LOGIN") {
+              socket.write(`${tag} OK [CAPABILITY IMAP4rev1] logged in\r\n`);
+            } else if (command === "LIST") {
+              socket.write(`* LIST () "/" "INBOX"\r\n${tag} OK done\r\n`);
+            } else if (command === "SELECT" || command === "EXAMINE") {
+              // Keep EXISTS nonzero even when the requested UID was expunged, so ImapFlow sends FETCH.
+              socket.write(
+                `* FLAGS (\\Seen)\r\n* ${Math.max(1, uids.length)} EXISTS\r\n* OK [UIDVALIDITY 10] ok\r\n* OK [UIDNEXT 10] ok\r\n${tag} OK [READ-WRITE] done\r\n`,
+              );
+            } else if (command === "UID FETCH") {
+              if (options.throttleFetch) {
+                throttle();
+                continue;
+              }
+              for (const [index, uid] of uids.entries()) {
+                if (!matches(words[2] ?? "", uid)) continue;
+                const source = `Message-ID: ${messageIdFor(uid)}\r\n\r\nBody ${uid}\r\n`;
+                const body = line.includes("BODY.PEEK[]") ? ` BODY[]<0> {${Buffer.byteLength(source)}}\r\n${source}` : "";
+                socket.write(
+                  `* ${index + 1} FETCH (UID ${uid} FLAGS () RFC822.SIZE ${Buffer.byteLength(source)} ENVELOPE (NIL "Throttle" NIL NIL NIL NIL NIL NIL NIL "${messageIdFor(uid)}")${body})\r\n`,
+                );
+              }
+              socket.write(`${tag} OK done\r\n`);
+            } else if (command === "UID SEARCH") {
+              if (options.throttleSearch) {
+                throttle();
+                continue;
+              }
+              const found = line.includes("HEADER")
+                ? uids.filter((uid) => messageIdFor(uid) === messageId)
+                : uids.filter((uid) => matches(words[3] ?? "", uid));
+              socket.write(`* SEARCH ${found.join(" ")}\r\n${tag} OK done\r\n`);
+            } else if (command === "LOGOUT") {
+              socket.write(`* BYE\r\n${tag} OK done\r\n`);
+              socket.end();
+            } else {
+              socket.write(`${tag} OK done\r\n`);
+            }
+          }
+        },
+      },
+    });
+    return { server, commands };
+  };
+  const sessionFor = (port: number) => async () => {
+    const client = new ImapFlow({
+      host: "127.0.0.1",
+      port,
+      secure: false,
+      doSTARTTLS: false,
+      auth: { user: "fixture", pass: "fixture" },
+      logger: false,
+      disableAutoIdle: true,
+      socketTimeout: 2_000,
+    });
+    Object.assign(client, { throttleWait: async () => false });
+    return trackImapSession(client);
+  };
+
+  test.each(reads)("%s confirms an empty FETCH answer before it reports a message as gone", async (_name, read) => {
+    const fixture = serverFor({ throttleFetch: true });
+    try {
+      const result = withSharedImapSession(config, sessionFor(fixture.server.port), read);
+      await expect(result).rejects.toMatchObject({ code: "ETHROTTLE", foundUids: [7] });
+      await result.catch((error: unknown) => expect(isTransientProviderFailure(error)).toBe(true));
+      expect(fixture.commands.filter((command) => command.startsWith("UID FETCH "))).toHaveLength(4);
+      expect(fixture.commands.filter((command) => command.startsWith("UID SEARCH UID "))).toHaveLength(1);
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test.each(reads)("%s refuses to infer absence when SEARCH is throttled too", async (_name, read) => {
+    const fixture = serverFor({ throttleFetch: true, throttleSearch: true });
+    try {
+      const result = withSharedImapSession(config, sessionFor(fixture.server.port), read);
+      await expect(result).rejects.toMatchObject({ code: "ETHROTTLE" });
+      await result.catch((error: unknown) => expect(isTransientProviderFailure(error)).toBe(true));
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test("envelope selection refuses a throttled SEARCH instead of choosing an empty batch", async () => {
+    const fixture = serverFor({ throttleFetch: false, throttleSearch: true });
+    try {
+      await expect(
+        withSharedImapSession(config, sessionFor(fixture.server.port), (session) => imapSmtpConnector.fetchEnvelopeBatch(session, request)),
+      ).rejects.toMatchObject({ code: "ETHROTTLE" });
+      expect(fixture.commands.filter((command) => command.startsWith("UID FETCH "))).toHaveLength(0);
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test("confirmed absence keeps state, search, download and reconcile outcomes", async () => {
+    const fixture = serverFor({ throttleFetch: false, uids: [9] });
+    try {
+      await withSharedImapSession(config, sessionFor(fixture.server.port), async (session) => {
+        expect(await imapSmtpConnector.getMessageState(session, target)).toEqual({
+          exists: false,
+          flags: [],
+          keywords: [],
+          messageId: null,
+          modseq: null,
+        });
+        expect(await imapSmtpConnector.getMessageStates(session, { ...target, uids: [7, 9] })).toEqual(
+          new Map([[9, { exists: true, flags: [], keywords: [], messageId: messageIdFor(9), modseq: null }]]),
+        );
+        expect(await imapSmtpConnector.findMessageById(session, "INBOX", messageId)).toEqual([]);
+        const envelopes = await imapSmtpConnector.fetchEnvelopeBatch(session, { ...request, uids: [7, 9] });
+        expect(envelopes.messages.map((message) => message.remoteRef.uid)).toEqual(["9"]);
+        const consumed: number[] = [];
+        await imapSmtpConnector.downloadSourceBatch(session, "INBOX", [sourceRequest(7), sourceRequest(9)], async (source) => {
+          for await (const _chunk of source.stream) {
+            /* drain the real download */
+          }
+          consumed.push(source.uid);
+        });
+        expect(consumed).toEqual([9]);
+        expect((await imapSmtpConnector.fetchUidWindow(session, "INBOX", "10", 1, 9)).map((entry) => entry.uid)).toEqual([9]);
+      });
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test.each(reads.filter(([name]) => ["getMessageState", "getMessageStates", "downloadSourceBatch"].includes(name)))(
+    "%s issues no SEARCH when FETCH answers every requested UID",
+    async (_name, read) => {
+      const fixture = serverFor({ throttleFetch: false });
+      try {
+        await withSharedImapSession(config, sessionFor(fixture.server.port), read);
+        expect(fixture.commands.filter((command) => command.startsWith("UID SEARCH "))).toHaveLength(0);
+      } finally {
+        fixture.server.stop(true);
+      }
+    },
+  );
+});
+
 describe("IMAP set moves", () => {
   type Folder = "INBOX" | "Archive";
   type Stored = { uid: number; deleted: boolean };
@@ -560,7 +750,7 @@ describe("IMAP set moves", () => {
             const [tag, ...words] = line.split(" ");
             const uidCommand = words[0]?.toUpperCase() === "UID";
             const command = (uidCommand ? `UID ${words[1]}` : (words[0] ?? "")).toUpperCase();
-            const set = uidCommand ? (words[2] ?? "") : "";
+            const set = uidCommand ? (words[command === "UID SEARCH" ? 3 : 2] ?? "") : "";
             const name = (words.at(-1) ?? "").replaceAll('"', "");
             const selected = folders[socket.data.selected];
             commands.push(command);
@@ -589,6 +779,9 @@ describe("IMAP set moves", () => {
                 responses += `* ${index + 1} FETCH (UID ${message.uid} FLAGS (${flags}) ENVELOPE (NIL "Set" NIL NIL NIL NIL NIL NIL NIL "<set-${message.uid}@example.test>"))\r\n`;
               }
               socket.write(`${responses}${tag} OK done\r\n`);
+            } else if (command === "UID SEARCH") {
+              const matches = parseUidSet(words[3] ?? "").filter((uid) => selected.some((message) => message.uid === uid));
+              socket.write(`* SEARCH ${matches.join(" ")}\r\n${tag} OK done\r\n`);
             } else if (command === "UID MOVE") {
               const copied = copy(requested.filter((uid) => !refuse.has(uid)));
               const moved = `${copyUid(copied) ? `* OK ${copyUid(copied)}moved\r\n` : ""}${expunge("INBOX", new Set(copied.source))}`;
@@ -765,7 +958,7 @@ describe("IMAP set moves", () => {
         [5, "<set-5@example.test>"],
       ]);
       expect(fixture.commands.filter((command) => command === "UID FETCH")).toHaveLength(1);
-      expect(fixture.sets).toEqual(["1:3,5"]);
+      expect(fixture.sets).toEqual(["1:3,5", "3"]);
     } finally {
       fixture.server.stop(true);
     }
@@ -934,6 +1127,7 @@ describe("IMAP source downloads", () => {
     let downloads = 0;
     const first = source(1);
     const client = {
+      search: async () => [],
       usable: true,
       mailbox: { path: "INBOX", delimiter: "/", flags: new Set<string>(), uidValidity: 10n, uidNext: 4, exists: 3 },
       download: async (uid: number) => {
@@ -954,6 +1148,7 @@ describe("IMAP source downloads", () => {
     const consumed: string[] = [];
     await downloadSelectedSources(
       {
+        search: async () => [],
         usable: true,
         mailbox: { uidValidity: 10n } as never,
         // FETCH for an expunged UID returns no message; imapflow then resolves an empty object.
@@ -968,7 +1163,12 @@ describe("IMAP source downloads", () => {
   });
 
   test("fail the batch instead of skipping the rest when the connection closed between downloads", async () => {
-    const client = { usable: true, mailbox: { uidValidity: 10n } as never, download: async (uid: number) => source(uid) };
+    const client = {
+      search: async () => [],
+      usable: true,
+      mailbox: { uidValidity: 10n } as never,
+      download: async (uid: number) => source(uid),
+    };
     const consumed: string[] = [];
     const batch = downloadSelectedSources(client, requests, async (download) => {
       consumed.push(download.key);
@@ -983,6 +1183,7 @@ describe("IMAP source downloads", () => {
     const sizes: Array<number | null> = [];
     await downloadSelectedSources(
       {
+        search: async () => [],
         usable: true,
         mailbox: { uidValidity: 10n } as never,
         download: async (uid) => ({ meta: { contentType: "message/rfc822" }, content: Readable.from([String(uid)]) }),
@@ -1007,7 +1208,7 @@ describe("IMAP message state", () => {
   });
 
   test("reports Gmail labels among the keywords exactly as sync stores them", async () => {
-    const state = await fetchRemoteMessageState({ fetchOne: async (_uid, query) => gmailMessage(query) }, 7);
+    const state = await fetchRemoteMessageState({ fetchOne: async (_uid, query) => gmailMessage(query), search: async () => [7] }, 7);
     const synced = await mapFetchedEnvelope(gmailMessage({ labels: true }), {
       folderPath: "INBOX",
       folderStableKey: "inbox",
@@ -1022,8 +1223,46 @@ describe("IMAP message state", () => {
     expect(state.keywords).toEqual(["$Forwarded", "Projects", "\\Important"]);
   });
 
+  const unconfirmedSearches: Array<[string, false | undefined | number[]]> = [
+    ["a refused search", false],
+    ["no selected mailbox", undefined],
+    ["the message", [7]],
+  ];
+  test.each(unconfirmedSearches)("rejects an empty FETCH when the absence search answers with %s", async (_answer, found) => {
+    let searches = 0;
+    const read = fetchRemoteMessageState(
+      {
+        fetchOne: async () => false,
+        search: async (query, options) => {
+          searches += 1;
+          expect(query).toEqual({ uid: "7" });
+          expect(options).toEqual({ uid: true });
+          return found;
+        },
+      },
+      7,
+    );
+    await expect(read).rejects.toMatchObject({ code: "ETHROTTLE" });
+    expect(searches).toBe(1);
+  });
+
+  test("preserves a thrown absence search error and its cause", async () => {
+    const cause = new Error("Socket closed");
+    const error = Object.assign(new Error("Connection not available", { cause }), { code: "NoConnection" });
+    const read = fetchRemoteMessageState(
+      {
+        fetchOne: async () => false,
+        search: async () => {
+          throw error;
+        },
+      },
+      7,
+    );
+    await expect(read).rejects.toBe(error);
+  });
+
   test("reports a message the folder no longer has as missing", async () => {
-    expect(await fetchRemoteMessageState({ fetchOne: async () => false }, 7)).toEqual({
+    expect(await fetchRemoteMessageState({ fetchOne: async () => false, search: async () => [] }, 7)).toEqual({
       exists: false,
       flags: [],
       keywords: [],

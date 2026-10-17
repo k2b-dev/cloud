@@ -9,6 +9,7 @@ import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { type ConnectorEnvelope, imapSmtpConnector } from "./connectors";
+import { downloadSelectedSources } from "./connectors/imap-smtp";
 import { createMailbox } from "./mailboxes";
 import { getOperatorActionEligibility } from "./operator-actions";
 import { createProviderConnection } from "./provider-connections";
@@ -88,6 +89,8 @@ suite("mail body hydration scheduling", () => {
   const broken = new Set<string>();
   // Accounts whose next source download fails before the first message.
   const unreachable = new Set<string>();
+  // Accounts whose provider throttles every source FETCH but still lists the messages.
+  const throttled = new Set<string>();
   // Accounts whose source downloads do not answer until the test releases them.
   const hanging = new Map<string, Promise<void>>();
   const downloads: string[] = [];
@@ -273,6 +276,16 @@ suite("mail body hydration scheduling", () => {
         downloads.push(labels.get(config.username) ?? config.username);
         await downloadGate;
         await hanging.get(config.username);
+        if (throttled.has(config.username)) {
+          // ImapFlow answers a download whose FETCH stayed throttled with {}, while SEARCH still lists the message.
+          const throttledClient = {
+            usable: true,
+            mailbox: { uidValidity: BigInt(requests[0]?.uidValidity ?? "10") } as never,
+            download: async () => ({}),
+            search: async () => requests.map((request) => request.uid),
+          };
+          return downloadSelectedSources(throttledClient, requests, consume);
+        }
         if (unreachable.delete(config.username)) {
           throw Object.assign(new Error("Connection not available"), { code: "NoConnection" });
         }
@@ -386,6 +399,27 @@ suite("mail body hydration scheduling", () => {
       { hydration_status: "complete", hydration_attempt: 1 },
       { hydration_status: "complete", hydration_attempt: 1 },
     ]);
+  });
+
+  test("a throttled source download uses no hydration attempt and succeeds after the provider recovers", async () => {
+    const fixture = await createSyncedMailbox("throttled-source");
+    const sentinel = await createSyncedMailbox("sentinel-throttled-source");
+    throttled.add(fixture.account);
+    try {
+      await deliver(fixture, 1);
+      const messageId = await newestMessageId(fixture);
+      await waitFor(async () => downloads.includes(fixture.label));
+      // A sentinel round lets the rejected batch finish before checking its durable state.
+      await deliver(sentinel, 1);
+      await waitFor(async () => (await unhydrated([sentinel])) === 0);
+      expect(await hydrationState(messageId)).toEqual({ hydration_status: "envelope", hydration_attempt: 0, hydration_error_code: null });
+      throttled.delete(fixture.account);
+      await enqueueMessageHydration(messageId);
+      await waitFor(async () => (await hydrationState(messageId))?.hydration_status === "complete");
+      expect(await hydrationState(messageId)).toEqual({ hydration_status: "complete", hydration_attempt: 1, hydration_error_code: null });
+    } finally {
+      throttled.delete(fixture.account);
+    }
   });
 
   test("a body that fails neither holds back the mailbox's next new mail nor is retried back to back", async () => {
