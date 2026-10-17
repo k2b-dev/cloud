@@ -40,8 +40,13 @@ export function notePdfImageBoxes(placements: readonly BookImagePlacement[], pre
   const clamp = (value: number) => Math.max(1, Math.min(16383, Math.round(value)));
   return DPI.map((dpi) => ({
     width: clamp(Math.max(...placements.map(({ width }) => Math.min(width === null ? Infinity : width / 96, page.width / 25.4) * dpi))),
+    // With a width, Book keeps `height: auto`, so a height hint does not limit the displayed size.
     height: clamp(
-      Math.max(...placements.map(({ height }) => Math.min(height === null ? Infinity : height / 96, page.height / 25.4) * dpi)),
+      Math.max(
+        ...placements.map(
+          ({ width, height }) => Math.min(height === null || width !== null ? Infinity : height / 96, page.height / 25.4) * dpi,
+        ),
+      ),
     ),
   }));
 }

@@ -989,7 +989,7 @@ import templatesRoutes from "./templates";
 import widgetRoutes from "./widgets";
 
 // Keyed by the Hono context: bodyLimit replaces c.req.raw before the handler runs.
-const notePdfAdmissions = new WeakMap<Context, { notebook: Notebook; note: Note }>();
+const notePdfAdmissions = new WeakMap<Context, { notebook: Notebook; note: Note; signal: AbortSignal }>();
 
 const app = new Hono<AuthContext>()
   .route("/widget", widgetRoutes)
@@ -2011,20 +2011,18 @@ const app = new Hono<AuthContext>()
         504: jsonResponse(ErrorResponseSchema, "PDF renderer timed out"),
       },
     }),
+    // Admit the caller before reading the body. The conversion slot is taken only after parsing,
+    // so a slowly streamed body cannot hold a slot that no conversion uses.
     async (c, next) => {
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
       if (error) return error;
       const note = await requireNoteInNotebook(notebook!.id, c.req.param("noteId")!, getLocale(c));
       if (!note.ok) return respond(c, note);
-      if (activeNotePdfConversions >= NOTE_PDF_MAX_ACTIVE_CONVERSIONS) {
-        return respond(c, { ok: false, error: messages(c).pdfBusy, status: 503 });
-      }
-      notePdfAdmissions.set(c, { notebook: notebook!, note: note.data });
-      activeNotePdfConversions++;
+      // bodyLimit replaces c.req.raw; keep the signal of the client's connection.
+      notePdfAdmissions.set(c, { notebook: notebook!, note: note.data, signal: c.req.raw.signal });
       try {
         await next();
       } finally {
-        activeNotePdfConversions--;
         notePdfAdmissions.delete(c);
       }
     },
@@ -2034,7 +2032,7 @@ const app = new Hono<AuthContext>()
     }),
     v("json", NotePdfRequestSchema),
     async (c) => {
-      const { notebook, note } = notePdfAdmissions.get(c)!;
+      const { notebook, note, signal } = notePdfAdmissions.get(c)!;
       const notebookId = notebook.id;
       const input = c.req.valid("json");
 
@@ -2044,6 +2042,11 @@ const app = new Hono<AuthContext>()
       if (input.customCss && byteLength(input.customCss) > MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES) {
         return respond(c, { ok: false, error: messages(c).cssTooLarge, status: 413 });
       }
+      if (activeNotePdfConversions >= NOTE_PDF_MAX_ACTIVE_CONVERSIONS) {
+        return respond(c, { ok: false, error: messages(c).pdfBusy, status: 503 });
+      }
+
+      activeNotePdfConversions += 1;
       try {
         const [config, maxAttachmentBytes] = await Promise.all([getGotenbergConfig(), getMaxAttachmentSizeBytes()]);
         setRequestTimeout(c, Math.min(REQUEST_IDLE_TIMEOUT_MAX_SECONDS, Math.ceil((2 * notePdfPhaseMs(config) + 10_000) / 1000)));
@@ -2067,7 +2070,7 @@ const app = new Hono<AuthContext>()
             bypassAccess: subject.user ? hasRole(subject.user, "admin") : false,
             locale: getLocale(c),
           },
-          { config, maxAttachmentBytes, signal: c.req.raw.signal },
+          { config, maxAttachmentBytes, signal },
         );
         const omissionsHeader = encodeNotePdfOmissions(rendered.omissions);
         const buffer = new Uint8Array(rendered.pdf);
@@ -2084,6 +2087,7 @@ const app = new Hono<AuthContext>()
         const projected = notePdfError(cause, getLocale(c));
         return respond(c, { ok: false, error: projected.message, status: projected.status });
       } finally {
+        activeNotePdfConversions -= 1;
         setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
       }
     },

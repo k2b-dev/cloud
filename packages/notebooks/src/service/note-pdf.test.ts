@@ -207,6 +207,9 @@ describe("PDF attachment packing", () => {
     const input = imageInput("![small](attach://ABC123 =400x) ![large](attach://ABC123 =600x)");
     expect(notePdfImageBoxes([{ ...input.images[0]!, width: null }], "document")[0]!.width).toBe(2008);
     expect(notePdfImageBoxes([input.images[0]!], "document")[0]!.width).toBe(1250);
+    // Book keeps `height: auto` when a width is set, so `=400x10` still shows 400 px wide at the image's own ratio.
+    expect(notePdfImageBoxes([{ ...input.images[0]!, height: 10 }], "document")[0]).toEqual({ width: 1250, height: 2965 });
+    expect(notePdfImageBoxes([{ ...input.images[0]!, width: null, height: 300 }], "document")[0]).toEqual({ width: 2008, height: 938 });
     expect(notePdfImageBoxes([{ ...input.images[0]!, width: 999999, height: 999999 }], "compact")[0]).toEqual({
       width: 2126,
       height: 3154,
