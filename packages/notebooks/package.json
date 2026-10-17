@@ -36,6 +36,7 @@
     "@codemirror/view": "catalog:",
     "@lezer/common": "1.5.3",
     "@lezer/highlight": "1.2.4",
+    "@lezer/markdown": "1.7.2",
     "@uiw/codemirror-themes": "4.25.12",
     "@k2b/ui": "workspace:*",
     "@k2b/cloud": "workspace:*",

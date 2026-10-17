@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
+import { parseSizedMarkdownImage } from "../../../lib/markdown-image";
 import { openAttachedImage } from "../attachment-preview";
 import {
   blockWidgetLineNavigationExtension,
@@ -17,26 +18,6 @@ import {
   isSafeMarkdownUrl,
 } from "./attachment-url";
 
-/** Match the optional `=WxH` size suffix Pandoc-style image syntax allows. */
-const SIZE_SUFFIX_REGEX = /\s+=(\d+)?x(\d+)?$/;
-
-type ParsedImage = {
-  url: string;
-  width: string | null;
-  height: string | null;
-};
-
-const parseImageHref = (href: string): ParsedImage => {
-  const match = SIZE_SUFFIX_REGEX.exec(href);
-  if (!match) return { url: href, width: null, height: null };
-  if (!match[1] && !match[2]) return { url: href, width: null, height: null };
-  return {
-    url: href.slice(0, match.index),
-    width: match[1] ?? null,
-    height: match[2] ?? null,
-  };
-};
-
 /** `attach://<shortId>` → `/api/notebooks/<nbid>/attachments/<shortId>/content`. */
 const resolveUrl = (rawUrl: string, notebookId: string): string => {
   const id = extractAttachmentId(rawUrl);
@@ -49,6 +30,7 @@ class ImageWidget extends WidgetType {
     private alt: string,
     private width: string | null,
     private height: string | null,
+    private title: string | null,
   ) {
     super();
   }
@@ -71,12 +53,19 @@ class ImageWidget extends WidgetType {
         : "block max-h-[400px] rounded border border-gray-200 dark:border-gray-700";
     img.src = this.url;
     img.alt = this.alt || "";
+    if (this.title !== null) img.title = this.title;
     img.loading = "lazy";
-    if (this.width) {
-      img.setAttribute("width", this.width);
-      img.style.maxWidth = `${this.width}px`;
-    }
+    // The suffix reserves the image's place before it loads: width and height give the aspect ratio, a width alone its
+    // width. The image never grows past the column; a height alone keeps the image's proportions inside that height.
+    img.style.maxWidth = "100%";
+    if (this.width) img.setAttribute("width", this.width);
     if (this.height) img.setAttribute("height", this.height);
+    if (this.height && !this.width) {
+      img.style.height = `${this.height}px`;
+      img.style.objectFit = "contain";
+    } else {
+      img.style.height = "auto";
+    }
 
     if (this.alt) {
       const caption = document.createElement("figcaption");
@@ -123,7 +112,8 @@ class ImageWidget extends WidgetType {
       other.url === this.url &&
       other.alt === this.alt &&
       other.width === this.width &&
-      other.height === this.height
+      other.height === this.height &&
+      other.title === this.title
     );
   }
 
@@ -150,21 +140,24 @@ const findMarkdownImages = (state: EditorState, notebookId: string): CursorZoneS
       if (selectionIntersectsRange(cursor, prevLine.from, nextLine.to)) return false;
 
       const text = state.sliceDoc(node.from, node.to);
-      const match = text.match(/!\[([^\]]*)\]\(([^)]+)\)/);
-
-      if (match) {
-        const alt = match[1] ?? "";
-        const rawHref = match[2] ?? "";
-        const { url, width, height } = parseImageHref(rawHref);
-        const resolvedUrl = resolveUrl(url, notebookId);
-        if (!isSafeMarkdownUrl(resolvedUrl)) return false;
-        const imageDecoration = Decoration.replace({
-          widget: new ImageWidget(resolvedUrl, alt, width, height),
-          block: true,
-        }).range(node.from, node.to);
-        decorations.push(imageDecoration);
-        atomicDecorations.push(imageDecoration);
-      }
+      const sized = parseSizedMarkdownImage(text);
+      const urlNode = node.node.getChild("URL");
+      if (!sized && !urlNode) return false;
+      const marks = node.node.getChildren("LinkMark");
+      const titleNode = node.node.getChild("LinkTitle");
+      const alt = sized ? sized.alt : state.sliceDoc(marks[0]!.to, marks[1]!.from);
+      const href = sized ? sized.href : state.sliceDoc(urlNode!.from, urlNode!.to);
+      const title = sized ? sized.title : titleNode ? state.sliceDoc(titleNode.from + 1, titleNode.to - 1) : null;
+      const width = sized?.width == null ? null : String(sized.width);
+      const height = sized?.height == null ? null : String(sized.height);
+      const resolvedUrl = resolveUrl(href, notebookId);
+      if (!isSafeMarkdownUrl(resolvedUrl)) return false;
+      const imageDecoration = Decoration.replace({
+        widget: new ImageWidget(resolvedUrl, alt, width, height, title),
+        block: true,
+      }).range(node.from, node.to);
+      decorations.push(imageDecoration);
+      atomicDecorations.push(imageDecoration);
     },
   });
 

@@ -17,6 +17,7 @@ import { bookRendererMessages } from "./book-renderer-messages";
 import { anchorHash, headingAnchor, parseNoteLink } from "./heading-anchors";
 import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "./ligatures";
 import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
+import { parseSizedMarkdownImage } from "./markdown-image";
 import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "./named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks, type QueryBlock, type QueryField } from "./query-blocks";
 
@@ -377,20 +378,21 @@ export const renderNotebookBook = (
         },
       },
       {
-        // CodeMirror already accepts Pandoc-style image dimensions.
+        // Share the sized-image dialect with the editor, including titles after the size.
         name: "bookSizedImage",
         level: "inline",
         start: (src) => src.indexOf("!["),
         tokenizer(src) {
-          const match = /^!\[([^\]\n]*)\]\(([^\s)]+)\s+=(\d+)?x(\d+)?\)/.exec(src);
-          return match && (match[3] || match[4])
+          const image = parseSizedMarkdownImage(src);
+          return image
             ? {
                 type: "bookSizedImage",
-                raw: match[0],
-                tokens: this.lexer.inlineTokens(match[1]!),
-                href: match[2],
-                width: match[3],
-                height: match[4],
+                raw: src.slice(0, image.length),
+                tokens: this.lexer.inlineTokens(image.alt),
+                href: image.href,
+                title: image.title,
+                width: image.width,
+                height: image.height,
               }
             : undefined;
         },
@@ -403,7 +405,7 @@ export const renderNotebookBook = (
                 String(token.href),
                 url,
                 alt,
-                `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${token.width ? ` width="${token.width}"` : ""}${token.height ? ` height="${token.height}"` : ""}>`,
+                `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${token.width !== null ? ` width="${token.width}"` : ""}${token.height !== null ? ` height="${token.height}"` : ""}${token.height !== null && token.width === null ? ` style="height: ${token.height}px"` : ""}${token.title !== null ? ` title="${escape(String(token.title))}"` : ""}>`,
               )
             : escape(alt);
         },
@@ -540,7 +542,7 @@ export const sanitizeNotebookBookHtml = (value: string, resolveUrl: (href: strin
         { name: "data-link", multiple: false, values: ["web", "mail"] },
         { name: "data-reference", multiple: false, values: ["pdf", "image", "design", "file", "note", "heading", "task", "page"] },
       ],
-      img: ["src", "alt", "loading", "width", "height"],
+      img: ["src", "alt", "loading", "width", "height", "style"],
       input: ["type", "disabled", "checked"],
       span: ["style"],
       th: ["scope"],
@@ -551,7 +553,8 @@ export const sanitizeNotebookBookHtml = (value: string, resolveUrl: (href: strin
     allowedSchemes: ["http", "https", "mailto", "tel"],
     allowedSchemesByTag: { img: ["http", "https"] },
     allowProtocolRelative: false,
-    allowedStyles: { span: { width: [/^\d+(?:\.\d+)?%$/] } },
+    // A height-only size suffix sets the image's height; the shared `height: auto` would otherwise ignore it.
+    allowedStyles: { span: { width: [/^\d+(?:\.\d+)?%$/] }, img: { height: [/^\d+px$/] } },
     transformTags: {
       ...callouts.transformTags,
       a: (_tag, attrs) => {

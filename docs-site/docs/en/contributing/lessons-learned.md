@@ -24,6 +24,7 @@ convention still needs a check or a test.
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
 | Motion choice ignored | JavaScript or a separate document animates despite the person's reduced-motion choice. | Tests: `MailConversationReader.behavior.test.tsx` checks the choice at jump time; `MailMessageBody.browser.test.ts` checks initial and live propagation into the sandboxed message and rejects frame-originated motion messages ([#1230](https://github.com/k2b-dev/cloud/issues/1230)). |
+| One Markdown dialect parsed differently by editor and renderer | Separate parsers disagree about documented source forms, so an image renders in one view and disappears in another. | Shared helper: Notebooks uses `parseSizedMarkdownImage` in Book and Lezer. Test: both views iterate `DOCUMENTED_IMAGE_FORMS` for attachment and HTTPS images with sizes and titles ([#1278](https://github.com/k2b-dev/cloud/issues/1278)). |
 | Workspace-only export | A published package imports code that exists only in the workspace copy of a pinned sibling; workspace links hide the missing export. | Check: the `packed` CI job runs with `--release` on the release pull request and in the merge queue, resolving already published sibling pins from npm. Convention: [refresh the release PR after the last feature PR merges](/en/docs/contributing/release-process#let-release-please-cut-the-release). |
 | Time | A test or a render depends on today's date, the time zone, or randomness, so it passes on one day and fails on another. | Test: the Assistant sidebar test from [#1121](https://github.com/k2b-dev/cloud/pull/1121) freezes its clock. No repository check finds other tests that compare fixed dates with the real clock yet. |
 | Lease starvation under a continuous competing workload | A class of work keeps the lease while competing work retains places and retries without progress. | Test: Mail’s `provider-lease-fairness.integration.test.ts` checks command progress during continuous folder syncs, sync progress under old command backlogs, and a total order with one first waiter ([#1268](https://github.com/k2b-dev/cloud/issues/1268)). |
@@ -253,6 +254,13 @@ convention still needs a check or a test.
 - **Root cause:** The editor used pending state to choose between a control and a badge.
 - **Error class:** A control swaps to a different element during a pending state and shifts layout.
 - **Guard:** Permission editor behavior tests retain picker identity during grants, updates, and revokes and check failure recovery; Chromium tests compare row and control boxes before, during, and after an update at phone and desktop widths and check that keyboard focus returns to the changed picker. Convention: [Pending states keep the control](/en/ui/getting-started#pending-states-keep-the-control).
+
+### Sized notebook images disappear in the editor
+
+- **What happened:** Documented image size suffixes rendered in Book but produced no editor image, and Book did not accept a title after the size ([#1278](https://github.com/k2b-dev/cloud/issues/1278)).
+- **Root cause:** CommonMark parsed only the image label when the destination contained a size suffix; Book and editor decorations also used separate size patterns.
+- **Error class:** One Markdown dialect parsed differently by editor and renderer.
+- **Guard:** Book and the editor's Lezer extension use `parseSizedMarkdownImage`. Their tests iterate the same `DOCUMENTED_IMAGE_FORMS` matrix for attachment and HTTPS images, dimensions, and titles; parser tests reject invalid forms and verify offsets.
 
 ## Add a lesson
 

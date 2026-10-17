@@ -4,10 +4,50 @@ import { renderMarkdownInfoBlock } from "@k2b/ui";
 import type { NoteQueryResult } from "../service/note-query";
 import { renderNotebookBook, sanitizeNotebookBookHtml } from "./book-renderer";
 import { bookRendererMessages } from "./book-renderer-messages";
+import { DOCUMENTED_IMAGE_FORMS } from "./markdown-image.fixtures";
 
 const render = (markdown: string, locale = "en", queryResults?: ReadonlyMap<number, NoteQueryResult>) =>
   renderNotebookBook({ markdown, notebookId: "ABC123", locale, queryResults });
 const sanitize = (html: string) => sanitizeNotebookBookHtml(html, (href) => href);
+
+describe("documented Book image forms", () => {
+  for (const fixture of DOCUMENTED_IMAGE_FORMS) {
+    test(fixture.name, () => {
+      const { html } = render(fixture.markdown);
+      const images = html.match(/<img\b[^>]*>/g) ?? [];
+      expect(images).toHaveLength(1);
+      const img = images[0]!;
+      const src = fixture.href.startsWith("attach://") ? "/api/notebooks/ABC123/attachments/GHI789/content?v=1" : fixture.href;
+      expect(img).toContain(`src="${src}"`);
+      expect(img).toContain(`alt="${fixture.alt}"`);
+      for (const attribute of ["width", "height", "title"] as const) {
+        if (fixture[attribute] === null) expect(img).not.toContain(` ${attribute}=`);
+        else expect(img).toContain(` ${attribute}="${fixture[attribute]}"`);
+      }
+      // A height alone needs an explicit height, because Book's image style otherwise keeps `height: auto`.
+      if (fixture.height !== null && fixture.width === null) expect(img).toContain(`style="height:${fixture.height}px"`);
+      else expect(img).not.toContain("style=");
+      const print = renderNotebookBook({ markdown: fixture.markdown, notebookId: "ABC123", locale: "en", print: true }).html;
+      expect(print).toContain('class="notebook-book-image-label"');
+      expect(print).toContain(fixture.alt);
+      expect(print).not.toContain("<img");
+    });
+  }
+
+  test("a sized image inside a link keeps one outer link", () => {
+    const { html } = render("[![B](attach://GHI789 =64x)](https://example.test)");
+    expect(html.match(/<a\b/g)).toHaveLength(1);
+    expect(html.match(/<img\b/g)).toHaveLength(1);
+    expect(html).toMatch(/<a[^>]*href="https:\/\/example.test"[^>]*><img[^>]*width="64"[^>]*\/><\/a>/);
+  });
+
+  test("sized image titles are escaped and unsafe URLs show only escaped alt text", () => {
+    expect(render('![Plan](attach://GHI789 =400x "<floor> & ground")').html).toContain('title="&lt;floor&gt; &amp; ground"');
+    const unsafe = render('![<unsafe>](javascript:alert =400x "title")').html;
+    expect(unsafe).not.toContain("<img");
+    expect(unsafe).toContain("&lt;unsafe&gt;");
+  });
+});
 
 const result: NoteQueryResult = {
   columns: ["$title"],
