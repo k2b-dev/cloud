@@ -80,6 +80,8 @@ export const outgoingMailMessages = i18n.define({
       bouncesChecked: "Bounces checked",
       bouncesFailed: "Bounce check failed",
       bounceOpenFailed: "Cloud could not open the mailbox. Check the server, sign-in, TLS, and folder.",
+      bounceTargetBlocked:
+        "The mail server is on an internal network that the operator has not allowed. An operator can allow it with OUTGOING_MAIL_ALLOWED_TARGETS.",
       bounceSearchFailed: "Cloud could not search the mailbox.",
       bounceApplyFailed: "Cloud could not record a delivery report and tries again with the next check.",
       bounceSaveFailed: "Cloud could not save its progress and tries again with the next check.",
@@ -334,6 +336,8 @@ export const outgoingMailMessages = i18n.define({
       bouncesChecked: "Unzustellbare Mails geprüft",
       bouncesFailed: "Prüfung auf unzustellbare Mails fehlgeschlagen",
       bounceOpenFailed: "Cloud konnte das Postfach nicht öffnen. Prüfe Server, Anmeldung, TLS und Ordner.",
+      bounceTargetBlocked:
+        "Der Mailserver liegt in einem internen Netzwerk, das der Betreiber noch nicht freigegeben hat. Der Betreiber kann ihn mit OUTGOING_MAIL_ALLOWED_TARGETS freigeben.",
       bounceSearchFailed: "Cloud konnte das Postfach nicht durchsuchen.",
       bounceApplyFailed: "Cloud konnte einen Zustellbericht nicht speichern und versucht es bei der nächsten Prüfung erneut.",
       bounceSaveFailed: "Cloud konnte den Fortschritt nicht speichern und versucht es bei der nächsten Prüfung erneut.",

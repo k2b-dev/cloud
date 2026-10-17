@@ -172,6 +172,7 @@ first check. Errors are stable codes, cleared by a successful check:
 | Code | What to check |
 | --- | --- |
 | `open_failed` | Credentials, folder, TLS certificate, required STARTTLS, Core's IMAP egress, or a UIDVALIDITY change during reconnection |
+| `target_blocked` | The IMAP host resolves to an internal network address that `OUTGOING_MAIL_ALLOWED_TARGETS` does not allow; add the host, address or range, then restart Core |
 | `search_failed` | IMAP server availability and UID search support |
 | `apply_failed` | Database availability while recording a report |
 | `save_failed` | Database availability while saving progress and check status |
