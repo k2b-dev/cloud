@@ -23,6 +23,7 @@ const APP_ID = "core";
 const CreateSchema = z
   .object({
     chatId: AiConversationIdSchema,
+    title: z.string().trim().min(1).max(80).optional(),
     prompt: z.string().trim().min(1).max(10_000),
     schedule: ScheduleInputSchema,
     grants: ChatTaskGrantsSchema.default([]),
@@ -30,14 +31,15 @@ const CreateSchema = z
   .strict();
 const UpdateSchema = z
   .object({
+    title: z.string().trim().min(1).max(80).optional(),
     prompt: z.string().trim().min(1).max(10_000).optional(),
     schedule: ScheduleInputSchema.optional(),
     grants: ChatTaskGrantsSchema.optional(),
   })
   .strict()
   .refine(
-    (value) => value.prompt !== undefined || value.schedule !== undefined || value.grants !== undefined,
-    "Provide a prompt, schedule or grants",
+    (value) => value.title !== undefined || value.prompt !== undefined || value.schedule !== undefined || value.grants !== undefined,
+    "Provide a title, prompt, schedule or grants",
   );
 const ListSchema = z
   .object({
@@ -156,6 +158,8 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
         userId: owner,
         chatId: input.chatId,
         prompt: input.prompt,
+        title: input.title,
+        locale: getLocale(c),
         grants: input.grants,
         ...normalized,
         idempotencyKey: idempotencyKey.data,
@@ -211,6 +215,7 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
       userId: owner,
       taskId: parsed.data,
       prompt: input.prompt,
+      title: input.title,
       grants: input.grants,
       ...normalized,
     });
@@ -235,7 +240,7 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
     const current = await aiChatTasks.get({ userId: owner, taskId: parsed.data });
     if (!current) return respond(c, fail(err.notFound("Task")));
     if (current.state !== "active" && current.state !== "paused")
-      return respond(c, fail(err.conflict(`Task ${current.shortId} cannot be paused while ${current.state}`)));
+      return respond(c, fail(err.conflict(`Task “${current.name}” cannot be paused while ${current.state}`)));
     const task = await aiChatTasks.setState({ userId: owner, taskId: parsed.data, state: "paused" });
     if (!task) return respond(c, fail(err.conflict("Task state changed; read it and retry")));
     reconcileSoon();
@@ -249,9 +254,9 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
     const current = await aiChatTasks.get({ userId: owner, taskId: parsed.data });
     if (!current) return respond(c, fail(err.notFound("Task")));
     if (current.state === "needs_attention" && current.schedule.kind === "once")
-      return respond(c, fail(err.conflict(`Task ${current.shortId} needs a new future schedule before it can resume`)));
+      return respond(c, fail(err.conflict(`Task “${current.name}” needs a new future schedule before it can resume`)));
     if (current.state === "completed")
-      return respond(c, fail(err.conflict(`Task ${current.shortId} cannot be resumed while ${current.state}`)));
+      return respond(c, fail(err.conflict(`Task “${current.name}” cannot be resumed while ${current.state}`)));
     const task = await aiChatTasks.setState({ userId: owner, taskId: parsed.data, state: "active" });
     if (!task) return respond(c, fail(err.conflict("Task state changed; read it and retry")));
     reconcileSoon();

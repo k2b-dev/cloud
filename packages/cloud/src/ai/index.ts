@@ -34,11 +34,21 @@ export {
   ChatTaskOccurrenceIdSchema,
   ChatTaskScheduleInputSchema,
   chatTaskCreateFingerprint,
+  chatTaskName,
   getChatTaskTimezone,
   normalizeChatTaskSchedule,
   toAiChatTaskOccurrenceView,
   toAiChatTaskView,
 } from "./chat-task-contracts";
+export {
+  CHAT_TASK_REASON_CODES,
+  type ChatTaskReason,
+  type ChatTaskReasonCode,
+  chatTaskLocale,
+  chatTaskReasonSentence,
+  chatTaskReasonState,
+  chatTaskStopSentence,
+} from "./chat-task-reasons";
 export {
   type AiChatTask,
   AiChatTaskIdempotencyConflictError,

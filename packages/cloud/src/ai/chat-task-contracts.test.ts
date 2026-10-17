@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { coreSettings } from "@k2b/cloud/services";
 import { chatTaskCreateFingerprint, normalizeChatTaskSchedule } from "./chat-task-contracts";
 
-afterEach(() => mock.restore());
+beforeEach(() => setSystemTime(new Date("2026-04-07T09:00:00.000Z")));
+afterEach(() => {
+  mock.restore();
+  setSystemTime();
+});
 
 describe("scheduled chat task contracts", () => {
   test("resolves one-time local input with app.timezone", async () => {
@@ -63,4 +67,14 @@ describe("scheduled chat task contracts", () => {
 
     expect(chatTaskCreateFingerprint(input)).not.toBe(chatTaskCreateFingerprint({ ...input, timezone: "UTC" }));
   });
+});
+
+test("routine name uses title, chat title, then a bounded prompt line", async () => {
+  const { chatTaskName } = await import("./chat-task-contracts");
+  expect(chatTaskName({ title: "Neue Rechnungen", chatTitle: "Buchhaltung", prompt: "Check" })).toBe("Neue Rechnungen");
+  expect(chatTaskName({ title: null, chatTitle: "Buchhaltung", prompt: "Check" })).toBe("Buchhaltung");
+  expect(chatTaskName({ chatTitle: " ", prompt: "Check mail\nThen save" })).toBe("Check mail");
+  expect(chatTaskName({ prompt: "x".repeat(100) })).toHaveLength(80);
+  const input = { chatId: "abc234", prompt: "Check", schedule: { kind: "cron" as const, cron: "0 9 * * *" } };
+  expect(chatTaskCreateFingerprint({ ...input, title: "First" })).not.toBe(chatTaskCreateFingerprint({ ...input, title: "Second" }));
 });

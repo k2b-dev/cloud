@@ -5,7 +5,7 @@ section: AI
 order: 1060
 description: Run validated model tasks outside an interactive chat request.
 tags: [ai, structured-output, background]
-updated: 2026-10-08
+updated: 2026-10-17
 ---
 
 # Structured and background AI
@@ -357,3 +357,65 @@ requestedModelId)` for Assistant model grants and `resolveAiModel` with
 through `resolveModel`. Supply only verified server-side identities, not IDs from
 the calculation's input. The calculations receive only the supplied prompt and
 input, with no tools or implicit conversation context.
+
+## Routine names and stop reasons
+
+A routine can have a short `title` in the user's language, up to 80 characters.
+Its `name` uses that title, then the chat title, then the first prompt line
+(up to 80 characters). Lists, action reviews and notifications use this name.
+
+A stopped routine has one `reason_code` and a `reason_at` timestamp. The code
+determines its state. A database CHECK enforces this relation.
+
+| Code | State | English sentence |
+| --- | --- | --- |
+| `paused` | `paused` | Paused by you on {time}. What happens meanwhile is not caught up automatically. |
+| `chat_archived` | `paused` | Paused because the chat is archived. |
+| `owner_inactive` | `paused` | Paused because the account is inactive. |
+| `failed` | `needs_attention` | The last run failed. |
+| `rights_changed` | `needs_attention` | What it may do changed. Please confirm again. |
+| `needs_approval` | `needs_attention` | Tried to {action}. That needs your approval every time, and routines never ask. |
+
+Without an action, `needs_approval` shows only its second sentence. No writer
+sets this code yet. The pause time uses `reason_at`, the reader's locale and
+the routine's timezone. `chatTaskReasonSentence` from `@k2b/cloud/ai` renders
+these sentences in English and German. Browser code imports it from
+`@k2b/cloud/ai/browser`.
+
+Raw errors remain technical details. They are not the reason sentence.
+A failed run keeps its last model response when available and adds reason
+metadata. Without a response, the chat line uses the reason sentence.
+
+A needs-attention notification has the title **“{name}” needs you** and the
+reason sentence as its body. Paused routines do not send this notification.
+The key `routine:{task uuid}:{code}:{reason_at epoch ms}` permits one notice
+per routine and reason until the state changes. Recovery uses the newest
+failed occurrence after the notification definition was registered. It also
+recognizes legacy `occurrence:{id}` keys, so an upgrade does not resend them.
+
+Creation stores the request locale on the routine. Runs, delivered chat lines
+and notifications use that locale, then the instance setting `app.locale`,
+then `en`. Existing routines get the locale of the newest personal chat turn
+at or before creation, else the newest personal chat turn in that chat.
+Background turns do not supply this value. This backfill runs only when the
+locale column is first added. Cloud has no stored per-user locale setting.
+
+Archiving a chat pauses its active routines. Restoring the chat resumes only
+routines paused for that reason. If their authority cannot resume, they need
+attention with `rights_changed`.
+
+Pause and delete request an immediate abort of a running turn. The occurrence
+ends as `stopped`. The chat receives one line:
+
+> Stopped while the routine was running. Already done: {list}. Nothing was undone.
+
+With no successful write call, the line is:
+
+> Stopped while the routine was running. It had not changed anything yet.
+
+The list comes from stored successful write calls and their Action sentences.
+It never comes from the model's prose. Reads, failed calls and rejected calls
+are excluded. The line's metadata stores the stop cause and the done list.
+Deleting the routine does not delete this receipt. Recovery can deliver the
+line once from a terminal deleted-routine turn completed within the last day.
+It does not deliver into an archived chat.

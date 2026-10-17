@@ -47,9 +47,17 @@ Mit `cld acp` kannst du den Assistenten auch in Editoren wie T3 Code und Zed nut
 
 Eine Routine sendet eine gespeicherte Anfrage zur gewählten Zeit zurück in einen Chat. Gehört dieser Chat zu einem Projekt, verwendet der Durchlauf die Zugriffsrechte, Anweisungen, Dateien, Wissenseinträge, Referenzen und das Standardmodell des Projekts, die zum Startzeitpunkt gelten.
 
-Eine einmalige Routine verwendet einen genauen lokalen Zeitpunkt in der Zeitzone der Cloud-Anwendung. Eine wiederkehrende Routine verwendet einen Cron-Ausdruck mit fünf Feldern in derselben Zeitzone. Bitte den Assistenten, deine Routinen aufzulisten oder zu lesen. In der CLI heißen sie Tasks: `cld assistant tasks`. Schlägt eine Routine fehl, wechselt sie in den Status **Eingriff erforderlich** und benachrichtigt dich. Beim Löschen eines Chats werden auch seine Routinen und ihr Ausführungsverlauf gelöscht.
+Eine einmalige Routine verwendet einen genauen lokalen Zeitpunkt in der Zeitzone der Cloud-Anwendung. Eine wiederkehrende Routine verwendet einen Cron-Ausdruck mit fünf Feldern in derselben Zeitzone. Bitte den Assistenten, deine Routinen aufzulisten oder zu lesen. In der CLI heißen sie Tasks: `cld assistant tasks`. Schlägt eine Routine fehl, wechselt sie in den Status **Braucht dich**. Die Benachrichtigung nennt die Routine beim Namen und sagt, warum sie angehalten wurde. Beim Löschen eines Chats werden auch seine Routinen und ihr Ausführungsverlauf gelöscht.
 
 Öffne **Kontext** in der Seitenleiste **In diesem Chat** und wähle eine Routine, um sie anzupassen, zu pausieren, fortzusetzen, auszuführen oder zu löschen oder um ihren Ausführungsverlauf zu prüfen.
+
+**Pausiert** nennt den Grund: „Von dir pausiert am 16.10.2026, 14:30. Was in der Pause passiert, wird nicht von selbst nachgeholt.“, „Pausiert, weil der Chat archiviert ist.“ oder „Pausiert, weil das Konto inaktiv ist.“
+
+**Braucht dich** sagt „Der letzte Lauf ist fehlgeschlagen.“ oder „Was sie darf, hat sich geändert. Bitte neu bestätigen.“ Braucht eine Aktion deine Freigabe, heißt es: „Das macht der Assistant nur mit dir, und Routinen fragen nie.“ Unter den technischen Details findest du den ursprünglichen Fehler.
+
+Archivierst du einen Chat, pausieren seine Routinen. Stellst du ihn wieder her, werden diese Routinen fortgesetzt. Können ihre Freigaben nicht fortgesetzt werden, musst du sie neu bestätigen.
+
+Pausieren und Löschen halten eine laufende Routine sofort an. Im Chat steht „Angehalten, während die Routine lief“ und was sie schon erfolgreich geändert hat. Hat sie nichts geändert, steht das dort. Nichts wird rückgängig gemacht.
 
 :::info Wenn der Assistent nicht verfügbar ist
 Wenn KI deaktiviert oder falsch konfiguriert ist oder kein auswählbares Streaming-Modell bereitsteht, ist das Eingabefeld deaktiviert und die Seite zeigt den aktuellen Statusfehler.

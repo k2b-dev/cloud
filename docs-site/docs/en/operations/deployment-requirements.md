@@ -988,7 +988,7 @@ and `idx_ai_turns_background_finished`.
 The latter uses a plain `CREATE INDEX` on `ai.turns`, briefly blocking writes
 to `ai.turns` while it builds; allow for a longer build on large installations.
 The routine recovery tick then
-deletes completed and failed runs older than 90 days, their background turns
+deletes completed, failed and stopped runs older than 90 days, their background turns
 with tool calls, and their run transcripts (`ai.task_messages`) in batches of
 100 per minute. Queued and running runs, finished runs whose turns are still
 active, and chat result messages stay.

@@ -212,6 +212,9 @@ suite("AI chat tasks", () => {
         turnStatus: "running",
       });
       const runs = [expired, recent, running];
+      // A live worker owns the active turn, so deleting its routine only asks it to stop and it stays active.
+      await sql`UPDATE ai.turns SET status = 'running', lease_owner = 'retention-worker', lease_expires_at = now() + interval '1 hour'
+        WHERE id = ${running.turnId}::uuid`;
       await sql`INSERT INTO ai.tool_calls(turn_id, conversation_id, call_id, tool_name, status)
         VALUES (${expired.turnId}::uuid, ${conversation.id}::uuid, 'orphan-retention-tool', 'code', 'completed')`;
       // Seed a chat result for the active run too, to guard every run's delivered messages.
@@ -230,6 +233,8 @@ suite("AI chat tasks", () => {
         expect(await sql`SELECT id FROM ai.turns WHERE id = ${run.turnId}::uuid`).toHaveLength(1);
         expect(await sql`SELECT id FROM ai.task_messages WHERE loop_id = ${run.turnId}`).toHaveLength(2);
       }
+      const [stopping] = await sql`SELECT status, cancellation_reason FROM ai.turns WHERE id = ${running.turnId}::uuid`;
+      expect(stopping).toEqual({ status: "running", cancellation_reason: "routine_deleted" });
       expect(await aiChatTasks.pruneExpiredRuns({ now, limit: 100 })).toBe(1);
       expect(await sql`SELECT id FROM ai.turns WHERE id = ${expired.turnId}::uuid`).toHaveLength(0);
       expect(await sql`SELECT id FROM ai.task_messages WHERE loop_id = ${expired.turnId}`).toHaveLength(0);
@@ -613,7 +618,17 @@ suite("AI chat tasks", () => {
           }),
         ).toBeNull();
         const stopped = await aiChatTasks.get({ userId: user!.id, taskId: task.shortId });
-        expect(stopped?.state).toBe(condition === "paused" ? "paused" : "needs_attention");
+        expect(stopped?.state).toBe(condition === "paused" || condition === "sponsor" ? "paused" : "needs_attention");
+        expect(stopped?.reasonCode).toBe(condition === "paused" ? "paused" : condition === "sponsor" ? "owner_inactive" : "rights_changed");
+        expect(stopped?.reasonAt).not.toBeNull();
+        if (condition === "sponsor") {
+          expect((await mandates.get(task.mandateId!))?.state).toBe("paused");
+          expect((await mandates.get(task.mandateId!))!.revision).toBe(stopped!.mandateRevision!);
+          expect((await aiChatTasks.listOccurrences({ userId: user!.id, taskId: task.shortId }))?.[0]).toMatchObject({
+            state: "queued",
+            resultText: null,
+          });
+        }
         expect(
           (await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.turns WHERE conversation_id = ${conversation.id}::uuid`)[0]
             ?.count,
@@ -687,6 +702,8 @@ suite("AI chat tasks", () => {
         expect(await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status })).toBeNull();
         const finished = await aiChatTasks.get({ userId: user!.id, taskId: task.shortId });
         expect(finished?.state).toBe(status === "completed" ? "completed" : "needs_attention");
+        expect(finished?.reasonCode).toBe(status === "completed" ? null : "failed");
+        if (status === "completed") expect(finished?.reasonAt).toBeNull();
         const [liveMandate] = await sql<{ state: string }[]>`SELECT state FROM auth.mandates WHERE id = ${task.mandateId}::uuid`;
         expect(liveMandate?.state).toBe(
           condition === "stale" || condition === "narrowed" ? "paused" : condition === "revoked" ? "revoked" : "active",
@@ -1036,13 +1053,14 @@ suite("AI chat tasks", () => {
       }))!;
       expect(
         await aiChatTasks.failOccurrence({
+          code: "failed",
           occurrenceId: occurrence.id,
           error: "Project access is missing. Update this task in the chat.",
         }),
       ).toBe("failed");
-      expect(await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "duplicate" })).toBe("gone");
+      expect(await aiChatTasks.failOccurrence({ code: "failed", occurrenceId: occurrence.id, error: "duplicate" })).toBe("gone");
       expect((await aiChatTasks.get({ userId: user!.id, taskId: task.shortId }))?.state).toBe("needs_attention");
-      expect((await aiChatTasks.listOccurrences({ userId: user!.id, taskId: task.shortId }))?.[0]?.resultText).toContain("Project access");
+      expect((await aiChatTasks.listOccurrences({ userId: user!.id, taskId: task.shortId }))?.[0]?.resultText).toBe("The last run failed.");
       expect(
         (await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.messages WHERE conversation_id=${conversation.id}::uuid`)[0]
           ?.count,
@@ -1120,7 +1138,7 @@ suite("AI chat tasks", () => {
       expect((await aiChatTasks.listOccurrences({ userId: owner.id, taskId: task!.shortId }))?.[0]?.state).toBe("queued");
       await aiChatTasks.getQueuedOccurrence(stale!.id);
       await aiChatTasks.update({ userId: owner.id, taskId: task!.shortId, prompt: "Updated before preflight failed." });
-      expect(await aiChatTasks.failOccurrence({ occurrenceId: stale!.id, error: "Stale preflight" })).toBe("stale");
+      expect(await aiChatTasks.failOccurrence({ code: "failed", occurrenceId: stale!.id, error: "Stale preflight" })).toBe("stale");
       expect((await aiChatTasks.listOccurrences({ userId: owner.id, taskId: task!.shortId }))?.[0]?.state).toBe("queued");
       const rebound = await aiChatTasks.getQueuedOccurrence(stale!.id);
       const staleDelivery = await aiChatTasks.deliverOccurrence({
@@ -1179,11 +1197,299 @@ suite("AI chat tasks", () => {
           })
         )?.state,
       ).toBe("active");
-      await sql`UPDATE ai.chat_tasks SET state = 'needs_attention' WHERE id = ${task!.id}::uuid`;
+      await sql`UPDATE ai.chat_tasks SET state = 'needs_attention', reason_code = 'failed', reason_at = now() WHERE id = ${task!.id}::uuid`;
       expect(await aiChatTasks.setState({ userId: owner.id, taskId: task!.shortId, state: "active" })).toBeNull();
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id IN (${conversation.id}::uuid, ${peerConversation.id}::uuid)`;
       await sql`DELETE FROM auth.users WHERE id IN (${owner.id}::uuid, ${peer.id}::uuid)`;
+    }
+  });
+  test("archive pauses routines, restore resumes only archive reasons, and admission remains a backstop", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`routine-archive-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Invoices" });
+    const create = () =>
+      aiChatTasks.create({
+        userId: user!.id,
+        chatId: conversation.shortId,
+        prompt: "Save invoices",
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+        locale: "de",
+      });
+    try {
+      const task = (await create())!;
+      const manual = (await create())!;
+      await aiChatTasks.setState({ userId: user!.id, taskId: manual.shortId, state: "paused" });
+      expect(await aiConversations.archiveConversation({ conversationId: conversation.id, ownerUserId: user!.id })).toBe(true);
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({
+        state: "paused",
+        reasonCode: "chat_archived",
+      });
+      expect((await mandates.get(task.mandateId!))?.state).toBe("paused");
+      expect(await aiConversations.restoreConversation({ conversationId: conversation.id, ownerUserId: user!.id })).not.toBeNull();
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({
+        state: "active",
+        reasonCode: null,
+        reasonAt: null,
+      });
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: manual.shortId })).toMatchObject({ state: "paused", reasonCode: "paused" });
+      // Simulate an archive whose follow-up failed. Admission narrows authority without creating a failed run or message.
+      await sql`UPDATE ai.conversations SET archived_at = now() WHERE id = ${conversation.id}::uuid`;
+      expect(
+        await aiChatTasks.createOccurrence({
+          taskId: task.id,
+          scheduledFor: "2026-04-07T09:00:00.000Z",
+          trigger: "manual",
+          requestKey: suffix,
+        }),
+      ).toBeNull();
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({
+        state: "paused",
+        reasonCode: "chat_archived",
+      });
+      expect(await sql`SELECT id FROM ai.chat_task_occurrences WHERE task_id = ${task.id}::uuid`).toHaveLength(0);
+      expect(await aiConversations.listMessages({ conversationId: conversation.id })).toHaveLength(0);
+      await mandates.revoke({
+        mandateId: task.mandateId!,
+        expectedRevision: (await mandates.get(task.mandateId!))!.revision,
+        authority: { kind: "interactive", userId: user!.id },
+        reason: "Test revocation",
+      });
+      await aiConversations.restoreConversation({ conversationId: conversation.id, ownerUserId: user!.id });
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({
+        state: "needs_attention",
+        reasonCode: "rights_changed",
+      });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
+  for (const cause of ["paused", "deleted"] as const)
+    test(`${cause} aborts a running turn and recovers one factual stop line`, async () => {
+      const suffix = crypto.randomUUID();
+      const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`routine-stop-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+      const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Invoices" });
+      try {
+        const task = (await aiChatTasks.create({
+          userId: user!.id,
+          chatId: conversation.shortId,
+          title: "Neue Rechnungen",
+          locale: "de",
+          prompt: "Save invoices",
+          schedule: { kind: "cron", cron: "0 9 * * *" },
+          timezone: "Europe/Berlin",
+        }))!;
+        const occurrence = (await aiChatTasks.createOccurrence({
+          taskId: task.id,
+          scheduledFor: "2026-04-07T09:00:00.000Z",
+          trigger: "manual",
+          requestKey: suffix,
+        }))!;
+        const delivered = await aiChatTasks.deliverOccurrence({
+          occurrenceId: occurrence.id,
+          modelProfileId: "test",
+          runConfig: { kind: "chat", input: task.prompt, locale: "de", toolSource: { kind: "none" } },
+          userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
+          expectedRevision: task.revision,
+        });
+        if (!delivered.delivered) throw new Error("Expected run admission");
+        await sql`UPDATE ai.turns SET status = 'running', lease_owner = 'routine-test', lease_expires_at = now() + interval '1 hour'
+        WHERE id = ${delivered.turnId}::uuid`;
+        const presentation = {
+          kind: "capability",
+          appId: "invoices",
+          appName: "Invoices",
+          appIcon: "ti ti-file",
+          title: "Save invoice",
+          capabilityKind: "action",
+          sentences: { done: "Rechnung {input.number} gespeichert" },
+        };
+        const messages = [
+          {
+            role: "assistant",
+            content: [
+              { type: "text", text: "MODEL CLAIM: I deleted all invoices" },
+              { type: "tool_call", id: "write", name: "save", args: { number: "42" } },
+              { type: "tool_call", id: "read", name: "read", args: {} },
+              { type: "tool_call", id: "web-read", name: "web_extract", args: { url: "https://example.test" } },
+              { type: "tool_call", id: "file-write", name: "write_file", args: { path: "invoices.csv" } },
+              { type: "tool_call", id: "failed", name: "save", args: { number: "43" } },
+              { type: "tool_call", id: "rejected", name: "save", args: { number: "44" } },
+              { type: "tool_call", id: "not-run", name: "save", args: { number: "45" } },
+            ],
+          },
+          { role: "tool_result", callId: "write", name: "save", result: { ok: true, data: {} } },
+          { role: "tool_result", callId: "read", name: "read", result: { ok: true, data: {} } },
+          { role: "tool_result", callId: "web-read", name: "web_extract", result: { content: "Read only" } },
+          { role: "tool_result", callId: "file-write", name: "write_file", result: { path: "invoices.csv" } },
+          { role: "tool_result", callId: "failed", name: "save", isError: true, result: { ok: false } },
+          { role: "tool_result", callId: "rejected", name: "save", result: { ok: false } },
+        ];
+        for (const [i, message] of messages.entries())
+          await sql`
+        INSERT INTO ai.task_messages(short_id, conversation_id, seq, kind, role, message, loop_id, meta)
+        VALUES (${createAiShortId()}, ${conversation.id}::uuid, ${i + 2}, 'message', ${message.role}, ${JSON.stringify(message)}::text::jsonb,
+          ${delivered.turnId}, ${JSON.stringify({ toolPresentations: { write: presentation, read: { ...presentation, capabilityKind: "query" }, failed: presentation, rejected: presentation, "not-run": presentation } })}::text::jsonb)`;
+        if (cause === "paused") await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "paused" });
+        else expect(await aiChatTasks.delete({ userId: user!.id, taskId: task.shortId })).toBe(true);
+        const [turn] = await sql<{ cancel_requested_at: Date | null; cancellation_reason: string }[]>`
+        SELECT cancel_requested_at, cancellation_reason FROM ai.turns WHERE id = ${delivered.turnId}::uuid`;
+        expect(turn?.cancel_requested_at).not.toBeNull();
+        expect(turn?.cancellation_reason).toBe(`routine_${cause}`);
+        expect(
+          await aiConversations.completeTurn({
+            conversationId: conversation.id,
+            turnId: delivered.turnId,
+            leaseOwner: "routine-test",
+            status: "aborted",
+            error: null,
+          }),
+        ).toBe("completed");
+        expect(await aiChatTasks.listTerminalRunningTurns()).toContainEqual({ turnId: delivered.turnId, status: "aborted" });
+        await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "aborted" });
+        await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "aborted" });
+        expect(await aiChatTasks.listTerminalRunningTurns()).not.toContainEqual({ turnId: delivered.turnId, status: "aborted" });
+        const lines = await aiConversations.listMessages({ conversationId: conversation.id });
+        expect(lines).toHaveLength(1);
+        expect(lines[0]?.meta?.scheduledTask?.stop).toEqual({ cause, done: ["Rechnung 42 gespeichert", "invoices.csv geschrieben"] });
+        expect(JSON.stringify(lines[0]?.message)).toContain(
+          "Schon erledigt: Rechnung 42 gespeichert; invoices.csv geschrieben. Nichts wurde rückgängig gemacht.",
+        );
+        expect(JSON.stringify(lines[0]?.message)).not.toContain("MODEL CLAIM");
+        if (cause === "paused") {
+          expect((await aiChatTasks.listOccurrences({ userId: user!.id, taskId: task.shortId }))?.[0]?.state).toBe("stopped");
+          expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({
+            state: "paused",
+            reasonCode: "paused",
+          });
+          await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "active" });
+          expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({
+            state: "active",
+            reasonCode: null,
+            reasonAt: null,
+          });
+        } else expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toBeNull();
+      } finally {
+        await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+      }
+    });
+
+  for (const cause of ["paused", "deleted"] as const)
+    test(`${cause} finalizes an ownerless running routine immediately with an empty done list`, async () => {
+      const suffix = crypto.randomUUID();
+      const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+        VALUES (${`routine-ownerless-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+      const conversation = await aiConversations.createConversation({ ownerUserId: user!.id });
+      try {
+        const task = (await aiChatTasks.create({
+          userId: user!.id,
+          chatId: conversation.shortId,
+          prompt: "Save invoices",
+          locale: "en",
+          schedule: { kind: "cron", cron: "0 9 * * *" },
+          timezone: "UTC",
+        }))!;
+        const occurrence = (await aiChatTasks.createOccurrence({
+          taskId: task.id,
+          scheduledFor: "2026-04-07T09:00:00Z",
+          trigger: "manual",
+          requestKey: suffix,
+        }))!;
+        const turn = await aiChatTasks.deliverOccurrence({
+          occurrenceId: occurrence.id,
+          modelProfileId: "test",
+          runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
+          userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
+          expectedRevision: task.revision,
+        });
+        if (!turn.delivered) throw new Error("Expected run admission");
+        await sql`UPDATE ai.turns SET status = 'running' WHERE id = ${turn.turnId}::uuid`;
+        if (cause === "paused") await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "paused" });
+        else await aiChatTasks.delete({ userId: user!.id, taskId: task.shortId });
+        expect((await sql<{ status: string }[]>`SELECT status FROM ai.turns WHERE id = ${turn.turnId}::uuid`)[0]?.status).toBe("aborted");
+        const messages = await aiConversations.listMessages({ conversationId: conversation.id });
+        expect(messages).toHaveLength(1);
+        expect(messages[0]?.meta?.scheduledTask?.stop).toEqual({ cause, done: [] });
+        expect(JSON.stringify(messages[0]?.message)).toContain("Stopped while the routine was running. It had not changed anything yet.");
+        await aiChatTasks.finalizeTurn({ turnId: turn.turnId, status: "aborted" });
+        expect(await aiConversations.listMessages({ conversationId: conversation.id })).toHaveLength(1);
+      } finally {
+        await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+      }
+    });
+
+  test("reason checks and one-time locale migration are idempotent", async () => {
+    const { migrateChatTaskReasons } = await import("./chat-task-reasons-migrate");
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`routine-migration-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Migration" });
+    const emptyConversation = await aiConversations.createConversation({ ownerUserId: user!.id });
+    try {
+      const tasks = await Promise.all(
+        ["paused", "changed", "failed", "fallback", "no_locale"].map((prompt) =>
+          aiChatTasks.create({
+            userId: user!.id,
+            chatId: prompt === "no_locale" ? emptyConversation.shortId : conversation.shortId,
+            prompt,
+            schedule: { kind: "cron", cron: "0 9 * * *" },
+            timezone: "UTC",
+          }),
+        ),
+      );
+      await expect(sql`UPDATE ai.chat_tasks SET state = 'needs_attention' WHERE id = ${tasks[0]!.id}::uuid`).rejects.toMatchObject({
+        constraint: "ai_chat_tasks_reason_state_check",
+      });
+      const rollback = new Error("Rollback migration fixture");
+      await expect(
+        sql.begin(async (tx) => {
+          await tx`ALTER TABLE ai.chat_tasks DROP CONSTRAINT ai_chat_tasks_reason_state_check`.simple();
+          await tx`ALTER TABLE ai.chat_tasks DROP COLUMN locale`.simple();
+          for (const [i, task] of tasks.entries())
+            await tx`UPDATE ai.chat_tasks
+          SET state = ${i === 0 ? "paused" : "needs_attention"}, reason_code = NULL, reason_at = NULL,
+            last_error = ${i === 1 ? "Scheduled task mandate revision changed" : "Raw technical error"},
+            created_at = ${i === 3 ? "1999-01-01T00:00:00.000Z" : "2001-01-01T00:00:00.000Z"}::timestamptz,
+            updated_at = '2001-01-02T00:00:00.000Z'::timestamptz WHERE id = ${task!.id}::uuid`;
+          for (const [locale, createdAt, background] of [
+            ["DE-ch", "2000-01-01T00:00:00.000Z", false],
+            ["fr", "2002-01-01T00:00:00.000Z", false],
+            ["es", "2000-12-31T00:00:00.000Z", true],
+          ] as const)
+            await tx`INSERT INTO ai.turns(short_id, conversation_id, status, created_at, run_config)
+            VALUES (${createAiShortId()}, ${conversation.id}::uuid, 'completed', ${createdAt}::timestamptz,
+              ${JSON.stringify({ kind: "chat", locale, ...(background ? { background: {} } : {}) })}::text::jsonb)`;
+          await migrateChatTaskReasons(tx);
+          for (const [i, task] of tasks.entries()) {
+            const [row] = await tx<
+              { reason_code: string; reason_at: Date; locale: string | null }[]
+            >`SELECT reason_code, reason_at, locale FROM ai.chat_tasks WHERE id = ${task!.id}::uuid`;
+            expect(row).toEqual({
+              reason_code: i === 0 ? "paused" : i === 1 ? "rights_changed" : "failed",
+              reason_at: new Date("2001-01-02T00:00:00.000Z"),
+              locale: i === 4 ? null : i === 3 ? "fr" : "de-CH",
+            });
+          }
+          // Clearing locale after the first migration proves restart does not rescan the turns.
+          await tx`UPDATE ai.chat_tasks SET locale = NULL WHERE id = ${tasks[0]!.id}::uuid`;
+          const before = await tx`SELECT id, xmin::text, reason_code, reason_at, locale FROM ai.chat_tasks ORDER BY id`;
+          await migrateChatTaskReasons(tx);
+          expect(await tx`SELECT id, xmin::text, reason_code, reason_at, locale FROM ai.chat_tasks ORDER BY id`).toEqual(before);
+          throw rollback;
+        }),
+      ).rejects.toBe(rollback);
+      await migrateCloudAi();
+      await migrateCloudAi();
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id IN (${conversation.id}::uuid, ${emptyConversation.id}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
     }
   });
 });

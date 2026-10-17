@@ -16,6 +16,7 @@ import * as platformSettings from "../services/settings";
 import { createAiApprovalPreferenceRoutes } from "./approval-routes";
 import { AI_WEBSITE_APPROVAL_TOOL, findRememberedAiToolApproval, hasRememberedAiToolApproval } from "./approvals";
 import * as assistantModels from "./assistant-models";
+import { aiChatTasks } from "./chat-tasks";
 import { aiFileStore } from "./files-store";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import { migrateCloudAi } from "./migrate";
@@ -61,6 +62,28 @@ suite("global AI conversation boundaries", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("archive and restore routes pause and resume the chat's routines", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const headers = { Authorization: `Bearer ${await createTestSession(userId)}` };
+    try {
+      const task = (await aiChatTasks.create({
+        userId,
+        chatId: chat.shortId,
+        prompt: "Save invoices",
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      }))!;
+      expect((await aiRoutes.request(`/conversations/${chat.shortId}/archive`, { method: "POST", headers })).status).toBe(200);
+      expect(await aiChatTasks.get({ userId, taskId: task.shortId })).toMatchObject({ state: "paused", reasonCode: "chat_archived" });
+      expect((await aiRoutes.request(`/conversations/${chat.shortId}/restore`, { method: "POST", headers })).status).toBe(200);
+      expect(await aiChatTasks.get({ userId, taskId: task.shortId })).toMatchObject({ state: "active", reasonCode: null, reasonAt: null });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("image upload API sanitizes stored bytes and reports malformed images as 422", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });

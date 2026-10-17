@@ -17,6 +17,7 @@ import {
 } from "solid-js";
 import { markdown } from "../../shared";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
+import { type ChatTaskReason, chatTaskReasonSentence, chatTaskReasonState, chatTaskStopSentence } from "../chat-task-reasons";
 import type { AiTurnError } from "../types";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
 import {
@@ -65,8 +66,17 @@ export type AiTurnSegment = {
   earlier: boolean;
   /** Read reactively, so a ticking clock does not rebuild the segment. */
   duration: () => AiTurnDuration | null;
-  /** Shown above the work of a delivered scheduled result. */
-  scheduledTask?: { taskId: string; occurrenceId: string } | null;
+  /**
+   * Shown above the work of a delivered scheduled result. `stop` and `reason` add a system line the chat words in
+   * the reader's language; with `stop` or `reasonOnly` that line replaces the stored text.
+   */
+  scheduledTask?: {
+    taskId: string;
+    occurrenceId: string;
+    reason?: ChatTaskReason;
+    reasonOnly?: true;
+    stop?: { cause: "paused" | "deleted"; done: string[] };
+  } | null;
   /**
    * The live turn cannot reach the model or the server right now: a model call waits for its retry, or the stream
    * reconnects. The working segment's work line says so while its clock stands; a turn without a work line yet says
@@ -789,6 +799,7 @@ function AiTurnText(props: {
  */
 export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosureState: AiToolDisclosureState }): JSX.Element {
   const locale = useLocale();
+  const timeZone = useReaderTimeZone();
   const chatActions = useAiChatActions();
   const layout = () => props.segment().layout;
   const results = createMemo(() => new Map(layout().results.map((result) => [result.id, result])));
@@ -829,7 +840,12 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           </div>
         </Show>
         <For each={resultIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => actions().has(id)} />}</For>
-        <Show when={layout().text.length > 0}>
+        <Show when={props.segment().scheduledTask?.stop}>
+          {(stop) => (
+            <Chat.Activity class="ai-turn__routine-line" icon="ti ti-player-stop" label={chatTaskStopSentence(stop().done, locale())} />
+          )}
+        </Show>
+        <Show when={layout().text.length > 0 && !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly}>
           <AiTurnText
             blocks={() => layout().text}
             live={live}
@@ -837,6 +853,16 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             quiet={() => layout().textIsStatus}
             earlier={() => props.segment().earlier}
           />
+        </Show>
+        <Show when={props.segment().scheduledTask?.stop ? undefined : props.segment().scheduledTask?.reason}>
+          {(reason) => (
+            <Chat.Activity
+              class="ai-turn__routine-line"
+              icon={chatTaskReasonState(reason().code) === "paused" ? "ti ti-player-pause" : "ti ti-alert-triangle"}
+              tone={chatTaskReasonState(reason().code) === "paused" ? "neutral" : "warning"}
+              label={chatTaskReasonSentence(reason(), { locale: locale(), timeZone })}
+            />
+          )}
         </Show>
         <For each={actionIds()}>
           {(id) => <AiTurnActionView action={() => actions().get(id)} turnId={props.segment().turnId} phase={props.segment().phase} />}

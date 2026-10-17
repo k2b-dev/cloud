@@ -3,6 +3,11 @@ import type { AiChatTask } from "@k2b/cloud/ai";
 import { reconcileAiChatTaskSchedules, recoverAiChatTasks } from "./ai-chat-tasks-runtime";
 
 const task = (id: string): AiChatTask => ({
+  title: null,
+  name: "Release planning",
+  locale: null,
+  reasonCode: null,
+  reasonAt: null,
   id,
   shortId: id,
   chatId: "chat",
