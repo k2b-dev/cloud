@@ -45,6 +45,24 @@ AI results remain normal workflow outputs. **Use output** and **Add condition** 
 
 The editor turns off or leaves out additions that would exceed the limits for the flow, branches, nesting, or AI calls. You cannot remove a step that produces output while a later step still uses that output. When you rename an AI classification choice, Mail updates the conditions that use it. Before you delete a choice in use, remove or change those conditions.
 
+### Keep noise out of Needs action
+
+For newsletters, sign-in codes, or shipping updates, use one incoming automation:
+
+:::steps
+1. Add a condition for the sender or domain.
+2. Add **Mail action → Mark as read**.
+3. Add **Mail action → Set status → Done**.
+4. Add **Mail action → Move to folder** and choose the destination.
+:::
+
+Keep read before move in one automation; see **Several matching automations** below. The status step changes only Cloud state.
+For important mail, add no status step: incoming mail already sets **Needs action**.
+Adding **AI classify** starts with **Important** and **Routine** and an If branch.
+For **Important**, it uses **Set status → Needs action**; otherwise, **Set status → Done**.
+Add **Move to folder** to the **Routine** branch to file it too.
+An automation's **Done** or **Waiting for reply** covers only the message that started it, also when Mail loads that message later. Other incoming mail sets **Needs action** again.
+
 ### Know the guided definition contract
 
 The guided editor and the CLI use the same strict definition. Mail rejects unknown fields. A definition has `name`, `enabled`, `scope`, and `steps`. Its name accepts 1–120 characters. A new definition sets `enabled` to `false` by default.
@@ -96,7 +114,7 @@ A generated text output has no effect until a later step uses it. Reply automati
 
 Spaces steps run with a delegation of the user who set up the automation, and that user can revoke it. Mail stores its token encrypted. It revokes the token when someone removes the last Spaces step or deletes the automation. Every run still checks the current Mail access and the current Spaces access. Linking updates an existing link or creates one, and event creation uses a durable idempotency key, so retries create no duplicate events. If someone revokes the delegated API key or removes the Space access, future runs fail instead of acting without that access.
 
-Use `set_status: done` to complete a conversation. Done is a local state and does not mark mail read. Unread counts follow the provider read flag, so add **Mark as read** when mail should also stop counting as unread. Use `needs_action` or `waiting` to open it again explicitly. Other new incoming mail moves a completed conversation back to **Needs action**. The message that starts the automation does not reopen it, even when Mail loads its content later. A separate step that unmarks Done on incoming mail is therefore normally not needed.
+Unread counts follow the provider read flag. Done does not mark mail read, so the recipe in **Keep noise out of Needs action** adds **Mark as read**. Use `needs_action` or `waiting` to open a conversation again explicitly.
 
 For automation through `cld`, use `mail automation catalog` to find valid IDs. `mail automation create` and `mail automation update` accept the complete guided definition as JSON or YAML through `--definition-file` or `--definition-stdin`, including `scope` and the ordered `steps` tree. The CLI and the interface therefore behave the same, including output references and nested conditions. For an invalid definition, Mail names each affected field by its path, such as `scope.conditions.items`, with the reason.
 
