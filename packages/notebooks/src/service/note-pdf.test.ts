@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { GotenbergRenderError, MarkdownPdfError, type PdfImageVariant } from "@k2b/cloud/services/pdf";
+import { GotenbergRenderError, MarkdownPdfError, PDF_IMAGE_MAX_INPUT_BYTES, type PdfImageVariant } from "@k2b/cloud/services/pdf";
 import { renderNotebookBook } from "../lib/book-renderer";
 import { DOCUMENTED_IMAGE_FORMS } from "../lib/markdown-image.fixtures";
 import type { Attachment } from "./attachments";
@@ -299,6 +299,22 @@ describe("PDF attachment packing", () => {
     ]);
     expect(result.html).not.toContain("private.png");
     expect(result.html).toContain("Image not included – file not found");
+  });
+
+  test("attachments above the image worker's input cap are never loaded, even under a larger attachment limit", async () => {
+    let loads = 0;
+    const result = await prepareNotePdfImages(
+      imageInput("![huge](attach://BIG000)", { maxAttachmentBytes: 200 * 1024 * 1024 }),
+      imageDeps({
+        list: async () => [fixtureAttachment("BIG000", { sizeBytes: PDF_IMAGE_MAX_INPUT_BYTES + 1 })],
+        content: async () => {
+          loads++;
+          return null;
+        },
+      }),
+    );
+    expect(loads).toBe(0);
+    expect(result.omissions).toEqual([{ code: "too_large", kind: "image", label: "huge" }]);
   });
 
   test("deadlines and abort stop starting images and propagate primitive failure codes", async () => {

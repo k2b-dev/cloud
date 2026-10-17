@@ -73,16 +73,6 @@ const defaults: NotePdfImageDependencies = {
   now: Date.now,
 };
 
-/** Settle database waits on cancellation; image workers themselves are awaited until their child exits. */
-export function waitForPdfPreparation<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const abort = () => reject(new GotenbergRenderError("timeout", "Note PDF preparation timed out."));
-    signal.addEventListener("abort", abort, { once: true });
-    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
-    if (signal.aborted) abort();
-  });
-}
-
 /** Resolve only notebook-owned attachments, and retain at most one input budget per tier. */
 export async function prepareNotePdfImages(
   input: {
@@ -113,7 +103,7 @@ export async function prepareNotePdfImages(
   });
   const rows =
     shortIds.length && !input.signal.aborted && deps.now() < input.deadline
-      ? await waitForPdfPreparation(deps.list({ shortIds, notebookId: input.notebookId }), input.signal)
+      ? await deps.list({ shortIds, notebookId: input.notebookId })
       : [];
   const metadata = new Map(rows.filter((row) => row.notebookId === input.notebookId).map((row) => [row.shortId, row]));
   const label = (image: BookImagePlacement) =>
@@ -143,7 +133,7 @@ export async function prepareNotePdfImages(
   let peakRetainedBytes = 0;
   // Keep content scoped to this call so it is released before the next attachment is loaded.
   const prepare = async (row: attachments.Attachment, placements: BookImagePlacement[]) => {
-    const loaded = await waitForPdfPreparation(deps.content({ id: row.id, notebookId: input.notebookId }), input.signal);
+    const loaded = await deps.content({ id: row.id, notebookId: input.notebookId });
     if (!loaded) return { ok: false, code: "not_found" } as const;
     if (input.signal.aborted || deps.now() >= input.deadline) return { ok: false, code: "timed_out" } as const;
     return deps.prepare(
@@ -174,7 +164,8 @@ export async function prepareNotePdfImages(
       group.code = "unsupported_format";
       continue;
     }
-    if (row.sizeBytes > input.maxAttachmentBytes) {
+    // The image worker rejects larger inputs anyway; never load bytes it cannot take.
+    if (row.sizeBytes > Math.min(input.maxAttachmentBytes, PDF_IMAGE_MAX_INPUT_BYTES)) {
       group.code = "too_large";
       continue;
     }

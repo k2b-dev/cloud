@@ -13,7 +13,7 @@ import { LIGATURE_CLASS, LIGATURES } from "../lib/ligatures";
 import type { NotePdfOmission } from "../lib/pdf-omissions";
 import * as attachments from "./attachments";
 import { resolveBookQueries, resolveBookReferences } from "./book";
-import { NOTE_PDF_PAGE_BOX_MM, type NotePdfImageDependencies, prepareNotePdfImages, waitForPdfPreparation } from "./note-pdf-images";
+import { NOTE_PDF_PAGE_BOX_MM, type NotePdfImageDependencies, prepareNotePdfImages } from "./note-pdf-images";
 import type { NoteQueryResult } from "./note-query";
 
 /**
@@ -156,19 +156,22 @@ export const renderNotePdf = async (
   const preparation = new AbortController();
   const timer = setTimeout(() => preparation.abort(), phaseMs);
   const signal = options.signal ? AbortSignal.any([options.signal, preparation.signal]) : preparation.signal;
+  // Started work finishes before the route releases its conversion slot; the signal only stops the next step.
+  const closed = () => {
+    if (options.signal?.aborted) throw new GotenbergRenderError("timeout", "Note PDF preparation aborted.");
+  };
   try {
-    signal.throwIfAborted();
-    const [queryResults, attachmentMetadata] = await waitForPdfPreparation(
-      Promise.all([
-        resolveBookQueries(params),
-        (options.imageDependencies?.list ?? attachments.listByShortIds)({
-          shortIds: attachments.extractIds(params.markdown),
-          notebookId: params.notebookId,
-        }),
-      ]),
-      signal,
-    );
-    const references = await waitForPdfPreparation(resolveBookReferences(params, attachmentMetadata), signal);
+    closed();
+    const [queryResults, attachmentMetadata] = await Promise.all([
+      resolveBookQueries({ ...params, signal }),
+      (options.imageDependencies?.list ?? attachments.listByShortIds)({
+        shortIds: attachments.extractIds(params.markdown),
+        notebookId: params.notebookId,
+      }),
+    ]);
+    closed();
+    const references = await resolveBookReferences(params, attachmentMetadata);
+    closed();
     const built = buildNotePdfHtml({ ...params, queryResults, references });
     const prepared = await prepareNotePdfImages(
       {
@@ -182,7 +185,7 @@ export const renderNotePdf = async (
       },
       { ...options.imageDependencies, list: async () => attachmentMetadata },
     );
-    if (options.signal?.aborted) throw new GotenbergRenderError("timeout", "Note PDF preparation aborted.");
+    closed();
     clearTimeout(timer);
     return {
       ...(await renderHtmlToPdfWithConfig(

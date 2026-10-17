@@ -33,10 +33,13 @@ export const resolveBookQueries = async (params: {
   boundNotebookId?: string | null;
   markdown: string;
   bypassAccess?: boolean;
+  /** Stops before the next query; a query without a result prints as unavailable. */
+  signal?: AbortSignal;
 }): Promise<Map<number, NoteQueryResult>> => {
   const queryResults = new Map<number, NoteQueryResult>();
   // The parser bounds blocks and each resolver bounds rows. Avoid database fan-out.
   for (const query of parseNotebookQueryBlocks(params.markdown).blocks) {
+    if (params.signal?.aborted) break;
     queryResults.set(
       query.line,
       await resolveNoteQuery({
