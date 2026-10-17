@@ -1,5 +1,7 @@
 import { type JSX, Show } from "solid-js";
 import Chart from "../content/Chart";
+import type { ChartTooltipFormatter } from "../content/chart-inspection-core";
+import { useLocale } from "../intl/locale";
 import type { AccentColor } from "../semantics";
 import { type StatGridSize, useStatGridSize, useStatGridSurface } from "./StatGrid";
 
@@ -20,6 +22,11 @@ export type StatCellProps = {
   href?: string;
   title?: string;
   trend?: readonly number[];
+  /**
+   * Replaces the default trend tooltip in browser code, for example with a period title or a unit.
+   * `selection.datum.index` is the source index into `trend`.
+   */
+  trendTooltip?: ChartTooltipFormatter;
   size?: StatGridSize;
   /**
    * Wraps the label, value and support line instead of truncating them. Use it for a cell whose height nothing
@@ -32,6 +39,13 @@ function Body(props: StatCellProps): JSX.Element {
   const gridSize = useStatGridSize();
   const size = () => props.size ?? gridSize;
   const accent = () => props.accent;
+  const locale = useLocale();
+  const defaultTrendTooltip: ChartTooltipFormatter = ({ datum }) => {
+    const y = datum.values.find((field) => field.key === "y")?.value ?? "";
+    return {
+      rows: [{ label: props.label, value: typeof y === "number" ? new Intl.NumberFormat(locale()).format(y) : y }],
+    };
+  };
   return (
     <>
       <span class="k2b-stat-cell__label" data-size={size()}>
@@ -44,6 +58,7 @@ function Body(props: StatCellProps): JSX.Element {
         <Chart
           kind="sparkline"
           labels={{ interactiveChart: props.label }}
+          tooltip={props.trendTooltip ?? defaultTrendTooltip}
           class="k2b-stat-cell__trend"
           style={{ height: "32px" }}
           data={Array.from(props.trend ?? [])}

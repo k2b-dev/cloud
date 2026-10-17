@@ -1,6 +1,9 @@
 import { render } from "solid-js/web";
 import Chart from "../src/content/Chart";
+import { LocaleProvider } from "../src/intl/locale";
 import { StatCell } from "../src/surfaces/StatCell";
+
+const latencyTrend = [12, 18];
 
 render(
   () => (
@@ -35,7 +38,25 @@ render(
           },
         ]}
       />
-      <StatCell label="Requests" value={42} trend={[12, 24, 18]} />
+      <div class="requests-trend">
+        <StatCell label="Requests" value={42} trend={[12, 24, 18]} />
+      </div>
+      <div class="de-trend">
+        <LocaleProvider locale="de">
+          <StatCell label="Umsatz" value={1500} trend={[1200, 1500]} />
+        </LocaleProvider>
+      </div>
+      <div class="custom-trend">
+        <StatCell
+          label="Latency"
+          value={18}
+          trend={latencyTrend}
+          trendTooltip={({ datum }) => ({
+            title: `Day ${datum.index + 1}`,
+            rows: [{ label: "Latency", value: `${latencyTrend[datum.index]} ms` }],
+          })}
+        />
+      </div>
       <div aria-hidden="true" style={{ height: "1600px" }} />
     </main>
   ),

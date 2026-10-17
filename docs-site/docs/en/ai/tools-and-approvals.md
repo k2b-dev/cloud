@@ -287,7 +287,9 @@ A saved stats view is `{view: "stats", title, subtitle?, items}`. Each item has
 optional number `format`, `sub`, finite `delta`, `better: "up" | "down"`, and
 `sparkline` (2..480 finite numbers, oldest first). Format and delta require a
 numeric value; better requires delta. Delta is in the value's units. The host
-chooses improvement colors from better; no direction or zero stays neutral.
+chooses improvement colors from better; no direction or zero stays neutral. The
+sparkline tooltip names each point after the item label and uses the item
+`format`.
 Titles are trimmed to 1..160 characters, subtitles to 1..300, and item labels,
 text values and sub to 1..80. Stats do not convert Dates.
 

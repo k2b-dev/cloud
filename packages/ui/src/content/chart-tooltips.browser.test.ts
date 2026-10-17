@@ -59,6 +59,14 @@ const tooltipText = async (page: Page, chart = ".plain-bar", text = "Imports") =
   );
   return page.locator(`${chart} [role="tooltip"]`).textContent();
 };
+const tooltipContent = (page: Page, chart: string) =>
+  page.locator(`${chart} [role="tooltip"]:popover-open`).evaluate((tooltip) => ({
+    title: tooltip.querySelector(".k2b-chart__tooltip-title")?.textContent ?? null,
+    rows: Array.from(tooltip.querySelectorAll(".k2b-chart__tooltip-row")).map((row) => [
+      row.querySelector("span")?.textContent?.replace(/:\s*$/, ""),
+      row.querySelector("b")?.textContent,
+    ]),
+  }));
 const closed = (page: Page) => page.waitForFunction(() => !document.querySelector('[role="tooltip"]:popover-open'));
 const focused = (page: Page) => page.locator(".plain-bar").evaluate((chart) => chart === document.activeElement);
 
@@ -142,22 +150,64 @@ test("phone taps pin inspection; outside pointerdown and scrolling dismiss it", 
 test("a StatCell trend has a named sparkline with hover inspection and stable geometry", async () => {
   const page = await open();
   try {
-    const chart = page.locator('.k2b-stat-cell [data-chart-kind="sparkline"]');
+    const chart = page.locator('.requests-trend [data-chart-kind="sparkline"]');
     expect(await chart.getAttribute("aria-label")).toBe("Requests");
     const before = await chart.boundingBox();
     expect(before).not.toBeNull();
     await chart.locator("[data-chart-datum] circle").last().hover();
-    const text = await tooltipText(page, ".k2b-stat-cell__trend", "18");
-    expect(text).toContain("18");
+    const text = await tooltipText(page, ".requests-trend .k2b-stat-cell__trend", "18");
+    expect(await tooltipContent(page, ".requests-trend")).toEqual({ title: null, rows: [["Requests", "18"]] });
+    expect(text).toContain("Requests: 18");
+    expect(text).not.toMatch(/\b[XY]:|\bX\b|\bY\b|Value|Wert/);
     expect(await chart.boundingBox()).toEqual(before);
     await page.mouse.move(0, 0);
     await closed(page);
+    await chart.scrollIntoViewIfNeeded();
+    await page.evaluate(() => new Promise(requestAnimationFrame));
     await chart.focus();
-    await tooltipText(page, ".k2b-stat-cell__trend", "12");
+    await tooltipText(page, ".requests-trend .k2b-stat-cell__trend", "12");
+    expect(await tooltipContent(page, ".requests-trend")).toEqual({ title: null, rows: [["Requests", "12"]] });
     expect(await chart.boundingBox()).toEqual(before);
     await page.locator("#after").focus();
     await closed(page);
     expect(await chart.boundingBox()).toEqual(before);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a StatCell trend shows one named value on a phone and closes on outside touch", async () => {
+  const page = await open({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  try {
+    const chart = page.locator('.requests-trend [data-chart-kind="sparkline"]');
+    await chart.locator("[data-chart-datum] circle").last().tap();
+    const text = await tooltipText(page, ".requests-trend .k2b-stat-cell__trend", "18");
+    expect(await tooltipContent(page, ".requests-trend")).toEqual({ title: null, rows: [["Requests", "18"]] });
+    expect(text).not.toMatch(/\b[XY]:|\bX\b|\bY\b|Value|Wert/);
+    await page.locator("#before").dispatchEvent("pointerdown", { pointerType: "touch", bubbles: true });
+    await closed(page);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a StatCell trend formats values in the inherited locale", async () => {
+  const page = await open();
+  try {
+    await page.locator(".de-trend [data-chart-datum] circle").last().hover();
+    await tooltipText(page, ".de-trend .k2b-stat-cell__trend", "1.500");
+    expect(await tooltipContent(page, ".de-trend")).toEqual({ title: null, rows: [["Umsatz", "1.500"]] });
+  } finally {
+    await page.close();
+  }
+});
+
+test("a StatCell trend formatter replaces the default with a period title and unit", async () => {
+  const page = await open();
+  try {
+    await page.locator(".custom-trend [data-chart-datum] circle").last().hover();
+    await tooltipText(page, ".custom-trend .k2b-stat-cell__trend", "18 ms");
+    expect(await tooltipContent(page, ".custom-trend")).toEqual({ title: "Day 2", rows: [["Latency", "18 ms"]] });
   } finally {
     await page.close();
   }
