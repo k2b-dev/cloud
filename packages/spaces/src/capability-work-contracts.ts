@@ -75,7 +75,6 @@ export const EventAgendaDataSchema = z
         startsAt: z.string(),
         endsAt: z.string(),
         allDay: z.boolean(),
-        deadlineAllDay: DeadlineAllDaySchema,
         location: z.string().max(500).nullable(),
         recurrenceId: z.string().nullable(),
         seriesId: ResourceShortIdSchema.nullable(),

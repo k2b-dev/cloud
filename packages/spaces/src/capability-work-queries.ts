@@ -101,7 +101,6 @@ export const runEventAgenda = async (input: z.infer<typeof EventAgendaInputSchem
       startsAt: item.startsAt!,
       endsAt: item.endsAt!,
       allDay: item.allDay,
-      deadlineAllDay: item.deadlineAllDay,
       location: item.location?.slice(0, 500) ?? null,
       recurrenceId: item.recurrenceId,
       seriesId: item.recurringEventId,
