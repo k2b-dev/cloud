@@ -44,6 +44,16 @@ render(() => createComponent(LocaleProvider, { locale: new URLSearchParams(locat
   insert(extra, () => activeDrag() && window.extraTarget ? target("Later", ["demo.row"]) : null);
   return [list, rail, extra];
 } }), document.getElementById("app"));
+// A modal dialog nested inside the Archive target, with its own source.
+window.openNested = () => {
+  const dialog = document.createElement("dialog"); dialog.className = "nested"; dialog.style.padding = "40px";
+  document.querySelector(".archive").append(dialog);
+  render(() => createComponent(LocaleProvider, { locale: "en", get children() {
+    const row = document.createElement("div"); row.className = "inner-row"; row.textContent = "Inner row";
+    return createComponent(DragSource, { payload: { type: "demo.row", value: "inner", label: "Inner" }, children: row });
+  } }), dialog);
+  dialog.showModal();
+};
 new MutationObserver(() => {
   const text = document.querySelector('.k2b-drag-announcer')?.textContent;
   if (text && window.announcements.at(-1) !== text) window.announcements.push(text);
@@ -421,8 +431,9 @@ describe(`drag and drop in ${browserName}`, () => {
   test("keyboard pickup skips a hidden destination", async () => {
     const { page, context } = await open();
     try {
+      // Still laid out, but invisible: a pointer cannot aim at it, so the keyboard must not either.
       await page.locator(".archive").evaluate((el) => {
-        (el as HTMLElement).style.display = "none";
+        (el as HTMLElement).style.visibility = "hidden";
       });
       const row = page.getByRole("group", { name: "Row 2", exact: true });
       await row.focus();
@@ -434,6 +445,27 @@ describe(`drag and drop in ${browserName}`, () => {
       await clean(page);
       expect(await row.evaluate((el) => el === document.activeElement)).toBe(true);
       await page.keyboard.press("Enter");
+      expect(await drops(page)).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a drag inside a modal dialog never reaches a target around the dialog", async () => {
+    const { page, context } = await open();
+    try {
+      await page.evaluate("window.openNested()");
+      const row = (await page.locator(".inner-row").boundingBox())!;
+      const dialog = (await page.locator("dialog.nested").boundingBox())!;
+      await page.mouse.move(row.x + 10, row.y + row.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(row.x + 30, row.y + row.height / 2);
+      await page.locator(".k2b-drag-preview").waitFor();
+      await page.mouse.move(dialog.x + 8, dialog.y + 8);
+      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      expect(await page.locator(".archive").getAttribute("data-drop")).not.toBe("over");
+      await page.mouse.up();
+      await clean(page);
       expect(await drops(page)).toEqual([]);
     } finally {
       await context.close();

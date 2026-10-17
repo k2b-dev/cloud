@@ -60,24 +60,28 @@ const engineFor = (doc: Document): Engine => {
 };
 const accepts = (target: Target, payload: DragPayload) =>
   target.element.isConnected && !target.disabled && target.accept.includes(payload.type);
-/** The topmost modal dialog; everything outside of it is inert. */
-const topModal = (doc: Document): Element | undefined =>
-  Array.from(doc.querySelectorAll("dialog[open]"))
-    .filter((dialog) => {
-      try {
-        return dialog.matches(":modal");
-      } catch {
-        return false;
-      }
-    })
-    .at(-1);
-/** A keyboard destination must be one a pointer could reach: shown, not inert, and not behind a modal dialog. */
-const reachable = (target: Target) => {
+const isModal = (dialog: Element) => {
+  try {
+    return dialog.matches(":modal");
+  } catch {
+    return dialog.matches("dialog[open]");
+  }
+};
+/** The modal dialog around an element; while one is open, everything outside of it is inert. */
+const modalOf = (element: Element): Element | undefined => {
+  for (let dialog = element.closest("dialog"); dialog; dialog = dialog.parentElement?.closest("dialog") ?? null)
+    if (isModal(dialog)) return dialog;
+  return undefined;
+};
+/**
+ * A keyboard destination must be one a pointer could reach from where the pickup started: shown and visible, not
+ * inert, and in the same modal dialog as the origin.
+ */
+const reachable = (target: Target, origin: HTMLElement) => {
   const element = target.element;
-  if (element.closest("[inert]")) return false;
-  const modal = topModal(element.ownerDocument);
-  if (modal && !modal.contains(element)) return false;
-  return typeof element.checkVisibility === "function" ? element.checkVisibility() : element.getClientRects().length > 0;
+  if (element.closest("[inert]") || modalOf(element) !== modalOf(origin)) return false;
+  if (typeof element.checkVisibility === "function") return element.checkVisibility({ checkVisibilityCSS: true });
+  return element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden";
 };
 const mark = (target: Target, payload?: DragPayload) => {
   if (payload && accepts(target, payload)) target.element.dataset.drop = "ok";
@@ -294,6 +298,8 @@ export const bindDragSource = (
       let next: Target | undefined;
       for (let element = hit; element; element = element.parentElement) {
         const target = engine.byElement.get(element);
+        // A dialog is a boundary: a target around it lies behind it.
+        if (!target && element instanceof HTMLDialogElement) break;
         if (!target) continue;
         inner ??= target;
         if (accepts(target, payload)) {
@@ -464,7 +470,7 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
   const payload = { ...input };
   const choices = () =>
     [...engine.targets]
-      .filter((target) => accepts(target, payload) && reachable(target))
+      .filter((target) => accepts(target, payload) && reachable(target, origin))
       .sort((a, b) => (a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   let targets: Target[] = [];
   let current: Target | undefined;
@@ -509,7 +515,7 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
     event.stopPropagation();
     if (next !== undefined) choose(targets[(next + targets.length) % targets.length]!);
     else if (event.key === "Escape") cancel();
-    else end(current && accepts(current, payload) && reachable(current) ? current : undefined);
+    else end(current && accepts(current, payload) && reachable(current, origin) ? current : undefined);
   };
   /** Chooses the first destination and starts listening; without one, the sequence ends at once. */
   const settle = () => {
