@@ -179,8 +179,9 @@ Open each URL state that a test checks in its own page. Navigate a loaded page
 in place only when the test checks navigation itself: reload, Back, Forward,
 or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place
 `goto` on an idle Notebooks page stalled before load in two WebKit CI runs,
-and a Back to a graph page in a third; hundreds of local runs did not
-reproduce it, and first navigations of fresh pages never stalled.
+and a Back to a graph page in a third. The cause was a collapsed receive
+queue on the CI runner's kernel; see
+[When a page never fires load](#when-a-page-never-fires-load).
 
 When `goto`, `reload`, `goBack`, or `goForward` on a launcher page fails or
 times out, the error appends a navigation diagnosis. It names the call and how long it
@@ -310,6 +311,34 @@ docker run --rm --network host --pid=container:playwright-webkit \
 
 A main thread in `gst_pad_stop_task` under `gst_element_change_state` is the
 media deadlock.
+
+### When a page never fires load
+
+A navigation that commits but never fires load, or never commits, waits for a
+response that does not finish. The navigation diagnosis lists that response
+under "Requests still open". When the test server wrote the whole response,
+look at the sockets on the server's port while the page waits:
+
+```bash
+sudo ss -tnoiepm state all '( sport = :PORT or dport = :PORT )'
+grep -A1 '^TcpExt' /proc/net/netstat
+```
+
+A browser socket with a receive buffer of about 1 KB (`rb` in `skmem`), no
+unread data, and drops (`d`), next to a server socket that waits on a 2 KB
+window, is a collapsed receive queue. Rising `PruneCalled`, `TCPRcvQDrop`, and
+`BeyondWindow` counters confirm it. On Linux 6.17, the kernel of the CI
+runners, this happens when the busy browser reads a large page, bundle, or
+font slowly. The receive buffer then shrinks, and the connection never
+recovers ([#1367](https://github.com/k2b-dev/cloud/issues/1367)). Every CI job
+that installs dependencies sets an 8 MiB default receive buffer through
+`.github/actions/install`. When
+browser tests stall like this on a development machine, apply the CI setting
+until the next reboot:
+
+```bash
+sudo sysctl -w net.ipv4.tcp_rmem="4096 8388608 33554432"
+```
 
 ### Engine differences
 
@@ -637,8 +666,10 @@ writes for the current `bun.lock`. With that cache, `bun ci` needs no
 registry. `scripts/ci-install.ts` stops an install that takes over two
 minutes and retries a stalled install once. Any other install failure fails
 at once. A pull request that changes `bun.lock` installs from the registry
-until it merges. The `ci-install` check rejects direct dependency installs in
-workflows. Only the release workflow keeps a plain `bun ci`, because it can
+until it merges. Before the install, the action sets the default TCP receive
+buffer to 8 MiB, so a slow browser cannot stall a test server's response; see
+[When a page never fires load](#when-a-page-never-fires-load). The
+`ci-install` check rejects direct dependency installs in workflows. Only the release workflow keeps a plain `bun ci`, because it can
 finish an older release from a commit without the install action.
 
 The standalone `cld` test compiles the release target. On Linux x64, Bun
