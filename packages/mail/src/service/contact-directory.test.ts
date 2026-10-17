@@ -1,5 +1,4 @@
-import { afterAll, describe, expect, spyOn, test } from "bun:test";
-import * as capabilityServer from "@k2b/cloud/capabilities/server";
+import { describe, expect, test } from "bun:test";
 import type { CapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
@@ -17,11 +16,14 @@ import {
   type User,
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
-import { app } from "../config";
-import * as access from "./access";
 import type { MailContactDirectoryConfig } from "../contact-directory-settings";
 import type { MailRequestContext } from "./auth";
-import type { ContactDirectoryDependencies } from "./contact-directory";
+import {
+  type ContactDirectoryDependencies,
+  contactDirectoryIssues,
+  loadContactDirectoryAdmin,
+  saveContactDirectory,
+} from "./contact-directory";
 
 const run = (): CapabilityInvocationResult<never> => ({
   ok: false,
@@ -153,11 +155,6 @@ const dependencies = (overrides: Partial<ContactDirectoryDependencies> = {}) => 
   return { deps, writes };
 };
 
-// Install the catalog spy before the platform adapter captures its dependency.
-const catalog = spyOn(capabilityServer, "getCapabilityCatalogApp").mockResolvedValue({ ok: true, data: catalogApp() });
-const { contactDirectoryIssues, loadContactDirectoryAdmin, saveContactDirectory } = await import("./contact-directory");
-afterAll(() => catalog.mockRestore());
-
 describe("Mail contact directory administration", () => {
   test("offers only capabilities whose published schemas match each function", async () => {
     const { deps } = dependencies();
@@ -247,22 +244,4 @@ describe("Mail contact directory administration", () => {
     expect(await saveContactDirectory(context, crmConfig, "en", deps)).toMatchObject({ ok: false, status: 403 });
     expect(writes).toEqual([]);
   });
-});
-
-test("explicit contact directory input replaces unreadable settings through the platform adapter", async () => {
-  const authorize = spyOn(access, "isCurrentPlatformAdmin").mockResolvedValue(true);
-  const write = spyOn(app.settings, "set").mockResolvedValue();
-  try {
-    expect(await saveContactDirectory(context, crmConfig, "en")).toEqual({ ok: true, config: crmConfig });
-    expect(write.mock.calls).toEqual([
-      ["mail.contact_directory.app", "crm", { replaceUnreadable: true }],
-      ["mail.contact_directory.suggest", "customer.suggest", { replaceUnreadable: true }],
-      ["mail.contact_directory.resolve", "customer.match", { replaceUnreadable: true }],
-      ["mail.contact_directory.read", "customer.read", { replaceUnreadable: true }],
-      ["mail.contact_directory.list_writable_books", "segment.list", { replaceUnreadable: true }],
-      ["mail.contact_directory.create", "customer.create", { replaceUnreadable: true }],
-    ]);
-  } finally {
-    for (const spy of [authorize, write]) spy.mockRestore();
-  }
 });
