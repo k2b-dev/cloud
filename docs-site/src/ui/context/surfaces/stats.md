@@ -58,7 +58,7 @@ stays empty. One- and two-column grids remain fixed.
 | `accent` | `StatCellAccent` | Adds a semantic icon or short status pill. |
 | `valueClass` | `string` | Overrides the value color. |
 | `title` | `string` | Adds a native title to a truncated value. |
-| `trend` | `readonly number[]` | Adds a compact sparkline from oldest to newest. |
+| `trend` | `readonly number[]` | Adds a compact sparkline from oldest to newest, with tooltips and keyboard inspection. |
 | `size` | `"md" \| "sm"` | Overrides the inherited size for one cell. |
 | `wrap` | `boolean` | Wraps label, value, `sub` and accent instead of truncating them; the accent moves below `sub` when both do not fit. |
 
@@ -67,6 +67,11 @@ height. Use `wrap` only for a cell whose height nothing else reserves, such as
 one figure on its own.
 
 An accent has a `tone`, Tabler `icon`, and optional `text`. Text creates a pill. Without text, only the icon is shown. Use the cell `href` when the measurement needs a link.
+
+A trend sparkline uses the cell's label as its accessible name. Keep `href` and
+`trend` on separate cells: a linked cell should not contain an inspectable
+sparkline, which would nest interactive content. That combination is not yet
+supported.
 
 ## Composition
 

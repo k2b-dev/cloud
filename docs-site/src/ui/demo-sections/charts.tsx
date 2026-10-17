@@ -21,7 +21,6 @@ const examples = {
       xAxis: { label: "Time (h)" },
       legend: true,
       smooth: true,
-      interactive: true,
     },
   },
   scatter: {
@@ -377,7 +376,6 @@ const gallery = Object.values(examples).map(({ description, chart }) => ({
   chart: {
     ...(chart.kind === "stateTimeline" ? {} : { style: { height: "14rem" } }),
     ...chart,
-    interactive: true,
   },
 }));
 
