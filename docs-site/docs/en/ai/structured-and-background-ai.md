@@ -137,8 +137,10 @@ Core deletes a scheduled task's finished run (completed or failed) 90 days
 after it finished, together with its background turn, tool calls, and run
 transcript. Queued and running runs stay, as does the result message the run
 delivered into its chat. A finished run also stays while its turn is still active.
-The run holding a one-off task's scheduled time stays, even after completion,
-until the task gets a new time or is deleted, so that time never runs twice.
+The run holding a one-off task's scheduled time keeps its row, even after
+completion, until the task gets a new time or is deleted, so that time never
+runs twice; its background turn and transcript still expire after 90 days.
+Memory learning runs that used an expired turn as evidence stay without it.
 If the task was deleted, its runs' background turns, tool calls, and transcripts
 expire on the same 90-day clock, measured from when each turn finished.
 

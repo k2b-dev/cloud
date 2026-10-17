@@ -135,7 +135,7 @@ test("global task dialogs provide live context through activity, run detail and 
   }
 });
 
-test("a run removed after 90 days explains that its result stays in the chat, also when it expires while open", async () => {
+test("an expired run or run history explains that its result stays in the chat, also when it expires while open", async () => {
   const dom = createDomTestHarness();
   dom.root.className = "k2b-ui";
   const { dialogCore } = await import("@k2b/ui");
@@ -203,6 +203,17 @@ test("a run removed after 90 days explains that its result stays in the chat, al
     unavailable();
     dialogCore.close();
     await later;
+    // A one-off task's slot run outlives its transcript: the history explains the gap instead of staying blank.
+    removed = false;
+    void openAssistantTaskRun(task.id, occurrence.id, createAssistantLiveHub());
+    await tick();
+    const history = [...dom.document.querySelectorAll("button")].find((button) => button.textContent?.includes("Run history"));
+    history?.click();
+    await tick();
+    const historyPlaceholder = [...dom.document.querySelectorAll(".k2b-placeholder")].find((item) =>
+      item.textContent?.includes("No run history"),
+    );
+    expect(historyPlaceholder?.textContent).toContain("Run details are kept for 90 days after a run finishes.");
   } finally {
     while (dialogCore.isOpen()) dialogCore.close();
     await tick();

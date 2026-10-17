@@ -45,6 +45,7 @@ const germanText: Record<string, string> = {
   "Background run": "Hintergrundlauf",
   "Manage task": "Aufgabe verwalten",
   "Run history": "Laufverlauf",
+  "No run history": "Kein Laufverlauf",
   "Run needs attention": "Lauf benötigt Aufmerksamkeit",
   "Loading background activity": "Hintergrundaktivität wird geladen",
   "Could not load background activity": "Hintergrundaktivität konnte nicht geladen werden",

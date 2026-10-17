@@ -110,7 +110,19 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
                     onOpenReference: (title, ref) => void openAssistantCloudReference(title, ref),
                   }}
                 >
-                  <RunTranscript messages={value().messages} />
+                  {/* A one-off task keeps its run after 90 days, but its transcript expires. */}
+                  <Show
+                    when={value().messages.length}
+                    fallback={
+                      <Placeholder
+                        icon="ti ti-history-off"
+                        title={text("No run history")}
+                        description={text("Run details are kept for 90 days after a run finishes. Its result stays in the chat.")}
+                      />
+                    }
+                  >
+                    <RunTranscript messages={value().messages} />
+                  </Show>
                 </AiChatActionsProvider>
               }
             >

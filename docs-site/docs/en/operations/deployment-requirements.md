@@ -983,8 +983,11 @@ deletes completed and failed runs older than 90 days, their background turns
 with tool calls, and their run transcripts (`ai.task_messages`) in batches of
 100 per minute. Queued and running runs, finished runs whose turns are still
 active, and chat result messages stay.
-The run holding a one-off task's scheduled time stays, even after completion,
-until the task gets a new time or is deleted, so that time never runs twice.
+The run row holding a one-off task's scheduled time stays, even after
+completion, until the task gets a new time or is deleted, so that time never
+runs twice; its turn and transcript expire on the same clock.
+The same start relaxes `ai_memory_learning_runs_evidence_check` so a workflow
+memory learning run keeps its evidence key when its source turn is deleted.
 Background turns and transcripts of runs whose task was deleted expire on the
 same 90-day clock, measured from when the turn finished.
 
