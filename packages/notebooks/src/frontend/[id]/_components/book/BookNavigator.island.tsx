@@ -76,7 +76,7 @@ export default function BookNavigator(props: BookNavigatorProps) {
       props.notebookId,
       state().selectedNoteId,
       "book",
-      props.current === "graph" ? props.graphBack : state().selectedNoteId ? undefined : props.currentHref,
+      props.current === "graph" ? props.graphBack : state().selectedNoteId ? undefined : state().currentHref,
     );
   const currentNoteId = () => (props.current === "graph" ? null : state().selectedNoteId);
   const items = (nodes: BookTreeNode[]) =>

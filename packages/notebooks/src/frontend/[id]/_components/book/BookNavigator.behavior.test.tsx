@@ -222,6 +222,26 @@ describe("Book navigation tree", () => {
     }
   });
 
+  test("Links returns to the page a snapshot opened without a note, such as tag results", async () => {
+    const app = await mount("note01", { currentHref });
+    const tagHref = "/app/notebooks/book01/tags/guide?mode=book&search=x&page=2";
+    try {
+      window.dispatchEvent(
+        new CustomEvent<BookMetadata>(BOOK_SNAPSHOT_EVENT, { detail: { ...snapshot("note01"), href: tagHref, selectedNoteId: null } }),
+      );
+      const links = Array.from(document.querySelectorAll<HTMLAnchorElement>(".notebook-sidebar-foot a"));
+      expect(links).toHaveLength(1);
+      const url = new URL(links[0]!.href, "http://localhost");
+      expect(url.searchParams.get("mode")).toBe("graph");
+      expect(url.searchParams.get("note")).toBeNull();
+      expect(url.searchParams.get("from")).toBe("book");
+      expect(url.searchParams.get("back")).toBe(tagHref);
+      expect(app.mobileItems().find((item) => item.id === "graph")?.href).toBe(url.pathname + url.search);
+    } finally {
+      app.cleanup();
+    }
+  });
+
   test.each([true, false])("the phone navigation exposes the Write workspace item only for writers (canWrite=%s)", async (canWrite) => {
     const app = await mount("note01", { canWrite, currentHref });
     try {
