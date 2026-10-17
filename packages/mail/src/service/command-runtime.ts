@@ -3315,6 +3315,12 @@ const prepareFreshOutbox = async (
     sentPath: sender.sent_path,
     messageId: outbox.stable_message_id,
     signal,
+  }).catch((error: unknown): number[] => {
+    if (normalizeCode(error, "") !== "ETHROTTLE") throw error;
+    // This lookup only guards a Sent copy left by an earlier attempt; a throttled IMAP read
+    // must not hold back or fail a send. The other lookup call sites already handle failures.
+    log.warn("Pre-send Sent lookup throttled; continuing send", { outboxId: outbox.id });
+    return [];
   });
   return {
     sender,

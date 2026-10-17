@@ -54,8 +54,16 @@ convention still needs a check or a test.
 | Breakpoint gap | Two neighbouring media queries end at `max-width: 1023px` and start at `min-width: 1024px`. A fractional width between them, such as a zoomed window, matches neither, and the page falls back to its base rules. | Test: `packages/cloud/src/styles/shell-modes.test.ts` pins the shell queries to `min-width` and its negation `not all and (min-width: …)` ([#1255](https://github.com/k2b-dev/cloud/issues/1255)). Range syntax such as `width < 64rem` is no guard: the build lowers it to `max-width: calc(64rem - .001px)`. No check covers other style sheets yet. |
 | Nested surface | A view fills its work area but draws its own rounded border, making a second card inside the app card, as in the Notebooks graph and attachments empty state. | Check: `workspace-surfaces` detects full-area framed elements, filling `Paper` elements, and paper panel placeholders. Convention: [UI-22](/en/docs/conventions/frontend#visual-ui-ui) and [Workspace surface hierarchy](/en/ui/layout/workspace) keep full-area views on Main's surface. |
 | Theme in print | The screen theme reaches paper: dark-theme text and surfaces print on white paper, or print rules show what the screen hides on purpose. | Test: the Mail printing browser test in `MailConversationList.browser.test.ts` prints a dark and a light conversation through Print conversation in Chromium and WebKit. It checks contrast against the printed surface, the sender rows, and the single quote label ([#1175](https://github.com/k2b-dev/cloud/issues/1175)). No shared guard yet: native printing still prints the dark theme on every other page ([#1274](https://github.com/k2b-dev/cloud/issues/1274)). |
+| Absence from an empty provider answer | An empty or failed provider read is taken as proof that a message is gone. A command fails as missing, a delete or move is confirmed, a body is marked missing, or a reconcile window retires messages. | Test: `%s confirms an empty FETCH answer before it reports a message as gone` in `packages/mail/src/service/connectors/imap-smtp.test.ts` drives real ImapFlow against a throttling fixture for every connector read that can infer absence ([#1244](https://github.com/k2b-dev/cloud/issues/1244)). Convention: a new connector read that infers absence confirms it with the same helper. |
 
 ## Lessons
+
+### A throttled Mail provider looked like a missing message
+
+- **What happened:** Empty reads could fail commands as missing, confirm deletes or moves, mark bodies missing, or retire local messages ([#1244](https://github.com/k2b-dev/cloud/issues/1244)).
+- **Root cause:** ImapFlow ends FETCH without rows when its throttle retries run out. SEARCH returns false on command failure. Mail treated these answers as absence.
+- **Error class:** Absence from an empty provider answer.
+- **Guard:** `%s confirms an empty FETCH answer before it reports a message as gone` in `packages/mail/src/service/connectors/imap-smtp.test.ts` drives real ImapFlow against a throttling server for every affected read. New reads that infer absence use the same confirmation helper. A source the provider lists but never delivers still uses the missing-source budget (`downloadSourceBatch skips a source the provider lists but never delivers and streams the rest`).
 
 ### Contacts exports stopped at 1,000 contacts
 
