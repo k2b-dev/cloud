@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { env } from "@k2b/cloud/config";
-import { AppApprovalError, appApproval, isAccountCategoryAllowed } from "@k2b/cloud/services";
+import { type AppApprovalConfig, AppApprovalError, isAccountCategoryAllowed, readAppApprovalConfig } from "@k2b/cloud/services";
 import { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import * as settings from "@k2b/cloud/services/settings";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
@@ -158,14 +158,15 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
           WHERE device_authorization_id=${params.request.grant.deviceAuthorizationId}::uuid
             AND kind='terminal' AND state='approved'`;
         if (login) {
-          let cfg;
+          // Same rule as browser completion, read on this transaction: a second pool connection could starve the pool.
+          let cfg: AppApprovalConfig;
           try {
-            cfg = await appApproval.config();
+            cfg = await readAppApprovalConfig(db);
           } catch (error) {
             if (error instanceof AppApprovalError) return null;
             throw error;
           }
-          if (login.issuer !== cfg.issuer) return null;
+          if (!cfg.enabled || !cfg.appOrigin || login.issuer !== cfg.issuer) return null;
           // Lock user, device, then login, matching sign-out everywhere and signed decisions. FOR SHARE holds the
           // epoch still without blocking the key-share lock a concurrent decision's grant update takes on the user.
           const [user] = await db`SELECT id FROM auth.users WHERE id=${grant.user_id}::uuid

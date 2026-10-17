@@ -203,8 +203,10 @@ export {
   appApproval,
   type AppDeviceAdministrator,
   type AppDeviceEnrollmentNotice,
+  type AppApprovalConfig,
   type AppTerminalLogins,
   type AppTerminalLoginInput,
+  readAppApprovalConfig,
 } from "./app-approval";
 export { PwaError, pwaDevices, type PwaDeviceAdministrator, type PwaDevicePairedNotice } from "./pwa-devices";
 export { legalConsent } from "./legal-consent";

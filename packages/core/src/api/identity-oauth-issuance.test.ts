@@ -815,6 +815,7 @@ withDatabase("Core terminal approval issuance boundary", () => {
     "missing-device",
     "expired-ui",
     "disabled",
+    "disabled-in-transaction",
     "issuer",
     "device-issuer",
   ] as const)("rechecks terminal approval authority before issuance: %s", async (scenario) => {
@@ -822,8 +823,10 @@ withDatabase("Core terminal approval issuance boundary", () => {
     const routes = createIdentityOAuthIssuanceRoutes({
       authenticate: () => true,
       withActiveSigner: async (_purpose, callback) =>
-        sql.begin((db) =>
-          callback(
+        sql.begin(async (db) => {
+          // Visible only to this transaction: the recheck must read settings on it, not on a second pool connection.
+          if (scenario === "disabled-in-transaction") await db`DELETE FROM settings.entries WHERE key='user.app_approval.enabled'`;
+          return callback(
             {
               kid: crypto.randomUUID(),
               key: privateKey,
@@ -831,8 +834,8 @@ withDatabase("Core terminal approval issuance boundary", () => {
               issuer: "https://cloud.example.test",
             },
             db,
-          ),
-        ),
+          );
+        }),
       issuer: async () => "https://cloud.example.test",
     });
     const userId = crypto.randomUUID(),
