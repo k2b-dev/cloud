@@ -1615,7 +1615,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           if (!changed) return;
           syncObservedRoots();
           // A new width token or a removed panel can end waiting without any box resizing.
-          syncHostState();
+          if (records.some((record) => record.type === "childList" || record.attributeName === "data-width")) syncHostState();
           scheduleReconcile();
         });
 
