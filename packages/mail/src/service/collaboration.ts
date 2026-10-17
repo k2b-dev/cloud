@@ -994,15 +994,15 @@ export const applyConversationCompletions = async (params: {
   let result: Result<{ collaborations: Map<string, ConversationCollaboration>; changed: boolean }>;
   try {
     result = await sql.begin(async (tx) => {
-      // Same order as a single completion: access first, then the mailbox lock and execution check.
-      const access = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
-      if (!access.ok) return access;
+      // Read access under the mailbox lock, like a single completion, so a concurrent grant change cannot go stale.
       const [mailbox] = await tx<{ id: string }[]>`
         SELECT id FROM mail.mailboxes
         WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL
         FOR SHARE
       `;
       if (!mailbox) return fail(err.notFound("Mailbox"));
+      const access = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
+      if (!access.ok) return access;
       const execution = await resolveMailExecution({
         mailboxId: params.mailboxId,
         operation: "actorRead",
