@@ -780,6 +780,33 @@ suite("mail conversation work-state projection", () => {
     expect(await reconciledActivities(outboundId)).toHaveLength(0);
   }, 30_000);
 
+  test("reopening counts a terminally failed reply to restore Needs action", async () => {
+    const { first, secondId } = await terminalFailurePair("reopen");
+    const outbound = envelope({
+      uid: Number(first.remoteRef.uid) + 2,
+      messageId: `<terminal-reopen-outbound-${suffix}@example.test>`,
+      inReplyTo: first.messageId,
+      from: "support@example.test",
+      to: first.addresses.from[0]!.address,
+      date: new Date("2026-10-01T11:00:30.000Z"),
+    });
+    outbound.remoteRef.folderStableKey = `work-state-sent-${suffix}`;
+    const outboundId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId: sentFolderId, message: outbound });
+    expect((await conversationForMessage(outboundId)).id).toBe((await conversationForMessage(secondId)).id);
+    await hydrate(outboundId, [
+      `Message-ID: ${outbound.messageId}`,
+      `In-Reply-To: ${first.messageId}`,
+      "From: support@example.test",
+      `To: ${outbound.addresses.to[0]!.address}`,
+    ]);
+    expect((await conversationForMessage(secondId)).work_status).toBe("waiting");
+    await failTooLarge(secondId);
+    expect((await conversationForMessage(secondId)).work_status).toBe("needs_action");
+    expect((await decideWorkState(secondId, { completion: "done" })).workStatus).toBe("done");
+    await decideWorkState(secondId, { completion: "open" });
+    expect((await conversationForMessage(secondId)).work_status).toBe("needs_action");
+  }, 30_000);
+
   test("reopening lets an envelope-only reply reopen the conversation to Needs action", async () => {
     const ownAddress = `reopen-outbound-${suffix}@example.test`;
     await sql`

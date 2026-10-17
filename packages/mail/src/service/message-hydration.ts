@@ -39,6 +39,15 @@ const log = logger("mail:hydration");
 // Hydration stops retrying at this attempt count; a permanent failure jumps to it.
 const MAX_HYDRATION_ATTEMPTS = 5;
 
+/** A message whose hydration failed for good; its envelope still decides the work status. */
+export const isTerminalHydrationFailure = (message: {
+  hydrationStatus: Bun.SQL.Query<unknown>;
+  hydrationAttempt: Bun.SQL.Query<unknown>;
+}): Bun.SQL.Query<unknown> => sql`(
+  ${message.hydrationStatus} = 'failed'
+  AND ${message.hydrationAttempt} >= ${MAX_HYDRATION_ATTEMPTS}
+)`;
+
 type ClaimedMessage = {
   id: string;
   mailbox_id: string;
@@ -510,7 +519,10 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
         WHERE newer_link.conversation_id = conversation.id
           AND (
             ${isTimelineMessage({ id: sql`newer_message.id`, hydrationStatus: sql`newer_message.hydration_status` })}
-            OR (newer_message.hydration_status = 'failed' AND newer_message.hydration_attempt >= ${MAX_HYDRATION_ATTEMPTS})
+            OR ${isTerminalHydrationFailure({
+              hydrationStatus: sql`newer_message.hydration_status`,
+              hydrationAttempt: sql`newer_message.hydration_attempt`,
+            })}
           )
           AND (newer_message.internal_date, newer_message.id) > (message.internal_date, message.id)
           -- A reply someone chose to send before Mail stored this message was written without it.
