@@ -133,12 +133,14 @@ Clients should identify users by `sub`.
 ## Login lifetime
 
 Authorization-code and device logins have an absolute end. Without `ttl`, the
-refresh-token family lasts 90 days. Access and ID tokens last at most one hour
-and never outlive the login.
+refresh-token family lasts 90 days, except for
+[Cloud Login approval](#approve-in-cloud-login). Access and ID tokens last at
+most one hour and never outlive the login.
 
 The Cloud extension `ttl` requests a shorter login lifetime in integer seconds.
 Send it on `POST /oauth/token` with `grant_type=authorization_code`, or on
-`POST /oauth/device_authorization`. For example, `ttl=600` requests ten minutes.
+`POST /oauth/device_authorization`, including requests with `login_hint`.
+For example, `ttl=600` requests ten minutes.
 Use decimal digits only, without a leading zero, from 1 to 15 digits. Zero,
 negative values, fractions, and empty values return `invalid_request`.
 Sending `ttl` with any other token grant also returns `invalid_request`.
@@ -149,7 +151,8 @@ Cloud caps `ttl` at the session length setting `user.session.expiry_hours`
 For device requests, Cloud stores the capped lifetime when authorization
 starts and checks the current cap again when issuing tokens. Lowering the
 setting does not shorten logins that already exist. Without `ttl`, this
-setting does not change the 90-day OAuth lifetime.
+setting does not change the 90-day OAuth lifetime for requests without
+`login_hint`.
 
 Every token response that carries `refresh_token` also includes
 `refresh_token_expires_in`: the whole seconds remaining until the family's
@@ -260,6 +263,62 @@ Rate limits:
 
 The OAuth app's background cleanup removes device authorizations one hour after
 expiry and immediately after their tokens are issued.
+
+### Approve in Cloud Login
+
+First-party clients can send `login_hint` to request approval in the person's
+paired Cloud Login. Today this is available to the Cloud CLI's `cloud-cli`
+registration. [Cloud Login approval](/en/docs/operations/app-approval) must be
+turned on, and the paired app must support terminal sign-ins.
+The account must have accepted the terms once in the browser.
+Until then, the request behaves like an unknown account and expires.
+
+```http
+POST /oauth/device_authorization
+Content-Type: application/x-www-form-urlencoded
+
+client_id=cloud-cli&scope=openid%20offline_access%20read&login_hint=alice
+```
+
+Use a username or email address. Cloud trims surrounding whitespace and accepts
+1–254 characters. Email lookup is case-insensitive.
+
+```json
+{
+  "device_code": "<opaque device code>",
+  "comparison": "012345",
+  "expires_in": 300,
+  "interval": 5
+}
+```
+
+The person compares the six digits with Cloud Login, reviews the client,
+scopes and login lifetime, then approves or denies. There is no `user_code`
+or verification URI: this request cannot be approved by entering a code in
+the browser. It expires after five minutes.
+
+Poll `/oauth/token` with the normal device-code grant. The same errors apply:
+`authorization_pending`, `slow_down`, `access_denied`, `expired_token`, and
+`invalid_grant` on replay. Unknown, ambiguous and unpaired accounts get the
+same start response and remain pending until expiry. No account lookup result
+is exposed to the client.
+
+Without `ttl`, the login lasts `user.session.expiry_hours`, up to 90 days.
+A shorter `ttl` reduces that lifetime. The lifetime is absolute; refreshing
+never extends it. Clients without `login_hint` keep the existing device flow
+and 90-day default.
+
+Start errors:
+
+| Error | Meaning | Client action |
+| --- | --- | --- |
+| `invalid_request` | Non-first-party client, malformed hint, or approval turned off | Correct the request or start without `login_hint` |
+| `invalid_scope` | Empty, disallowed, or `admin` scopes | Request allowed scopes; use the plain device flow for `admin` |
+| HTTP 503 `temporarily_unavailable` | Core cannot accept the request | Try later; operators should update Core before OAuth |
+
+An older Core without the approval route also produces 503. Both discovery
+documents advertise `cloud_login_hint_supported: true`; clients should check
+this marker before using the extension.
 
 ## Client-credentials flow
 
