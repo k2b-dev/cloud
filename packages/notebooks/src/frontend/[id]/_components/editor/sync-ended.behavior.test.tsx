@@ -1,4 +1,4 @@
-import { describe, expect, mock, spyOn, test, setSystemTime } from "bun:test";
+import { describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { EditorView } from "@codemirror/view";
 import { createCodeMirror } from "solid-codemirror";
 import { Show } from "solid-js";
@@ -9,15 +9,15 @@ import type { YjsProviderOptions } from "../../../lib/yjs";
 import type { YjsProviderError } from "../../../lib/yjs/provider";
 import { notebookWorkspaceMessages } from "../../messages";
 import {
+  ACTIVE_HEADING_EVENT,
+  JUMP_TO_PARTICIPANT_EVENT,
+  PRESENCE_LOCATIONS_EVENT,
+  type PresenceLocationsEventDetail,
+  RECONNECT_EVENT,
+  SIDEBAR_FILTER_CHANGED_EVENT,
   SYNC_STATE_EVENT,
   SYNC_STATE_REQUEST_EVENT,
-  RECONNECT_EVENT,
-  ACTIVE_HEADING_EVENT,
-  PRESENCE_LOCATIONS_EVENT,
-  JUMP_TO_PARTICIPANT_EVENT,
   type SyncStateEventDetail,
-  type PresenceLocationsEventDetail,
-  SIDEBAR_FILTER_CHANGED_EVENT,
 } from "../detail/events";
 
 const refreshCurrentPath = mock(() => {});

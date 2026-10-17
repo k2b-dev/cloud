@@ -20,10 +20,10 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import { isNotebookActivityAction, type NotebookActivityAction } from "../lib/activity-actions";
 import { apiClient } from "@/api/client";
-import { describeOverviewActivity } from "./activity-messages";
+import { isNotebookActivityAction, type NotebookActivityAction } from "../lib/activity-actions";
 import { setPinnedNotebookIds as writePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
+import { describeOverviewActivity } from "./activity-messages";
 import { createNotebookCreation } from "./create-notebook-dialog";
 import { notebooksPageMessages } from "./messages";
 import { createNoteCommands } from "./note-commands";

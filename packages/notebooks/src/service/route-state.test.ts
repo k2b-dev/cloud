@@ -1,4 +1,4 @@
-import { describe, expect, test, spyOn } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { notebooksService } from "./index";
 import { loadEditableNoteRouteData } from "./route-state";
 

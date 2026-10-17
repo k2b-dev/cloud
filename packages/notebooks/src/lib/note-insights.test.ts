@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { extractTocFromMarkdown, extractHeadingLines, headingAtLine } from "./note-insights";
+import { extractHeadingLines, extractTocFromMarkdown, headingAtLine } from "./note-insights";
 
 describe("note insights", () => {
   test("code info strings cannot close fences or hide following headings", () => {
