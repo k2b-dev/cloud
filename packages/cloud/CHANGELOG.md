@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.39.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.38.0...npm-cloud-v0.39.0) (2026-10-17)
+
+
+### Features
+
+* **cloud:** approve terminal sign-ins in Cloud Login, with client, rights and lifetime ([#1395](https://github.com/k2b-dev/cloud/issues/1395)) ([1dcf324](https://github.com/k2b-dev/cloud/commit/1dcf324abb4952c6e9137f232a8e4b049e278dea))
+* **spaces:** let service accounts be assignees so an agent that claims a task is responsible like a person ([#1384](https://github.com/k2b-dev/cloud/issues/1384)) ([c3199d1](https://github.com/k2b-dev/cloud/commit/c3199d15a96ee54007a00a9d81c0d75d5d9a6751)), closes [#1269](https://github.com/k2b-dev/cloud/issues/1269)
+* **ui:** every Chart shows tooltips by default ([#1357](https://github.com/k2b-dev/cloud/issues/1357)) ([a2605a0](https://github.com/k2b-dev/cloud/commit/a2605a065473f9824463fc45cbe8129c9ff2e9b2))
+
+
+### Bug Fixes
+
+* **access:** keep keyboard focus and open member lists when access settings refresh after a change ([#1346](https://github.com/k2b-dev/cloud/issues/1346)) ([da4353b](https://github.com/k2b-dev/cloud/commit/da4353bef18a5cac5ff8ec058dfd6224c6c35f9d))
+* **ai:** audit remembered approvals and their revocation ([#1378](https://github.com/k2b-dev/cloud/issues/1378)) ([1771214](https://github.com/k2b-dev/cloud/commit/1771214a2921186a3ec4b127e8e9319a92578b2b))
+* **cloud:** keep app-colored text readable and give each app its selection fills ([#1398](https://github.com/k2b-dev/cloud/issues/1398)) ([c486eb9](https://github.com/k2b-dev/cloud/commit/c486eb93a1f463ae2c525e92f65cd784aedae489))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.28.0 to 0.29.0
+
 ## [0.38.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.37.0...npm-cloud-v0.38.0) (2026-10-17)
 
 
