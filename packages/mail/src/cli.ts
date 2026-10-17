@@ -44,6 +44,7 @@ import {
   type ComposeSignatureDefault,
   type ComposeSuggestion,
   type ComposeTemplate,
+  type ConversationCompletionResult,
   type ConversationDraftSummary,
   type CreatedAttachmentLink,
   type CreateIncomingAutomation,
@@ -2155,6 +2156,38 @@ const everydayCommands = (t: Translate) => {
         return missing.length > 0 ? 1 : undefined;
       },
     }),
+    ...(["done", "reopen"] as const).map((name) =>
+      command(name, {
+        summary:
+          name === "done"
+            ? t({ en: "Mark conversations done", de: "Unterhaltungen als erledigt markieren" })
+            : t({ en: "Reopen conversations", de: "Unterhaltungen wieder öffnen" }),
+        args: conversationsArg(t),
+        flags: mailboxOption,
+        examples: [name === "done" ? "cld mail done Convo1 Convo2" : "cld mail reopen Convo1"],
+        run: async ({ ctx, args, flags }) => {
+          const conversationIds = requireConversationIds(args.conversations, t);
+          const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+          const result = await readApi<ConversationCompletionResult>(
+            ctx,
+            `/mailboxes/${mailbox.id}/conversations/completion`,
+            jsonRequest("POST", { conversationIds, completion: name === "done" ? "done" : "open" }),
+          );
+          const missing = result.results.filter((item) => item.status !== "ok");
+          if (!printStructured(ctx, result)) {
+            const count = result.results.length - missing.length;
+            ctx.print(
+              name === "done"
+                ? t({ en: `Marked ${count} conversation(s) Done.`, de: `${count} Unterhaltung(en) als erledigt markiert.` })
+                : t({ en: `Reopened ${count} conversation(s).`, de: `${count} Unterhaltung(en) wieder geöffnet.` }),
+            );
+            for (const item of missing)
+              ctx.error(`${item.conversationId}: ${t({ en: "not found in this mailbox", de: "in diesem Postfach nicht gefunden" })}`);
+          }
+          return missing.length > 0 ? 1 : undefined;
+        },
+      }),
+    ),
     command("keep", {
       summary: t({ en: "Keep conversations and later replies", de: "Unterhaltungen und spätere Antworten aufbewahren" }),
       args: conversationsArg(t),

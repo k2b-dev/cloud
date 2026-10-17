@@ -15,13 +15,17 @@ describe("Mail API composition", () => {
     expect(mailboxRoute).toBeDefined();
   });
 
-  test("reaches bulk assignment before the conversation id resolver can claim `assign`", () => {
-    const assign = api.routes.findIndex((route) => route.method === "POST" && route.path === "/mailboxes/:mailboxId/conversations/assign");
+  test("reaches bulk assignment and completion before the conversation id resolver", () => {
     const conversationResolver = api.routes.findIndex(
       (route) => route.method === "ALL" && route.path === "/mailboxes/:mailboxId/conversations/:conversationId",
     );
-    expect(assign).toBeGreaterThanOrEqual(0);
-    expect(conversationResolver).toBeGreaterThan(assign);
+    for (const segment of ["assign", "completion"]) {
+      const route = api.routes.findIndex(
+        (route) => route.method === "POST" && route.path === `/mailboxes/:mailboxId/conversations/${segment}`,
+      );
+      expect(route).toBeGreaterThanOrEqual(0);
+      expect(conversationResolver).toBeGreaterThan(route);
+    }
   });
 
   test("reaches every static path segment before an earlier route can claim it as an ID", () => {

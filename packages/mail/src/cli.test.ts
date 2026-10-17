@@ -5838,3 +5838,48 @@ test("command list sends state and cursor filters, shows errors and a text-only 
   expect(partial.exitCode, partial.stderr).toBe(0);
   expect(partial.stdout).not.toContain("Next page:");
 });
+
+for (const name of ["done", "reopen"] as const) {
+  test(`${name} sends one revision-free batch, preserves structured results and fails on missing items`, async () => {
+    const bodies: unknown[] = [];
+    const completion = name === "done" ? "done" : "open";
+    const resultFor = (conversationIds: string[]) => ({
+      completion,
+      results: conversationIds.map((conversationId) =>
+        conversationId === SOURCE_CONVERSATION_ID
+          ? { conversationId, status: "not_found" }
+          : { conversationId, status: "ok", workStatus: name === "done" ? "done" : "needs_action", revision: 7 },
+      ),
+    });
+    const server = withMailbox(async (request) => {
+      expect(request.method).toBe("POST");
+      expect(new URL(request.url).pathname).toBe(`/api/mail/mailboxes/${MAILBOX_ID}/conversations/completion`);
+      const body = await request.json();
+      bodies.push(body);
+      return api(resultFor(body.conversationIds));
+    });
+    servers.push(server);
+    const run = (ids: string[], flags: string[] = []) =>
+      runCli(`http://127.0.0.1:${server.port}`, [...flags, "mail", name, ...ids, "--mailbox", MAILBOX_ID]);
+    const success = await run([CONVERSATION_ID, REMINDER_ID]);
+    expect(success.exitCode, success.stderr).toBe(0);
+    expect(success.stdout.trim()).toBe(name === "done" ? "Marked 2 conversation(s) Done." : "Reopened 2 conversation(s).");
+    const partial = await run([CONVERSATION_ID, SOURCE_CONVERSATION_ID]);
+    expect(partial.exitCode).toBe(1);
+    expect(partial.stderr).toContain(`${SOURCE_CONVERSATION_ID}: not found in this mailbox`);
+    expect(partial.stdout).toContain("1 conversation(s)");
+    for (const output of ["--json", "--jsonl"]) {
+      const structured = await run([CONVERSATION_ID, SOURCE_CONVERSATION_ID], [output]);
+      expect(structured.exitCode).toBe(1);
+      expect(JSON.parse(structured.stdout)).toEqual(resultFor([CONVERSATION_ID, SOURCE_CONVERSATION_ID]));
+    }
+    expect(bodies).toEqual([
+      { conversationIds: [CONVERSATION_ID, REMINDER_ID], completion },
+      ...Array.from({ length: 3 }, () => ({ conversationIds: [CONVERSATION_ID, SOURCE_CONVERSATION_ID], completion })),
+    ]);
+    const oversized = await run(Array.from({ length: 51 }, (_, i) => `Cv${String(i).padStart(4, "0")}`));
+    expect(oversized.exitCode).toBe(1);
+    expect(oversized.stderr).toContain("Pass at most 50 conversations at once.");
+    expect(bodies).toHaveLength(4);
+  });
+}

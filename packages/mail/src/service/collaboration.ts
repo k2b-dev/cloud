@@ -3,6 +3,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type {
   ActorRef,
+  ConversationCompletionResult,
   CreateConversationComment,
   DeleteConversationComment,
   UpdateConversationCollaboration,
@@ -11,6 +12,7 @@ import type {
 import { createConversationCommentSchema, MAIL_CONVERSATION_ASSIGNEE_LIMIT, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
 import {
+  conversationVisibleTo,
   type MailboxAccess,
   messageVisibleTo,
   requireMailboxAccess,
@@ -970,6 +972,82 @@ export const applyConversationAssignments = async (params: {
       activityIds: committed.events.map((event) => event.activityId),
       added: [...committed.added].map(([userId, conversationIds]) => ({ userId, conversationIds })),
     },
+  });
+};
+
+/**
+ * Completes or reopens many conversations of one mailbox in one transaction.
+ * Like a single completion, this requires write access and actorRead execution;
+ * assigned-only writers may update only their visible conversations. Missing,
+ * foreign, and invisible ids report `not_found`. Each row uses its current
+ * revision through the single-conversation collaboration mutation.
+ */
+export const applyConversationCompletions = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  conversationIds: readonly string[];
+  completion: "done" | "open";
+}): Promise<Result<ConversationCompletionResult>> => {
+  if (params.conversationIds.length === 0 || params.conversationIds.length > MAIL_CONVERSATION_BATCH_LIMIT)
+    return fail(err.badInput(`Pass 1 to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations`));
+  const requestedIds = [...new Set(params.conversationIds)];
+  let result: Result<{ collaborations: Map<string, ConversationCollaboration>; changed: boolean }>;
+  try {
+    result = await sql.begin(async (tx) => {
+      // Same order as a single completion: access first, then the mailbox lock and execution check.
+      const access = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
+      if (!access.ok) return access;
+      const [mailbox] = await tx<{ id: string }[]>`
+        SELECT id FROM mail.mailboxes
+        WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL
+        FOR SHARE
+      `;
+      if (!mailbox) return fail(err.notFound("Mailbox"));
+      const execution = await resolveMailExecution({
+        mailboxId: params.mailboxId,
+        operation: "actorRead",
+        context: params.context,
+        conversationScoped: true,
+        db: tx,
+      });
+      if (!execution.ok) return execution;
+      // Share the stable lock order with bulk assignment.
+      const rows = await tx<{ id: string; short_id: string; revision: string | number }[]>`
+        SELECT id, short_id, revision FROM mail.conversations
+        WHERE mailbox_id = ${params.mailboxId}::uuid
+          AND short_id IN (SELECT value FROM jsonb_array_elements_text(${requestedIds}::jsonb))
+          AND ${conversationVisibleTo(access.data, sql`id`)}
+        ORDER BY id FOR UPDATE
+      `;
+      const collaborations = new Map<string, ConversationCollaboration>();
+      let changed = false;
+      for (const row of rows) {
+        const applied = await applyConversationCollaborationInTransaction({
+          context: params.context,
+          mailboxId: params.mailboxId,
+          conversationId: row.id,
+          input: { expectedRevision: Number(row.revision), completion: params.completion },
+          db: tx,
+        });
+        if (!applied.ok) throw applied.error;
+        collaborations.set(row.short_id, applied.data.value);
+        if (applied.data.event) changed = true;
+      }
+      return ok({ collaborations, changed });
+    });
+  } catch {
+    return fail(err.internal("Failed to update conversations"));
+  }
+  if (!result.ok) return result;
+  if (result.data.changed) mailLive.wake();
+  return ok({
+    completion: params.completion,
+    results: params.conversationIds.map((conversationId) => {
+      const collaboration = result.data.collaborations.get(conversationId);
+      return collaboration
+        ? { conversationId, status: "ok" as const, workStatus: collaboration.workStatus, revision: collaboration.revision }
+        : { conversationId, status: "not_found" as const };
+    }),
   });
 };
 

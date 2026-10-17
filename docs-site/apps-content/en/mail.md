@@ -222,6 +222,13 @@ it replaces the assignees with that person, and `null` removes them all.
 Merging two conversations keeps the assignees of both, and splitting one gives
 the new conversation the same assignees.
 
+The API marks up to 50 visible conversations of one mailbox done or reopens
+them with `POST /api/mail/mailboxes/{mailboxId}/conversations/completion`
+and `{ "conversationIds": ["<id>"], "completion": "done" | "open" }`.
+It needs write access, including assigned-only write access, and no revision.
+Results follow request order; each reports `ok` with `workStatus` and
+`revision`, or `not_found` for missing or invisible conversations.
+
 Next to View, Edit, and Manage, a mailbox grant for a person or group can cover
 only the conversations assigned to the person: **View assigned only** (`read`)
 or **Edit assigned only** (`write`). The access API takes it as
@@ -439,6 +446,8 @@ another folder:
 
 ```bash
 cld mail assign <conversation-id> <conversation-id> --to me
+cld --json mail done <conversation-id> <conversation-id>
+cld mail reopen <conversation-id>
 cld mail archive <conversation-id> <conversation-id>
 cld mail mv <conversation-id> --to "Support:Projekte / 2025"
 cld mail tag add <conversation-id> --tag Priority
@@ -448,6 +457,18 @@ cld mail rm <conversation-id> --yes
 `assign --to maria,me` adds people to the conversations and keeps the others;
 `--replace` replaces them, `--remove maria` removes one, and `--to none`
 removes everyone. `cld mail conversation users` lists who can be assigned.
+
+`done` and `reopen` need no revision. Done also covers messages Mail still
+loads. Each result reports `ok` with the resulting status and revision, or
+`not_found` for a missing or invisible conversation. Partial results exit with
+status 1. To mark a page of Needs action conversations done in batches of 50:
+
+```bash
+cld --json mail ls <mailbox> --view needs_action --limit 100 | jq -r '.items[].id' | xargs -r -n 50 cld mail done --mailbox <mailbox>
+```
+
+Done conversations leave that view, so re-running the pipeline continues.
+Lists return `items` and `nextCursor`; pass `--cursor` to read another page.
 
 API clients can undo the move commands returned by a conversation action with
 `POST /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/actions/undo`
