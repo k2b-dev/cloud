@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { bigGraph, handbookGraph } from "./graph.fixtures";
-import { layoutNetwork, type NetPoint, nodeRadius, seededRandom } from "./layout-net";
+import { layoutNetwork, layoutNetworkInSlices, type NetPoint, nodeRadius, seededRandom } from "./layout-net";
 import { buildGraphModel } from "./model";
 
 for (const [name, fixture] of [
@@ -68,4 +68,18 @@ test("mulberry32 matches the prototype and empty/singleton layouts are finite", 
   graph.edges = [];
   const point = [...layoutNetwork(buildGraphModel(graph)).values()][0];
   expect(point && Number.isFinite(point.x) && Number.isFinite(point.y)).toBe(true);
+});
+
+test("the sliced layout yields to the page and still gives exactly the same positions", async () => {
+  const model = buildGraphModel(bigGraph());
+  let yielded = 0;
+  const counting = setInterval(() => yielded++, 0);
+  const sliced = await layoutNetworkInSlices(model, new AbortController().signal);
+  clearInterval(counting);
+  expect(sliced && [...sliced]).toEqual([...layoutNetwork(model)]);
+  expect(yielded).toBeGreaterThan(0);
+  const controller = new AbortController();
+  const aborted = layoutNetworkInSlices(model, controller.signal);
+  controller.abort();
+  expect(await aborted).toBeNull();
 });

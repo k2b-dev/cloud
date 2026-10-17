@@ -135,6 +135,7 @@ export const notebookWorkspaceMessages = i18n.define({
         `${notes === 1 ? "1 note" : `${notes} notes`} · ${links === 1 ? "1 link" : `${links} links`}`,
       graphLinkCounts: ({ out, incoming }: { out: number; incoming: number }) => `links to ${out} · linked from ${incoming}`,
       graphChanged: "changed",
+      graphArranging: ({ count }: { count: number }) => `Arranging ${count === 1 ? "1 note" : `${count} notes`}…`,
       graphSearchHits: ({ count, query }: { count: number; query: string }) =>
         `${count === 1 ? "1 match" : `${count} matches`} for “${query}” · Enter jumps to the first`,
       graphSearchHidden: ({ query }: { query: string }) => `The filters hide every note called “${query}”`,
@@ -565,6 +566,7 @@ export const notebookWorkspaceMessages = i18n.define({
         `${notes === 1 ? "1 Notiz" : `${notes} Notizen`} · ${links === 1 ? "1 Verknüpfung" : `${links} Verknüpfungen`}`,
       graphLinkCounts: ({ out, incoming }) => `verweist auf ${out} · verwiesen von ${incoming}`,
       graphChanged: "geändert",
+      graphArranging: ({ count }) => `${count === 1 ? "1 Notiz wird" : `${count} Notizen werden`} angeordnet …`,
       graphSearchHits: ({ count, query }) => `${count} Treffer für „${query}“ · Enter springt zum ersten`,
       graphSearchHidden: ({ query }) => `Die Filter blenden jede Notiz mit „${query}“ aus`,
       graphSearchNone: ({ query }) => `Keine Notiz heißt „${query}“`,

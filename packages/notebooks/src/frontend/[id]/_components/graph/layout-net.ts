@@ -19,7 +19,8 @@ export function seededRandom(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-export function layoutNetwork(model: GraphModel): Map<string, NetPoint> {
+/** One headless simulation; `step` advances it by single ticks, so slicing never changes the result. */
+function createLayout(model: GraphModel) {
   const random = seededRandom(11);
   const radius = 210 * Math.sqrt(model.notes.length / 50);
   const areaCount = model.areas.length - 1;
@@ -56,11 +57,42 @@ export function layoutNetwork(model: GraphModel): Map<string, NetPoint> {
         .strength((edge) => (edge.sameArea ? 0.7 : 0.004)),
     )
     .force("charge", forceManyBody<Node>().strength(-45).distanceMax(400).theta(1.2));
-  simulation.tick(TICKS - COLLIDE_TICKS);
-  simulation.force(
-    "collide",
-    forceCollide<Node>((node) => node.r + 8),
-  );
-  simulation.tick(COLLIDE_TICKS);
-  return new Map(nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+  let ticks = 0;
+  return {
+    done: () => ticks >= TICKS,
+    step: () => {
+      if (ticks === TICKS - COLLIDE_TICKS)
+        simulation.force(
+          "collide",
+          forceCollide<Node>((node) => node.r + 8),
+        );
+      simulation.tick(1);
+      ticks++;
+    },
+    positions: () => new Map(nodes.map((node) => [node.id, { x: node.x, y: node.y }])),
+  };
+}
+
+export function layoutNetwork(model: GraphModel): Map<string, NetPoint> {
+  const layout = createLayout(model);
+  while (!layout.done()) layout.step();
+  return layout.positions();
+}
+
+/** Time the browser may spend on the layout before it paints and handles input again. */
+const SLICE_MS = 12;
+
+/**
+ * The same layout, computed in slices of about 12 ms, so a large notebook never blocks the page (Close keeps working).
+ * Resolves with exactly the positions of `layoutNetwork`, or null when the signal aborts.
+ */
+export async function layoutNetworkInSlices(model: GraphModel, signal: AbortSignal): Promise<Map<string, NetPoint> | null> {
+  const layout = createLayout(model);
+  while (!layout.done()) {
+    const start = performance.now();
+    while (!layout.done() && performance.now() - start < SLICE_MS) layout.step();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (signal.aborted) return null;
+  }
+  return layout.positions();
 }

@@ -362,6 +362,21 @@ test(`${browserName}: notebooks without links and filters that leave nothing sho
   }
 }, 30_000);
 
+test(`${browserName}: a no-links state taller than the canvas scrolls to its way back`, async () => {
+  const page = await open(graphPath("free01"), { width: 390, height: 300 });
+  try {
+    const empty = page.locator(".notebook-graph__empty");
+    expect(await empty.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+    const back = page.getByRole("link", { name: "Back to note" });
+    await back.scrollIntoViewIfNeeded();
+    const box = (await back.boundingBox())!;
+    const area = (await empty.boundingBox())!;
+    expect(box.y + box.height).toBeLessThanOrEqual(area.y + area.height);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
 test(`${browserName}: the server render and the mounted graph share their boxes`, async () => {
   for (const query of ["", "&list=1&links=unlinked"]) {
     const path = new URL(graphPath("hand01", query), server.url).href;

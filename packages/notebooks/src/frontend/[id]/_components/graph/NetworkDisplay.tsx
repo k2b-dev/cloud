@@ -3,7 +3,7 @@ import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMo
 import { notebookWorkspaceMessages } from "../../messages";
 import { convexHull, fitView, type GraphView, type Rect, screenRadius, spatialNext, toScreen, toWorld, zoomView } from "./geometry";
 import { type AreaLabelInput, type LabelFont, type LabelKind, type LabelNode, placeLabels } from "./labels";
-import { layoutNetwork, type NetPoint } from "./layout-net";
+import { layoutNetworkInSlices, type NetPoint } from "./layout-net";
 import { type GraphModel, type GraphModelEdge, type GraphNote, matchesQuery } from "./model";
 
 /** Zoom and fit for the toolbar, which lives outside the canvas. */
@@ -364,8 +364,12 @@ export default function NetworkDisplay(props: Props) {
   };
 
   onMount(() => {
-    // One headless layout per graph, run in the browser. The canvas never animates.
-    setPositions(layoutNetwork(props.model));
+    // One headless layout per graph, run in the browser in slices, so the page stays responsive. The canvas never
+    // animates: the notes appear once, at their final places.
+    const layout = new AbortController();
+    void layoutNetworkInSlices(props.model, layout.signal).then((result) => {
+      if (result) setPositions(result);
+    });
     const resize = new ResizeObserver(() => {
       const rect = container.getBoundingClientRect();
       setSize((current) =>
@@ -387,6 +391,7 @@ export default function NetworkDisplay(props: Props) {
       setFontsReady(true);
     });
     onCleanup(() => {
+      layout.abort();
       alive = false;
       resize.disconnect();
       svg.removeEventListener("wheel", onWheel);
@@ -563,13 +568,15 @@ export default function NetworkDisplay(props: Props) {
           when={statusNote()}
           fallback={
             <span class="notebook-graph__status-text">
-              {props.query.trim()
-                ? queryHits()
-                  ? t().graphSearchHits({ count: queryHits(), query: props.query.trim() })
-                  : hiddenHits()
-                    ? t().graphSearchHidden({ query: props.query.trim() })
-                    : t().graphSearchNone({ query: props.query.trim() })
-                : t().graphNoteCount({ notes: props.notes.length, links: props.edges.length })}
+              {!positions()
+                ? t().graphArranging({ count: props.notes.length })
+                : props.query.trim()
+                  ? queryHits()
+                    ? t().graphSearchHits({ count: queryHits(), query: props.query.trim() })
+                    : hiddenHits()
+                      ? t().graphSearchHidden({ query: props.query.trim() })
+                      : t().graphSearchNone({ query: props.query.trim() })
+                  : t().graphNoteCount({ notes: props.notes.length, links: props.edges.length })}
             </span>
           }
         >

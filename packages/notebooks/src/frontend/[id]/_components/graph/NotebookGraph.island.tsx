@@ -211,65 +211,72 @@ export default function NotebookGraph(props: Props) {
       <div class="notebook-graph__body">
         <Switch>
           <Match when={model.notes.length === 0}>
-            <Placeholder class="absolute inset-0" variant="panel" icon="ti ti-affiliate" description={t().graphNoNotes} />
+            <div class="notebook-graph__empty">
+              <Placeholder class="min-h-full" variant="panel" icon="ti ti-affiliate" description={t().graphNoNotes} />
+            </div>
           </Match>
           <Match when={!hasLinks && !state().list}>
-            <Placeholder
-              class="absolute inset-0"
-              variant="panel"
-              icon="ti ti-affiliate"
-              title={t().graphNoLinks}
-              description={
-                <>
-                  <p>
-                    {t().graphNoLinksDescription({ name: props.notebookName })} {t().graphNoLinksHintBefore} <code>/note</code>{" "}
-                    {t().graphNoLinksHintAfter}
-                  </p>
-                  <ul
-                    class="notebook-graph__unlinked"
-                    data-query={query().trim() ? "" : undefined}
-                    aria-label={t().graphUnlinkedNotes({ count: model.notes.length })}
-                  >
-                    <For each={model.notes}>
-                      {(note) => (
-                        <li data-slot={note.area.slot}>
-                          <a href={noteHref(note.id)} data-match={matchesQuery(note, query()) ? "" : undefined}>
-                            <span class="notebook-graph__dot" aria-hidden="true" />
-                            {note.title || t().untitled}
-                          </a>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </>
-              }
-              action={
-                <ButtonLink variant="secondary" size="sm" href={closeHref()}>
-                  <i class="ti ti-arrow-left" aria-hidden="true" />
-                  {t().graphBackToNote}
-                </ButtonLink>
-              }
-            />
+            {/* Many unlinked notes can be taller than the canvas, so this state scrolls. */}
+            <div class="notebook-graph__empty">
+              <Placeholder
+                class="min-h-full"
+                variant="panel"
+                icon="ti ti-affiliate"
+                title={t().graphNoLinks}
+                description={
+                  <>
+                    <p>
+                      {t().graphNoLinksDescription({ name: props.notebookName })} {t().graphNoLinksHintBefore} <code>/note</code>{" "}
+                      {t().graphNoLinksHintAfter}
+                    </p>
+                    <ul
+                      class="notebook-graph__unlinked"
+                      data-query={query().trim() ? "" : undefined}
+                      aria-label={t().graphUnlinkedNotes({ count: model.notes.length })}
+                    >
+                      <For each={model.notes}>
+                        {(note) => (
+                          <li data-slot={note.area.slot}>
+                            <a href={noteHref(note.id)} data-match={matchesQuery(note, query()) ? "" : undefined}>
+                              <span class="notebook-graph__dot" aria-hidden="true" />
+                              {note.title || t().untitled}
+                            </a>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </>
+                }
+                action={
+                  <ButtonLink variant="secondary" size="sm" href={closeHref()}>
+                    <i class="ti ti-arrow-left" aria-hidden="true" />
+                    {t().graphBackToNote}
+                  </ButtonLink>
+                }
+              />
+            </div>
           </Match>
           <Match when={notes().length === 0}>
-            <Placeholder
-              class="absolute inset-0"
-              variant="panel"
-              icon="ti ti-filter"
-              title={t().graphFilterEmpty}
-              description={
-                model.areas.every((area) => area.count === 0 || state().hide.includes(area.key))
-                  ? t().graphFilterAllHidden
-                  : state().links === "unlinked"
-                    ? t().graphFilterAllLinked
-                    : t().graphFilterNoneLinked
-              }
-              action={
-                <Button variant="secondary" size="sm" onClick={resetFilters}>
-                  {t().graphResetFilters}
-                </Button>
-              }
-            />
+            <div class="notebook-graph__empty">
+              <Placeholder
+                class="min-h-full"
+                variant="panel"
+                icon="ti ti-filter"
+                title={t().graphFilterEmpty}
+                description={
+                  model.areas.every((area) => area.count === 0 || state().hide.includes(area.key))
+                    ? t().graphFilterAllHidden
+                    : state().links === "unlinked"
+                      ? t().graphFilterAllLinked
+                      : t().graphFilterNoneLinked
+                }
+                action={
+                  <Button variant="secondary" size="sm" onClick={resetFilters}>
+                    {t().graphResetFilters}
+                  </Button>
+                }
+              />
+            </div>
           </Match>
           <Match when={state().list}>
             <GraphList

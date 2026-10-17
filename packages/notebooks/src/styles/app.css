@@ -1833,7 +1833,12 @@
   white-space: nowrap;
 }
 
-/* Empty states */
+/* Empty states fill the canvas and scroll when their content is taller. */
+.notebook-graph__empty {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+}
 .notebook-graph__unlinked {
   display: flex;
   max-width: 24rem;
