@@ -4,7 +4,11 @@ import { readWorkflowValuePath } from "@k2b/cloud/workflows/language";
 import { sql } from "bun";
 import { MAIL_WORKFLOW_ACTIONS } from "../workflows/actions";
 import * as publicResources from "./public-resources";
-import { createMailWorkflowValueResolver } from "./workflow-runtime-values";
+import {
+  createMailWorkflowValueResolver,
+  normalizeMailWorkflowFrozenHydration,
+  projectMailWorkflowFrozenBody,
+} from "./workflow-runtime-values";
 
 const plan: WorkflowBoundPlan = {
   schemaVersion: 2,
@@ -23,6 +27,8 @@ const plan: WorkflowBoundPlan = {
 const fixture = (frozenHydration: Record<string, WorkflowJsonValue> = {}) => {
   const message = { id: "msg001", body: "", bodyText: "", bodyHtml: "", bodyAvailable: false, flags: ["seen"] };
   const inputs = { message };
+  normalizeMailWorkflowFrozenHydration(frozenHydration);
+  projectMailWorkflowFrozenBody("message", message, frozenHydration);
   const resolver = createMailWorkflowValueResolver({
     claim: { runId: "run", executionGeneration: 1, inputs },
     mailboxId: "mailbox",
@@ -51,6 +57,62 @@ const fixture = (frozenHydration: Record<string, WorkflowJsonValue> = {}) => {
       }),
   };
 };
+
+describe("Mail frozen body projection", () => {
+  test.each(["both", "plain", "html", "empty"])("projects %s frozen bodies in place", (scenario) => {
+    const message = { body: "", bodyText: "", bodyHtml: "", bodyAvailable: false, flags: ["seen"] };
+    const inputs = { message, alias: message };
+    const frozen: Record<string, WorkflowJsonValue> = {};
+    if (scenario === "both" || scenario === "plain") frozen["inputs.message.bodyText"] = "Frozen text";
+    if (scenario === "both" || scenario === "html") frozen["inputs.message.bodyHtml"] = "<p>Frozen HTML</p>";
+
+    projectMailWorkflowFrozenBody("message", inputs.message, frozen);
+
+    expect(inputs.message).toBe(message);
+    expect(inputs.alias).toBe(message);
+    expect(message).toEqual({
+      body: scenario === "both" || scenario === "plain" ? "Frozen text" : "",
+      bodyText: scenario === "both" || scenario === "plain" ? "Frozen text" : "",
+      bodyHtml: scenario === "both" || scenario === "html" ? "<p>Frozen HTML</p>" : "",
+      bodyAvailable: scenario === "both",
+      flags: ["seen"],
+    });
+  });
+
+  test("normalizes legacy text before projection without replacing the canonical key", () => {
+    const frozen = {
+      "inputs.legacy.body": "Legacy text",
+      "inputs.legacy.bodyHtml": "",
+      "inputs.current.body": "Superseded text",
+      "inputs.current.bodyText": "",
+      "inputs.current.bodyHtml": "",
+    };
+    normalizeMailWorkflowFrozenHydration(frozen);
+    for (const name of ["legacy", "current"]) {
+      const message = { body: "", bodyText: "", bodyHtml: "", bodyAvailable: false };
+      projectMailWorkflowFrozenBody(name, message, frozen);
+      expect(message).toEqual({
+        body: name === "legacy" ? "Legacy text" : "",
+        bodyText: name === "legacy" ? "Legacy text" : "",
+        bodyHtml: "",
+        bodyAvailable: true,
+      });
+    }
+  });
+
+  test("leaves available old-event bodies untouched", () => {
+    const message = { body: "Old text", bodyText: "Old text", bodyHtml: "<p>Old HTML</p>", bodyAvailable: true };
+    const before = { ...message };
+    projectMailWorkflowFrozenBody("message", message, { "inputs.message.bodyText": "New text", "inputs.message.bodyHtml": "New HTML" });
+    expect(message).toEqual(before);
+  });
+
+  test("ignores non-object message inputs", () => {
+    for (const message of [undefined, null, "message", []]) {
+      expect(() => projectMailWorkflowFrozenBody("message", message, { "inputs.message.bodyText": "Frozen text" })).not.toThrow();
+    }
+  });
+});
 
 describe("Mail lazy workflow values", () => {
   test("body and bodyText share the plain frozen entry and update the shared projection", async () => {
@@ -106,7 +168,7 @@ describe("Mail lazy workflow values", () => {
     });
   }
 
-  test("Mail reference-only message fields do not read or project body content", async () => {
+  test("Mail reference-only message fields reuse eager frozen bodies without reading Mail", async () => {
     const read = spyOn(publicResources, "resolveMailboxPublicId").mockImplementation(async () => {
       throw new Error("Reference-only fields must not read Mail");
     });
@@ -117,7 +179,12 @@ describe("Mail lazy workflow values", () => {
           "inputs.message.bodyHtml": "<p>Frozen HTML</p>",
         });
         expect(await resolve("inputs.message", ["steps", 0, action, "message"])).toEqual({ state: "resolved", value: message });
-        expect(message).toMatchObject({ body: "", bodyText: "", bodyHtml: "", bodyAvailable: false });
+        expect(message).toMatchObject({
+          body: "Frozen plain text",
+          bodyText: "Frozen plain text",
+          bodyHtml: "<p>Frozen HTML</p>",
+          bodyAvailable: true,
+        });
       }
       expect(read).not.toHaveBeenCalled();
     } finally {

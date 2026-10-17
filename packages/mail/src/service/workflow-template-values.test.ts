@@ -69,6 +69,62 @@ const fixture = () => {
 };
 
 describe("Mail workflow template body access", () => {
+  test("preserves message identity between the variable snapshot and inputs", async () => {
+    const { ctx, message, resolveReference } = fixture();
+    ctx.variables.snapshot = () => ({ selected: message });
+    const source = "{% if selected == inputs.message %}OK{% else %}{{ inputs.message.bodyText }}{% endif %}";
+
+    await resolveMailWorkflowTemplateBodies(ctx, step(source));
+
+    expect(resolveReference).not.toHaveBeenCalled();
+    expect(ctx.invocation.inputs.message).toBe(message);
+    expect(renderMailWorkflowTemplate({ invocation: ctx.invocation, variableSnapshot: ctx.variables.snapshot }, source)).toBe("OK");
+  });
+
+  test.each(["unread", "resolved", "unavailable", "render error"])("restores plain body properties after an %s probe", async (scenario) => {
+    const { ctx, message, resolveReference } = fixture();
+    const expectPlainBodies = () => {
+      for (const field of ["body", "bodyText", "bodyHtml"] as const) {
+        expect(Object.getOwnPropertyDescriptor(message, field)).toEqual({
+          value: message[field],
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+      }
+    };
+    const resolve = resolveReference.getMockImplementation()!;
+    resolveReference.mockImplementation(async (reference, path) => {
+      expectPlainBodies(); // Getters must be gone before the resolver can suspend.
+      return scenario === "unavailable" ? undefined : resolve(reference, path);
+    });
+    const source =
+      scenario === "unread"
+        ? "OK"
+        : scenario === "render error"
+          ? "{{ inputs.message.bodyText | pad_start: 0 }}{{ inputs.message.bodyHtml }}"
+          : "{{ inputs.message.bodyText }}";
+    const probe = resolveMailWorkflowTemplateBodies(ctx, step(source));
+    if (scenario === "unavailable") await expect(probe).rejects.toThrow("inputs.message.bodyText");
+    else await probe;
+
+    expectPlainBodies();
+    expect(message).toEqual({
+      id: "msg001",
+      body: scenario === "resolved" || scenario === "render error" ? "x plain" : "",
+      bodyText: scenario === "resolved" || scenario === "render error" ? "x plain" : "",
+      bodyHtml: "",
+      bodyAvailable: false,
+    });
+  });
+
+  test("uses bodies already available on an older event without resolving them", async () => {
+    const { ctx, message, resolveReference } = fixture();
+    Object.assign(message, { body: "Old text", bodyText: "Old text", bodyHtml: "<p>Old HTML</p>", bodyAvailable: true });
+    await resolveMailWorkflowTemplateBodies(ctx, step("{{ inputs.message.bodyText }} / {{ inputs.message.bodyHtml }}"));
+    expect(resolveReference).not.toHaveBeenCalled();
+  });
+
   test("does not resolve bodies in untaken branches", async () => {
     const { ctx, message, resolveReference } = fixture();
     await resolveMailWorkflowTemplateBodies(ctx, step("{% if false %}{{ inputs.message.bodyText }}{% else %}OK{% endif %}"));

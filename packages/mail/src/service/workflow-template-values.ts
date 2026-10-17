@@ -18,46 +18,47 @@ export const resolveMailWorkflowTemplateBodies = async (ctx: WorkflowExecuteActi
         ? await ctx.evaluate(rawFormat, [...step.sourcePath, step.action, "format"])
         : rawFormat;
     const output = mailWorkflowTemplateOutput(step.action, templateField, format);
-    const inputs = { ...ctx.invocation.inputs };
     const resolved = new Set<string>();
-    const recordings = new Map<Record<string, WorkflowJsonValue>, Record<string, WorkflowJsonValue>>();
+    const messages = new Map<Record<string, WorkflowJsonValue>, string>();
     let pendingReference: string | undefined;
     for (const input of ctx.plan.inputs) {
-      const message = inputs[input.name];
+      const message = ctx.invocation.inputs[input.name];
       if (input.type !== "mailMessage" || !message || typeof message !== "object" || Array.isArray(message)) continue;
-      const existing = recordings.get(message);
-      if (existing) {
-        inputs[input.name] = existing;
-        continue;
-      }
-      const recording = { ...message };
-      for (const field of BODY_FIELDS) {
-        const reference = `inputs.${input.name}.${field}`;
-        Object.defineProperty(recording, field, {
-          enumerable: true,
-          get: () => {
-            if (!resolved.has(reference)) {
-              pendingReference = reference;
-              throw unresolvedBody;
-            }
-            return message[field];
-          },
-        });
-      }
-      recordings.set(message, recording);
-      inputs[input.name] = recording;
+      if (!messages.has(message)) messages.set(message, input.name);
     }
     const data = mailWorkflowTemplateData({
-      invocation: { ...ctx.invocation, inputs },
+      invocation: ctx.invocation,
       variableSnapshot: () => ctx.variables.snapshot?.() ?? {},
     });
     // Each productive pass resolves a new field; one final pass confirms there are no more accesses.
-    const maxReferences = recordings.size * BODY_FIELDS.length;
+    const maxReferences = messages.size * BODY_FIELDS.length;
     for (let pass = 0; pass <= maxReferences; pass++) {
       pendingReference = undefined;
-      // The renderer wraps the sentinel; the local reference identifies it without inspecting errors.
-      // Other render errors end probing and are reported by the real renderer.
-      renderMailLiquidTemplate(source, data, output);
+      const restore: Array<() => void> = [];
+      try {
+        for (const [message, name] of messages) {
+          for (const field of BODY_FIELDS) {
+            const value = message[field];
+            const reference = `inputs.${name}.${field}`;
+            Object.defineProperty(message, field, {
+              enumerable: true,
+              configurable: true,
+              get: () => {
+                if (resolved.has(reference) || message.bodyAvailable === true) return value;
+                pendingReference = reference;
+                throw unresolvedBody;
+              },
+            });
+            restore.push(() => Object.defineProperty(message, field, { value, writable: true, enumerable: true, configurable: true }));
+          }
+        }
+        // The renderer wraps the sentinel; the local reference identifies it without inspecting errors.
+        // Other render errors end probing and are reported by the real renderer.
+        renderMailLiquidTemplate(source, data, output);
+      } finally {
+        // Restore real objects before resolution can suspend or update their bodies.
+        for (const field of restore) field();
+      }
       if (pendingReference === undefined) break;
       const value = await ctx.resolveReference(pendingReference, [...step.sourcePath, step.action, templateField]);
       if (value === undefined) throw new Error(`Mail workflow value unavailable: ${pendingReference}`);

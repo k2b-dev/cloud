@@ -130,18 +130,31 @@ const freezeHydrationValue = async (params: {
     return params.value;
   });
 
+export const normalizeMailWorkflowFrozenHydration = (frozen: JsonObject): void => {
+  // Runs frozen before #1313 may have only the legacy plain-text body key.
+  for (const [key, value] of Object.entries(frozen)) {
+    if (/^inputs\.[^.]+\.body$/.test(key) && !Object.hasOwn(frozen, `${key}Text`)) {
+      frozen[`${key}Text`] = value;
+    }
+  }
+};
+
+export const projectMailWorkflowFrozenBody = (name: string, message: WorkflowJsonValue | undefined, frozen: JsonObject): void => {
+  if (!isObject(message) || message.bodyAvailable === true) return;
+  const plainKey = `inputs.${name}.bodyText`;
+  const htmlKey = `inputs.${name}.bodyHtml`;
+  // Mutate the shared projection so action contexts and restored aliases see the same body.
+  if (Object.hasOwn(frozen, plainKey)) message.body = message.bodyText = frozen[plainKey]!;
+  if (Object.hasOwn(frozen, htmlKey)) message.bodyHtml = frozen[htmlKey]!;
+  if (Object.hasOwn(frozen, plainKey) && Object.hasOwn(frozen, htmlKey)) message.bodyAvailable = true;
+};
+
 export const createMailWorkflowValueResolver = (params: {
   claim: Pick<WorkflowRunClaim, "runId" | "executionGeneration" | "inputs">;
   mailboxId: string;
   frozenHydration: Record<string, WorkflowJsonValue>;
   mailActionNames: ReadonlySet<string>;
 }): WorkflowValueResolverPort => {
-  // Runs frozen before #1313 may have only the legacy plain-text body key.
-  for (const [key, value] of Object.entries(params.frozenHydration)) {
-    if (/^inputs\.[^.]+\.body$/.test(key) && !Object.hasOwn(params.frozenHydration, `${key}Text`)) {
-      params.frozenHydration[`${key}Text`] = value;
-    }
-  }
   const hasFrozen = (key: string) => Object.hasOwn(params.frozenHydration, key);
   const freeze = async (reference: string, value: WorkflowJsonValue): Promise<WorkflowJsonValue> => {
     const frozen = await freezeHydrationValue({
@@ -153,18 +166,9 @@ export const createMailWorkflowValueResolver = (params: {
     params.frozenHydration[reference] = frozen;
     return frozen;
   };
-  const projectBody = (name: string, message: JsonObject): void => {
-    const plainKey = `inputs.${name}.bodyText`;
-    const htmlKey = `inputs.${name}.bodyHtml`;
-    // Mutate the shared projection so action contexts and restored aliases see the same body.
-    if (hasFrozen(plainKey)) message.body = message.bodyText = params.frozenHydration[plainKey]!;
-    if (hasFrozen(htmlKey)) message.bodyHtml = params.frozenHydration[htmlKey]!;
-    if (hasFrozen(plainKey) && hasFrozen(htmlKey)) message.bodyAvailable = true;
-  };
   const hydrateWholeMessage = async (name: string): Promise<void> => {
     const message = params.claim.inputs[name];
     if (!isObject(message) || message.bodyAvailable === true) return;
-    projectBody(name, message);
     if (typeof message.id !== "string") return;
     const entries: Array<{ key: string; value: WorkflowJsonValue }> = [];
     for (const field of ["bodyText", "bodyHtml"] as const) {
@@ -176,7 +180,7 @@ export const createMailWorkflowValueResolver = (params: {
       entries.push({ key, value: hydrated.value });
     }
     for (const entry of entries) await freeze(entry.key, entry.value);
-    projectBody(name, message);
+    projectMailWorkflowFrozenBody(name, message, params.frozenHydration);
   };
   return {
     resolve: async ({ reference, path, plan, fallback }) => {
@@ -221,7 +225,8 @@ export const createMailWorkflowValueResolver = (params: {
         }
         await freeze(candidate.frozenKey, hydrated.value);
       }
-      if (candidate.field !== "attachments") projectBody(reference.split(".")[1]!, candidate.message);
+      if (candidate.field !== "attachments")
+        projectMailWorkflowFrozenBody(reference.split(".")[1]!, candidate.message, params.frozenHydration);
       return resolvedPath(params.frozenHydration[candidate.frozenKey]!, candidate.tail);
     },
   };

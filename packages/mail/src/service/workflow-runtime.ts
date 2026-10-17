@@ -1,6 +1,11 @@
 import { env } from "@k2b/cloud/config";
 import { createRuntimeLifecycle } from "@k2b/cloud/services";
-import { AI_WORKFLOW_ACTIONS, createWorkflowBuiltinActionPorts, type WorkflowExecutionError } from "@k2b/cloud/workflows";
+import {
+  AI_WORKFLOW_ACTIONS,
+  createWorkflowBuiltinActionPorts,
+  type WorkflowExecutionError,
+  type WorkflowJsonValue,
+} from "@k2b/cloud/workflows";
 import { startWorkflowAiRuntime, stopWorkflowAiRuntime } from "@k2b/cloud/workflows/ai";
 import type { WorkflowExecuteActionPort, WorkflowTracePort } from "@k2b/cloud/workflows/runtime";
 import {
@@ -23,11 +28,16 @@ import {
   rebindMailWorkflowRestoredOutput,
   restoreMailWorkflowProjectedState,
 } from "./workflow-projected-state";
-import { createMailWorkflowValueResolver } from "./workflow-runtime-values";
+import {
+  createMailWorkflowValueResolver,
+  normalizeMailWorkflowFrozenHydration,
+  projectMailWorkflowFrozenBody,
+} from "./workflow-runtime-values";
 import { startMailWorkflowScheduleRuntime, stopMailWorkflowScheduleRuntime } from "./workflow-schedule-runtime";
 import { resolveMailWorkflowTemplateBodies } from "./workflow-template-values";
 
 const workerId = `mail:${env.HOSTNAME ?? "local"}:${process.pid}`;
+const inputReadiness = new WeakMap<Record<string, WorkflowJsonValue>, Promise<Record<string, WorkflowJsonValue>>>();
 
 const mailActionNames = new Set(Object.keys(MAIL_WORKFLOW_ACTIONS));
 const aiActionNames = new Set(Object.keys(AI_WORKFLOW_ACTIONS));
@@ -65,28 +75,24 @@ const builtins = createWorkflowBuiltinActionPorts({
 const actions: WorkflowExecuteActionPort = {
   get: (name) => {
     const declared = declaredActions.get(name);
-    if (!declared) {
-      const builtin = builtins.execute.get(name);
-      if (!builtin) return undefined;
-      return rebindMailWorkflowRestoredOutput({
-        ...builtin,
-        execute: async (ctx, step) => {
-          await resolveMailWorkflowTemplateBodies(ctx, step);
-          return builtin.execute(ctx, step);
-        },
-      });
-    }
+    const action = declared ?? builtins.execute.get(name);
+    if (!action) return undefined;
+    const handler = declared ? action : rebindMailWorkflowRestoredOutput(action);
     return {
       execute: async (ctx, step) => {
+        await inputReadiness.get(ctx.invocation.inputs);
         await resolveMailWorkflowTemplateBodies(ctx, step);
-        const outcome = await declared.execute(ctx, step);
-        if (outcome.state === "completed") await publishMailWorkflowCollaborationEventFromOutput(outcome.output);
+        const outcome = await handler.execute(ctx, step);
+        if (declared && outcome.state === "completed") await publishMailWorkflowCollaborationEventFromOutput(outcome.output);
         return outcome;
       },
       restoreCompleted: async (ctx, step, outcome) => {
-        await declared.restoreCompleted?.(ctx, step, outcome);
-        await restoreMailWorkflowProjectedState(ctx, step, outcome);
-        await publishMailWorkflowCollaborationEventFromOutput(outcome.output);
+        await inputReadiness.get(ctx.invocation.inputs);
+        await handler.restoreCompleted?.(ctx, step, outcome);
+        if (declared) {
+          await restoreMailWorkflowProjectedState(ctx, step, outcome);
+          await publishMailWorkflowCollaborationEventFromOutput(outcome.output);
+        }
       },
     };
   },
@@ -103,19 +109,26 @@ const values = (claim: WorkflowRunClaim) => {
   );
   for (const key of Object.keys(claim.inputs)) delete claim.inputs[key];
   Object.assign(claim.inputs, projected.inputs);
-  claim.context.source = projected.source as unknown as import("@k2b/cloud/workflows").WorkflowJsonValue;
+  claim.context.source = projected.source as unknown as WorkflowJsonValue;
 
-  let frozen: Promise<Record<string, import("@k2b/cloud/workflows").WorkflowJsonValue>> | null = null;
+  const frozen = sql<{ frozen_hydration: Record<string, WorkflowJsonValue> | string }[]>`
+    SELECT frozen_hydration
+    FROM mail.workflow_run_state
+    WHERE run_id = ${claim.runId}::uuid
+  `.then((rows) => {
+    const value = rows[0]?.frozen_hydration;
+    const hydration: Record<string, WorkflowJsonValue> = typeof value === "string" ? JSON.parse(value) : (value ?? {});
+    normalizeMailWorkflowFrozenHydration(hydration);
+    for (const input of claim.plan.inputs) {
+      if (input.type === "mailMessage") projectMailWorkflowFrozenBody(input.name, claim.inputs[input.name], hydration);
+    }
+    return hydration;
+  });
+  // Steps and the resolver await this promise and see a load failure; a run that never awaits it must not crash the worker.
+  frozen.catch(() => {});
+  inputReadiness.set(claim.inputs, frozen);
   return {
     resolve: async (input: Parameters<ReturnType<typeof createMailWorkflowValueResolver>["resolve"]>[0]) => {
-      frozen ??= sql<{ frozen_hydration: Record<string, import("@k2b/cloud/workflows").WorkflowJsonValue> | string }[]>`
-        SELECT frozen_hydration
-        FROM mail.workflow_run_state
-        WHERE run_id = ${claim.runId}::uuid
-      `.then((rows) => {
-        const value = rows[0]?.frozen_hydration;
-        return typeof value === "string" ? JSON.parse(value) : (value ?? {});
-      });
       return createMailWorkflowValueResolver({
         claim,
         mailboxId: claim.scopeId,

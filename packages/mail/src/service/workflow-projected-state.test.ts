@@ -70,37 +70,6 @@ describe("Mail workflow projected state", () => {
     expect(output.nested[0]?.conversation).not.toBe(conversation);
   });
 
-  for (const scenario of ["hydrated journal", "body-less journal", "loaded canonical"] as const) {
-    test(`restores setVariable message bodies in place: ${scenario}`, async () => {
-      const emptyBodies = { body: "", bodyText: "", bodyHtml: "", bodyAvailable: false };
-      const frozenBodies = { body: "Frozen text", bodyText: "Frozen text", bodyHtml: "<p>Frozen HTML</p>", bodyAvailable: true };
-      const canonicalBodies = { body: "Current text", bodyText: "Current text", bodyHtml: "<p>Current HTML</p>", bodyAvailable: true };
-      const message = { id: "message", ...(scenario === "loaded canonical" ? canonicalBodies : emptyBodies) };
-      const journaled = { id: "message", ...(scenario === "body-less journal" ? emptyBodies : frozenBodies) };
-      const ctx = {
-        invocation: { inputs: { message }, context: { source: { message } } },
-      } as unknown as WorkflowExecuteActionContext;
-      let selected: unknown;
-      const handler = rebindMailWorkflowRestoredOutput({
-        execute: async () => ({ state: "completed" }),
-        restoreCompleted: (_ctx, _step, restored) => {
-          selected = restored.output;
-        },
-      });
-      await handler.restoreCompleted?.(
-        ctx,
-        { kind: "action", action: "setVariable", config: { name: "selected" }, sourcePath: ["steps", 0] } as WorkflowActionStep,
-        { state: "completed", output: journaled },
-      );
-      expect(selected).toBe(message);
-      expect(ctx.invocation.inputs.message).toBe(message);
-      expect(message).toEqual({
-        id: "message",
-        ...(scenario === "hydrated journal" ? frozenBodies : scenario === "body-less journal" ? emptyBodies : canonicalBodies),
-      });
-    });
-  }
-
   test("applies message transitions idempotently with stable keyword comparison", () => {
     const message = structuredClone(source.message);
 
