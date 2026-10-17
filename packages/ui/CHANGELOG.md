@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.28.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.27.0...npm-ui-v0.28.0) (2026-10-17)
+
+
+### Features
+
+* **assistant:** choose the model, search the chat, and run scheduled tasks from the slash menu ([#1305](https://github.com/k2b-dev/cloud/issues/1305)) ([8f63bf4](https://github.com/k2b-dev/cloud/commit/8f63bf4560aa24fb03d034b5b1d6fed1fb0fffea))
+* **assistant:** Studio charts print their values as a table ([#1343](https://github.com/k2b-dev/cloud/issues/1343)) ([6c72058](https://github.com/k2b-dev/cloud/commit/6c7205814c51a932a1c0f5a1ac09318986699729))
+* **assistant:** Studio charts show tooltips by default ([#1329](https://github.com/k2b-dev/cloud/issues/1329)) ([6cbfff0](https://github.com/k2b-dev/cloud/commit/6cbfff0ba065b9d21dfc941c6c8417b9927eaffb))
+* **cloud:** write Help with task kinds, needs, next steps, key caps and details ([#1324](https://github.com/k2b-dev/cloud/issues/1324)) ([48560d3](https://github.com/k2b-dev/cloud/commit/48560d3c861dd4f0d61c03899a583b2928a4379f))
+* **notebooks:** a calm note side panel with one action row, clear sections and translated activity ([#1339](https://github.com/k2b-dev/cloud/issues/1339)) ([c1682b4](https://github.com/k2b-dev/cloud/commit/c1682b4bbc0b3e7dd9fe4791697e992f3ec2cc71))
+* **notebooks:** read chart values by pointer, tap and keyboard, as a table, or copy them ([#1344](https://github.com/k2b-dev/cloud/issues/1344)) ([3d423e7](https://github.com/k2b-dev/cloud/commit/3d423e7c2114d0674079125943e71288eb26f573))
+* **ui:** a floating bottom toolbar that keeps its most important actions and shows key hints ([#1318](https://github.com/k2b-dev/cloud/issues/1318)) ([efdc555](https://github.com/k2b-dev/cloud/commit/efdc5557d69160830306ab0199d2b4ff98cca31f))
+* **ui:** draw an avatar's status ring inside the avatar so panels never cut it off ([#1320](https://github.com/k2b-dev/cloud/issues/1320)) ([0d675c0](https://github.com/k2b-dev/cloud/commit/0d675c066d7df8dbcee592a2448deef7bcf26aa5))
+* **ui:** know whether a person uses touch, a trackpad or a keyboard without moving anything ([#1291](https://github.com/k2b-dev/cloud/issues/1291)) ([558cb3f](https://github.com/k2b-dev/cloud/commit/558cb3fefaceb22d70c3316aece6658e31b51252))
+* **ui:** offer chart inspection without Solid for sandboxed hosts ([#1316](https://github.com/k2b-dev/cloud/issues/1316)) ([6c7d65d](https://github.com/k2b-dev/cloud/commit/6c7d65d4197a16663f67d04a198ce4b18be3e9aa))
+* **ui:** open the hold menu at the finger on tablets ([#1335](https://github.com/k2b-dev/cloud/issues/1335)) ([7278cf7](https://github.com/k2b-dev/cloud/commit/7278cf76c497cc303fbd4fcf159153419206a0a6))
+* **ui:** print page content without the app chrome, starting with Notebooks ([#1321](https://github.com/k2b-dev/cloud/issues/1321)) ([e1b2b21](https://github.com/k2b-dev/cloud/commit/e1b2b2188d08c9426af13261969a6db12ed03485)), closes [#1281](https://github.com/k2b-dev/cloud/issues/1281)
+* **ui:** share the message reaction chips as ReactionBar, with names on hover, focus and a long press ([#1337](https://github.com/k2b-dev/cloud/issues/1337)) ([14e5055](https://github.com/k2b-dev/cloud/commit/14e50552a25d1300f38e801fbe3253e0fd61ec50))
+* **ui:** show the slash menu as a sheet above the phone keyboard ([#1336](https://github.com/k2b-dev/cloud/issues/1336)) ([3b4dff1](https://github.com/k2b-dev/cloud/commit/3b4dff10ef1db29409d54a38091510cb5c6dd46e))
+
+
+### Bug Fixes
+
+* **tools:** convert iPhone HEIC photos and show one calm drop state ([#1284](https://github.com/k2b-dev/cloud/issues/1284)) ([#1330](https://github.com/k2b-dev/cloud/issues/1330)) ([da468f4](https://github.com/k2b-dev/cloud/commit/da468f4d99650caef34578e0802f475017d706ea))
+
 ## [0.27.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.26.0...npm-ui-v0.27.0) (2026-10-16)
 
 
