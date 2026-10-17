@@ -90,6 +90,19 @@
 .k2b-ui .k2b-avatar[data-size="md"] { width: 2.5rem; height: 2.5rem; font-size: 0.875rem; }
 .k2b-ui .k2b-avatar[data-size="lg"] { width: 4rem; height: 4rem; font-size: 1.125rem; }
 .k2b-ui .k2b-avatar[data-size="xl"] { width: 5rem; height: 5rem; font-size: 1.25rem; }
+/* A status ring lies inside the avatar's own border box: the border is the ring, the
+ * padding a transparent gap, and the face fills the content box. The avatar keeps
+ * its size when the ring comes and goes, and a scrolling or clipping ancestor
+ * never cuts the ring off, which an outline or an outset shadow would risk. */
+.k2b-ui .k2b-avatar[data-ring] {
+  box-sizing: border-box;
+  padding: 1.5px;
+  border: 2px solid var(--k2b-avatar-ring, var(--k2b-success-text));
+  background-clip: content-box;
+}
+.k2b-ui .k2b-avatar[data-ring="success"] { --k2b-avatar-ring: var(--k2b-success-text); }
+/* The smallest face is 17 px wide inside its ring; slightly smaller initials keep clear of it. */
+.k2b-ui .k2b-avatar[data-ring][data-size="xs"] { font-size: 0.5625rem; }
 
 /* -------------------------------------------------------------- LinkCard -- */
 .k2b-ui .k2b-link-card {

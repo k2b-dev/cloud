@@ -670,7 +670,7 @@ export default function NotebookDetailPanel(props: Props) {
                               : undefined
                           }
                           size="xs"
-                          style={`outline: 2px solid ${p.color}; outline-offset: 1px`}
+                          ring={{ color: p.color }}
                         />
                         <span class="truncate">{p.displayName}</span>
                         {p.peerCount > 1 && <span class="ml-auto text-[11px] text-dimmed">{t().tabs({ count: p.peerCount })}</span>}

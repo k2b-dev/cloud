@@ -14,6 +14,8 @@ import { Avatar, LinkCard, ResourceCard, type ResourceCardState } from "@k2b/ui"
 
 `LinkCard` accepts a title, description, icon, destination, optional semantic color, and one optional trailing `meta` fact. Without `color`, the glyph uses `--k2b-app-workspace-active`, the same optional accent hook as `AppOverview`'s icon, which defaults to the action color; Cloud maps it to the active application's accent. For navigation in place, pass `navigation="enhanced"` and `onNavigate`, as with `ButtonLink`. Without both, the card follows its link with a full page load. Use `meta` for one count or one non-interactive badge, such as a role; counts render with tabular figures. `Avatar` accepts a name, optional image URL or icon, fallback, size, and loading behavior. Image content takes precedence over the icon, which takes precedence over initials. Initials and icons sit on a calm tint that the name decides, from a palette of ten colors, so the same name has the same color wherever an avatar shows it and people stay apart in long lists and conversations. Pass the display name the application shows for the person, so their avatar matches across surfaces.
 
+Use `Avatar`'s `ring` for a live status such as someone working on a task, or a collaborator's own color, not for selection or focus. `"success"` uses the theme's success text color; `{ color }` accepts any CSS color the application owns. The ring and its small transparent gap lie inside the avatar's own box: it keeps its size, nothing moves when the ring appears or disappears, and a scrolling panel edge does not cut it off.
+
 ## Show a referenced element
 
 `ResourceCard` shows an element in one of five `state`s:
@@ -46,10 +48,11 @@ type ResourceCardProps = {
 };
 
 type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
+type AvatarRing = "success" | { color: string };
 
 type AvatarProps = {
   name: string; src?: string | null; icon?: string; alt?: string; fallback?: string; size?: AvatarSize;
-  loading?: "eager" | "lazy"; class?: string; style?: JSX.CSSProperties | string;
+  ring?: AvatarRing; loading?: "eager" | "lazy"; class?: string; style?: JSX.CSSProperties | string;
 };
 ```
 
@@ -58,6 +61,8 @@ type AvatarProps = {
 ## Accessibility
 
 The card remains one native link with a visible focus indicator. A `ResourceCard` that opens is one native link or button, read with its title, source, location, and preview; it never moves on hover or focus. A card that cannot show its element is plain text and takes no focus. A card that leaves `"ok"` while it has focus, for example because the element was deleted, becomes plain text, and focus returns to the page. A loading card is marked busy and names "Loading" for screen readers without a live region, so a list of cards does not announce each one. Avatar supplies an image alternative or fallback `role="img"` label.
+
+Pair a ring with a visible text label or an avatar `alt` that explains what it means; color alone does not carry meaning.
 
 ## Runtime
 
@@ -89,4 +94,6 @@ All three components render on the server. Link navigation works without browser
 
 <Avatar name="Ada Lovelace" src={profileImageUrl} size="sm" />
 <Avatar name="Workflow" icon="ti ti-route" size="sm" />
+<Avatar name="Grace Hopper" size="xs" ring="success" alt="Grace Hopper is working on it" />
+<Avatar name="Ada Lovelace" size="sm" ring={{ color: "#7c3aed" }} alt="Ada Lovelace is online" />
 ```

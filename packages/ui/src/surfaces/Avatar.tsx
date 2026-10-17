@@ -3,6 +3,12 @@ import { useAvatarMessages } from "./avatar-messages";
 
 export type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
 
+/**
+ * A status ring around the avatar: `"success"` for an active state such as someone working on a task, or an explicit
+ * color, for example a collaborator's cursor color.
+ */
+export type AvatarRing = "success" | { color: string };
+
 export type AvatarProps = {
   name: string;
   src?: string | null;
@@ -10,6 +16,8 @@ export type AvatarProps = {
   alt?: string;
   fallback?: string;
   size?: AvatarSize;
+  /** Draws a ring with a small transparent gap inside the avatar's own box, so the avatar keeps its size and no container clips the ring. */
+  ring?: AvatarRing;
   loading?: "eager" | "lazy";
   class?: string;
   style?: JSX.CSSProperties | string;
@@ -44,6 +52,13 @@ export function Avatar(props: AvatarProps): JSX.Element {
   const fallback = () => props.fallback ?? initialsFor(props.name);
   const fallbackContent = () => (props.icon ? <i class={props.icon} aria-hidden="true" /> : fallback());
   const className = () => `k2b-avatar ${props.class ?? ""}`;
+  const ring = () => (props.ring === undefined ? undefined : typeof props.ring === "string" ? props.ring : "color");
+  const style = (): JSX.CSSProperties | string | undefined => {
+    const color = typeof props.ring === "object" ? props.ring.color : undefined;
+    if (color === undefined) return props.style;
+    if (typeof props.style === "string") return `${props.style ? `${props.style};` : ""}--k2b-avatar-ring:${color}`;
+    return { ...props.style, "--k2b-avatar-ring": color };
+  };
 
   createEffect(
     on(
@@ -61,7 +76,8 @@ export function Avatar(props: AvatarProps): JSX.Element {
           class={className()}
           data-size={props.size ?? "md"}
           data-tint={tintFor(props.name.trim())}
-          style={props.style}
+          data-ring={ring()}
+          style={style()}
           role="img"
           aria-label={props.alt ?? avatarMessages().avatarLabel({ name: label() })}
         >
@@ -75,7 +91,8 @@ export function Avatar(props: AvatarProps): JSX.Element {
           alt={props.alt ?? avatarMessages().avatarLabel({ name: label() })}
           class={className()}
           data-size={props.size ?? "md"}
-          style={props.style}
+          data-ring={ring()}
+          style={style()}
           loading={props.loading ?? "lazy"}
           decoding="async"
           onError={() => setFailed(true)}

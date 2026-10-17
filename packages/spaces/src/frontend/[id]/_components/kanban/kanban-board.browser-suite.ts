@@ -1998,36 +1998,30 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
           const holder = element.querySelector("[data-spaces-claim-badge] .k2b-avatar")!;
           const holderBox = holder.getBoundingClientRect();
           const next = holder.closest("[data-spaces-claim-badge]")!.nextElementSibling!.getBoundingClientRect();
-          // No ancestor up to the card clips the ring that reaches 4 px past the avatar.
+          // No ancestor up to the card clips the ring, which lies inside the avatar's own box.
           const clipped = [] as string[];
           for (let node = holder.parentElement; node && node !== element.parentElement; node = node.parentElement) {
             const style = getComputedStyle(node);
             if (style.overflow === "visible") continue;
             const box = node.getBoundingClientRect();
-            if (
-              holderBox.left - 4 < box.left ||
-              holderBox.right + 4 > box.right ||
-              holderBox.top - 4 < box.top ||
-              holderBox.bottom + 4 > box.bottom
-            )
+            if (holderBox.left < box.left || holderBox.right > box.right || holderBox.top < box.top || holderBox.bottom > box.bottom)
               clipped.push(node.className);
           }
+          const style = getComputedStyle(holder);
           return {
             clipped,
-            ring: (() => {
-              const style = getComputedStyle(holder);
-              // An outline leaves the gap transparent, so it matches the card when hovered or selected.
-              return [style.outlineStyle, style.outlineWidth, style.outlineOffset, style.boxShadow].join(" ");
-            })(),
+            // The ring is the avatar's border behind a transparent gap, so the gap matches the card when hovered or
+            // selected, and nothing paints outside the avatar.
+            ring: [holder.getAttribute("data-ring"), style.borderTopWidth, style.outlineStyle, style.boxShadow].join(" "),
             sizes: [holderBox.width, next.width],
-            // The ring reaches 4 px past the avatar; the next avatar starts at the ring's outer edge.
+            // The next avatar starts where the holder's ring ends instead of covering it.
             gap: Math.round(next.left - holderBox.right),
           };
         });
         expect(stack.clipped).toEqual([]);
-        expect(stack.ring).toBe("solid 2px 2px none");
+        expect(stack.ring).toBe("success 2px none none");
         expect(stack.sizes[0]).toBe(stack.sizes[1]);
-        expect(stack.gap).toBe(4);
+        expect(stack.gap).toBe(0);
         const before = await layout(page);
         await card.hover();
         expect(await layout(page)).toEqual(before);
