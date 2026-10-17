@@ -74,11 +74,14 @@ export function releaseNoteMarkup(title: string, body: string): string[] {
   const finding = (where: string, snippet: string) =>
     `HTML-like markup in ${where}: ${JSON.stringify(snippet)}. Write placeholders without angle brackets (for example DIR or {dir}), because release-please parses release notes as HTML (#1298).`;
   const findings = snippets(title, false).map((snippet) => finding("title", snippet));
-  for (const paragraph of body.replace(/\r\n/g, "\n").split(/\n[\t ]*\n/)) {
-    const footer = /^BREAKING(?: CHANGE|-CHANGE):/m.exec(paragraph);
-    if (footer) {
-      findings.push(...snippets(paragraph.slice(footer.index), false).map((snippet) => finding("BREAKING CHANGE footer", snippet)));
-    }
+  const normalized = body.replace(/\r\n/g, "\n");
+  // A conservative superset of release-please's split and nested commit headers.
+  for (const header of normalized.matchAll(/^(?:feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(?:\(.*?\))?!?: [^\n]*/gm)) {
+    findings.push(...snippets(header[0], false).map((snippet) => finding("commit header line in the body", snippet)));
+  }
+  // Only a truly empty line ends a breaking note; spaces and tabs belong to it.
+  for (const footer of normalized.matchAll(/^BREAKING(?: CHANGE|-CHANGE):[^\n]*(?:\n(?!\n)[^\n]+)*/gm)) {
+    findings.push(...snippets(footer[0], false).map((snippet) => finding("BREAKING CHANGE footer", snippet)));
   }
   return findings;
 }

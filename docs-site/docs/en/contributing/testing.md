@@ -567,8 +567,10 @@ parser pinned in `main.yml`, including in the merge queue. It fails if a bumped
 component is missing, has another version, or swallowed another section. It
 also tests historical fixtures when the guard, its fixtures, or the parser pin
 changes. The `check` job runs `bun scripts/check-release-pr-body.ts --message`
-on pull requests to refuse HTML-like markup in titles and `BREAKING CHANGE`
-footers before it reaches release notes. See
+on pull requests and again in the merge queue. It reads the live PR title and
+body to refuse HTML-like markup in the title, Conventional Commit header lines
+in the body, and `BREAKING CHANGE` footers. After fixing the title or footer,
+re-run the failed `check` job to check the new text. See
 [Release process](/en/docs/contributing/release-process#let-release-please-cut-the-release).
 
 Jobs of the CI and nightly workflows install workspace dependencies through

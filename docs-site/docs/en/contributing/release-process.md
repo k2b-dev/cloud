@@ -35,11 +35,14 @@ A `BREAKING CHANGE:` footer in the PR body has the same effect as `!`. Use
 either only with explicit maintainer approval, because it moves every
 application image to a new major version.
 
-release-please copies the PR title and each `BREAKING CHANGE:` or
-`BREAKING-CHANGE:` paragraph into the release PR body and parses it as HTML.
+release-please copies commit descriptions and `BREAKING CHANGE:` or
+`BREAKING-CHANGE:` paragraphs into the release PR body and parses it as HTML.
 Write placeholders without angle brackets: use `DIR` or `{dir}` instead of
-`<word>`, even inside backticks. The `check` job refuses HTML-like markup in
-these parts of the PR ([#1298](https://github.com/k2b-dev/cloud/issues/1298)).
+`<word>`, even inside backticks. The `check` job reads the live PR title and
+body on the PR and again in the merge queue. It refuses HTML-like markup in
+the title, Conventional Commit header lines in the body, and breaking-change
+paragraphs ([#1298](https://github.com/k2b-dev/cloud/issues/1298)). After fixing
+the title or footer, re-run the failed `check` job to check the new text.
 
 A change to a runtime contract (configuration, routes, permissions, data
 format, deployment) needs a `feat` or `feat!` title and a note on the matching

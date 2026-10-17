@@ -104,10 +104,45 @@ describe("releaseNoteMarkup", () => {
     expect(findings[0]).not.toContain("<dir>");
   });
 
-  test("accepts the hyphen variant, CRLF, multiple footers, and whitespace-only blank lines", () => {
+  test("checks across whitespace-only lines with the hyphen variant, CRLF, and multiple footers", () => {
     expect(
       releaseNoteMarkup("fix: input", "BREAKING-CHANGE: use\r\n<dir>\r\n \t\r\nignored <x>\r\n\r\nBREAKING CHANGE: </x>"),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
+  });
+
+  test.each(["\n", "\r\n"])("only a truly empty line ends a footer (%j)", (newline) => {
+    const findings = releaseNoteMarkup("feat(x): add y", ["BREAKING CHANGE: migrate", " \t", "Use <dir>", "", "next <a>"].join(newline));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain("BREAKING CHANGE footer");
+    expect(findings[0]).toContain("<dir>");
+    expect(findings[0]).not.toContain("<a>");
+  });
+
+  test.each(["Some text\n", "Some text\n\n", "BEGIN_NESTED_COMMIT\n"])("checks body commit header lines after %j", (prefix) => {
+    const findings = releaseNoteMarkup("feat(x): add y", `${prefix}fix(cli): use <dir>\nEND_NESTED_COMMIT`);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain("commit header line in the body");
+    expect(findings[0]).toContain("<dir>");
+  });
+
+  test.each(["feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore", "revert"])(
+    "checks %s body headers with optional scopes and breaking markers",
+    (type) => {
+      for (const suffix of ["", "(cli)", "!", "(cli)!"]) {
+        expect(releaseNoteMarkup("fix: input", `${type}${suffix}: use <dir>`)).toHaveLength(1);
+      }
+    },
+  );
+
+  test("checks a split commit's header without its ordinary body", () => {
+    const findings = releaseNoteMarkup("feat(x): add y", "Some text\n\nfeat(ui): extra <d>\nwith body\n\nend <a>");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain("<d>");
+    expect(findings[0]).not.toContain("<a>");
+  });
+
+  test("allows markup in prose, bullets, and indented headers", () => {
+    expect(releaseNoteMarkup("fix: input", "Uses `<Button>`\n- fix: x <c>\n fix: use <dir>\nExample fix: <dir>")).toEqual([]);
   });
 
   test("requires a line-start token", () => {

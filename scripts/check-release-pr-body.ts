@@ -56,6 +56,13 @@ async function command(file: string, args: string[], cwd = root, timeout = 30_00
   }
 }
 
+function collectingLogger(messages: string[]) {
+  const collect = (...values: unknown[]) => {
+    messages.push(values.map(String).join(" "));
+  };
+  return { error: collect, warn: collect, info: collect, debug: collect, trace: collect };
+}
+
 async function parser() {
   const workflow = await readFile(join(root, ".github/workflows/main.yml"), "utf8");
   const pins = new Set(
@@ -77,19 +84,22 @@ async function parser() {
     }
     await command("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], directory, 300_000);
   }
-  const loaded: unknown = createRequire(import.meta.url)(modulePath);
+  const require = createRequire(import.meta.url);
+  const loaded: unknown = require(modulePath);
   if (!isRecord(loaded)) throw new Error("Invalid release-please parser module");
   const bodyClass = loaded.PullRequestBody;
   if ((typeof bodyClass !== "function" && !isRecord(bodyClass)) || !("parse" in bodyClass) || typeof bodyClass.parse !== "function") {
     throw new Error("release-please module does not export PullRequestBody.parse");
   }
   const parse = bodyClass.parse;
-  return (body: string) => {
+  const commitModule: unknown = require(join(directory, "node_modules/release-please/build/src/commit.js"));
+  if (!isRecord(commitModule) || typeof commitModule.parseConventionalCommits !== "function") {
+    throw new Error("release-please module does not export parseConventionalCommits");
+  }
+  const parseConventionalCommits = commitModule.parseConventionalCommits;
+  const parseBody = (body: string) => {
     const messages: string[] = [];
-    const collect = (...values: unknown[]) => {
-      messages.push(values.map(String).join(" "));
-    };
-    const result: unknown = parse(body, { error: collect, warn: collect, info() {}, debug() {}, trace() {} });
+    const result: unknown = parse(body, collectingLogger(messages));
     const releases: ReleaseData[] = [];
     if (result !== undefined) {
       if (!isRecord(result) || !Array.isArray(result.releaseData)) throw new Error("Parser returned invalid releaseData");
@@ -106,6 +116,26 @@ async function parser() {
     }
     return { releases, messages };
   };
+  const parseCommits = (message: string) => {
+    const messages: string[] = [];
+    const result: unknown = parseConventionalCommits([{ sha: "0", message, files: [] }], collectingLogger(messages));
+    if (!Array.isArray(result)) throw new Error("Commit parser returned invalid commits");
+    const commits: unknown[] = result;
+    const texts: string[] = [];
+    for (const commit of commits) {
+      if (!isRecord(commit) || typeof commit.bareMessage !== "string" || !Array.isArray(commit.notes)) {
+        throw new Error("Commit parser returned an invalid commit");
+      }
+      texts.push(commit.bareMessage);
+      const notes: unknown[] = commit.notes;
+      for (const note of notes) {
+        if (!isRecord(note) || typeof note.text !== "string") throw new Error("Commit parser returned an invalid note");
+        texts.push(note.text);
+      }
+    }
+    return { texts, messages };
+  };
+  return { parseBody, parseCommits };
 }
 
 function report(body: string, findings: string[], messages: string[]): void {
@@ -116,11 +146,54 @@ function report(body: string, findings: string[], messages: string[]): void {
   console.error("See docs-site/docs/en/contributing/release-process.md (#1298).");
 }
 
-async function checkPr(number: string, bodyFile?: string): Promise<boolean> {
-  // Install first: the check must fetch the live body after this potentially slow step.
-  const parse = await parser();
+async function resolvePrNumber(number?: string): Promise<string | undefined> {
+  if (number !== undefined) {
+    if (!/^[1-9]\d*$/.test(number)) throw new Error("Expected a positive PR number");
+    return number;
+  }
+  const eventFile = process.env.GITHUB_EVENT_PATH;
+  if (!eventFile || !existsSync(eventFile)) return undefined;
+  const event = json(await readFile(eventFile, "utf8"));
+  if (!isRecord(event)) throw new Error("Invalid GitHub event: expected an object");
+  if (event.pull_request !== undefined) {
+    const pr = event.pull_request;
+    if (!isRecord(pr) || typeof pr.number !== "number" || !Number.isSafeInteger(pr.number) || pr.number <= 0) {
+      throw new Error("Invalid GitHub event: expected a positive pull_request.number");
+    }
+    return String(pr.number);
+  }
+  if (event.merge_group !== undefined) {
+    if (!isRecord(event.merge_group) || typeof event.merge_group.head_ref !== "string") {
+      throw new Error("Invalid GitHub event: expected merge_group.head_ref");
+    }
+    const match = /^refs\/heads\/gh-readonly-queue\/.+\/pr-([1-9]\d*)-[0-9a-f]+$/.exec(event.merge_group.head_ref);
+    if (!match?.[1]) throw new Error(`Cannot find a pull request number in queue ref: ${event.merge_group.head_ref}`);
+    return match[1];
+  }
+  return undefined;
+}
+
+function repositoryName(): string {
   const repository = process.env.GITHUB_REPOSITORY || "k2b-dev/cloud";
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error("Invalid GITHUB_REPOSITORY");
+  return repository;
+}
+
+async function checkMessage(number: string): Promise<boolean> {
+  const pr = json(await command("gh", ["api", `repos/${repositoryName()}/pulls/${number}`]));
+  if (!isRecord(pr) || typeof pr.title !== "string" || (pr.body !== null && typeof pr.body !== "string")) {
+    throw new Error("Invalid pull request response: expected title and body");
+  }
+  const findings = releaseNoteMarkup(pr.title, pr.body ?? "");
+  for (const finding of findings) console.error(finding);
+  if (!findings.length) console.log(`PR #${number}: title, body commit headers, and BREAKING CHANGE footers pass.`);
+  return findings.length === 0;
+}
+
+async function checkPr(number: string, bodyFile?: string): Promise<boolean> {
+  // Install first: the check must fetch the live body after this potentially slow step.
+  const { parseBody } = await parser();
+  const repository = repositoryName();
   const pr = json(await command("gh", ["api", `repos/${repository}/pulls/${number}`]));
   if (!isRecord(pr) || !isRecord(pr.head) || typeof pr.head.ref !== "string")
     throw new Error("Invalid pull request response: missing head.ref");
@@ -153,7 +226,7 @@ async function checkPr(number: string, bodyFile?: string): Promise<boolean> {
   const before = await readManifest(pr.base.sha);
   const after = await readManifest(pr.head.sha);
   const body = bodyFile ? await readFile(bodyFile, "utf8") : (pr.body ?? "");
-  const { releases, messages } = parse(body);
+  const { releases, messages } = parseBody(body);
   for (const release of releases) console.log(`${release.component ?? "(unnamed)"} ${release.version ?? "(missing version)"}`);
   const findings = verifyReleaseData(bumpedComponents(configuration, before, after), releases);
   if (findings.length) report(body, findings, messages);
@@ -162,7 +235,7 @@ async function checkPr(number: string, bodyFile?: string): Promise<boolean> {
 }
 
 async function selfTest(): Promise<boolean> {
-  const parse = await parser();
+  const { parseBody, parseCommits } = await parser();
   const configuration = await config();
   const fixture = (name: string) => readFile(join(root, "scripts/fixtures/release-pr-body", name), "utf8");
   let passed = true;
@@ -174,20 +247,31 @@ async function selfTest(): Promise<boolean> {
     const body = await fixture(name);
     const before = manifest(json(await fixture(`${manifests}-manifest-before.json`)));
     const after = manifest(json(await fixture(`${manifests}-manifest-after.json`)));
-    const { releases, messages } = parse(body);
+    const { releases, messages } = parseBody(body);
     const findings = verifyReleaseData(bumpedComponents(configuration, before, after), releases);
     const ok = missingCloud ? findings.some((finding) => finding.startsWith("Missing cloud ")) : findings.length === 0;
     console.log(`${ok ? "PASS" : "FAIL"} ${name}${missingCloud ? " (expected failure: missing cloud)" : ""}`);
     if (findings.length || !ok) report(body, findings, messages);
     passed &&= ok;
   }
-  const message = await fixture("1227-commit-message.txt");
-  const [title = "", ...lines] = message.split("\n");
-  const findings = releaseNoteMarkup(title, lines.join("\n"));
-  const ok = findings.length > 0;
-  console.log(`${ok ? "PASS" : "FAIL"} 1227-commit-message.txt (expected markup rejection)`);
-  for (const finding of findings) console.log(finding);
-  return passed && ok;
+  for (const [name, message, expectMarkup] of [
+    ["1227-commit-message.txt", await fixture("1227-commit-message.txt"), true],
+    ["whitespace-only footer line", "feat(x): add y\n\nBREAKING CHANGE: migrate\n \t\nUse <dir>\n\nnext <a>", true],
+    ["split commit header", "feat(x): add y\n\nSome text\n\nfeat(ui): extra <d>\nwith body\n\nend", true],
+    ["nested commit header", "feat: add y\n\nBEGIN_NESTED_COMMIT\nfix(x): use <dir>\nEND_NESTED_COMMIT", true],
+    ["clean message", "feat(x): add y\n\nBREAKING CHANGE: migrate to DIR", false],
+    ["markup only in prose and a bullet", "fix: add y\n\nUses `<Button>`\n\n- fix: x <c>", false],
+  ] as const) {
+    const [title = "", ...lines] = message.split("\n");
+    const findings = releaseNoteMarkup(title, lines.join("\n"));
+    const { texts, messages } = parseCommits(message);
+    const parserHasMarkup = texts.some((text) => markupSnippets(text).length > 0);
+    const ok = (!parserHasMarkup || findings.length > 0) && (expectMarkup ? parserHasMarkup : findings.length === 0);
+    console.log(`${ok ? "PASS" : "FAIL"} ${name} (expected ${expectMarkup ? "markup rejection" : "no lint findings"})`);
+    if (!ok) report(message, findings, messages);
+    passed &&= ok;
+  }
+  return passed;
 }
 
 async function main(): Promise<boolean> {
@@ -211,35 +295,39 @@ async function main(): Promise<boolean> {
     if (arg !== "--pr" && arg !== "--self-test" && arg !== "--message")
       throw new Error(`Unknown argument: ${arg}. Run with --help for usage.`);
     if (mode) throw new Error("Choose exactly one of --pr, --self-test, or --message");
-    if (arg === "--pr") {
-      mode = "pr";
-      number = args[++index];
-      if (!number || !/^[1-9]\d*$/.test(number)) throw new Error("--pr requires a positive PR number");
-    } else mode = arg === "--message" ? "message" : "self-test";
+    mode = arg === "--pr" ? "pr" : arg === "--message" ? "message" : "self-test";
+    const next = args[index + 1];
+    if (mode !== "self-test" && next !== undefined && !next.startsWith("--")) {
+      number = next;
+      index++;
+    }
   }
   if (bodyFile && mode !== "pr") throw new Error("--body is only valid with --pr");
   if (help) {
-    console.log(`Usage: bun scripts/check-release-pr-body.ts --pr <number> [--body <file>]
+    console.log(`Usage: bun scripts/check-release-pr-body.ts --pr [<number>] [--body <file>]
        bun scripts/check-release-pr-body.ts --self-test
-       bun scripts/check-release-pr-body.ts --message
+       bun scripts/check-release-pr-body.ts --message [<number>]
        bun scripts/check-release-pr-body.ts --help
 
---pr: check a live release-please PR (GITHUB_REPOSITORY defaults to k2b-dev/cloud).
-      Uses gh auth locally or GH_TOKEN in CI. --body checks an edited file.
+--pr: check a live release-please PR. --body checks an edited file.
 --self-test: check historical fixtures with the parser pinned in main.yml.
---message: check PR_TITLE and PR_BODY for markup copied into release notes.
+--message: fetch the live PR title and body and check markup copied into release notes.
+--pr and --message accept an optional positive PR number. Otherwise, read
+      pull_request.number or merge_group.head_ref from GITHUB_EVENT_PATH.
+      With no event file or no PR in the event, there is no pull request to check.
+      Both use gh auth locally or GH_TOKEN in CI; GITHUB_REPOSITORY defaults to k2b-dev/cloud.
 --pr and --self-test download and install the pinned parser into the OS temp directory.
 --help: print this usage and exit.`);
     return true;
   }
-  if (mode === "pr" && number) return checkPr(number, bodyFile);
   if (mode === "self-test") return selfTest();
-  if (mode === "message") {
-    if (process.env.PR_TITLE === undefined || process.env.PR_BODY === undefined) throw new Error("--message requires PR_TITLE and PR_BODY");
-    const findings = releaseNoteMarkup(process.env.PR_TITLE, process.env.PR_BODY);
-    for (const finding of findings) console.error(finding);
-    if (!findings.length) console.log("PR title and BREAKING CHANGE footers pass.");
-    return findings.length === 0;
+  if (mode === "pr" || mode === "message") {
+    const resolved = await resolvePrNumber(number);
+    if (!resolved) {
+      console.log("There is no pull request to check.");
+      return true;
+    }
+    return mode === "pr" ? checkPr(resolved, bodyFile) : checkMessage(resolved);
   }
   throw new Error("Choose --pr, --self-test, or --message. Run with --help for usage.");
 }
