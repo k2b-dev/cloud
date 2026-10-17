@@ -34,7 +34,8 @@ const suite = valkeySuite();
 suite("public inbox upload rate limits", () => {
   const ips = new Set<string>();
   const identity = () => {
-    const ip = crypto.randomUUID().replaceAll("-", "").match(/.{4}/g)!.join(":");
+    // Random addresses stay inside 2001:db8::/32 so none lands in a NAT64, Teredo or 6to4 range that maps to IPv4.
+    const ip = `2001:db8:${crypto.randomUUID().replaceAll("-", "").slice(0, 24).match(/.{4}/g)!.join(":")}`;
     ips.add(ip);
     return { ip, token: crypto.randomUUID() };
   };
@@ -155,11 +156,13 @@ suite("public inbox upload rate limits", () => {
   });
 
   test("IPv6 addresses in one /64 share the upload budget across textual forms and links", async () => {
-    const groups = crypto.randomUUID().replaceAll("-", "").slice(0, 12).match(/.{4}/g)!;
-    const prefix = groups.join(":");
-    const firstIp = `${prefix}:2::1`;
-    const sameNetworkIp = `${prefix}:0002:FFFF:0000:0000:0009`.toUpperCase();
-    const otherNetworkIp = `${prefix}:3::1`;
+    const [high = 0, low = 0] = crypto.getRandomValues(new Uint16Array(2));
+    const subnet = low & 0xfffe;
+    const prefix = `2001:db8:${high.toString(16)}`;
+    const firstIp = `${prefix}:${subnet.toString(16)}::1`;
+    const sameNetworkIp =
+      `2001:0DB8:${high.toString(16).padStart(4, "0")}:${subnet.toString(16).padStart(4, "0")}:FFFF:0000:0000:0009`.toUpperCase();
+    const otherNetworkIp = `${prefix}:${(subnet + 1).toString(16)}::1`;
     for (const ip of [firstIp, sameNetworkIp, otherNetworkIp]) ips.add(ip);
     const token = crypto.randomUUID();
     const path = `/inbox/${token}/api/uploads`;
@@ -176,7 +179,7 @@ suite("public inbox upload rate limits", () => {
     expect(authCalls).toBe(callsBeforeLimited);
     expectUpload(await request(otherNetworkIp, path), 119);
     const storedKeys = await keys();
-    const bucket = `${groups.map((group) => Number.parseInt(group, 16).toString(16)).join(":")}:2::/64`;
+    const bucket = `${prefix}:${subnet.toString(16)}::/64`;
     expect(storedKeys.some((key) => key.startsWith(`filesv2:rate-limit:filesv2-public-upload:ip6:${bucket}:`))).toBe(true);
     expect(storedKeys.every((key) => !key.includes(token))).toBe(true);
   });
