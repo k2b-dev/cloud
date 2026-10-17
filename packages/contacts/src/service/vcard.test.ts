@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Contact } from "./types";
-import { parse, serializeBook, serializeBookCsv, serializeContact } from "./vcard";
+import { CSV_HEADER_LINE, parse, serializeBook, serializeBookCsv, serializeBookPage, serializeContact, serializeCsvRows } from "./vcard";
 
 const stamp = "2026-01-01T00:00:00.000Z";
 
@@ -81,6 +81,12 @@ const contact = (overrides: Partial<Contact> = {}): Contact => ({
 });
 
 describe("vCard serialization", () => {
+  test("concatenated pages preserve book bytes", () => {
+    const first = [contact(), contact({ id: "contact-2", label: "Two" })];
+    const second = [contact({ id: "contact-3", firstName: "Zoë" })];
+    expect(serializeBookPage(first) + serializeBookPage(second)).toBe(serializeBook([...first, ...second]));
+    expect(serializeBookPage([])).toBe("");
+  });
   test("serializes core contact fields and multi-value data", () => {
     const output = serializeContact(contact());
 
@@ -222,6 +228,15 @@ describe("vCard parsing", () => {
 });
 
 describe("CSV serialization", () => {
+  test("concatenated pages preserve book bytes with exactly one header", () => {
+    const first = [contact(), contact({ id: "contact-2", label: "Two" })];
+    const second = [contact({ id: "contact-3", companyName: "Line 1\nLine 2" })];
+    const output = CSV_HEADER_LINE + serializeCsvRows(first) + serializeCsvRows(second);
+    expect(output).toBe(serializeBookCsv([...first, ...second]));
+    expect(output.split(CSV_HEADER_LINE)).toHaveLength(2);
+    expect(serializeCsvRows([])).toBe("");
+    expect(serializeBookCsv([])).toBe(CSV_HEADER_LINE);
+  });
   test("quotes cells with commas, quotes, and newlines", () => {
     const output = serializeBookCsv([
       contact({

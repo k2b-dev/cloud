@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Silent truncation by a clamped page size | A caller asks for the whole collection with a page size above the helper's maximum and exports only the first page. | Check: `page-size` rejects oversized `pagination.perPage` literals. Tests: Contacts export pagination, cancellation, stream failure, serializer bytes, and the 1,001-contact integration case ([#1241](https://github.com/k2b-dev/cloud/issues/1241)). |
 | Claim and assignment diverge | A person works on a task while assignment-based lists still show it as unassigned, or a stale assignee replacement removes an active worker. | Tests: `packages/spaces/src/service/claim-assignment.integration.test.ts` checks transactional user claims, guarded assignee replacements, forced releases, completion, and idempotent backfill ([#1269](https://github.com/k2b-dev/cloud/issues/1269)). |
 | Paint outside a scrollport | An outline or outset shadow, such as a status ring, reaches past its element and a scrolling ancestor flush with it cuts it off. | Test: `packages/ui/src/layout/detail-panel-sections.browser.test.ts` checks that an avatar ring flush with the detail body paints inside the scrollport and keeps the avatar size. |
 | Unbounded storage growth | Durable payloads have no size bound or retention. | Tests: workflow event integration cases cover byte limits, payload retention, dedupe, and resumable runs; workflow observability integration cases cover expired payloads; Mail integration cases cover oversized messages ([#1183](https://github.com/k2b-dev/cloud/issues/1183)). |
@@ -53,6 +54,13 @@ convention still needs a check or a test.
 | Theme in print | The screen theme reaches paper: dark-theme text and surfaces print on white paper, or print rules show what the screen hides on purpose. | Test: the Mail printing browser test in `MailConversationList.browser.test.ts` prints a dark and a light conversation through Print conversation in Chromium and WebKit. It checks contrast against the printed surface, the sender rows, and the single quote label ([#1175](https://github.com/k2b-dev/cloud/issues/1175)). No shared guard yet: native printing still prints the dark theme on every other page ([#1274](https://github.com/k2b-dev/cloud/issues/1274)). |
 
 ## Lessons
+
+### Contacts exports stopped at 1,000 contacts
+
+- **What happened:** CSV and vCard book exports silently omitted contacts after the first 1,000 ([#1241](https://github.com/k2b-dev/cloud/issues/1241)).
+- **Root cause:** The export requested `perPage: 100_000`, which `paginate()` silently clamped to 1,000.
+- **Error class:** Silent truncation by a clamped page size.
+- **Guard:** `page-size` rejects oversized pagination literals. Contacts unit tests cover keyset cursors, cancellation, serializer bytes, and failed streams; `export.integration.test.ts` checks both downloads with 1,001 contacts.
 
 ### A claimed Spaces task still appeared unassigned
 

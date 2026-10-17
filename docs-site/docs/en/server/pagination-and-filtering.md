@@ -178,6 +178,11 @@ When pagination is present, `page` defaults to `1` and `perPage` defaults to
 `20`. Both values are rounded down and kept at a minimum of `1`. `perPage` is
 limited to `1000`.
 
+To read a whole collection for export or sync, page through it with a stable
+order, for example keyset by ID, and pass the request signal. Never request a
+`perPage` above `1000` to get everything: it is clamped without notice.
+`bun scripts/check.ts page-size` reports such literals.
+
 Use this for a bounded external response or computed list. Do not load a
 database table into memory to use it.
 
