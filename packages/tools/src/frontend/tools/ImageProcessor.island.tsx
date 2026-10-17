@@ -20,6 +20,9 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { IMAGE_ACCEPT } from "./image-intake/formats";
+import { disposeHeifDecoder, ImageIntakeError, type ImageIntakeFailure, type ImageIntakeStage, prepareImage } from "./image-intake/intake";
+import { imageIntakeMessages } from "./image-intake/messages";
 import { DEFAULT_ADJ, PRESETS } from "./image-processor/constants";
 import { type CropHandle, createCropRect, moveCropRect, resizeCropRect, toPixelCropRect } from "./image-processor/crop-geometry";
 import { buildImagePipeline, makePreviewSource, rotatedImageDimensions } from "./image-processor/image-processing";
@@ -63,18 +66,22 @@ type ImageProcessorViewProps = {
   readonly initialImages?: readonly ImageEntry[];
   readonly initialEditorMode?: "edit" | "markup";
   readonly initialCropActive?: boolean;
+  readonly initialLoadFailures?: readonly (ImageIntakeFailure & { file: File })[];
 };
 
 /** @internal Controlled render seam; the route-facing island below remains zero-prop. */
 export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   const locale = useLocale();
   const t = () => imageProcessorMessages.resolve([locale()]).t;
+  const intakeT = () => imageIntakeMessages.resolve([locale()]).t;
   const presetLabel = (key: string) => (key in presetLabelKeys ? t()[presetLabelKeys[key as PresetLabelKey]] : key);
 
   // --- Image list ---
   const [images, setImages] = createSignal<ImageEntry[]>([...(props.initialImages ?? [])]);
   const [activeIndex, setActiveIndex] = createSignal(0);
   const [error, setError] = createSignal("");
+  const [loadFailures, setLoadFailures] = createSignal<(ImageIntakeFailure & { file: File })[]>([...(props.initialLoadFailures ?? [])]);
+  const [currentLoad, setCurrentLoad] = createSignal<{ name: string; stage: ImageIntakeStage; index: number; count: number } | null>(null);
   const [basePreview, setBasePreview] = createSignal(props.initialImages?.[0]?.thumbUrl ?? "");
   const [previewBusy, setPreviewBusy] = createSignal(false);
   const [previewZoom, setPreviewZoom] = createSignal(1);
@@ -218,14 +225,22 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   // ====================================
 
   const loadMutation = mutations.create<void, File[]>({
-    mutation: async (files) => {
+    mutation: async (files, { abortSignal }) => {
       const entries: ImageEntry[] = [];
-      const failures: string[] = [];
-      for (const file of files) {
+      for (const [index, file] of files.entries()) {
+        abortSignal.throwIfAborted();
+        setCurrentLoad({ name: file.name, stage: "waiting", index: index + 1, count: files.length });
         try {
-          const source = await imageTools.create(file);
+          const prepared = await prepareImage(file, {
+            signal: abortSignal,
+            onStage: (stage) => {
+              if (!abortSignal.aborted) setCurrentLoad({ name: file.name, stage, index: index + 1, count: files.length });
+            },
+          });
+          const source = await imageTools.create(prepared.source);
           const previewSource = await makePreviewSource(source);
-          const thumbUrl = await imageTools.presets.thumbnail(file, 64, "#000", "jpeg");
+          const thumbUrl = await imageTools.presets.thumbnail(prepared.source, 64, "#000", "jpeg");
+          abortSignal.throwIfAborted();
           entries.push({
             id: uid(),
             file,
@@ -243,27 +258,23 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             cropBounds: { ...FULL_CROP_BOUNDS },
           });
         } catch (loadError) {
-          const reason = loadError instanceof Error ? loadError.message : t().fileDecodeFailed;
-          failures.push(t().couldNotLoadFile({ name: file.name, reason }));
+          abortSignal.throwIfAborted();
+          const reason = loadError instanceof ImageIntakeError ? loadError.reason : "decode-failed";
+          setLoadFailures((current) => [...current, { file, reason }]);
         }
       }
-      if (entries.length === 0) {
-        const firstFailure = failures[0] ?? t().selectedFilesDecodeFailed;
-        throw new Error(failures.length > 1 ? t().noImagesLoaded({ detail: firstFailure }) : firstFailure);
-      }
+      abortSignal.throwIfAborted();
+      if (entries.length === 0) return;
 
       const wasEmpty = images().length === 0;
       setImages((prev) => [...prev, ...entries]);
       if (wasEmpty) setActiveIndex(0);
       await rebuildBasePreview();
-      const firstFailure = failures[0];
-      if (firstFailure) {
-        setError(failures.length === 1 ? firstFailure : t().someImagesLoadFailed({ count: failures.length, detail: firstFailure }));
-      }
     },
     onError: (err) => {
       if (err.message !== "File dialog cancelled") setError(err.message);
     },
+    onFinally: () => setCurrentLoad(null),
   });
 
   const loadFiles = (files: File[]) => {
@@ -282,7 +293,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
   const selectFiles = async () => {
     try {
-      const files = await fileTools.showFileDialog({ accept: "image/*", multiple: true });
+      const files = await fileTools.showFileDialog({ accept: IMAGE_ACCEPT, multiple: true });
       loadFiles(files);
     } catch (selectionError) {
       if (selectionError instanceof Error && selectionError.message === "File dialog cancelled") return;
@@ -908,6 +919,11 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     }
   };
 
+  onCleanup(() => {
+    loadMutation.abort();
+    disposeHeifDecoder();
+  });
+
   onMount(() => {
     if (props.initialImages?.length) void rebuildBasePreview();
     measurePreviewViewport();
@@ -1001,112 +1017,120 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     <>
       <AppWorkspace.Main class="tools-main" scroll={false}>
         <div class="flex min-h-0 min-w-0 flex-1 flex-col" role="region" aria-label={t().canvasLabel}>
-          <FileDropTarget label={t().dropToAdd} accept="image/*" onDrop={loadFiles} />
-          <div
-            ref={previewViewportRef}
-            class="relative min-h-75 min-w-0 flex-1 overflow-auto bg-[var(--ui-surface)] p-[var(--ui-space-shell)]"
-          >
-            <Show when={!inspectorOpen()}>
-              <Tooltip.Anchor content={t().openImageControls}>
-                <IconButton
-                  label={t().openImageControls}
-                  class="absolute right-[var(--ui-space-shell)] top-[var(--ui-space-shell)] z-10 lg:hidden"
-                  onClick={() => setInspectorOpen(true)}
-                >
-                  <i class="ti ti-adjustments-horizontal" />
-                </IconButton>
-              </Tooltip.Anchor>
-            </Show>
+          <FileDropTarget label={t().dropToAdd} accept={IMAGE_ACCEPT} onDrop={loadFiles} />
+          <div class="relative min-h-0 flex-1">
+            <div
+              ref={previewViewportRef}
+              class="relative h-full min-h-75 min-w-0 overflow-auto bg-[var(--ui-surface)] p-[var(--ui-space-shell)]"
+            >
+              <Show when={!inspectorOpen()}>
+                <Tooltip.Anchor content={t().openImageControls}>
+                  <IconButton
+                    label={t().openImageControls}
+                    class="absolute right-[var(--ui-space-shell)] top-[var(--ui-space-shell)] z-10 lg:hidden"
+                    onClick={() => setInspectorOpen(true)}
+                  >
+                    <i class="ti ti-adjustments-horizontal" />
+                  </IconButton>
+                </Tooltip.Anchor>
+              </Show>
 
-            {/* Loading overlay */}
-            <Show when={loadMutation.loading() || previewBusy() || cropBusy()}>
-              <div class="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-black/50 z-10">
-                <i class="ti ti-loader-2 animate-spin text-2xl text-dimmed" />
-              </div>
-            </Show>
+              {/* Loading overlay */}
+              <Show when={loadMutation.loading() || previewBusy() || cropBusy()}>
+                <div class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white/50 dark:bg-black/50">
+                  <i class="ti ti-loader-2 animate-spin text-2xl text-dimmed" aria-hidden="true" />
+                  <Show when={currentLoad()}>
+                    {(current) => (
+                      <p class="max-w-full truncate px-4 text-sm text-primary" aria-live="polite">
+                        {intakeT().loadingFile({ ...current(), stage: intakeT()[current().stage] })}
+                      </p>
+                    )}
+                  </Show>
+                </div>
+              </Show>
 
-            {/* Empty state */}
-            <Show when={!hasImages() && !loadMutation.loading()}>
-              <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-dimmed">
-                <i class="ti ti-photo text-4xl" />
-                <p class="text-sm font-medium">{t().noImageSelected}</p>
-              </div>
-            </Show>
+              {/* Empty state */}
+              <Show when={!hasImages() && !loadMutation.loading()}>
+                <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-dimmed">
+                  <i class="ti ti-photo text-4xl" />
+                  <p class="text-sm font-medium">{t().noImageSelected}</p>
+                </div>
+              </Show>
 
-            <Show when={basePreview()}>
-              <Show when={previewLayout()}>
-                {(layout) => (
-                  <div class="flex min-h-full min-w-full">
-                    <div
-                      class="relative m-auto shrink-0"
-                      style={{ width: `${layout().stageWidth}px`, height: `${layout().stageHeight}px` }}
-                    >
-                      <div class="absolute inset-0 flex items-center justify-center">
-                        <div
-                          class="relative shrink-0"
-                          style={{
-                            width: `${layout().imageWidth}px`,
-                            height: `${layout().imageHeight}px`,
-                            transform: cropActive() || editorMode() === "markup" ? "none" : cssTransform(),
-                          }}
-                        >
-                          <img
-                            ref={imgRef}
-                            src={basePreview()}
-                            alt={t().previewAlt}
-                            class="block h-full w-full object-fill thumbnail"
-                            style={{ filter: cssFilter() }}
-                            draggable={false}
-                          />
-
-                          <Show when={adj().vignette > 0}>
-                            <div
-                              class="absolute inset-0 pointer-events-none rounded"
-                              style={{
-                                background: `radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,${adj().vignette}) 100%)`,
-                              }}
+              <Show when={basePreview()}>
+                <Show when={previewLayout()}>
+                  {(layout) => (
+                    <div class="flex min-h-full min-w-full">
+                      <div
+                        class="relative m-auto shrink-0"
+                        style={{ width: `${layout().stageWidth}px`, height: `${layout().stageHeight}px` }}
+                      >
+                        <div class="absolute inset-0 flex items-center justify-center">
+                          <div
+                            class="relative shrink-0"
+                            style={{
+                              width: `${layout().imageWidth}px`,
+                              height: `${layout().imageHeight}px`,
+                              transform: cropActive() || editorMode() === "markup" ? "none" : cssTransform(),
+                            }}
+                          >
+                            <img
+                              ref={imgRef}
+                              src={basePreview()}
+                              alt={t().previewAlt}
+                              class="block h-full w-full object-fill thumbnail"
+                              style={{ filter: cssFilter() }}
+                              draggable={false}
                             />
-                          </Show>
 
-                          <Show when={adj().grain > 0}>
-                            <div
-                              class="absolute inset-0 pointer-events-none rounded mix-blend-overlay"
-                              style={{
-                                opacity: adj().grain * 2,
-                                "background-image": `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
-                                "background-size": "128px 128px",
-                              }}
-                            />
-                          </Show>
-
-                          <Show when={activeImage()}>
-                            {(entry) => (
-                              <MarkupOverlay
-                                imageId={entry().id}
-                                width={entry().previewSource.width}
-                                height={entry().previewSource.height}
-                                elements={entry().markup}
-                                active={editorMode() === "markup" && !cropActive()}
-                                tool={markupTool()}
-                                shape={markupShape()}
-                                color={markupColor()}
-                                size={markupSize() / 1_000}
-                                selectedId={selectedMarkupId()}
-                                onCommit={replaceMarkup}
-                                onSelect={selectMarkup}
-                                onText={addMarkupText}
-                              />
-                            )}
-                          </Show>
-
-                          {/* Crop overlay */}
-                          <Show when={cropActive()}>
-                            <div class="absolute inset-0 touch-none">
-                              {/* Dark mask with hole via clip-path */}
+                            <Show when={adj().vignette > 0}>
                               <div
-                                class="absolute inset-0 bg-black/50"
+                                class="absolute inset-0 pointer-events-none rounded"
                                 style={{
-                                  "clip-path": `polygon(
+                                  background: `radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,${adj().vignette}) 100%)`,
+                                }}
+                              />
+                            </Show>
+
+                            <Show when={adj().grain > 0}>
+                              <div
+                                class="absolute inset-0 pointer-events-none rounded mix-blend-overlay"
+                                style={{
+                                  opacity: adj().grain * 2,
+                                  "background-image": `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+                                  "background-size": "128px 128px",
+                                }}
+                              />
+                            </Show>
+
+                            <Show when={activeImage()}>
+                              {(entry) => (
+                                <MarkupOverlay
+                                  imageId={entry().id}
+                                  width={entry().previewSource.width}
+                                  height={entry().previewSource.height}
+                                  elements={entry().markup}
+                                  active={editorMode() === "markup" && !cropActive()}
+                                  tool={markupTool()}
+                                  shape={markupShape()}
+                                  color={markupColor()}
+                                  size={markupSize() / 1_000}
+                                  selectedId={selectedMarkupId()}
+                                  onCommit={replaceMarkup}
+                                  onSelect={selectMarkup}
+                                  onText={addMarkupText}
+                                />
+                              )}
+                            </Show>
+
+                            {/* Crop overlay */}
+                            <Show when={cropActive()}>
+                              <div class="absolute inset-0 touch-none">
+                                {/* Dark mask with hole via clip-path */}
+                                <div
+                                  class="absolute inset-0 bg-black/50"
+                                  style={{
+                                    "clip-path": `polygon(
                           0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%,
                           ${cropRect().x * 100}% ${cropRect().y * 100}%,
                           ${cropRect().x * 100}% ${(cropRect().y + cropRect().h) * 100}%,
@@ -1114,44 +1138,73 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           ${(cropRect().x + cropRect().w) * 100}% ${cropRect().y * 100}%,
                           ${cropRect().x * 100}% ${cropRect().y * 100}%
                         )`,
-                                }}
-                              />
-                              {/* Crop border + handles */}
-                              <div
-                                class="absolute border-2 border-white cursor-move"
-                                style={{
-                                  left: `${cropRect().x * 100}%`,
-                                  top: `${cropRect().y * 100}%`,
-                                  width: `${cropRect().w * 100}%`,
-                                  height: `${cropRect().h * 100}%`,
-                                }}
-                                onPointerDown={(e) => startCropDrag("move", e)}
-                              >
-                                <div class="absolute inset-0 pointer-events-none">
-                                  <div class="absolute left-1/3 top-0 bottom-0 w-px bg-white/30" />
-                                  <div class="absolute left-2/3 top-0 bottom-0 w-px bg-white/30" />
-                                  <div class="absolute top-1/3 left-0 right-0 h-px bg-white/30" />
-                                  <div class="absolute top-2/3 left-0 right-0 h-px bg-white/30" />
-                                </div>
-                                {(["nw", "ne", "sw", "se"] as const).map((h) => (
-                                  <div
-                                    class={`absolute h-6 w-6 ${h.includes("n") ? "-top-3" : "-bottom-3"} ${
-                                      h.includes("w") ? "-left-3" : "-right-3"
-                                    } ${h === "nw" || h === "se" ? "cursor-nwse-resize" : "cursor-nesw-resize"} z-10`}
-                                    onPointerDown={(e) => startCropDrag(h, e)}
-                                  >
-                                    <div class="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-zinc-400 bg-white" />
+                                  }}
+                                />
+                                {/* Crop border + handles */}
+                                <div
+                                  class="absolute border-2 border-white cursor-move"
+                                  style={{
+                                    left: `${cropRect().x * 100}%`,
+                                    top: `${cropRect().y * 100}%`,
+                                    width: `${cropRect().w * 100}%`,
+                                    height: `${cropRect().h * 100}%`,
+                                  }}
+                                  onPointerDown={(e) => startCropDrag("move", e)}
+                                >
+                                  <div class="absolute inset-0 pointer-events-none">
+                                    <div class="absolute left-1/3 top-0 bottom-0 w-px bg-white/30" />
+                                    <div class="absolute left-2/3 top-0 bottom-0 w-px bg-white/30" />
+                                    <div class="absolute top-1/3 left-0 right-0 h-px bg-white/30" />
+                                    <div class="absolute top-2/3 left-0 right-0 h-px bg-white/30" />
                                   </div>
-                                ))}
+                                  {(["nw", "ne", "sw", "se"] as const).map((h) => (
+                                    <div
+                                      class={`absolute h-6 w-6 ${h.includes("n") ? "-top-3" : "-bottom-3"} ${
+                                        h.includes("w") ? "-left-3" : "-right-3"
+                                      } ${h === "nw" || h === "se" ? "cursor-nwse-resize" : "cursor-nesw-resize"} z-10`}
+                                      onPointerDown={(e) => startCropDrag(h, e)}
+                                    >
+                                      <div class="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-zinc-400 bg-white" />
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          </Show>
+                            </Show>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </Show>
               </Show>
+            </div>
+
+            <Show when={loadFailures().length > 0}>
+              <NoticeCard
+                tone="danger"
+                role="region"
+                aria-label={intakeT().failuresLabel}
+                class="absolute inset-x-[var(--ui-space-shell)] bottom-[var(--ui-space-shell)] z-20 max-h-[40%] overflow-auto"
+                title={intakeT().failuresLabel}
+                meta={
+                  <IconButton label={intakeT().dismissFailures} size="xs" class="h-6 w-6 text-current" onClick={() => setLoadFailures([])}>
+                    <i class="ti ti-x" aria-hidden="true" />
+                  </IconButton>
+                }
+              >
+                <ul class="flex flex-col gap-2" aria-live="polite">
+                  <For each={loadFailures()}>
+                    {(failure) => (
+                      <li class="min-w-0 text-sm">
+                        <p class="truncate">
+                          <span class="font-medium">{failure.file.name}</span> · {intakeT()[`${failure.reason}Title`]}
+                        </p>
+                        <p class="text-xs opacity-80">{intakeT()[`${failure.reason}Hint`]}</p>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </NoticeCard>
             </Show>
           </div>
 

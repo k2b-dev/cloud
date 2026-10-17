@@ -33,11 +33,14 @@ import {
 } from "./image-converter/image-converter";
 import { imageConverterMessages } from "./image-converter/messages";
 
-const IMAGE_ACCEPT = "image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.svg,.avif,.heic,.heif";
+import { IMAGE_ACCEPT } from "./image-intake/formats";
+import { disposeHeifDecoder, ImageIntakeError, type ImageIntakeFailure, type ImageIntakeStage, prepareImage } from "./image-intake/intake";
+import { imageIntakeMessages } from "./image-intake/messages";
 
 export type ImageConverterEntry = {
   id: string;
   file: File;
+  source: Blob;
   previewUrl: string;
   width: number;
   height: number;
@@ -45,8 +48,14 @@ export type ImageConverterEntry = {
   selected: boolean;
 };
 
+export type ImageConverterItem =
+  | ({ status: "ready" } & ImageConverterEntry)
+  | { status: "loading"; id: string; file: File; stage: ImageIntakeStage }
+  | { status: "failed"; id: string; file: File; reason: ImageIntakeFailure["reason"] };
+
 type ImageConverterViewProps = {
-  readonly initialImages?: readonly ImageConverterEntry[];
+  readonly initialImages?: readonly (Omit<ImageConverterEntry, "source"> & { source?: Blob })[];
+  readonly initialItems?: readonly ImageConverterItem[];
 };
 
 type ExportScope = "all" | "selected";
@@ -64,7 +73,7 @@ const formatBytes = (bytes: number): string => {
 };
 
 const sourceFormat = (file: File): string => {
-  const mimeFormat = file.type.replace(/^image\//u, "").replace("svg+xml", "svg");
+  const mimeFormat = file.type.startsWith("image/") ? file.type.slice(6).replace("svg+xml", "svg") : "";
   if (mimeFormat) return mimeFormat.toUpperCase();
   return file.name.split(".").at(-1)?.toUpperCase() || "IMAGE";
 };
@@ -78,7 +87,17 @@ const rotateImage = (data: ImgData, rotation: ImageConverterRotation): Promise<I
 export function ImageConverterView(props: ImageConverterViewProps = {}) {
   const locale = useLocale();
   const t = () => imageConverterMessages.resolve([locale()]).t;
-  const [images, setImages] = createSignal<ImageConverterEntry[]>([...(props.initialImages ?? [])]);
+  const intakeT = () => imageIntakeMessages.resolve([locale()]).t;
+  const [items, setItems] = createSignal<ImageConverterItem[]>(
+    props.initialItems
+      ? [...props.initialItems]
+      : (props.initialImages ?? []).map((image) => ({ ...image, status: "ready", source: image.source ?? image.file })),
+  );
+  const images = createMemo(() => items().filter((item): item is ImageConverterEntry & { status: "ready" } => item.status === "ready"));
+  const loading = createMemo(() => items().some((item) => item.status === "loading"));
+  const failedCount = createMemo(() => items().filter((item) => item.status === "failed").length);
+  const intakeController = new AbortController();
+  let processing = false;
   const [format, setFormat] = createSignal<ImageConverterFormat>("webp");
   const [quality, setQuality] = createSignal(0.85);
   const [jpegBackground, setJpegBackground] = createSignal("#ffffff");
@@ -94,73 +113,68 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
   const hasSelection = createMemo(() => selectedCount() > 0);
   const allSelected = createMemo(() => images().length > 0 && selectedCount() === images().length);
 
-  const loadImage = async (file: File): Promise<ImageConverterEntry> => {
-    const previewUrl = URL.createObjectURL(file);
-    managedPreviewUrls.add(previewUrl);
-    const preview = new Image();
-    preview.decoding = "async";
-
+  const processQueue = async () => {
+    if (processing) return;
+    processing = true;
+    const signal = intakeController.signal;
     try {
-      await new Promise<void>((resolve, reject) => {
-        preview.onload = () => resolve();
-        preview.onerror = () => reject(new Error(t().decodeFailed));
-        preview.src = previewUrl;
-      });
-      if (preview.naturalWidth < 1 || preview.naturalHeight < 1) throw new Error(t().noDimensions);
-      return {
-        id: imageId(),
-        file,
-        previewUrl,
-        width: preview.naturalWidth,
-        height: preview.naturalHeight,
-        rotation: 0,
-        selected: false,
-      };
-    } catch (cause) {
-      managedPreviewUrls.delete(previewUrl);
-      URL.revokeObjectURL(previewUrl);
-      throw cause;
+      while (!signal.aborted) {
+        const item = items().find((item) => item.status === "loading");
+        if (!item) break;
+        try {
+          const prepared = await prepareImage(item.file, {
+            signal,
+            onStage: (stage) => {
+              if (!signal.aborted)
+                setItems((current) =>
+                  current.map((entry) => (entry.id === item.id && entry.status === "loading" ? { ...entry, stage } : entry)),
+                );
+            },
+          });
+          signal.throwIfAborted();
+          const previewUrl = URL.createObjectURL(prepared.source);
+          managedPreviewUrls.add(previewUrl);
+          setItems((current) =>
+            current.map((entry) =>
+              entry.id === item.id
+                ? {
+                    status: "ready",
+                    id: item.id,
+                    file: item.file,
+                    ...prepared,
+                    previewUrl,
+                    rotation: 0,
+                    selected: false,
+                  }
+                : entry,
+            ),
+          );
+        } catch (cause) {
+          if (signal.aborted) break;
+          const reason = cause instanceof ImageIntakeError ? cause.reason : "decode-failed";
+          setItems((current) =>
+            current.map((entry) => (entry.id === item.id ? { status: "failed", id: item.id, file: item.file, reason } : entry)),
+          );
+        }
+      }
+    } finally {
+      processing = false;
     }
   };
 
-  const loadMutation = mutation.create<void, File[]>({
-    mutation: async (files, { abortSignal }) => {
-      const loaded: ImageConverterEntry[] = [];
-      const failures: string[] = [];
-      for (const file of files) {
-        try {
-          loaded.push(await loadImage(file));
-          abortSignal.throwIfAborted();
-        } catch (cause) {
-          failures.push(`${file.name}: ${cause instanceof Error ? cause.message : t().loadFallback}`);
-        }
-      }
-
-      abortSignal.throwIfAborted();
-      if (loaded.length > 0) setImages((current) => [...current, ...loaded]);
-      if (failures.length > 0) {
-        setError(`${t().imagesSkipped({ count: failures.length })} ${failures[0]}`);
-      }
-      if (loaded.length === 0 && failures.length > 0) throw new Error(failures[0]);
-    },
-    onBefore: () => {
-      setError("");
-      setSuccess("");
-    },
-    onError: (cause) => setError(cause.message),
-  });
-
   const addFiles = (files: File[]) => {
     if (files.length === 0) return;
-    if (loadMutation.loading()) {
-      setError(t().waitForLoading);
-      return;
-    }
     if (exportLocked()) {
       setError(t().waitForExport);
       return;
     }
-    void loadMutation.mutate(files);
+    setError("");
+    setSuccess("");
+    setItems((current) => [
+      ...current,
+      ...files.map((file) => ({ status: "loading" as const, id: imageId(), file, stage: "waiting" as const })),
+    ]);
+    void processQueue();
   };
 
   const selectFiles = async () => {
@@ -179,33 +193,37 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
   };
 
   const removeImage = (id: string) => {
-    const image = images().find((entry) => entry.id === id);
-    if (image) releasePreview(image.previewUrl);
-    setImages((current) => current.filter((entry) => entry.id !== id));
+    const image = items().find((entry) => entry.id === id);
+    if (image?.status === "loading") return;
+    if (image?.status === "ready") releasePreview(image.previewUrl);
+    setItems((current) => current.filter((entry) => entry.id !== id));
   };
 
   const clearImages = async () => {
-    const confirmed = await prompts.confirm(t().clearConfirm({ count: images().length }), {
+    const confirmed = await prompts.confirm(t().clearConfirm({ count: items().length }), {
       title: t().clearConfirmTitle,
       icon: "ti ti-trash",
       confirmText: t().clearConfirmAction,
       variant: "danger",
     });
-    if (!confirmed) return;
+    if (!confirmed || loading() || exportLocked()) return;
     for (const image of images()) releasePreview(image.previewUrl);
-    setImages([]);
+    setItems([]);
     setError("");
     setSuccess("");
   };
 
   const toggleImage = (id: string, selected: boolean) =>
-    setImages((current) => current.map((image) => (image.id === id ? { ...image, selected } : image)));
+    setItems((current) => current.map((image) => (image.status === "ready" && image.id === id ? { ...image, selected } : image)));
 
-  const toggleAll = (selected: boolean) => setImages((current) => current.map((image) => ({ ...image, selected })));
+  const toggleAll = (selected: boolean) =>
+    setItems((current) => current.map((image) => (image.status === "ready" ? { ...image, selected } : image)));
 
   const rotateClockwise = (id: string) =>
-    setImages((current) =>
-      current.map((image) => (image.id === id ? { ...image, rotation: nextClockwiseRotation(image.rotation) } : image)),
+    setItems((current) =>
+      current.map((image) =>
+        image.status === "ready" && image.id === id ? { ...image, rotation: nextClockwiseRotation(image.rotation) } : image,
+      ),
     );
 
   const processImage = async (
@@ -217,7 +235,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
     heightLimit: number | null,
     destination: ExportDestination,
   ): Promise<{ data: ImgData; blob?: Blob; dataUrl?: string }> => {
-    let data = await imageTools.create(entry.file);
+    let data = await imageTools.create(entry.source);
     data = await rotateImage(data, entry.rotation);
     const fitted = fitWithin(data.width, data.height, widthLimit, heightLimit);
     if (fitted.width !== data.width || fitted.height !== data.height) {
@@ -309,11 +327,12 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
   });
 
   const startExport = (scope: ExportScope, destination: ExportDestination) => {
-    if (!loadMutation.loading() && !exportMutation.loading()) void exportMutation.mutate({ scope, destination });
+    if (!loading() && !exportMutation.loading()) void exportMutation.mutate({ scope, destination });
   };
 
   onCleanup(() => {
-    loadMutation.abort();
+    intakeController.abort();
+    disposeHeifDecoder();
     exportMutation.abort();
     for (const previewUrl of managedPreviewUrls) URL.revokeObjectURL(previewUrl);
     managedPreviewUrls.clear();
@@ -330,14 +349,20 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
           <header class="flex flex-none flex-wrap items-center justify-between gap-3 px-[var(--ui-space-shell)] py-[var(--ui-space-section)]">
             <div class="min-w-0">
               <h1 class="text-base font-semibold text-primary">{t().heading}</h1>
-              <p class="text-xs text-dimmed">{images().length === 0 ? t().emptySubtitle : t().imageCount({ count: images().length })}</p>
+              <p class="text-xs text-dimmed">
+                {items().length === 0
+                  ? t().emptySubtitle
+                  : failedCount() > 0
+                    ? `${t().imageCount({ count: images().length })} · ${t().notAdded({ count: failedCount() })}`
+                    : t().imageCount({ count: images().length })}
+              </p>
             </div>
             <div class="flex items-center gap-2">
-              <Show when={images().length > 0}>
-                <Button variant="secondary" size="sm" onClick={selectFiles} disabled={loadMutation.loading() || exportMutation.loading()}>
+              <Show when={items().length > 0}>
+                <Button variant="secondary" size="sm" onClick={selectFiles} disabled={exportMutation.loading()}>
                   <i class="ti ti-photo-plus" aria-hidden="true" /> {t().addImages}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={clearImages} disabled={loadMutation.loading() || exportMutation.loading()}>
+                <Button variant="ghost" size="sm" onClick={clearImages} disabled={loading() || exportMutation.loading()}>
                   {t().clearAll}
                 </Button>
               </Show>
@@ -345,7 +370,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
           </header>
 
           <Show
-            when={images().length > 0}
+            when={items().length > 0}
             fallback={
               <div class="flex min-h-80 flex-1 items-center justify-center p-[var(--ui-space-shell)]">
                 <FileDropzone
@@ -353,7 +378,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                   aria-label={t().dropzoneLabel}
                   accept={IMAGE_ACCEPT}
                   multiple
-                  busy={loadMutation.loading() || exportLocked()}
+                  busy={loading() || exportLocked()}
                   title={t().dropzoneTitle}
                   subtitle={t().dropzoneSubtitle}
                   hint={t().dropzoneHint}
@@ -369,7 +394,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                 label={t().selectAll}
                 value={allSelected}
                 indeterminate={hasSelection() && !allSelected()}
-                disabled={loadMutation.loading() || exportMutation.loading()}
+                disabled={loading() || exportMutation.loading()}
                 onValueChange={toggleAll}
               />
               <Show when={hasSelection()}>
@@ -383,62 +408,132 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                 role="list"
                 aria-label={t().listLabel}
               >
-                <For each={images()}>
-                  {(image) => {
-                    const dimensions = () => rotatedDimensions(image.width, image.height, image.rotation);
+                <For each={items().map((item) => item.id)}>
+                  {(id) => {
+                    // A removed card can read the list once more before it is disposed.
+                    const item = createMemo(() => items().find((item) => item.id === id));
+                    const file = () => item()?.file;
+                    const ready = () => {
+                      const value = item();
+                      return value?.status === "ready" ? value : undefined;
+                    };
+                    const failed = () => {
+                      const value = item();
+                      return value?.status === "failed" ? value : undefined;
+                    };
+                    const stage = () => {
+                      const value = item();
+                      return value?.status === "loading" ? intakeT()[value.stage] : "";
+                    };
+                    const dimensions = () => {
+                      const image = ready();
+                      return image ? rotatedDimensions(image.width, image.height, image.rotation) : null;
+                    };
                     return (
                       <article
                         class="tools-image-converter-card group min-w-0 overflow-hidden rounded-[var(--ui-radius-surface)] border border-[var(--ui-border)] bg-[var(--ui-surface-subtle)]"
                         role="listitem"
-                        data-selected={image.selected ? "true" : undefined}
+                        data-status={item()?.status}
+                        data-selected={ready()?.selected ? "true" : undefined}
                         data-selection-active={hasSelection() ? "true" : undefined}
                       >
                         <div class="tools-image-converter-card__preview relative aspect-square overflow-hidden bg-[var(--ui-surface)] p-3">
-                          <img
-                            src={image.previewUrl}
-                            alt={t().previewAlt({ name: image.file.name })}
-                            class="h-full w-full object-contain transition-transform"
-                            style={{ transform: `rotate(${image.rotation}deg)` }}
-                            draggable={false}
-                          />
-                          <div class="tools-image-converter-card__selection absolute left-2 top-2">
-                            <Checkbox
-                              aria-label={t().selectImage({ name: image.file.name })}
-                              value={image.selected}
-                              disabled={loadMutation.loading() || exportMutation.loading()}
-                              onValueChange={(selected) => toggleImage(image.id, selected)}
-                            />
-                          </div>
-                          <div class="tools-image-converter-card__actions absolute right-2 top-2 flex gap-1">
-                            <Tooltip.Anchor content={t().rotateClockwise}>
-                              <IconButton
-                                label={t().rotateImageClockwise({ name: image.file.name })}
-                                size="sm"
-                                onClick={() => rotateClockwise(image.id)}
-                                disabled={loadMutation.loading() || exportMutation.loading()}
-                              >
-                                <i class="ti ti-rotate-clockwise" aria-hidden="true" />
-                              </IconButton>
-                            </Tooltip.Anchor>
-                            <Tooltip.Anchor content={t().removeImage}>
-                              <IconButton
-                                label={t().removeNamed({ name: image.file.name })}
-                                size="sm"
-                                class="text-red-600 dark:text-red-400"
-                                onClick={() => removeImage(image.id)}
-                                disabled={loadMutation.loading() || exportMutation.loading()}
-                              >
-                                <i class="ti ti-trash" aria-hidden="true" />
-                              </IconButton>
-                            </Tooltip.Anchor>
-                          </div>
+                          <Show when={ready()}>
+                            {(image) => (
+                              <>
+                                <img
+                                  src={image().previewUrl}
+                                  alt={t().previewAlt({ name: image().file.name })}
+                                  class="h-full w-full object-contain transition-transform"
+                                  style={{ transform: `rotate(${image().rotation}deg)` }}
+                                  draggable={false}
+                                />
+                                <div class="tools-image-converter-card__selection absolute left-2 top-2">
+                                  <Checkbox
+                                    aria-label={t().selectImage({ name: image().file.name })}
+                                    value={image().selected}
+                                    disabled={loading() || exportMutation.loading()}
+                                    onValueChange={(selected) => toggleImage(id, selected)}
+                                  />
+                                </div>
+                                <div class="tools-image-converter-card__actions absolute right-2 top-2 flex gap-1">
+                                  <Tooltip.Anchor content={t().rotateClockwise}>
+                                    <IconButton
+                                      label={t().rotateImageClockwise({ name: image().file.name })}
+                                      size="sm"
+                                      onClick={() => rotateClockwise(id)}
+                                      disabled={loading() || exportMutation.loading()}
+                                    >
+                                      <i class="ti ti-rotate-clockwise" aria-hidden="true" />
+                                    </IconButton>
+                                  </Tooltip.Anchor>
+                                  <Tooltip.Anchor content={t().removeImage}>
+                                    <IconButton
+                                      label={t().removeNamed({ name: image().file.name })}
+                                      size="sm"
+                                      class="text-red-600 dark:text-red-400"
+                                      onClick={() => removeImage(id)}
+                                      disabled={loading() || exportMutation.loading()}
+                                    >
+                                      <i class="ti ti-trash" aria-hidden="true" />
+                                    </IconButton>
+                                  </Tooltip.Anchor>
+                                </div>
+                              </>
+                            )}
+                          </Show>
+                          <Show when={item()?.status === "loading"}>
+                            <div class="flex h-full items-center justify-center text-dimmed">
+                              <i class="ti ti-loader-2 animate-spin text-2xl" aria-hidden="true" />
+                            </div>
+                          </Show>
+                          <Show when={failed()}>
+                            {(image) => (
+                              <>
+                                <div class="tools-image-converter-card__failure flex h-full flex-col items-center justify-center gap-1 px-2 text-center">
+                                  <span class="tools-image-converter-card__failure-icon mb-1.5" aria-hidden="true">
+                                    <i class="ti ti-photo-x" />
+                                  </span>
+                                  <p class="text-sm font-medium text-primary">{intakeT()[`${image().reason}Title`]}</p>
+                                  <p class="text-xs text-dimmed">{intakeT()[`${image().reason}Hint`]}</p>
+                                </div>
+                                <div class="tools-image-converter-card__actions absolute right-2 top-2 flex gap-1">
+                                  <Tooltip.Anchor content={t().removeImage}>
+                                    <IconButton
+                                      label={t().removeNamed({ name: image().file.name })}
+                                      size="sm"
+                                      class="text-red-600 dark:text-red-400"
+                                      onClick={() => removeImage(id)}
+                                      disabled={exportMutation.loading()}
+                                    >
+                                      <i class="ti ti-trash" aria-hidden="true" />
+                                    </IconButton>
+                                  </Tooltip.Anchor>
+                                </div>
+                              </>
+                            )}
+                          </Show>
                         </div>
                         <div class="min-w-0 border-t border-[var(--ui-border)] px-3 py-2">
-                          <p class="truncate text-sm font-medium text-primary" title={image.file.name}>
-                            {image.file.name}
+                          <p class="truncate text-sm font-medium text-primary" title={file()?.name}>
+                            {file()?.name}
                           </p>
                           <p class="truncate text-xs tabular-nums text-dimmed">
-                            {sourceFormat(image.file)} · {dimensions().width} × {dimensions().height} px · {formatBytes(image.file.size)}
+                            <Show
+                              when={ready()}
+                              fallback={
+                                <span aria-live="polite">
+                                  {stage() || (file() ? `${sourceFormat(file()!)} · ${formatBytes(file()!.size)}` : "")}
+                                </span>
+                              }
+                            >
+                              {(image) => (
+                                <>
+                                  {sourceFormat(image().file)} · {dimensions()?.width} × {dimensions()?.height} px ·{" "}
+                                  {formatBytes(image().file.size)}
+                                </>
+                              )}
+                            </Show>
                           </p>
                         </div>
                       </article>
@@ -453,7 +548,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
 
       <AppWorkspace.Detail
         id="image-converter-settings"
-        open={images().length > 0}
+        open={items().length > 0}
         width="md"
         minWidth={288}
         viewTransitionName="tools-image-converter-settings"
@@ -571,7 +666,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                     },
                   ]}
                   menuLabel={t().moreExportAll}
-                  disabled={loadMutation.loading()}
+                  disabled={loading()}
                   loading={exportMutation.loading()}
                   loadingLabel={t().exporting}
                 >
@@ -591,7 +686,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                   },
                 ]}
                 menuLabel={hasSelection() ? t().moreExportSelected : t().moreExportAll}
-                disabled={loadMutation.loading()}
+                disabled={loading()}
                 loading={exportMutation.loading()}
                 loadingLabel={t().exporting}
               >

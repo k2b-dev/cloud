@@ -151,3 +151,21 @@ describe("Tools detail panels", () => {
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
   });
 });
+
+test("image file failures stay in the main preview region when the inspector is closed", () => {
+  const html = renderImageProcessorView({
+    initialLoadFailures: [
+      { file: new File([], "broken.heic", { type: "image/heic" }), reason: "decode-failed" },
+      { file: new File([], "scan.tiff", { type: "image/tiff" }), reason: "unsupported" },
+    ],
+  });
+  const main = html.slice(0, html.indexOf('id="k2b-workspace-detail-image-processor-inspector"'));
+  expect(main).toContain('aria-label="Files that could not be added"');
+  expect(main).toContain("broken.heic");
+  expect(main).toContain("This image could not be read.");
+  expect(main).toContain("Export it again from the source app, or choose another file.");
+  expect(main).toContain("scan.tiff");
+  expect(main).toContain("This format is not supported.");
+  expect(main).toContain('aria-label="Dismiss file errors"');
+  expect(main).toContain("absolute inset-x-[var(--ui-space-shell)] bottom-[var(--ui-space-shell)]");
+});

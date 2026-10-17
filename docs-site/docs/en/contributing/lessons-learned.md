@@ -50,6 +50,13 @@ convention still needs a check or a test.
 
 ## Lessons
 
+### Accepted iPhone photos failed in a closed settings panel
+
+- **What happened:** Tools accepted HEIC files, but browsers without native HEIC support showed no image or visible failure ([#1284](https://github.com/k2b-dev/cloud/issues/1284)).
+- **Root cause:** Image loading depended on native browser decoding. Load errors appeared only in a detail panel that was closed for an empty batch or on phones.
+- **Error class:** Accepted input that the pipeline cannot process fails silently.
+- **Guard:** Every accepted file becomes an image or a visible per-file failure with a recovery hint in the main area. `image-intake/intake.test.ts` checks every accepted type and English and German recovery messages. Converter render and browser tests keep failures in the main area and preserve card order and position.
+
 ### A scrolling panel clipped an avatar's status ring
 
 - **What happened:** The ring around the person working on a Spaces task was cut off at the detail panel's left edge.

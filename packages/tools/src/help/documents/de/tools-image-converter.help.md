@@ -6,14 +6,16 @@ description: Wandle mehrere Bilder gemeinsam im Browser in JPEG, PNG, WebP oder 
 order: 117
 ---
 
-Der **Bildkonverter** verarbeitet mehrere vom Browser unterstützte Bilder gemeinsam, ohne sie hochzuladen.
+Der **Bildkonverter** verarbeitet JPEG, PNG, WebP, GIF, BMP, SVG, AVIF und HEIC/HEIF-Fotos vom iPhone in deinem Browser, ohne sie hochzuladen.
+
+Der HEIC-Decoder wird nur geladen, wenn dein Browser das Foto nicht selbst lesen kann.
 
 :::steps
 1. Wähle **Bilder hinzufügen** oder ziehe Dateien irgendwo in den Arbeitsbereich.
 2. Wähle bei Bedarf eine Vorschau vor dem Export aus, entferne sie oder drehe sie im Uhrzeigersinn.
 :::
 
-Die Exporteinstellungen öffnen sich automatisch, sobald der Stapel ein Bild enthält. Sie schließen sich wieder, wenn der Stapel leer ist.
+Die Exporteinstellungen öffnen sich automatisch, sobald du eine Datei hinzufügst. Sie schließen sich wieder, wenn der Stapel leer ist.
 
 ## Ausgabeformat wählen {icon="photo"}
 
@@ -38,4 +40,17 @@ Base64-Bild-Tags sind in kontrolliertem HTML nützlich. E-Mail-Programme und emp
 
 ## Verarbeitung im Browser verstehen {icon="shield-check"}
 
-Der Konverter behält Quelldateien und Ergebnisse im aktuellen Browser-Tab. Er lädt sie nicht hoch und speichert sie nicht dauerhaft. Welche Eingabeformate funktionieren, hängt davon ab, was der Browser dekodieren kann. Der Konverter rastert Vektorbilder und macht animierte Bilder zu Standbildern. Die konvertierte Ausgabe enthält keine Bildmetadaten.
+Der Konverter behält Quelldateien und Ergebnisse im aktuellen Browser-Tab. Er lädt sie nicht hoch und speichert sie nicht dauerhaft. Der Konverter rastert Vektorbilder und macht animierte Bilder zu Standbildern. Die konvertierte Ausgabe enthält keine Bildmetadaten.
+
+## Fehler beim Hinzufügen beheben {icon="photo-x"}
+
+Jede Datei bekommt eine Karte in der Bildliste. Während die Datei lädt, zeigt ihre Karte den aktuellen Schritt.
+Eine Fehlerkarte zeigt weiterhin den Dateinamen, den Grund und einen Hinweis zur Lösung. Andere Bilder bleiben für den Export verfügbar.
+
+:::reference
+- **Format nicht unterstützt:** Wandle die Datei zuerst in JPEG, PNG, WebP oder HEIC um. Oder wähle eine andere Datei.
+- **Foto zu groß:** Wenn der HEIC-Decoder benötigt wird, gilt eine Grenze von 50 MP und 64 MiB pro Foto. Verkleinere das Foto zuerst oder wähle eine andere Datei.
+- **Bild nicht lesbar:** Die Datei ist möglicherweise beschädigt. Exportiere sie erneut aus der ursprünglichen App oder wähle eine andere Datei.
+:::
+
+Entferne eine Fehlerkarte mit ihrem Papierkorb. **Alle entfernen** leert die ganze Liste, sobald alle Dateien fertig geladen sind.
