@@ -847,16 +847,17 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
     setSubmitting(true);
     try {
-      if (commandSheetHeld()) setClosedAt(commandQuery()?.start);
-      // The sheet's Back entry leaves first, so a submit handler that navigates finds the history settled.
-      if (isTouchOnly()) await dialogHistorySettled();
       await runChatSubmission({
         clear: () => {
           props.onValueChange("");
           props.onMentionsChange?.([]);
           if (intent !== "steer") setAttachments([]);
         },
-        perform: () => props.onSubmit(input),
+        perform: async () => {
+          // Clearing the draft closes the sheet; its Back entry leaves before a submit handler that navigates runs.
+          if (isTouchOnly()) await dialogHistorySettled();
+          return props.onSubmit(input);
+        },
         restore: () => {
           // Text typed while the submission ran stays, after the returned draft. Its mentions are read first, because
           // an application may already move them when the text changes.

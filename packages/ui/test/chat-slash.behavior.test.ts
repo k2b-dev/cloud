@@ -401,6 +401,8 @@ test.each(["Ctrl+Enter", "Cmd+Enter", "send before Back", "send during Back", "d
         }),
       );
     expect(submissions).toHaveLength(activation === "desktop" ? 1 : 0);
+    // The draft clears at once, so text typed while the sheet's Back is on its way stays in the field.
+    expect(value()).toBe("");
     await submitted;
     expect(submissionStates).toEqual([{ page: "chat" }]);
     expect(submissions).toEqual([{ intent: "send", text: "/", mentions: [], attachments: [] }]);
