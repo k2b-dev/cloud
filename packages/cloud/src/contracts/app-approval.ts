@@ -30,7 +30,10 @@ export const APP_ACTION_LIMITS = {
   valueChars: 300,
 } as const;
 /** Commands a Cloud serves beyond the first version, announced in `/info` as `features`. */
-export const APP_APPROVAL_FEATURES = ["actions"] as const;
+export const APP_APPROVAL_FEATURES = ["actions", "terminal-logins"] as const;
+
+export const APP_APPROVAL_ACCEPT = ["terminal-logins"] as const;
+export type AppApprovalAccept = (typeof APP_APPROVAL_ACCEPT)[number];
 
 const Id = z.string().uuid();
 const Secret = z.string().regex(/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/);
@@ -77,7 +80,17 @@ export const AppDeviceCommandSchema = z.discriminatedUnion("operation", [
   /** Stores the authenticator's opaque push token for sign-in wake-ups on this device. */
   z.object({ operation: z.literal("push"), token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict(),
   /** Pending sign-ins and the newest open Action approvals of the signing device's account in one call. */
-  z.object({ operation: z.literal("inbox") }).strict(),
+  z
+    .object({
+      operation: z.literal("inbox"),
+      accept: z
+        .array(z.enum(APP_APPROVAL_ACCEPT))
+        .min(1)
+        .max(8)
+        .refine((values) => new Set(values).size === values.length)
+        .optional(),
+    })
+    .strict(),
   /** One open Action approval as the device shows it, with the digest the device recomputes before it decides. */
   z.object({ operation: z.literal("action"), actionId: Id }).strict(),
   /** Decides an Action approval. `digest` binds the decision to exactly the view the person saw. */
@@ -121,6 +134,7 @@ export const appDeviceProofMessage = (proof: AppDeviceProof): string => {
     c.operation,
     ...(c.operation === "decide" ? [c.requestId, c.challenge, c.comparison, c.decision] : []),
     ...(c.operation === "push" ? [c.token] : []),
+    ...(c.operation === "inbox" && c.accept !== undefined ? [c.accept] : []),
     ...(c.operation === "action" ? [c.actionId] : []),
     ...(c.operation === "act" ? [c.actionId, c.digest, c.decision] : []),
   ]);
@@ -151,8 +165,40 @@ export const AppDeviceViewSchema = z
     assisted: z.boolean(),
   })
   .strict();
+/** Plain text on one line: no control, format or bidirectional characters, so an app cannot fake Cloud's own frame. */
+const PlainText = (max: number) =>
+  z
+    .string()
+    .refine((value) => Array.from(value).length <= max, `Must contain at most ${max} code points`)
+    .regex(/^[^\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u);
+export const AppTerminalLoginSchema = z
+  .object({
+    client: z
+      .object({
+        // Bound encoded bytes including escapes, so five complete consent rows fit the response budget.
+        id: PlainText(256)
+          .min(1)
+          .refine((value) => new TextEncoder().encode(JSON.stringify(value)).length <= 258),
+        name: PlainText(APP_ACTION_LIMITS.nameChars).min(1),
+      })
+      .strict(),
+    scopes: z
+      .array(z.string().regex(/^[a-z][a-z0-9_:.-]{0,39}$/))
+      .min(1)
+      .max(16),
+    lifetimeSeconds: z.number().int().positive(),
+  })
+  .strict();
+export type AppTerminalLogin = z.infer<typeof AppTerminalLoginSchema>;
 export const AppPendingLoginSchema = z
-  .object({ requestId: Id, challenge: Secret, comparison: Comparison, createdAt: DateTime, expiresAt: DateTime })
+  .object({
+    requestId: Id,
+    challenge: Secret,
+    comparison: Comparison,
+    createdAt: DateTime,
+    expiresAt: DateTime,
+    terminal: AppTerminalLoginSchema.optional(),
+  })
   .strict();
 export const AppPairingPayloadSchema = z
   .object({ protocol: z.literal(APP_APPROVAL_PROTOCOL), issuer: z.string().url(), pairingId: Id, secret: Secret, expiresAt: DateTime })
@@ -215,12 +261,6 @@ export const AppDeviceAccountSchema = z
   })
   .strict();
 export type AppDeviceAccount = z.infer<typeof AppDeviceAccountSchema>;
-/** Plain text on one line: no control, format or bidirectional characters, so an app cannot fake Cloud's own frame. */
-const PlainText = (max: number) =>
-  z
-    .string()
-    .refine((value) => Array.from(value).length <= max, `Must contain at most ${max} code points`)
-    .regex(/^[^\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u);
 const ActionApp = z
   .object({ id: PlainText(APP_ACTION_LIMITS.nameChars).min(1), name: PlainText(APP_ACTION_LIMITS.nameChars).min(1) })
   .strict();

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import * as settings from "@k2b/cloud/services/settings";
 import { sql } from "bun";
 import { generateKeyPair, jwtVerify } from "jose";
 import { z } from "zod";
@@ -684,6 +685,220 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
       await sql`DELETE FROM oauth.refresh_token_families WHERE id = ${familyId}::uuid`;
       await sql`DELETE FROM oauth.clients WHERE client_id = ${clientId}`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+});
+
+withDatabase("Core terminal approval issuance boundary", () => {
+  const saved = new Map<string, unknown>();
+  const configKeys = ["app.url", "user.app_approval.enabled", "user.app_approval.origin"];
+  beforeAll(async () => {
+    const { migrate } = await import("../migrate/core/app-approval");
+    await migrate();
+    for (const key of configKeys) saved.set(key, await settings.get(key));
+    await settings.set("app.url", "https://cloud.example.test");
+    await settings.set("user.app_approval.enabled", true);
+    await settings.set("user.app_approval.origin", "https://terminal-login.example.test");
+  });
+  afterAll(async () => {
+    for (const key of configKeys) await settings.set(key, saved.get(key));
+  });
+
+  test("issuance waits for the device before locking the login, avoiding a concurrent decide deadlock", async () => {
+    const { privateKey } = await generateKeyPair("RS256");
+    const userId = crypto.randomUUID(),
+      deviceId = crypto.randomUUID(),
+      authorizationId = crypto.randomUUID(),
+      otherAuthorizationId = crypto.randomUUID(),
+      loginId = crypto.randomUUID(),
+      nonce = crypto.randomUUID(),
+      clientId = `issuance-lock-order-${crypto.randomUUID()}`;
+    let issuancePid: number | undefined;
+    let issuance: Promise<Response> | undefined;
+    const routes = createIdentityOAuthIssuanceRoutes({
+      authenticate: () => true,
+      withActiveSigner: async (_purpose, callback) =>
+        sql.begin(async (db) => {
+          await db`SET LOCAL statement_timeout='5s'`;
+          const [backend] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          issuancePid = backend!.pid;
+          return callback(
+            {
+              kid: crypto.randomUUID(),
+              key: privateKey,
+              signUntil: new Date(Date.now() + 60_000),
+              issuer: "https://cloud.example.test",
+            },
+            db,
+          );
+        }),
+      issuer: async () => "https://cloud.example.test",
+    });
+    try {
+      await sql`INSERT INTO auth.users(id,uid,provider,profile)
+        VALUES (${userId}::uuid,${`terminal-lock-order-${userId}`},'local','user')`;
+      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes,audiences,allowed_profiles,access_mode,registration_kind,is_public,allow_device_grant)
+        VALUES ('Issuance lock order',${clientId},'{}',ARRAY['openid','profile'],ARRAY['cloud'],ARRAY['user'],'profiles','managed',true,true)`;
+      await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,expires_at,authority_nonce)
+        VALUES (${authorizationId}::uuid,${authorizationId},${authorizationId},${clientId},ARRAY['openid','profile'],ARRAY['cloud'],
+          'consumed',${userId}::uuid,now()+interval '10 minutes',${nonce}::uuid)`;
+      await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,expires_at)
+        VALUES (${otherAuthorizationId}::uuid,${otherAuthorizationId},${otherAuthorizationId},${clientId},ARRAY['openid'],ARRAY['cloud'],
+          now()+interval '10 minutes')`;
+      await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted)
+        VALUES (${deviceId}::uuid,'https://cloud.example.test',${userId}::uuid,'Phone','{}',false)`;
+      await sql`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,state,approved_by,expires_at,
+        kind,device_authorization_id,client_id,scopes,lifetime_seconds)
+        SELECT ${loginId}::uuid,'https://cloud.example.test',u.id,u.auth_epoch,'login','unusable','unusable','000123','approved',${deviceId}::uuid,
+          now()+interval '5 minutes','terminal',${authorizationId}::uuid,${clientId},ARRAY['openid','profile'],3600
+        FROM auth.users u WHERE u.id=${userId}::uuid`;
+
+      // Transaction A models a signed decide: device first, then login.
+      await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout='3s'`;
+        const [locker] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        await tx`SELECT id FROM auth.app_devices WHERE id=${deviceId}::uuid FOR UPDATE`;
+        issuance = Promise.resolve(
+          routes.request("/oauth/token", {
+            method: "POST",
+            headers: { authorization: "Bearer broker", "content-type": "application/json" },
+            body: JSON.stringify({
+              tokens: [
+                { kind: "user_access", grant: { kind: "device_code", deviceAuthorizationId: authorizationId, nonce }, expiresIn: 3600 },
+              ],
+            }),
+          }),
+        );
+        let blocked = false;
+        const deadline = performance.now() + 3000;
+        while (performance.now() < deadline) {
+          if (issuancePid !== undefined) {
+            const [waiting] = await tx<{ blocked: boolean }[]>`
+              SELECT ${locker!.pid}=ANY(pg_blocking_pids(${issuancePid})) AS blocked`;
+            if (waiting?.blocked) {
+              blocked = true;
+              break;
+            }
+          }
+          await Bun.sleep(10);
+        }
+        expect(blocked).toBe(true);
+        // The decision hook approves another grant of this user; its foreign key takes a key-share lock on the user.
+        await tx`UPDATE oauth.device_authorizations SET status='approved',user_id=${userId}::uuid,decided_at=now()
+          WHERE id=${otherAuthorizationId}::uuid`;
+        // With the inverted order, issuance already holds this row and A deadlocks.
+        const locked = await tx`SELECT id FROM auth.app_logins WHERE id=${loginId}::uuid FOR UPDATE`;
+        expect(locked).toHaveLength(1);
+      });
+      const response = await issuance;
+      expect(response?.status).toBe(200);
+      expect(z.object({ tokens: z.array(z.string()).length(1) }).parse(await response!.json()).tokens).toHaveLength(1);
+      const [login] = await sql`SELECT state FROM auth.app_logins WHERE id=${loginId}::uuid`;
+      expect(login.state).toBe("consumed");
+      const [grant] = await sql`SELECT authority_issued_at FROM oauth.device_authorizations WHERE id=${authorizationId}::uuid`;
+      expect(grant.authority_issued_at).not.toBeNull();
+    } finally {
+      await issuance;
+      await sql`DELETE FROM auth.app_logins WHERE id=${loginId}::uuid`;
+      await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 15_000);
+
+  test.each([
+    "happy",
+    "browser",
+    "revoked",
+    "epoch",
+    "device-owner",
+    "login-owner",
+    "missing-device",
+    "expired-ui",
+    "disabled",
+    "disabled-in-transaction",
+    "issuer",
+    "device-issuer",
+  ] as const)("rechecks terminal approval authority before issuance: %s", async (scenario) => {
+    const { privateKey } = await generateKeyPair("RS256");
+    const routes = createIdentityOAuthIssuanceRoutes({
+      authenticate: () => true,
+      withActiveSigner: async (_purpose, callback) =>
+        sql.begin(async (db) => {
+          // Visible only to this transaction: the recheck must read settings on it, not on a second pool connection.
+          if (scenario === "disabled-in-transaction") await db`DELETE FROM settings.entries WHERE key='user.app_approval.enabled'`;
+          return callback(
+            {
+              kid: crypto.randomUUID(),
+              key: privateKey,
+              signUntil: new Date(Date.now() + 60_000),
+              issuer: "https://cloud.example.test",
+            },
+            db,
+          );
+        }),
+      issuer: async () => "https://cloud.example.test",
+    });
+    const userId = crypto.randomUUID(),
+      otherUser = crypto.randomUUID(),
+      clientId = `issuance-terminal-${crypto.randomUUID()}`;
+    const deviceId = crypto.randomUUID(),
+      authorizationId = crypto.randomUUID(),
+      loginId = crypto.randomUUID(),
+      nonce = crypto.randomUUID();
+    try {
+      for (const id of [userId, otherUser])
+        await sql`INSERT INTO auth.users(id,uid,provider,profile)
+          VALUES (${id}::uuid,${`terminal-issuance-${id}`},'local','user')`;
+      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes,audiences,allowed_profiles,access_mode,registration_kind,is_public,allow_device_grant)
+          VALUES ('Issuance test',${clientId},'{}',ARRAY['openid','profile'],ARRAY['cloud'],ARRAY['user'],'profiles','managed',true,true)`;
+      await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,expires_at,authority_nonce)
+          VALUES (${authorizationId}::uuid,${authorizationId},${authorizationId},${clientId},ARRAY['openid','profile'],ARRAY['cloud'],
+            'consumed',${userId}::uuid,now()+interval '10 minutes',${nonce}::uuid)`;
+      if (scenario !== "browser") {
+        await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted)
+            VALUES (${deviceId}::uuid,'https://cloud.example.test',${scenario === "device-owner" ? otherUser : userId}::uuid,'Phone','{}',false)`;
+        await sql`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,state,approved_by,expires_at,
+            kind,device_authorization_id,client_id,scopes,lifetime_seconds)
+            SELECT ${loginId}::uuid,'https://cloud.example.test',u.id,u.auth_epoch,'login','unusable','unusable','000123','approved',${deviceId}::uuid,
+              now()+interval '5 minutes','terminal',${authorizationId}::uuid,${clientId},ARRAY['openid','profile'],3600
+            FROM auth.users u WHERE u.id=${scenario === "login-owner" ? otherUser : userId}::uuid`;
+        if (scenario === "revoked") await sql`UPDATE auth.app_devices SET revoked_at=now() WHERE id=${deviceId}::uuid`;
+        if (scenario === "epoch") await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${userId}::uuid`;
+        if (scenario === "missing-device") await sql`DELETE FROM auth.app_devices WHERE id=${deviceId}::uuid`;
+        if (scenario === "disabled") await settings.set("user.app_approval.enabled", false);
+        if (scenario === "issuer") await settings.set("app.url", "https://other-cloud.example.test");
+        if (scenario === "device-issuer")
+          await sql`UPDATE auth.app_devices SET issuer='https://other-cloud.example.test' WHERE id=${deviceId}::uuid`;
+        if (scenario === "expired-ui") {
+          await sql`UPDATE auth.app_logins SET expires_at=now()-interval '1 second' WHERE id=${loginId}::uuid`;
+          // Cleanup must retain the evidence needed by issuance after the sign-in UI closes.
+          const { appApproval } = await import("@k2b/cloud/services");
+          await appApproval.cleanup();
+        }
+      }
+      const response = await routes.request("/oauth/token", {
+        method: "POST",
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
+        body: JSON.stringify({
+          tokens: [{ kind: "user_access", grant: { kind: "device_code", deviceAuthorizationId: authorizationId, nonce }, expiresIn: 3600 }],
+        }),
+      });
+      const allowed = ["happy", "browser", "expired-ui"].includes(scenario);
+      expect(response.status).toBe(allowed ? 200 : 403);
+      const result = await response.json();
+      if (allowed) expect(z.object({ tokens: z.array(z.string()).length(1) }).parse(result).tokens).toHaveLength(1);
+      else expect(result).toEqual({ message: "Forbidden" });
+      const [grant] = await sql`SELECT authority_issued_at FROM oauth.device_authorizations WHERE id=${authorizationId}::uuid`;
+      expect(grant.authority_issued_at !== null).toBe(allowed);
+      if (scenario !== "browser") {
+        const [login] = await sql`SELECT state FROM auth.app_logins WHERE id=${loginId}::uuid`;
+        expect(login.state).toBe(allowed ? "consumed" : "approved");
+      }
+    } finally {
+      await settings.set("user.app_approval.enabled", true);
+      await settings.set("app.url", "https://cloud.example.test");
+      await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+      for (const id of [userId, otherUser]) await sql`DELETE FROM auth.users WHERE id=${id}::uuid`;
     }
   });
 });

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { env } from "@k2b/cloud/config";
-import { isAccountCategoryAllowed } from "@k2b/cloud/services";
+import { type AppApprovalConfig, AppApprovalError, isAccountCategoryAllowed, readAppApprovalConfig } from "@k2b/cloud/services";
 import { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import * as settings from "@k2b/cloud/services/settings";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
@@ -149,6 +149,38 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
         RETURNING device.client_id, device.user_id, device.scopes, device.audiences, NULL::text AS resource, NULL::text AS nonce, NULL::timestamptz AS family_expires_at
       `;
       grant = row ?? null;
+      if (grant) {
+        // Keep the approval until this boundary, even after the sign-in UI expires.
+        const [login] = await db<
+          { id: string; issuer: string; user_id: string | null; approved_by: string | null; auth_epoch: string | null }[]
+        >`
+          SELECT id,issuer,user_id,approved_by,auth_epoch FROM auth.app_logins
+          WHERE device_authorization_id=${params.request.grant.deviceAuthorizationId}::uuid
+            AND kind='terminal' AND state='approved'`;
+        if (login) {
+          // Same rule as browser completion, read on this transaction: a second pool connection could starve the pool.
+          let cfg: AppApprovalConfig;
+          try {
+            cfg = await readAppApprovalConfig(db);
+          } catch (error) {
+            if (error instanceof AppApprovalError) return null;
+            throw error;
+          }
+          if (!cfg.enabled || !cfg.appOrigin || login.issuer !== cfg.issuer) return null;
+          // Lock user, device, then login, matching sign-out everywhere and signed decisions. FOR SHARE holds the
+          // epoch still without blocking the key-share lock a concurrent decision's grant update takes on the user.
+          const [user] = await db`SELECT id FROM auth.users WHERE id=${grant.user_id}::uuid
+            AND id=${login.user_id}::uuid AND auth_epoch=${login.auth_epoch}::bigint FOR SHARE`;
+          if (!user) return null;
+          const [device] = await db`SELECT id FROM auth.app_devices
+            WHERE id=${login.approved_by}::uuid AND issuer=${cfg.issuer} AND revoked_at IS NULL
+              AND user_id=${grant.user_id}::uuid FOR UPDATE`;
+          if (!device) return null;
+          const [consumed] = await db`UPDATE auth.app_logins SET state='consumed'
+            WHERE id=${login.id}::uuid AND state='approved' AND approved_by=${login.approved_by}::uuid RETURNING id`;
+          if (!consumed) return null;
+        }
+      }
     } else {
       const [row] = await db<GrantRow[]>`
         UPDATE oauth.refresh_tokens token
@@ -269,13 +301,15 @@ type Dependencies = {
   now: () => number;
 };
 
+export const authenticateOAuthBroker = (token: string | null): boolean => {
+  const secret = env.CLOUD_OAUTH_BROKER_SECRET;
+  // OAuth is optional. Missing or malformed configuration disables its broker.
+  if (!secret || !/^[a-fA-F0-9]{64}$/.test(secret) || !token || !/^[a-fA-F0-9]{64}$/.test(token)) return false;
+  return timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(secret, "hex"));
+};
+
 const defaultDependencies: Dependencies = {
-  authenticate: (token) => {
-    const secret = env.CLOUD_OAUTH_BROKER_SECRET;
-    // OAuth is optional. Missing or malformed configuration disables its broker.
-    if (!secret || !/^[a-fA-F0-9]{64}$/.test(secret) || !token || !/^[a-fA-F0-9]{64}$/.test(token)) return false;
-    return timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(secret, "hex"));
-  },
+  authenticate: authenticateOAuthBroker,
   withActiveSigner: withActiveIdentitySigner,
   issuer: async () => publicCloudOrigin(await settings.get<string>("app.url")),
   resolve: resolveAuthorityState,
@@ -284,7 +318,7 @@ const defaultDependencies: Dependencies = {
 
 class InvalidOAuthGrantAuthorityError extends Error {}
 
-const bearer = (value: string | undefined): string | null => {
+export const oauthBrokerBearer = (value: string | undefined): string | null => {
   if (!value?.startsWith("Bearer ")) return null;
   const token = value.slice(7).trim();
   return token || null;
@@ -438,14 +472,14 @@ export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencie
   const routes = new Hono();
   routes.post("/oauth/ready", async (c) => {
     c.header("Cache-Control", "no-store");
-    if (!dependencies.authenticate(bearer(c.req.header("authorization")))) return c.json({ message: "Unauthorized" }, 401);
+    if (!dependencies.authenticate(oauthBrokerBearer(c.req.header("authorization")))) return c.json({ message: "Unauthorized" }, 401);
     await dependencies.withActiveSigner("oauth", async () => undefined, { timeoutMs: 5_000 });
     return c.body(null, 204);
   });
   routes.post("/oauth/token", async (c) => {
     c.header("Cache-Control", "no-store");
     c.header("Pragma", "no-cache");
-    if (!dependencies.authenticate(bearer(c.req.header("authorization")))) return c.json({ message: "Unauthorized" }, 401);
+    if (!dependencies.authenticate(oauthBrokerBearer(c.req.header("authorization")))) return c.json({ message: "Unauthorized" }, 401);
 
     const contentLength = Number(c.req.header("content-length") ?? 0);
     if (Number.isFinite(contentLength) && contentLength > 262_144) return c.json({ message: "Request too large" }, 413);
