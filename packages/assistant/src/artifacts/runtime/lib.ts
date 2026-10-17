@@ -147,7 +147,8 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
         // App titles draw inside these kinds; only the contract's label is a data category, as in chat.
         if (datum.role === "value" && (mapped.kind === "stat" || mapped.kind === "gauge")) {
           datum.label = mapped.label;
-          opening = opening.replace(/ data-chart-datum="[^"]*"/, ` data-chart-datum="${escapeXml(JSON.stringify(datum))}"`);
+          // A callback keeps "$&" or "$$" in a label literal.
+          opening = opening.replace(/ data-chart-datum="[^"]*"/, () => ` data-chart-datum="${escapeXml(JSON.stringify(datum))}"`);
         }
         const row = rows.add(datum);
         const tooltip = cloudAiChartTooltip(rows.columns(), row);

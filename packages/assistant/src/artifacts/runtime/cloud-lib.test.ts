@@ -655,3 +655,9 @@ test("chart print tables preserve German currency, custom formats and escaped te
 test("an uninspectable empty stat omits its print table", () => {
   expect(String(chart({ kind: "stat", value: null }, "en"))).not.toContain("<table");
 });
+
+test("a gauge label with replacement patterns stays literal in its mark data", () => {
+  const markup = String(chart({ kind: "gauge", title: "Margin", value: 42, label: "Profit $& costs $$" }, "en"));
+  const encoded = /data-chart-datum="([^"]*)" data-chart-tooltip/.exec(markup)?.[1];
+  expect(JSON.parse(decodeChartAttribute(encoded ?? "")).label).toBe("Profit $& costs $$");
+});
