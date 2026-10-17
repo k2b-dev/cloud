@@ -95,6 +95,17 @@ Because the document root is a container, an unnamed `@container` query in
 application CSS without a nearer container now follows the window. Name the
 container a query belongs to, as in `@container my-form (min-width: 54rem)`.
 
+The root's containment also stops `body` from handing its background and
+`overflow` to the canvas and the viewport. Paint the page color on `html` as
+well as on `body`, and lock page scrolling on `html`, as the @k2b/ui dialogs
+do. A `body` that alone sets `overflow: hidden` clips its own box and leaves
+the document scrollable.
+
+Declare a host's container name in its stylesheet or markup from the first
+paint and keep it there. Change the host's width, not its name: the
+controller finds each workspace's host once and follows that element's
+resizes.
+
 ## Levels
 
 Use `Main level` for a hierarchy of columns, such as settings areas, a list,
@@ -338,6 +349,9 @@ function openHostPanel() {
 The helper defaults to `document`. It updates each open drawer's button and
 moves focus to it only when focus was inside that drawer. These waiting
 rules do not change default hosts, phones, or coarse-pointer tablet drawers.
+From a 64 rem host a Detail never waits: it keeps the column rules of a
+window that wide, so a wide Detail beside a wide sidebar narrows below its
+width token, as it does in a window of that width.
 
 ## Navigation
 
