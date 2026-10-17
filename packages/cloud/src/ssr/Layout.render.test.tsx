@@ -197,14 +197,16 @@ describe("Cloud layouts SSR", () => {
       expect(main).toContain("flex flex-col");
       expect(main).not.toContain("scrollbar-gutter");
     }
-    // Below md the document scrolls every page except fullPage surfaces, which the canvas marks.
+    // Below md only anonymous regular pages use the document scroller.
     expect(page.canvas).not.toContain("data-layout-full-page");
     expect(fullWidth.canvas).not.toContain("data-layout-full-page");
     expect(fullPage.canvas).toContain('data-layout-full-page="true"');
     const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
     const mobileStart = css.indexOf("@media not all and (min-width: 768px) {");
     const mobileShell = css.slice(mobileStart, css.indexOf("\n}", mobileStart));
-    expect(mobileShell).toMatch(/html:has\(\.cloud-app-canvas:not\(\[data-layout-full-page\]\)\) \{ scrollbar-gutter: stable; \}/);
+    expect(mobileShell).toMatch(
+      /html:has\(\.cloud-app-canvas:not\(\[data-layout-full-page\], \[data-layout-authenticated\]\)\) \{ scrollbar-gutter: stable; \}/,
+    );
   });
   test("admin children inherit the request locale during SSR", async () => {
     for (const locale of ["de", "en", "de-CH"]) {
@@ -276,6 +278,7 @@ describe("Cloud layouts SSR", () => {
     const chrome = withoutIslands(html).match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
     expect(chrome).toContain('href="/"');
     expect(chrome).toContain('href="/auth/login"');
+    expect(html).not.toContain('class="cloud-tab-bar"');
   });
 
   test("signed-in pages trade the header for the rail from md and publish the page trail", async () => {
@@ -295,10 +298,16 @@ describe("Cloud layouts SSR", () => {
     expect(html).not.toContain("hidden min-w-0 items-center lg:flex");
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
     expect(html).toContain('class="layout-rail hidden w-14 shrink-0 flex-col md:flex"');
-    // The rail's Home link and the phone header's Home link stay server markup.
+    // Home stays in the rail; phones get Start and the person's apps in the server-rendered bar.
     const chrome = withoutIslands(html);
     expect(chrome).toMatch(/<aside class="layout-rail[^"]*"><div class="layout-rail-logo[^"]*"><a href="\/" aria-label="Home">/);
-    expect(chrome.match(/<header[\s\S]*?<\/header>/)?.[0]).toContain('href="/"');
+    expect(chrome.match(/<header[\s\S]*?<\/header>/)?.[0]).not.toContain('href="/"');
+    const bar = chrome.slice(chrome.indexOf('class="cloud-tab-bar"'));
+    expect(bar).toContain('href="/"');
+    expect(bar).toContain('data-tab="home"');
+    const start = bar.match(/<a href="\/"[^>]*>([\s\S]*?)<\/a>/)?.[1];
+    expect(start).toContain("<span>Home</span>");
+    for (const app of badgeApps) expect(bar).toContain(`href="${app.nav.href}"`);
     // The page trail travels as JSON that cannot end its script element or carry markup.
     const source = html.match(/<script type="application\/json" data-k2b-page-trail>([^<]*)<\/script>/)?.[1] ?? "";
     expect(source).toContain("\\u003cnotes>");
