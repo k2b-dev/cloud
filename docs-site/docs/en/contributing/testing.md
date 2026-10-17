@@ -175,6 +175,34 @@ reports after the timeout names what it waited for, not the cleanup in
 kept across tests closes with its browser.
 `packages/ui/test/browser.browser.test.ts` guards this recovery.
 
+Open each URL state that a test checks in its own page. Navigate a loaded page
+in place only when the test checks navigation itself: reload, Back, Forward,
+or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place
+`goto` on an idle Notebooks page stalled before load in two WebKit CI runs,
+and a Back to a graph page in a third; hundreds of local runs did not
+reproduce it, and first navigations of fresh pages never stalled.
+
+When `goto`, `reload`, `goBack`, or `goForward` on a launcher page fails or
+times out, the error appends a navigation diagnosis. It names the call and how long it
+waited, the URL before the call and at failure, and up to five recent responses
+with their status, method, and URL. It also reports whether a document
+committed, the navigation response status, DOMContentLoaded and load events,
+open and failed requests, and a main-thread probe. A navigation cut off when
+Bun's test timeout closes the browser carries the same evidence instead of a
+cleanup error; the probe reports that the page or browser is closed. Do not
+call Playwright between catching an error and reporting it: after the browser
+closed, Playwright rejects every call with one shared error object and
+rewrites its message, so the reported error names the later call.
+No commit with an open document request points to the server or network.
+A commit with an open subresource points to that request. A silent main
+thread after a commit points to a blocked page; see
+[When a WebKit page stops answering](#when-a-webkit-page-stops-answering).
+Before a commit, Chromium holds the probe until the navigation ends, so there
+silence alone proves nothing.
+`packages/ui/test/browser.browser.test.ts` guards the diagnosis for an
+uncommitted navigation, a committed navigation whose load never fires, and a
+navigation cut off by Bun's test timeout.
+
 A step that scrolls the page, such as `focus()` on an element below the fold,
 dispatches its `scroll` event on the next frame. Chart inspection, popovers,
 and menus that close on scroll can then undo the result of the next step.
