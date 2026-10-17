@@ -1,6 +1,7 @@
 import { lazySync } from "@k2b/cloud";
 import { appApproval, pwaDevices } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
+import { cleanupTerminalLogins } from "./api/identity-oauth-device-approval";
 import type { CoreNotificationSender } from "./notifications";
 
 const scheduler = lazySync((sync) => sync.scheduler({ id: "core-app-approval", delivery: { maxAttempts: 2, backoffMs: [5000] } }));
@@ -15,7 +16,10 @@ export const appApprovalRuntime = {
       timezone: "UTC",
       misfire: "latest",
       meta: { appId: "core", family: "app-approval", label: "App device enrollment notices and expiry cleanup" },
-      process: async ({ signal }) => appApproval.maintain(sender.sendDeviceEnrollment, signal),
+      process: async ({ signal }) => {
+        await appApproval.maintain(sender.sendDeviceEnrollment, signal);
+        await cleanupTerminalLogins();
+      },
     });
     await scheduler().create({
       id: "pwa-maintenance",

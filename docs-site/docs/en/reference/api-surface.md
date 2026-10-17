@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-16
+updated: 2026-10-17
 ---
 
 # API surface
@@ -173,8 +173,9 @@ The contracts barrel also exports the versioned app-approval input schemas,
 signing-message helpers and protocol limits for independent authenticator
 clients. Action approval schemas, `APP_ACTION_LIMITS`, and the Action digest
 helpers support the signed `inbox`, `action`, and `act` commands.
-`appApproval` in the services barrel is a Core-owned maintainer service, not
-general application authentication. Use the
+`appApproval`, `readAppApprovalConfig` and the `AppTerminalLogins` hook type in
+the services barrel are Core-owned maintainer surfaces, not general application
+authentication. Use the
 [app approval HTTP contract](/en/docs/operations/app-approval) for external clients.
 
 For [matching files](/en/docs/platform/file-providers#offer-matching-files),

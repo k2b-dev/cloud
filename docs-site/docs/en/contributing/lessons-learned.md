@@ -24,6 +24,7 @@ convention still needs a check or a test.
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
 | Inert server-rendered interaction | Interactive markup is rendered without an island, or browser inspection receives drawing labels instead of display labels. | Tests: Grids `page.render.test.tsx` checks display-only chart islands and SVG parity; `chart-tooltip.test.ts` checks named, formatted tooltips; `chart-tooltips.browser.test.ts` checks inspection and layout across mounting. |
+| A mutation’s refresh re-creates a rendered entity’s element | Refetched objects replace retained elements, losing focus and hover and leaving box reads detached. | Tests: Spaces kanban and detail claim tests use `keptThrough()` from `packages/ui/test/browser.ts` to check element identity and height; the held-card test distinguishes a retained card from one leaving its column ([#1391](https://github.com/k2b-dev/cloud/issues/1391)). |
 | Unreported export loss | A PDF replaces content with a label, source, or error notice without telling the caller. | Tests: Notebooks `book-renderer.test.ts` checks typed omissions against rendered diagnostics and content order; `pdf-omissions.test.ts` checks the header budget; API and gateway tests check delivery. |
 | Release notes parsed as HTML | HTML-like placeholders swallow release sections, so release-please skips a component or mixes its notes with another release. | Check: `release-body` CI job (`scripts/check-release-pr-body.ts`) parses release PR bodies with the pinned release-please parser; the `check` job reads live PR text on PR and merge queue runs and refuses markup in titles, body commit headers, BREAKING CHANGE paragraphs, and nested-commit blocks; a self-test checks that lint against the pinned commit parser ([#1298](https://github.com/k2b-dev/cloud/issues/1298)). |
 | Silent truncation by a clamped page size | A caller asks for the whole collection with a page size above the helper's maximum and exports only the first page. | Check: `page-size` rejects oversized `pagination.perPage` literals. Tests: Contacts export pagination, cancellation, stream failure, serializer bytes, and the 1,001-contact integration case ([#1241](https://github.com/k2b-dev/cloud/issues/1241)). |
@@ -400,6 +401,13 @@ convention still needs a check or a test.
 - **Root cause:** The renderer returned HTML and parser diagnostics but no report of rendering fallbacks.
 - **Error class:** Unreported export loss.
 - **Guard:** Notebooks renderer tests cover each fallback, omission order, and one block omission per diagnostic in English and German. Header tests check Unicode labels and the maximal prefix within 2048 bytes; service, API, and gateway tests check delivery.
+
+### A claim replaced every kanban column and card
+
+- **What happened:** Claiming a card detached it during the refresh, losing focus and hover and leaving a WebKit box read empty ([#1391](https://github.com/k2b-dev/cloud/issues/1391)).
+- **Root cause:** Solid's `<For>` keyed columns and cards by refetched object references.
+- **Error class:** A mutation’s refresh re-creates a rendered entity’s element.
+- **Guard:** `keptThrough()` checks element identity and height in the kanban and detail claim tests. The held-card test checks that refresh keeps a press until its card leaves the column. Convention: [Keep focus while content refreshes](/en/ui/focus#keep-focus-while-content-refreshes).
 
 ## Add a lesson
 
