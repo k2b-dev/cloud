@@ -9,7 +9,7 @@ import { writeServiceWorker } from "./service-worker";
 export const packageRoot = resolve(import.meta.dir, "..");
 export const dist = resolve(packageRoot, "dist");
 
-const solid: BunPlugin = {
+export const solid: BunPlugin = {
   name: "pwa-auth-solid",
   setup(build) {
     build.onLoad({ filter: /\.[jt]sx$/ }, async ({ path }) => {
