@@ -45,10 +45,12 @@ describe("@k2b/ui base stylesheet", () => {
     }
   });
 
-  test("defines every custom property it reads, apart from the chart size that chart markup sets", () => {
+  test("defines every custom property it reads, apart from the chart size and inspection geometry that chart markup and inspection set", () => {
     const defined = new Set(base.flatMap((rule) => [...cssDeclarations(rule.body).keys()].filter((name) => name.startsWith("--"))));
     const used = new Set([...read("base.css").matchAll(/var\((--[\w-]+)/g)].map((match) => match[1]!));
-    const missing = [...used].filter((name) => !defined.has(name) && name !== "--k2b-chart-width" && name !== "--k2b-chart-height");
+    const missing = [...used].filter(
+      (name) => !defined.has(name) && !/^--k2b-chart-(width|height|inspection-(color|x|y)|plot-(left|right|top|bottom))$/.test(name),
+    );
     expect(missing).toEqual([]);
   });
 
@@ -85,6 +87,8 @@ describe("@k2b/ui base stylesheet", () => {
       'input:is([type="checkbox"], [type="radio"])', // the control box inside its label or row
       'button[aria-busy="true"]::after', // the centered spinner
       "dialog:modal", // centered in the top layer, outside any flow
+      ".k2b-chart__anchor", // absolutely placed at the inspected mark, outside any flow
+      ".k2b-chart__tooltip[popover]", // in the top layer, outside any flow
       ".row > *", // helpers take the flow margin from their children
       ".grid > *",
       ".stat > *",

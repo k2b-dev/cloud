@@ -4,6 +4,8 @@
 // browser code that cannot work here into clear errors. Bundled to an IIFE.
 import "./no-eval";
 import "./no-hints";
+import { cloudAiChartMarkKey } from "@k2b/cloud/ai/browser";
+import { type ChartInspection, type ChartKind, type ChartTooltip, inspectChart, isChartDatum } from "@k2b/ui/chart-inspection";
 import { LIMITS } from "../contracts";
 import { createBridge } from "../runtime/bridge";
 import { createCloud } from "../runtime/cloud";
@@ -244,6 +246,52 @@ addEventListener(
 // cloud.chart() returns markup before it has a place in the page. Once it is in the
 // document, cartesian charts are redrawn at their measured width, so axis room and
 // labels fit phones as well as wide screens. PDFs keep the stretched logical drawing.
+const inspections = new Map<Element, ChartInspection>();
+const chartTooltips = new WeakMap<Element, Map<string, ChartTooltip>>();
+const chartKinds: readonly ChartKind[] = [
+  "bar",
+  "line",
+  "scatter",
+  "histogram",
+  "boxplot",
+  "pie",
+  "donut",
+  "gauge",
+  "barGauge",
+  "stat",
+  "heatmap",
+  "sparkline",
+];
+const isChartKind = (value: string | null): value is ChartKind => chartKinds.some((kind) => kind === value);
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+const isTooltip = (value: unknown): value is ChartTooltip =>
+  isObject(value) &&
+  (value.title === undefined || typeof value.title === "string") &&
+  Array.isArray(value.rows) &&
+  value.rows.every((row) => isObject(row) && typeof row.label === "string" && typeof row.value === "string");
+function readChartTooltips(chart: Element): Map<string, ChartTooltip> {
+  const tooltips = new Map<string, ChartTooltip>();
+  for (const mark of chart.querySelectorAll("[data-chart-datum]")) {
+    try {
+      const datum: unknown = JSON.parse(mark.getAttribute("data-chart-datum") ?? "null");
+      if (!isChartDatum(datum)) continue;
+      let tooltip: unknown;
+      try {
+        tooltip = JSON.parse(mark.getAttribute("data-chart-tooltip") ?? "null");
+      } catch {
+        /* Use the native title for a mark without valid tooltip data. */
+      }
+      tooltips.set(
+        cloudAiChartMarkKey(datum),
+        isTooltip(tooltip) ? tooltip : { title: mark.querySelector("title")?.textContent ?? "", rows: [] },
+      );
+    } catch {
+      /* Only valid renderer metadata participates in inspection. */
+    }
+  }
+  chartTooltips.set(chart, tooltips);
+  return tooltips;
+}
 const drawn = new WeakMap<Element, number>();
 const charts = new ResizeObserver((entries) => {
   for (const entry of entries) {
@@ -255,6 +303,11 @@ const charts = new ResizeObserver((entries) => {
     const height = Number.parseFloat(element.style.getPropertyValue("--k2b-chart-height")) || 280;
     element.style.setProperty("--k2b-chart-width", `${width}px`);
     element.innerHTML = chartSvg(options, config.context.locale, width, height);
+    const chart = element.closest(".k2b-chart");
+    if (chart) {
+      chartTooltips.delete(chart);
+      inspections.get(chart)?.invalidate();
+    }
   }
 });
 // A table that scrolls inside its <figure> must be reachable by keyboard; only then does it get a tab stop.
@@ -268,7 +321,42 @@ const scrollers = new ResizeObserver((entries) => {
     else element.removeAttribute("tabindex");
   }
 });
-new MutationObserver(() => {
+new MutationObserver((records) => {
+  if (
+    records.every(({ target }) => {
+      const element = target instanceof Element ? target : target.parentElement;
+      return element?.closest(".k2b-chart__tooltip");
+    })
+  )
+    return;
+  for (const [element, inspection] of inspections) {
+    if (element.isConnected) continue;
+    inspection.destroy();
+    inspections.delete(element);
+    chartTooltips.delete(element);
+  }
+  for (const chart of document.querySelectorAll<HTMLElement>(".k2b-chart")) {
+    if (inspections.has(chart) || !chart.querySelector("[data-chart-datum]")) continue;
+    const kind = chart.getAttribute("data-chart-kind");
+    if (!isChartKind(kind)) continue;
+    chart.setAttribute("role", "group");
+    chart.setAttribute(
+      "aria-description",
+      config.context.locale.split("-")[0] === "de"
+        ? "Interaktives Diagramm. Mit den Pfeiltasten Werte ansehen, mit Escape schließen."
+        : "Interactive chart. Use arrow keys to inspect values, Escape to dismiss.",
+    );
+    inspections.set(
+      chart,
+      inspectChart(chart, {
+        kind,
+        format: ({ datum }) => {
+          const key = cloudAiChartMarkKey(datum);
+          return chartTooltips.get(chart)?.get(key) ?? readChartTooltips(chart).get(key) ?? { rows: [] };
+        },
+      }),
+    );
+  }
   for (const element of document.querySelectorAll(".k2b-chart__svg[data-chart-id]:not([data-cloud-observed])")) {
     element.setAttribute("data-cloud-observed", "");
     charts.observe(element);

@@ -179,6 +179,11 @@ has that did not come from a code run. It shares the chart contract of
 Set exactly one of `kind` or `charts` at the tool's flat root, with `title` and
 optional `subtitle` (unit, period or source).
 
+In Studio and one-off HTML apps, `cloud.chart()` shows tooltips by default on
+hover, keyboard focus and tap, using the same text as chat charts and their data
+tables. Function formats also apply to tooltip values when `tooltip.format` is
+absent.
+
 | Kind | Data and options |
 | --- | --- |
 | `bar` | `data: [{label, value}]`; `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |

@@ -257,7 +257,9 @@ axes in the viewer's wall-clock time, and stdlib-only options outside the chart
 contract, such as `padding`, being ignored. Renderer errors, such as a fixed
 domain that does not contain every value, now throw `invalid` instead of a plain
 error, and x strings must be ISO dates as documented. Chart groups and the
-additional chart kinds need no configuration or data migration. See
+additional chart kinds need no configuration or data migration. Studio and
+one-off HTML app charts show tooltips on hover, keyboard focus and tap without
+additional configuration. See
 [Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
 
 ### Assistant Chromium isolation
