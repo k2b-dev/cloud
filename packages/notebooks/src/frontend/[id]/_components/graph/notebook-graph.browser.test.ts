@@ -124,31 +124,35 @@ test(`${browserName}: Close, zoom and the navigation toggle live in toolbars, no
   }
 }, 30_000);
 
-test(`${browserName}: the Book update notice stays below the graph toolbars`, async () => {
-  const page = await open(graphPath("hand01"));
-  try {
-    await page.evaluate((notebookId) => {
-      window.dispatchEvent(
-        new CustomEvent("notebooks.workspace.event", {
-          detail: {
-            cursor: null,
-            event: { type: "note.updated", notebookId },
-            cover: (coverage: Promise<void>) => coverage.catch(() => {}),
-          },
-        }),
-      );
-    }, "hand01");
-    const notice = page.getByRole("alert");
-    await notice.waitFor();
-    const box = (await notice.boundingBox())!;
-    for (const name of ["Graph tools", "Graph filters"]) {
-      const bar = (await page.getByRole("toolbar", { name }).boundingBox())!;
-      expect(box.y).toBeGreaterThanOrEqual(bar.y + bar.height);
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+])
+  test(`${browserName}: the Book update notice stays below the graph toolbars at ${viewport.width}`, async () => {
+    const page = await open(graphPath("hand01"), viewport);
+    try {
+      await page.evaluate((notebookId) => {
+        window.dispatchEvent(
+          new CustomEvent("notebooks.workspace.event", {
+            detail: {
+              cursor: null,
+              event: { type: "note.updated", notebookId },
+              cover: (coverage: Promise<void>) => coverage.catch(() => {}),
+            },
+          }),
+        );
+      }, "hand01");
+      const notice = page.getByRole("alert");
+      await notice.waitFor();
+      const box = (await notice.boundingBox())!;
+      for (const name of ["Graph tools", "Graph filters"]) {
+        const bar = (await page.getByRole("toolbar", { name }).boundingBox())!;
+        expect(box.y).toBeGreaterThanOrEqual(bar.y + bar.height);
+      }
+    } finally {
+      await close(page);
     }
-  } finally {
-    await close(page);
-  }
-}, 30_000);
+  }, 30_000);
 
 test(`${browserName}: showing the navigation on a tablet keeps keyboard focus on the page`, async () => {
   const page = await open(graphPath("hand01"), { width: 900, height: 900 });
@@ -666,10 +670,13 @@ test(`${browserName}: touch selection offers Move to center and clears after rec
     const bar = page.getByRole("region", { name: "Selected note" });
     await bar.waitFor();
     expect(search(page).has("note")).toBe(false);
-    await bar.getByRole("button", { name: "Move to center", exact: true }).click();
+    // Activated from the keyboard, the vanishing bar hands focus to the new centre, not to the page.
+    await bar.getByRole("button", { name: "Move to center", exact: true }).focus();
+    await page.keyboard.press("Enter");
     expect(search(page).get("note")).toBe(target);
     expect(await bar.count()).toBe(0);
     expect(await page.locator("[data-node][data-current]").getAttribute("data-node")).toBe(target);
+    await page.waitForFunction((id) => document.activeElement?.getAttribute("data-node") === id, target);
   } finally {
     await close(page);
   }

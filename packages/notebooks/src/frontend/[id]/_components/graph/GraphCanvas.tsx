@@ -321,7 +321,8 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   const [announcement, setAnnouncement] = createSignal("");
   const centre = (id: string) => {
     if (!props.neighborhood || id === props.currentId) return;
-    const hadFocus = nodeElement(id) === document.activeElement;
+    // Focus on the note, or on the selection bar that disappears now, moves to the new centre, never to the page.
+    const hadFocus = container.contains(document.activeElement);
     setSelected(null);
     props.neighborhood.onCentre(id);
     // The same counts as the note's own description, so the announcement and a later re-read agree.
@@ -667,13 +668,14 @@ export default function GraphCanvas(props: GraphCanvasProps) {
                 if (!a || !b) return "";
                 const pa = localLayout()?.pos.get(edge.source),
                   pb = localLayout()?.pos.get(edge.target);
-                if (pa?.ring === 1 && pb?.ring === 1) {
-                  const control = toScreen(view(), { x: ((pa.x + pb.x) / 2) * 0.45, y: ((pa.y + pb.y) / 2) * 0.45 });
-                  return `M${f1(a.x)},${f1(a.y)}Q${f1(control.x)},${f1(control.y)} ${f1(b.x)},${f1(b.y)}`;
-                }
                 const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
                 const nx = (-(b.y - a.y) / length) * shift;
                 const ny = ((b.x - a.x) / length) * shift;
+                // Links between first-ring notes curve towards the centre; a reciprocal pair shifts the whole curve.
+                if (pa?.ring === 1 && pb?.ring === 1) {
+                  const control = toScreen(view(), { x: ((pa.x + pb.x) / 2) * 0.45, y: ((pa.y + pb.y) / 2) * 0.45 });
+                  return `M${f1(a.x + nx)},${f1(a.y + ny)}Q${f1(control.x + nx)},${f1(control.y + ny)} ${f1(b.x + nx)},${f1(b.y + ny)}`;
+                }
                 return `M${f1(a.x + nx)},${f1(a.y + ny)}L${f1(b.x + nx)},${f1(b.y + ny)}`;
               };
               const edgeClass = () => {
