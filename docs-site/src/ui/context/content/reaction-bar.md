@@ -38,8 +38,9 @@ import { ReactionBar, reactionPeople, type ReactionBarItem, type ReactionBarProp
   Reaktionen" in the inherited locale.
 - `add="always"` is the default. With `add="progressive"`, put the bar inside
   a `k2b-progressive-row` ancestor: the add button shows on hover and focus
-  with a mouse or trackpad, keeping its space while hidden, and is absent on
-  touch. It stays visible while its picker is open because
+  with a mouse or trackpad, and is hidden on a touch screen, where people
+  react elsewhere, such as in the item's detail. Its space stays reserved
+  either way, so nothing moves. It stays visible while its picker is open because
   [`EmojiPicker.Popover`](/en/ui/input/emoji-picker) sets `aria-expanded` on
   the anchor. `class` adds a caller's class to the bar.
 
@@ -92,7 +93,7 @@ use `aria-pressed`; their accessible name includes emoji, count, and names.
 Read-only chips use `role="img"`, also say whether the reader reacted, and
 are not tab stops. A scrolling read-only list is one tab stop so the keyboard
 can scroll it; a wrapping list adds no tab stop. The chip's visible focus
-ring sits outside its edge with a 1 px offset.
+ring sits 1 px outside its edge.
 
 The names hint is hidden from screen readers because the chip's accessible
 name already includes those names. It does not replace that accessible name.

@@ -8715,9 +8715,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: progress;
 }
 
+/* The ring sits 1 px outside the chip, inside the 3 px the scrolling list keeps around its chips. */
 .k2b-ui .k2b-reaction-bar__chip:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: 1px;
+  outline-offset: calc(var(--k2b-focus-width) / 2);
 }
 
 /* "+n" counts the emoji that are not shown. It is text, not a control: a pointer passes through to what lies beneath,
@@ -8758,14 +8759,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* A progressive "Add reaction" (`k2b-progressive-action`) shows on hover and focus with a mouse or trackpad and keeps
-   its place meanwhile. A touch screen reacts elsewhere, such as in the item's detail, so there it is absent. */
+   its place meanwhile. A touch screen reacts elsewhere, such as in the item's detail, so there it is hidden; like every
+   input-mode rule this changes paint only, and its place stays reserved. */
 :where(html[data-k2b-input="touch"]) .k2b-ui .k2b-reaction-bar[data-add="progressive"] .k2b-reaction-bar__add {
-  display: none;
+  visibility: hidden;
 }
 
 @media (any-hover: none) {
   :where(html:not([data-k2b-input="trackpad"])) .k2b-ui .k2b-reaction-bar[data-add="progressive"] .k2b-reaction-bar__add {
-    display: none;
+    visibility: hidden;
   }
 }
 

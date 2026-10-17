@@ -1,4 +1,4 @@
-import { type Accessor, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
 import { useChatMessages } from "../chat/chat-messages";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
@@ -30,7 +30,7 @@ export type ReactionBarProps = {
   max?: number;
   /** Screen-reader text of "+n"; defaults to "{n} more reactions". */
   moreLabel?: (count: number) => string;
-  /** "always" (default) or "progressive": shown on hover and focus with a mouse or trackpad (k2b-progressive-action, inside the caller's k2b-progressive-row), kept while its picker is open, absent on touch. */
+  /** "always" (default) or "progressive": shown on hover and focus with a mouse or trackpad (k2b-progressive-action, inside the caller's k2b-progressive-row), kept while its picker is open, hidden on touch. Its place stays reserved. */
   add?: "always" | "progressive";
   class?: string;
 };
@@ -47,7 +47,17 @@ export function ReactionBar(props: ReactionBarProps): JSX.Element {
   const keys = createMemo(() => shown().map((reaction) => reaction.key));
   const byKey = createMemo(() => new Map(shown().map((reaction) => [reaction.key, reaction])));
   const more = () => props.reactions.length - shown().length;
-  const [hint, setHint] = createSignal("");
+  /** The reaction whose names the hint shows; it follows that reaction while the caller updates it. */
+  const [hintKey, setHintKey] = createSignal<string>();
+  const hinted = () => {
+    const key = hintKey();
+    const reaction = key === undefined ? undefined : byKey().get(key);
+    return reaction?.label?.trim() ? reaction : undefined;
+  };
+  const hint = () => {
+    const reaction = hinted();
+    return reaction ? `${reaction.emoji} ${reaction.label}` : "";
+  };
   const [touch, setTouch] = createSignal(false);
   let root: HTMLDivElement | undefined;
   let surface: HTMLSpanElement | undefined;
@@ -90,7 +100,7 @@ export function ReactionBar(props: ReactionBarProps): JSX.Element {
       clearTimer();
       const reaction = byKey().get(chip.dataset.reactionKey ?? "");
       if (!reaction?.label?.trim() || !chip.isConnected) return;
-      setHint(`${reaction.emoji} ${reaction.label}`);
+      setHintKey(reaction.key);
       setTouch(fromTouch);
       if (!tooltip.matches(":popover-open")) {
         try {
@@ -106,6 +116,15 @@ export function ReactionBar(props: ReactionBarProps): JSX.Element {
       window.addEventListener("scroll", close, true);
       window.addEventListener("resize", close);
     };
+    // An open hint follows its reaction: new names show at once, and it closes when the reaction, its names, or its
+    // chip go away.
+    createEffect(
+      on(hinted, (reaction) => {
+        if (!openChip) return;
+        if (!reaction || !openChip.isConnected) close();
+        else positionTooltipSurface(tooltip, openChip, "top");
+      }),
+    );
     const delayed = (chip: HTMLElement) => {
       if (touch() && openChip) return;
       if (

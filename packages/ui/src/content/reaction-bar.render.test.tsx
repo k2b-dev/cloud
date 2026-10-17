@@ -117,6 +117,6 @@ describe("ReactionBar", () => {
     expect(declarations('.k2b-ui .k2b-reaction-bar[data-density="compact"]').get("--k2b-reaction-height")).toEqual(["1.5rem"]);
     expect(declarations(".k2b-ui .k2b-reaction-bar__chip").get("height")).toEqual(["var(--k2b-reaction-height)"]);
     expect(declarations(".k2b-ui .k2b-reaction-bar__more").get("pointer-events")).toEqual(["none"]);
-    expect(declarations(".k2b-ui .k2b-reaction-bar__chip:focus-visible").get("outline-offset")).toEqual(["1px"]);
+    expect(declarations(".k2b-ui .k2b-reaction-bar__chip:focus-visible").get("outline-offset")).toEqual(["calc(var(--k2b-focus-width) / 2)"]);
   });
 });

@@ -39,6 +39,8 @@ window.fixture = {
   // Solid delegates click once per document and intentionally keeps that shared listener.
   listeners: () => listeners.filter((item) => item.type !== "click").length,
   replace: () => setReactions((items) => items.map((item) => ({ ...item, count: item.count + 1 }))),
+  relabel: (label) => setReactions((items) => items.map((item) => (item.key === "0" ? { ...item, label } : item))),
+  remove: () => setReactions((items) => items.filter((item) => item.key !== "0")),
   unmount: render(() => createComponent(ReactionBar, {
     get reactions() { return reactions(); },
     onToggle: options.readOnly ? undefined : (key) => window.toggled.push(key),
@@ -60,7 +62,13 @@ const build = await Bun.build({
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the ReactionBar fixture.");
 const script = await build.outputs[0]!.text();
 
-declare const fixture: { listeners: () => number; replace: () => void; unmount: () => void };
+declare const fixture: {
+  listeners: () => number;
+  replace: () => void;
+  relabel: (label: string) => void;
+  remove: () => void;
+  unmount: () => void;
+};
 declare const toggled: string[];
 let browser: Browser;
 let context: BrowserContext | undefined;
@@ -141,6 +149,18 @@ describe("ReactionBar in the browser", () => {
     await page.waitForTimeout(350);
     expect(await isOpen(page)).toBe(true);
     await page.keyboard.press("Escape");
+    expect(await isOpen(page)).toBe(false);
+  }, 30_000);
+
+  test("an open names hint follows its reaction and closes when the reaction goes", async () => {
+    const page = await open();
+    await chip(page).hover();
+    await page.waitForTimeout(350);
+    expect(await isOpen(page)).toBe(true);
+    await page.evaluate(() => fixture.relabel("You and Nora Brandt"));
+    expect(await hint(page).textContent()).toBe("👍 You and Nora Brandt");
+    expect(await isOpen(page)).toBe(true);
+    await page.evaluate(() => fixture.remove());
     expect(await isOpen(page)).toBe(false);
   }, 30_000);
 
@@ -263,7 +283,9 @@ describe("ReactionBar in the browser", () => {
     expect(await add.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
     expect(await boxes()).toEqual(before);
     await page.locator("html").evaluate((element) => element.setAttribute("data-k2b-input", "touch"));
-    expect(await add.evaluate((element) => getComputedStyle(element).display)).toBe("none");
+    // Touch hides it by paint only; its place stays reserved.
+    expect(await add.evaluate((element) => getComputedStyle(element).visibility)).toBe("hidden");
+    expect(await boxes()).toEqual(before);
   }, 30_000);
   test("unmount removes the open hint, timers and document/window listeners", async () => {
     const page = await open();
