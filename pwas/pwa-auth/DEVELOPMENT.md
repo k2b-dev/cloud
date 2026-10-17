@@ -46,8 +46,11 @@ Use public `@k2b/ui` controls and tokens. English and German messages live in
 `src/i18n.ts`, using Cloud's `i18n.define()` pattern and the inherited UI locale.
 The menu groups account management, settings, notifications, and installation.
 Sign-ins and Actions open as a sheet on phones and as a centered dialog from
-tablet width (48rem), through `bottomSheetAdaptiveOptions`. A sign-in shows its
-code in groups of three and requires an explicit choice after comparing it.
+tablet width (48rem), through `bottomSheetAdaptiveOptions`. A sign-in shows when
+it started (its `createdAt`, on the device clock) and its code in groups of three,
+and requires an explicit choice after comparing it.
+`src/decision.browser.test.ts` checks in Chromium that the sheet and the dialog
+keep their height when an ending replaces the request.
 Actions appear per Cloud and open a review only on a tap or a tapped
 notification. The row's **Review** button loads a fresh SDK-checked view first
 and opens the review only with it, so it never grows after its first frame; a

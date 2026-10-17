@@ -190,3 +190,89 @@ test("an expired sign-in stays open with its ending and focused Done", async () 
     dom.cleanup();
   }
 });
+
+test("the sheet says when the sign-in started, on the device's clock in its language", async () => {
+  // The fixture pins the device zone; the two instants sit on either side of Vienna's switch from summer time.
+  const zone = process.env.TZ;
+  process.env.TZ = "Europe/Vienna";
+  const { Clouds } = await import("./Clouds");
+  const { closeDialogs } = await import("./dialog");
+  const keys = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
+  const binding: Binding = {
+    id: "fixture",
+    label: "Test Cloud",
+    name: "Test",
+    issuer: "http://localhost",
+    deviceId: "device",
+    key: { privateKey: keys.privateKey, publicKey: { kty: "EC", crv: "P-256", x: "unused", y: "unused" } },
+  };
+  const noop = async () => {};
+  try {
+    for (const [locale, createdAt, line] of [
+      ["en", "2026-10-24T07:14:00.000Z", "Started at 09:14"],
+      ["de", "2026-10-24T07:14:00.000Z", "Gestartet um 09:14"],
+      ["en", "2026-10-25T08:14:00.000Z", "Started at 09:14"],
+      ["de", "2026-10-25T08:14:00.000Z", "Gestartet um 09:14"],
+    ] as const) {
+      const dom = createDomTestHarness();
+      const request: Login = {
+        requestId: "login",
+        comparison: "623775",
+        challenge: "unused",
+        createdAt,
+        expiresAt: new Date(Date.parse(createdAt) + 60_000).toISOString(),
+      };
+      const auth: Authenticator = {
+        bindings: () => [binding],
+        states: () => ({ fixture: { requests: [request], actions: [], moreActions: 0 } }),
+        now: () => Date.parse(createdAt) + 30_000,
+        online: () => true,
+        storageError: () => false,
+        changed: noop,
+        client: async () => {
+          throw new Error("No network in this test");
+        },
+        stored: async () => undefined,
+        account: async () => {
+          throw new Error("No network in this test");
+        },
+        action: async () => {
+          throw new Error("No action in this test");
+        },
+        act: noop,
+        decide: noop,
+        revoke: noop,
+        syncPush: noop,
+        forget: noop,
+        rename: noop,
+      };
+      const preferences: Preferences = {
+        locale: () => locale,
+        language: () => locale,
+        theme: () => "light",
+        setLanguage: () => {},
+        setTheme: () => {},
+      };
+      const dispose = render(() => createComponent(Clouds, { auth, preferences }), dom.root);
+      try {
+        await Bun.sleep(30);
+        const dialog = document.querySelector<HTMLDialogElement>("dialog[open]")!;
+        const time = dialog.querySelector<HTMLTimeElement>(".auth-decision__request time")!;
+        expect(time?.textContent, `${locale} ${createdAt}`).toBe(line);
+        expect(time.dateTime).toBe(createdAt);
+        // Read with the request: it comes before the explanation and the code, and nothing hides it.
+        expect(time.closest("[aria-hidden]")).toBeNull();
+        const request = dialog.querySelector(".auth-decision__request")!;
+        expect(request.textContent?.indexOf(line)).toBe(0);
+      } finally {
+        closeDialogs();
+        await Bun.sleep(20);
+        dispose();
+        dom.cleanup();
+      }
+    }
+  } finally {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  }
+});
