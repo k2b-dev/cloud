@@ -26,6 +26,11 @@
     "./styles.css": "./dist/styles.css",
     "./fonts/plex.css": "./dist/plex.css",
     "./icons/tabler.css": "./dist/tabler.css",
+    "./chart-inspection": {
+      "types": "./dist/types/chart-inspection.d.ts",
+      "browser": "./dist/browser/chart-inspection.js",
+      "default": "./dist/browser/chart-inspection.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

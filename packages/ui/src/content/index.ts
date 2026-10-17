@@ -41,7 +41,7 @@ export type {
   ChartExplorerSnapshot,
 } from "./chart-explorer";
 export { createChartExplorer } from "./chart-explorer";
-export type { ChartDatumRef, ChartSelection, ChartTooltip, ChartTooltipFormatter } from "./chart-inspection";
+export type { ChartDatumRef, ChartSelection, ChartTooltip, ChartTooltipFormatter } from "./chart-inspection-core";
 export type { ChartSnapshot } from "./chart-snapshot";
 export { prepareChartSnapshot } from "./chart-snapshot";
 export type {

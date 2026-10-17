@@ -112,6 +112,38 @@ try {
   `;
   run([process.execPath, "--no-install", "--conditions=browser", "-e", browserSmoke], consumer);
 
+  const inspectionSmoke = `
+    const resolved = import.meta.resolve("@k2b/ui/chart-inspection");
+    if (!resolved.includes("/node_modules/@k2b/ui/dist/browser/chart-inspection.js")) {
+      throw new Error("chart inspection did not resolve to packed dist/browser/chart-inspection.js: " + resolved);
+    }
+  `;
+  run([process.execPath, "--no-install", "-e", inspectionSmoke], consumer);
+  run([process.execPath, "--no-install", "--conditions=browser", "-e", inspectionSmoke], consumer);
+
+  const inspectionEntry = join(consumer, "inspection-entry.ts");
+  await Bun.write(inspectionEntry, 'export { inspectChart } from "@k2b/ui/chart-inspection";\n');
+  const inspectionBuild = await Bun.build({
+    entrypoints: [inspectionEntry],
+    target: "browser",
+    format: "esm",
+    external: ["solid-js", "solid-js/*"],
+    minify: true,
+  });
+  if (!inspectionBuild.success) {
+    throw new Error(`packed chart inspection build failed\n${inspectionBuild.logs.join("\n")}`);
+  }
+  const inspectionOutput = await inspectionBuild.outputs[0]!.text();
+  const inspectionBytes = new TextEncoder().encode(inspectionOutput).byteLength;
+  if (inspectionOutput.includes("solid-js")) {
+    throw new Error("packed chart inspection build requires Solid");
+  }
+  // The minified framework-free inspector measured 13,241 bytes. Leave a few
+  // percent for small changes while catching accidental framework dependencies.
+  if (inspectionBytes > 13_700) {
+    throw new Error(`packed chart inspection browser build is too large: ${inspectionBytes} bytes`);
+  }
+
   const globalStyles = import.meta.resolve("@k2b/ui/global.css", join(consumer, "index.ts"));
   if (!globalStyles.includes("/node_modules/@k2b/ui/dist/global.css")) {
     throw new Error(`global stylesheet did not resolve from packed dist: ${globalStyles}`);
@@ -175,7 +207,7 @@ try {
   }
 
   console.log(
-    `Packed @k2b/ui imports and renders via SSR; global CSS bundles; browser tree-shaking produced ${browserOutput.length} bytes`,
+    `Packed @k2b/ui imports and renders via SSR; global CSS bundles; browser tree-shaking produced ${browserOutput.length} bytes; chart inspection ${inspectionBytes} bytes`,
   );
 } finally {
   rmSync(temporaryRoot, { recursive: true, force: true });
