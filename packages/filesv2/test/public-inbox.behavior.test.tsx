@@ -16,6 +16,8 @@ let startKey = "";
 let rateLimitPhase: "start" | "commit" = "start";
 let rateLimitAt = 0;
 let retryAfter = "1";
+let holdNames: Promise<void> | undefined;
+let namesFromCommits = false;
 const rateLimitResponse = () => Response.json({ message: "Rate limit exceeded" }, { status: 429, headers: { "Retry-After": retryAfter } });
 mock.module("../src/frontend/public-client", () => ({
   publicClient: {
@@ -26,7 +28,12 @@ mock.module("../src/frontend/public-client", () => ({
           $get: async () => {
             nameLoads++;
             if (nameLoads > 10) return rateLimitResponse();
-            return Response.json({ ...share, uploadedNames: ["file.txt"] });
+            // The server answers with the names committed when the read started.
+            const uploadedNames = namesFromCommits ? Array.from({ length: commits }, (_, i) => `file-${i}.txt`) : ["file.txt"];
+            const hold = holdNames;
+            holdNames = undefined;
+            await hold;
+            return Response.json({ ...share, uploadedNames });
           },
           uploads: {
             $post: async (input: { json: { idempotencyKey: string } }) => {
@@ -111,6 +118,8 @@ afterEach(() => {
   rateLimitPhase = "start";
   rateLimitAt = 0;
   retryAfter = "1";
+  holdNames = undefined;
+  namesFromCommits = false;
   if (storageDescriptor) Object.defineProperty(globalThis, "localStorage", storageDescriptor);
   else Reflect.deleteProperty(globalThis, "localStorage");
 });
@@ -308,4 +317,36 @@ test("public inbox refreshes the received names once per batch instead of once p
   expect(nameLoads).toBe(1);
   expect(dom.document.querySelectorAll("[data-k2b-toast]:not([data-custom])")).toHaveLength(0);
   expect(dom.root.querySelector('[aria-label="Received file names"] li')?.textContent).toBe("file.txt");
+});
+
+test("public inbox refreshes the received names again when a batch settles during a refresh", async () => {
+  const dom = createDomTestHarness();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+  const { default: PublicInbox } = await import("../src/frontend/PublicInbox.island");
+  const dispose = render(() => <PublicInbox token="public-secret" share={{ ...share, showUploadNames: true }} />, dom.root);
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  let release = () => {};
+  namesFromCommits = true;
+  holdNames = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]')!;
+  const drop = (name: string) => {
+    Object.defineProperty(input, "files", { configurable: true, value: [new File([], name, { lastModified: 123 })] });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  drop("file-0.txt");
+  await settle(() => commits === 1 && nameLoads === 1);
+  drop("file-1.txt");
+  await settle(() => commits === 2);
+  await flush();
+  expect(nameLoads).toBe(1);
+  release();
+  await settle(() => nameLoads === 2);
+  await flush();
+  const listed = () => Array.from(dom.root.querySelectorAll('[aria-label="Received file names"] li'), (item) => item.textContent);
+  expect(listed()).toEqual(["file-0.txt", "file-1.txt"]);
 });

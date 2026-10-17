@@ -28,8 +28,14 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
   const [namesLoading, setNamesLoading] = createSignal(false);
   const namesController = new AbortController();
   onCleanup(() => namesController.abort());
+  // A refresh asked for during another read runs after it, so names committed meanwhile are not lost.
+  let refreshPending = false;
   const loadNames = async (append = false) => {
-    if (!props.share.showUploadNames || namesLoading()) return;
+    if (!props.share.showUploadNames) return;
+    if (namesLoading()) {
+      if (!append) refreshPending = true;
+      return;
+    }
     setNamesLoading(true);
     try {
       const response = await publicClient.inbox[":token"].api.$get(
@@ -44,6 +50,10 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
       if (!namesController.signal.aborted) toast.error(error instanceof Error ? error.message : b().publicLinkUnavailableDescription);
     } finally {
       setNamesLoading(false);
+      if (refreshPending && !namesController.signal.aborted) {
+        refreshPending = false;
+        void loadNames();
+      }
     }
   };
   const [uploaded, setUploaded] = createSignal<string[]>([]);
