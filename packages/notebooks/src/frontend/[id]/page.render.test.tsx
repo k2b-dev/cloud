@@ -302,7 +302,11 @@ test.each([
   );
 });
 
-const renderNotebookWithNotes = async (preferences: Record<string, unknown>, mode: "graph" | "write" | "readonly" = "graph") => {
+const renderNotebookWithNotes = async (
+  preferences: Record<string, unknown>,
+  mode: "graph" | "write" | "readonly" = "graph",
+  query = "",
+) => {
   const note = (shortId: string, title: string) => ({
     id: `uuid-${shortId}`,
     shortId,
@@ -327,7 +331,23 @@ const renderNotebookWithNotes = async (preferences: Record<string, unknown>, mod
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([note("note01", "Private folder"), note("note02", "Team notes")]));
-  spies.push(spyOn(notebooksService.notebook, "graph").mockResolvedValue({ nodes: [], edges: [] }));
+  spies.push(
+    spyOn(notebooksService.notebook, "graph").mockResolvedValue(
+      query
+        ? {
+            nodes: ["note01", "note02"].map((id, position) => ({
+              id,
+              title: id === "note01" ? "Private folder" : "Team notes",
+              parentId: null,
+              position,
+              inDegree: position,
+              updatedAt: timestamp,
+            })),
+            edges: [{ source: "note01", target: "note02" }],
+          }
+        : { nodes: [], edges: [] },
+    ),
+  );
   spies.push(spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue(null));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
@@ -339,7 +359,17 @@ const renderNotebookWithNotes = async (preferences: Record<string, unknown>, mod
     c.set("runtime", { apps: [] });
     await next();
   });
-  spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note("note01", "Private folder")));
+  spies.push(
+    spyOn(notebooksService.note, "getByShortId").mockImplementation(async ({ shortId }) =>
+      shortId === "other1"
+        ? { ...note(shortId, "Foreign note"), notebookId: "other-notebook" }
+        : shortId === "note01"
+          ? note(shortId, "Private folder")
+          : shortId === "note02"
+            ? note(shortId, "Team notes")
+            : null,
+    ),
+  );
   if (mode !== "graph") {
     spies.push(
       spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue({
@@ -361,7 +391,7 @@ const renderNotebookWithNotes = async (preferences: Record<string, unknown>, mod
   app.get("/app/notebooks/:id", ...handler);
   // The graph view keeps the notebook route without redirecting to a note.
   const response = await app.request(
-    `https://cloud.example.test/app/notebooks/book01${mode === "graph" ? "" : "/notes/note01"}?mode=${mode}`,
+    `https://cloud.example.test/app/notebooks/book01${mode === "graph" ? "" : "/notes/note01"}?mode=${mode}${query}`,
     {
       headers: {
         "accept-language": "de",
@@ -769,3 +799,22 @@ test.each(["write", "readonly"] as const)("%s: SSR supplies author identities to
   const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
   expect(islandProps(editor?.attributes["data-props"]).initialDetail).toHaveProperty("noteAuthors", noteAuthors);
 });
+
+test.each(["note02", "other1"])(
+  "Neighborhood serializes the query centre before the cookie, with foreign-note fallback (%s)",
+  async (queryNote) => {
+    const html = await renderNotebookWithNotes(
+      { notebooks: { book01: { lastNoteId: "note01" } } },
+      "graph",
+      `&display=neighborhood&note=${queryNote}`,
+    );
+    const [island] = await select(html, 'solid-island[data-file="NotebookGraph.island.tsx"]');
+    expect(island).toBeDefined();
+    const props = islandProps(island?.attributes["data-props"]);
+    expect(props.selectedNoteId).toBe(queryNote === "note02" ? "note02" : "note01");
+    expect(props.view).toMatchObject({ display: "neighborhood", depth: 2 });
+    const [title] = await select(html, ".notebook-graph__title small");
+    expect(title?.text).toContain(`von „${queryNote === "note02" ? "Team notes" : "Private folder"}“`);
+    expect(html).not.toContain("Foreign note");
+  },
+);

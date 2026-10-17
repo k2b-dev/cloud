@@ -241,7 +241,12 @@ Im Editor erscheinen die Bedienelemente, wenn du auf das Diagramm zeigst oder es
 ## Notizen mit Links, Tags und Anhängen verbinden {icon="link"}
 
 :::reference
-- **Verknüpfungen sehen:** Wähle **Verknüpfungen** unten in der Navigation. Das Netz zeigt alle Notizen des Notizbuchs und die Verknüpfungen zwischen ihnen. Die offene Notiz hat einen Ring in der Farbe der App. Das geht auch mit Zugriff **Ansehen** in der Buchansicht.
+- **Verknüpfungen sehen:** Wähle **Verknüpfungen** unten in der Navigation. **Netz** zeigt alle Notizen des Notizbuchs und die Verknüpfungen zwischen ihnen. Die offene Notiz hat einen Ring in der Farbe der App. Das geht auch mit Zugriff **Ansehen** in der Buchansicht.
+- **Umgebung:** Die aktuelle Notiz steht in der Mitte. Notizen, auf die sie verweist, stehen rechts. Notizen, die auf sie verweisen, stehen links. Der zweite Schritt steht auf dem äußeren Ring. Auf dem Telefon stehen eingehende Verweise oben und ausgehende unten.
+- **Tiefe:** Wähle in **Umgebung** zwischen **1 Schritt** und **2 Schritte**.
+- **In die Mitte:** Fokussiere eine Notiz und drücke die **Leertaste**. Auf einem Touchscreen wählst du eine Notiz und dann **In die Mitte**. Diese Notiz wird die Mitte.
+- **Auf dem Telefon:** Verknüpfungen öffnet sich in **Umgebung**, außer du wählst **Netz**. Deine Wahl bleibt in der Adresse.
+- **Hier keine Verknüpfungen:** Wähle **Ganzes Notizbuch zeigen**, um **Netz** zu sehen. Blenden die Filter alle Verknüpfungen der aktuellen Notiz aus, wähle **Filter zurücksetzen**.
 - **Bereiche:** Jede Seite auf oberster Ebene mit Unterseiten ist ein Bereich mit eigener Farbe. Die übrigen Seiten auf oberster Ebene stehen unter **Oberste Ebene**. Das Netz bewegt sich nicht von selbst. Du kannst eine Notiz ziehen, und ihre Nachbarn folgen ein wenig.
 - **Auf eine Notiz zeigen:** Die Notiz und ihre Nachbarn bleiben sichtbar, die anderen Notizen treten zurück. Verweise von der Notiz sind durchgezogen. Verweise auf die Notiz sind gestrichelt. Unten links stehen der Bereich, die Zahl der Verweise in beide Richtungen und die letzte Änderung.
 - **Filter und Suche:** Wähle **Alle Notizen**, **Nur verknüpfte** oder **Nur ohne Verknüpfung**. Wähle einen Bereich, um ihn aus- oder einzublenden. **Notiz finden** markiert die Notizen mit passendem Titel, und Enter springt zum ersten Treffer. Die Adresse behält diese Einstellungen, also zeigen Neuladen und Zurück dieselbe Ansicht.

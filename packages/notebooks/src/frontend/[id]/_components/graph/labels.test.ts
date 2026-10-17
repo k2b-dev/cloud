@@ -172,3 +172,42 @@ test("fitText binary search uses the ellipsis and requires three prefix characte
   expect(fitText("Handbook", 0, font, measure)).toBe("");
   expect(fitText("Hand book", measure("Hand …", font), font, measure)).toBe("Hand…");
 });
+
+test("per-node sides and widths override only that node's placement", () => {
+  const target = node({ sides: ["b"], maxWidth: 45 });
+  const result = place([target]).labels[0]!;
+  expect(result.y).toBeGreaterThan(target.y + target.r);
+  expect(result.width).toBeLessThanOrEqual(45);
+  expect(result.text).toEndWith("…");
+  // Explicit defaults produce exactly the existing network placement.
+  expect(place([node()])).toEqual(place([node({ sides: ["r", "l", "b", "t"], maxWidth: 130, priority: 0 })]));
+});
+test("headings are obstacles even for a forced current or hover label", () => {
+  const obstacles = [
+    { x0: 205, y0: 185, x1: 385, y1: 220 },
+    { x0: 120, y0: 225, x1: 280, y1: 265 },
+  ];
+  const result = placeLabels({
+    width: 390,
+    height: 640,
+    nodes: [node({ kind: "current" }), node({ id: "hover1", x: 230, kind: "hover" })],
+    areaLabels: [],
+    measure,
+    maxLabels: 400,
+    maxWidth: 130,
+    obstacles,
+  });
+  expect(result.labels).toHaveLength(2);
+  assertRects([...obstacles, ...result.labels.map((label) => label.rect)], 390, 640);
+});
+test("far labels are smaller and hubs win among outer-ring notes; ring one adds priority", () => {
+  expect(LABEL_FONTS.far).toEqual({ size: 11, weight: 400 });
+  const nodes = [
+    node({ id: "far001", kind: "far", deg: 1, x: 50, y: 50 }),
+    node({ id: "hub001", kind: "far", deg: 99, x: 50, y: 150 }),
+    node({ id: "ring01", priority: 300, deg: 1, x: 50, y: 250 }),
+  ];
+  const result = place(nodes, [], 2);
+  expect(result.labels.map((label) => label.id)).toEqual(["ring01", "hub001"]);
+  expect(result.labels[1]!.height).toBe(15);
+});

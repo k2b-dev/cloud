@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
-import { HANDBOOK_IDS } from "./graph.fixtures";
+import { FIXTURE_NOW, HANDBOOK_IDS } from "./graph.fixtures";
 import { startGraphServer } from "./notebook-graph.browser-server";
 
 let browser: Browser;
@@ -24,6 +24,7 @@ const settled = (page: Page) =>
 const open = async (path: string, viewport = { width: 1440, height: 900 }, options: BrowserContextOptions = {}) => {
   const context = await browser.newContext({ viewport, ...options });
   const page = await context.newPage();
+  await page.clock.install({ time: new Date(FIXTURE_NOW) });
   await page.goto(new URL(path, server.url).href);
   await page.waitForFunction(() => window.notebookGraphFixture?.mounted === true);
   await settled(page);
@@ -61,7 +62,7 @@ for (const [notebook, notes] of [
     { width: 390, height: 844 },
   ]) {
     test(`${browserName}: labels of ${notes} notes never overlap and never leave the canvas at ${viewport.width}`, async () => {
-      const page = await open(graphPath(notebook), viewport);
+      const page = await open(graphPath(notebook, "&display=network"), viewport);
       try {
         const { boxes, canvas } = await page.evaluate(() => {
           const rect = (element: Element) => {
@@ -501,29 +502,49 @@ test(`${browserName}: a no-links state taller than the canvas scrolls to its way
   }
 }, 30_000);
 
-test(`${browserName}: the server render and the mounted graph share their boxes`, async () => {
-  for (const query of ["", "&list=1&links=unlinked"]) {
-    const path = new URL(graphPath("hand01", query), server.url).href;
-    const boxes = (page: Page) =>
-      page.evaluate(() =>
-        [".notebook-graph__head", ".notebook-graph__filters", ".notebook-graph__body", ".notebook-graph__list table"].map((selector) => {
-          const box = document.querySelector(selector)?.getBoundingClientRect();
-          return box ? [Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)] : null;
-        }),
-      );
-    const still = await browser.newContext({ viewport: { width: 1440, height: 900 }, javaScriptEnabled: false });
-    const served = await still.newPage();
-    await served.goto(path);
-    const before = await boxes(served);
-    await still.close();
-    const page = await open(path);
-    try {
-      expect(await boxes(page)).toEqual(before);
-    } finally {
-      await close(page);
+test(`${browserName}: the server render and mounted defaults share controls and boxes at both widths`, async () => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    for (const query of ["", "&list=1&links=unlinked"]) {
+      const path = new URL(graphPath("hand01", query), server.url).href;
+      const frame = (page: Page) =>
+        page.evaluate(() => {
+          const visible = (element: Element) => element.getClientRects().length > 0;
+          return {
+            checked: [...document.querySelectorAll('[aria-label="Display"] [aria-checked="true"]')].find(visible)?.textContent,
+            depth: [...document.querySelectorAll(".notebook-graph__depth")].some(visible),
+            boxes: [".notebook-graph__head", ".notebook-graph__filters", ".notebook-graph__body", ".notebook-graph__list table"].map(
+              (selector) => {
+                const box = document.querySelector(selector)?.getBoundingClientRect();
+                return box ? [box.x, box.y, box.width, box.height].map(Math.round) : null;
+              },
+            ),
+          };
+        });
+      const still = await browser.newContext({ viewport, javaScriptEnabled: false });
+      let before: Awaited<ReturnType<typeof frame>>;
+      try {
+        const served = await still.newPage();
+        await served.goto(path);
+        before = await frame(served);
+      } finally {
+        await still.close();
+      }
+      const page = await open(path, viewport);
+      try {
+        expect(await frame(page)).toEqual(before);
+        const initial = await page.evaluate(() => window.notebookGraphFixture!);
+        expect(initial.clientFrame).toEqual(initial.serverFrame);
+        expect(initial.clientFrame.checked?.trim()).toBe(viewport.width < 768 ? "Neighborhood" : "Network");
+        expect(initial.clientFrame.depth).toBe(viewport.width < 768 && query === "");
+      } finally {
+        await close(page);
+      }
     }
   }
-}, 30_000);
+}, 60_000);
 
 test(`${browserName}: the layout of 300 notes is computed once, in bounded time`, async () => {
   const page = await open(graphPath("big001"));
@@ -536,3 +557,286 @@ test(`${browserName}: the layout of 300 notes is computed once, in bounded time`
     await close(page);
   }
 }, 60_000);
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`${browserName}: Neighborhood centre and directional first ring at ${viewport.width}`, async () => {
+    const page = await open(graphPath("hand01", "&display=neighborhood"), viewport);
+    try {
+      const centre = await nodeCenter(page, WAREHOUSE);
+      const canvas = (await page.locator(".notebook-graph__svg").boundingBox())!;
+      expect(Math.abs(centre.x - canvas.x - canvas.width / 2)).toBeLessThan(2);
+      expect(await page.locator(`[data-node="${WAREHOUSE}"]`).getAttribute("aria-label")).toEndWith(", current note");
+      expect(await page.locator('[data-node][data-ring="0"]').getAttribute("data-node")).toBe(WAREHOUSE);
+      const outgoing = ["anl", "ann", "kuehl", "lpl", "ret", "schad", "glos"];
+      const incoming = ["start", "einp"];
+      for (const key of outgoing) {
+        const at = await nodeCenter(page, HANDBOOK_IDS[key]!);
+        expect(viewport.width < 768 ? at.y - centre.y : at.x - centre.x).toBeGreaterThan(0);
+      }
+      for (const key of incoming) {
+        const at = await nodeCenter(page, HANDBOOK_IDS[key]!);
+        expect(viewport.width < 768 ? at.y - centre.y : at.x - centre.x).toBeLessThan(0);
+      }
+      expect(await page.locator('[data-node][tabindex="0"]').count()).toBe(1);
+      expect(await page.locator("[data-node][data-current]").count()).toBe(1);
+      const colours = await page.evaluate(() => {
+        const accent = getComputedStyle(document.querySelector(".notebook-graph__ring")!).stroke;
+        return {
+          accent,
+          others: [...document.querySelectorAll("[data-node]:not([data-current]) .notebook-graph__disc")].flatMap((el) => [
+            getComputedStyle(el).fill,
+            getComputedStyle(el).stroke,
+          ]),
+        };
+      });
+      expect(colours.others).not.toContain(colours.accent);
+      expect(await page.locator(".notebook-graph__svg").getAttribute("aria-label")).toContain("Neighborhood display");
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
+
+for (const depth of [1, 2]) {
+  test(`${browserName}: Space replaces the centre and history preserves it and depth ${depth}`, async () => {
+    const page = await open(graphPath("hand01", `&display=neighborhood&depth=${depth}&view=favorites&tag=x`));
+    const target = HANDBOOK_IDS.kuehl!;
+    try {
+      const length = await page.evaluate(() => history.length);
+      await page.locator(`[data-node="${target}"]`).focus();
+      await page.keyboard.press("Space");
+      await page.waitForFunction((id) => new URL(location.href).searchParams.get("note") === id, target);
+      expect(await page.evaluate(() => history.length)).toBe(length);
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("data-node"))).toBe(target);
+      expect(await page.locator(`[data-node="${target}"]`).getAttribute("aria-label")).toEndWith(", current note");
+      expect(await page.locator("[data-centred-announcement]").textContent()).toContain("“Kühlkette” is now in the center");
+      expect(await page.locator("[data-centred-announcement]").textContent()).toMatch(/links to \d+, linked from \d+/);
+      expect(search(page).get("view")).toBe("favorites");
+      expect(search(page).get("tag")).toBe("x");
+      expect(search(page).get("from")).toBe("book");
+      const centred = page.url();
+      await page.keyboard.press("Space");
+      expect(page.url()).toBe(centred);
+      expect(await page.evaluate(() => history.length)).toBe(length);
+      await page.reload();
+      await settled(page);
+      expect(await page.locator("[data-node][data-current]").getAttribute("data-node")).toBe(target);
+      expect(await page.getByRole("radio", { name: depth === 1 ? "1 step" : "2 steps", exact: true }).getAttribute("aria-checked")).toBe(
+        "true",
+      );
+      expect((await page.locator('[data-node][data-ring="2"]').count()) === 0).toBe(depth === 1);
+      await page.locator(`[data-node="${target}"]`).focus();
+      await page.keyboard.press("Enter");
+      await page.waitForURL(`**/app/notebooks/hand01/notes/${target}?mode=book`);
+      await page.goBack();
+      await settled(page);
+      expect(page.url()).toBe(centred);
+      expect(await page.locator("[data-node][data-current]").getAttribute("data-node")).toBe(target);
+      expect(await page.getByRole("radio", { name: depth === 1 ? "1 step" : "2 steps", exact: true }).getAttribute("aria-checked")).toBe(
+        "true",
+      );
+      expect(await page.getByRole("link", { name: "Close graph", exact: true }).getAttribute("href")).toBe(
+        `/app/notebooks/hand01/notes/${target}?mode=book`,
+      );
+      await page.getByRole("radio", { name: "Network", exact: true }).click();
+      await settled(page);
+      expect(await page.locator("[data-node][data-current]").getAttribute("data-node")).toBe(target);
+      expect(await page.locator('[data-label][data-kind="current"]').getAttribute("data-label")).toBe(target);
+      await page.getByRole("button", { name: "As list", exact: true }).click();
+      expect(await page.locator(".notebook-graph__list-title[aria-current]").textContent()).toBe("Kühlkette");
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
+
+test(`${browserName}: touch selection offers Move to center and clears after recentering`, async () => {
+  const page = await open(
+    graphPath("hand01", "&display=neighborhood"),
+    { width: 820, height: 1180 },
+    { hasTouch: true, isMobile: browserName === "chromium" },
+  );
+  try {
+    const target = HANDBOOK_IDS.kuehl!;
+    const at = await nodeCenter(page, target);
+    await page.touchscreen.tap(at.x, at.y);
+    const bar = page.getByRole("region", { name: "Selected note" });
+    await bar.waitFor();
+    expect(search(page).has("note")).toBe(false);
+    await bar.getByRole("button", { name: "Move to center", exact: true }).click();
+    expect(search(page).get("note")).toBe(target);
+    expect(await bar.count()).toBe(0);
+    expect(await page.locator("[data-node][data-current]").getAttribute("data-node")).toBe(target);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`${browserName}: device default, explicit Network and arrow switcher at ${viewport.width}`, async () => {
+    const page = await open(graphPath("hand01"), viewport);
+    try {
+      const expected = viewport.width < 768 ? "neighborhood" : "network";
+      expect(await page.locator(".notebook-graph__svg").getAttribute("data-display")).toBe(expected);
+      const switcher = page.getByRole("radiogroup", { name: "Display", exact: true });
+      expect(await switcher.count()).toBe(1);
+      expect(await switcher.isVisible()).toBe(true);
+      expect(await switcher.evaluate((el) => !!el.closest('.notebook-graph__head[role="toolbar"]'))).toBe(true);
+      const checked = switcher.locator('[aria-checked="true"]');
+      await checked.focus();
+      await page.keyboard.press(expected === "network" ? "ArrowRight" : "ArrowLeft");
+      expect(search(page).get("display")).toBe(expected === "network" ? "neighborhood" : "network");
+      await page.keyboard.press(expected === "network" ? "ArrowLeft" : "ArrowRight");
+      expect(search(page).get("display")).toBe(expected);
+      await switcher.getByRole("radio", { name: "Network", exact: true }).click();
+      await page.reload();
+      await settled(page);
+      expect(await page.locator(".notebook-graph__svg").getAttribute("data-display")).toBe("network");
+      expect(search(page).get("display")).toBe("network");
+      expect(await page.locator(".notebook-graph__depth").count()).toBe(0);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
+
+for (const notebook of ["hand01", "big001"])
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    test(`${browserName}: Neighborhood labels and headings never overlap or leave ${notebook} at ${viewport.width}`, async () => {
+      const page = await open(graphPath(notebook, "&display=neighborhood"), viewport);
+      try {
+        const { boxes, canvas, status, chipSlack } = await page.evaluate(() => {
+          const rect = (element: Element) => {
+            const r = element.getBoundingClientRect();
+            return { x0: r.left, y0: r.top, x1: r.right, y1: r.bottom };
+          };
+          const current = document.querySelector<SVGTextElement>('.notebook-graph__label[data-kind="current"]')!;
+          return {
+            boxes: [...document.querySelectorAll(".notebook-graph__label, .notebook-graph__heading")].map(rect),
+            canvas: rect(document.querySelector(".notebook-graph__svg")!),
+            status: rect(document.querySelector(".notebook-graph__status")!),
+            // The chip is measured, the text is rendered: they agree only when the bold face was loaded before measuring.
+            chipSlack:
+              document.querySelector<SVGRectElement>(".notebook-graph__chip")!.width.baseVal.value - current.getComputedTextLength(),
+          };
+        });
+        expect(boxes.length).toBeGreaterThan(2);
+        expect(chipSlack).toBeGreaterThan(9);
+        expect(chipSlack).toBeLessThan(11);
+        for (const [index, a] of boxes.entries()) {
+          expect(a.x0).toBeGreaterThanOrEqual(canvas.x0);
+          expect(a.x1).toBeLessThanOrEqual(canvas.x1);
+          expect(a.y0).toBeGreaterThanOrEqual(canvas.y0);
+          // Nothing hides under the status line at the bottom of the canvas.
+          expect(a.y1).toBeLessThanOrEqual(status.y0);
+          for (const b of boxes.slice(index + 1))
+            expect(Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > 0.5 && Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) > 0.5).toBe(false);
+        }
+      } finally {
+        await close(page);
+      }
+    }, 30_000);
+  }
+
+test(`${browserName}: isolated and filter-hidden centres offer a way out`, async () => {
+  const page = await open(graphPath("hand01", `&display=neighborhood&note=${HANDBOOK_IDS.rampe}`));
+  try {
+    expect(await page.getByText("“Alte Rampenzeiten” is not linked yet", { exact: true }).isVisible()).toBe(true);
+    expect(await page.getByRole("link", { name: "Go to note", exact: true }).getAttribute("href")).toBe(
+      `/app/notebooks/hand01/notes/${HANDBOOK_IDS.rampe}?mode=book`,
+    );
+    await page.getByRole("button", { name: "Show whole notebook", exact: true }).click();
+    await settled(page);
+    expect(search(page).get("display")).toBe("network");
+    expect(await nodes(page).count()).toBe(49);
+    await page.goto(new URL(graphPath("hand01", "&display=neighborhood&links=unlinked"), server.url).href);
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
+    expect(await page.getByText("No link of “Wareneingang” matches the filters", { exact: true }).isVisible()).toBe(true);
+    expect(await page.getByText("The current filters hide all links of this note.", { exact: true }).isVisible()).toBe(true);
+    await page.getByRole("button", { name: "Reset filters", exact: true }).click();
+    await settled(page);
+    expect(await page.locator('[data-ring="1"]').count()).toBeGreaterThan(0);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: depth changes ring two without moving the toolbars`, async () => {
+  const page = await open(graphPath("hand01", "&display=neighborhood"));
+  try {
+    const boxes = () =>
+      page.evaluate(() =>
+        [".notebook-graph__head", ".notebook-graph__filters", ".notebook-graph__body"].map((selector) => {
+          const r = document.querySelector(selector)!.getBoundingClientRect();
+          return [r.x, r.y, r.width, r.height];
+        }),
+      );
+    const before = await boxes();
+    expect(await page.locator('[data-node][data-ring="2"]').count()).toBeGreaterThan(0);
+    await page.getByRole("radio", { name: "1 step", exact: true }).click();
+    expect(await page.locator('[data-node][data-ring="2"]').count()).toBe(0);
+    expect(await boxes()).toEqual(before);
+    expect(search(page).get("depth")).toBe("1");
+    await page.getByRole("radio", { name: "2 steps", exact: true }).click();
+    expect(await page.locator('[data-node][data-ring="2"]').count()).toBeGreaterThan(0);
+    expect(await boxes()).toEqual(before);
+    expect(search(page).has("depth")).toBe(false);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: neighborhood search uses local hits and preserves zoom; dragging a node does nothing`, async () => {
+  const page = await open(graphPath("hand01", "&display=neighborhood&depth=1"));
+  try {
+    const filter = page.getByRole("toolbar", { name: "Graph filters" });
+    const initial = await positions(page);
+    await filter.getByRole("button", { name: "Zoom in", exact: true }).click();
+    const target = HANDBOOK_IDS.kuehl!;
+    await page.waitForFunction(([id, old]) => document.querySelector(`[data-node="${id}"]`)?.getAttribute("transform") !== old, [
+      target,
+      initial[target],
+    ] as const);
+    const zoomed = await positions(page);
+    const find = page.getByRole("searchbox", { name: "Find a note in the graph" });
+    await find.fill("Kühl");
+    await page.waitForFunction(() => document.querySelectorAll("[data-node][data-match]").length === 1);
+    expect(await positions(page)).toEqual(zoomed);
+    await page.keyboard.press("Enter");
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-node"))).toBe(target);
+    await page.keyboard.press("Escape");
+    expect(await find.inputValue()).toBe("");
+    await find.fill("plan");
+    expect(await page.locator(".notebook-graph__status-text").first().textContent()).toContain(
+      "1 match for “plan” in this neighborhood, 2 in the notebook",
+    );
+    await page.keyboard.press("Enter");
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-node"))).toBe(HANDBOOK_IDS.einp!);
+    await find.fill("Versand");
+    expect(await page.locator(".notebook-graph__status-text").first().textContent()).toContain(
+      "“Versand” is not in this neighborhood, but 3× in the notebook",
+    );
+    await find.fill("not-a-note");
+    expect(await page.locator(".notebook-graph__status-text").first().textContent()).toContain("No note is called “not-a-note”");
+    await find.fill("");
+    const at = await nodeCenter(page, target);
+    const before = await positions(page);
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.down();
+    await page.mouse.move(at.x + 50, at.y + 30, { steps: 5 });
+    await page.mouse.up();
+    expect(page.url()).toContain("mode=graph");
+    expect(await positions(page)).toEqual(before);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
