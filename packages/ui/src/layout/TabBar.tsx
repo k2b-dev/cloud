@@ -20,8 +20,8 @@ export type TabBarProps = {
   /**
    * `bar` (the default) is flat on the page canvas and pads the bottom safe area. `floating` is a rounded bar that the
    * host places above the content, away from the safe areas; its open item is a raised chip. The host may paint it
-   * with `--k2b-tab-bar-background` and color the open item with `--k2b-tab-bar-selected-background` and
-   * `--k2b-tab-bar-selected-color`.
+   * with `--k2b-tab-bar-background`, color its items with `--k2b-tab-bar-color`, and color the open item with
+   * `--k2b-tab-bar-selected-background` and `--k2b-tab-bar-selected-color`.
    */
   variant?: "bar" | "floating";
   class?: string;

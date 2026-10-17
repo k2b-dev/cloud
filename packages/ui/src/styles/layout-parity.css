@@ -2926,7 +2926,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 .k2b-ui .k2b-tab-bar[data-variant="floating"] a {
   min-height: 3.125rem;
   border-radius: 1.25rem;
-  color: var(--k2b-text-secondary);
+  color: var(--k2b-tab-bar-color, var(--k2b-text-secondary));
 }
 
 .k2b-ui .k2b-tab-bar[data-variant="floating"] a[aria-current="page"],
@@ -2938,7 +2938,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 }
 
 .k2b-ui .k2b-tab-bar[data-variant="floating"]:has(a[data-k2b-pending]) a[aria-current="page"]:not([data-k2b-pending]) {
-  color: var(--k2b-text-secondary);
+  color: var(--k2b-tab-bar-color, var(--k2b-text-secondary));
   background: transparent;
   box-shadow: none;
 }

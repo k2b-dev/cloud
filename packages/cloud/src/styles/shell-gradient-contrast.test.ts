@@ -66,11 +66,29 @@ const appearances = appIds().flatMap((id) => {
   if (!accent) throw new Error(`${id} appearance needs an accent`);
   const from = color("from") ?? accent;
   const to = color("to") ?? from;
-  return [{ id, accent, from, to }];
+  const strength = Number(appearance.match(/\bstrength:\s*(\d+)/)?.[1] ?? 20);
+  return [{ id, accent, from, to, via: color("via") ?? "#ffffff", strength }];
 });
+// A third-party app may declare any color at full strength; the shell must stay readable for it too.
+const extremes = ["#000000", "#ffffff", "#0000ff", "#ffff00"].map((color) => ({
+  id: `extreme ${color}`,
+  accent: color,
+  from: color,
+  to: color,
+  via: color,
+  strength: 100,
+}));
+// The phone canvas caps the declared tint where text sits on it (`min(…, 30%)` light, `min(…, 15%)` dark).
+const phoneCap = (dark: boolean) => {
+  const rule = shell.match(
+    dark ? /--cloud-canvas-dark-strength: min\([^,]+, (\d+)%\)/ : /--cloud-canvas-strength: min\([^,]+, (\d+)%\)/,
+  )?.[1];
+  if (!rule) throw new Error("Cannot read the phone canvas cap");
+  return Number(rule) / 100;
+};
 
-describe("built-in shell gradient contrast", () => {
-  for (const appearance of appearances) {
+describe("shell gradient contrast for built-in and extreme app colors", () => {
+  for (const appearance of [...appearances, ...extremes]) {
     for (const dark of [false, true]) {
       test(`${appearance.id} ${dark ? "dark" : "light"}: labels, titles, icons and selected item meet WCAG`, () => {
         // The light canvas uses Tailwind zinc-50 (oklch in Tailwind's source);
@@ -93,11 +111,23 @@ describe("built-in shell gradient contrast", () => {
         if (dark) expect(SHELL_DARK_SELECTED_TINT).toBe(weight(selectedBackground[1]!));
         const selected = dark ? mix(accent, weight(selectedBackground[1]!), surface) : surface;
         const selectedText = rgb(shellInk(appearance.accent)[dark ? "dark" : "light"]);
-        const ratios = stops.flatMap((stop, index) => [
-          { kind: `bar label at stop ${index}`, ratio: contrast(secondary, stop), minimum: 4.5 },
-          { kind: `header title at stop ${index}`, ratio: contrast(text, stop), minimum: 4.5 },
-          { kind: `rail icon at stop ${index}`, ratio: contrast(secondary, stop), minimum: 3 },
-        ]);
+        // The phone canvas behind the title row: the app's own gradient, capped.
+        const strength = Math.min(dark ? Math.round(appearance.strength / 2) / 100 : appearance.strength / 100, phoneCap(dark));
+        const phoneStops = [
+          mix(from, strength, canvas),
+          dark ? canvas : mix(rgb(appearance.via), strength, canvas),
+          mix(to, strength, canvas),
+        ];
+        const ratios = [
+          ...stops.flatMap((stop, index) => [
+            { kind: `bar label at stop ${index}`, ratio: contrast(text, stop), minimum: 4.5 },
+            { kind: `rail icon at stop ${index}`, ratio: contrast(secondary, stop), minimum: 3 },
+          ]),
+          ...phoneStops.flatMap((stop, index) => [
+            { kind: `header title at phone stop ${index}`, ratio: contrast(text, stop), minimum: 4.5 },
+            { kind: `header control at phone stop ${index}`, ratio: contrast(secondary, stop), minimum: 4.5 },
+          ]),
+        ];
         ratios.push({ kind: "selected item", ratio: contrast(selectedText, selected), minimum: 4.5 });
         expect(
           ratios.filter(({ ratio, minimum }) => !Number.isFinite(ratio) || ratio < minimum),

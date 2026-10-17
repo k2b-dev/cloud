@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { defaultRailPreferences, isRailShortcutHref, RailPreferencesSchema } from "../contracts/rail-preferences";
-import { phoneBarLinks, projectRailNavigation, type RailApp, railLinkActive, sortRailApps } from "./rail-navigation";
+import { phoneBarItems, phoneBarLinks, projectRailNavigation, type RailApp, railLinkActive, sortRailApps } from "./rail-navigation";
 
 const app = (id: string, label: string, defaultVisible = true): RailApp => ({
   id,
@@ -150,5 +150,25 @@ describe("phone bar links", () => {
   test("a current app inside the limit leaves the selection unchanged", () => {
     expect(phoneBarLinks(navigation, "/app/b", 4)).toEqual(phoneBarLinks(navigation, "/", 4));
     expect(phoneBarLinks(navigation, "/app/pinned", 4)).toEqual(phoneBarLinks(navigation, "/", 4));
+  });
+  test("Home leads to / and is the open item there and on the start page that / opens", () => {
+    const home = { label: "Home", path: "/app/dashboard?view=today" };
+    const current = (path: string) =>
+      phoneBarItems(navigation, path, home)
+        .filter((item) => item.current)
+        .map((item) => item.id);
+    expect(phoneBarItems(navigation, "/", home)[0]).toMatchObject({ id: "home", href: "/", label: "Home", icon: "ti ti-home" });
+    expect(phoneBarItems(navigation, "/", home)).toHaveLength(5);
+    expect(current("/")).toEqual(["home"]);
+    expect(current("/app/dashboard")).toEqual(["home"]);
+    expect(current("/app/dashboard/widgets")).toEqual(["home"]);
+    expect(current("/app/dashboards")).toEqual([]);
+    expect(current("/app/b/inbox")).toEqual(["b"]);
+    // A start page that is an app in the bar marks the app, not Home.
+    expect(
+      phoneBarItems(navigation, "/app/b", { label: "Home", path: "/app/b" })
+        .filter((item) => item.current)
+        .map((item) => item.id),
+    ).toEqual(["b"]);
   });
 });

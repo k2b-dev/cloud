@@ -298,11 +298,12 @@ describe("Cloud layouts SSR", () => {
     expect(html).not.toContain("hidden min-w-0 items-center lg:flex");
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
     expect(html).toContain('class="layout-rail hidden w-14 shrink-0 flex-col md:flex"');
-    // Home stays in the rail; phones get Start and the person's apps in the server-rendered bar.
+    // Home stays in the rail; phones get Home and the person's apps in the bar, which the server renders in its
+    // final form inside the shell's island.
     const chrome = withoutIslands(html);
     expect(chrome).toMatch(/<aside class="layout-rail[^"]*"><div class="layout-rail-logo[^"]*"><a href="\/" aria-label="Home">/);
     expect(chrome.match(/<header[\s\S]*?<\/header>/)?.[0]).not.toContain('href="/"');
-    const bar = chrome.slice(chrome.indexOf('class="cloud-tab-bar"'));
+    const bar = html.slice(html.indexOf('class="cloud-tab-bar"'));
     expect(bar).toContain('href="/"');
     expect(bar).toContain('data-tab="home"');
     const start = bar.match(/<a href="\/"[^>]*>([\s\S]*?)<\/a>/)?.[1];

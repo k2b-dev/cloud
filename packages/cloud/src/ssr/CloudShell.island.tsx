@@ -1,5 +1,5 @@
-import { useLocale } from "@k2b/ui";
-import { createEffect } from "solid-js";
+import { TabBar, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { AppLaunchpadButton, setAppLaunchpadContext } from "./app-launchpad";
 import GlobalSearchTrigger from "./GlobalSearchTrigger";
 import LayoutBreadcrumbs from "./LayoutBreadcrumbs";
@@ -9,11 +9,14 @@ import type { LayoutBreadcrumb } from "./layout-runtime";
 import ProfilePreferences from "./ProfilePreferences";
 import { platformMessages } from "./platform-messages";
 import RailApps from "./RailApps";
+import { RAIL_PREFERENCES_EVENT, readRailContext } from "./rail-context";
+import { phoneBarItems, projectRailNavigation } from "./rail-navigation";
 import ShellFocusToggle from "./ShellFocusToggle";
 import { useShellData } from "./shell-data";
 
 type CloudShellProps =
   | { slot: "rail"; currentPath: string }
+  | { slot: "bar"; currentPath: string }
   | { slot: "header"; authenticated: boolean; title?: string; launchpad: boolean; breadcrumbs?: LayoutBreadcrumb[] };
 
 /**
@@ -21,7 +24,31 @@ type CloudShellProps =
  * own the frame and the plain links around it as server markup.
  */
 export default function CloudShell(props: CloudShellProps) {
-  return props.slot === "rail" ? <RailNavigation currentPath={props.currentPath} /> : <HeaderControls {...props} />;
+  if (props.slot === "rail") return <RailNavigation currentPath={props.currentPath} />;
+  if (props.slot === "bar") return <BarNavigation currentPath={props.currentPath} />;
+  return <HeaderControls {...props} />;
+}
+
+/** The phone bar; it follows saved rail preferences as the rail does. */
+function BarNavigation(props: { currentPath: string }) {
+  const data = useShellData();
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
+  const initial = data?.rail;
+  if (!data || !initial) return null;
+  const [settings, setSettings] = createSignal(initial);
+  onMount(() => {
+    const sync = () => setSettings(readRailContext()?.settings ?? initial);
+    window.addEventListener(RAIL_PREFERENCES_EVENT, sync);
+    onCleanup(() => window.removeEventListener(RAIL_PREFERENCES_EVENT, sync));
+  });
+  const items = createMemo(() =>
+    phoneBarItems(projectRailNavigation(data.apps, settings(), locale()), props.currentPath, {
+      label: t().home,
+      path: data.home ?? "/",
+    }),
+  );
+  return <TabBar variant="floating" label={t().apps} items={items()} />;
 }
 
 function RailNavigation(props: { currentPath: string }) {

@@ -1,3 +1,4 @@
+import type { TabBarItem } from "@k2b/ui";
 import type { RailPreferences, RailSnapshot } from "../contracts/rail-preferences";
 import { helpPageAppId } from "./layout-help-url";
 
@@ -76,4 +77,36 @@ export const phoneBarLinks = (navigation: { shortcuts: RailLink[]; apps: RailLin
   const current = links.findIndex((link) => railLinkActive(link, currentPath));
   if (current < limit) return links.slice(0, limit);
   return [...links.slice(0, limit - 1), links[current]!];
+};
+
+/** Start and four apps fill the phone bar's five places. */
+const PHONE_BAR_APPS = 4;
+
+const underPath = (pathname: string, path: string) => pathname === path || pathname.startsWith(`${path.replace(/\/$/, "")}/`);
+
+/**
+ * The phone bar: Home, then the person's first apps in their rail order. Home leads to `/`, which opens the
+ * installation's start page (`home`), so it is the open item on `/` and on that start page, unless an app in the bar
+ * is open there.
+ */
+export const phoneBarItems = (
+  navigation: { shortcuts: RailLink[]; apps: RailLink[] },
+  currentPath: string,
+  home: { label: string; path: string },
+): TabBarItem[] => {
+  const links = phoneBarLinks(navigation, currentPath, PHONE_BAR_APPS);
+  const items = links.map((link) => ({
+    id: link.id,
+    label: link.label,
+    icon: link.iconClass,
+    href: link.href,
+    current: railLinkActive(link, currentPath),
+  }));
+  const pathname = new URL(currentPath, "https://cloud.invalid").pathname;
+  const start = new URL(home.path, "https://cloud.invalid").pathname;
+  const atHome = pathname === "/" || (!items.some((item) => item.current) && underPath(pathname, start));
+  return [
+    { id: "home", label: home.label, icon: "ti ti-home", href: "/", current: atHome },
+    ...items.map((item) => ({ ...item, current: !atHome && item.current })),
+  ];
 };

@@ -1096,7 +1096,15 @@ describe("soft tablet and phone shell", () => {
               await page.locator(scroller).evaluate((area) => {
                 area.scrollTop = 0;
               });
-              await page.locator(row).last().focus();
+              // Focus scrolls the control into view the way scrollIntoView's "nearest" does, which honours
+              // scroll padding; WebKit does not scroll for a programmatic focus(), so the test asks for it.
+              await page
+                .locator(row)
+                .last()
+                .evaluate((element: HTMLElement) => {
+                  element.focus();
+                  element.scrollIntoView({ block: "nearest" });
+                });
               const focused = await page.evaluate(() => ({
                 bottom: document.activeElement!.getBoundingClientRect().bottom,
                 bar: document.querySelector(".cloud-tab-bar .k2b-tab-bar")!.getBoundingClientRect().top,

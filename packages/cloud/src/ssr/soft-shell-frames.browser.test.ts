@@ -60,8 +60,8 @@ import { fromJSON } from "seroval";
 import { LocaleProvider, installAppWorkspaceController } from "@k2b/ui";
 import CloudShell from "./CloudShell.island";
 window.mountShell = () => {
-  const islands = [...document.querySelectorAll("solid-island")].filter(element => element.innerHTML.includes("layout-rail-navigation") || element.closest(".layout-header"));
-  if (islands.length !== 2) throw new Error("Expected the real rail and header CloudShell islands, got " + islands.length);
+  const islands = [...document.querySelectorAll("solid-island")].filter(element => element.innerHTML.includes("layout-rail-navigation") || element.closest(".layout-header, .cloud-tab-bar"));
+  if (islands.length !== 3) throw new Error("Expected the real rail, header, and bar CloudShell islands, got " + islands.length);
   for (const island of islands) {
     const props = fromJSON(JSON.parse(island.dataset.props));
     island.replaceChildren();
@@ -142,4 +142,31 @@ requestAnimationFrame(() => { window.serverFrame = window.measureShell(); });
       }, 60_000);
     }
   }
+});
+
+describe("the phone bar follows saved rail preferences", () => {
+  test("390×844: hiding an app in Customize app bar takes it out of the bar without a reload", async () => {
+    const { context, page } = await open(phone, "/app/mail/inbox?overview=1", { attached: false });
+    try {
+      // A real origin, so the mounted shell can read its cookies.
+      const markup = await html("/app/mail/inbox?overview=1");
+      await page.route("https://shell.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }));
+      await page.goto("https://shell.example.test/app/mail/inbox?overview=1");
+      await page.addScriptTag({ content: client });
+      await page.evaluate(() => (window as unknown as { mountShell: () => void }).mountShell());
+      const hrefs = () => page.locator(".cloud-tab-bar a").evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+      expect(await hrefs()).toEqual(["/", "/app/mail"]);
+      // What RailEditor's publishRailPreferences does after saving: new shell data, then the event.
+      await page.evaluate(() => {
+        const element = document.getElementById("cloud-shell-data")!;
+        const data = JSON.parse(element.textContent!);
+        data.rail = { ...data.rail, visibility: { ...data.rail.visibility, mail: false } };
+        element.textContent = JSON.stringify(data);
+        window.dispatchEvent(new CustomEvent("cloud:rail-preferences"));
+      });
+      expect(await hrefs()).toEqual(["/"]);
+    } finally {
+      await context.close();
+    }
+  });
 });

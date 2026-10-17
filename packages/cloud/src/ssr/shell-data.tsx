@@ -11,6 +11,8 @@ export type ShellData = {
   apps: RailApp[];
   /** Signed-in pages: the person's rail preferences. */
   rail?: RailSnapshot;
+  /** Signed-in pages: the start page that `/` opens, for the phone bar's Home. */
+  home?: string;
   legalLinks: AppLaunchpadLegalLink[];
   /** Signed-in pages: the person, for the profile menu and the phone menu's profile actions. */
   profile?: { name: string; avatarSrc?: string; appHref?: string };

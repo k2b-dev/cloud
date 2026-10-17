@@ -67,6 +67,7 @@ Set these custom properties on the bar or an ancestor to match its host:
 | --- | --- | --- |
 | `--k2b-tab-bar-background` | `--k2b-surface-elevated` | Bar background, including a gradient |
 | `--k2b-tab-bar-selected-background` | `--k2b-surface` | Selected item's background |
+| `--k2b-tab-bar-color` | `--k2b-text-secondary` | Icons and labels of the other items |
 | `--k2b-tab-bar-selected-color` | `--k2b-action` | Selected item's icon and label |
 
 ```tsx
