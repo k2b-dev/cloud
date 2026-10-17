@@ -890,3 +890,65 @@ test("resource URLs use the base and resource key instead of the external ID", (
     permalink: "https://cloud.test/open/pulse.resource/~Base01%2Fhost%3Aa%2Fb",
   });
 });
+
+describe("Pulse data store administration", () => {
+  const fixturePassword = "obviously-fake-cli-store-password";
+  test("every admin command has help without fetching", async () => {
+    for (const command of ["get", "set", "check", "setup-sql"]) {
+      const context = createContext(["admin", "store", command, "--help"]);
+      await pulseCli.run(context.ctx);
+      expect(context.lines.join("\n")).toContain(`pulse admin store ${command}`);
+      expect(context.calls).toHaveLength(0);
+    }
+  });
+  test("setup-sql transports the file password only in the body and prints only salted SQL", async () => {
+    const { buildSetupSql, hashServicePassword } = await import("./store/setup-sql");
+    const path = join(tmpdir(), `pulse-store-cli-${crypto.randomUUID()}.password`);
+    const hash = await hashServicePassword(fixturePassword);
+    const sql = buildSetupSql({ user: "pulse_fixture", passwordSha256Hex: hash.sha256Hex, saltHex: hash.saltHex });
+    await Bun.write(path, fixturePassword + "\n");
+    try {
+      const context = createContext(["admin", "store", "setup-sql"], { "password-file": path }, [jsonResponse({ sql })]);
+      await pulseCli.run(context.ctx);
+      expect(context.lines.join("\n")).toBe(sql);
+      expect(context.lines.join("\n")).not.toContain(fixturePassword);
+      expect(context.calls[0]?.path).toBe("/api/pulse/admin/store/setup-sql");
+      expect(context.calls[0]?.path).not.toContain(fixturePassword);
+      expect(JSON.parse(String(context.calls[0]?.init?.body))).toEqual({ password: fixturePassword });
+    } finally {
+      await unlink(path);
+    }
+  });
+  for (const ok of [true, false])
+    test(`store set --password-file has no secret output (ok=${ok})`, async () => {
+      const path = join(tmpdir(), `pulse-store-cli-${crypto.randomUUID()}.password`);
+      await Bun.write(path, fixturePassword + "\n");
+      const status = {
+        ok,
+        ...(ok ? {} : { code: "AUTH_FAILED" }),
+        checkedAt: "2026-10-17T12:00:00Z",
+        steps: { reach: "ok", auth: ok ? "ok" : "failed", version: "skipped", rights: "skipped", profiles: "skipped" },
+      };
+      try {
+        const context = createContext(
+          ["admin", "store", "set"],
+          { url: "http://fixture.invalid:8123", user: "pulse_fixture", "password-file": path },
+          [
+            jsonResponse(
+              ok
+                ? { configured: true, url: "http://fixture.invalid:8123", user: "pulse_fixture", passwordSet: true, status }
+                : { code: "STORE_CHECK_FAILED", status },
+              ok ? 200 : 422,
+            ),
+          ],
+        );
+        if (ok) await pulseCli.run(context.ctx);
+        else await expect(pulseCli.run(context.ctx)).rejects.toThrow("AUTH_FAILED");
+        expect(JSON.stringify(context.lines) + JSON.stringify(context.tables)).not.toContain(fixturePassword);
+        expect(context.calls[0]?.path).not.toContain(fixturePassword);
+        expect(JSON.parse(String(context.calls[0]?.init?.body)).password).toBe(fixturePassword);
+      } finally {
+        await unlink(path);
+      }
+    });
+});

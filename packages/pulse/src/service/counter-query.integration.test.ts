@@ -8,7 +8,7 @@ import { queryMetricData } from "./query-execution";
 const enabled = testInfra.database !== undefined;
 const postgresTest = enabled ? test : test.skip;
 beforeAll(async () => {
-  if (enabled) await (await import("../schema")).initializeSchema();
+  if (enabled) await (await import("../migrate")).migrate();
 }, 30000);
 
 describe("observed counter pairs", () => {

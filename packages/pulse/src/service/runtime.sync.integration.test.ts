@@ -15,8 +15,8 @@ syncTest(
     const { pulseRuntime } = await import("./runtime");
     const { ingestBatch } = await import("./ingest-writer");
     const { newShortId } = await import("../lib/short-id");
-    const { initializeSchema } = await import("../schema");
-    await initializeSchema();
+    const { migrate } = await import("../migrate");
+    await migrate();
     const connection = await connectTestNats({ ignoreClusterUpdates: true });
     const namespace = testSyncNamespace("pulse-runtime");
     const sync = createSync({

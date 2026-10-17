@@ -1,26 +1,24 @@
-import { sql as database } from "bun";
+import type { TransactionSQL } from "bun";
 
-/** Install a fresh Pulse schema atomically. There is deliberately no upgrade path. */
-export const initializeSchema = async (): Promise<void> => {
-  await database.begin(async (sql) => {
-    await sql`SELECT pg_advisory_xact_lock(hashtextextended('pulse.schema.install', 0))`;
-    const [existing] = await sql`
+/** Version 1 baseline. Adopt a complete pre-ledger installation without replaying DDL. */
+export const installBaseline = async (sql: TransactionSQL): Promise<void> => {
+  const [existing] = await sql`
       SELECT to_regclass('pulse.installation') IS NOT NULL AS installed,
-             EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'pulse') AS populated
+             EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'pulse' AND tablename <> 'schema_migrations') AS populated
     `;
-    if (existing?.installed) return;
-    if (existing?.populated) {
-      throw new Error(
-        "Pulse requires a fresh schema. Remove the disposable Alpha schema explicitly before starting; automatic upgrades are not supported.",
-      );
-    }
-    await sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`.simple();
+  if (existing?.installed) return;
+  if (existing?.populated) {
+    throw new Error(
+      "Pulse requires a fresh schema. Remove the disposable Alpha schema explicitly before starting; automatic upgrades are not supported.",
+    );
+  }
+  await sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`.simple();
 
-    await sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`.simple();
+  await sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`.simple();
 
-    await sql`CREATE SCHEMA IF NOT EXISTS pulse`.simple();
+  await sql`CREATE SCHEMA IF NOT EXISTS pulse`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.bases (
       data_clear_error TEXT,
       data_clear_failed_at TIMESTAMPTZ,
@@ -42,17 +40,17 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE UNIQUE INDEX idx_pulse_bases_short_id ON pulse.bases(short_id)`.simple();
+  await sql`CREATE UNIQUE INDEX idx_pulse_bases_short_id ON pulse.bases(short_id)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_bases_created_by ON pulse.bases(created_by)`.simple();
+  await sql`CREATE INDEX idx_pulse_bases_created_by ON pulse.bases(created_by)`.simple();
 
-    await sql`
+  await sql`
     CREATE INDEX idx_pulse_bases_active_updated
     ON pulse.bases(updated_at DESC)
     WHERE deletion_started_at IS NULL
   `.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.base_deletions (
       base_id UUID PRIMARY KEY REFERENCES pulse.bases(id) ON DELETE CASCADE,
       requested_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
@@ -66,9 +64,9 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_base_deletions_status ON pulse.base_deletions(status, updated_at)`.simple();
+  await sql`CREATE INDEX idx_pulse_base_deletions_status ON pulse.base_deletions(status, updated_at)`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.base_data_clears (
       base_id UUID PRIMARY KEY REFERENCES pulse.bases(id) ON DELETE CASCADE,
       requested_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
@@ -83,9 +81,9 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_base_data_clears_status ON pulse.base_data_clears(status, updated_at)`.simple();
+  await sql`CREATE INDEX idx_pulse_base_data_clears_status ON pulse.base_data_clears(status, updated_at)`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.base_access (
       base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
       access_id UUID NOT NULL REFERENCES auth.access(id) ON DELETE CASCADE,
@@ -93,13 +91,13 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_base_access_access ON pulse.base_access(access_id)`.simple();
+  await sql`CREATE INDEX idx_pulse_base_access_access ON pulse.base_access(access_id)`.simple();
 
-    await sql`
+  await sql`
     CREATE TYPE pulse.source_kind AS ENUM ('metrics', 'http_ingest');
   `.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.sources (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       short_id TEXT NOT NULL CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
@@ -121,11 +119,11 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE UNIQUE INDEX idx_pulse_sources_short_id ON pulse.sources(short_id)`.simple();
+  await sql`CREATE UNIQUE INDEX idx_pulse_sources_short_id ON pulse.sources(short_id)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_sources_base ON pulse.sources(base_id, kind)`.simple();
+  await sql`CREATE INDEX idx_pulse_sources_base ON pulse.sources(base_id, kind)`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.source_scrapes (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
@@ -141,9 +139,9 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_source_scrapes_source_started ON pulse.source_scrapes(source_id, started_at DESC)`.simple();
+  await sql`CREATE INDEX idx_pulse_source_scrapes_source_started ON pulse.source_scrapes(source_id, started_at DESC)`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.ingest_idempotency (
       source_id UUID NOT NULL REFERENCES pulse.sources(id) ON DELETE CASCADE,
       idempotency_key TEXT NOT NULL,
@@ -156,13 +154,13 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_ingest_idempotency_expires ON pulse.ingest_idempotency(expires_at)`.simple();
+  await sql`CREATE INDEX idx_pulse_ingest_idempotency_expires ON pulse.ingest_idempotency(expires_at)`.simple();
 
-    await sql`
+  await sql`
     CREATE TYPE pulse.metric_type AS ENUM ('gauge', 'counter');
   `.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.metric_defs (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
@@ -175,7 +173,7 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.metric_series (
       resource_label TEXT,
       resource_type TEXT,
@@ -193,15 +191,15 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_metric_series_base_metric ON pulse.metric_series(base_id, metric_id)`.simple();
+  await sql`CREATE INDEX idx_pulse_metric_series_base_metric ON pulse.metric_series(base_id, metric_id)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_metric_series_source ON pulse.metric_series(source_id) WHERE source_id IS NOT NULL`.simple();
+  await sql`CREATE INDEX idx_pulse_metric_series_source ON pulse.metric_series(source_id) WHERE source_id IS NOT NULL`.simple();
 
-    await sql`CREATE INDEX idx_pulse_metric_series_resource ON pulse.metric_series(base_id, resource_key, last_seen_at DESC) WHERE resource_key IS NOT NULL`.simple();
+  await sql`CREATE INDEX idx_pulse_metric_series_resource ON pulse.metric_series(base_id, resource_key, last_seen_at DESC) WHERE resource_key IS NOT NULL`.simple();
 
-    await sql`CREATE UNIQUE INDEX idx_pulse_metric_series_unique_key ON pulse.metric_series(base_id, metric_id, series_key)`.simple();
+  await sql`CREATE UNIQUE INDEX idx_pulse_metric_series_unique_key ON pulse.metric_series(base_id, metric_id, series_key)`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.metric_series_dimensions (
       series_id UUID NOT NULL REFERENCES pulse.metric_series(id) ON DELETE CASCADE,
       key TEXT NOT NULL,
@@ -210,13 +208,13 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_metric_series_dimensions_lookup ON pulse.metric_series_dimensions(key, value, series_id)`.simple();
+  await sql`CREATE INDEX idx_pulse_metric_series_dimensions_lookup ON pulse.metric_series_dimensions(key, value, series_id)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_metric_series_dimensions_key_search ON pulse.metric_series_dimensions USING GIN (key gin_trgm_ops)`.simple();
+  await sql`CREATE INDEX idx_pulse_metric_series_dimensions_key_search ON pulse.metric_series_dimensions USING GIN (key gin_trgm_ops)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_metric_series_dimensions_value_search ON pulse.metric_series_dimensions USING GIN (value gin_trgm_ops)`.simple();
+  await sql`CREATE INDEX idx_pulse_metric_series_dimensions_value_search ON pulse.metric_series_dimensions USING GIN (value gin_trgm_ops)`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.metric_samples (
       base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
       series_id UUID NOT NULL REFERENCES pulse.metric_series(id) ON DELETE CASCADE,
@@ -227,9 +225,9 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_metric_samples_base_ts ON pulse.metric_samples(base_id, ts DESC)`.simple();
+  await sql`CREATE INDEX idx_pulse_metric_samples_base_ts ON pulse.metric_samples(base_id, ts DESC)`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.metric_hours (
       base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
       hour TIMESTAMPTZ NOT NULL,
@@ -237,9 +235,9 @@ export const initializeSchema = async (): Promise<void> => {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       PRIMARY KEY (base_id,hour)
     )`.simple();
-    await sql`CREATE INDEX idx_pulse_metric_hours_work ON pulse.metric_hours(state,hour,base_id)`.simple();
+  await sql`CREATE INDEX idx_pulse_metric_hours_work ON pulse.metric_hours(state,hour,base_id)`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.metric_rollups_hourly (
       base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
       series_id UUID NOT NULL REFERENCES pulse.metric_series(id) ON DELETE CASCADE,
@@ -255,9 +253,9 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_metric_rollups_hourly_base_bucket ON pulse.metric_rollups_hourly(base_id, bucket DESC)`.simple();
+  await sql`CREATE INDEX idx_pulse_metric_rollups_hourly_base_bucket ON pulse.metric_rollups_hourly(base_id, bucket DESC)`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.events (
       resource_label TEXT,
       resource_type TEXT,
@@ -283,21 +281,21 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_events_base_kind_ts ON pulse.events(base_id, kind, ts DESC)`.simple();
+  await sql`CREATE INDEX idx_pulse_events_base_kind_ts ON pulse.events(base_id, kind, ts DESC)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_events_base_recent ON pulse.events(base_id, ts DESC, recorded_at DESC)`.simple();
+  await sql`CREATE INDEX idx_pulse_events_base_recent ON pulse.events(base_id, ts DESC, recorded_at DESC)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_events_actor_ts ON pulse.events(base_id, actor_id, ts DESC) WHERE actor_id IS NOT NULL`.simple();
+  await sql`CREATE INDEX idx_pulse_events_actor_ts ON pulse.events(base_id, actor_id, ts DESC) WHERE actor_id IS NOT NULL`.simple();
 
-    await sql`CREATE INDEX idx_pulse_events_correlation_ts ON pulse.events(base_id, correlation_id, ts DESC) WHERE correlation_id IS NOT NULL`.simple();
+  await sql`CREATE INDEX idx_pulse_events_correlation_ts ON pulse.events(base_id, correlation_id, ts DESC) WHERE correlation_id IS NOT NULL`.simple();
 
-    await sql`CREATE INDEX idx_pulse_events_resource_ts ON pulse.events(base_id, resource_key, ts DESC) WHERE resource_key IS NOT NULL`.simple();
+  await sql`CREATE INDEX idx_pulse_events_resource_ts ON pulse.events(base_id, resource_key, ts DESC) WHERE resource_key IS NOT NULL`.simple();
 
-    await sql`CREATE INDEX idx_pulse_events_ts_brin ON pulse.events USING BRIN (ts) WITH (autosummarize = on)`.simple();
+  await sql`CREATE INDEX idx_pulse_events_ts_brin ON pulse.events USING BRIN (ts) WITH (autosummarize = on)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_events_sensitive_retention ON pulse.events(base_id, ts) WHERE sensitive <> '{}'::jsonb`.simple();
+  await sql`CREATE INDEX idx_pulse_events_sensitive_retention ON pulse.events(base_id, ts) WHERE sensitive <> '{}'::jsonb`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.states_current (
       resource_label TEXT,
       resource_type TEXT,
@@ -315,9 +313,9 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_states_current_resource ON pulse.states_current(base_id, resource_key, updated_at DESC) WHERE resource_key IS NOT NULL`.simple();
+  await sql`CREATE INDEX idx_pulse_states_current_resource ON pulse.states_current(base_id, resource_key, updated_at DESC) WHERE resource_key IS NOT NULL`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.state_changes (
       sequence BIGINT GENERATED ALWAYS AS IDENTITY,
       resource_label TEXT,
@@ -337,11 +335,11 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_state_changes_key_ts ON pulse.state_changes(base_id, state_key, changed_at DESC, sequence DESC)`.simple();
+  await sql`CREATE INDEX idx_pulse_state_changes_key_ts ON pulse.state_changes(base_id, state_key, changed_at DESC, sequence DESC)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_state_changes_resource_ts ON pulse.state_changes(base_id, resource_key, changed_at DESC) WHERE resource_key IS NOT NULL`.simple();
+  await sql`CREATE INDEX idx_pulse_state_changes_resource_ts ON pulse.state_changes(base_id, resource_key, changed_at DESC) WHERE resource_key IS NOT NULL`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.signal_fields (
       base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
       source_id UUID NOT NULL REFERENCES pulse.sources(id) ON DELETE CASCADE,
@@ -357,9 +355,9 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_signal_fields_catalog ON pulse.signal_fields(base_id, scope, signal_name, role, key)`.simple();
+  await sql`CREATE INDEX idx_pulse_signal_fields_catalog ON pulse.signal_fields(base_id, scope, signal_name, role, key)`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.observed_resources (
       search_text TEXT,
       id UUID NOT NULL DEFAULT gen_random_uuid(),
@@ -376,20 +374,20 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE UNIQUE INDEX idx_pulse_observed_resources_id ON pulse.observed_resources(id)`.simple();
+  await sql`CREATE UNIQUE INDEX idx_pulse_observed_resources_id ON pulse.observed_resources(id)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_observed_resources_base_seen ON pulse.observed_resources(base_id, last_seen_at DESC)`.simple();
+  await sql`CREATE INDEX idx_pulse_observed_resources_base_seen ON pulse.observed_resources(base_id, last_seen_at DESC)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_observed_resources_base_type ON pulse.observed_resources(base_id, resource_type, last_seen_at DESC)`.simple();
+  await sql`CREATE INDEX idx_pulse_observed_resources_base_type ON pulse.observed_resources(base_id, resource_type, last_seen_at DESC)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_observed_resources_sources ON pulse.observed_resources USING GIN (source_ids)`.simple();
+  await sql`CREATE INDEX idx_pulse_observed_resources_sources ON pulse.observed_resources USING GIN (source_ids)`.simple();
 
-    await sql`
+  await sql`
     CREATE INDEX idx_pulse_observed_resources_search
     ON pulse.observed_resources USING GIN (search_text gin_trgm_ops)
   `.simple();
 
-    await sql`
+  await sql`
     CREATE FUNCTION pulse.refresh_observed_resource_search_text()
     RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
@@ -398,26 +396,26 @@ export const initializeSchema = async (): Promise<void> => {
     END $$
   `.simple();
 
-    await sql`
+  await sql`
     CREATE TRIGGER pulse_observed_resources_search_text
     BEFORE INSERT OR UPDATE OF resource_key, resource_id, resource_type, label, dimensions
     ON pulse.observed_resources
     FOR EACH ROW EXECUTE FUNCTION pulse.refresh_observed_resource_search_text()
   `.simple();
 
-    await sql`CREATE INDEX idx_pulse_metric_defs_name_search ON pulse.metric_defs USING GIN (name gin_trgm_ops)`.simple();
+  await sql`CREATE INDEX idx_pulse_metric_defs_name_search ON pulse.metric_defs USING GIN (name gin_trgm_ops)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_metric_series_base_source_seen ON pulse.metric_series(base_id, source_id, last_seen_at DESC)`.simple();
+  await sql`CREATE INDEX idx_pulse_metric_series_base_source_seen ON pulse.metric_series(base_id, source_id, last_seen_at DESC)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_events_base_source_ts ON pulse.events(base_id, source_id, ts DESC)`.simple();
+  await sql`CREATE INDEX idx_pulse_events_base_source_ts ON pulse.events(base_id, source_id, ts DESC)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_states_base_source_updated ON pulse.states_current(base_id, source_id, updated_at DESC)`.simple();
+  await sql`CREATE INDEX idx_pulse_states_base_source_updated ON pulse.states_current(base_id, source_id, updated_at DESC)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_events_kind_search ON pulse.events USING GIN (kind gin_trgm_ops)`.simple();
+  await sql`CREATE INDEX idx_pulse_events_kind_search ON pulse.events USING GIN (kind gin_trgm_ops)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_states_key_search ON pulse.states_current USING GIN (state_key gin_trgm_ops)`.simple();
+  await sql`CREATE INDEX idx_pulse_states_key_search ON pulse.states_current USING GIN (state_key gin_trgm_ops)`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.dashboards (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       short_id TEXT NOT NULL CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
@@ -433,13 +431,13 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE UNIQUE INDEX idx_pulse_dashboards_short_id ON pulse.dashboards(short_id)`.simple();
+  await sql`CREATE UNIQUE INDEX idx_pulse_dashboards_short_id ON pulse.dashboards(short_id)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_dashboards_base ON pulse.dashboards(base_id)`.simple();
+  await sql`CREATE INDEX idx_pulse_dashboards_base ON pulse.dashboards(base_id)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_dashboards_public ON pulse.dashboards(public_token_hash) WHERE public_enabled = TRUE AND public_token_hash IS NOT NULL`.simple();
+  await sql`CREATE INDEX idx_pulse_dashboards_public ON pulse.dashboards(public_token_hash) WHERE public_enabled = TRUE AND public_token_hash IS NOT NULL`.simple();
 
-    await sql`
+  await sql`
     CREATE TABLE pulse.saved_queries (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       short_id TEXT NOT NULL CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
@@ -453,11 +451,11 @@ export const initializeSchema = async (): Promise<void> => {
     )
   `.simple();
 
-    await sql`CREATE UNIQUE INDEX idx_pulse_saved_queries_short_id ON pulse.saved_queries(short_id)`.simple();
+  await sql`CREATE UNIQUE INDEX idx_pulse_saved_queries_short_id ON pulse.saved_queries(short_id)`.simple();
 
-    await sql`CREATE INDEX idx_pulse_saved_queries_base_updated ON pulse.saved_queries(base_id, updated_at DESC)`.simple();
+  await sql`CREATE INDEX idx_pulse_saved_queries_base_updated ON pulse.saved_queries(base_id, updated_at DESC)`.simple();
 
-    await sql`
+  await sql`
     DO $$
     BEGIN
       IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
@@ -467,7 +465,6 @@ export const initializeSchema = async (): Promise<void> => {
       END IF;
     END $$
   `.simple();
-    await sql`CREATE TABLE pulse.installation (installed_at TIMESTAMPTZ NOT NULL DEFAULT now())`.simple();
-    await sql`INSERT INTO pulse.installation DEFAULT VALUES`;
-  });
+  await sql`CREATE TABLE pulse.installation (installed_at TIMESTAMPTZ NOT NULL DEFAULT now())`.simple();
+  await sql`INSERT INTO pulse.installation DEFAULT VALUES`;
 };

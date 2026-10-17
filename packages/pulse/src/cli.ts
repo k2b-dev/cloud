@@ -1,4 +1,5 @@
 import { arg, command, defineCliCommands, flag } from "@k2b/cloud/cli";
+import { adminCommands } from "./cli/admin";
 import { pulseAccessCommands } from "./cli/access";
 import { baseCommands } from "./cli/bases";
 import { resolveBaseFromCommand, resolveSource } from "./cli/context";
@@ -18,6 +19,8 @@ const module = defineCliCommands({
   name: "pulse",
   summary: "Inspect Pulse data and manage Pulse bases, sources, queries, and dashboards.",
   groupSummaries: {
+    admin: "Connect and check the operator-provided Pulse data store",
+    "admin store": "Manage the Pulse ClickHouse connection",
     access: "Manage direct access to Pulse bases",
     dashboards: "Create, inspect, and publish Pulse dashboards",
     fields: "Inspect observed telemetry fields",
@@ -27,6 +30,7 @@ const module = defineCliCommands({
     sources: "Create, inspect, and manage Pulse sources",
   },
   commands: [
+    ...adminCommands,
     command("capabilities", {
       summary: "Show Pulse deployment capabilities",
       async run({ ctx }) {

@@ -457,10 +457,11 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | `CLOUD_TEST_VALKEY_URL` | `redis://127.0.0.1:6380` (no database index) |
 | `CLOUD_TEST_FILEGATE_URL` | `http://127.0.0.1:4000` |
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
+| `CLOUD_TEST_CLICKHOUSE_URL` | `http://cloud_ci:cloud_ci@127.0.0.1:8123` (test admin URL) |
 | `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8080` |
 
 The ports are the development stack's defaults. If you moved them with
-`CLOUD_DEV_POSTGRES_PORT`, `CLOUD_DEV_TEST_VALKEY_PORT`, or `CLOUD_DEV_NATS_PORT`
+`CLOUD_DEV_POSTGRES_PORT`, `CLOUD_DEV_TEST_VALKEY_PORT`, `CLOUD_DEV_NATS_PORT`, or `CLOUD_DEV_CLICKHOUSE_PORT`
 ([Change host ports](/en/docs/operations/monorepo-development#change-host-ports)),
 use the same ports here.
 
@@ -473,6 +474,25 @@ removed, because unset is the off switch for those clients. `DATABASE_URL` and
 and `redis` handles would otherwise dial `localhost`, so an ungated test that
 reaches for them fails with a connection error instead of touching the stack
 configured in `.env`.
+
+`CLOUD_TEST_CLICKHOUSE_URL` is an **admin URL**, including URL-encoded userinfo,
+for example `http://cloud_ci:cloud_ci@127.0.0.1:8123` for the throwaway CI service.
+It has no runtime alias: Pulse gets its store connection from app settings.
+The gate checks `/ping` within three seconds. An unset target skips ClickHouse
+suites; a configured but unusable target fails loudly. Diagnostics redact URL
+passwords for every infrastructure kind.
+
+ClickHouse tests use one `pulsetest_<8 hex>_` prefix per process. Generated
+setup SQL grants the service user only that database wildcard, and the fixture
+removes exactly that prefix's databases, users, settings profiles, roles,
+quotas and row policies after the process's tests. Cleanup validates the prefix
+before dropping anything and leaves objects outside it alone. Use a dedicated
+test instance: checks deliberately probe instance-wide admin privileges and
+create temporary users. CI and nightly provide ClickHouse 26.9.19.9 for these
+suites. See [development setup](/en/docs/operations/monorepo-development#connect-pulse-to-development-clickhouse)
+for local credentials. Installation tests in `pulse/src/migrate.integration.test.ts`
+keep their own disposable Postgres database and run in the integration runner's
+one-file process, as the previous schema test did.
 
 Run integration tests through `bun run test`: it exports those runtime
 variables into every test process before Bun starts, which is the only moment

@@ -141,3 +141,20 @@ describe("root test orchestration", () => {
     expect(hasIntegrationTarget({ CLOUD_TEST_NATS_SERVERS: "nats://localhost:4222" })).toBeTrue();
   });
 });
+
+test("discovers ClickHouse and versioned Pulse migration files as isolated integration suites", async () => {
+  const suites = await discoverTestSuites(workspaceRoot, { integration: true });
+  for (const name of [
+    "src/store/check.integration.test.ts",
+    "src/api/admin-store.integration.test.ts",
+    "src/migrate.integration.test.ts",
+    "integration/test-clickhouse-cleanup.integration.test.ts",
+  ]) {
+    const suite = suites.find((item) => item.name.endsWith(name));
+    expect(suite).toBeDefined();
+    expect(suite?.command.at(-1)).toBe(name);
+  }
+  expect(suites.some((suite) => suite.name.endsWith("src/schema.integration.test.ts") && suite.name.includes("cloud-app-pulse"))).toBe(
+    false,
+  );
+});

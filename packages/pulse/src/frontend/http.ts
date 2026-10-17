@@ -8,11 +8,6 @@ const messageFromBody = (body: unknown, fallback: string): string => {
   return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
 };
 
-const readError = async (response: Response, fallback: string): Promise<string> => {
-  const body = await response.json().catch(() => null);
-  return messageFromBody(body, fallback);
-};
-
 const isJsonResponse = (response: Response): boolean => {
   return (response.headers.get("Content-Type") ?? "").includes("application/json");
 };
@@ -25,11 +20,19 @@ const readSuccess = async <T>(response: Response): Promise<T> => {
   return JSON.parse(text) as T;
 };
 
-export const jsonFetch = async <T>(url: string, init?: RequestInit, fallback = "Request failed"): Promise<T> => {
+export const jsonFetch = async <T>(
+  url: string,
+  init?: RequestInit,
+  fallback = "Request failed",
+  errorFromBody?: (status: number, body: unknown) => Error,
+): Promise<T> => {
   const response = await fetch(url, {
     ...init,
     headers: withJsonContentType(init),
   });
-  if (!response.ok) throw new Error(await readError(response, fallback));
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    throw errorFromBody ? errorFromBody(response.status, body) : new Error(messageFromBody(body, fallback));
+  }
   return readSuccess<T>(response);
 };

@@ -32,6 +32,7 @@
  */
 import { $ } from "bun";
 import { prepareDevFilegate } from "./dev-filegate";
+import { prepareDevClickhouse } from "./dev-clickhouse";
 import { prepareDevRsql } from "./dev-rsql";
 
 export const COMPOSE_FILE = "compose.dev.yml";
@@ -39,6 +40,7 @@ export const INFRA_COMPOSE_FILE = "compose.yml";
 
 /** Prepare local credentials and start every infrastructure service in compose.yml. */
 export const ensureInfra = async (): Promise<void> => {
+  await prepareDevClickhouse();
   await prepareDevRsql();
   await prepareDevFilegate();
   await $`bun packages/gateway-ops/scripts/dev-nats.ts`;
