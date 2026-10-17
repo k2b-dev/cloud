@@ -45,8 +45,9 @@ const result = await app.start({
     setup: async () => {
       await migrate();
       // Lookups use the older index until the command index is valid; search ranks natively until
-      // the optional BM25 index is valid. Startup waits for neither build.
-      void buildCommandTargetIndex().then(() => buildOptionalSearchIndex());
+      // the optional BM25 index is valid. Startup waits for neither build. While another build of the
+      // command index runs, the BM25 build waits for the next start: two builds at once can deadlock.
+      void buildCommandTargetIndex().then((outcome) => (outcome === "busy" ? undefined : buildOptionalSearchIndex()));
     },
     start: async () => {
       try {

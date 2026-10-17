@@ -104,7 +104,9 @@ suite("per-message command lookup plans", () => {
         if (!explained) throw new Error("Missing command target query plan");
         const nodes = planNodes(explained["QUERY PLAN"][0].Plan);
         expect(nodes.some((node) => node["Index Name"] === "commands_message_target_idx")).toBe(true);
+        // Both older indexes lead with mailbox_id, so either one scans the mailbox's whole command history.
         expect(nodes.some((node) => node["Index Name"] === "commands_mailbox_idx")).toBe(false);
+        expect(nodes.some((node) => node["Index Name"] === "commands_mailbox_id_idempotency_key_key")).toBe(false);
         expect(nodes.some((node) => node["Relation Name"] === "commands" && node["Node Type"] === "Seq Scan")).toBe(false);
       }
     } finally {
