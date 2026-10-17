@@ -115,6 +115,12 @@ const portableSections = [
       page("copy-remove", "Copy and remove", "ti ti-copy", "Focused clipboard feedback and destructive icon actions."),
       page("menus", "Menus", "ti ti-menu-2", "Dropdown and context menus with keyboard and viewport behavior."),
       page("gestures", "GestureMenu", "ti ti-hand-finger", "Swipe, double-tap, and long-press shortcuts into an element's menu."),
+      page(
+        "drag-and-drop",
+        "Drag and drop",
+        "ti ti-drag-drop-2",
+        "Drag rows, tasks, and paragraphs onto targets, with hold-then-drag on touch and a keyboard path.",
+      ),
       page("filters", "Filters", "ti ti-filter", "Section-aware single and multi-select filtering."),
       page("segmented-control", "SegmentedControl", "ti ti-layout-grid", "A controlled radio-group toolbar with roving focus."),
       page("tabs", "Tabs", "ti ti-folders", "Accessible controlled peer views with compositional or data-driven items."),

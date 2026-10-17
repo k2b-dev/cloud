@@ -1,0 +1,411 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { Browser, BrowserContextOptions, Page } from "playwright";
+import { browserName, launchBrowser } from "../../test/browser";
+
+const ui = resolve(import.meta.dir, "../..");
+const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
+const entry = resolve(import.meta.dir, "drag-and-drop.fixture.ts");
+const source = `
+import { createSignal } from "solid-js";
+import { createComponent, insert, render } from "solid-js/web";
+import { DragSource, DropTarget, GestureMenu, LocaleProvider, useKeyboardDrag, activeDrag } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+window.drops = []; window.clicks = 0; window.announcements = []; window.shift = 0;
+window.addEventListener("pointerdown", event => window.lastPointer = event.pointerId, true);
+const [removed, setRemoved] = createSignal(false);
+const [disabled, setDisabled] = createSignal(false);
+window.removeFirst = () => setRemoved(true);
+window.disableArchive = () => setDisabled(true);
+render(() => createComponent(LocaleProvider, { locale: new URLSearchParams(location.search).get("locale") || "en", get children() {
+  const pickUp = useKeyboardDrag();
+  const list = document.createElement("div"); list.className = "list";
+  insert(list, Array.from({ length: 30 }, (_, i) => {
+    const payload = { type: "demo.row", value: "row-" + i, label: "Row " + i, icon: "ti ti-mail" };
+    const content = document.createElement("div"); content.className = "row"; content.textContent = payload.label;
+    content.addEventListener("click", () => window.clicks++);
+    const menu = () => createComponent(GestureMenu, { label: payload.label, items: [
+      { label: "Reply", action: () => {} },
+      { label: "Move…", action: () => pickUp(payload, content) },
+    ], get children() { return i === 1 ? createComponent(DragSource, { payload, children: content }) : content; } });
+    // Exercise both nestings. Removing through Solid runs the source's cleanup.
+    if (i === 1) return menu();
+    const host = document.createElement("div");
+    insert(host, () => i === 0 && removed() ? null : createComponent(DragSource, { payload, get children() { return menu(); } }));
+    return host;
+  }));
+  const rail = document.createElement("div"); rail.className = "rail";
+  const target = (label, accept) => createComponent(DropTarget, { label, accept, class: label.toLowerCase(),
+    get disabled() { return label === "Archive" && disabled(); },
+    onDrop: (payload) => window.drops.push({ target: label, value: payload.value }), children: label });
+  insert(rail, [target("Archive", ["demo.row"]), target("Calendar", ["demo.task"])]);
+  const extra = document.createElement("div"); extra.className = "extra";
+  // Opt in per test, so the normal keyboard path has exactly one accepting destination.
+  insert(extra, () => activeDrag() && window.extraTarget ? target("Later", ["demo.row"]) : null);
+  return [list, rail, extra];
+} }), document.getElementById("app"));
+new MutationObserver(() => {
+  const text = document.querySelector('.k2b-drag-announcer')?.textContent;
+  if (text && window.announcements.at(-1) !== text) window.announcements.push(text);
+}).observe(document.body, { subtree: true, childList: true, characterData: true });
+if (PerformanceObserver.supportedEntryTypes.includes("layout-shift"))
+  new PerformanceObserver(list => { for (const shift of list.getEntries()) window.shift += shift.value; }).observe({ type: "layout-shift", buffered: true });
+`;
+const build = await Bun.build({
+  entrypoints: [entry],
+  files: { [entry]: source },
+  target: "browser",
+  conditions: ["browser"],
+  format: "iife",
+});
+if (!build.success) throw new AggregateError(build.logs, "Could not bundle the drag and drop fixture.");
+const script = await build.outputs[0]!.text();
+let browser: Browser;
+beforeAll(async () => {
+  browser = await launchBrowser();
+}, 30_000);
+afterAll(async () => {
+  await browser?.close();
+});
+
+const open = async (options: BrowserContextOptions = {}) => {
+  const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, ...options });
+  const page = await context.newPage();
+  await page.setContent(`<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>
+    body { margin: 0; } #app { display: flex; gap: 24px; padding: 20px; align-items: start; }
+    .list { height: 300px; width: 400px; overflow: auto; flex: none; } .row { height: 48px; padding: 12px; box-sizing: border-box; }
+    .rail { display: grid; gap: 20px; } .k2b-drop-target { width: 160px; padding: 20px; box-sizing: border-box; }
+    .extra { position: fixed; bottom: 20px; right: 20px; }
+    </style></head><body class="k2b-ui"><div id="app"></div></body></html>`);
+  await page.addScriptTag({ content: script });
+  await page.locator(".row").first().waitFor();
+  return { page, context };
+};
+const until = (page: Page, expression: string) => page.waitForFunction(expression, undefined, { timeout: 10_000 });
+const center = async (page: Page, selector: string) => {
+  const box = (await page.locator(selector).first().boundingBox())!;
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+};
+const startMouse = async (page: Page, index = 2) => {
+  const point = await center(page, `.row >> nth=${index}`);
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.mouse.move(point.x + 15, point.y);
+  await page.locator(".k2b-drag-preview").waitFor();
+  return point;
+};
+const moveTo = async (page: Page, selector: string) => {
+  const point = await center(page, selector);
+  await page.mouse.move(point.x, point.y);
+  return point;
+};
+const clean = async (page: Page) => {
+  await until(page, `!document.querySelector('.k2b-drag-preview, [data-drop], [data-dragging], [data-held]')`);
+};
+const drops = (page: Page) => page.evaluate("window.drops");
+
+describe(`drag and drop in ${browserName}`, () => {
+  test("mouse slop, preview, accepting drop, and stable source geometry", async () => {
+    const { page, context } = await open();
+    try {
+      const row = page.locator(".k2b-drag-source").nth(2);
+      const before = await row.boundingBox();
+      const point = await center(page, ".row >> nth=2");
+      await page.mouse.move(point.x, point.y);
+      await page.mouse.down();
+      await page.mouse.move(point.x + 5, point.y);
+      await page.mouse.up();
+      expect(await page.locator(".k2b-drag-preview").count()).toBe(0);
+      await startMouse(page);
+      expect(await row.boundingBox()).toEqual(before);
+      const target = await moveTo(page, ".archive");
+      await until(page, `document.querySelector('.archive')?.dataset.drop === 'over'`);
+      expect(await page.locator(".calendar").getAttribute("data-drop")).toBeNull();
+      // The preview sits at the pointer; WebKit reports mouse coordinates in whole pixels.
+      const [x, y] = await page
+        .locator(".k2b-drag-preview")
+        .evaluate((el) => (/translate3d\(([-\d.]+)px, ([-\d.]+)px/.exec(el.style.transform) ?? []).slice(1).map(Number));
+      expect(Math.abs(x! - target.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(y! - target.y)).toBeLessThanOrEqual(1);
+      expect(await page.evaluate<boolean>("window.announcements.some(text => text.startsWith('Row 2 picked up.'))")).toBe(true);
+      await page.mouse.up();
+      await clean(page);
+      expect(await drops(page)).toEqual([{ target: "Archive", value: "row-2" }]);
+      expect(await page.locator(".k2b-drag-announcer").textContent()).toBe("Row 2 dropped on Archive.");
+      expect(await row.boundingBox()).toEqual(before);
+      if (browserName === "chromium") expect(await page.evaluate<number>("window.shift")).toBe(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("an incompatible target refuses and does not drop", async () => {
+    const { page, context } = await open();
+    try {
+      await startMouse(page);
+      await moveTo(page, ".calendar");
+      await until(page, `document.querySelector('.calendar')?.dataset.drop === 'refused'`);
+      expect(await page.locator(".k2b-drag-announcer").textContent()).toBe("Calendar does not take Row 2.");
+      await page.mouse.up();
+      await clean(page);
+      expect(await drops(page)).toEqual([]);
+      expect(await page.locator(".k2b-drag-announcer").textContent()).toBe("Row 2 not moved.");
+    } finally {
+      await context.close();
+    }
+  });
+
+  for (const index of [1, 2])
+    test(`held touch hands the menu to the drag, nesting ${index}`, async () => {
+      const { page, context } = await open({ viewport: { width: 834, height: 1194 }, hasTouch: true, isMobile: true });
+      try {
+        const point = await center(page, `.row >> nth=${index}`);
+        const target = await center(page, ".archive");
+        if (browserName === "chromium") {
+          const cdp = await context.newCDPSession(page);
+          try {
+            await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point] });
+            await page.locator(".k2b-context-menu").waitFor();
+            await page.locator("[data-held]").waitFor();
+            await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: point.x + 20, y: point.y }] });
+            await page.locator(".k2b-drag-preview").waitFor();
+            await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [target] });
+            await until(page, `document.querySelector('.archive')?.dataset.drop === 'over'`);
+            await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+          } finally {
+            await cdp.detach();
+          }
+        } else {
+          // Playwright drives WebKit touch only as a whole tap; synthetic PointerEvents exercise the held pointer lifecycle.
+          await page.evaluate(
+            ({ point, index }) => {
+              const row = document.querySelectorAll(".row")[index]!;
+              row.dispatchEvent(
+                new PointerEvent("pointerdown", {
+                  pointerId: 7,
+                  pointerType: "touch",
+                  isPrimary: true,
+                  button: 0,
+                  bubbles: true,
+                  cancelable: true,
+                  clientX: point.x,
+                  clientY: point.y,
+                }),
+              );
+            },
+            { point, index },
+          );
+          await page.locator(".k2b-context-menu").waitFor();
+          await page.locator("[data-held]").waitFor();
+          await page.evaluate(
+            ({ point, target, index }) => {
+              const row = document.querySelectorAll(".row")[index]!;
+              const send = (type: string, x: number, y: number) =>
+                row.dispatchEvent(
+                  new PointerEvent(type, {
+                    pointerId: 7,
+                    pointerType: "touch",
+                    isPrimary: true,
+                    button: 0,
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                  }),
+                );
+              send("pointermove", point.x + 20, point.y);
+              send("pointermove", target.x, target.y);
+            },
+            { point, target, index },
+          );
+          await until(page, `document.querySelector('.archive')?.dataset.drop === 'over'`);
+          await page.evaluate(
+            ({ target, index }) => {
+              const row = document.querySelectorAll(".row")[index]!;
+              row.dispatchEvent(
+                new PointerEvent("pointerup", { pointerId: 7, pointerType: "touch", bubbles: true, clientX: target.x, clientY: target.y }),
+              );
+              const end = new Event("touchend", { bubbles: true, cancelable: true });
+              row.dispatchEvent(end);
+              if (!end.defaultPrevented) row.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+            },
+            { target, index },
+          );
+        }
+        await clean(page);
+        expect(await page.locator(".k2b-context-menu").count()).toBe(0);
+        expect(await drops(page)).toEqual([{ target: "Archive", value: `row-${index}` }]);
+        expect(await page.evaluate<number>("window.clicks")).toBe(0);
+      } finally {
+        await context.close();
+      }
+    });
+
+  // A finger that stays down while a modal sheet opens needs Chromium's input protocol.
+  test.skipIf(browserName === "webkit")("below 48rem a held touch closes the sheet and drags", async () => {
+    const { page, context } = await open({ viewport: { width: 760, height: 900 }, hasTouch: true, isMobile: true });
+    try {
+      const point = await center(page, ".row >> nth=2");
+      const target = await center(page, ".archive");
+      const cdp = await context.newCDPSession(page);
+      try {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point] });
+        await page.locator("dialog[open] .k2b-gesture-menu__sheet-menu").waitFor();
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: point.x + 20, y: point.y }] });
+        await page.locator(".k2b-drag-preview").waitFor();
+        await until(page, `!document.querySelector("dialog[open]")`);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [target] });
+        await until(page, `document.querySelector('.archive')?.dataset.drop === 'over'`);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      } finally {
+        await cdp.detach();
+      }
+      await clean(page);
+      expect(await drops(page)).toEqual([{ target: "Archive", value: "row-2" }]);
+      expect(await page.evaluate<number>("window.clicks")).toBe(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Playwright cannot drive a WebKit touch scroll; synthetic PointerEvents cannot scroll the browser.
+  test.skipIf(browserName === "webkit")("touch movement before the hold scrolls instead of dragging", async () => {
+    const { page, context } = await open({ hasTouch: true, isMobile: true });
+    try {
+      const cdp = await context.newCDPSession(page);
+      try {
+        const point = await center(page, ".row >> nth=4");
+        const now = Date.now() / 1000;
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point], timestamp: now });
+        for (let i = 1; i <= 8; i++)
+          await cdp.send("Input.dispatchTouchEvent", {
+            type: "touchMove",
+            touchPoints: [{ x: point.x, y: point.y - i * 15 }],
+            timestamp: now + i / 60,
+          });
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [], timestamp: now + 13 / 60 });
+        await until(page, `document.querySelector('.list').scrollTop > 0`);
+        await clean(page);
+        expect(await drops(page)).toEqual([]);
+        expect(await page.locator(".k2b-context-menu").count()).toBe(0);
+      } finally {
+        await cdp.detach();
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("autoscroll continues at rest and stops outside the edge zone", async () => {
+    const { page, context } = await open();
+    try {
+      await startMouse(page);
+      const box = (await page.locator(".list").boundingBox())!;
+      await page.mouse.move(box.x + 100, box.y + box.height - 4);
+      await until(page, `document.querySelector('.list').scrollTop >= 36`);
+      await page.mouse.move(box.x + 100, box.y + 150);
+      const samples = await page.evaluate(async () => {
+        const list = document.querySelector(".list")!;
+        await new Promise(requestAnimationFrame);
+        const before = list.scrollTop;
+        for (let i = 0; i < 5; i++) await new Promise(requestAnimationFrame);
+        return [before, list.scrollTop];
+      });
+      expect(samples[1]).toBe(samples[0]);
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+      await clean(page);
+    } finally {
+      await context.close();
+    }
+  });
+
+  for (const method of ["Escape", "pointercancel", "blur", "second pointer"])
+    test(`${method} cancels with complete cleanup`, async () => {
+      const { page, context } = await open();
+      try {
+        await startMouse(page);
+        await moveTo(page, ".archive");
+        await until(page, `document.querySelector('.archive')?.dataset.drop === 'over'`);
+        if (method === "Escape") await page.keyboard.press("Escape");
+        else
+          await page.evaluate(
+            ({ method, pointerId }) => {
+              if (method === "blur") window.dispatchEvent(new Event("blur"));
+              else
+                window.dispatchEvent(
+                  new PointerEvent(method === "pointercancel" ? "pointercancel" : "pointerdown", {
+                    pointerId: method === "pointercancel" ? pointerId : pointerId + 1,
+                    bubbles: true,
+                  }),
+                );
+            },
+            { method, pointerId: await page.evaluate<number>("window.lastPointer") },
+          );
+        await clean(page);
+        await page.mouse.up();
+        expect(await drops(page)).toEqual([]);
+        expect(await page.locator(".k2b-drag-announcer").textContent()).toBe("Row 2 not moved.");
+        expect(await page.evaluate(() => document.documentElement.style.userSelect)).toBe("");
+      } finally {
+        await context.close();
+      }
+    });
+
+  test("keyboard pickup from the row menu drops and returns focus", async () => {
+    const { page, context } = await open();
+    try {
+      const row = page.getByRole("group", { name: "Row 2", exact: true });
+      await row.focus();
+      await page.keyboard.press("Shift+F10");
+      await until(page, `document.activeElement?.textContent === 'Reply'`);
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await until(page, `document.querySelector('.archive')?.dataset.drop === 'over'`);
+      // Instructions and the first choice come as one announcement.
+      expect(await page.locator(".k2b-drag-announcer").textContent()).toBe(
+        "Row 2 picked up. 1 place takes it. Arrow keys choose a place, Enter drops, Escape cancels. Archive, 1 of 1.",
+      );
+      await page.keyboard.press("ArrowDown");
+      await until(page, `document.querySelector('.k2b-drag-announcer')?.textContent === 'Archive, 1 of 1.'`);
+      await page.keyboard.press("Enter");
+      await clean(page);
+      expect(await drops(page)).toEqual([{ target: "Archive", value: "row-2" }]);
+      expect(await page.locator(".k2b-drag-announcer").textContent()).toBe("Row 2 dropped on Archive.");
+      expect(await row.evaluate((el) => el === document.activeElement)).toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("unmounting a source cancels the drag", async () => {
+    const { page, context } = await open();
+    try {
+      await startMouse(page, 0);
+      await moveTo(page, ".archive");
+      await page.evaluate("window.removeFirst()");
+      await clean(page);
+      await page.mouse.up();
+      expect(await drops(page)).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("targets mounted during a drag register immediately; a disabled target refuses", async () => {
+    const { page, context } = await open();
+    try {
+      await page.evaluate("window.extraTarget = true");
+      await startMouse(page);
+      await until(page, `document.querySelector('.later')?.dataset.drop === 'ok'`);
+      await page.evaluate("window.disableArchive()");
+      await moveTo(page, ".archive");
+      await until(page, `document.querySelector('.archive')?.dataset.drop === 'refused'`);
+      await page.mouse.up();
+      await clean(page);
+      expect(await drops(page)).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+});
