@@ -78,6 +78,7 @@ suite("OAuth external review regressions", () => {
   test("transport failure releases an unclaimed attempt and fences late Core even after re-reservation", async () => {
     const { userId, client } = await fixture();
     const token = await refreshTokens.create({
+      expiresAt: new Date(Date.now() + refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
       userId,
       client,
       scopes: ["openid", "offline_access"],
@@ -106,6 +107,7 @@ suite("OAuth external review regressions", () => {
   test("Core claim wins concurrent release: lost response revokes the family without reissuance", async () => {
     const { userId, client } = await fixture();
     const token = await refreshTokens.create({
+      expiresAt: new Date(Date.now() + refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
       userId,
       client,
       scopes: ["openid", "offline_access"],
@@ -155,6 +157,7 @@ suite("OAuth external review regressions", () => {
   test("refresh reservation waits for the family without locking its token", async () => {
     const { userId, client } = await fixture();
     const token = await refreshTokens.create({
+      expiresAt: new Date(Date.now() + refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
       userId,
       client,
       scopes: ["openid", "offline_access"],

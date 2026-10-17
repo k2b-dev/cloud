@@ -1,6 +1,7 @@
 import { type AuthContext, auth, jsonResponse, rateLimit, v } from "@k2b/cloud/server";
 import { accounts, get, isAccountCategoryAllowed, logger } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
+import * as settings from "@k2b/cloud/services/settings";
 import { createLoginRedirectUrl, publicCloudOrigin } from "@k2b/cloud/shared";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -16,6 +17,7 @@ import {
   type OAuthScope,
 } from "@/contracts";
 import { oauth } from "./service/oauth";
+import { DEFAULT_LOGIN_LIFETIME_SECONDS } from "./service/refresh-tokens";
 import type { OAuthUserGrantReference } from "./service/token-authority";
 
 const log = logger("oauth");
@@ -114,6 +116,18 @@ const AuthorizeQuerySchema = z.object({
   code_challenge_method: z.enum(["S256", "plain"]).optional(),
 });
 
+/** Cloud extension: a requested absolute login lifetime in whole seconds. */
+const LoginLifetimeSchema = z
+  .string()
+  .max(15)
+  .regex(/^[1-9][0-9]*$/);
+
+const capLoginLifetime = async (requested: number): Promise<number> => {
+  const hours = await settings.get<number>("user.session.expiry_hours");
+  if (!Number.isFinite(hours) || hours < 1) throw new Error("user.session.expiry_hours must be a positive number");
+  return Math.min(requested, Math.floor(hours * 3600));
+};
+
 const TokenBodySchema = z.discriminatedUnion("grant_type", [
   z.object({
     grant_type: z.literal("authorization_code"),
@@ -125,10 +139,12 @@ const TokenBodySchema = z.discriminatedUnion("grant_type", [
     client_id: z.string().min(1).optional(),
     client_secret: z.string().optional(),
     code_verifier: z.string().optional(),
+    ttl: LoginLifetimeSchema.optional(),
     resource: z.string().optional(),
   }),
   z.object({
     grant_type: z.literal("client_credentials"),
+    ttl: z.string().optional(),
     client_id: z.string().min(1).optional(),
     client_secret: z.string().optional(),
     scope: z.string().optional(),
@@ -136,6 +152,7 @@ const TokenBodySchema = z.discriminatedUnion("grant_type", [
   }),
   z.object({
     grant_type: z.literal("refresh_token"),
+    ttl: z.string().optional(),
     refresh_token: z.string().min(1),
     client_id: z.string().min(1).optional(),
     client_secret: z.string().optional(),
@@ -144,6 +161,7 @@ const TokenBodySchema = z.discriminatedUnion("grant_type", [
   }),
   z.object({
     grant_type: z.literal(DEVICE_CODE_GRANT_TYPE),
+    ttl: z.string().optional(),
     device_code: z.string().min(1).max(256),
     client_id: z.string().min(1).optional(),
     client_secret: z.string().optional(),
@@ -152,6 +170,7 @@ const TokenBodySchema = z.discriminatedUnion("grant_type", [
 ]);
 
 const DeviceAuthorizationBodySchema = z.object({
+  ttl: LoginLifetimeSchema.optional(),
   client_id: z.string().min(1).optional(),
   client_secret: z.string().optional(),
   scope: z.string().optional(),
@@ -181,6 +200,7 @@ const TokenResponseSchema = z.object({
   id_token: z.string().optional(),
   scope: z.string(),
   refresh_token: z.string().optional(),
+  refresh_token_expires_in: z.number().int().min(0).optional(),
 });
 
 const TokenErrorResponseSchema = z.object({
@@ -269,9 +289,14 @@ const readBoundedRegistrationJson = async (request: Request): Promise<{ ok: true
   }
 };
 
-const validateTokenBody = openApiValidator("form", TokenBodySchema, (result, c: Context<AuthContext>) => {
-  if (!result.success) return tokenError(c, "invalid_request", "Token request validation failed");
-});
+const validateTokenBody = openApiValidator(
+  "form",
+  TokenBodySchema,
+  (result, c: Context<AuthContext>) => {
+    if (!result.success) return tokenError(c, "invalid_request", "Token request validation failed");
+  },
+  { media: "application/x-www-form-urlencoded" },
+);
 
 const RevokeTokenBodySchema = z.object({
   token: z.string().min(1),
@@ -294,6 +319,7 @@ const issueUserGrant = async (
     resource: string | null;
     authorityGrant: OAuthUserGrantReference;
     grantName: "Authorization code" | "Device code";
+    loginLifetimeSeconds?: number | null;
   },
 ) => {
   const { client } = grant;
@@ -325,6 +351,10 @@ const issueUserGrant = async (
       resource: grant.resource,
       authorityGrant: grant.authorityGrant,
       issueRefreshToken: true,
+      login: {
+        lifetimeSeconds:
+          grant.loginLifetimeSeconds == null ? DEFAULT_LOGIN_LIFETIME_SECONDS : await capLoginLifetime(grant.loginLifetimeSeconds),
+      },
     });
 
     return c.json({
@@ -333,7 +363,7 @@ const issueUserGrant = async (
       expires_in: tokens.expiresIn,
       ...(tokens.idToken ? { id_token: tokens.idToken } : {}),
       scope: tokens.scope,
-      ...(tokens.refreshToken ? { refresh_token: tokens.refreshToken } : {}),
+      ...(tokens.refreshToken ? { refresh_token: tokens.refreshToken, refresh_token_expires_in: tokens.refreshTokenExpiresIn } : {}),
     });
   } catch (err) {
     if (err instanceof oauth.tokens.OAuthAuthorityGrantRejectedError) {
@@ -581,9 +611,14 @@ const app = new Hono<AuthContext>()
     noStore,
     rateLimit({ keyBy: "ip", limitPerSecond: 10, windowSecs: 60 }),
     oauthFormLimit,
-    openApiValidator("form", DeviceAuthorizationBodySchema, (result, c: Context<AuthContext>) => {
-      if (!result.success) return tokenError(c, "invalid_request", "Device authorization request validation failed");
-    }),
+    openApiValidator(
+      "form",
+      DeviceAuthorizationBodySchema,
+      (result, c: Context<AuthContext>) => {
+        if (!result.success) return tokenError(c, "invalid_request", "Device authorization request validation failed");
+      },
+      { media: "application/x-www-form-urlencoded" },
+    ),
     async (c) => {
       const body = c.req.valid("form");
       const credentials = resolveClientCredentials(c.req.header("Authorization"), body);
@@ -601,7 +636,11 @@ const app = new Hono<AuthContext>()
       if (!scopes) return tokenError(c, "invalid_scope", "Requested scope is not allowed for this client");
 
       const issuer = await getIssuer();
-      const started = await oauth.device.create({ client, scopes });
+      const started = await oauth.device.create({
+        client,
+        scopes,
+        loginLifetimeSeconds: body.ttl === undefined ? null : await capLoginLifetime(Number(body.ttl)),
+      });
       const userCode = oauth.device.formatUserCode(started.userCode);
       const verificationUri = `${issuer}/oauth/device`;
       return c.json({
@@ -635,6 +674,13 @@ const app = new Hono<AuthContext>()
     validateTokenBody,
     async (c) => {
       const body = c.req.valid("form");
+      if (body.grant_type !== "authorization_code" && body.ttl !== undefined) {
+        return tokenError(
+          c,
+          "invalid_request",
+          "ttl is only accepted for the authorization_code grant and the device authorization request",
+        );
+      }
       if (body.resource && !ResourceIndicatorSchema.safeParse(body.resource).success) {
         return tokenError(c, "invalid_target", "Resource must be an absolute URI without a fragment");
       }
@@ -729,6 +775,7 @@ const app = new Hono<AuthContext>()
                 audiences: grant.resource ? grant.audiences : Array.from(new Set(["cloud", client.clientId, ...grant.audiences])),
                 resource: grant.resource,
                 authorityGrant: grant.authorityGrant,
+                login: { endsAt: grant.familyExpiresAt },
               });
             } catch (error) {
               if (error instanceof oauth.tokens.OAuthAuthorityGrantRejectedError) {
@@ -762,6 +809,7 @@ const app = new Hono<AuthContext>()
           ...(tokens.idToken ? { id_token: tokens.idToken } : {}),
           scope: tokens.scope,
           refresh_token: rotated.refreshToken,
+          refresh_token_expires_in: Math.max(0, Math.floor((new Date(rotated.refreshTokenExpiresAt).getTime() - Date.now()) / 1000)),
         });
       }
 
@@ -780,6 +828,7 @@ const app = new Hono<AuthContext>()
           resource: null,
           authorityGrant: result.authorityGrant,
           grantName: "Device code",
+          loginLifetimeSeconds: result.loginLifetimeSeconds,
         });
       }
 
@@ -806,6 +855,7 @@ const app = new Hono<AuthContext>()
         resource: result.resource,
         authorityGrant: result.authorityGrant,
         grantName: "Authorization code",
+        loginLifetimeSeconds: body.ttl === undefined ? undefined : Number(body.ttl),
       });
     },
   )

@@ -3,9 +3,11 @@ import { createMcpRoutes } from "@k2b/cloud/api";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { oauthTokens, serviceAccounts } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
+import * as settings from "@k2b/cloud/services/settings";
 import { sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import adminApiRoutes from "../api";
@@ -43,7 +45,7 @@ const adminActor = (id: string) => ({ id, uid: `oauth-admin-${id}`, provider: "l
 const createSessionToken = createTestSession;
 
 // Exercise real code consumption and Core issuance, never a test-only signing bypass.
-const createGrantedTokens = async (params: Omit<Parameters<typeof oauth.tokens.createTokens>[0], "authorityGrant">) => {
+const createGrantedTokens = async (params: Omit<Parameters<typeof oauth.tokens.createTokens>[0], "authorityGrant" | "login">) => {
   const redirectUri = params.client.redirectUris[0]!;
   const code = await oauth.codes.create({
     clientId: params.client.clientId,
@@ -60,7 +62,12 @@ const createGrantedTokens = async (params: Omit<Parameters<typeof oauth.tokens.c
     resource: params.resource ?? undefined,
   });
   if (!consumed) throw new Error("Test authorization code was rejected");
-  return oauth.tokens.createTokens({ ...params, audiences: consumed.audiences, authorityGrant: consumed.authorityGrant });
+  return oauth.tokens.createTokens({
+    login: { lifetimeSeconds: oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS },
+    ...params,
+    audiences: consumed.audiences,
+    authorityGrant: consumed.authorityGrant,
+  });
 };
 
 const requestClientCredentialsToken = async (params: { clientId: string; clientSecret: string; scope?: string; resource?: string }) => {
@@ -458,6 +465,83 @@ suite("OAuth resource access tokens", () => {
     }
   });
 
+  for (const [ttl, expected] of [
+    ["2592000", 28800],
+    [undefined, 7776000],
+  ] as const) {
+    test(`authorization-code ttl=${ttl ?? "omitted"} expires after ${expected} seconds`, async () => {
+      const previous = await settings.get<number>("user.session.expiry_hours");
+      const userId = await insertUser();
+      let clientId: string | null = null;
+      try {
+        await settings.set("user.session.expiry_hours", 8);
+        const created = await oauth.clients.create({
+          actor: adminActor(userId),
+          data: {
+            name: `Login lifetime ${crypto.randomUUID()}`,
+            redirectUris: ["https://client.example.test/callback"],
+            scopes: ["openid", "offline_access"],
+            audiences: ["cloud"],
+            allowedProfiles: ["user"],
+            accessMode: "profiles",
+            allowedUserIds: [],
+            allowedGroupIds: [],
+            isPublic: false,
+          },
+        });
+        if (!created.ok) throw new Error("Client setup failed");
+        clientId = created.data.id;
+        const code = await oauth.codes.create({
+          clientId: created.data.clientId,
+          userId,
+          redirectUri: "https://client.example.test/callback",
+          scopes: created.data.scopes,
+        });
+        const exchange = (requested?: string) =>
+          oauthRoutes.request("/oauth/token", {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": uniqueCallerAddress() },
+            body: new URLSearchParams({
+              grant_type: "authorization_code",
+              client_id: created.data.clientId,
+              client_secret: created.data.clientSecret,
+              code,
+              redirect_uri: "https://client.example.test/callback",
+              ...(requested === undefined ? {} : { ttl: requested }),
+            }),
+          });
+        // Validation must reject these requests before consuming the code.
+        for (const malformed of ["0", "-1", "abc", "1.5", "", "01", "1\n", "1000000000000000"]) {
+          const response = await exchange(malformed);
+          expect(response.status).toBe(400);
+          expect(await response.json()).toEqual({ error: "invalid_request", error_description: "Token request validation failed" });
+        }
+        const response = await exchange(ttl);
+        expect(response.status).toBe(200);
+        const tokens: Record<string, unknown> = await response.json();
+        expect(tokens.expires_in).toBe(3600);
+        expect(Number.isInteger(tokens.refresh_token_expires_in)).toBe(true);
+        expect(Number(tokens.refresh_token_expires_in)).toBeGreaterThanOrEqual(expected - 5);
+        expect(Number(tokens.refresh_token_expires_in)).toBeLessThanOrEqual(expected);
+        const [family] = await sql<{ expires_at: Date }[]>`
+          SELECT family.expires_at FROM oauth.refresh_token_families family
+          JOIN oauth.refresh_tokens token ON token.family_id = family.id
+          WHERE token.token_prefix = ${String(tokens.refresh_token).split("_")[2]!}
+        `;
+        if (!family) throw new Error("Refresh family is missing");
+        expect(family.expires_at.getTime() - Date.now()).toBeGreaterThanOrEqual((expected - 5) * 1000);
+        expect(family.expires_at.getTime() - Date.now()).toBeLessThanOrEqual(expected * 1000);
+        for (const token of [tokens.access_token, tokens.id_token]) {
+          expect(jose.decodeJwt(String(token)).exp).toBeLessThanOrEqual(Math.floor(family.expires_at.getTime() / 1000));
+        }
+      } finally {
+        await settings.set("user.session.expiry_hours", previous);
+        if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+      }
+    });
+  }
+
   test("refresh tokens rotate and reused tokens revoke the token family", async () => {
     const userId = await insertUser();
     let clientId: string | null = null;
@@ -588,6 +672,7 @@ suite("OAuth resource access tokens", () => {
 
       const createGrant = () =>
         oauth.refreshTokens.create({
+          expiresAt: new Date(Date.now() + oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
           userId,
           client: created.data,
           scopes: ["openid", "offline_access"],
@@ -731,12 +816,14 @@ suite("OAuth resource access tokens", () => {
     expect(configuration.revocation_endpoint).toBe("https://cloud.example.test/oauth/revoke");
     expect(configuration.code_challenge_methods_supported).toEqual(["S256"]);
     expect(configuration.resource_parameter_supported).toBe(true);
+    expect(configuration.cloud_login_ttl_supported).toBe(true);
     const response = await oauthRoutes.request("/.well-known/oauth-authorization-server");
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       issuer: "http://localhost:3000",
       registration_endpoint: "http://localhost:3000/oauth/register",
       resource_parameter_supported: true,
+      cloud_login_ttl_supported: true,
     });
     const jwks = await oauthRoutes.request("/.well-known/jwks.json");
     expect(jwks.status).toBe(200);
@@ -1373,7 +1460,24 @@ suite("OAuth resource access tokens", () => {
       clientId = created.data.id;
       process.env.CLOUD_OAUTH_BROKER_SECRET = "abababababababababababababababababababababababababababababababab";
       process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal:3000";
-      globalThis.fetch = Object.assign(async () => new Response(null, { status: 403 }), { preconnect: originalFetch.preconnect });
+      let authorityCalls = 0;
+      globalThis.fetch = Object.assign(
+        async () => {
+          authorityCalls += 1;
+          return new Response(null, { status: 403 });
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+
+      await expect(
+        oauth.tokens.createTokens({
+          userId,
+          client: created.data,
+          authorityGrant: { kind: "refresh_token", tokenId: userId, nonce: userId },
+          login: { endsAt: new Date(Date.now() + 999) },
+        }),
+      ).rejects.toBeInstanceOf(oauth.tokens.OAuthAuthorityGrantRejectedError);
+      expect(authorityCalls).toBe(0);
 
       const code = await oauth.codes.create({
         clientId: created.data.clientId,
@@ -1396,6 +1500,7 @@ suite("OAuth resource access tokens", () => {
       expect(await codeResponse.json()).toMatchObject({ error: "invalid_grant" });
 
       const rejectedRefresh = await oauth.refreshTokens.create({
+        expiresAt: new Date(Date.now() + oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
         userId,
         client: created.data,
         scopes: ["openid", "offline_access"],
@@ -1421,6 +1526,7 @@ suite("OAuth resource access tokens", () => {
       expect(releasedFamily?.status).toBe("active");
 
       const unknownRefresh = await oauth.refreshTokens.create({
+        expiresAt: new Date(Date.now() + oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
         userId,
         client: created.data,
         scopes: ["openid", "offline_access"],

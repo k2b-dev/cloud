@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { generateSpecs } from "hono-openapi";
 import {
   CreateOAuthClientSchema,
   DynamicClientRegistrationRequestSchema,
@@ -6,8 +7,42 @@ import {
   OAuthClientParamSchema,
   UpdateOAuthClientSchema,
 } from "./contracts";
+import oauthRoutes from "./oauth";
 
 describe("OAuth contracts", () => {
+  test("OpenAPI documents the login ttl input and optional refresh lifetime output", async () => {
+    const spec = await generateSpecs(oauthRoutes);
+    const tokenRoute = spec.paths["/oauth/token"]?.post;
+    expect(tokenRoute?.requestBody).toMatchObject({
+      content: {
+        "application/x-www-form-urlencoded": {
+          schema: {
+            oneOf: expect.arrayContaining([
+              expect.objectContaining({
+                properties: expect.objectContaining({ ttl: expect.objectContaining({ type: "string", maxLength: 15 }) }),
+              }),
+            ]),
+          },
+        },
+      },
+    });
+    expect(spec.paths["/oauth/device_authorization"]?.post?.requestBody).toMatchObject({
+      content: {
+        "application/x-www-form-urlencoded": {
+          schema: {
+            properties: { ttl: { type: "string", maxLength: 15 } },
+          },
+        },
+      },
+    });
+    const response = tokenRoute?.responses?.["200"];
+    if (!response || "$ref" in response) throw new Error("Token response schema is missing");
+    const schema = response.content?.["application/json"]?.schema;
+    if (!schema || "$ref" in schema) throw new Error("Token response schema is missing");
+    expect(schema.properties?.refresh_token_expires_in).toMatchObject({ type: "integer", minimum: 0 });
+    expect(schema.required).not.toContain("refresh_token_expires_in");
+  });
+
   test("normalizes create payloads without changing valid client intent", () => {
     const parsed = CreateOAuthClientSchema.parse({
       name: "  Demo client  ",

@@ -995,6 +995,21 @@ An installation with a large backlog drains it over time. PostgreSQL reuses
 the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
 See [Scheduled task run history](/en/docs/ai/structured-and-background-ai#keep-scheduled-task-run-history-for-90-days).
 
+### End OAuth sign-ins sooner
+
+OAuth logins can request a shorter absolute lifetime with `ttl`, capped at
+`user.session.expiry_hours`; see
+[Login lifetime](/en/docs/identity/oauth#login-lifetime). It needs no
+configuration change. Without `ttl`, logins keep their 90-day refresh family.
+
+Deploy Core with or before OAuth. OAuth now asks Core for access and ID tokens
+shorter than one hour when a login ends within the hour, and an older Core
+rejects any lifetime other than 3600 seconds, so such a sign-in or refresh
+fails with `invalid_grant`. Core also caps every refreshed token at its
+refresh family's end. OAuth's first start adds the nullable column
+`oauth.device_authorizations.login_lifetime_seconds`. A rollback ignores it
+and issues 90-day logins again.
+
 ## Coordinate an existing installation's identity upgrade
 
 Use one maintenance window for the gateway, Core, OAuth, applications, and
