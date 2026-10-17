@@ -1,16 +1,4 @@
-import {
-  type Browser,
-  type BrowserContext,
-  chromium,
-  errors,
-  type Frame,
-  type LaunchOptions,
-  type Locator,
-  type Page,
-  type Request,
-  type Response,
-  webkit,
-} from "playwright";
+import { type Browser, type BrowserContext, chromium, type LaunchOptions, type Locator, type Page, type Request, webkit } from "playwright";
 
 /**
  * The engine that Playwright tests run in, chosen with `TEST_BROWSER`:
@@ -69,86 +57,113 @@ const probeMainThread = async (page: Page): Promise<string> => {
   }
 };
 
-const explained = async <T>(page: Page, call: () => Promise<T>): Promise<T> => {
-  const open = new Map<Request, string>();
-  const failed: string[] = [];
-  let committed: string | undefined;
-  let status: number | undefined;
-  let domcontentloaded = false;
-  let load = false;
-  const request = (request: Request) => open.set(request, `${request.method()} ${request.url()}`);
-  const finished = (request: Request) => open.delete(request);
-  const failure = (request: Request) => {
-    failed.push(`${request.method()} ${request.url()}`);
-    open.delete(request);
-  };
-  const response = (response: Response) => {
-    const request = response.request();
-    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) status = response.status();
-  };
-  const navigated = (frame: Frame) => {
-    if (frame === page.mainFrame()) committed = frame.url();
-  };
-  const domReady = () => {
-    domcontentloaded = true;
-  };
-  const loaded = () => {
-    load = true;
-  };
-  page.on("request", request);
-  page.on("requestfinished", finished);
-  page.on("requestfailed", failure);
-  page.on("response", response);
-  page.on("framenavigated", navigated);
-  page.on("domcontentloaded", domReady);
-  page.on("load", loaded);
-  try {
-    try {
-      return await call();
-    } finally {
-      page.off("request", request);
-      page.off("requestfinished", finished);
-      page.off("requestfailed", failure);
-      page.off("response", response);
-      page.off("framenavigated", navigated);
-      page.off("domcontentloaded", domReady);
-      page.off("load", loaded);
-    }
-  } catch (error) {
-    if (error instanceof errors.TimeoutError) {
-      const pending = [...open.values()];
-      const lines = [
-        "Navigation diagnosis:",
-        committed === undefined ? `No document committed; page still shows ${page.url()}` : `Document committed at ${committed}`,
-        status === undefined ? "Navigation response: none" : `Navigation response status: ${status}`,
-        `DOMContentLoaded: ${domcontentloaded ? "fired" : "did not fire"}`,
-        `load: ${load ? "fired" : "did not fire"}`,
-        pending.length === 0 ? "Requests still open: none" : "Requests still open:",
-        ...pending.slice(0, 10),
-        ...(pending.length > 10 ? [`and ${pending.length - 10} more`] : []),
-        ...(failed.length > 0
-          ? ["Requests failed:", ...failed.slice(0, 10), ...(failed.length > 10 ? [`and ${failed.length - 10} more`] : [])]
-          : []),
-        await probeMainThread(page),
-      ];
-      error.message += `\n\n${lines.join("\n")}`;
-    }
-    throw error;
-  }
+type NavigationRecord = {
+  open: Map<Request, string>;
+  failed: string[];
+  responses: string[];
+  committed?: string;
+  status?: number;
+  domcontentloaded: boolean;
+  load: boolean;
 };
 
 const explainedPages = new WeakSet<Page>();
 const explainNavigations = (page: Page): Page => {
   if (explainedPages.has(page)) return page;
   explainedPages.add(page);
+  const records = new Set<NavigationRecord>();
+  // Keep listeners until the page dies: failing channel calls rewrite a shared closed error (#1367).
+  page.on("request", (request) => {
+    for (const record of records) record.open.set(request, `${request.method()} ${request.url()}`);
+  });
+  page.on("requestfinished", (request) => {
+    for (const record of records) record.open.delete(request);
+  });
+  page.on("requestfailed", (request) => {
+    for (const record of records) {
+      record.failed.push(`${request.method()} ${request.url()}`);
+      record.open.delete(request);
+    }
+  });
+  page.on("response", (response) => {
+    const request = response.request();
+    for (const record of records) {
+      record.responses.push(`${response.status()} ${request.method()} ${response.url()}`);
+      if (record.responses.length > 5) record.responses.shift();
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame()) record.status = response.status();
+    }
+  });
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) for (const record of records) record.committed = frame.url();
+  });
+  page.on("domcontentloaded", () => {
+    for (const record of records) record.domcontentloaded = true;
+  });
+  page.on("load", () => {
+    for (const record of records) record.load = true;
+  });
+
+  const explained = async <T>(name: string, call: () => Promise<T>): Promise<T> => {
+    const started = Date.now();
+    const before = page.url();
+    const record: NavigationRecord = {
+      open: new Map(),
+      failed: [],
+      responses: [],
+      domcontentloaded: false,
+      load: false,
+    };
+    records.add(record);
+    try {
+      try {
+        return await call();
+      } finally {
+        records.delete(record);
+      }
+    } catch (error) {
+      // Every failure carries the evidence. Bun's test timeout can kill the browser before Playwright's own timeout;
+      // the navigation then fails as TargetClosedError, or in Chromium as net::ERR_ABORTED before the page reports closed.
+      const shared = !(error instanceof Error) || error.name === "TargetClosedError";
+      const closed = shared || page.isClosed() || page.context().browser()?.isConnected() === false;
+      const message = error instanceof Error ? error.message : String(error);
+      const { open, failed, responses, committed, status, domcontentloaded, load } = record;
+      const pending = [...open.values()];
+      const now = page.url();
+      const lines = [
+        "Navigation diagnosis:",
+        `${name} waited ${Date.now() - started} ms`,
+        `URL before: ${before}`,
+        `URL now: ${now}`,
+        committed === undefined ? `No document committed; page still shows ${now}` : `Document committed at ${committed}`,
+        status === undefined ? "Navigation response: none" : `Navigation response status: ${status}`,
+        `DOMContentLoaded: ${domcontentloaded ? "fired" : "did not fire"}`,
+        `load: ${load ? "fired" : "did not fire"}`,
+        responses.length === 0 ? "Responses: none" : "Responses:",
+        ...responses,
+        pending.length === 0 ? "Requests still open: none" : "Requests still open:",
+        ...pending.slice(0, 10),
+        ...(pending.length > 10 ? [`and ${pending.length - 10} more`] : []),
+        ...(failed.length > 0
+          ? ["Requests failed:", ...failed.slice(0, 10), ...(failed.length > 10 ? [`and ${failed.length - 10} more`] : [])]
+          : []),
+        closed ? "Main thread: page or browser is closed" : await probeMainThread(page),
+      ];
+      const diagnosis = lines.join("\n");
+      // A closed connection rejects every call with one shared error, so that one is wrapped, never changed.
+      if (shared || !(error instanceof Error)) throw new Error(`${message}\n\n${diagnosis}`, { cause: error });
+      error.message += `\n\n${diagnosis}`;
+      throw error;
+    }
+  };
+
   const goto = page.goto.bind(page);
-  page.goto = (url, options) => explained(page, () => goto(url, options));
+  page.goto = (url, options) => explained("goto", () => goto(url, options));
   const reload = page.reload.bind(page);
-  page.reload = (options) => explained(page, () => reload(options));
+  page.reload = (options) => explained("reload", () => reload(options));
   const goBack = page.goBack.bind(page);
-  page.goBack = (options) => explained(page, () => goBack(options));
+  page.goBack = (options) => explained("goBack", () => goBack(options));
   const goForward = page.goForward.bind(page);
-  page.goForward = (options) => explained(page, () => goForward(options));
+  page.goForward = (options) => explained("goForward", () => goForward(options));
   return page;
 };
 
@@ -169,7 +184,7 @@ const wrapContext = (context: BrowserContext): BrowserContext => {
  * test, not in beforeAll.
  * Closing a page or context of a killed browser succeeds, so the late error of
  * a timed-out test names the step that hung, not its cleanup (#1355).
- * Navigation timeouts include document, request, load, and main-thread evidence (#1367).
+ * Navigation timeouts and navigations cut off by a closed browser carry document, request, load, and main-thread evidence (#1367).
  */
 export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browser> => {
   let current = await start(options);

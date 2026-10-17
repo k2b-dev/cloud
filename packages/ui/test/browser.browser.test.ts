@@ -40,6 +40,10 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
       expect(error).toBeInstanceOf(errors.TimeoutError);
       if (!(error instanceof errors.TimeoutError)) throw new Error("Expected a navigation timeout");
       expect(error.message).toContain("Navigation diagnosis:");
+      expect(error.message).toMatch(/goto waited \d+ ms/);
+      expect(error.message).toContain(`URL before: ${start}`);
+      expect(error.message).toContain(`URL now: ${start}`);
+      expect(error.message).toContain("Responses:");
       expect(error.message).toContain(`No document committed; page still shows ${start}`);
       expect(error.message).toContain("Navigation response: none");
       expect(error.message).toContain("Requests still open:");
@@ -61,6 +65,10 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
       expect(error).toBeInstanceOf(errors.TimeoutError);
       if (!(error instanceof errors.TimeoutError)) throw new Error("Expected a navigation timeout");
       expect(error.message).toContain("Navigation diagnosis:");
+      expect(error.message).toMatch(/goto waited \d+ ms/);
+      expect(error.message).toContain("URL before: about:blank");
+      expect(error.message).toContain(`URL now: ${stalled}`);
+      expect(error.message).toContain(`Responses:\n200 GET ${stalled}`);
       expect(error.message).toContain(`Document committed at ${stalled}`);
       expect(error.message).toContain("Navigation response status: 200");
       expect(error.message).toContain("DOMContentLoaded: fired");
@@ -85,7 +93,17 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     // A piped `bun test` lists only failing tests by name; the summary counts the passing ones.
     const failed = Array.from(output.matchAll(/^\(fail\) (.*?) \[[^\]\r\n]*\]\r?$/gm), (match) => match[1]);
     const passed = Number(/^ (\d+) pass\r?$/m.exec(output)?.[1] ?? 0);
-    expect({ code, failed, passed }, output).toEqual({ code: 1, failed: ["a test that hangs waiting on its page"], passed: 3 });
+    expect({ code, failed, passed }, output).toEqual({
+      code: 1,
+      failed: ["a test that hangs waiting on its page", "a test that hangs in a navigation"],
+      passed: 3,
+    });
+    expect(output).toContain("Navigation diagnosis:");
+    expect(output).toMatch(/goto waited \d+ ms/);
+    // A killed browser can fail the open document request before the report, so it is open or failed.
+    expect(output).toMatch(/Requests (still open|failed):\r?\nGET http:\/\/127\.0\.0\.1:\d+\/hang/);
+    expect(output).toMatch(/URL before: http:\/\/127\.0\.0\.1:\d+\/start/);
+    expect(output).not.toContain("removeListener");
     if (!process.env.TEST_BROWSER_ENDPOINT?.trim()) {
       // Prove Bun killed the local browser. If Bun stops killing subprocesses,
       // revisit the launcher comment about timeout cleanup.
