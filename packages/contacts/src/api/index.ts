@@ -54,6 +54,7 @@ import type { ContactBook } from "../service/types";
 import * as vcard from "../service/vcard";
 import { isSafeWebsiteUrl, resolveContactName } from "../shared";
 import legacyLiveRoutes from "../ws";
+import { exportBody } from "./export-stream";
 
 const documentRoute = (options: Parameters<typeof describeRoute>[0]) => describeRoute(options) as MiddlewareHandler<AuthContext>;
 
@@ -586,8 +587,6 @@ const safeExportFilename = (name: string | null | undefined, extension: "csv" | 
   const basename = (name ?? "contacts").replace(/[^a-z0-9-_]+/gi, "_");
   return `${basename}.${extension}`;
 };
-
-const loadBookContactsForExport = (bookId: string) => contactsService.contact.list({ bookId, pagination: { page: 1, perPage: 100_000 } });
 
 const resolveContactRelations = async <T extends { parentContactId?: string | null; tagIds?: string[] }>(bookId: string, data: T) => {
   const [parentIds, tagIds] = await Promise.all([
@@ -1987,8 +1986,11 @@ const app = new Hono<AuthContext>()
       const bookId = c.req.param("bookId") ?? "";
       const { book, bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
       if (error) return error;
-      const result = await loadBookContactsForExport(internalBookId!);
-      const body = vcard.serializeBook(result.items);
+      const body = exportBody(
+        (signal) => contactsService.contact.exportPages({ bookId: internalBookId!, signal }),
+        vcard.serializeBookPage,
+        { bookId: internalBookId!, format: "vcf", signal: c.req.raw.signal },
+      );
       return c.body(body, 200, {
         "Content-Type": "text/vcard; charset=utf-8",
         "Content-Disposition": `attachment; filename="${safeExportFilename(book?.name, "vcf")}"`,
@@ -2009,8 +2011,11 @@ const app = new Hono<AuthContext>()
       const bookId = c.req.param("bookId") ?? "";
       const { book, bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
       if (error) return error;
-      const result = await loadBookContactsForExport(internalBookId!);
-      const body = vcard.serializeBookCsv(result.items);
+      const body = exportBody(
+        (signal) => contactsService.contact.exportPages({ bookId: internalBookId!, signal }),
+        vcard.serializeCsvRows,
+        { bookId: internalBookId!, format: "csv", signal: c.req.raw.signal, header: vcard.CSV_HEADER_LINE },
+      );
       return c.body(body, 200, {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${safeExportFilename(book?.name, "csv")}"`,
