@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Release notes parsed as HTML | HTML-like placeholders swallow release sections, so release-please skips a component or mixes its notes with another release. | Check: `release-body` CI job (`scripts/check-release-pr-body.ts`) parses release PR bodies with the pinned release-please parser; the `check` job reads live PR text on PR and merge queue runs and refuses markup in titles, body commit headers, BREAKING CHANGE paragraphs, and nested-commit blocks; a self-test checks that lint against the pinned commit parser ([#1298](https://github.com/k2b-dev/cloud/issues/1298)). |
 | Silent truncation by a clamped page size | A caller asks for the whole collection with a page size above the helper's maximum and exports only the first page. | Check: `page-size` rejects oversized `pagination.perPage` literals. Tests: Contacts export pagination, cancellation, stream failure, serializer bytes, and the 1,001-contact integration case ([#1241](https://github.com/k2b-dev/cloud/issues/1241)). |
 | Claim and assignment diverge | A person works on a task while assignment-based lists still show it as unassigned, or a stale assignee replacement removes an active worker. | Tests: `packages/spaces/src/service/claim-assignment.integration.test.ts` checks transactional user claims, guarded assignee replacements, forced releases, completion, and idempotent backfill ([#1269](https://github.com/k2b-dev/cloud/issues/1269)). |
 | Paint outside a scrollport | An outline or outset shadow, such as a status ring, reaches past its element and a scrolling ancestor flush with it cuts it off. | Test: `packages/ui/src/layout/detail-panel-sections.browser.test.ts` checks that an avatar ring flush with the detail body paints inside the scrollport and keeps the avatar size. |
@@ -57,6 +58,13 @@ convention still needs a check or a test.
 | Theme in print | The screen theme reaches paper: dark-theme text and surfaces print on white paper, or print rules show what the screen hides on purpose. | Test: the Mail printing browser test in `MailConversationList.browser.test.ts` prints a dark and a light conversation through Print conversation in Chromium and WebKit. It checks contrast against the printed surface, the sender rows, and the single quote label ([#1175](https://github.com/k2b-dev/cloud/issues/1175)). No shared guard yet: native printing still prints the dark theme on every other page ([#1274](https://github.com/k2b-dev/cloud/issues/1274)). |
 
 ## Lessons
+
+### release-please skipped the Cloud release 0.44.0
+
+- **What happened:** Merging release PR #1248 created the npm releases but no `cloud-v0.44.0`; images and CLI assets needed a manual recovery ([#1298](https://github.com/k2b-dev/cloud/issues/1298)).
+- **Root cause:** A BREAKING CHANGE footer contained `<dir>`-style text. release-please parses the release PR body as HTML, so the unclosed tag swallowed the Cloud section.
+- **Error class:** Release notes parsed as HTML.
+- **Guard:** The `release-body` CI job parses each release PR body with the pinned release-please parser, on the PR and in the merge queue. Its self-test fails on the #1248 body as merged. The `check` job refuses such markup in PR titles and release text in PR bodies. [Release process](/en/docs/contributing/release-process#recover-a-release-that-release-please-skipped) records the recovery.
 
 ### Contacts exports stopped at 1,000 contacts
 
