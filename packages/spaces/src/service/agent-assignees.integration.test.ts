@@ -104,6 +104,31 @@ const createFixture = async (spaceIds: string[], userId: string, accountIds: str
 };
 
 suite("Spaces service-account assignees", () => {
+  test("an exact account name lists first, and kind keeps people from crowding out accounts", async () => {
+    await withFixture(async (f) => {
+      const suffix = crypto.randomUUID();
+      const exact = await f.account("agent");
+      const longer = await f.account("standalone");
+      await sql`UPDATE auth.service_accounts SET name = ${`Sync ${suffix}`} WHERE id = ${exact.id}::uuid`;
+      // Sorts before the exact name and contains it, so only the exact-match order puts the exact one first.
+      await sql`UPDATE auth.service_accounts SET name = ${`A Sync ${suffix} helper`} WHERE id = ${longer.id}::uuid`;
+      const search = `SYNC ${suffix}`;
+      expect(await listAssignableUsers({ spaceId: f.spaceId, search, kind: "service_account", limit: 1 })).toMatchObject([
+        { id: exact.id },
+      ]);
+      expect((await listAssignableUsers({ spaceId: f.spaceId, search, kind: "service_account" })).map((entry) => entry.id)).toEqual([
+        exact.id,
+        longer.id,
+      ]);
+      const people = await listAssignableUsers({ spaceId: f.spaceId, kind: "user" });
+      expect(people.length).toBeGreaterThan(0);
+      expect(people.every((entry) => entry.kind === "user")).toBe(true);
+      const accounts = await listAssignableUsers({ spaceId: f.spaceId, kind: "service_account" });
+      expect(accounts.map((entry) => entry.id)).toContain(f.agent.id);
+      expect(accounts.every((entry) => entry.kind === "service_account")).toBe(true);
+    });
+  });
+
   test("claiming assigns the agent once and assignment filters preserve personal scope", async () => {
     await withFixture(async (f) => {
       const itemId = await f.task();

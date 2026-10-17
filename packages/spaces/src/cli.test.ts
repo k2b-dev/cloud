@@ -197,13 +197,15 @@ beforeAll(async () => {
       if (path.startsWith("/api/spaces/items/")) return Response.json({ message: "Item not found" }, { status: 404 });
       if (path === "/api/spaces/Space1") return json(spaceDetail);
       if (path === "/api/spaces/Space1/assignable-users")
-        return json([
-          { id: OTHER_ID, kind: "user", uid: "ada", displayName: "Ada", avatarHash: null },
-          { id: AGENT_ID, kind: "service_account", uid: "Release Agent", displayName: "Release Agent", avatarHash: null },
-          // Only standalone and agent names are unique; a Space API key may share one with an agent.
-          { id: KEY_ID, kind: "service_account", uid: "Roadmap sync", displayName: "Roadmap sync", avatarHash: null },
-          { id: SYNC_AGENT_ID, kind: "service_account", uid: "roadmap sync", displayName: "roadmap sync", avatarHash: null },
-        ]);
+        return json(
+          [
+            { id: OTHER_ID, kind: "user", uid: "ada", displayName: "Ada", avatarHash: null },
+            { id: AGENT_ID, kind: "service_account", uid: "Release Agent", displayName: "Release Agent", avatarHash: null },
+            // Only standalone and agent names are unique; a Space API key may share one with an agent.
+            { id: KEY_ID, kind: "service_account", uid: "Roadmap sync", displayName: "Roadmap sync", avatarHash: null },
+            { id: SYNC_AGENT_ID, kind: "service_account", uid: "roadmap sync", displayName: "roadmap sync", avatarHash: null },
+          ].filter((entry) => entry.kind === (url.searchParams.get("kind") ?? entry.kind)),
+        );
       if (path === "/api/spaces/Space1/items/filter") return json({ items: [task], total: 1, page: 1, pageSize: 50, totalPages: 1 });
       if (path === "/api/spaces/Space1/items") return json({ ...task, ...(body as object), id: "New002" });
       if (path === "/api/spaces/Space1/templates") return json(spaceDetail.templates);

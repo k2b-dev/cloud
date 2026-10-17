@@ -362,12 +362,14 @@ export const listServiceAccountsWithAccess = async (params: {
   // Match the people directory's existing query budget.
   const limit = Math.min(Math.max(params.limit ?? (ids.length || 20), 1), 500);
   const rows = await db<{ id: string; name: string; kind: "standalone" | "agent" | "resource_bound" }[]>`
-    SELECT DISTINCT account.id, account.name, account.kind
+    SELECT account.id, account.name, account.kind
     FROM auth.service_accounts account
-    JOIN auth.access access ON access.service_account_id = account.id
-    JOIN spaces.space_access space_access ON space_access.access_id = access.id
-    WHERE space_access.space_id = ${params.spaceId}::uuid
-      AND access.permission IN ('read', 'write', 'admin')
+    WHERE EXISTS (
+        SELECT 1 FROM auth.access access
+        JOIN spaces.space_access space_access ON space_access.access_id = access.id
+        WHERE access.service_account_id = account.id AND space_access.space_id = ${params.spaceId}::uuid
+          AND access.permission IN ('read', 'write', 'admin')
+      )
       AND account.status = 'active'
       AND (
         account.kind IN ('standalone', 'agent')
@@ -377,7 +379,7 @@ export const listServiceAccountsWithAccess = async (params: {
       AND (${params.ids === undefined} OR account.id = ANY(${toPgUuidArray(ids)}::uuid[]))
       AND account.id <> ALL(${toPgUuidArray(excluded)}::uuid[])
       AND (${pattern}::text IS NULL OR LOWER(account.name) LIKE ${pattern} ESCAPE '\\')
-    ORDER BY account.name, account.id
+    ORDER BY (${query ?? null}::text IS NOT NULL AND LOWER(account.name) = ${query ?? null}) DESC, account.name, account.id
     LIMIT ${limit}
   `;
   return rows.map((row) => ({
@@ -390,19 +392,24 @@ export const listServiceAccountsWithAccess = async (params: {
   }));
 };
 
+/** People first, then service accounts; `kind` lists only one of them, so people never crowd out an account name lookup. */
 export const listAssignableUsers = async (params: {
   spaceId: string;
   search?: string;
   excludeUserIds?: string[];
   limit?: number;
+  kind?: SpaceAssignableUser["kind"];
 }): Promise<SpaceAssignableUser[]> => {
   const limit = Math.min(Math.max(params.limit ?? 20, 1), 500);
-  const users = await listUsersWithAccess({
-    accessIds: await listSpaceAccessIds(params.spaceId),
-    search: params.search,
-    excludeUserIds: params.excludeUserIds,
-    limit,
-  });
+  const users =
+    params.kind === "service_account"
+      ? []
+      : await listUsersWithAccess({
+          accessIds: await listSpaceAccessIds(params.spaceId),
+          search: params.search,
+          excludeUserIds: params.excludeUserIds,
+          limit,
+        });
   const people: SpaceAssignableUser[] = users.map((user) => ({
     kind: "user",
     id: user.id,
@@ -411,7 +418,7 @@ export const listAssignableUsers = async (params: {
     uid: user.uid,
     description: assignableUserDescription(user),
   }));
-  if (people.length === limit) return people;
+  if (people.length === limit || params.kind === "user") return people;
   const accounts = await listServiceAccountsWithAccess({
     spaceId: params.spaceId,
     search: params.search,
