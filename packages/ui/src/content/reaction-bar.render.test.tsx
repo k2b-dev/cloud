@@ -77,7 +77,9 @@ describe("ReactionBar", () => {
     expect(elements(html, ".k2b-reaction-bar__hint")).toEqual([
       { class: "k2b-tooltip k2b-reaction-bar__hint", popover: "manual", role: "tooltip", "aria-hidden": "true" },
     ]);
-    expect(elements(html, ".k2b-reaction-bar__add-button")[0]).toMatchObject({ "aria-label": "Add reaction", "aria-haspopup": "dialog" });
+    expect(elements(html, ".k2b-reaction-bar__add-button")[0]).toMatchObject({ "aria-label": "Add reaction" });
+    // The caller decides what Add reaction opens, so the button claims no popup type of its own.
+    expect(elements(html, ".k2b-reaction-bar__add-button")[0]).not.toHaveProperty("aria-haspopup");
   });
   test("read-only chips are images ignored by GestureMenu, with one scrolling tab stop", () => {
     const html = bar();
@@ -117,6 +119,8 @@ describe("ReactionBar", () => {
     expect(declarations('.k2b-ui .k2b-reaction-bar[data-density="compact"]').get("--k2b-reaction-height")).toEqual(["1.5rem"]);
     expect(declarations(".k2b-ui .k2b-reaction-bar__chip").get("height")).toEqual(["var(--k2b-reaction-height)"]);
     expect(declarations(".k2b-ui .k2b-reaction-bar__more").get("pointer-events")).toEqual(["none"]);
-    expect(declarations(".k2b-ui .k2b-reaction-bar__chip:focus-visible").get("outline-offset")).toEqual(["calc(var(--k2b-focus-width) / 2)"]);
+    expect(declarations(".k2b-ui .k2b-reaction-bar__chip:focus-visible").get("outline-offset")).toEqual([
+      "calc(var(--k2b-focus-width) / 2)",
+    ]);
   });
 });

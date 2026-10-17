@@ -323,7 +323,6 @@ export function ReactionBar(props: ReactionBarProps): JSX.Element {
               label={chatMessages().messageAddReaction}
               size="xs"
               class="k2b-reaction-bar__add-button"
-              aria-haspopup="dialog"
               onClick={(event) => add()(event.currentTarget)}
             >
               <i class="ti ti-mood-plus" aria-hidden="true" />
