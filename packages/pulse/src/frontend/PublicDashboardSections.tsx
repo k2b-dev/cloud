@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Chart, DataTable, type ChartTooltipFormatter, type DataTableColumn, MarkdownView } from "@k2b/ui";
+import { Chart, type ChartTooltipFormatter, DataTable, type DataTableColumn, MarkdownView } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import type {
   MetricQueryPoint,

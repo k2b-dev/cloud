@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ChartSelection } from "@k2b/ui";
-import { metricChartTooltip, type MetricChartTooltipOptions } from "./chart-tooltips";
+import { type MetricChartTooltipOptions, metricChartTooltip } from "./chart-tooltips";
 
 const options: MetricChartTooltipOptions = {
   title: "CPU",
