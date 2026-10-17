@@ -18,7 +18,7 @@ Wähle **Weitere Optionen**, um alle Felder für Aufgaben oder Termine zu sehen.
 
 Fälligkeiten sind standardmäßig ganztägig. Wähle ein Datum, an dem die Aufgabe fällig ist. **Uhrzeit hinzufügen** ergänzt eine feste Uhrzeit; **Uhrzeit entfernen** macht die Fälligkeit wieder ganztägig.
 
-Eine ganztägige Fälligkeit wird erst am Folgetag in der Anwendungszeitzone überfällig. Am gewählten Tag zählt sie den ganzen Tag als heute fällig. Im Kalender steht sie in der Tages- und Wochenansicht in der Ganztagszeile, in der Monats- und Jahresansicht an ihrem Datum. Bestehende Fälligkeiten mit Uhrzeit behalten ihre Uhrzeit.
+Eine ganztägige Fälligkeit wird erst am Folgetag in deiner Zeitzone überfällig. Am gewählten Tag zählt sie den ganzen Tag als heute fällig. Im Kalender steht sie in der Tages- und Wochenansicht in der Ganztagszeile, in der Monats- und Jahresansicht an ihrem Datum. Bestehende Fälligkeiten mit Uhrzeit behalten ihre Uhrzeit.
 
 ## Mit einer Vorlage beginnen {icon="template"}
 
