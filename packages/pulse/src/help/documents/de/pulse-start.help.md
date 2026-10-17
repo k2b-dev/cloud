@@ -28,6 +28,8 @@ Pulse verwandelt eingehende Daten in durchsuchbare Fakten, Abfrageergebnisse und
 6. **Dashboard schreiben:** Kopiere nützliche, stabile Abfragen in die Dashboard-DSL. Ergänze Beschreibungen, wenn ein Diagramm erklärt werden muss.
 :::
 
+Zeigst du auf ein Diagramm, tippst darauf oder springst mit der Tabulatortaste hinein, siehst du die Werte mit Zeit und Einheit.
+
 :::note Eine Regel für Namen
 Signalnamen beschreiben den Fakt, zum Beispiel `orders.created` oder `system.cpu.usage`. Quelle, Ressource und Dimensionen beschreiben, woher dieser Fakt stammt. Deshalb funktioniert dasselbe Modell für Server, Verkäufe, Websites, Energiesysteme und App-Abläufe.
 :::
