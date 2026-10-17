@@ -42,7 +42,9 @@ Write placeholders without angle brackets: use `DIR` or `{dir}` instead of
 body on the PR and again in the merge queue. It refuses HTML-like markup in
 the title, Conventional Commit header lines in the body, breaking-change
 paragraphs, and `BEGIN_NESTED_COMMIT` or `BEGIN_COMMIT_OVERRIDE` blocks
-([#1298](https://github.com/k2b-dev/cloud/issues/1298)). After fixing the
+([#1298](https://github.com/k2b-dev/cloud/issues/1298)). This cheap check
+covers the usual forms of release-please's commit grammar, not every one; the
+`release-body` job below parses with release-please itself. After fixing the
 text, re-run the failed `check` job to check it again.
 
 A change to a runtime contract (configuration, routes, permissions, data

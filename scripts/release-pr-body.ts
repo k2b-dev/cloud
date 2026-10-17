@@ -70,6 +70,11 @@ export function markupSnippets(text: string): string[] {
   return snippets(text, true);
 }
 
+/**
+ * Cheap PR-time lint for markup that release-please copies into release notes. It covers the
+ * usual forms of its commit grammar without installing it; the release-body CI job, which
+ * parses with release-please itself, stays the authoritative check.
+ */
 export function releaseNoteMarkup(title: string, body: string): string[] {
   const finding = (where: string, snippet: string) =>
     `HTML-like markup in ${where}: ${JSON.stringify(snippet)}. Write placeholders without angle brackets (for example DIR or {dir}), because release-please parses release notes as HTML (#1298).`;
