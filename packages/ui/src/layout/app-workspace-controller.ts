@@ -564,7 +564,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         detailWasWaiting.set(aside, waiting);
         if (!waiting) parkDetailDrawer(aside);
         else if (detailDrawer(aside)) syncDetailDrawerSpace(aside);
-        else if (before === false && aside.contains(ownerDocument.activeElement)) detailToggle(aside)?.focus({ preventScroll: true });
+        else if (before !== true && aside.contains(ownerDocument.activeElement)) detailToggle(aside)?.focus({ preventScroll: true });
       }
     }
   };
