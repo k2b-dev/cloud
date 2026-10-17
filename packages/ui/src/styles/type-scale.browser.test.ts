@@ -83,7 +83,9 @@ const load = async () => {
       '<body class="k2b-ui" data-theme="light" style="margin:0"><div id="app" style="height:48rem"></div></body></html>',
   );
   await page.evaluate(() =>
-    Promise.all(["400 13px 'IBM Plex Sans'", "500 13px 'IBM Plex Sans'", "600 13px 'IBM Plex Sans'"].map((font) => document.fonts.load(font))),
+    Promise.all(
+      ["400 13px 'IBM Plex Sans'", "500 13px 'IBM Plex Sans'", "600 13px 'IBM Plex Sans'"].map((font) => document.fonts.load(font)),
+    ),
   );
   await page.addScriptTag({ content: script });
   await page.locator('[data-probe="button-md"]').waitFor();
@@ -176,10 +178,11 @@ describe(`type scale in ${browserName}`, () => {
         const probe = await measure(page);
         const heights = Object.fromEntries(Object.keys(baseline).map((name) => [name, probe[name as keyof typeof baseline].height]));
         // A sixty-fourth of a pixel is how the engines round a line box, not a shift.
-        for (const [name, height] of Object.entries(baseline)) expect({ name, height: heights[name]! }).toEqual({ name, height: expect.closeTo(height, 1) });
+        for (const [name, height] of Object.entries(baseline))
+          expect({ name, height: heights[name]! }).toEqual({ name, height: expect.closeTo(height, 1) });
         expect(probe.tableHeader.height + probe.tableRow.height).toBe(64);
 
-        const type = Object.fromEntries(
+        const type: Record<string, readonly string[]> = Object.fromEntries(
           Object.keys(scale).map((name) => {
             const { fontSize, fontWeight, color } = probe[name as keyof typeof scale];
             return [name, [fontSize, fontWeight, color]];

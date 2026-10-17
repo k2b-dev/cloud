@@ -754,11 +754,13 @@
 
 /* Scoped to the description. The bare `.k2b-settings-field p` selector this
    replaces outranked `__error` and also restyled any paragraph a consumer
-   passed as `children`. Cloud: `text-xs text-dimmed`, spacing from the gap. */
+   passed as `children`. Spacing comes from the gap; the line height keeps the
+   former 18px line under the larger type. */
 .k2b-ui .k2b-settings-field__copy > p {
   margin: 0;
-  color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.78125rem;
+  line-height: 1.125rem;
 }
 
 /* Cloud: `text-xs text-red-600 flex items-center gap-1`. */
