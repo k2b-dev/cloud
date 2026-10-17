@@ -1,5 +1,6 @@
 import { TabBar, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { isServer, Portal } from "solid-js/web";
 import { AppLaunchpadButton, setAppLaunchpadContext } from "./app-launchpad";
 import GlobalSearchTrigger from "./GlobalSearchTrigger";
 import LayoutBreadcrumbs from "./LayoutBreadcrumbs";
@@ -16,7 +17,6 @@ import { useShellData } from "./shell-data";
 
 type CloudShellProps =
   | { slot: "rail"; currentPath: string }
-  | { slot: "bar"; currentPath: string }
   | { slot: "header"; authenticated: boolean; title?: string; launchpad: boolean; breadcrumbs?: LayoutBreadcrumb[] };
 
 /**
@@ -24,17 +24,17 @@ type CloudShellProps =
  * own the frame and the plain links around it as server markup.
  */
 export default function CloudShell(props: CloudShellProps) {
-  if (props.slot === "rail") return <RailNavigation currentPath={props.currentPath} />;
-  if (props.slot === "bar") return <BarNavigation currentPath={props.currentPath} />;
-  return <HeaderControls {...props} />;
+  return props.slot === "rail" ? <RailNavigation currentPath={props.currentPath} /> : <HeaderControls {...props} />;
 }
 
 /**
- * The phone bar's live copy. It renders nothing while the server's bar is current, so mounting moves and refocuses
- * nothing. When the saved rail preferences or the URL (a fragment, Back and Forward in the document) change what the
- * bar shows, it renders the new bar, and CSS hides the server's.
+ * The phone bar's live copy, mounted with the rail's island so the shell adds no island instance. It renders nothing
+ * while the server's bar is current, so mounting moves and refocuses nothing. When the saved rail preferences or the
+ * URL (a fragment, Back and Forward, an in-page navigation) change what the bar shows, it renders the new bar into the
+ * bar's row, and CSS hides the server's.
  */
 function BarNavigation(props: { currentPath: string }) {
+  if (isServer) return null;
   const data = useShellData();
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
@@ -53,15 +53,23 @@ function BarNavigation(props: { currentPath: string }) {
     window.addEventListener(RAIL_PREFERENCES_EVENT, sync);
     window.addEventListener("popstate", syncLocation);
     window.addEventListener("hashchange", syncLocation);
+    // In-page navigation (`@k2b/ssr/nav`) commits with pushState or replaceState, which only the Navigation API
+    // reports; where a browser lacks it, the bar follows at the next page load.
+    window.navigation?.addEventListener("currententrychange", syncLocation);
     onCleanup(() => {
       window.removeEventListener(RAIL_PREFERENCES_EVENT, sync);
       window.removeEventListener("popstate", syncLocation);
       window.removeEventListener("hashchange", syncLocation);
+      window.navigation?.removeEventListener("currententrychange", syncLocation);
     });
   });
+  const row = document.querySelector<HTMLElement>(".cloud-tab-bar__row");
+  if (!row) return null;
   return (
     <Show when={JSON.stringify(items()) !== served}>
-      <TabBar variant="floating" class="cloud-tab-bar__live" label={t().apps} items={items()} />
+      <Portal mount={row}>
+        <TabBar variant="floating" class="cloud-tab-bar__live" label={t().apps} items={items()} />
+      </Portal>
     </Show>
   );
 }
@@ -78,6 +86,7 @@ function RailNavigation(props: { currentPath: string }) {
       <ShellFocusToggle variant="rail" />
       <RailApps apps={data.apps} settings={data.rail} currentPath={props.currentPath} />
       <AppLaunchpadButton profile={profile} apps={data.apps} legalLinks={data.legalLinks} variant="rail" label={t().openApps} />
+      <BarNavigation currentPath={props.currentPath} />
       <div class="mt-auto shrink-0 flex flex-col items-center gap-1">
         <GlobalSearchTrigger variant="rail" />
         <LayoutHelpTrigger variant="rail" />

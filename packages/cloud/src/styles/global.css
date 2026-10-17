@@ -456,8 +456,12 @@ solid-island {
 
 /* The shell's live bar replaces the server's once the bar's content changes
    in the browser. */
-.cloud-tab-bar__row:has(> :is(solid-island, solid-client) > .cloud-tab-bar__live) > .k2b-tab-bar {
+.cloud-tab-bar__row:has(.cloud-tab-bar__live) > .k2b-tab-bar {
   display: none;
+}
+
+.cloud-tab-bar__row > div:has(> .cloud-tab-bar__live) {
+  display: contents;
 }
 
 .cloud-tab-bar .k2b-tab-bar {

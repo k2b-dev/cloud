@@ -61,8 +61,8 @@ import { fromJSON } from "seroval";
 import { LocaleProvider, installAppWorkspaceController } from "@k2b/ui";
 import CloudShell from "./CloudShell.island";
 window.mountShell = () => {
-  const islands = [...document.querySelectorAll("solid-island")].filter(element => element.innerHTML.includes("layout-rail-navigation") || element.closest(".layout-header, .cloud-tab-bar"));
-  if (islands.length !== 3) throw new Error("Expected the real rail, header, and bar CloudShell islands, got " + islands.length);
+  const islands = [...document.querySelectorAll("solid-island")].filter(element => element.innerHTML.includes("layout-rail-navigation") || element.closest(".layout-header"));
+  if (islands.length !== 2) throw new Error("Expected the real rail and header CloudShell islands, got " + islands.length);
   for (const island of islands) {
     const props = fromJSON(JSON.parse(island.dataset.props));
     island.replaceChildren();
@@ -176,6 +176,34 @@ describe("the phone bar follows saved rail preferences", () => {
         window.dispatchEvent(new CustomEvent("cloud:rail-preferences"));
       });
       expect(await hrefs()).toEqual(["/"]);
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("the phone bar follows in-page navigation", () => {
+  test("390×844: a pushState navigation moves the open item where the browser reports it", async () => {
+    const { context, page } = await open(phone, "/app/mail/inbox?overview=1", { attached: false });
+    try {
+      const markup = await html("/app/mail/inbox?overview=1");
+      await page.route("https://shell.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }));
+      await page.goto("https://shell.example.test/app/mail/inbox?overview=1");
+      await page.addScriptTag({ content: client });
+      await page.evaluate(() => (window as unknown as { mountShell: () => void }).mountShell());
+      const current = () =>
+        page
+          .locator('.cloud-tab-bar a[aria-current="page"]')
+          .evaluateAll((links) => links.filter((link) => link.checkVisibility()).map((link) => link.getAttribute("href")));
+      expect(await current()).toEqual(["/app/mail"]);
+      // What `@k2b/ssr/nav` does for an enhanced link: a history entry without a document load.
+      const reported = await page.evaluate(async () => {
+        history.pushState(null, "", "/");
+        await new Promise<void>((settle) => requestAnimationFrame(() => requestAnimationFrame(() => settle())));
+        return "navigation" in window;
+      });
+      // Without the Navigation API the browser reports nothing, and the next page load brings the bar up to date.
+      expect(await current()).toEqual(reported ? ["/"] : ["/app/mail"]);
     } finally {
       await context.close();
     }
