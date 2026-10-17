@@ -756,6 +756,39 @@ describe("absolute login expiry", () => {
       expect(await Bun.file(config).exists()).toBe(false);
     }
   });
+
+  test("an omitted refresh-token lifetime with --ttl still ends the login no later than ttl", async () => {
+    const token = { access_token: "access-token-secret", token_type: "Bearer", expires_in: 3600, refresh_token: "refresh-token-secret" };
+    const { origin } = startServer(["approve"], { tokenResponse: token });
+    const config = await configPath();
+    const before = Date.now();
+    const result = await runCli(config, [...userArgs(origin), "--ttl", "30m"]);
+    const after = Date.now();
+    expect(result.exitCode).toBe(0);
+    const session = (await readConfig(config)).profiles.portal?.oauth;
+    expectExpiry(session?.loginExpiresAt, 1800, before, after);
+    expect(result.stdout).toContain(`Login expires: ${session?.loginExpiresAt}`);
+  });
+
+  test("login refuses a profile with an agent's client credentials before any request", async () => {
+    const { state, origin } = startServer();
+    const config = await configPath();
+    const agentConfig = JSON.stringify({
+      currentProfile: "agent",
+      profiles: { agent: { server: origin, clientCredentials: { clientId: "agent-1", clientSecret: "agent-secret" } } },
+    });
+    await writeFile(config, agentConfig);
+    for (const [locale, expected] of [
+      ["en", 'Profile "agent" holds an agent\'s client credentials. Run `cld logout --profile agent` first'],
+      ["de", 'Profil "agent" enthält die Client-Zugangsdaten eines Agents. Führe zuerst `cld logout --profile agent` aus'],
+    ] as const) {
+      const result = await runCli(config, ["--locale", locale, "login", "agent", "--server", origin, "--user", "alice", "--ttl", "8h"]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain(expected);
+    }
+    expect(state.requests).toHaveLength(0);
+    expect(await readFile(config, "utf8")).toBe(agentConfig);
+  });
 });
 
 test("login and auth help document Cloud Login and login expiry in English and German", async () => {

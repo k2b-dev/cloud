@@ -3375,6 +3375,14 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   }
   const ttl = "ttl" in parsed.flags ? parseLoginTtl(takeStringFlag(parsed.flags, "ttl")) : undefined;
   const existing = config.profiles?.[name] ?? {};
+  // The agent's client credentials would win over the personal login and later overwrite it.
+  if (existing.clientCredentials) {
+    throw new CliError(
+      `Profile "${name}" holds an agent's client credentials. Run \`cld logout --profile ${name}\` first or choose another profile name.`,
+      1,
+      `Profil "${name}" enthält die Client-Zugangsdaten eines Agents. Führe zuerst \`cld logout --profile ${name}\` aus oder wähle einen anderen Profilnamen.`,
+    );
+  }
   const server = takeStringFlag(parsed.flags, "server") ?? global.server ?? envServer() ?? existing.server;
   if (!server) throw new CliError("Missing server. Run `cld login --server <url>`.");
 
@@ -3416,8 +3424,9 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   const refreshToken = token.refresh_token;
   if (!refreshToken) throw new CliError("OAuth server did not issue a refresh token. Check the offline_access scope.");
 
-  const loginExpiresAt =
-    token.refresh_token_expires_in !== undefined ? new Date(Date.now() + token.refresh_token_expires_in * 1000).toISOString() : undefined;
+  // A Cloud that accepted ttl but omits the remaining lifetime still ends the login no later than ttl.
+  const loginSeconds = token.refresh_token_expires_in ?? ttl;
+  const loginExpiresAt = loginSeconds !== undefined ? new Date(Date.now() + loginSeconds * 1000).toISOString() : undefined;
   await storeOAuthLogin({
     name,
     server: normalizedServer,
