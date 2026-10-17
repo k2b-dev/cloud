@@ -44,7 +44,7 @@ window.fixture = {
   unmount: render(() => createComponent(ReactionBar, {
     get reactions() { return reactions(); },
     onToggle: options.readOnly ? undefined : (key) => window.toggled.push(key),
-    onAdd: options.progressive ? () => {} : undefined,
+    onAdd: options.progressive || options.add ? () => window.toggled.push("add") : undefined,
     add: options.progressive ? "progressive" : "always",
     density: options.density,
     overflow: options.overflow,
@@ -90,6 +90,7 @@ const open = async (
     progressive?: boolean;
     readOnly?: boolean;
     touch?: boolean;
+    add?: boolean;
   } = {},
 ): Promise<Page> => {
   context = await browser.newContext({ viewport: { width: 500, height: 600 }, hasTouch: options.touch ?? false });
@@ -188,6 +189,13 @@ describe("ReactionBar in the browser", () => {
         await input.send("touchEnd");
         await page.touchscreen.tap(position.x, position.y);
         expect(await page.evaluate(() => toggled)).toEqual(["0", "0"]);
+        // A keyboard's click after a hold is never swallowed, also where the browser sends no click after the finger.
+        await input.send("touchStart", position);
+        await page.waitForTimeout(650);
+        await input.send("touchEnd");
+        await chip(page).focus();
+        await page.keyboard.press("Enter");
+        expect(await page.evaluate(() => toggled)).toEqual(["0", "0", "0"]);
       } finally {
         await input.close();
       }
@@ -258,11 +266,22 @@ describe("ReactionBar in the browser", () => {
       await page.waitForTimeout(650);
       expect(await isOpen(page)).toBe(true);
       await chip(page).dispatchEvent("pointerup", { pointerType: "pen", pointerId: 9 });
-      await chip(page).dispatchEvent("click");
+      await chip(page).dispatchEvent("click", { detail: 1 });
       expect(await page.evaluate(() => toggled)).toEqual(["0"]);
     },
     30_000,
   );
+  test("on a touch screen the add button's 44 px area does not reach back over the chips before it", async () => {
+    const page = await open({ touch: true, add: true });
+    expect(await page.evaluate(() => matchMedia("(any-pointer: coarse)").matches)).toBe(true);
+    const add = await page.locator(".k2b-reaction-bar__add-button").boundingBox();
+    // 3 px left of the button lies the gap and the end of the chip list; with the shared area centred it would be the button's.
+    const hit = await page.evaluate(({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest(".k2b-reaction-bar__add")), {
+      x: add!.x - 3,
+      y: add!.y + add!.height / 2,
+    });
+    expect(hit).toBe(false);
+  }, 30_000);
   test("progressive add keeps all boxes on hover and remains visible while expanded", async () => {
     const page = await open({ density: "compact", max: 3, progressive: true });
     const add = page.locator(".k2b-reaction-bar__add");

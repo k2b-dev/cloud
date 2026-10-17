@@ -210,10 +210,14 @@ export function ReactionBar(props: ReactionBarProps): JSX.Element {
       if (event.pointerId === press?.id) endPress();
     };
     const touchEnd = (event: TouchEvent) => {
-      if (swallowClick && event.cancelable) event.preventDefault();
+      if (!swallowClick || !event.cancelable) return;
+      // A cancelled touchend sends no click, so nothing is left to swallow.
+      event.preventDefault();
+      resetSwallow();
     };
+    // Only the click of the held finger or pen is swallowed; a keyboard's click has no detail and always goes through.
     const click = (event: MouseEvent) => {
-      if (!swallowClick) return;
+      if (!swallowClick || event.detail === 0) return;
       event.preventDefault();
       event.stopPropagation();
       resetSwallow();

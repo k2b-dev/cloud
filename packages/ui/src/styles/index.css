@@ -8780,8 +8780,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Touch targets: on a coarse pointer, chips in a scrolling bar take taps 9 px above and below, inside the list that
-   clips them, without taking layout. */
+   clips them, without taking layout. "Add reaction" sits in its own slot, so like any button after others its 44 px
+   area does not reach back over the last chip. */
 @media (any-pointer: coarse) {
+  .k2b-ui .k2b-reaction-bar__add:not(:first-child) > .k2b-button::after {
+    inset-inline-start: 0;
+  }
+
   .k2b-ui .k2b-reaction-bar__scroll {
     position: relative;
     margin-block: -0.5625rem;
