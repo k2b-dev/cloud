@@ -59,7 +59,7 @@ if (mode !== "book")
           editor.markdownExtension(),
           editor.searchTheme(),
           fadeScrollMarginsExtension(() => port),
-          editor.noteScrollerTheme,
+          editor.noteScroller,
           previews ? [previews.extension, previews.listener] : [],
           mode === "source"
             ? [editor.rawLightInit(), lineNumbers()]

@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
-import { FIXTURE_NOW, HANDBOOK_IDS } from "./graph.fixtures";
+import { bigGraph, FIXTURE_NOW, HANDBOOK_IDS, handbookGraph } from "./graph.fixtures";
+import { buildGraphModel, matchesQuery, visibleEdges, visibleNotes } from "./model";
 import { startGraphServer } from "./notebook-graph.browser-server";
 
 let browser: Browser;
@@ -1226,6 +1227,489 @@ test(`${browserName}: Circle display and filters survive reload, opening a note 
     await settled(page);
     expect(await page.locator(".notebook-graph__svg").getAttribute("data-display")).toBe("circle");
     expect([...search(page)]).toEqual(before);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+const timelineRows = (page: Page) => page.locator(".notebook-graph__row[data-row]");
+const timelineIds = (page: Page) => timelineRows(page).evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row")));
+const focusedRow = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("data-row") ?? null);
+const timelineReady = (page: Page, links: number) =>
+  page.waitForFunction((count) => document.querySelectorAll(".notebook-graph__arc").length === count, links);
+const handbookModel = buildGraphModel(handbookGraph(), "en");
+// Fixture ages give the expected order; ties use the model's notebook order.
+const changedOrder = (direction: "asc" | "desc") =>
+  handbookModel.notes.toSorted(
+    (a, b) =>
+      (direction === "desc" ? Date.parse(b.updatedAt) - Date.parse(a.updatedAt) : Date.parse(a.updatedAt) - Date.parse(b.updatedAt)) ||
+      a.order - b.order,
+  );
+
+for (const lang of ["en", "de"] as const) {
+  for (const filtered of [false, true]) {
+    test(`${browserName}: Timeline ${lang} has dated rows, source-colored arcs and identical server groups${filtered ? " with filters" : ""}`, async () => {
+      const hide = filtered ? [HANDBOOK_IDS.komm!] : [];
+      const expected = visibleNotes(handbookModel, { links: filtered ? "linked" : "all", hide });
+      const ids = new Set(expected.map((note) => note.id));
+      const edges = visibleEdges(handbookModel, ids);
+      const page = await open(
+        graphPath("hand01", `&display=timeline&lang=${lang}${filtered ? `&links=linked&hide=${hide.join(",")}` : ""}`),
+      );
+      try {
+        await timelineReady(page, edges.length);
+        expect(await timelineIds(page)).toEqual(
+          changedOrder("desc")
+            .filter((note) => ids.has(note.id))
+            .map((note) => note.id),
+        );
+        expect(await timelineRows(page).count()).toBe(expected.length);
+        expect(new Set(await timelineIds(page)).size).toBe(expected.length);
+        expect(await page.locator(".notebook-graph__timeline-wrap").getByRole("link").count()).toBe(expected.length);
+        expect(await page.locator('[data-row][tabindex="0"]').count()).toBe(1);
+        expect(await page.locator('[data-row][tabindex="0"]').getAttribute("data-row")).toBe(WAREHOUSE);
+        expect(await page.locator(".notebook-graph__arcs").getAttribute("aria-hidden")).toBe("true");
+        const headings = await page.locator(".notebook-graph__timeline-group").allTextContents();
+        expect(headings.slice(0, 4)).toEqual(
+          lang === "en" ? ["Today", "Yesterday", "This week", "Last week"] : ["Heute", "Gestern", "Diese Woche", "Letzte Woche"],
+        );
+        expect(headings.slice(4)).toEqual([
+          ...(lang === "en" ? ["October", "September", "August", "July", "June"] : ["Oktober", "September", "August", "Juli", "Juni"]),
+          ...(!filtered ? ["April"] : []),
+        ]);
+        for (const label of await timelineRows(page).evaluateAll((rows) => rows.map((row) => row.getAttribute("aria-label"))))
+          expect(label).toContain(lang === "en" ? "changed" : "geändert");
+        const slots = await page.locator(".notebook-graph__arc").evaluateAll((arcs) =>
+          arcs.map((arc) => ({
+            arc: arc.getAttribute("data-slot"),
+            row: document.querySelector(`[data-row="${arc.getAttribute("data-source")}"]`)?.getAttribute("data-slot") ?? null,
+          })),
+        );
+        expect(slots).toHaveLength(edges.length);
+        for (const slot of slots) expect(slot.arc).toBe(slot.row);
+        const initial = await page.evaluate(() => window.notebookGraphFixture!);
+        expect(initial.serverFrame.timelineRows).toEqual(await timelineIds(page));
+        expect(initial.serverFrame.timelineGroups).toEqual(headings);
+        expect(initial.clientFrame.timelineRows).toEqual(initial.serverFrame.timelineRows);
+        expect(initial.clientFrame.timelineGroups).toEqual(initial.serverFrame.timelineGroups);
+      } finally {
+        await close(page);
+      }
+    }, 30_000);
+  }
+}
+
+test(`${browserName}: Timeline hover keeps neighbours and distinguishes incoming and outgoing arcs`, async () => {
+  const page = await open(graphPath("hand01", "&display=timeline"));
+  try {
+    await timelineReady(page, handbookModel.edges.length);
+    await page.locator(`[data-row="${WAREHOUSE}"]`).hover();
+    await page.waitForSelector(".notebook-graph__timeline[data-highlight]");
+    const near = await page.locator("[data-row][data-near]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row")));
+    expect(new Set(near)).toEqual(new Set([WAREHOUSE, ...handbookModel.byId.get(WAREHOUSE)!.neighbours]));
+    const arcs = await page.locator(".notebook-graph__arc").evaluateAll((items) =>
+      items.map((arc) => ({
+        source: arc.getAttribute("data-source"),
+        target: arc.getAttribute("data-target"),
+        near: arc.getAttribute("data-near"),
+        opacity: Number(getComputedStyle(arc).strokeOpacity),
+        dash: getComputedStyle(arc).strokeDasharray,
+      })),
+    );
+    const outgoing = arcs.filter((arc) => arc.source === WAREHOUSE);
+    const incoming = arcs.filter((arc) => arc.target === WAREHOUSE);
+    expect(outgoing).toHaveLength(7);
+    expect(incoming).toHaveLength(2);
+    for (const arc of outgoing) {
+      expect(arc.near).toBe("out");
+      expect(arc.dash).toBe("none");
+    }
+    for (const arc of incoming) {
+      expect(arc.near).toBe("in");
+      expect(arc.dash).not.toBe("none");
+    }
+    for (const arc of arcs.filter((arc) => !arc.near)) expect(arc.opacity).toBeLessThan(outgoing[0]!.opacity);
+    await page.mouse.move(0, 0);
+    expect(await page.locator(".notebook-graph__timeline[data-highlight]").count()).toBe(0);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: Timeline has one tab stop, scrolls with arrows, and opens with Enter`, async () => {
+  const page = await open(graphPath("hand01", "&display=timeline"));
+  try {
+    const ids = changedOrder("desc").map((note) => note.id);
+    const current = ids.indexOf(WAREHOUSE);
+    await page.locator(".notebook-graph__areas button").last().focus();
+    await page.keyboard.press("Tab");
+    expect(await focusedRow(page)).toBe(WAREHOUSE);
+    const inside = () =>
+      page.evaluate(() => {
+        const row = document.activeElement!.getBoundingClientRect();
+        const scroller = document.querySelector(".notebook-graph__timeline")!.getBoundingClientRect();
+        return row.top >= scroller.top - 1 && row.bottom <= scroller.bottom + 1;
+      });
+    for (let step = 1; step <= ids.length; step++) {
+      await page.keyboard.press("ArrowDown");
+      expect(await focusedRow(page)).toBe(ids[Math.min(current + step, ids.length - 1)]!);
+      expect(await page.locator('[data-row][tabindex="0"]').getAttribute("data-row")).toBe(await focusedRow(page));
+      expect(await inside()).toBe(true);
+    }
+    await page.keyboard.press("ArrowUp");
+    expect(await focusedRow(page)).toBe(ids.at(-2)!);
+    await page.keyboard.press("Home");
+    expect(await focusedRow(page)).toBe(WAREHOUSE);
+    await page.keyboard.press("Enter");
+    await page.waitForURL(`**/app/notebooks/hand01/notes/${WAREHOUSE}?mode=book`);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`${browserName}: Timeline opens at the current row and avoids horizontal overflow at ${viewport.width}`, async () => {
+    const page = await open(graphPath("hand01", "&display=timeline"), viewport);
+    try {
+      for (let load = 0; load < 2; load++) {
+        if (load) {
+          await page.reload();
+          await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
+        }
+        await timelineReady(page, handbookModel.edges.length);
+        const box = await page.locator(".notebook-graph__timeline").evaluate((element: HTMLElement, id) => {
+          const row = element.querySelector(`[data-row="${id}"]`)!.getBoundingClientRect();
+          return {
+            centre: row.top + row.height / 2 - element.getBoundingClientRect().top,
+            height: row.height,
+            viewport: element.clientHeight,
+            overflow: element.scrollWidth - element.clientWidth,
+            documentOverflow: document.documentElement.scrollWidth - innerWidth,
+          };
+        }, WAREHOUSE);
+        expect(box.centre).toBeGreaterThanOrEqual(0);
+        expect(box.centre).toBeLessThanOrEqual(box.viewport / 3 + box.height);
+        expect(box.overflow).toBeLessThanOrEqual(0);
+        expect(box.documentOverflow).toBeLessThanOrEqual(0);
+      }
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
+
+test(`${browserName}: Timeline search marks matches and Enter follows time order`, async () => {
+  const page = await open(graphPath("hand01", "&display=timeline"));
+  try {
+    const find = page.getByRole("searchbox", { name: "Find a note in the graph" });
+    for (const query of ["Kühl", "plan"]) {
+      await find.fill(query);
+      const hits = changedOrder("desc").filter((note) => matchesQuery(note, query));
+      await page.waitForFunction((count) => document.querySelectorAll("[data-row][data-match]").length === count, hits.length);
+      expect(await page.locator("[data-row]:not([data-match])").count()).toBe(handbookModel.notes.length - hits.length);
+      const appearances = await page.locator("[data-row]").evaluateAll((rows) =>
+        rows.map((row) => {
+          const title = getComputedStyle(row.querySelector(".notebook-graph__row-title")!);
+          return { match: row.hasAttribute("data-match"), appearance: [title.color, title.opacity, getComputedStyle(row).opacity] };
+        }),
+      );
+      expect(appearances.find((row) => row.match)!.appearance).not.toEqual(appearances.find((row) => !row.match)!.appearance);
+      await find.press("Enter");
+      expect(await focusedRow(page)).toBe(hits[0]!.id);
+      await page.keyboard.press("Escape");
+      expect(await find.inputValue()).toBe("");
+      await page.keyboard.press("Escape");
+      expect(await focusedRow(page)).toBeNull();
+    }
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: Timeline disables zoom without moving the toolbars`, async () => {
+  const page = await open(graphPath("hand01", "&display=network"));
+  try {
+    const boxes = () =>
+      page.evaluate(() =>
+        [".notebook-graph__head", ".notebook-graph__filters", ".notebook-graph__body", ".notebook-graph__zoom"].map((selector) => {
+          const box = document.querySelector(selector)!.getBoundingClientRect();
+          return [box.x, box.y, box.width, box.height];
+        }),
+      );
+    const before = await boxes();
+    await page.getByRole("radio", { name: "Timeline", exact: true }).click();
+    await timelineReady(page, handbookModel.edges.length);
+    expect(await boxes()).toEqual(before);
+    for (const label of ["Zoom in", "Zoom out", "Fit graph"]) {
+      const button = page.locator(`.notebook-graph__zoom button[aria-label="${label}"]`);
+      expect(await button.isVisible()).toBe(false);
+      expect(await button.isDisabled()).toBe(true);
+    }
+    expect(await page.locator(".notebook-graph__depth").count()).toBe(0);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: Timeline renders every row and link at 300 notes`, async () => {
+  const model = buildGraphModel(bigGraph(), "en");
+  const page = await open(graphPath("big001", "&display=timeline"));
+  try {
+    await timelineReady(page, model.edges.length);
+    expect(await timelineRows(page).count()).toBe(300);
+    expect(await page.locator(".notebook-graph__arc").count()).toBe(model.edges.length);
+    const ms = await page.evaluate(() => window.notebookGraphFixture!.firstFrameMs);
+    console.info(`${browserName} Timeline: 300 rows, ${model.edges.length} arcs, first frame ${ms.toFixed(1)}ms`);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: Timeline returns to the scrolled rows after opening a note and Back, and after a reload`, async () => {
+  const page = await open(graphPath("big001", "&display=timeline"));
+  const model = buildGraphModel(bigGraph(), "en");
+  const scrollTop = () => page.locator(".notebook-graph__timeline").evaluate((element) => element.scrollTop);
+  try {
+    await timelineReady(page, model.edges.length);
+    const opened = await page.locator(".notebook-graph__timeline").evaluate((element) => {
+      element.scrollTop = element.scrollHeight / 2;
+      const top = element.getBoundingClientRect().top;
+      return [...element.querySelectorAll<HTMLElement>("[data-row]")].find((row) => row.getBoundingClientRect().top > top + 40)!.dataset
+        .row!;
+    });
+    const scrolled = await scrollTop();
+    expect(scrolled).toBeGreaterThan(1000);
+    await page.locator(`[data-row="${opened}"]`).click();
+    await page.waitForURL(`**/app/notebooks/big001/notes/${opened}?mode=book`);
+    await page.goBack();
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
+    await timelineReady(page, model.edges.length);
+    expect(Math.abs((await scrollTop()) - scrolled)).toBeLessThanOrEqual(1);
+    await page.locator(".notebook-graph__timeline").evaluate((element) => {
+      element.scrollTop = 400;
+    });
+    // The position is saved once scrolling pauses.
+    await page.waitForFunction(() => history.state?.notebookGraphTimelineScroll === 400);
+    await page.reload();
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
+    await timelineReady(page, model.edges.length);
+    expect(Math.abs((await scrollTop()) - 400)).toBeLessThanOrEqual(1);
+    // A display switch right after scrolling, before the pause, keeps the newest position too.
+    const pendingAtSwitch = await page.getByRole("radio", { name: "Network", exact: true }).evaluate(async (radio: HTMLElement) => {
+      document.querySelector(".notebook-graph__timeline")!.scrollTop = 1200;
+      await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
+      const pending = history.state?.notebookGraphTimelineScroll !== 1200;
+      radio.click();
+      return pending;
+    });
+    expect(pendingAtSwitch).toBe(true);
+    expect(search(page).get("display")).toBe("network");
+    await page.getByRole("radio", { name: "Timeline", exact: true }).click();
+    await timelineReady(page, model.edges.length);
+    expect(Math.abs((await scrollTop()) - 1200)).toBeLessThanOrEqual(1);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: Reset filters into a scrolled Timeline keeps the focused row in view`, async () => {
+  const page = await open(graphPath("big001", "&display=timeline"));
+  const model = buildGraphModel(bigGraph(), "en");
+  try {
+    await timelineReady(page, model.edges.length);
+    await page.locator(".notebook-graph__timeline").evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await page.waitForFunction(() => (history.state?.notebookGraphTimelineScroll ?? 0) > 1000);
+    // The same history entry, now with every area hidden: the reload keeps the saved scroll and shows the empty state.
+    await page.evaluate(
+      (hide) => history.replaceState(history.state, "", `${location.pathname}${location.search}&hide=${hide}`),
+      [...new Set(model.areas.map((area) => area.key))].join(","),
+    );
+    await page.reload();
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
+    await page.getByRole("button", { name: "Reset filters", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await timelineReady(page, model.edges.length);
+    await page.waitForFunction(() => document.activeElement?.hasAttribute("data-row"));
+    const inView = await page.evaluate(() => {
+      const row = document.activeElement!.getBoundingClientRect();
+      const box = document.querySelector(".notebook-graph__timeline")!.getBoundingClientRect();
+      return row.top >= box.top && row.bottom <= box.bottom;
+    });
+    expect(inView).toBe(true);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: a list sorted by Changed shows the Changed column on a phone, without horizontal overflow`, async () => {
+  const page = await open(graphPath("hand01", "&list=1&sort=changed"), { width: 390, height: 844 });
+  try {
+    const changed = page.getByRole("columnheader", { name: "Changed", exact: true });
+    expect(await changed.isVisible()).toBe(true);
+    expect(await changed.getAttribute("aria-sort")).toBe("descending");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+    const overflow = await page.locator(".notebook-graph__list").evaluate((element) => {
+      const table = element.querySelector("table")!.getBoundingClientRect();
+      return table.right - element.getBoundingClientRect().right;
+    });
+    expect(overflow).toBeLessThanOrEqual(0);
+    await changed.getByRole("button").click();
+    expect(search(page).get("sort")).toBe("changed-asc");
+    expect(await changed.getAttribute("aria-sort")).toBe("ascending");
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+for (const display of ["network", "neighborhood", "timeline"]) {
+  test(`${browserName}: a narrow desktop Main keeps every ${display} header control inside the head`, async () => {
+    const page = await open(graphPath("hand01", `&display=${display}`), { width: 1024, height: 800 });
+    try {
+      for (const width of [664, 600]) {
+        // A 1024 px window beside the navigation leaves about 664 px for Main.
+        const box = await page.evaluate((main) => {
+          document.querySelector<HTMLElement>(".notebook-graph")!.style.width = `${main}px`;
+          const head = document.querySelector(".notebook-graph__head")!;
+          const right = Math.max(...[...head.children].map((child) => child.getBoundingClientRect().right));
+          return {
+            overflow: right - head.getBoundingClientRect().right,
+            search: document.querySelector(".notebook-graph__search")!.clientWidth,
+          };
+        }, width);
+        expect(box.overflow).toBeLessThanOrEqual(0);
+        expect(box.search).toBeGreaterThanOrEqual(128);
+      }
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
+
+test(`${browserName}: Changed sorts the list through the URL and survives reload and Back`, async () => {
+  const page = await open(graphPath("hand01", "&list=1"));
+  const ids = () =>
+    page
+      .locator(".notebook-graph__list-title")
+      .evaluateAll((links) => links.map((link) => /\/notes\/([^?]+)/.exec(link.getAttribute("href")!)![1]));
+  try {
+    const changed = page.getByRole("columnheader", { name: "Changed", exact: true });
+    expect(await changed.getAttribute("aria-sort")).toBe("none");
+    expect(await ids()).toEqual(handbookModel.notes.map((note) => note.id));
+    expect(await page.locator('th:not(:has-text("Changed"))[aria-sort]').count()).toBe(0);
+    await changed.getByRole("button").click();
+    expect(search(page).get("sort")).toBe("changed");
+    expect(await changed.getAttribute("aria-sort")).toBe("descending");
+    expect(await ids()).toEqual(changedOrder("desc").map((note) => note.id));
+    // The keyboard keeps its place on the sort button, so Enter turns the order again.
+    await changed.getByRole("button").focus();
+    await page.keyboard.press("Enter");
+    expect(search(page).get("sort")).toBe("changed-asc");
+    expect(await changed.getAttribute("aria-sort")).toBe("ascending");
+    expect(await page.evaluate(() => document.activeElement?.closest("th")?.textContent?.trim())).toBe("Changed");
+    await page.keyboard.press("Enter");
+    expect(search(page).get("sort")).toBe("changed");
+    await page.keyboard.press("Enter");
+    expect(search(page).get("sort")).toBe("changed-asc");
+    expect(await changed.getAttribute("aria-sort")).toBe("ascending");
+    const oldest = changedOrder("asc").map((note) => note.id);
+    expect(await ids()).toEqual(oldest);
+    await page.reload();
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
+    expect(await ids()).toEqual(oldest);
+    expect(await changed.getAttribute("aria-sort")).toBe("ascending");
+    await page.locator(".notebook-graph__list-title").first().click();
+    await page.waitForURL(`**/app/notebooks/hand01/notes/${oldest[0]}?mode=book`);
+    await page.goBack();
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
+    expect(search(page).get("list")).toBe("1");
+    expect(search(page).get("sort")).toBe("changed-asc");
+    expect(await ids()).toEqual(oldest);
+    expect(await changed.getAttribute("aria-sort")).toBe("ascending");
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: Timeline and filters survive reload, opening a note, and Back`, async () => {
+  const page = await open(graphPath("hand01", `&display=timeline&links=linked&hide=${HANDBOOK_IDS.komm}`));
+  try {
+    const before = [...search(page)];
+    const rows = await timelineIds(page);
+    await page.reload();
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
+    expect([...search(page)]).toEqual(before);
+    expect(await timelineIds(page)).toEqual(rows);
+    await page.locator(`[data-row="${WAREHOUSE}"]`).focus();
+    await page.keyboard.press("Enter");
+    await page.waitForURL(`**/app/notebooks/hand01/notes/${WAREHOUSE}?mode=book`);
+    await page.goBack();
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
+    expect(search(page).get("display")).toBe("timeline");
+    expect([...search(page)]).toEqual(before);
+    expect(await timelineIds(page)).toEqual(rows);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: Timeline scroll range shrinks with the rows when a filter hides most of them`, async () => {
+  const model = buildGraphModel(bigGraph(), "en");
+  const page = await open(graphPath("big001", "&display=timeline"));
+  try {
+    await timelineReady(page, model.edges.length);
+    const range = () =>
+      page.evaluate(() => {
+        const scroller = document.querySelector<HTMLElement>(".notebook-graph__timeline")!;
+        const wrap = scroller.querySelector<HTMLElement>(".notebook-graph__timeline-wrap")!;
+        const arcs = scroller.querySelector<SVGSVGElement>(".notebook-graph__arcs")!;
+        return { scroll: scroller.scrollHeight, rows: wrap.offsetHeight, arcs: arcs.getBoundingClientRect().height };
+      });
+    const before = await range();
+    await page.evaluate(() => {
+      document.querySelector<HTMLElement>(".notebook-graph__timeline")!.scrollTop = 1e6;
+    });
+    // Hide every area but the first; the arcs of the remaining notes are drawn again from the new rows.
+    const areas = page.locator(".notebook-graph__areas button");
+    for (let index = (await areas.count()) - 1; index > 0; index--) await areas.nth(index).click();
+    const rows = await timelineRows(page).count();
+    expect(rows).toBeLessThan(300);
+    await page.waitForFunction(() => {
+      const wrap = document.querySelector<HTMLElement>(".notebook-graph__timeline-wrap")!;
+      return Math.abs(document.querySelector(".notebook-graph__arcs")!.getBoundingClientRect().height - wrap.offsetHeight) < 1;
+    });
+    const after = await range();
+    expect(after.rows).toBeLessThan(before.rows);
+    expect(after.scroll).toBeLessThanOrEqual(
+      Math.max(after.rows, await page.locator(".notebook-graph__timeline").evaluate((el) => el.clientHeight)) + 1,
+    );
+    // Some rows stay in view after the range shrinks.
+    expect(
+      await page.evaluate(() => {
+        const scroller = document.querySelector(".notebook-graph__timeline")!.getBoundingClientRect();
+        return [...document.querySelectorAll("[data-row]")].some((row) => {
+          const box = row.getBoundingClientRect();
+          return box.bottom > scroller.top && box.top < scroller.bottom;
+        });
+      }),
+    ).toBe(true);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: Timeline in a notebook without links keeps the unlinked notes and their search`, async () => {
+  const page = await open(graphPath("free01", "&display=timeline"));
+  try {
+    expect(await page.locator(".notebook-graph__timeline").count()).toBe(0);
+    const find = page.getByRole("searchbox", { name: "Find a note in the graph" });
+    await find.fill("Kost");
+    await find.press("Enter");
+    expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Kosten");
   } finally {
     await close(page);
   }

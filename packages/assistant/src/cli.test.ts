@@ -393,7 +393,7 @@ describe("assistant CLI", () => {
     expect(help).toContain("Review and resolve pending turn actions");
     expect(help).toContain("Manage personal facts, preferences, and learning");
     expect(help).toContain("Find structured Cloud resources used in Assistant chats");
-    expect(help).toContain("Manage one-time and recurring chat tasks");
+    expect(help).toContain("Manage routines, called tasks in the CLI, that run once or repeatedly in a chat");
     expect(help).not.toMatch(/^\s+\w+\s+Commands$/m);
   });
 
@@ -428,7 +428,7 @@ describe("assistant CLI", () => {
     expect(requests).toEqual([`/api/assistant/artifacts/${id}/database/status`, `/api/assistant/artifacts/${id}/database/reset`]);
   });
 
-  test("creates and manually runs chat-bound scheduled tasks", async () => {
+  test("creates and manually runs chat-bound routines", async () => {
     const requests: Array<{ path: string; method: string; body: unknown; idempotencyKey: string | null }> = [];
     const task = {
       id: "tSk234",

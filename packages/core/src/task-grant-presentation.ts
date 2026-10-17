@@ -53,8 +53,8 @@ export async function taskGrantPresentation(grants: AiChatTaskView["grants"], lo
         mode: de ? "Lesen und ändern" : "Read and write",
         scope: fields.length
           ? de
-            ? `Festgelegt: ${fields.join("; ")}. Andere Eingaben darf die Aufgabe selbst wählen.`
-            : `Fixed: ${fields.join("; ")}. The task may choose other inputs itself.`
+            ? `Festgelegt: ${fields.join("; ")}. Andere Eingaben darf die Routine selbst wählen.`
+            : `Fixed: ${fields.join("; ")}. The routine may choose other inputs itself.`
           : de
             ? "Keine Einschränkung auf bestimmte Ziele oder Operationen."
             : "Not limited to specific targets or operations.",
@@ -82,8 +82,8 @@ export async function taskGrantPresentation(grants: AiChatTaskView["grants"], lo
       mode: grant.kind === "query" ? (de ? "Nur lesen" : "Read only") : de ? "Aktion ausführen" : "Perform action",
       scope: fields.length
         ? de
-          ? `Festgelegt: ${fields.join("; ")}. Andere Eingaben darf die Aufgabe selbst wählen.`
-          : `Fixed: ${fields.join("; ")}. The task may choose other inputs itself.`
+          ? `Festgelegt: ${fields.join("; ")}. Andere Eingaben darf die Routine selbst wählen.`
+          : `Fixed: ${fields.join("; ")}. The routine may choose other inputs itself.`
         : de
           ? "Keine Einschränkung auf bestimmte Inhalte."
           : "Not limited to specific content.",
@@ -95,7 +95,7 @@ export async function taskGrantReview(grants: AiChatTaskView["grants"], locale =
   const items = await taskGrantPresentation(grants, locale);
   const escape = (value: string) => value.replace(/[\\`*_{}\[\]()<>#+.!|~-]/gu, "\\$&");
   return {
-    label: locale.startsWith("de") ? "Das erlaubst du dieser Aufgabe" : "What you allow this task to do",
+    label: locale.startsWith("de") ? "Das erlaubst du dieser Routine" : "What you allow this routine to do",
     value: items.length
       ? items
           .map((item) => `**${escape(item.title)}** · ${escape(item.app)}  \n${escape(item.scope).replaceAll("\n", "  \n")}`)

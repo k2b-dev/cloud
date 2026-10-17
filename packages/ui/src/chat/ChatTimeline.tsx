@@ -27,7 +27,8 @@ export type ChatActivityItem = {
   kind: "activity";
   /** Unique within the timeline. A record with a known id updates its row in place instead of replacing it. */
   id: string;
-  label: string;
+  /** The step as text, or as a sentence with `ReferenceChip`s. */
+  label: JSX.Element;
   description?: string;
   icon?: string;
   leading?: JSX.Element;

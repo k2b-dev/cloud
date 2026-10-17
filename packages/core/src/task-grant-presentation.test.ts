@@ -16,12 +16,12 @@ test("task access review distinguishes unrestricted inputs, exact restrictions a
     );
     expect(review.format).toBe("markdown");
     expect(review.value).toContain("**event\\.agenda**");
-    expect(review.label).toBe("Das erlaubst du dieser Aufgabe");
+    expect(review.label).toBe("Das erlaubst du dieser Routine");
     expect(review.value).not.toContain("Aktion ausführen");
     expect(review.value).toContain("Keine Einschränkung auf bestimmte Inhalte");
     expect(review.value).toContain("noteId: abc123");
     expect(review.value.split("\n\n")[1]).toBe(
-      "**note\\.update** · notebooks  \nFestgelegt: noteId: abc123\\. Andere Eingaben darf die Aufgabe selbst wählen\\.",
+      "**note\\.update** · notebooks  \nFestgelegt: noteId: abc123\\. Andere Eingaben darf die Routine selbst wählen\\.",
     );
     expect(review.value).not.toContain('"fixedInput"');
     expect(lookup).toHaveBeenCalledWith("spaces", "de");
