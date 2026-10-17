@@ -282,6 +282,22 @@ describe("ReactionBar in the browser", () => {
     });
     expect(hit).toBe(false);
   }, 30_000);
+  test("on a touch screen wrapped lines keep chips clear of the add button's area", async () => {
+    const page = await open({ touch: true, add: true, overflow: "wrap" });
+    const add = await page.locator(".k2b-reaction-bar__add-button").boundingBox();
+    const first = await chip(page).boundingBox();
+    expect(add!.y).toBeGreaterThan(first!.y);
+    // The lower edge of every chip takes its own tap, also on the line right above "Add reaction".
+    const stolen = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>("[data-reaction-key]"))
+        .filter((element) => {
+          const box = element.getBoundingClientRect();
+          return document.elementFromPoint(box.x + box.width / 2, box.bottom - 1)?.closest("[data-reaction-key]") !== element;
+        })
+        .map((element) => element.dataset.reactionKey),
+    );
+    expect(stolen).toEqual([]);
+  }, 30_000);
   test("progressive add keeps all boxes on hover and remains visible while expanded", async () => {
     const page = await open({ density: "compact", max: 3, progressive: true });
     const add = page.locator(".k2b-reaction-bar__add");

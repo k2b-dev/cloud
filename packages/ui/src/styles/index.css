@@ -8781,10 +8781,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* Touch targets: on a coarse pointer, chips in a scrolling bar take taps 9 px above and below, inside the list that
    clips them, without taking layout. "Add reaction" sits in its own slot, so like any button after others its 44 px
-   area does not reach back over the last chip. */
+   area does not reach back over the last chip. The device decides this room, never the bar's state. */
 @media (any-pointer: coarse) {
   .k2b-ui .k2b-reaction-bar__add:not(:first-child) > .k2b-button::after {
     inset-inline-start: 0;
+  }
+
+  /* Wrapped lines keep 0.625rem apart, as wrapping button rows do, so the area of "Add reaction" on a later line does
+     not take taps from the chips above it. */
+  .k2b-ui .k2b-reaction-bar[data-overflow="wrap"] {
+    row-gap: 0.625rem;
   }
 
   .k2b-ui .k2b-reaction-bar__scroll {
