@@ -7,7 +7,6 @@ import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, expectUserBackedActor, getLocale, jsonResponse, rateLimit, requiresAuth, v } from "../server";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
-  type AiToolApprovalChangeContext,
   type AiToolApprovalPreference,
   listAiToolApprovalPreferences,
   parseAiWebsiteApprovalScope,
@@ -57,7 +56,7 @@ type AiApprovalRouteDependencies = {
   limit?: MiddlewareHandler<AuthContext>;
   authenticate?: MiddlewareHandler<AuthContext>;
   listPreferences?: (actorUserId: string, options: { conversationId?: string }) => Promise<AiToolApprovalPreference[]>;
-  revokePreference?: (context: AiToolApprovalChangeContext, preferenceId: string) => Promise<boolean>;
+  revokePreference?: typeof revokeAiToolApprovalPreference;
   listCapabilities?: () => Promise<CapabilityRegistryEntry[]>;
   /** Resolves a chat the user owns by its ID or short ID. */
   findConversation?: (ownerUserId: string, conversation: string) => Promise<{ id: string } | null>;
@@ -158,15 +157,10 @@ export const createAiApprovalPreferenceRoutes = (dependencies: AiApprovalRouteDe
       v("param", AiApprovalPreferenceParamSchema),
       async (c) => {
         const user = expectUserBackedActor(c);
-        const deleted = await revokePreference(
-          {
-            actorUserId: user.id,
-            actor: c.get("actor"),
-            accessSubject: c.get("accessSubject"),
-            requestId: c.req.header("x-request-id") ?? null,
-          },
-          c.req.valid("param").preferenceId,
-        );
+        const deleted = await revokePreference(user.id, c.req.valid("param").preferenceId, {
+          actor: c.get("actor"),
+          requestId: c.req.header("x-request-id") ?? null,
+        });
         return deleted ? c.json({ deleted: true as const }) : c.json({ message: "Approval not found", code: "NOT_FOUND" }, 404);
       },
     );

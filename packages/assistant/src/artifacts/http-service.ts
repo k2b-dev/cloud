@@ -129,7 +129,7 @@ export const httpService = {
       if (remember) throw new HttpError("HTTP_DENIED");
       return { offer: false, allowed: false, approvalId: null };
     }
-    const context = { actorUserId: user(identity).id, actor: identity.actor, accessSubject: identity.accessSubject };
+    const context = { actorUserId: user(identity).id, actor: identity.actor };
     const approval = { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: aiWebsiteApprovalScope(website.origin, website.resourceId) };
     if (remember) await rememberAiToolApproval(context, approval);
     const approvalId = await findRememberedAiToolApproval(context, approval);

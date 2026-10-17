@@ -17,7 +17,7 @@ describe("localized audit labels", () => {
   });
 
   test.each([
-    ["en", "Assistant approvals", "Remember Assistant approval", "Revoke Assistant approval", "Remembered approval"],
+    ["en", "Assistant approvals", "Remember Assistant approval", "Revoke Assistant approval", "remembered approval"],
     ["de", "Assistant-Freigaben", "Assistant-Freigabe merken", "Assistant-Freigabe entziehen", "Gemerkte Freigabe"],
   ])("labels remembered approvals in %s", (locale, section, remember, revoke, target) => {
     const { t } = accountsMessages.resolve([locale]);

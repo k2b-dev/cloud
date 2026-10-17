@@ -287,7 +287,7 @@ async function resolveCapability(
   if (!decision.approved) return { status: "denied" as const };
   if (decision.remember && prepared.scope)
     await rememberAiToolApproval(
-      { actorUserId: actor.id, actor: identity.actor, accessSubject: identity.accessSubject, requestId: caller.requestId },
+      { actorUserId: actor.id, actor: identity.actor, requestId: caller.requestId },
       { toolName: request.name, approvalScope: prepared.scope },
     );
   const result = await invokeCapability(

@@ -658,7 +658,7 @@ export const accountsMessages = i18n.define({
       targetType: "target",
       userTarget: "user",
       groupTarget: "group",
-      approvalTarget: "Remembered approval",
+      approvalTarget: "remembered approval",
       allowed: "Allowed",
       last7Days: "Last 7 days",
       last30Days: "Last 30 days",

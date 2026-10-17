@@ -231,12 +231,12 @@ describe("AI approval preference routes", () => {
   });
 
   test("revokes only through the current user's ownership boundary", async () => {
-    let revoked: { context: AiToolApprovalChangeContext; id: string } | undefined;
+    let revoked: { actorUserId: string; id: string; change?: Pick<AiToolApprovalChangeContext, "actor" | "requestId"> } | undefined;
     const routes = createAiApprovalPreferenceRoutes({
       limit: pass,
       authenticate,
-      revokePreference: async (context, id) => {
-        revoked = { context, id };
+      revokePreference: async (actorUserId, id, change) => {
+        revoked = { actorUserId, id, change };
         return true;
       },
     });
@@ -245,10 +245,9 @@ describe("AI approval preference routes", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ deleted: true });
     expect(revoked).toEqual({
-      context: {
-        actorUserId: userId,
+      actorUserId: userId,
+      change: {
         actor: { kind: "user", user },
-        accessSubject: { type: "user", userId },
         requestId: "approval-revoke-request",
       },
       id: preferenceId,

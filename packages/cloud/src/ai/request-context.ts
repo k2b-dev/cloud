@@ -32,7 +32,6 @@ export const resolveAiChatRequestContext = async <T extends AuthContext>(
     toolApprovalChangeContext: {
       actorUserId: user.id,
       actor,
-      accessSubject: c.get("accessSubject"),
       requestId: c.req.header("x-request-id") ?? null,
     },
     signedInSession: actor.kind === "user" && !actor.delegation && c.get("credentialKind") === "session",

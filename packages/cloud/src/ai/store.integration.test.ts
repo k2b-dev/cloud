@@ -2352,8 +2352,8 @@ suite("AI conversation store integration", () => {
       expect(preferences).toHaveLength(1);
       expect(preferences[0]).toMatchObject(tool);
       expect(await listAiToolApprovalPreferences(otherUserId)).toEqual([]);
-      expect(await revokeAiToolApprovalPreference({ actorUserId: otherUserId }, preferences[0]!.id)).toBe(false);
-      expect(await revokeAiToolApprovalPreference({ actorUserId: userId }, preferences[0]!.id)).toBe(true);
+      expect(await revokeAiToolApprovalPreference(otherUserId, preferences[0]!.id)).toBe(false);
+      expect(await revokeAiToolApprovalPreference(userId, preferences[0]!.id)).toBe(true);
       expect(await hasRememberedAiToolApproval(context, tool)).toBe(false);
 
       await rememberAiToolApproval(context, tool);

@@ -38,11 +38,10 @@ export type AiToolApprovalContext = {
 /**
  * Request identity for approval changes; never persist this context in a turn run config.
  * When actor is absent, audit uses { userId: actorUserId } for the approval's owner.
- * When accessSubject is absent, audit uses { type: "user", userId: actorUserId }.
+ * The access subject is derived from actor, or falls back to { type: "user", userId: actorUserId }.
  */
 export type AiToolApprovalChangeContext = AiToolApprovalContext & {
   actor?: RequestActor;
-  accessSubject?: AccessSubject;
   requestId?: string | null;
 };
 
@@ -74,6 +73,7 @@ type ApprovalAuditRow = Pick<AiToolApprovalPreferenceRow, "id" | "tool_name" | "
 type ApprovalAuditIdentity = {
   actor: AuditActor | null;
   accessSubject: AccessSubject | null;
+  serviceAccountId?: string;
   requestId?: string | null;
   reason?: string;
 };
@@ -86,7 +86,17 @@ const approvalAuditIdentity = (context: AiToolApprovalChangeContext): ApprovalAu
         ? { userId: user.id, uid: user.uid, provider: user.provider, roles: user.roles }
         : null
       : { userId: context.actorUserId },
-    accessSubject: context.accessSubject ?? { type: "user", userId: context.actorUserId },
+    // Match aiChatAccessSubject locally: importing assistant-models creates a cycle through firecrawl-tools.
+    accessSubject: user
+      ? {
+          type: "user",
+          userId: user.id,
+          ...(context.actor?.kind === "service_account" ? { delegatedByServiceAccountId: context.actor.serviceAccount.id } : {}),
+        }
+      : context.actor?.kind === "service_account"
+        ? { type: "service_account", serviceAccountId: context.actor.serviceAccount.id }
+        : { type: "user", userId: context.actorUserId },
+    ...(context.actor?.kind === "service_account" ? { serviceAccountId: context.actor.serviceAccount.id } : {}),
     requestId: context.requestId,
   };
 };
@@ -108,6 +118,7 @@ const approvalAuditEvent = (
     remember: row.conversation_id !== null ? "chat" : "always",
     ...(row.conversation_id !== null ? { conversationId: row.conversation_id } : {}),
     accessSubject: identity.accessSubject,
+    ...(identity.serviceAccountId ? { serviceAccountId: identity.serviceAccountId } : {}),
   },
 });
 
@@ -161,14 +172,6 @@ export const rememberAiToolApproval = async (
 ): Promise<void> => {
   const conversationId = input.conversationId ?? null;
   await sql.begin(async (tx) => {
-    await tx`
-      DELETE FROM ai.tool_approval_preferences
-      WHERE actor_user_id = ${context.actorUserId}
-        AND tool_name = ${input.toolName}
-        AND approval_scope = ${input.approvalScope}
-        AND conversation_id IS NOT DISTINCT FROM ${conversationId}::uuid
-    `;
-
     const [row] = await tx<{ id: string }[]>`
       INSERT INTO ai.tool_approval_preferences (
         actor_user_id,
@@ -186,6 +189,11 @@ export const rememberAiToolApproval = async (
         now(),
         ${input.expiresAt ?? null}
       )
+      ON CONFLICT (actor_user_id, tool_name, approval_scope, conversation_id)
+      DO UPDATE SET
+        created_at = EXCLUDED.created_at,
+        last_used_at = EXCLUDED.last_used_at,
+        expires_at = EXCLUDED.expires_at
       RETURNING id
     `;
     await audit.record(
@@ -259,15 +267,20 @@ export const listAiToolApprovalPreferences = async (
   return rows.map(approvalPreferenceFromRow);
 };
 
-export const revokeAiToolApprovalPreference = async (context: AiToolApprovalChangeContext, preferenceId: string): Promise<boolean> =>
+export const revokeAiToolApprovalPreference = async (
+  actorUserId: string,
+  preferenceId: string,
+  change?: { actor?: RequestActor; requestId?: string | null },
+): Promise<boolean> =>
   sql.begin(async (tx) => {
     const rows = await tx<ApprovalAuditRow[]>`
       DELETE FROM ai.tool_approval_preferences
       WHERE id = ${preferenceId}
-        AND actor_user_id = ${context.actorUserId}
+        AND actor_user_id = ${actorUserId}
       RETURNING id, tool_name, approval_scope, conversation_id
     `;
-    for (const row of rows) await audit.record(approvalAuditEvent("ai.approval.revoke", row, approvalAuditIdentity(context)), tx);
+    for (const row of rows)
+      await audit.record(approvalAuditEvent("ai.approval.revoke", row, approvalAuditIdentity({ ...change, actorUserId })), tx);
     return rows.length > 0;
   });
 
@@ -277,16 +290,16 @@ export const revokeAiToolApprovalPreferencesAsSystem = async (
   input: { ids: readonly string[]; reason: string },
 ): Promise<number> => {
   if (input.ids.length === 0) return 0;
-  const rows = await db<ApprovalAuditRow[]>`
+  const rows = await db<(ApprovalAuditRow & { actor_user_id: string | null })[]>`
     DELETE FROM ai.tool_approval_preferences
     WHERE id = ANY(${toPgTextArray([...input.ids])}::uuid[])
-    RETURNING id, tool_name, approval_scope, conversation_id
+    RETURNING id, tool_name, approval_scope, conversation_id, actor_user_id
   `;
   for (const row of rows)
     await audit.record(
       approvalAuditEvent("ai.approval.revoke", row, {
         actor: null,
-        accessSubject: null,
+        accessSubject: row.actor_user_id === null ? null : { type: "user", userId: row.actor_user_id },
         reason: input.reason,
       }),
       db,

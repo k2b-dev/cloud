@@ -34,6 +34,7 @@ type ApprovalAuditEventRow = {
     remember: "chat" | "always";
     conversationId?: string;
     accessSubject: AccessSubject | null;
+    serviceAccountId?: string;
   };
 };
 
@@ -67,12 +68,10 @@ const fixture = async () => {
       managesGroupIds: [],
     },
   };
-  const delegatedByServiceAccountId = crypto.randomUUID();
-  const accessSubject: AccessSubject = { type: "user", userId, delegatedByServiceAccountId };
+  const accessSubject: AccessSubject = { type: "user", userId };
   const context = {
     actorUserId: userId,
     actor,
-    accessSubject,
     requestId: `approval-audit-${suffix}`,
   } satisfies AiToolApprovalChangeContext;
   const tool = { toolName: `audit-tool-${suffix}`, approvalScope: "items:write" };
@@ -100,7 +99,7 @@ const fixture = async () => {
     await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
     await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   };
-  return { userId, actor, context, tool, events, preference, cleanup, delegatedByServiceAccountId };
+  return { userId, actor, context, tool, events, preference, cleanup, accessSubject };
 };
 
 suite("remembered approval audit integration", () => {
@@ -125,10 +124,10 @@ suite("remembered approval audit integration", () => {
         target_label: f.tool.toolName,
         request_id: f.context.requestId,
         reason: null,
-        metadata: { ...f.tool, remember: "always", accessSubject: f.context.accessSubject },
+        metadata: { ...f.tool, remember: "always", accessSubject: f.accessSubject },
       };
       expect(await f.events()).toEqual([expected]);
-      expect(await revokeAiToolApprovalPreference(f.context, preference.id)).toBe(true);
+      expect(await revokeAiToolApprovalPreference(f.userId, preference.id, f.context)).toBe(true);
       expect(await f.events()).toEqual([expected, { ...expected, action: "ai.approval.revoke" }]);
       expect(await f.preference()).toBeUndefined();
     } finally {
@@ -136,7 +135,50 @@ suite("remembered approval audit integration", () => {
     }
   });
 
-  test("chat remember and forget map a delegated user and include only the chat ID", async () => {
+  test.each(["always", "chat"] as const)(
+    "re-remembering the same %s reach keeps its ID and records only remember events",
+    async (reach) => {
+      const f = await fixture();
+      try {
+        let conversationId: string | undefined;
+        if (reach === "chat") {
+          const [chat] = await sql<{ id: string }[]>`
+          INSERT INTO ai.conversations (short_id, title, created_by_user_id)
+          VALUES (${createAiShortId()}, 'Approval reach', ${f.userId}::uuid) RETURNING id
+        `;
+          conversationId = chat!.id;
+        }
+        const tool = { ...f.tool, conversationId };
+        await rememberAiToolApproval(f.context, tool);
+        const original = await f.preference(conversationId);
+        const oldTimestamp = "2000-01-01T00:00:00.000Z";
+        await sql`
+        UPDATE ai.tool_approval_preferences
+        SET created_at = ${oldTimestamp}::timestamptz,
+            last_used_at = ${oldTimestamp}::timestamptz,
+            expires_at = ${oldTimestamp}::timestamptz
+        WHERE id = ${original.id}::uuid
+      `;
+
+        await rememberAiToolApproval(f.context, tool);
+        const remembered = await f.preference(conversationId);
+        expect(remembered.id).toBe(original.id);
+        expect(remembered.createdAt).not.toBe(oldTimestamp);
+        expect(remembered.lastUsedAt).toBe(remembered.createdAt);
+        expect(remembered.expiresAt).toBeNull();
+        const events = await f.events();
+        expect(events).toHaveLength(2);
+        expect(events.map((event) => [event.action, event.target_id])).toEqual([
+          ["ai.approval.remember", original.id],
+          ["ai.approval.remember", original.id],
+        ]);
+      } finally {
+        await f.cleanup();
+      }
+    },
+  );
+
+  test("API-key chat remember and forget derive the delegated identity from the actor", async () => {
     const f = await fixture();
     try {
       const [chat] = await sql<{ id: string }[]>`
@@ -148,7 +190,7 @@ suite("remembered approval audit integration", () => {
         delegatedUser: f.actor.user,
         scopes: [],
         serviceAccount: {
-          id: f.delegatedByServiceAccountId,
+          id: crypto.randomUUID(),
           name: "Approval client",
           kind: "user_delegated",
           status: "active",
@@ -160,7 +202,7 @@ suite("remembered approval audit integration", () => {
           createdAt: "2026-10-17T00:00:00.000Z",
         },
       };
-      const context = { ...f.context, actor };
+      const context = { actorUserId: f.userId, actor, requestId: f.context.requestId } satisfies AiToolApprovalChangeContext;
       const tool = { ...f.tool, conversationId: chat!.id };
       await rememberAiToolApproval(context, tool);
       const preference = await f.preference(chat!.id);
@@ -181,7 +223,12 @@ suite("remembered approval audit integration", () => {
           target_label: f.tool.toolName,
           request_id: f.context.requestId,
           reason: null,
-          metadata: { ...tool, remember: "chat", accessSubject: f.context.accessSubject },
+          metadata: {
+            ...tool,
+            remember: "chat",
+            accessSubject: { type: "user", userId: f.userId, delegatedByServiceAccountId: actor.serviceAccount.id },
+            serviceAccountId: actor.serviceAccount.id,
+          },
         });
       }
       expect(await forgetAiToolApproval(context, tool)).toBe(false);
@@ -205,8 +252,8 @@ suite("remembered approval audit integration", () => {
         actor_roles: [],
         metadata: { ...f.tool, remember: "always", accessSubject: { type: "user", userId: f.userId } },
       });
-      expect(await revokeAiToolApprovalPreference(context, crypto.randomUUID())).toBe(false);
-      expect(await revokeAiToolApprovalPreference({ actorUserId: crypto.randomUUID() }, preference.id)).toBe(false);
+      expect(await revokeAiToolApprovalPreference(f.userId, crypto.randomUUID())).toBe(false);
+      expect(await revokeAiToolApprovalPreference(crypto.randomUUID(), preference.id)).toBe(false);
       expect(await forgetAiToolApproval(context, { ...f.tool, approvalScope: "other" })).toBe(false);
       expect(await f.events()).toHaveLength(1);
       expect((await f.preference()).id).toBe(preference.id);
@@ -227,7 +274,7 @@ suite("remembered approval audit integration", () => {
       const original = await f.preference();
       await expect(rememberAiToolApproval(failing, f.tool)).rejects.toThrow();
       expect(await f.preference()).toEqual(original);
-      await expect(revokeAiToolApprovalPreference(failing, original.id)).rejects.toThrow();
+      await expect(revokeAiToolApprovalPreference(f.userId, original.id, failing)).rejects.toThrow();
       expect(await f.preference()).toEqual(original);
       await expect(forgetAiToolApproval(failing, f.tool)).rejects.toThrow();
       expect(await f.preference()).toEqual(original);
@@ -237,7 +284,7 @@ suite("remembered approval audit integration", () => {
     }
   });
 
-  test("system revocation uses the caller transaction, exact IDs, null identity, and a stable reason", async () => {
+  test("system revocation uses the caller transaction, exact IDs, null actor, owner subject, and a stable reason", async () => {
     const f = await fixture();
     try {
       const ids: string[] = [];
@@ -294,7 +341,12 @@ suite("remembered approval audit integration", () => {
           target_label: f.tool.toolName,
           request_id: null,
           reason: "approval_policy_migration",
-          metadata: { toolName: f.tool.toolName, approvalScope: scopeById.get(event.target_id)!, remember: "always", accessSubject: null },
+          metadata: {
+            toolName: f.tool.toolName,
+            approvalScope: scopeById.get(event.target_id)!,
+            remember: "always",
+            accessSubject: { type: "user", userId: f.userId },
+          },
         });
       }
       expect((await listAiToolApprovalPreferences(f.userId)).map((row) => row.id)).toEqual([ids[2]!]);

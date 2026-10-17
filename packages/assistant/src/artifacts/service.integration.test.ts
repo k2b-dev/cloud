@@ -121,6 +121,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
 
     await sql`CREATE TABLE ai.tool_calls(request_id text,conversation_id uuid,turn_id uuid,location text,call_id text,tool_name text,status text,started_at timestamptz,UNIQUE(turn_id,call_id))`;
     await sql`CREATE TABLE ai.tool_approval_preferences(id uuid DEFAULT gen_random_uuid(),actor_user_id uuid,tool_name text,approval_scope text,conversation_id uuid REFERENCES ai.conversations(id) ON DELETE CASCADE,created_at timestamptz DEFAULT now(),last_used_at timestamptz,expires_at timestamptz)`;
+    await sql`CREATE UNIQUE INDEX ai_tool_approval_preferences_reach ON ai.tool_approval_preferences(actor_user_id,tool_name,approval_scope,conversation_id) NULLS NOT DISTINCT`;
     await sql`CREATE SCHEMA auth`;
     await sql`CREATE TYPE auth.permission_level AS ENUM ('none','read','write','admin')`;
     await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY, display_name text DEFAULT 'Test', uid text DEFAULT 'test', avatar_hash text, auth_epoch bigint NOT NULL DEFAULT 0)`;
@@ -1532,7 +1533,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         await decline(reader, id);
       }
       // Revoked from a receipt, the next view asks again.
-      expect(await revokeAiToolApprovalPreference({ actorUserId: owner.user.id }, receipts[0]!)).toBe(true);
+      expect(await revokeAiToolApprovalPreference(owner.user.id, receipts[0]!)).toBe(true);
       const again = await prepare(owner, quote("NVDA"));
       expect((await website(owner, "session", again, false)).body).toMatchObject({ offer: true, allowed: false });
       await decline(owner, again);
