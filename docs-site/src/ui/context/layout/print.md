@@ -24,7 +24,7 @@ Add `data-print-region=""` to the element that holds the complete readable conte
 </article>
 ```
 
-With a region, everything else inside `.k2b-ui` is hidden on paper, including Cloud's app bar, header, page trail, sidebars, and detail panels. A region inside a detail panel still prints. Ancestors become plain blocks without fixed height, clipping, or padding; workspace and scroll-area containers inside a region grow to their full content. Use Tailwind `print:hidden` for controls **inside** a region. Links are underlined; their destination is not appended.
+With a region, everything else inside `.k2b-ui` is hidden on paper, including Cloud's app bar, header, page trail, sidebars, and detail panels. A region inside a detail panel still prints. Ancestors become plain blocks without fixed height, clipping, or padding; workspace and scroll-area containers inside a region grow to their full content, and a `ScrollArea` positioned to fill an overflow-hidden frame joins the flow. A custom scroll container of the application (`overflow-auto` with a fixed height) still clips; release it with `print:` utilities or keep it out of the region. Use Tailwind `print:hidden` for controls **inside** a region. Links are underlined; their destination is not appended.
 
 ## Provide an export hint
 
@@ -44,7 +44,7 @@ Keep semantic headings, link text and image descriptions in the printed content.
 
 ## Runtime
 
-The CSS works on server-rendered HTML before JavaScript loads and does not change screen geometry. A client-owned print copy adds its region attribute only after rendering, removes it on disposal, and updates synchronously on print when its renderer is ready.
+The CSS works on server-rendered HTML before JavaScript loads and does not change screen geometry. Transitions and animations stop on paper, so a panel that animates its display is already hidden when the page prints. A client-owned print copy adds its region attribute only after rendering, removes it on disposal, and updates synchronously on print when its renderer is ready.
 
 ## Check paper and screen
 
