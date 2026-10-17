@@ -16,6 +16,7 @@ import {
   Button,
   ButtonLink,
   dialogCore,
+  InlineGuidance,
   NumberInput,
   PanelDialog,
   Placeholder,
@@ -36,6 +37,8 @@ type SettingEntry = {
   default: unknown;
   value: unknown;
   isCustom: boolean;
+  /** A saved value exists that this application cannot read; `value` is the one in use. */
+  unreadable: boolean;
 };
 
 const fetchSettings = async (signal: AbortSignal, locale: string): Promise<SettingEntry[]> => {
@@ -45,12 +48,19 @@ const fetchSettings = async (signal: AbortSignal, locale: string): Promise<Setti
   return await res.json();
 };
 
-const updateSetting = async (key: string, value: unknown, signal: AbortSignal, locale: string): Promise<void> => {
+const updateSetting = async (
+  key: string,
+  value: unknown,
+  replaceUnreadable: boolean,
+  signal: AbortSignal,
+  locale: string,
+): Promise<void> => {
   const t = notebooksAdminMessages.resolve([locale]).t;
   const res = await apiClient.admin.settings[":key"].$put(
     {
       param: { key },
-      json: { value },
+      // The row shows the unreadable warning, so a changed value is an explicit replacement.
+      json: replaceUnreadable ? { value, replaceUnreadable } : { value },
     },
     { init: { signal } },
   );
@@ -109,28 +119,35 @@ const SettingRow = (props: { entry: SettingEntry; onChange: (value: unknown) => 
   };
 
   return (
-    <Show
-      when={isNumber}
-      fallback={
-        <TextInput
+    <div class="flex flex-col gap-1.5">
+      <Show
+        when={isNumber}
+        fallback={
+          <TextInput
+            id={`setting-${props.entry.key}`}
+            label={t().settingLabel({ key: props.entry.key, label: props.entry.label })}
+            description={t().settingDescription({ key: props.entry.key, description: props.entry.description })}
+            value={value}
+            onValueChange={handleValue}
+            placeholder={typeof props.entry.default === "string" ? props.entry.default : String(props.entry.default ?? "")}
+          />
+        }
+      >
+        <NumberInput
           id={`setting-${props.entry.key}`}
           label={t().settingLabel({ key: props.entry.key, label: props.entry.label })}
           description={t().settingDescription({ key: props.entry.key, description: props.entry.description })}
-          value={value}
-          onValueChange={handleValue}
-          placeholder={typeof props.entry.default === "string" ? props.entry.default : String(props.entry.default ?? "")}
+          value={() => (value().trim() === "" ? null : Number(value()))}
+          onValueChange={(next) => handleValue(next === null ? "" : String(next))}
+          suffix={suffix ? <span class="font-mono text-[11px]">{suffix}</span> : undefined}
         />
-      }
-    >
-      <NumberInput
-        id={`setting-${props.entry.key}`}
-        label={t().settingLabel({ key: props.entry.key, label: props.entry.label })}
-        description={t().settingDescription({ key: props.entry.key, description: props.entry.description })}
-        value={() => (value().trim() === "" ? null : Number(value()))}
-        onValueChange={(next) => handleValue(next === null ? "" : String(next))}
-        suffix={suffix ? <span class="font-mono text-[11px]">{suffix}</span> : undefined}
-      />
-    </Show>
+      </Show>
+      <Show when={props.entry.unreadable}>
+        <InlineGuidance tone="warning" icon="ti ti-alert-triangle">
+          {t().settingUnreadable}
+        </InlineGuidance>
+      </Show>
+    </div>
   );
 };
 
@@ -159,7 +176,8 @@ const SettingsBody = (props: { close: () => void }) => {
       const appliedKeys: string[] = [];
       for (const [key, value] of changes) {
         try {
-          await updateSetting(key, value, abortSignal, locale());
+          const unreadable = entries.data()?.find((entry) => entry.key === key)?.unreadable === true;
+          await updateSetting(key, value, unreadable, abortSignal, locale());
           appliedKeys.push(key);
         } catch (error) {
           if (abortSignal.aborted) throw error;

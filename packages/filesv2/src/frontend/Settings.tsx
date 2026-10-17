@@ -70,6 +70,11 @@ export default function Settings(props: {
       }
       setSaved(false);
       await props.onSaved();
+      // Drafts made before the reset would no longer match what is stored.
+      const next = clean(props.configuration);
+      setBaseline(next);
+      setConfiguration(reconcile(next));
+      setToken("");
     },
   });
   // Save and reset write the same stored value; one at a time keeps their order.

@@ -148,7 +148,9 @@ describe("Files settings with an unreadable saved configuration", () => {
         await tick();
         await tick();
         expect(ui.saved()).toBe(1);
-        expect(ui.dirty().saving).toBe(false);
+        // The drafts typed before the reset give way to the stored defaults.
+        expect(ui.dirty()).toEqual({ dirty: false, saving: false });
+        expect(url.value).toBe("");
       } finally {
         release();
         ui.cleanup();

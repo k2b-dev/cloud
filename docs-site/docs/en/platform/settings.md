@@ -109,6 +109,7 @@ Writes over unreadable rows fail with HTTP 409 `setting_unreadable` by default.
 from `@k2b/cloud/services`. To replace a whole value with explicit input, pass
 `{ replaceUnreadable: true }` as the third argument to `app.settings.set()`.
 Never build that replacement by merging over a fallback.
+Per-key admin routes built on `settingsService.entry.update` accept `replaceUnreadable: true` alongside `value` for explicit replacement.
 
 To change part of a value, read with `read()` and refuse an unreadable state:
 

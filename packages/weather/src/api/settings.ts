@@ -19,21 +19,29 @@ import { weatherMessages } from "../messages";
 const WEATHER_KEYS = new Set(["weather.default_lat", "weather.default_lon", "weather.cache_minutes", "weather.geo_url"]);
 const isWeatherKey = (key: string): boolean => WEATHER_KEYS.has(key);
 
-const BulkUpdateSchema = z.record(z.string(), z.unknown());
+const BulkUpdateSchema = z.union([
+  z.object({ updates: z.record(z.string(), z.unknown()), replaceUnreadable: z.array(z.string()) }).strict(),
+  z.record(z.string(), z.unknown()).transform((updates) => ({ updates, replaceUnreadable: [] as string[] })),
+]);
 
 export const weatherSettingsRouter = new Hono<AuthContext>()
   .put("/", auth.requireRole("admin"), v("json", BulkUpdateSchema), async (c) => {
     const { t } = weatherMessages.resolve([getLocale(c)]);
-    const updates = c.req.valid("json");
+    const { updates, replaceUnreadable } = c.req.valid("json");
+    const replace = new Set(replaceUnreadable);
     const keys = Object.keys(updates);
-    if (keys.length === 0) return c.body(null, 204);
+    if (keys.length === 0 && replace.size === 0) return c.body(null, 204);
 
-    const ownership: Record<string, string> = {};
+    const ownership = new Map<string, string>();
     for (const key of keys) {
-      if (!isWeatherKey(key)) ownership[key] = t.settingNotOwned({ key });
+      if (!isWeatherKey(key)) ownership.set(key, t.settingNotOwned({ key }));
     }
-    if (Object.keys(ownership).length > 0) {
-      return c.json({ message: t.invalidKeys, errors: ownership }, 400);
+    for (const key of replace) {
+      if (!isWeatherKey(key)) ownership.set(key, t.settingNotOwned({ key }));
+      else if (!Object.hasOwn(updates, key)) ownership.set(key, t.invalidKeys);
+    }
+    if (ownership.size > 0) {
+      return c.json({ message: t.invalidKeys, errors: Object.fromEntries(ownership) }, 400);
     }
 
     const fieldErrors: Record<string, string> = {};
@@ -41,7 +49,7 @@ export const weatherSettingsRouter = new Hono<AuthContext>()
       await sql.begin(async () => {
         for (const [key, value] of Object.entries(updates)) {
           try {
-            await app.settings.set(key as never, value as never);
+            await app.settings.set(key as never, value as never, { replaceUnreadable: replace.has(key) });
           } catch (error) {
             fieldErrors[key] = t.updateSettingFailed({ key });
             throw error;
