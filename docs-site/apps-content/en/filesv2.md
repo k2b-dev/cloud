@@ -260,8 +260,8 @@ Unlock attempts are rate-limited. The browser receives an encrypted, share-scope
 HttpOnly cookie; transfers retain their existing short lease lifetime.
 
 Inbox upload requests (start, lease, commit and abort) are limited to 120 per
-minute per client address across all upload links; IPv6 clients count per /64
-network. The uploader waits automatically when the limit is reached. Each file
+minute per client address across all upload links. IPv6 clients count per /64
+network; NAT64 and Teredo addresses count per embedded IPv4 address. The uploader waits automatically when the limit is reached. Each file
 needs about two requests, allowing roughly 60 files per minute within that
 budget. Other public page requests keep their existing limit of 10 per minute
 per client address. For operators: guests behind one shared address (NAT or
