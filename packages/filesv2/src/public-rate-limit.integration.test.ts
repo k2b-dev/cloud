@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, mock, setSystemTime, test } from "bun:test";
-import { createHash } from "node:crypto";
 import * as cloudServer from "@k2b/cloud/server";
 import { redis } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { valkeySuite } from "../../../scripts/fixtures/test-infra";
+import { publicUploadClientBucket } from "./public-upload-rate-limit";
 import { FilesError } from "./service/errors";
 
 let authCalls = 0;
@@ -55,6 +55,12 @@ suite("public inbox upload rate limits", () => {
       ...(start ? { body: JSON.stringify({ name: "file.txt", size: 0, idempotencyKey: crypto.randomUUID() }) } : {}),
     });
   };
+  const expectUpload = (response: Response, remaining: number) => {
+    expect(response.ok).toBe(true);
+    expect(response.headers.get("X-RateLimit-Limit")).toBe("120");
+    expect(response.headers.get("X-RateLimit-Remaining")).toBe(String(remaining));
+    expect(response.headers.get("X-RateLimit-Reset")).toBe("60");
+  };
 
   beforeEach(() => {
     authCalls = 0;
@@ -63,7 +69,7 @@ suite("public inbox upload rate limits", () => {
   afterEach(async () => {
     try {
       for (const key of await keys()) {
-        if ([...ips].some((ip) => key.includes(`:ip:${ip}:`))) await redis.del(key);
+        if ([...ips].some((ip) => key.includes(`:ip:${ip}:`) || key.includes(`:${publicUploadClientBucket(ip)}:`))) await redis.del(key);
       }
     } finally {
       ips.clear();
@@ -75,16 +81,12 @@ suite("public inbox upload rate limits", () => {
     const { ip, token } = identity();
     const uploadPath = `/inbox/${token}/api/uploads`;
     for (let i = 0; i < 15; i++) {
-      expect((await request(ip, uploadPath)).ok).toBe(true);
-      expect((await request(ip, `${uploadPath}/upload-id/commit`)).ok).toBe(true);
+      expectUpload(await request(ip, uploadPath), 119 - i * 2);
+      expectUpload(await request(ip, `${uploadPath}/upload-id/commit`), 118 - i * 2);
     }
     for (let i = 30; i < 120; i++) {
       const action = ["lease", "commit", "abort"][i % 3];
-      const response = await request(ip, `${uploadPath}/upload-id/${action}`);
-      expect(response.ok).toBe(true);
-      expect(response.headers.get("X-RateLimit-Limit")).toBe("120");
-      expect(response.headers.get("X-RateLimit-Remaining")).toBe(String(119 - i));
-      expect(response.headers.get("X-RateLimit-Reset")).toBe("60");
+      expectUpload(await request(ip, `${uploadPath}/upload-id/${action}`), 119 - i);
     }
     expect(authCalls).toBe(120);
     const callsBeforeLimited = authCalls;
@@ -98,9 +100,11 @@ suite("public inbox upload rate limits", () => {
     expect(await limited.json()).toEqual({ message: "Rate limit exceeded" });
 
     const secondToken = crypto.randomUUID();
-    const independent = await request(ip, `/inbox/${secondToken}/api/uploads`);
-    expect(independent.ok).toBe(true);
-    expect(independent.headers.get("X-RateLimit-Remaining")).toBe("119");
+    const sameClient = await request(ip, `/inbox/${secondToken}/api/uploads`);
+    expect(sameClient.status).toBe(429);
+    expect(sameClient.headers.get("Retry-After")).toMatch(/^[1-9]\d*$/);
+    expect(sameClient.headers.get("X-RateLimit-Remaining")).toBe("0");
+    expect(authCalls).toBe(callsBeforeLimited);
     const secondIp = identity().ip;
     const visitor = await request(secondIp, uploadPath);
     expect(visitor.ok).toBe(true);
@@ -115,11 +119,66 @@ suite("public inbox upload rate limits", () => {
     expect((await request(ip, `/inbox/${token}/api`, "GET")).status).toBe(429);
 
     const storedKeys = await keys();
+    expect(storedKeys.some((key) => key.startsWith(`filesv2:rate-limit:filesv2-public-upload:${publicUploadClientBucket(ip)}:`))).toBe(
+      true,
+    );
     for (const secret of [token, secondToken]) {
-      const hash = createHash("sha256").update(secret).digest("hex");
-      expect(storedKeys.some((key) => key.startsWith("filesv2:rate-limit:") && key.includes(`:share:${hash}:ip:${ip}:`))).toBe(true);
       expect(storedKeys.every((key) => !key.includes(secret))).toBe(true);
     }
+  });
+
+  test("spraying new tokens spends one client budget while a second client and page requests stay independent", async () => {
+    const ip = crypto.getRandomValues(new Uint8Array(4)).join(".");
+    ips.add(ip);
+    const tokens = Array.from({ length: 121 }, () => crypto.randomUUID());
+    for (const [i, token] of tokens.slice(0, 120).entries()) {
+      expectUpload(await request(ip, `/inbox/${token}/api/uploads`), 119 - i);
+    }
+    expect(authCalls).toBe(120);
+    const limited = await request(ip, `/inbox/${tokens[120]}/api/uploads`);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Retry-After")).toMatch(/^[1-9]\d*$/);
+    expect(limited.headers.get("X-RateLimit-Reset")).toBe(limited.headers.get("Retry-After"));
+    expect(limited.headers.get("X-RateLimit-Remaining")).toBe("0");
+    expect(authCalls).toBe(120);
+
+    expectUpload(await request(identity().ip, `/inbox/${tokens[120]}/api/uploads`), 119);
+    for (let i = 0; i < 10; i++) {
+      const response = await request(ip, `/inbox/${tokens[0]}/api`, "GET");
+      expect(response.ok).toBe(true);
+      expect(response.headers.get("X-RateLimit-Limit")).toBe("10");
+      expect(response.headers.get("X-RateLimit-Remaining")).toBe(String(9 - i));
+    }
+    expect((await request(ip, `/inbox/${tokens[0]}/api`, "GET")).status).toBe(429);
+    const storedKeys = await keys();
+    expect(storedKeys.every((key) => tokens.every((token) => !key.includes(token)))).toBe(true);
+  });
+
+  test("IPv6 addresses in one /64 share the upload budget across textual forms and links", async () => {
+    const groups = crypto.randomUUID().replaceAll("-", "").slice(0, 12).match(/.{4}/g)!;
+    const prefix = groups.join(":");
+    const firstIp = `${prefix}:2::1`;
+    const sameNetworkIp = `${prefix}:0002:FFFF:0000:0000:0009`.toUpperCase();
+    const otherNetworkIp = `${prefix}:3::1`;
+    for (const ip of [firstIp, sameNetworkIp, otherNetworkIp]) ips.add(ip);
+    const token = crypto.randomUUID();
+    const path = `/inbox/${token}/api/uploads`;
+    for (let i = 0; i < 120; i++) {
+      expectUpload(await request(i % 2 === 0 ? firstIp : sameNetworkIp, path), 119 - i);
+    }
+    const callsBeforeLimited = authCalls;
+    for (const ip of [firstIp, sameNetworkIp]) {
+      const limited = await request(ip, `/inbox/${crypto.randomUUID()}/api/uploads`);
+      expect(limited.status).toBe(429);
+      expect(limited.headers.get("Retry-After")).toMatch(/^[1-9]\d*$/);
+      expect(limited.headers.get("X-RateLimit-Remaining")).toBe("0");
+    }
+    expect(authCalls).toBe(callsBeforeLimited);
+    expectUpload(await request(otherNetworkIp, path), 119);
+    const storedKeys = await keys();
+    const bucket = `${groups.map((group) => Number.parseInt(group, 16).toString(16)).join(":")}:2::/64`;
+    expect(storedKeys.some((key) => key.startsWith(`filesv2:rate-limit:filesv2-public-upload:ip6:${bucket}:`))).toBe(true);
+    expect(storedKeys.every((key) => !key.includes(token))).toBe(true);
   });
 
   test("similar paths, other methods and trailing slashes consume the public 10-request budget", async () => {
@@ -175,16 +234,14 @@ suite("public inbox upload rate limits", () => {
     expect((await upload()).status).toBe(429);
   });
 
-  test.each(["encoded", "malformed"] as const)("%s token segments use the decoded route token in Valkey keys", async (encoding) => {
+  test.each(["encoded", "malformed"] as const)("%s token segments spend the upload budget", async (encoding) => {
     const { ip, token } = identity();
     const routeToken = `${token}${encoding === "encoded" ? "/suffix" : "%invalid"}`;
     const segment = encoding === "encoded" ? encodeURIComponent(routeToken) : routeToken;
     const response = await request(ip, `/inbox/${segment}/api/uploads`);
     expect(response.ok).toBe(true);
     expect(response.headers.get("X-RateLimit-Limit")).toBe("120");
-    const hash = createHash("sha256").update(routeToken).digest("hex");
     const storedKeys = await keys();
-    expect(storedKeys.some((key) => key.startsWith("filesv2:rate-limit:") && key.includes(`:share:${hash}:ip:${ip}:`))).toBe(true);
     expect(storedKeys.every((key) => !key.includes(token))).toBe(true);
   });
 });

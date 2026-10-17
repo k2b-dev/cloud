@@ -23,7 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
-| Rate-limit scope and budget mismatch | Multi-request uploads exhaust the public page budget. | Tests: Files `public-rate-limit.integration.test.ts` checks separate upload and page budgets; `public-inbox.behavior.test.tsx` checks automatic waits and the terminal rate-limit message ([#1168](https://github.com/k2b-dev/cloud/issues/1168)). |
+| Rate-limit scope and budget mismatch | Multi-request uploads exhaust the public page budget; per-link keys let clients bypass the upload cap by spraying tokens. | Tests: Files `public-rate-limit.integration.test.ts` checks the per-client (IPv6 /64) upload budget, token spraying and page isolation; `public-inbox.behavior.test.tsx` checks automatic waits and the terminal rate-limit message ([#1168](https://github.com/k2b-dev/cloud/issues/1168)). |
 | Claim and assignment diverge | A person works on a task while assignment-based lists still show it as unassigned, or a stale assignee replacement removes an active worker. | Tests: `packages/spaces/src/service/claim-assignment.integration.test.ts` checks transactional user claims, guarded assignee replacements, forced releases, completion, and idempotent backfill ([#1269](https://github.com/k2b-dev/cloud/issues/1269)). |
 | Paint outside a scrollport | An outline or outset shadow, such as a status ring, reaches past its element and a scrolling ancestor flush with it cuts it off. | Test: `packages/ui/src/layout/detail-panel-sections.browser.test.ts` checks that an avatar ring flush with the detail body paints inside the scrollport and keeps the avatar size. |
 | Unbounded storage growth | Durable payloads have no size bound or retention. | Tests: workflow event integration cases cover byte limits, payload retention, dedupe, and resumable runs; workflow observability integration cases cover expired payloads; Mail integration cases cover oversized messages ([#1183](https://github.com/k2b-dev/cloud/issues/1183)). |
@@ -330,9 +330,9 @@ convention still needs a check or a test.
 ### Public inbox uploads exhaust the page request budget
 
 - **What happened:** A 15-file inbox upload hit rate limits after only a few files ([#1168](https://github.com/k2b-dev/cloud/issues/1168)).
-- **Root cause:** Upload control requests shared the public page limit of 10 requests per minute per IP.
+- **Root cause:** Upload control requests shared the public page limit of 10 requests per minute per IP. The initial per-link upload key let one client bypass the cap by spraying tokens.
 - **Error class:** Rate-limit scope and budget mismatch.
-- **Guard:** `public-rate-limit.integration.test.ts` checks the separate 120-request upload budget per hashed link token and IP, mounted routes, similar paths, page isolation and secret-free Valkey keys. `public-inbox.behavior.test.tsx` checks automatic waits during a 15-file batch and the terminal rate-limit message.
+- **Guard:** `public-rate-limit.integration.test.ts` checks the separate 120-request per-client (IPv6 /64) upload budget, token spraying, mounted routes, similar paths, page isolation and secret-free Valkey keys. `public-upload-rate-limit.test.ts` checks address bucketing without Valkey. `public-inbox.behavior.test.tsx` checks automatic waits during a 15-file batch and the terminal rate-limit message.
 
 ## Add a lesson
 
