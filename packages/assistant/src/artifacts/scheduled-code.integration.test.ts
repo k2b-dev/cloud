@@ -1,7 +1,7 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { aiChatTasks, aiConversations, createAiShortId } from "@k2b/cloud/ai";
 import { sql } from "bun";
-import { databaseSuite, requireInfraUrl, testFor } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { app } from "../config";
 import { agentHost, hostFetch } from "./agent-host";
 import { artifactDatabase } from "./database";
@@ -13,6 +13,16 @@ import { testIdentity } from "./test-identity";
 
 // Uses the production schemas prepared by `bun run test --integration`.
 databaseSuite()("Scheduled Code Mode", () => {
+  let originalTargets: string | undefined;
+  beforeEach(() => {
+    originalTargets = process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
+    process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = ["127.0.0.1", ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : [])].join(",");
+  });
+  afterEach(() => {
+    if (originalTargets === undefined) delete process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
+    else process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = originalTargets;
+  });
+
   test("runs with a real task mandate alongside a foreground turn and fails closed after revocation", async () => {
     const previousOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
     process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://127.0.0.1:1"; // No capability calls in this test.

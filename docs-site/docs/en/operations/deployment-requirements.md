@@ -346,7 +346,7 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |
 | HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts; [keep Gotenberg offline](#keep-gotenberg-offline) | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). `GOTENBERG_URL` can bootstrap `gotenberg.url`; Dev Compose sets it to `http://gotenberg:3000`. A saved setting wins. Without a URL, Grids tells users that an administrator must configure PDF rendering. |
 | Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test native notification delivery to an opted-in browser with Cloud visible and with no open Cloud tab. Notification history does not depend on browser push. |
-| City search | `weather.geo_url` pointing to the supported Geo API | Dev supplies a Geo container (`http://geo:4000` internally), but an administrator must still set the Geo API URL in Weather settings. An empty URL returns `WEATHER_CITY_SEARCH_NOT_CONFIGURED` (500); Geo service failures return `WEATHER_CITY_SEARCH_UNAVAILABLE` (500). Capability errors point to `weather.forecast.current` / `weather.forecast.get` with `source.kind = "coordinates"`; forecast access is a separate dependency. |
+| City search | `weather.geo_url` pointing to the supported Geo API | `GEO_ALLOWED_TARGETS` defaults to `geo`; an explicit allowlist replaces that default. Dev supplies a Geo container (`http://geo:4000` internally), but an administrator must still set the Geo API URL in Weather settings. An empty URL returns `WEATHER_CITY_SEARCH_NOT_CONFIGURED` (500); Geo service failures return `WEATHER_CITY_SEARCH_UNAVAILABLE` (500). Capability errors point to `weather.forecast.current` / `weather.forecast.get` with `source.kind = "coordinates"`; forecast access is a separate dependency. |
 
 For S3 snapshots, enter credentials in the individual notebook's snapshot
 configuration, not invented global S3 credential environment keys. Snapshots upload
@@ -354,14 +354,39 @@ to public storage by default; internal S3-compatible storage requires an operato
 allowlist as described below. Files (`filesv2`) uses
 the Filegate root and lease API of Filegate 6.1 or 7.0; see [Files](/en/apps/filesv2).
 
-Cloud refuses person-chosen outbound requests from the Webhook Tester,
-workflow HTTP steps, assistant file downloads, web push, Mail endpoints, Pulse metrics sources, and Notebook S3 snapshots to
+Cloud refuses person- and administrator-chosen outbound requests from the Webhook Tester,
+workflow HTTP steps, assistant file downloads, web push, Mail endpoints, Pulse metrics sources, Notebook S3 snapshots, health webhooks, Geo city search, Assistant rsql, and outgoing mail SMTP and bounce IMAP connections to
 loopback, private, link-local, shared, and other reserved addresses, including
 names that resolve there. A failed DNS lookup also refuses the request. An
 address in the well-known NAT64 prefix `64:ff9b::/96` is judged by the IPv4
 address it embeds, so IPv6-only servers with DNS64 still reach public IPv4
 hosts. To test an internal service, use an address that is public from the
 server.
+
+Operators can allow internal administrator-configured endpoints with
+`GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` in `app-gateway-ops` (default empty,
+public targets only), `GEO_ALLOWED_TARGETS` in `app-weather` (default `geo`),
+`ASSISTANT_RSQL_ALLOWED_TARGETS` in `app-assistant` (default `rsql`), and
+`OUTGOING_MAIL_ALLOWED_TARGETS` in `app-core` (default empty, covering both SMTP
+and bounce IMAP). Each accepts exact host names, IP addresses and CIDRs; an
+explicit value replaces the default. Empty Compose passthrough values use the
+default. Invalid entries, including `/0`, stop the owning process at startup.
+The HTTP transports for these endpoints never follow redirects; health
+webhooks previously followed them. They request identity encoding and reject
+compressed responses. IMAP tries every validated address. SMTP connects to one
+validated address per delivery attempt; retries move to the next address, and a
+test send checks each address in turn on connection failure before sending once.
+The test send opens a separate connection to verify the selected address and
+authentication first. Both SMTP and IMAP preserve the original host name for TLS
+certificate verification.
+
+**After this update:** Existing installations whose health webhooks, outgoing
+mail SMTP/IMAP profiles, Geo URL, or rsql URL point at internal hosts other than
+the defaults fail with a clear reason until the operator sets the corresponding
+variable. Stored configuration stays. Geo reports city search as unavailable
+and logs `GEO_ALLOWED_TARGETS`; mail delivery policy refusals remain retryable
+until the message deadline. Use narrow entries and retain `geo` or `rsql` in an
+explicit list if the shipped containers must stay reachable.
 
 Pulse operators can allow internal metrics targets with `PULSE_SCRAPE_ALLOWED_TARGETS`
 in the Pulse container environment. Use the narrowest entry: an exact host name,

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
@@ -25,7 +25,7 @@ import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
-import { databaseSuite, requireInfraUrl, testFor } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { importRows } from "../../examples/accounting/import-rows";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { app } from "../config";
@@ -75,6 +75,20 @@ function checkConversation(conversationId: string, userId: string) {
 }
 
 databaseSuite()("Assistant artifacts in disposable Postgres", () => {
+  let originalTargets: string | undefined;
+  beforeEach(() => {
+    originalTargets = process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
+    process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = [
+      "127.0.0.1",
+      "localhost",
+      ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : []),
+    ].join(",");
+  });
+  afterEach(() => {
+    if (originalTargets === undefined) delete process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
+    else process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = originalTargets;
+  });
+
   const owner = testIdentity("00000000-0000-4000-8000-000000000001");
   const reader = testIdentity("00000000-0000-4000-8000-000000000002");
   const editor = testIdentity("00000000-0000-4000-8000-000000000003");
@@ -2533,6 +2547,33 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await artifactDatabase.status(resource.id, owner)).toMatchObject({ connected: true });
     } finally {
       settings.mockRestore();
+    }
+  });
+
+  test("rsql configure refuses internal targets until explicitly allowed", async () => {
+    const administrator = { ...stranger, actor: { kind: "user" as const, user: { ...stranger.user, roles: ["admin" as const] } } };
+    let received = 0;
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => {
+        received++;
+        return Response.json({ data: [] });
+      },
+    });
+    try {
+      delete process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
+      await expect(
+        artifactDatabase.configure({ url: upstream.url.origin, token: "guard-fixture" }, administrator, true),
+      ).rejects.toMatchObject({ code: "DB_TARGET_BLOCKED", status: 502 });
+      expect(received).toBe(0);
+      process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = "127.0.0.1";
+      expect(await artifactDatabase.configure({ url: upstream.url.origin, token: "guard-fixture" }, administrator, true)).toEqual({
+        connected: true,
+      });
+      expect(received).toBe(1);
+    } finally {
+      await upstream.stop(true);
     }
   });
 

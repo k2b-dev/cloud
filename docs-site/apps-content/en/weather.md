@@ -35,6 +35,10 @@ microclimate. Provider data can change as newer observations arrive.
 | Rain radar and display | Visual views for near-term rain and shared screens |
 | Current-weather widget | A compact dashboard view using saved or configured coordinates |
 
+City search allows public Geo endpoints and the shipped `geo` host by default;
+the operator can replace this list with `GEO_ALLOWED_TARGETS` in the Weather
+container when another internal Geo host is needed.
+
 Location search currently covers German cities. A saved location stays in the
 user's account until the user removes it. Weather may reuse cached provider
 data according to the configured cache duration.

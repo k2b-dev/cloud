@@ -699,6 +699,11 @@ code and names the startup step that stalled, such as launching Chromium.
 The Assistant administration page lists all saved Apps, their shared
 file and key/value counts, and whether they have a database. Administrators can
 manage access, delete resources, and configure or test the rsql connection.
+The rsql endpoint allows public targets and the shipped `rsql` host by default;
+the operator can replace this list with `ASSISTANT_RSQL_ALLOWED_TARGETS` in the
+Assistant container to allow another internal host. A blocked target reports
+`DB_TARGET_BLOCKED` without changing stored configuration.
+
 The stored API token is never returned. Removing or changing the server is
 blocked while databases or queued database cleanup still depend on it.
 

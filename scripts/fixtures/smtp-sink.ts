@@ -6,6 +6,7 @@ type Session = { buffer: string; decoder: TextDecoder; from: string; to: string[
 
 /** Ephemeral loopback-only SMTP server. Each connection owns its envelope and DATA state. */
 export const smtpSink = (options: SmtpSinkOptions = {}) => {
+  let connections = 0;
   const messages: SmtpSinkMessage[] = [];
   const sockets = new Set<Socket<Session>>();
   const reset = (state: Session) => {
@@ -20,6 +21,7 @@ export const smtpSink = (options: SmtpSinkOptions = {}) => {
     port: 0,
     socket: {
       open(socket) {
+        connections++;
         socket.data = { buffer: "", decoder: new TextDecoder(), from: "", to: [], lines: [], data: false, auth: 0 };
         sockets.add(socket);
         socket.write("220 localhost SMTP sink\r\n");
@@ -108,6 +110,9 @@ export const smtpSink = (options: SmtpSinkOptions = {}) => {
     host: "127.0.0.1",
     port: server.port!,
     messages,
+    get connections() {
+      return connections;
+    },
     stop() {
       for (const socket of sockets) socket.end();
       server.stop(true);

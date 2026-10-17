@@ -1,7 +1,7 @@
 import { audit } from "../audit";
 import { get } from "../settings";
 import { type MailAuditContext, OutgoingMailError, resolveMailCredentials } from "./store";
-import { buildMailTransport } from "./transport";
+import { resolveMailTransport } from "./transport";
 
 export const smtpFailureMessage = (error: unknown, secrets: readonly (string | null)[]): string => {
   let message = error instanceof Error ? error.message : "SMTP delivery failed.";
@@ -17,8 +17,23 @@ export const outgoingMailTest = {
     const event = { ...context, action: "outgoing_mail.profile.test", target: { type: "outgoing_mail_profile", id: key } };
     // Fail before the external effect if audit storage is unavailable.
     await audit.record({ ...event, outcome: "allowed" });
-    const transport = buildMailTransport(profile);
+    let transport: ReturnType<Awaited<ReturnType<typeof resolveMailTransport>>["build"]> | undefined;
     try {
+      const resolved = await resolveMailTransport(profile);
+      for (let index = 0; index < resolved.count; index++) {
+        transport = resolved.build(index);
+        try {
+          // CONN also labels socket errors after DATA. Only fall back during a
+          // preflight that cannot send a message, then send once to that address.
+          await transport.verify();
+          break;
+        } catch (error) {
+          transport.close();
+          transport = undefined;
+          if (!(error instanceof Error) || !("command" in error) || error.command !== "CONN" || index === resolved.count - 1) throw error;
+        }
+      }
+      if (!transport) throw new Error("No validated SMTP address.");
       await transport.sendMail({
         from: { address: profile.fromAddress, name: profile.fromName ?? (await get<string>("app.name")) },
         to: recipient,
@@ -34,7 +49,7 @@ export const outgoingMailTest = {
       await audit.recordResultAfterSideEffect({ ...event, result: { ok: false, error: { code: "smtp_failed", message, status: 500 } } });
       throw new OutgoingMailError("smtp_failed", message, 502);
     } finally {
-      transport.close();
+      transport?.close();
     }
   },
 };

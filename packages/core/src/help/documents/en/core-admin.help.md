@@ -46,7 +46,7 @@ Disabling an account type denies later requests from existing sessions, user OAu
 - **Accounts & sign-in → Linux identities:** Reserve an ID range and set defaults for home and shell. While assignment is on, new local full accounts and promoted guests get Linux attributes automatically. Turning it on does not change older full accounts; use **Backfill existing accounts** for them. Turning assignment off hides the backfill table and keeps existing identities in Accounts. Linux identities do not enable computer sign-in or sudo.
 - **Accounts & sign-in → FreeIPA:** FreeIPA connection settings, sync rules, and group mapping.
 - **AI:** Configure model profiles and provider credentials, and check background work. Use **Skills** or **Projects** to restore access when nobody has **Manage** access to a shared resource any more. These recovery pages can give access or permanently delete resources that are no longer needed. An app does not install a deleted app Skill again until you choose **Restore**.
-- **Settings → Outgoing mail** and **Settings → PDF rendering:** SMTP delivery, sender credentials, the Gotenberg connection and its credentials, and render limits.
+- **Settings → Outgoing mail** and **Settings → PDF rendering:** SMTP delivery, sender credentials, the Gotenberg connection and its credentials, and render limits. Internal SMTP and bounce IMAP hosts require the operator to set `OUTGOING_MAIL_ALLOWED_TARGETS` in Core; the default permits only public targets.
 - **Settings → Email templates**, **Settings → Security**, and **Settings → Legal:** Transactional email templates, rate limits, defaults for access protection, Terms of Service, Privacy Policy, and Imprint.
 :::
 

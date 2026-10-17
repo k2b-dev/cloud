@@ -1,8 +1,14 @@
 import { lazySync } from "@k2b/cloud";
-import { logger, trace } from "@k2b/cloud/services";
+import { createAllowedNetworkFetch, logger, trace } from "@k2b/cloud/services";
+import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
+import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
+import { appEnv } from "./env";
 import { buildGatewayHealth, type GatewayHealth, type GatewayHealthStatus, scopeGatewayHealth } from "./health";
+
+export const webhookAllowlist = () =>
+  parseNetworkAllowlistEnv("GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS", appEnv.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS);
 
 const log = logger("gateway:webhooks");
 const MAX_REPEAT_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -236,12 +242,18 @@ export const deliverHealthWebhook = async (webhook: HealthWebhook, health: Gatew
             signal: controller.signal,
           }
         : { method: "GET", signal: controller.signal };
-    const response = await fetch(webhook.url, init);
+    const response = await createAllowedNetworkFetch(webhookAllowlist())(webhook.url, init);
+    await response.body?.cancel();
     if (!response.ok) throw new Error(`Webhook returned HTTP ${response.status}`);
     await markResult(webhook, health, true);
     log.info("Health webhook delivered", { webhookId: webhook.id, name: webhook.name, mode, status: health.status });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message =
+      error instanceof NetworkTargetBlockedError
+        ? "Webhook target is on an internal network. An operator can allow it with GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS."
+        : error instanceof Error
+          ? error.message
+          : String(error);
     await markResult(webhook, health, false, message);
     log.error("Health webhook failed", { webhookId: webhook.id, name: webhook.name, mode, status: health.status, error: message });
     throw new HealthWebhookDeliveryError(message, { cause: error });
