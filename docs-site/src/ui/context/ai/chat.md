@@ -210,6 +210,26 @@ Tab on a command with `scope` replaces the query after `/` with that scope's
 inserts its mention; a scope-only row also narrows on Enter. An unavailable
 row keeps its reason and never narrows.
 
+An action may return `{ mention: attachment }` after a picker resolves. The
+reference replaces the original token at its position, using the same edit as
+a row's `mention`. Ctrl/⌘+Z restores `/…` in one step. Returning `"cancelled"`
+keeps the token. If the draft changed, or moved to another `draftKey`, while
+the picker was open, the composer inserts nothing and shows a visible
+explanation.
+
+Set `attachFiles: true` to use the composer's `fileSelection` from a slash row.
+Its `choose` function runs synchronously inside the key or click activation so
+the device's file dialog can open. The token leaves; resolving with `[]` brings
+it back if the draft is unchanged. The same `onSelect` handles selected files.
+A row with `reason` cannot open file selection.
+
+Use `commandFallback({ query, scope })` for a final row built immediately from
+the current search. Unscoped, it follows **Nothing found for “…”** when no rows
+match and does not count as a match. In a scope, it is the last row inside that
+group. Return `undefined` when no fallback applies. It participates in keyboard
+selection; adding a space after an unmatched unscoped query still closes the
+list. The overview has no fallback.
+
 Set `hiddenUntilSearch` for rows that do not apply to the current context.
 They are absent from the overview and appear with their reason when matched;
 scoped results do not hide them. A `searched` section shows a quiet heading

@@ -322,6 +322,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/widgets` | Supported, browser | `streamWidgets`: read dashboard widgets from Core as each one answers | [Dashboard widgets](/en/docs/platform/dashboard-widgets#read-widgets-from-a-browser) |
 | `@k2b/cloud/browser/commands` | Supported, browser | Open interactive Commands, handle command links, and register context actions | [Capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/browser/testing` | Supported, browser tests | Inspect mounted context actions and navigation, and capture search requests | [Universal search](/en/docs/platform/search#test-application-search-and-context-actions) |
+| `@k2b/cloud/browser/composer-insert` | Supported, SolidJS | Build composer insert rows and scopes with `cloudInsertMenu`; give each composer its tags from one shared catalog load with `createCloudComposerCatalog` | [Universal search](/en/docs/platform/search#insert-resources-from-a-composer) |
 | `@k2b/cloud/browser/resource-picker` | Supported, SolidJS | Choose a stable resource reference through Universal Search | [Universal search](/en/docs/platform/search) |
 | `@k2b/cloud/browser/files` | Supported, SolidJS | `chooseFiles`: add files from this device or from Cloud apps that offer files, as `File` objects; `saveFiles`, `SaveFilesButton`, `saveFilesLabel`, `SAVE_FILES_ICON`: save copies into Cloud apps that store files | [File providers](/en/docs/platform/file-providers) |
 | `@k2b/cloud/clients/core` | Platform-owned, browser | Typed client for the Core platform API | — |

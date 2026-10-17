@@ -42,6 +42,7 @@
     "./browser/widgets": "./src/browser/widgets.ts",
     "./browser/testing": "./src/browser/testing.ts",
     "./browser/resource-picker": "./src/browser/resource-picker.tsx",
+    "./browser/composer-insert": "./src/browser/composer-insert.ts",
     "./browser/files": "./src/browser/files.tsx",
     "./capabilities": "./src/capabilities/client.ts",
     "./capabilities/server": "./src/capabilities/server.ts",
