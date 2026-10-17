@@ -85,6 +85,20 @@ Unter **Blockiert durch** steht jede blockierende Aufgabe mit Titel und Stand: e
 
 Du kannst einen eigenen Kommentar bis zu zehn Minuten nach dem Veröffentlichen bearbeiten oder löschen. Kommentare anderer Personen bleiben unverändert, auch für Personen mit Zugriff **Verwalten**.
 
+## Mit einem Emoji reagieren {icon="mood-plus"}
+
+Du brauchst Zugriff **Bearbeiten**, um zu reagieren. Reaktionen senden keine Benachrichtigungen.
+
+:::steps
+1. Wähle auf einer Kanban-Karte einen Emoji-Chip, um deine Reaktion hinzuzufügen oder zu entfernen.
+2. Zeige mit der Maus auf die Karte. Wähle **Reaktion hinzufügen**, um ein anderes Emoji auszuwählen.
+3. Öffne auf einem Smartphone oder Tablet den Eintrag. Wähle über den Kommentaren einen Chip oder **Reaktion hinzufügen**.
+4. Zeige auf einen Chip, um zu sehen, wer reagiert hat. Halte auf einem Touchscreen den Chip gedrückt.
+5. Wenn das Speichern fehlschlägt, wähle in der Fehlermeldung **Erneut versuchen**.
+:::
+
+Ein Eintrag kann bis zu 20 verschiedene Emojis haben. Wenn er 20 hat, reagiere mit einem davon.
+
 ## Schnell mit der Tastatur arbeiten {icon="keyboard"}
 
 - Wenn ein Eintrag geöffnet ist, drücke **J** für den nächsten und **K** für den vorherigen Eintrag in Liste, Tabelle und Kanban.
