@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1090
 description: Build and host the standalone authenticator for multiple Cloud installations.
 tags: [authentication, pwa, deployment]
-updated: 2026-10-11
+updated: 2026-10-17
 ---
 
 # Run Cloud Login
@@ -250,6 +250,16 @@ with the waiting browser, and explicitly approve or deny it.
 A failing Cloud does not block the others. After an uncertain response, check
 the original browser and start a new sign-in if needed; Cloud Login does not
 silently resend the decision.
+
+Cloud Login opts in to `terminal-logins` only when the Cloud announces it in
+`/info.features`. Older Clouds keep browser sign-ins only. For terminal
+sign-ins, the sheet shows the client name from the Cloud's registry in the
+title, the Cloud host, the comparison code, the login lifetime and every scope
+in plain words; unknown scope codes appear verbatim. One tap approves exactly
+these scopes for that lifetime, with no scope downgrade in the sheet.
+Uncertain and expired endings direct the user to the terminal to check the
+result or start again. Upgrade **Core, then OAuth, then Cloud Login**; see
+[Approve a terminal sign-in](./app-approval.md#approve-a-terminal-sign-in).
 
 Actions appear below the sign-ins in each Cloud card, with the app's name,
 its sentence, the chat title when available, and the request time. They stay
