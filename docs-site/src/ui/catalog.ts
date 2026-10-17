@@ -474,6 +474,7 @@ export const documentedOnlyUiCatalogExports = {
   formatFileViewSize: "Documented FileView metadata formatter.",
   getFileViewPreviewKind: "Documented FileView preview classifier.",
   isStructuredDataValue: "Documented StructuredDataPreview boundary validator.",
+  parkWorkspaceDetailDrawers: "Documented host helper for parking AppWorkspace detail drawers.",
   installAppWorkspaceController: "Documented AppWorkspace resize-controller installer.",
   installationPlatform: "Documented InstallGuide platform classifier.",
   isPointInsideToast: "Documented toast interaction helper.",

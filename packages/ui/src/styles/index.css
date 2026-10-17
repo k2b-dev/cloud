@@ -5138,13 +5138,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: none;
 }
 
-@media not all and (min-width: 64rem) {
+@container k2b-app-area not (min-width: 64rem) {
   .k2b-ui .k2b-app-workspace [data-sidebar-mode="collapsed"] {
     display: none;
   }
 }
 
-@media (min-width: 64rem) {
+@container k2b-app-area (min-width: 64rem) {
   .k2b-ui .k2b-app-workspace[data-sidebar-collapsed="true"] [data-sidebar-mode="expanded"] {
     display: none;
   }
@@ -12215,7 +12215,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 1rem;
 }
 
-@media (min-width: 64rem) {
+@container k2b-app-area (min-width: 64rem) {
   .k2b-ui .k2b-app-workspace[data-sidebar-collapsed="true"] .k2b-app-workspace__sidebar-item-copy:not(.k2b-app-workspace__sidebar-preview *) { display: none; }
 }
 
