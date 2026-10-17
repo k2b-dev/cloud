@@ -530,8 +530,15 @@ describe("IMAP reads under throttling", () => {
     ["fetchEnvelopeBatch", (session) => imapSmtpConnector.fetchEnvelopeBatch(session, { ...request, uids: [7] })],
     ["fetchUidWindow", (session) => imapSmtpConnector.fetchUidWindow(session, "INBOX", "10", 1, 9)],
   ];
-  const serverFor = (options: { throttleFetch: boolean; throttleSearch?: boolean; uids?: number[] }) => {
+  const serverFor = (options: {
+    throttleFetch: boolean;
+    throttleFetches?: number;
+    throttleSearch?: boolean;
+    uids?: number[];
+    phantoms?: number[];
+  }) => {
     const uids = options.uids ?? [7];
+    let throttleFetches = options.throttleFetches ?? 0;
     const commands: string[] = [];
     const matches = (set: string, uid: number): boolean =>
       set.split(",").some((part) => {
@@ -567,14 +574,18 @@ describe("IMAP reads under throttling", () => {
                 `* FLAGS (\\Seen)\r\n* ${Math.max(1, uids.length)} EXISTS\r\n* OK [UIDVALIDITY 10] ok\r\n* OK [UIDNEXT 10] ok\r\n${tag} OK [READ-WRITE] done\r\n`,
               );
             } else if (command === "UID FETCH") {
-              if (options.throttleFetch) {
+              if (options.throttleFetch || throttleFetches > 0) {
+                if (throttleFetches > 0) throttleFetches -= 1;
                 throttle();
                 continue;
               }
               for (const [index, uid] of uids.entries()) {
                 if (!matches(words[2] ?? "", uid)) continue;
                 const source = `Message-ID: ${messageIdFor(uid)}\r\n\r\nBody ${uid}\r\n`;
-                const body = line.includes("BODY.PEEK[]") ? ` BODY[]<0> {${Buffer.byteLength(source)}}\r\n${source}` : "";
+                const body =
+                  line.includes("BODY.PEEK[]") && !options.phantoms?.includes(uid)
+                    ? ` BODY[]<0> {${Buffer.byteLength(source)}}\r\n${source}`
+                    : "";
                 socket.write(
                   `* ${index + 1} FETCH (UID ${uid} FLAGS () RFC822.SIZE ${Buffer.byteLength(source)} ENVELOPE (NIL "Throttle" NIL NIL NIL NIL NIL NIL NIL "${messageIdFor(uid)}")${body})\r\n`,
                 );
@@ -616,13 +627,53 @@ describe("IMAP reads under throttling", () => {
     return trackImapSession(client);
   };
 
-  test.each(reads)("%s confirms an empty FETCH answer before it reports a message as gone", async (_name, read) => {
+  test.each(reads)("%s confirms an empty FETCH answer before it reports a message as gone", async (name, read) => {
     const fixture = serverFor({ throttleFetch: true });
     try {
       const result = withSharedImapSession(config, sessionFor(fixture.server.port), read);
       await expect(result).rejects.toMatchObject({ code: "ETHROTTLE", foundUids: [7] });
       await result.catch((error: unknown) => expect(isTransientProviderFailure(error)).toBe(true));
+      // Downloads exhaust four FETCH attempts, then four more for the metadata probe.
+      expect(fixture.commands.filter((command) => command.startsWith("UID FETCH "))).toHaveLength(name === "downloadSourceBatch" ? 8 : 4);
+      expect(fixture.commands.filter((command) => command.startsWith("UID SEARCH UID "))).toHaveLength(1);
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test("downloadSourceBatch skips a source the provider lists but never delivers and streams the rest", async () => {
+    const fixture = serverFor({ throttleFetch: false, uids: [7, 9], phantoms: [7] });
+    const consumed: number[] = [];
+    try {
+      await withSharedImapSession(config, sessionFor(fixture.server.port), (session) =>
+        imapSmtpConnector.downloadSourceBatch(session, "INBOX", [sourceRequest(7), sourceRequest(9)], async (source) => {
+          for await (const _chunk of source.stream) {
+            /* drain the real download */
+          }
+          consumed.push(source.uid);
+        }),
+      );
+      expect(consumed).toEqual([9]);
       expect(fixture.commands.filter((command) => command.startsWith("UID FETCH "))).toHaveLength(4);
+      expect(fixture.commands.filter((command) => command.startsWith("UID SEARCH UID "))).toHaveLength(1);
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test("downloadSourceBatch delivers the source when throttling ends after SEARCH", async () => {
+    const fixture = serverFor({ throttleFetch: false, throttleFetches: 4 });
+    const consumed: Array<{ uid: number; source: string }> = [];
+    try {
+      await withSharedImapSession(config, sessionFor(fixture.server.port), (session) =>
+        imapSmtpConnector.downloadSourceBatch(session, "INBOX", [sourceRequest(7)], async (source) => {
+          let body = "";
+          for await (const chunk of source.stream) body += chunk;
+          consumed.push({ uid: source.uid, source: body });
+        }),
+      );
+      expect(consumed).toEqual([{ uid: 7, source: `Message-ID: ${messageId}\r\n\r\nBody 7\r\n` }]);
+      expect(fixture.commands.filter((command) => command.startsWith("UID FETCH "))).toHaveLength(6);
       expect(fixture.commands.filter((command) => command.startsWith("UID SEARCH UID "))).toHaveLength(1);
     } finally {
       fixture.server.stop(true);
@@ -1128,6 +1179,7 @@ describe("IMAP source downloads", () => {
     const first = source(1);
     const client = {
       search: async () => [],
+      fetchOne: async (): Promise<false> => false,
       usable: true,
       mailbox: { path: "INBOX", delimiter: "/", flags: new Set<string>(), uidValidity: 10n, uidNext: 4, exists: 3 },
       download: async (uid: number) => {
@@ -1149,6 +1201,7 @@ describe("IMAP source downloads", () => {
     await downloadSelectedSources(
       {
         search: async () => [],
+        fetchOne: async (): Promise<false> => false,
         usable: true,
         mailbox: { uidValidity: 10n } as never,
         // FETCH for an expunged UID returns no message; imapflow then resolves an empty object.
@@ -1165,6 +1218,7 @@ describe("IMAP source downloads", () => {
   test("fail the batch instead of skipping the rest when the connection closed between downloads", async () => {
     const client = {
       search: async () => [],
+      fetchOne: async (): Promise<false> => false,
       usable: true,
       mailbox: { uidValidity: 10n } as never,
       download: async (uid: number) => source(uid),
@@ -1184,6 +1238,7 @@ describe("IMAP source downloads", () => {
     await downloadSelectedSources(
       {
         search: async () => [],
+        fetchOne: async (): Promise<false> => false,
         usable: true,
         mailbox: { uidValidity: 10n } as never,
         download: async (uid) => ({ meta: { contentType: "message/rfc822" }, content: Readable.from([String(uid)]) }),

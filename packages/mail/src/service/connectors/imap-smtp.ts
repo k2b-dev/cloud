@@ -891,11 +891,15 @@ const unconfirmedAbsence = (foundUids?: number[]): Error =>
 
 // ImapFlow ends FETCH empty after its ETHROTTLE retries run out, and SEARCH returns false
 // on command failure. Neither answer proves absence without a successful UID search.
-const confirmAbsentUids = async (client: Pick<ImapFlow, "search">, missing: readonly number[]): Promise<void> => {
-  if (missing.length === 0) return;
-  const found = await client.search({ uid: imapUidSet(missing) }, { uid: true });
+const listedUids = async (client: Pick<ImapFlow, "search">, uids: readonly number[]): Promise<number[]> => {
+  if (uids.length === 0) return [];
+  const found = await client.search({ uid: imapUidSet(uids) }, { uid: true });
   if (!Array.isArray(found)) throw unconfirmedAbsence();
-  const stillListed = found.filter((uid) => missing.includes(uid));
+  return found.filter((uid) => uids.includes(uid));
+};
+
+const confirmAbsentUids = async (client: Pick<ImapFlow, "search">, missing: readonly number[]): Promise<void> => {
+  const stillListed = await listedUids(client, missing);
   if (stillListed.length > 0) throw unconfirmedAbsence(stillListed);
 };
 
@@ -1190,16 +1194,16 @@ const fetchUidWindow = async (
   );
 
 type SourceDownloadClient = SelectedMailboxClient &
-  Pick<ImapFlow, "search"> & {
+  Pick<ImapFlow, "search" | "fetchOne"> & {
     // imapflow resolves an empty object when FETCH returns no message, although its types promise one.
     download(uid: number, part: undefined, options: { uid: true }): Promise<Partial<DownloadObject>>;
   };
 
 /**
- * Streams the requested sources of the selected folder in order. A UID confirmed absent yields
- * nothing, so the caller decides what the missing message means without losing the rest of the
- * batch. An unconfirmed gap fails transiently. A consumer that resolves "stop" leaves the remaining
- * sources unfetched.
+ * Streams the requested sources of the selected folder in order. An absent UID or a listed message
+ * that answers metadata but still has no source after one retry yields nothing for the caller's
+ * missing-source budget. An unconfirmed gap fails transiently; a recovered source streams normally.
+ * A consumer that resolves "stop" leaves the remaining sources unfetched.
  */
 export const downloadSelectedSources = async (
   client: SourceDownloadClient,
@@ -1207,12 +1211,15 @@ export const downloadSelectedSources = async (
   consume: (source: SourceDownload) => Promise<void | "stop">,
 ): Promise<void> => {
   for (const request of requests) {
-    const download = await client.download(request.uid, undefined, { uid: true });
+    let download = await client.download(request.uid, undefined, { uid: true });
     if (!download.content || !download.meta) {
       // imapflow also answers every download with an empty object once the connection has closed.
       assertSelectedMailbox(client, request.uidValidity);
-      await confirmAbsentUids(client, [request.uid]);
-      continue;
+      if ((await listedUids(client, [request.uid])).length === 0) continue;
+      const message = await client.fetchOne(request.uid, { uid: true }, { uid: true });
+      if (!message) throw unconfirmedAbsence([request.uid]);
+      download = await client.download(request.uid, undefined, { uid: true });
+      if (!download.content || !download.meta) continue;
     }
     const source = { ...request, expectedSize: download.meta.expectedSize ?? null, stream: download.content };
     try {
