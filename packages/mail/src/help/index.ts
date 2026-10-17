@@ -25,3 +25,8 @@ export const mailHelp = defineHelp({
     de: [startDe, workDe, composeDe, collaborationDe, securityDe, adminDe, automationDe, workflowsDe, troubleshootingDe],
   },
 });
+
+/** Articles that fit the application's main pages, in display order. */
+export const mailPageHelp = {
+  mailbox: ["mail-work", "mail-compose", "mail-collaboration"],
+} as const;

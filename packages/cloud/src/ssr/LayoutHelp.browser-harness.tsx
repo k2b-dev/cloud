@@ -1,17 +1,52 @@
 import { AppWorkspace, LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
+import { registerContextAwareCommand } from "../browser/command-bridge";
 import type { HelpDocumentManifest, HelpDocumentPayload } from "../shared/help";
 import { LayoutHelpPage, openLayoutHelpDialog } from "./LayoutHelp";
 import { registry } from "./layout-help-registry";
 
-const documents: HelpDocumentManifest[] = Array.from({ length: 8 }, (_, index) => ({
-  id: `topic-${index}`,
-  title: `Topic ${index}`,
+const params = new URL(location.href).searchParams;
+const fixture = (id: string, title: string, order: number, kind?: HelpDocumentManifest["kind"], icon?: string): HelpDocumentManifest => ({
+  id,
+  title,
   description: "Help browser fixture",
-  order: index,
-  url: `/api/help/topic-${index}`,
+  order,
+  ...(kind ? { kind } : {}),
+  ...(icon ? { icon } : {}),
+  url: `/api/help/${id}`,
   searchUrl: "/api/help/search",
-}));
+});
+// `?start`: an app with every kind and more tasks than the start shows as tiles.
+const startDocuments: HelpDocumentManifest[] = [
+  fixture("share-space", "Share a Space", 10, "task", "ti ti-share"),
+  fixture("claim-task", "Claim a task", 20, "task", "ti ti-hand-grab"),
+  fixture("statuses", "Create and order statuses", 30, "task", "ti ti-arrows-sort"),
+  fixture("calendar-feed", "See dates in your own calendar", 40, "task", "ti ti-calendar-share"),
+  fixture("templates", "Start from a template", 50, undefined, "ti ti-template"),
+  fixture("filters", "Filter and find items", 60, "task", "ti ti-filter"),
+  fixture("handoffs", "Hand work over", 70, "task", "ti ti-arrows-exchange"),
+  fixture("archive", "Archive a Space", 80, "task", "ti ti-archive"),
+  fixture("import", "Import tasks from a spreadsheet with a very long title that wraps", 90, "task", "ti ti-table-import"),
+  fixture("recurring", "Repeat a task", 100, "task", "ti ti-repeat"),
+  fixture("start", "Start with Spaces", 5, "start", "ti ti-rocket"),
+  fixture("access-levels", "Access levels", 110, "reference", "ti ti-key"),
+  fixture("troubleshoot", "Fix problems in Spaces", 120, "troubleshoot", "ti ti-lifebuoy"),
+];
+const documents: HelpDocumentManifest[] = params.has("start")
+  ? startDocuments
+  : Array.from({ length: 8 }, (_, index) => fixture(`topic-${index}`, `Topic ${index}`, index));
+// `?commands`: what the shell and an app register on a real page.
+if (params.has("commands")) {
+  for (const command of [
+    { id: "cloud.shell.focus", title: "Hide sidebar", description: "", shortcut: "mod+\\" },
+    { id: "cloud.search", title: "Open global search", description: "", shortcut: "mod+k" },
+    { id: "cloud.help", title: "Open shortcut help", description: "", shortcut: "shift+/" },
+    { id: "spaces.new", title: "New task", description: "", shortcut: "n" },
+    { id: "spaces.filter", title: "Filter tasks", description: "", shortcut: "f" },
+    { id: "spaces.complete", title: "Complete selected", description: "", shortcut: "x", scope: "selection" as const },
+  ])
+    registerContextAwareCommand({ ...command, action: () => {} });
+}
 const lead = "<p>Share a Space so that other people can see and change its tasks.</p>";
 const longHtml =
   lead +
@@ -35,7 +70,13 @@ window.fetch = Object.assign(
   async (input: URL | RequestInfo) => {
     await new Promise((resolve) => setTimeout(resolve, 80));
     const path = String(input);
-    if (path.includes("/search")) return Response.json({ locale: "en", ids: ["topic-0", "topic-1"] });
+    if (path.includes("/search")) {
+      const query = new URL(path, location.href).searchParams.get("q") ?? "";
+      const ids = params.has("start")
+        ? documents.filter((document) => document.title.toLocaleLowerCase().includes(query)).map((document) => document.id)
+        : ["topic-0", "topic-1"];
+      return Response.json({ locale: "en", ids });
+    }
     const id = path.split("/").at(-1) ?? "topic-0";
     const payload: HelpDocumentPayload = {
       id,
@@ -54,7 +95,6 @@ window.fetch = Object.assign(
 );
 const main = document.querySelector<HTMLElement>(".layout-content-main");
 if (!main) throw new Error("Missing Layout main");
-const params = new URL(location.href).searchParams;
 const embedded = params.has("embedded");
 const referenceHost = params.get("host");
 if (referenceHost === "grids" || referenceHost === "pulse") {
@@ -88,7 +128,8 @@ if (referenceHost === "grids" || referenceHost === "pulse") {
   );
 } else if (params.has("modal")) {
   // The dialog reads the topics the page registered, as Layout.HelpDocuments does.
-  for (const manifest of documents) registry()?.set(manifest.id, { ...manifest, kind: "document" });
+  for (const manifest of documents) registry()?.set(manifest.id, manifest);
+  window.__cloudLayoutHelpPageBase = "/app/spaces/help";
   openLayoutHelpDialog();
 } else {
   const host = document.createElement("div");

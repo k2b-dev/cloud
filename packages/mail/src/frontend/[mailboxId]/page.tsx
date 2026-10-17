@@ -3,6 +3,7 @@ import { readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
 import { Layout, requestPath } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { requestContactDirectory } from "../../contact-directory-settings";
+import { mailPageHelp } from "../../help";
 import type { MailRequestContext } from "../../service";
 import { getSpacesMailIntegrationAvailability } from "../../service/app-integrations";
 import { loadMailboxPageData, resolveWorkspaceRequest } from "../../service/workspace";
@@ -43,6 +44,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout
       c={c}
+      help={mailPageHelp.mailbox}
       printHint={t.printHint}
       fullPage
       workspaceSidebarCollapsible={false}

@@ -4,7 +4,6 @@ import {
   Button,
   Dropdown,
   IconButton,
-  IconButtonLink,
   Kbd,
   MarkdownView,
   NoticeCard,
@@ -14,6 +13,7 @@ import {
   ScrollArea,
   TableOfContents,
   TextInput,
+  toast,
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
@@ -26,8 +26,17 @@ import { formatHelpBundleMarkdown, formatHelpDocumentMarkdown } from "./layout-h
 import { focusHelpArticleHeading, resetHelpArticleScroll } from "./layout-help-navigation";
 import { HELP_TOPICS_EVENT, type HelpTopic, registry } from "./layout-help-registry";
 import { searchHelpTopics } from "./layout-help-search";
+import {
+  type HelpShortcutCommand,
+  type HelpShortcutScope,
+  type HelpStartGroupKind,
+  helpShortcutGroups,
+  helpStart,
+} from "./layout-help-start";
 import { helpLinkTarget, layoutHelpTopicHref } from "./layout-help-url";
+import { platformMessages } from "./platform-messages";
 import { readShellData, useShellData } from "./shell-data";
+import { shellShortcuts } from "./shell-shortcuts";
 
 export type LayoutHelpPageProps = {
   documents: readonly HelpDocumentManifest[];
@@ -69,49 +78,77 @@ const articleLink = (value: unknown): HelpArticleLink | undefined => {
 
 /** An article without its own icon gets a neutral page tile. */
 const iconClass = (icon?: string) => (icon?.startsWith("ti ") ? icon : `ti ${icon ?? "ti-file-text"}`);
-const legacyTopicContent = (topic: HelpTopic) => (topic.kind === "content" ? topic.children : null);
-const sortedTopics = () =>
-  [...(registry()?.values() ?? [])].sort((a, b) => (a.order ?? 100) - (b.order ?? 100) || a.title.localeCompare(b.title));
-const documentTopics = (documents: readonly HelpDocumentManifest[] = []): HelpTopic[] =>
-  documents.map((document) => ({ ...document, kind: "document" }));
+const byOrder = (a: HelpTopic, b: HelpTopic) => (a.order ?? 100) - (b.order ?? 100) || a.title.localeCompare(b.title);
+const sortedTopics = () => [...(registry()?.values() ?? [])].sort(byOrder);
 const mergeTopics = (registered: readonly HelpTopic[], documents: readonly HelpDocumentManifest[] = []): HelpTopic[] => {
   const topics = new Map(registered.map((topic) => [topic.id, topic]));
-  for (const topic of documentTopics(documents)) topics.set(topic.id, topic);
-  return [...topics.values()].sort((a, b) => (a.order ?? 100) - (b.order ?? 100) || a.title.localeCompare(b.title));
+  for (const topic of documents) topics.set(topic.id, topic);
+  return [...topics.values()].sort(byOrder);
+};
+const GROUP_ICONS: Record<HelpStartGroupKind, string> = {
+  start: "ti ti-rocket",
+  reference: "ti ti-book-2",
+  troubleshoot: "ti ti-lifebuoy",
 };
 
-const Shortcuts = (props: { focusSearch: () => void }) => {
+/**
+ * Keyboard shortcuts come last in the start. The browser knows the page's commands. On a Layout page (it has shell
+ * data) the shell always registers its own Search and Help shortcuts, so they show from the server render and every
+ * first client render on, also before the shell has registered them. The groups reserve their height and place in CSS,
+ * so the ones the browser adds fill space that is already there.
+ */
+const StartShortcuts = (props: { appName?: string }) => {
   const locale = useLocale();
   const t = () => helpMessages.resolve([locale()]).t;
-  const [commands, setCommands] = createSignal(contextCommandsWithShortcuts());
+  const shell = useShellData();
+  const seed: HelpShortcutCommand[] = shell ? shellShortcuts(platformMessages.resolve([locale()]).t) : [];
+  const read = (): HelpShortcutCommand[] => {
+    const commands = contextCommandsWithShortcuts();
+    return [...seed.filter((command) => !commands.some((other) => other.id === command.id)), ...commands];
+  };
+  const [commands, setCommands] = createSignal<HelpShortcutCommand[]>(read());
   onMount(() => {
-    const update = () => setCommands(contextCommandsWithShortcuts());
+    const update = () => setCommands(read());
+    update();
     window.addEventListener(COMMANDS_CHANGED, update);
     onCleanup(() => window.removeEventListener(COMMANDS_CHANGED, update));
   });
-  const entries = createMemo(() => commands().filter((command) => command.shortcut));
+  const label = (scope: HelpShortcutScope) =>
+    scope === "everywhere"
+      ? t().shortcutsEverywhere
+      : scope === "selection"
+        ? t().shortcutsWithSelection
+        : props.appName
+          ? t().shortcutsInApp({ app: props.appName })
+          : t().shortcutsInThisApp;
   return (
-    <div class="flex flex-col gap-3">
-      <p class="text-sm leading-relaxed text-dimmed">{t().shortcutsIntro}</p>
-      <Button size="sm" variant="secondary" class="self-start" onClick={props.focusSearch}>
-        <i class="ti ti-search" /> {t().searchHelp}
-      </Button>
-      <div class="flex flex-col gap-2">
-        <For each={entries()}>
-          {(entry) => (
-            <div class="flex items-start justify-between gap-4 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] px-3 py-2.5">
-              <div class="min-w-0">
-                <p class="text-sm font-medium text-primary">{entry.title}</p>
-                <Show when={entry.description}>
-                  <p class="mt-0.5 text-xs text-dimmed">{entry.description}</p>
-                </Show>
-              </div>
-              <Kbd keys={entry.shortcut!} />
-            </div>
+    <section class="help-start-section help-start-shortcuts" data-help-shortcuts="" aria-labelledby="help-start-shortcuts-title">
+      <h3 id="help-start-shortcuts-title" class="help-start-heading">
+        <i class="ti ti-keyboard" aria-hidden="true" />
+        {t().keyboardShortcuts}
+      </h3>
+      <div class="help-shortcut-groups">
+        <For each={helpShortcutGroups(commands())}>
+          {(group) => (
+            <section class="help-shortcut-group" data-help-shortcut-group={group.scope} aria-label={label(group.scope)}>
+              <h4 class="help-shortcut-group-title" aria-hidden="true">
+                {label(group.scope)}
+              </h4>
+              <ul>
+                <For each={group.shortcuts}>
+                  {(command) => (
+                    <li class="help-shortcut" title={command.description}>
+                      <span class="help-shortcut-title">{command.title}</span>
+                      <Kbd keys={command.shortcut} platform={shell?.platform} />
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </section>
           )}
         </For>
       </div>
-    </div>
+    </section>
   );
 };
 
@@ -130,7 +167,8 @@ const HelpShell = (props: {
   // Links to this app's Help, by its own route or Core's `/help/apps/<id>`, open in place.
   const shell = useShellData();
   const appId = shell?.appId;
-  const appName = shell?.apps.find((app) => app.id === appId)?.label;
+  const app = shell?.apps.find((candidate) => candidate.id === appId);
+  const appName = app?.label;
   const accessLabel = (level: HelpAccessLevel) => ({ view: t().accessView, edit: t().accessEdit, manage: t().accessManage })[level];
   const [externalTopics, setExternalTopics] = createSignal(mergeTopics(sortedTopics(), props.documents));
   const [view, setView] = createSignal<HelpView>(props.session.view);
@@ -142,12 +180,16 @@ const HelpShell = (props: {
   const [loadAttempt, setLoadAttempt] = createSignal(0);
   const [remoteIds, setRemoteIds] = createSignal<readonly string[] | null>(null);
   const [searching, setSearching] = createSignal(false);
+  const [searchFailed, setSearchFailed] = createSignal(false);
+  const [searchAttempt, setSearchAttempt] = createSignal(0);
   const [copyingAll, setCopyingAll] = createSignal(false);
-  const [copyAllError, setCopyAllError] = createSignal<string | null>(null);
   const [activeSectionId, setActiveSectionId] = createSignal<string | null>(null);
   const [tocScrollRoot, setTocScrollRoot] = createSignal<HTMLElement>();
-  const articleClipboard = clipboard.create(1800);
-  const allHelpClipboard = clipboard.create(1800);
+  const writeText = (text: string) => navigator.clipboard.writeText(text);
+  const articleClipboard = clipboard.createWriter({ write: writeText, copiedFor: 1800 });
+  const allHelpClipboard = clipboard.createWriter({ write: writeText, copiedFor: 1800 });
+  /** The article a search started from; clearing the search returns to it. */
+  let searchReturnId: string | null = null;
   let root: HTMLDivElement | undefined;
   let scrollArea: HTMLDivElement | undefined;
   let articleContent: HTMLDivElement | undefined;
@@ -224,24 +266,8 @@ const HelpShell = (props: {
     }
   };
 
-  const focusSearch = () => {
-    showHub();
-    requestAnimationFrame(() => searchInput?.focus({ preventScroll: true }));
-  };
-
-  const shortcutsTopic = createMemo<HelpTopic>(() => ({
-    id: "shortcuts",
-    title: t().shortcuts,
-    icon: "ti ti-keyboard",
-    description: t().shortcutsDescription,
-    order: 0,
-    kind: "content",
-    children: <Shortcuts focusSearch={focusSearch} />,
-  }));
-  const topics = createMemo(() => (props.includeShortcuts === false ? externalTopics() : [shortcutsTopic(), ...externalTopics()]));
-  const documentTopics = createMemo(() =>
-    externalTopics().filter((topic): topic is HelpDocumentManifest & { kind: "document" } => topic.kind === "document"),
-  );
+  const topics = externalTopics;
+  const start = createMemo(() => helpStart(topics(), props.surface === "modal" ? shell?.help : undefined));
   const activeTopic = createMemo(() => topics().find((topic) => topic.id === activeId()) ?? null);
   // Article bodies load in the browser only; the server renders the head and the loading state.
   const articleParts = createMemo(() => {
@@ -258,16 +284,12 @@ const HelpShell = (props: {
 
   createEffect(() => {
     const value = normalizedQuery();
-    const urls = [
-      ...new Set(
-        externalTopics()
-          .filter((topic): topic is HelpDocumentManifest & { kind: "document" } => topic.kind === "document")
-          .map((topic) => topic.searchUrl),
-      ),
-    ];
+    searchAttempt();
+    const urls = [...new Set(topics().map((topic) => topic.searchUrl))];
     const version = ++searchVersion;
     setRemoteIds(null);
     setSearching(false);
+    setSearchFailed(false);
     if (!value || urls.length === 0) return;
 
     const controller = new AbortController();
@@ -291,7 +313,8 @@ const HelpShell = (props: {
         })
         .catch((error) => {
           if (error instanceof DOMException && error.name === "AbortError") return;
-          // Metadata matches stay usable if full-text search is temporarily unavailable.
+          // Metadata matches stay usable if full-text search is temporarily unavailable; the results say so.
+          if (version === searchVersion) setSearchFailed(true);
         })
         .finally(() => {
           if (version === searchVersion) setSearching(false);
@@ -340,10 +363,7 @@ const HelpShell = (props: {
 
   onMount(() => {
     const dialog = root?.closest("dialog");
-    if (dialog) {
-      dialog.setAttribute("aria-labelledby", "layout-help-title");
-      dialog.setAttribute("aria-describedby", "layout-help-subtitle");
-    }
+    dialog?.setAttribute("aria-labelledby", "layout-help-title");
     const update = () => setExternalTopics(mergeTopics(sortedTopics(), props.documents));
     window.addEventListener(HELP_TOPICS_EVENT, update);
     update();
@@ -435,7 +455,7 @@ const HelpShell = (props: {
     setPayload(null);
     setLoadError(null);
     setLoading(false);
-    if (!topic || topic.kind !== "document" || view() !== "article") return;
+    if (!topic || view() !== "article") return;
     const cached = props.session.articleCache.get(`${topic.locale ?? "en"}:${topic.url}`);
     if (cached) {
       setPayload(cached);
@@ -465,20 +485,36 @@ const HelpShell = (props: {
     });
   });
 
-  const copyArticle = (topic: HelpTopic, document: HelpDocumentPayload | null) => {
-    if (topic.kind !== "document" || !document) return;
-    return articleClipboard.copy(formatHelpDocumentMarkdown({ ...topic, markdown: document.markdown }));
+  /**
+   * Copies the open article. The article's own buttons show "Copied" in place; the menu closes on choice, so it confirms
+   * with a toast. A failed write always ends in an error toast with Try again.
+   */
+  const copyArticle = async (topic: HelpTopic, document: HelpDocumentPayload | null, confirm = false) => {
+    if (!document) return;
+    if (await articleClipboard.copy(formatHelpDocumentMarkdown({ ...topic, markdown: document.markdown }))) {
+      if (confirm) toast.success(t().articleCopied);
+      return;
+    }
+    toast.error(t().copyFailed({ message: articleClipboard.error()?.message ?? t().copyFallback }), {
+      action: { label: t().tryAgain, onClick: () => void copyArticle(topic, document, confirm) },
+    });
+  };
+
+  const copyFromMenu = async () => {
+    const topic = activeTopic();
+    if (view() === "article" && topic) await copyArticle(topic, payload(), true);
+    else await copyAllHelp();
   };
 
   const copyAllHelp = async () => {
-    const manifests = documentTopics();
+    const manifests = topics();
     if (manifests.length === 0 || copyingAll()) return;
 
     copyAllController?.abort();
     const controller = new AbortController();
     copyAllController = controller;
     setCopyingAll(true);
-    setCopyAllError(null);
+    const progress = toast(t().preparing, { progress: "indeterminate", duration: 0, iconClass: "ti ti-markdown" });
     try {
       const documents = await Promise.all(
         manifests.map(async (topic) => {
@@ -486,10 +522,16 @@ const HelpShell = (props: {
           return { ...topic, markdown: document.markdown };
         }),
       );
-      await allHelpClipboard.copy(formatHelpBundleMarkdown(documents));
+      if (!(await allHelpClipboard.copy(formatHelpBundleMarkdown(documents))))
+        throw allHelpClipboard.error() ?? new Error(t().copyFallback);
+      progress.dismiss();
+      toast.success(t().helpCopied);
     } catch (error) {
+      progress.dismiss();
       if (!(error instanceof DOMException && error.name === "AbortError")) {
-        setCopyAllError(error instanceof Error ? error.message : t().copyFallback);
+        toast.error(t().copyAllFailed({ message: error instanceof Error ? error.message : t().copyFallback }), {
+          action: { label: t().tryAgain, onClick: () => void copyAllHelp() },
+        });
       }
     } finally {
       if (copyAllController === controller) {
@@ -506,6 +548,7 @@ const HelpShell = (props: {
     }
   };
   const openTopic = (id: string, hash = "", push = true) => {
+    searchReturnId = null;
     if (push) pushHelpUrl(id, hash);
     try {
       localStorage.setItem(LAST_TOPIC_KEY, id);
@@ -525,6 +568,7 @@ const HelpShell = (props: {
     setView("article");
   };
   const showHub = (push = true) => {
+    searchReturnId = null;
     setQuery("");
     setResultsMinHeight(undefined);
     setRemoteIds(null);
@@ -532,8 +576,30 @@ const HelpShell = (props: {
     if (push) pushHelpUrl(null);
   };
   const goBack = () => {
+    searchReturnId = null;
     setView("hub");
     pushHelpUrl(null);
+  };
+  /** The search stays in the head in every view. Typing in an article shows results; clearing the search returns to the article. */
+  const changeQuery = (value: string) => {
+    const searching = !!value.trim();
+    if (searching && view() === "article") {
+      searchReturnId = activeId();
+      setResultsMinHeight(undefined);
+      setView("hub");
+    } else if (searching && !query().trim()) {
+      // Results replace the start below the field; the area keeps its height so nothing moves.
+      setResultsMinHeight(`${resultsRegion?.offsetHeight ?? 0}px`);
+    }
+    setQuery(value);
+    if (searching) return;
+    setResultsMinHeight(undefined);
+    const returnId = searchReturnId;
+    searchReturnId = null;
+    if (returnId && topics().some((topic) => topic.id === returnId)) {
+      setActiveId(returnId);
+      setView("article");
+    }
   };
 
   /** Links in the article, its table of contents, and its end open Help targets of this app in place. */
@@ -563,30 +629,49 @@ const HelpShell = (props: {
     }
   };
 
-  const TopicList = (listProps: { items: HelpTopic[] }) => (
-    <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5">
+  /** Rows: icon tile, title, and description; the start's groups, its further tasks, and search results use them. */
+  const TopicList = (listProps: { items: HelpTopic[]; marker?: string }) => (
+    <ul class="help-start-rows" {...(listProps.marker ? { [listProps.marker]: "" } : {})}>
       <For each={listProps.items}>
         {(topic) => (
-          <button
-            type="button"
-            class="group flex w-full items-center gap-3 rounded-[var(--ui-radius-control)] px-3 py-2.5 text-left hover:bg-[var(--ui-surface-raised)] focus-ui"
-            onClick={() => openTopic(topic.id)}
-          >
-            <span class="help-topic-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] app-accent-text">
-              <i class={`${iconClass(topic.icon)} text-base`} />
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-sm font-medium text-primary group-hover:app-accent-text">{topic.title}</span>
-              <Show when={topic.description}>
-                {(description) => <span class="mt-0.5 block truncate text-xs text-dimmed">{description()}</span>}
-              </Show>
-            </span>
-            <i class="ti ti-chevron-right shrink-0 text-xs text-dimmed" />
-          </button>
+          <li>
+            <button type="button" class="help-start-row focus-ui" data-help-topic={topic.id} onClick={() => openTopic(topic.id)}>
+              <span class="help-topic-icon help-start-row-icon app-accent-text" aria-hidden="true">
+                <i class={iconClass(topic.icon)} />
+              </span>
+              <span class="help-article-link-copy">
+                <span class="help-article-link-title">{topic.title}</span>
+                <Show when={topic.description}>{(description) => <span class="help-article-link-description">{description()}</span>}</Show>
+              </span>
+              <i class="ti ti-chevron-right help-start-row-arrow" aria-hidden="true" />
+            </button>
+          </li>
         )}
       </For>
-    </div>
+    </ul>
   );
+
+  /** At most eight tasks as tiles; the app colour shows only in the icon. */
+  const TaskTiles = (tilesProps: { items: HelpTopic[] }) => (
+    <ul class="help-start-tiles" data-help-tiles="">
+      <For each={tilesProps.items}>
+        {(topic) => (
+          <li>
+            <button type="button" class="help-start-tile focus-ui" data-help-topic={topic.id} onClick={() => openTopic(topic.id)}>
+              <span class="help-topic-icon help-start-tile-icon app-accent-text" aria-hidden="true">
+                <i class={iconClass(topic.icon)} />
+              </span>
+              <span class="help-start-tile-title">{topic.title}</span>
+              <Show when={topic.description}>{(description) => <span class="help-start-tile-description">{description()}</span>}</Show>
+            </button>
+          </li>
+        )}
+      </For>
+    </ul>
+  );
+
+  const groupTitle = (kind: HelpStartGroupKind) =>
+    ({ start: t().groupStart, reference: t().groupReference, troubleshoot: t().groupTroubleshoot })[kind];
 
   const ArticleLinkTitle = (link: { link: HelpArticleLink }) => (
     <span class="help-article-link-copy">
@@ -646,175 +731,185 @@ const HelpShell = (props: {
       </ScrollArea>
     );
 
+  const pageHref = () => (props.pageBase ? layoutHelpTopicHref(props.pageBase, view() === "article" ? activeId() : null) : undefined);
+  const menuItems = () => [
+    {
+      label: t().copyAsMarkdown,
+      icon: "ti ti-markdown",
+      ...(copyingAll() || (view() === "article" ? !payload() : topics().length === 0)
+        ? { disabled: true as const }
+        : { action: () => void copyFromMenu() }),
+    },
+    ...(props.surface === "modal" && pageHref() ? [{ label: t().openAsPage, icon: "ti ti-app-window", href: pageHref()! }] : []),
+  ];
+
   return (
     <div
       ref={root}
-      class={`app-accent-scope flex min-h-0 flex-col ${props.surface === "page" ? "" : "bg-[var(--ui-surface-raised)]"} ${
+      class={`help-shell app-accent-scope flex min-h-0 flex-col ${props.surface === "page" ? "" : "bg-[var(--ui-surface-raised)]"} ${
         props.surface === "modal"
           ? "h-[min(48rem,var(--ui-dialog-available-height))] overflow-hidden panel-dialog-shell [box-shadow:var(--ui-shadow-float)]"
           : props.surface === "page"
             ? ""
             : "h-full"
       }`}
+      data-surface={props.surface}
       style={appAccentStyle(props.accent)}
     >
-      <Show when={props.surface === "modal"}>
-        <header class="flex min-h-16 shrink-0 items-center gap-2 px-5 py-3">
-          <Show when={view() !== "hub"}>
-            <IconButton class="shrink-0" label={t().backToTopics} title={t().back} onClick={goBack}>
-              <i class="ti ti-arrow-left" />
-            </IconButton>
-          </Show>
-          {/* The article names itself in its own head, so the dialog keeps one name and never repeats the title. */}
-          <span class="help-topic-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] app-accent-text">
-            <i class="ti ti-help text-lg" />
-          </span>
-          <div class="min-w-0 flex-1">
-            <h2 id="layout-help-title" class="truncate font-semibold text-primary">
-              {t().help}
-            </h2>
-            <p id="layout-help-subtitle" class="truncate text-xs text-dimmed">
-              {t().description}
-            </p>
-          </div>
-          <div class="flex shrink-0 items-center gap-1" role="group" aria-label={t().actions}>
-            <Show when={view() === "hub" && documentTopics().length > 0}>
-              <IconButton
-                disabled={copyingAll()}
-                label={allHelpClipboard.wasCopied() ? t().helpCopied : t().copyAllHelp}
-                title={allHelpClipboard.wasCopied() ? t().copied : t().copyAllHelp}
-                onClick={() => void copyAllHelp()}
-              >
-                <i class={copyingAll() ? "ti ti-loader-2 animate-spin" : allHelpClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
-              </IconButton>
-            </Show>
-            <Show when={view() === "article" && activeTopic()?.kind === "document"}>
-              <IconButton
-                disabled={!payload()}
-                label={articleClipboard.wasCopied() ? t().articleCopied : t().copyArticle}
-                title={articleClipboard.wasCopied() ? t().copied : t().copyArticle}
-                onClick={() => {
-                  const topic = activeTopic();
-                  if (topic) void copyArticle(topic, payload());
-                }}
-              >
-                <i class={articleClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
-              </IconButton>
-            </Show>
-            <Show when={props.pageBase}>
-              {(pageBase) => (
-                <IconButtonLink
-                  href={layoutHelpTopicHref(pageBase(), view() === "article" ? activeId() : null)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  label={t().openWindow}
-                  title={t().openFullPage}
-                  onClick={(event) => {
-                    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-
-                    const popup = window.open(
-                      event.currentTarget.href,
-                      "cloud-layout-help",
-                      "popup,width=1120,height=820,resizable=yes,scrollbars=yes",
-                    );
-                    if (!popup) return;
-
-                    event.preventDefault();
-                    popup.opener = null;
-                    popup.focus();
-                  }}
+      {/* One head in every view: the search never moves between the start, an article, and results. An app's embedded
+          reader sits in the app's own chrome, which names it and picks its article, so it keeps only the search of its start. */}
+      <Show when={props.surface !== "embedded" || view() === "hub"}>
+        <header class="help-head" data-help-head="">
+          <div class="help-head-inner help-measure">
+            <Show when={props.surface !== "embedded"}>
+              <div class="help-head-row">
+                {/* The back button takes the app tile's place in an article, so nothing beside it moves. */}
+                <Show
+                  when={view() === "article"}
+                  fallback={
+                    <span class="help-head-tile" aria-hidden="true">
+                      <i class={app?.iconClass ?? "ti ti-help"} />
+                    </span>
+                  }
                 >
-                  <i class="ti ti-app-window" />
-                </IconButtonLink>
-              )}
+                  <IconButton class="help-head-back" label={t().backToTopics} title={t().back} onClick={goBack}>
+                    <i class="ti ti-arrow-left" />
+                  </IconButton>
+                </Show>
+                <h2 id="layout-help-title" class="help-head-title">
+                  {appName ? t().helpFor({ app: appName }) : t().help}
+                </h2>
+                <div class="help-head-actions" role="group" aria-label={t().actions}>
+                  <Dropdown.Root label={t().moreActions} position="bottom-left" items={menuItems()}>
+                    <Dropdown.Trigger iconOnly label={t().moreActions} variant="ghost" data-help-menu="">
+                      <i class="ti ti-dots" aria-hidden="true" />
+                    </Dropdown.Trigger>
+                  </Dropdown.Root>
+                  <Show when={props.surface === "modal"}>
+                    <IconButton label={t().closeHelp} title={t().close} onClick={props.close}>
+                      <i class="ti ti-x" />
+                    </IconButton>
+                  </Show>
+                </div>
+              </div>
             </Show>
-            <IconButton label={t().closeHelp} title={t().close} onClick={props.close}>
-              <i class="ti ti-x" />
-            </IconButton>
+            <TextInput
+              ref={searchInput}
+              type="search"
+              class="help-head-search"
+              icon="ti ti-search"
+              aria-label={t().searchHelp}
+              data-help-search=""
+              value={query()}
+              placeholder={t().searchPlaceholder}
+              onValueChange={changeQuery}
+            />
           </div>
         </header>
       </Show>
 
       <ReaderContent>
         <Show when={view() === "hub"}>
-          <div class="mx-auto flex max-w-3xl flex-col gap-6">
-            <div class="flex flex-col items-start justify-between gap-3 sm:flex-row">
-              <div>
-                <h3 class="text-xl font-semibold text-primary">{t().heading}</h3>
-                <p class="mt-1 text-sm text-dimmed">{t().headingDescription}</p>
-              </div>
-              <Show when={props.surface !== "modal" && documentTopics().length > 0}>
-                <Button size="sm" variant="secondary" class="shrink-0" disabled={copyingAll()} onClick={() => void copyAllHelp()}>
-                  <i class={copyingAll() ? "ti ti-loader-2 animate-spin" : allHelpClipboard.wasCopied() ? "ti ti-check" : "ti ti-copy"} />
-                  {copyingAll() ? t().preparing : allHelpClipboard.wasCopied() ? t().copied : t().copyAllShort}
-                </Button>
-              </Show>
-            </div>
-            <Show when={copyAllError()}>
-              {(message) => (
-                <p class="text-xs text-danger" role="alert">
-                  {t().copyAllFailed({ message: message() })}
-                </p>
-              )}
-            </Show>
-            <TextInput
-              ref={searchInput}
-              type="search"
-              icon="ti ti-search"
-              aria-label={t().searchHelp}
-              data-help-search=""
-              value={query()}
-              placeholder={t().searchPlaceholder}
-              onValueChange={(value) => {
-                // Results replace the start lists below the field; the area keeps its height so nothing moves.
-                if (!query().trim() && value.trim()) setResultsMinHeight(`${resultsRegion?.offsetHeight ?? 0}px`);
-                if (!value.trim()) setResultsMinHeight(undefined);
-                setQuery(value);
-              }}
-            />
-            <div ref={resultsRegion} data-help-results="" class="flex flex-col gap-4" style={{ "min-height": resultsMinHeight() }}>
-              <Show
-                when={normalizedQuery()}
-                fallback={
-                  <>
-                    <section aria-labelledby="help-start-title">
-                      <h4 id="help-start-title" class="mb-2 text-xs font-semibold uppercase tracking-wide text-dimmed">
-                        {t().startHere}
-                      </h4>
-                      <TopicList items={topics().slice(0, 5)} />
+          <div ref={resultsRegion} data-help-results="" class="help-start help-measure" style={{ "min-height": resultsMinHeight() }}>
+            <Show
+              when={normalizedQuery()}
+              fallback={
+                <>
+                  <Show when={start().view.length > 0}>
+                    <section class="help-start-section" data-help-view="" aria-labelledby="help-start-view-title">
+                      <h3 id="help-start-view-title" class="help-start-heading">
+                        <i class="ti ti-focus-2" aria-hidden="true" />
+                        {t().forThisView}
+                      </h3>
+                      <TopicList items={start().view} />
                     </section>
-                    <Show when={topics().length > 5}>
-                      <section aria-labelledby="help-all-title">
-                        <h4 id="help-all-title" class="mb-2 text-xs font-semibold uppercase tracking-wide text-dimmed">
-                          {t().allTopics}
-                        </h4>
-                        <TopicList items={topics().slice(5)} />
-                      </section>
-                    </Show>
-                  </>
-                }
-              >
-                {/* The count takes the place of the "Start here" title, so the first row stays where it was. */}
-                <section>
-                  <p class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-dimmed" aria-live="polite">
-                    {t().results({ count: results().length })}
-                    <Show when={searching()}>
-                      <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
-                    </Show>
-                  </p>
-                  <Show
-                    when={results().length > 0}
-                    fallback={
-                      <Show when={!searching()}>
-                        <Placeholder icon="ti ti-search-off" title={t().noResults} />
-                      </Show>
-                    }
-                  >
-                    <TopicList items={results()} />
                   </Show>
-                </section>
-              </Show>
-            </div>
+                  <Show when={start().tiles.length > 0}>
+                    <section class="help-start-section" data-help-tasks="" aria-labelledby="help-start-tasks-title">
+                      <h3 id="help-start-tasks-title" class="help-start-heading">
+                        <i class="ti ti-checklist" aria-hidden="true" />
+                        {t().whatToDo}
+                      </h3>
+                      <TaskTiles items={start().tiles} />
+                      <Show when={start().moreTasks.length > 0}>
+                        <TopicList items={start().moreTasks} marker="data-help-more-tasks" />
+                      </Show>
+                    </section>
+                  </Show>
+                  <Show when={start().groups.length > 0}>
+                    <div class="help-start-groups">
+                      <For each={start().groups}>
+                        {(group) => (
+                          <section
+                            class="help-start-section"
+                            data-help-group={group.kind}
+                            aria-labelledby={`help-start-${group.kind}-title`}
+                          >
+                            <h3 id={`help-start-${group.kind}-title`} class="help-start-heading">
+                              <i class={GROUP_ICONS[group.kind]} aria-hidden="true" />
+                              {groupTitle(group.kind)}
+                            </h3>
+                            <TopicList items={group.topics} />
+                          </section>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                  {/* An app without Help says so plainly; only a failed read of its Help offers a way to try again. */}
+                  <Show when={topics().length === 0}>
+                    <Show
+                      when={shell?.helpFailed}
+                      fallback={<Placeholder icon="ti ti-book-off" title={t().noArticles} description={t().noArticlesDetail} />}
+                    >
+                      <NoticeCard tone="danger" title={t().helpUnavailable} detail={t().helpUnavailableDetail} data-help-unavailable="">
+                        <Button size="sm" variant="secondary" onClick={() => location.reload()}>
+                          {t().reload}
+                        </Button>
+                      </NoticeCard>
+                    </Show>
+                  </Show>
+                  <Show when={props.includeShortcuts !== false}>
+                    <StartShortcuts appName={appName} />
+                  </Show>
+                </>
+              }
+            >
+              {/* The count takes the place of the first heading, so the first row stays where it was. */}
+              <section class="help-start-section" data-help-search-results="">
+                {/* A failed full-text search says so in the same line, with a way to try again; the results do not move. */}
+                <div class="help-start-status">
+                  <span aria-live="polite">{t().results({ count: results().length })}</span>
+                  <Show when={searching()}>
+                    <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
+                  </Show>
+                  <Show when={searchFailed()}>
+                    <span class="help-start-status-warning" data-help-search-failed="" title={t().searchTitlesOnly} role="status">
+                      <i class="ti ti-alert-triangle" aria-hidden="true" />
+                      <span aria-hidden="true">{t().titlesOnly}</span>
+                      <span class="sr-only">{t().searchTitlesOnly}</span>
+                    </span>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      class="help-start-status-retry"
+                      onClick={() => setSearchAttempt((value) => value + 1)}
+                    >
+                      {t().tryAgain}
+                    </Button>
+                  </Show>
+                </div>
+                <Show
+                  when={results().length > 0}
+                  fallback={
+                    <Show when={!searching()}>
+                      <Placeholder icon="ti ti-search-off" title={t().noResults} />
+                    </Show>
+                  }
+                >
+                  <TopicList items={results()} />
+                </Show>
+              </section>
+            </Show>
           </div>
         </Show>
 
@@ -852,7 +947,7 @@ const HelpShell = (props: {
                       when={articleParts()?.lead}
                       fallback={
                         // An article without a leading paragraph, or a built-in topic, shows its description; a loading article shows neither yet.
-                        <Show when={(topic().kind === "content" || articleParts()) && topic().description}>
+                        <Show when={articleParts() && topic().description}>
                           {(description) => <p class="help-article-lead">{description()}</p>}
                         </Show>
                       }
@@ -882,7 +977,7 @@ const HelpShell = (props: {
                         </Show>
                       </ul>
                     </Show>
-                    <Show when={articleSections().length > 0 || (props.surface !== "modal" && topic().kind === "document")}>
+                    <Show when={articleSections().length > 0 || props.surface !== "modal"}>
                       <div class="help-article-tools">
                         <Show when={articleSections().length > 0}>
                           <Dropdown.Root
@@ -902,7 +997,7 @@ const HelpShell = (props: {
                             </Dropdown.Trigger>
                           </Dropdown.Root>
                         </Show>
-                        <Show when={props.surface !== "modal" && topic().kind === "document"}>
+                        <Show when={props.surface !== "modal"}>
                           <IconButton
                             class="help-article-tools-copy"
                             disabled={!payload()}
@@ -916,53 +1011,48 @@ const HelpShell = (props: {
                       </div>
                     </Show>
                   </header>
-                  <Show when={topic().kind === "content"}>{legacyTopicContent(topic())}</Show>
-                  <Show when={topic().kind === "document"}>
-                    <Show when={loading()}>
-                      <div class="min-h-[24rem]">
-                        <Placeholder state="loading" variant="panel" title={t().loading} />
-                      </div>
-                    </Show>
-                    <Show when={loadError()}>
-                      {(message) => (
-                        <NoticeCard tone="danger" title={t().loadFailed} detail={message()}>
-                          <Button size="sm" variant="secondary" onClick={() => setLoadAttempt((value) => value + 1)}>
-                            {t().tryAgain}
-                          </Button>
-                        </NoticeCard>
-                      )}
-                    </Show>
-                    <div ref={articleContent}>
-                      <Show when={articleParts()}>{(parts) => <MarkdownView trustedHtml={parts().body} class="help-document" />}</Show>
+                  <Show when={loading()}>
+                    <div class="min-h-[24rem]">
+                      <Placeholder state="loading" variant="panel" title={t().loading} />
                     </div>
-                    <Show when={payload()}>{(document) => <ArticleEnd document={document()} />}</Show>
                   </Show>
-                </div>
-                <Show when={topic().kind === "document"}>
-                  <aside class="help-article-aside">
-                    <div class="help-article-aside-sticky">
-                      <TableOfContents
-                        items={articleSections()}
-                        title={t().onThisPage}
-                        scrollRoot={tocScrollRoot}
-                        contentRoot={() => articleContent}
-                        onActiveChange={(id) => setActiveSectionId(id ?? null)}
-                      />
-                      <Show when={props.surface !== "modal"}>
-                        <Button size="sm" variant="ghost" disabled={!payload()} onClick={() => void copyArticle(topic(), payload())}>
-                          <i class={articleClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
-                          {articleClipboard.wasCopied() ? t().copied : t().copyMarkdown}
+                  <Show when={loadError()}>
+                    {(message) => (
+                      <NoticeCard tone="danger" title={t().loadFailed} detail={message()}>
+                        <Button size="sm" variant="secondary" onClick={() => setLoadAttempt((value) => value + 1)}>
+                          {t().tryAgain}
                         </Button>
-                      </Show>
-                    </div>
-                  </aside>
-                </Show>
+                      </NoticeCard>
+                    )}
+                  </Show>
+                  <div ref={articleContent}>
+                    <Show when={articleParts()}>{(parts) => <MarkdownView trustedHtml={parts().body} class="help-document" />}</Show>
+                  </div>
+                  <Show when={payload()}>{(document) => <ArticleEnd document={document()} />}</Show>
+                </div>
+                <aside class="help-article-aside">
+                  <div class="help-article-aside-sticky">
+                    <TableOfContents
+                      items={articleSections()}
+                      title={t().onThisPage}
+                      scrollRoot={tocScrollRoot}
+                      contentRoot={() => articleContent}
+                      onActiveChange={(id) => setActiveSectionId(id ?? null)}
+                    />
+                    <Show when={props.surface !== "modal"}>
+                      <Button size="sm" variant="ghost" disabled={!payload()} onClick={() => void copyArticle(topic(), payload())}>
+                        <i class={articleClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
+                        {articleClipboard.wasCopied() ? t().copied : t().copyMarkdown}
+                      </Button>
+                    </Show>
+                  </div>
+                </aside>
               </div>
             </article>
           )}
         </Show>
         <span class="sr-only" aria-live="polite">
-          {articleClipboard.wasCopied() ? t().articleCopiedAnnouncement : allHelpClipboard.wasCopied() ? t().allCopiedAnnouncement : ""}
+          {articleClipboard.wasCopied() ? t().articleCopiedAnnouncement : ""}
         </span>
       </ReaderContent>
     </div>

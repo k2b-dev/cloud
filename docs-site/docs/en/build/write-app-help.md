@@ -5,7 +5,7 @@ section: Build an app
 order: 175
 description: Write English and German Help articles with short steps, one term per concept, and warnings before the risky step.
 tags: [help, writing, english, german, glossary, steps]
-updated: 2026-10-14
+updated: 2026-10-17
 ---
 
 # Write app help
@@ -47,6 +47,26 @@ stiff. Help keeps natural words and controls only the product terms through the
 German Help follows the same rules: kurze Sätze, Aktiv, Imperativ mit „du“ in
 Anleitungen, ein Begriff für eine Bedeutung. Write idiomatic German, not
 translated English word order.
+
+## Choose where an article appears
+
+Set `kind` in the base article's frontmatter: `start` introduces the app,
+`task` answers “How do I…?”, `reference` supports lookup, and `troubleshoot`
+helps recover from a problem. Translations inherit `kind` and `order`; repeated
+values must match the base article.
+
+Task articles become tiles under **What do you want to do?**. Give the most
+frequent tasks the lowest `order` values. Cloud sorts by `order` (default
+`100`), then title, and shows at most eight tiles. Remaining tasks follow as a
+list, so every task stays reachable. The other kinds appear under **Get
+started**, **Look up**, and **Solve problems**; empty groups are absent.
+
+Name two or three articles that fit each main page with Layout's
+`help={["inventory-start", "inventory-access"]}` prop. They appear first under
+**For this view**, in the declared order, and remain in their usual groups.
+Keep these IDs beside the app's Help declaration and test that every ID exists
+in each language you ship. See [In-product Help](/en/docs/platform/help#use-the-automatically-derived-surfaces)
+for the Layout example and filtering rules.
 
 ## Structure an article
 
