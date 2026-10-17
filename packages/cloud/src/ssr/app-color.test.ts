@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { appIds } from "../../../../scripts/workspace";
-import { appColors, appColorStyle, appColorSurfaces, contrastRatio, mixHex, relativeLuminance } from "./app-color";
+import { appColorStyle, appColorSurfaces, appColors, contrastRatio, mixHex, relativeLuminance } from "./app-color";
 
 type HexColor = `#${string}`;
 const workspaceRoot = resolve(import.meta.dir, "../../../..");
