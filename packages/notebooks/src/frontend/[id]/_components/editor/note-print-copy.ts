@@ -1,6 +1,6 @@
 import type { renderNotebookBook } from "../../../../lib/book-renderer";
 import { renderMermaid } from "../../../lib/mermaid-render";
-import { createPrintDiagrams } from "./note-print-diagrams";
+import { createPrintDiagrams, mermaidFenceSources } from "./note-print-diagrams";
 
 type Options = {
   notebookId: string;
@@ -38,7 +38,6 @@ async function loadDiagrams() {
 /** A complete Book copy, independent of the editor's virtualized viewport. Mount per note. */
 export function createNotePrintCopy(article: HTMLElement, options: Options) {
   let renderBook: typeof renderNotebookBook | undefined;
-  let loading: Promise<void> | undefined;
   let last: { markdown: string; locale: string } | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cancelIdle: (() => void) | undefined;
@@ -68,38 +67,29 @@ export function createNotePrintCopy(article: HTMLElement, options: Options) {
       console.warn("Note print copy unavailable; showing the app's print hint.", error);
     }
   };
-  const loadAndRender = async () => {
-    if (!renderBook) {
-      loading ??= import("../../../../lib/book-renderer")
-        .then((module) => {
-          renderBook = module.renderNotebookBook;
-        })
-        .finally(() => {
-          loading = undefined;
-        });
-      try {
-        await loading;
-      } catch (error) {
-        console.warn("Note print renderer unavailable; showing the app's print hint.", error);
-        return;
-      }
+  const load = async () => {
+    try {
+      const module = await import("../../../../lib/book-renderer");
+      if (disposed) return;
+      renderBook = module.renderNotebookBook;
+      // Print media can become active before the idle import completes.
+      if (media.matches) render();
+    } catch (error) {
+      console.warn("Note print renderer unavailable; showing the app's print hint.", error);
     }
-    render();
   };
-  const idle = () => {
-    cancelIdle?.();
+  const idle = (work: () => void) => {
     const run = () => {
-      cancelIdle = undefined;
-      void loadAndRender();
+      if (!disposed) work();
     };
     if (window.requestIdleCallback) {
       const id = window.requestIdleCallback(run);
-      cancelIdle = () => window.cancelIdleCallback(id);
-    } else {
-      const id = setTimeout(run, 0);
-      cancelIdle = () => clearTimeout(id);
+      return () => window.cancelIdleCallback(id);
     }
+    const id = setTimeout(run, 0);
+    return () => clearTimeout(id);
   };
+  const warm = () => diagrams.warm(mermaidFenceSources(options.markdown()));
   const print = () => {
     // Synchronous once the idle import completed. An earlier print uses Layout's fallback.
     render();
@@ -110,17 +100,26 @@ export function createNotePrintCopy(article: HTMLElement, options: Options) {
   };
   window.addEventListener("beforeprint", print);
   media.addEventListener("change", onMedia);
-  idle();
+  const cancelMountIdle = idle(() => {
+    void load();
+    warm();
+  });
   return {
     changed() {
       if (disposed) return;
       clearTimeout(timer);
       cancelIdle?.();
       cancelIdle = undefined;
-      timer = setTimeout(idle, 2000);
+      timer = setTimeout(() => {
+        cancelIdle = idle(() => {
+          cancelIdle = undefined;
+          warm();
+        });
+      }, 2000);
     },
     dispose() {
       disposed = true;
+      cancelMountIdle();
       clearTimeout(timer);
       cancelIdle?.();
       diagrams.dispose();

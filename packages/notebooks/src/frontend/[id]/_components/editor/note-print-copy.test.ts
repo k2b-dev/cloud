@@ -1,65 +1,123 @@
-import { expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, expect, jest, mock, spyOn, test } from "bun:test";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
+import * as book from "../../../../lib/book-renderer";
 import { createNotePrintCopy } from "./note-print-copy";
 
-const settle = async (until: () => boolean) => {
-  for (let i = 0; i < 100 && !until(); i++) await Bun.sleep(10);
-  expect(until()).toBe(true);
-};
+beforeEach(() => {
+  jest.useFakeTimers();
+  jest.setSystemTime(new Date("2026-10-01T00:00:00Z"));
+});
+afterEach(() => jest.useRealTimers());
 
-test("idle import, synchronous print refresh, unchanged content and disposal", async () => {
-  const dom = createDomTestHarness();
-  let markdown = "# First note\n\nOriginal content.";
-  const idle = new Map<number, IdleRequestCallback>();
+const settle = async () => {
+  for (let i = 0; i < 30; i++) await Promise.resolve();
+};
+const idleCallbacks = () => {
+  const pending = new Map<number, IdleRequestCallback>();
   let id = 0;
-  const requestIdle = mock((callback: IdleRequestCallback) => {
-    idle.set(++id, callback);
+  const request = mock((callback: IdleRequestCallback) => {
+    pending.set(++id, callback);
     return id;
   });
-  const cancelIdle = mock((id: number) => {
-    idle.delete(id);
+  const cancel = mock((id: number) => {
+    pending.delete(id);
   });
-  Object.defineProperty(window, "requestIdleCallback", { configurable: true, value: requestIdle });
-  Object.defineProperty(window, "cancelIdleCallback", { configurable: true, value: cancelIdle });
-  const article = document.createElement("article");
-  dom.root.append(article);
-  const copy = createNotePrintCopy(article, { notebookId: "book01", noteId: "note01", markdown: () => markdown, locale: () => "en" });
+  Object.defineProperty(window, "requestIdleCallback", { configurable: true, value: request });
+  Object.defineProperty(window, "cancelIdleCallback", { configurable: true, value: cancel });
+  return {
+    pending,
+    cancel,
+    flush() {
+      const callbacks = Array.from(pending.values());
+      pending.clear();
+      for (const callback of callbacks) callback({ didTimeout: false, timeRemaining: () => 50 });
+    },
+  };
+};
+const printMedia = () => {
+  const media = window.matchMedia("print");
+  let matches = false;
+  Object.defineProperty(media, "matches", { configurable: true, get: () => matches });
+  Object.defineProperty(window, "matchMedia", { configurable: true, value: () => media });
+  return (value: boolean) => {
+    matches = value;
+    media.dispatchEvent(Object.assign(new Event("change"), { matches }));
+  };
+};
+
+test("idle import and debounced typing never render the Book; print renders the latest content once", async () => {
+  const dom = createDomTestHarness();
+  const idle = idleCallbacks();
+  const render = spyOn(book, "renderNotebookBook");
+  let markdown = "# First note\n\nOriginal content.";
+  let locale = "en";
+  const copy = createNotePrintCopy(dom.root, { notebookId: "book01", noteId: "note01", markdown: () => markdown, locale: () => locale });
   try {
-    // An immediate print must leave the shell fallback eligible.
     window.dispatchEvent(new Event("beforeprint"));
-    expect(article.hasAttribute("data-print-region")).toBe(false);
-    expect(idle.size).toBe(1);
-    for (const callback of idle.values()) callback({ didTimeout: false, timeRemaining: () => 50 });
-    idle.clear();
-    await settle(() => article.hasAttribute("data-print-region"));
-    const first = article.firstChild;
+    expect(dom.root.hasAttribute("data-print-region")).toBe(false);
+    expect(idle.pending.size).toBe(1);
+    // Typing must not cancel the mount's idle import.
+    copy.changed();
+    idle.flush();
+    await settle();
+    for (let i = 0; i < 3; i++) {
+      markdown = `# Edit ${i}\n\nLatest text ${i}.`;
+      copy.changed();
+      jest.advanceTimersByTime(1999);
+      expect(idle.pending.size).toBe(0);
+      copy.changed();
+      jest.advanceTimersByTime(2000);
+      expect(idle.pending.size).toBe(1);
+      idle.flush();
+      await settle();
+    }
+    expect(render).not.toHaveBeenCalled();
+    expect(dom.root.childNodes).toHaveLength(0);
+    expect(dom.root.hasAttribute("data-print-region")).toBe(false);
     window.dispatchEvent(new Event("beforeprint"));
-    expect(article.firstChild).toBe(first);
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(render.mock.calls[0]?.[0].markdown).toBe(markdown);
+    expect(dom.root.textContent).toContain("Latest text 2.");
+    const first = dom.root.firstChild;
+    window.dispatchEvent(new Event("beforeprint"));
+    expect(dom.root.firstChild).toBe(first);
+    expect(render).toHaveBeenCalledTimes(1);
     markdown = "> **History incomplete** Saved history is incomplete.\n\n# Latest note\n\nThe latest content.\n\n![Square](/square.svg)";
     copy.changed();
-    expect(article.textContent).toContain("Original content.");
+    jest.advanceTimersByTime(2000);
+    idle.flush();
+    await settle();
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(dom.root.firstChild).toBe(first);
     window.dispatchEvent(new Event("beforeprint"));
-    expect(article.textContent).toContain("The latest content.");
-    expect(article.textContent).toContain("History incomplete");
-    expect(article.textContent).not.toContain("Original content.");
-    expect(article.querySelector("img")?.loading).toBe("eager");
+    expect(dom.root.textContent).toContain("The latest content.");
+    expect(dom.root.textContent).toContain("History incomplete");
+    expect(dom.root.textContent).not.toContain("Latest text 2.");
+    expect(dom.root.querySelector("img")?.loading).toBe("eager");
+    locale = "de";
+    copy.changed();
+    window.dispatchEvent(new Event("beforeprint"));
+    expect(render).toHaveBeenCalledTimes(3);
+    expect(render.mock.calls[2]?.[0].locale).toBe("de");
     copy.dispose();
     markdown = "# Disposed";
+    copy.changed();
+    jest.advanceTimersByTime(2000);
+    idle.flush();
     window.dispatchEvent(new Event("beforeprint"));
-    expect(article.hasAttribute("data-print-region")).toBe(false);
-    expect(article.childNodes).toHaveLength(0);
+    expect(render).toHaveBeenCalledTimes(3);
+    expect(dom.root.hasAttribute("data-print-region")).toBe(false);
+    expect(dom.root.childNodes).toHaveLength(0);
   } finally {
     copy.dispose();
+    render.mockRestore();
     dom.cleanup();
   }
 });
 
 test("unmount before idle cancels work and cannot publish a late region", () => {
   const dom = createDomTestHarness();
-  const requestIdle = mock(() => 7);
-  const cancelIdle = mock(() => {});
-  Object.defineProperty(window, "requestIdleCallback", { configurable: true, value: requestIdle });
-  Object.defineProperty(window, "cancelIdleCallback", { configurable: true, value: cancelIdle });
+  const idle = idleCallbacks();
   const copy = createNotePrintCopy(dom.root, {
     notebookId: "book01",
     noteId: "note02",
@@ -68,7 +126,8 @@ test("unmount before idle cancels work and cannot publish a late region", () => 
   });
   try {
     copy.dispose();
-    expect(cancelIdle).toHaveBeenCalledWith(7);
+    expect(idle.cancel).toHaveBeenCalledWith(1);
+    idle.flush();
     window.dispatchEvent(new Event("beforeprint"));
     expect(dom.root.hasAttribute("data-print-region")).toBe(false);
   } finally {
@@ -77,30 +136,92 @@ test("unmount before idle cancels work and cannot publish a late region", () => 
   }
 });
 
-test("the timeout idle fallback and print-media entry render the current markdown", async () => {
+test("the timeout idle fallback imports only; print-media entry renders the current markdown", async () => {
   const dom = createDomTestHarness();
   Object.defineProperty(window, "requestIdleCallback", { configurable: true, value: undefined });
-  const media = window.matchMedia("print");
-  Object.defineProperty(window, "matchMedia", { configurable: true, value: () => media });
+  const print = printMedia();
   let markdown = "# First";
   const copy = createNotePrintCopy(dom.root, { notebookId: "book01", noteId: "note02", markdown: () => markdown, locale: () => "en" });
   try {
-    await settle(() => dom.root.hasAttribute("data-print-region"));
+    jest.advanceTimersByTime(0);
+    await settle();
+    expect(dom.root.childNodes).toHaveLength(0);
+    expect(dom.root.hasAttribute("data-print-region")).toBe(false);
     markdown = "# Print media\n\nCurrent definition.";
     copy.changed();
-    media.dispatchEvent(Object.assign(new Event("change"), { matches: true }));
+    print(true);
     expect(dom.root.textContent).toContain("Current definition.");
     const first = dom.root.firstChild;
-    media.dispatchEvent(Object.assign(new Event("change"), { matches: true }));
+    print(true);
     expect(dom.root.firstChild).toBe(first);
     markdown = "# Still on screen";
-    media.dispatchEvent(Object.assign(new Event("change"), { matches: false }));
+    print(false);
     expect(dom.root.firstChild).toBe(first);
     copy.dispose();
-    media.dispatchEvent(Object.assign(new Event("change"), { matches: true }));
+    print(true);
     expect(dom.root.childNodes).toHaveLength(0);
   } finally {
     copy.dispose();
+    dom.cleanup();
+  }
+});
+
+test("an idle import completing in print media renders; disposal prevents a late copy", async () => {
+  const dom = createDomTestHarness();
+  const idle = idleCallbacks();
+  const print = printMedia();
+  const options = { notebookId: "book01", noteId: "note02", markdown: () => "# Early print\n\n![Square](/square.svg)", locale: () => "en" };
+  const copy = createNotePrintCopy(dom.root, options);
+  let next: ReturnType<typeof createNotePrintCopy> | undefined;
+  try {
+    idle.flush();
+    print(true);
+    expect(dom.root.hasAttribute("data-print-region")).toBe(false);
+    await settle();
+    expect(dom.root.hasAttribute("data-print-region")).toBe(true);
+    expect(dom.root.textContent).toContain("Early print");
+    expect(dom.root.querySelector("img")?.loading).toBe("eager");
+    copy.dispose();
+    next = createNotePrintCopy(dom.root, options);
+    idle.flush();
+    next.dispose();
+    await settle();
+    expect(dom.root.childNodes).toHaveLength(0);
+    expect(dom.root.hasAttribute("data-print-region")).toBe(false);
+  } finally {
+    copy.dispose();
+    next?.dispose();
+    dom.cleanup();
+  }
+});
+
+test("a failed print clears the region and warns; the next print retries", async () => {
+  const dom = createDomTestHarness();
+  const idle = idleCallbacks();
+  const render = spyOn(book, "renderNotebookBook");
+  const warn = spyOn(console, "warn").mockImplementation(() => {});
+  let markdown = "# First";
+  const copy = createNotePrintCopy(dom.root, { notebookId: "book01", noteId: "note01", markdown: () => markdown, locale: () => "en" });
+  try {
+    idle.flush();
+    await settle();
+    window.dispatchEvent(new Event("beforeprint"));
+    expect(dom.root.hasAttribute("data-print-region")).toBe(true);
+    markdown = "# Retry";
+    render.mockImplementationOnce(() => {
+      throw new Error("Cannot render");
+    });
+    window.dispatchEvent(new Event("beforeprint"));
+    expect(dom.root.childNodes).toHaveLength(0);
+    expect(dom.root.hasAttribute("data-print-region")).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new Event("beforeprint"));
+    expect(dom.root.hasAttribute("data-print-region")).toBe(true);
+    expect(dom.root.textContent).toContain("Retry");
+  } finally {
+    copy.dispose();
+    render.mockRestore();
+    warn.mockRestore();
     dom.cleanup();
   }
 });

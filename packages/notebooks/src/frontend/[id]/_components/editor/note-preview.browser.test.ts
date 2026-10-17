@@ -422,7 +422,7 @@ for (const readOnly of [false, true])
       await page.goto(`${server.url}?print${readOnly ? "&readonly" : ""}`);
       await page.waitForSelector(".cm-content");
       const copy = page.locator(".notebook-note-print");
-      await page.waitForSelector(".notebook-note-print[data-print-region]", { state: "attached" });
+      await copy.waitFor({ state: "attached" });
       expect(await copy.boundingBox()).toBeNull();
       if (!readOnly) {
         await page.locator(".cm-content").focus();
@@ -430,6 +430,7 @@ for (const readOnly of [false, true])
         await page.keyboard.type(" Zuletzt getippt.");
       }
       await page.emulateMedia({ media: "print" });
+      await page.waitForSelector(".notebook-note-print[data-print-region]", { state: "attached" });
       for (const selector of ["#navigation", ".cm-editor"]) expect(await page.locator(selector).boundingBox(), selector).toBeNull();
       const paragraphs = copy.locator("p");
       expect(await paragraphs.count()).toBe(150);

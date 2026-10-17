@@ -95,9 +95,10 @@ test("the Book copy prints the whole note; changes at print time replace the sta
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await page.goto(String(server.url));
-    await page.waitForSelector(".notebook-note-print[data-print-region]", { state: "attached" });
+    await page.waitForSelector(".notebook-note-print", { state: "attached" });
     expect(await page.locator(".notebook-note-print").boundingBox()).toBeNull();
     await page.emulateMedia({ media: "print" });
+    await page.waitForSelector(".notebook-note-print[data-print-region]", { state: "attached" });
     for (const selector of [".k2b-app-workspace__sidebar", ".k2b-app-workspace__detail", ".editor-toolbar", ".editor-surface"])
       expect({ selector, box: await page.locator(selector).boundingBox() }).toEqual({ selector, box: null });
     const paragraphs = page.locator(".notebook-note-print p").filter({ hasText: /^Paragraph \d+\./ });
@@ -122,6 +123,7 @@ test("the Book copy prints the whole note; changes at print time replace the sta
     await page.emulateMedia({ media: "screen" });
     await page.evaluate(() => window.printCopyHarness.switchNote("# Another note\n\nOnly this note."));
     expect(await page.locator(".notebook-note-print").getAttribute("data-print-region")).toBeNull();
+    await page.emulateMedia({ media: "print" });
     await page.waitForSelector(".notebook-note-print[data-print-region]", { state: "attached" });
     expect(await page.locator(".notebook-note-print").textContent()).toContain("Only this note.");
     await page.evaluate(() => {

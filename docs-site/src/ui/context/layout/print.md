@@ -12,7 +12,7 @@ The attributes need no JavaScript import. Load `@k2b/ui/styles.css` through your
 
 ## Choose what prints
 
-Add `data-print-region=""` to the element that holds the complete readable content. Several regions may print together. Mark a region only when its content is ready; a virtualized editor or list cannot supply a whole document from its visible rows.
+Add `data-print-region=""` to the element that holds the complete readable content. Several regions may print together. Mark a region only when its content is ready; a virtualized editor or list cannot supply a whole document from its visible rows. A region prints even when an ancestor is hidden on screen, so set the attribute only on the view that is currently shown, not on inactive tab panels or cached views.
 
 ## Example
 
@@ -44,8 +44,8 @@ Keep semantic headings, link text and image descriptions in the printed content.
 
 ## Runtime
 
-The CSS works on server-rendered HTML before JavaScript loads and does not change screen geometry. Transitions and animations stop on paper, so a panel that animates its display is already hidden when the page prints. A client-owned print copy adds its region attribute only after rendering, removes it on disposal, and updates synchronously on print when its renderer is ready.
+The CSS works on server-rendered HTML before JavaScript loads and does not change screen geometry. Transitions and animations stop on paper, so a panel that animates its display is already hidden when the page prints. A client-owned print copy renders on `beforeprint` or when print media starts, not while the person works: it adds its region attribute only after that render, removes it on disposal, and falls back to the export hint when its renderer has not loaded yet.
 
 ## Check paper and screen
 
-Use browser print emulation to check that every row prints beyond the first viewport and no ancestor clips it. Compare screen geometry with and without the region attribute; the fallback must have no box on screen. Until [#1274](https://github.com/k2b-dev/cloud/issues/1274) makes dark a screen-only theme, regions and fallbacks on dark pages print as near-black ink on white paper.
+Use browser print emulation to check that every row prints beyond the first viewport and no ancestor clips it. Compare screen geometry with and without the region attribute; the fallback must have no box on screen. Until [#1274](https://github.com/k2b-dev/cloud/issues/1274) makes dark a screen-only theme, regions and fallbacks on dark pages print as near-black ink on white paper. Images keep their pixels, so a diagram drawn in the dark theme prints dark.
