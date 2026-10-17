@@ -18,6 +18,7 @@ export type NotebookBlockDiagnosticCode =
   | "unknown-key"
   | "unclosed-block"
   | "unknown-block"
+  | "duplicate-block"
   | "unknown-column"
   | "not-a-number"
   | "chart-x-type"

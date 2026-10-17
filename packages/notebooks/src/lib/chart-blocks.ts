@@ -50,8 +50,11 @@ const scalarCell = (value: string | number | boolean): Cell => {
 };
 
 /** Reads only local note data. Markdown table tokens match the Book table renderer's cell text. */
-const namedSource = (markdown: string, name: string): SourceData | null => {
-  const block = extractNamedBlocks(markdown).find((candidate) => candidate.name === name);
+const namedSource = (markdown: string, name: string): SourceData | "duplicate" | null => {
+  const matches = extractNamedBlocks(markdown).filter((candidate) => candidate.name === name);
+  // Two blocks of one name would make the chart pick one silently; named data and queries reject them too.
+  if (matches.length > 1) return "duplicate";
+  const block = matches[0];
   if (!block) return null;
   const source = markdown.slice(block.blockStart, block.blockEnd);
   if (block.type === "table") {
@@ -172,7 +175,8 @@ const parseChart = (directive: ReturnType<typeof directives>[number], markdown: 
     if (!name) add("invalid-type", "data");
     else {
       const source = namedSource(markdown, name);
-      if (!source) add("unknown-block", "data", undefined, { name });
+      if (source === "duplicate") add("duplicate-block", "data", undefined, { name });
+      else if (!source) add("unknown-block", "data", undefined, { name });
       else data = source;
     }
   } else if (top.has("columns") || top.has("rows")) {
@@ -333,12 +337,20 @@ const parseChart = (directive: ReturnType<typeof directives>[number], markdown: 
   return { diagnostics, block: { line: directive.line, input: parsed.data } };
 };
 
-export const parseNotebookChartBlocks = (markdown: string): { blocks: ChartBlock[]; diagnostics: NotebookBlockDiagnostic[] } => {
+/**
+ * Every chart block of a note, or with `line` only the one opening there: reading one block never resolves or draws
+ * the others, and it still counts against the note's block budget.
+ */
+export const parseNotebookChartBlocks = (
+  markdown: string,
+  options: { line?: number } = {},
+): { blocks: ChartBlock[]; diagnostics: NotebookBlockDiagnostic[] } => {
   const blocks: ChartBlock[] = [];
   const diagnostics: NotebookBlockDiagnostic[] = [];
   for (const [index, directive] of directives(markdown)
     .filter((entry) => entry.type === "chart")
     .entries()) {
+    if (options.line !== undefined && directive.line !== options.line) continue;
     if (index >= CHART_MAX_BLOCKS) {
       diagnostics.push({ code: "too-many-items", line: directive.line, path: "chart", params: { limit: CHART_MAX_BLOCKS } });
       continue;

@@ -19,6 +19,7 @@ export const bookRendererMessages = i18n.define({
       "too-many-items": ({ limit }: { limit?: number }) =>
         limit === undefined ? "The block limit was exceeded." : `The limit is ${limit} items.`,
       "unknown-block": ({ name }: { name?: string }) => `No table, list or data block named @${name} in this note.`,
+      "duplicate-block": ({ name }: { name?: string }) => `More than one block is named @${name}. Rename all but one.`,
       "unknown-column": ({ name }: { name?: string }) => `Unknown column ${name}.`,
       "not-a-number": ({ name, row }: { name?: string; row?: number }) => `Column ${name}, row ${row} must contain a number.`,
       "chart-x-type": "Use numbers or ISO dates for x, or use type: bar for text labels.",
@@ -51,6 +52,7 @@ export const bookRendererMessages = i18n.define({
       "too-many-items": ({ limit }) =>
         limit === undefined ? "Das Block-Limit wurde überschritten." : `Die Grenze liegt bei ${limit} Einträgen.`,
       "unknown-block": ({ name }) => `Diese Notiz enthält keine Tabelle, Liste oder Daten mit dem Namen @${name}.`,
+      "duplicate-block": ({ name }) => `Mehrere Blöcke heißen @${name}. Benenne alle bis auf einen um.`,
       "unknown-column": ({ name }) => `Unbekannte Spalte ${name}.`,
       "not-a-number": ({ name, row }) => `Spalte ${name}, Zeile ${row} muss eine Zahl enthalten.`,
       "chart-x-type": "Verwende Zahlen oder ISO-Daten für x oder type: bar für Textbeschriftungen.",

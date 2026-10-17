@@ -134,7 +134,7 @@ tooltip:
 
 Verwende `line`, `area`, `bar`, `pie`, `donut`, `scatter` oder `stat` als `type`. Jedes Diagramm braucht einen `title`; `subtitle` ist optional. Ein Flächendiagramm füllt ein Liniendiagramm.
 
-Setze `data: @name` auf eine benannte Tabelle, Liste oder einen `:::data`-Block dieser Notiz. Tabellen verwenden berechnete Formelwerte und lassen Summenzeilen weg. Listen wie `- Jan: 12` und numerische Dateneinträge liefern die Spalten `label` und `value`. Datenschlüssel werden wie in der Buchansicht zu lesbaren Beschriftungen. Bei diesen Quellen kannst du die Spaltenangaben weglassen.
+Setze `data: @name` auf eine benannte Tabelle, Liste oder einen `:::data`-Block dieser Notiz. Verwende jeden Namen nur einmal. Tabellen verwenden berechnete Formelwerte und lassen Summenzeilen weg. Listen wie `- Jan: 12` und numerische Dateneinträge liefern die Spalten `label` und `value`. Datenschlüssel werden wie in der Buchansicht zu lesbaren Beschriftungen. Bei diesen Quellen kannst du die Spaltenangaben weglassen.
 
 Verwende `x` für die x-Spalte und `y` für eine Wertspalte oder eine Liste wie `[Revenue, Costs]`. Linien-, Flächen- und Streudiagramme brauchen numerische x-Werte oder ISO-Daten: `YYYY-MM-DD` oder `YYYY-MM-DDTHH:mm[:ss]`, ohne Zeitzonenversatz. Linien brauchen mindestens zwei Zeilen. Verwende `bar` für Textbeschriftungen. Jedes Balkendiagramm zeigt genau eine y-Spalte. Kreis- und Ringdiagramme verwenden die Spaltennamen `label` und `value`. Bei `stat` kann `value` eine Zahl, ein Schlüssel im referenzierten Datenblock oder eine Tabellenspalte sein. Eine Tabellenspalte zeigt ihren letzten Wert und ab zwei Zeilen eine kleine Trendlinie.
 

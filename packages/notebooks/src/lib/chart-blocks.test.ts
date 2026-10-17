@@ -235,3 +235,21 @@ test("a bad column reports its first row once, not one diagnostic per row", () =
   ]);
   expect(input("@sales\n- 1: 12\n- 2: 18\n\n" + chart("type: line\ntitle: Sales\ndata: @sales"))).not.toHaveProperty("xAxis");
 });
+
+test("a name shared by two blocks is a diagnostic, never an arbitrary pick", () => {
+  const markdown =
+    "@sales\n:::data\nrevenue: 12\n:::\n\n@sales\n:::data\nrevenue: 999\n:::\n\n" +
+    chart("type: stat\ntitle: Revenue\ndata: @sales\nvalue: revenue");
+  expect(parseNotebookChartBlocks(markdown).diagnostics).toEqual([
+    { code: "duplicate-block", line: 14, path: "chart.data", params: { name: "sales" } },
+  ]);
+});
+
+test("one chart can be read alone, still within the note's block budget", () => {
+  const markdown = Array.from({ length: CHART_MAX_BLOCKS + 1 }, () => chart("type: stat\ntitle: Value\nvalue: 12")).join("\n");
+  expect(parseNotebookChartBlocks(markdown, { line: 6 }).blocks.map((block) => block.line)).toEqual([6]);
+  expect(parseNotebookChartBlocks(markdown, { line: 101 })).toEqual({
+    blocks: [],
+    diagnostics: [{ code: "too-many-items", line: 101, path: "chart", params: { limit: 20 } }],
+  });
+});

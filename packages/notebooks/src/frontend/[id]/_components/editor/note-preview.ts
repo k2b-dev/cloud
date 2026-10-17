@@ -179,7 +179,7 @@ export const notePreviewChart = (markdown: string, lines: NotePreviewLine[]) => 
   const text = markdown.replace(/\r\n?/g, "\n");
   const line = lines.length + 1;
   if (line === 1 || !/^ {0,3}:::chart[ \t]*$/.test(text.split("\n")[line - 1] ?? "")) return null;
-  if (!parseNotebookChartBlocks(text).blocks.some((block) => block.line === line)) return null;
+  if (!parseNotebookChartBlocks(text, { line }).blocks.length) return null;
   const body = text.split("\n").slice(line);
   return chartBlockFrame(
     body.slice(
