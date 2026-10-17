@@ -9,6 +9,7 @@ import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { assertPrivateDatabase } from "../../test/private-database";
 import { bindings } from "../data/bases";
+import { ROOT_LOCK_WAIT_MS, withRootLock, withUploadLock } from "../data/operations";
 import { resolveEntryRefId } from "../data/references";
 import type { DocumentFormat } from "../documents";
 import { migrate } from "../migrate";
@@ -1157,6 +1158,88 @@ suite("Files service and durable bindings", () => {
     await expect(service.commitUpload(actor, { baseId, id: replace.id })).rejects.toMatchObject({ code: "upload_closed" });
     await service.abortUpload(actor, { baseId, id: replace.id });
   });
+  test("private upload commits wait for a root lock released within the budget", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const upload = await service.upload(actor, {
+      baseId,
+      path: "waiting.txt",
+      size: 4,
+      onConflict: "error",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    privateSession(upload.id).received = 4;
+    const entered = Promise.withResolvers<void>();
+    const holder = withRootLock("freeipa", async () => {
+      entered.resolve();
+      await Bun.sleep(300);
+    });
+    try {
+      await entered.promise;
+      expect((await service.commitUpload(actor, { baseId, id: upload.id })).entry).toMatchObject({ path: "waiting.txt", size: 4 });
+      expect(nodes.has("freeipa:users/alice/waiting.txt")).toBe(true);
+    } finally {
+      await holder;
+    }
+  });
+  test("private upload commits answer busy only after the five-second root lock wait", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const upload = await service.upload(actor, {
+      baseId,
+      path: "busy.txt",
+      size: 4,
+      onConflict: "error",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    privateSession(upload.id).received = 4;
+    await withRootLock("freeipa", async () => {
+      const started = performance.now();
+      await expect(service.commitUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "operation_busy", status: 503 });
+      expect(performance.now() - started).toBeGreaterThanOrEqual(ROOT_LOCK_WAIT_MS - 100);
+      expect(performance.now() - started).toBeLessThan(ROOT_LOCK_WAIT_MS + 2_000);
+      expect(nodes.has("freeipa:users/alice/busy.txt")).toBe(false);
+      expect(privateSession(upload.id).state).toBe("open");
+    });
+  }, 15_000);
+  test("capability uploads answer busy immediately without consuming the body when their upload lock is held", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const upload = await service.upload(actor, {
+      baseId,
+      path: "busy-capability.txt",
+      size: 4,
+      onConflict: "error",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    let consumed = false;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          consumed = true;
+          controller.enqueue(new TextEncoder().encode("1234"));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    try {
+      await withUploadLock(upload.id, async () => {
+        const started = performance.now();
+        await expect(service.capabilityUpload(actor, { baseId, id: upload.id }, body, new AbortController().signal)).rejects.toMatchObject({
+          code: "operation_busy",
+          status: 409,
+        });
+        expect(performance.now() - started).toBeLessThan(1_000);
+        expect(consumed).toBe(false);
+      });
+    } finally {
+      await body.cancel();
+    }
+  });
   test("file chooser pages show readable children per base and path, and saves create once and conflict by name", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
@@ -1317,7 +1400,6 @@ suite("Files service and durable bindings", () => {
     expect((await first).entry.path).toBe("cancelled.bin");
   });
   test("capability upload locks reject concurrent writers without exhausting domain connections", async () => {
-    const { withUploadLock } = await import("../data/operations");
     const release = Promise.withResolvers<void>();
     const entered = Promise.withResolvers<void>();
     const id = crypto.randomUUID();
@@ -1337,7 +1419,6 @@ suite("Files service and durable bindings", () => {
     expect(await withUploadLock(id, async () => "released")).toBe("released");
   });
   test("a crashed lock holder frees the root and the upload after its lease expires", async () => {
-    const { withRootLock, withUploadLock } = await import("../data/operations");
     const id = crypto.randomUUID();
     const root = `crashed-${id}`;
     // Another process that acquired the same leases with a short TTL and never released them.
@@ -1360,6 +1441,30 @@ suite("Files service and durable bindings", () => {
     expect(await recovered(() => withUploadLock(id, async () => "ran"))).toBe("ran");
     expect(await recovered(() => withRootLock(root, async () => "ran"))).toBe("ran");
   });
+  test("root locks make one immediate attempt without a wait or with an already-spent budget", async () => {
+    const root = `fail-fast-${crypto.randomUUID()}`;
+    const spent = AbortSignal.abort();
+    await withRootLock(root, async () => {
+      const started = performance.now();
+      await expect(withRootLock(root, async () => "ran")).rejects.toThrow("operation_busy");
+      expect(performance.now() - started).toBeLessThan(1_000);
+      const abortedStarted = performance.now();
+      await expect(withRootLock(root, async () => "ran", spent)).rejects.toThrow("operation_busy");
+      expect(performance.now() - abortedStarted).toBeLessThan(1_000);
+    });
+    // An exhausted wait still tries once when the root is free.
+    expect(await withRootLock(root, async () => "ran", spent)).toBe("ran");
+  });
+  test("a caller signal never extends the root lock wait past the budget", async () => {
+    const root = `bounded-wait-${crypto.randomUUID()}`;
+    const neverAborts = new AbortController().signal;
+    await withRootLock(root, async () => {
+      const started = performance.now();
+      await expect(withRootLock(root, async () => "ran", neverAborts)).rejects.toThrow("operation_busy");
+      expect(performance.now() - started).toBeGreaterThanOrEqual(ROOT_LOCK_WAIT_MS - 100);
+      expect(performance.now() - started).toBeLessThan(ROOT_LOCK_WAIT_MS + 2_000);
+    });
+  }, 15_000);
   test("a commit whose response was lost is recovered from the Filegate session record", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
@@ -1518,6 +1623,23 @@ suite("Files service and durable bindings", () => {
     expect(duplicated.entries[0]!.path).toMatch(/^b-[0-9a-f]{32}\.txt$/);
     expect(nodes.get(`freeipa:users/alice/${duplicated.entries[0]!.path}`)).toMatchObject({ uid: 1001, gid: 2001, mode: "0600" });
   });
+  test("moving three entries in one root shares one root-lock wait budget", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Docs");
+    const paths = ["a.txt", "b.txt", "c.txt"];
+    for (const path of paths) directory("freeipa", `users/alice/${path}`, 1001, 2001, "0640", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    await withRootLock("freeipa", async () => {
+      const started = performance.now();
+      const moved = await service.move(actor, { baseId, paths, folder: "Docs" });
+      const elapsed = performance.now() - started;
+      expect(moved.entries).toEqual([]);
+      expect(moved.results).toEqual(paths.map((path) => ({ path, ok: false, error: "operation_busy" })));
+      expect(elapsed).toBeGreaterThanOrEqual(ROOT_LOCK_WAIT_MS - 100);
+      expect(elapsed).toBeLessThan(ROOT_LOCK_WAIT_MS + 3_000);
+    });
+  }, 15_000);
   test("copies may cross bases but moves never leave a base", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
@@ -2675,7 +2797,6 @@ suite("Files service and durable bindings", () => {
   });
 
   test("Cloud publications respect the shared root lock, release on failure, and retry safely", async () => {
-    const { withRootLock } = await import("../data/operations");
     const fixture = await editorFixture("ipa");
     const timestamp = (await service.editorFileInfo(fixture.launch.token, fixture.fileId)).LastModifiedTime;
     const upload = await service.upload(fixture.actor, {
@@ -2686,23 +2807,22 @@ suite("Files service and durable bindings", () => {
       idempotencyKey: crypto.randomUUID(),
     });
     await withRootLock(fixture.root, async () => {
-      await expect(
+      // Hold the lock past the bounded wait. Start all three publications before awaiting any of
+      // them, so the test spends one wait budget instead of three.
+      const attempts = await Promise.allSettled([
         service.editorSave(fixture.launch.token, fixture.fileId, { timestamp, read: async () => new Blob(["busy"]) }),
-      ).rejects.toMatchObject({ code: "operation_busy", status: 503 });
-      await expect(service.commitUpload(fixture.actor, { baseId: fixture.baseId, id: upload.id })).rejects.toMatchObject({
-        code: "operation_busy",
-        status: 503,
-      });
-      await expect(service.rename(fixture.actor, { baseId: fixture.baseId, path: "Minutes.odt", name: "Moved.odt" })).rejects.toMatchObject(
-        { code: "operation_busy", status: 503 },
-      );
+        service.commitUpload(fixture.actor, { baseId: fixture.baseId, id: upload.id }),
+        service.rename(fixture.actor, { baseId: fixture.baseId, path: "Minutes.odt", name: "Moved.odt" }),
+      ]);
+      for (const attempt of attempts)
+        expect(attempt).toMatchObject({ status: "rejected", reason: { code: "operation_busy", status: 503 } });
       expect(contents.get(fixture.key)).toBe("original");
     });
     expect(
       await service.editorSave(fixture.launch.token, fixture.fileId, { timestamp, read: async () => new Blob(["retried"]) }),
     ).toHaveProperty("modified");
     expect(contents.get(fixture.key)).toBe("retried");
-  });
+  }, 15_000);
 
   test("managed WOPI saves reject a concurrent write while reading the incoming document", async () => {
     const fixture = await editorFixture("local");

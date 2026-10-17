@@ -22,6 +22,7 @@ import { appApproval } from "@k2b/cloud/services/app-approval";
 import { drain as drainDeferredAuthRequests } from "@k2b/cloud/services/auth-flows/deferred";
 import { initializeIdentityAuthority, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
 import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "@k2b/cloud/services/outgoing-mail/runtime";
+import { startWorkflowEventRetention } from "@k2b/cloud/workflows/store";
 import { aiChatTaskRuntime } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import type { createAiNotificationService } from "./ai-notifications";
@@ -48,6 +49,7 @@ let stopHelpMaintenance: (() => Promise<void>) | undefined;
 let stopIdentityMaintenance: (() => void) | null = null;
 let stopMandateMaintenance: (() => void) | null = null;
 let stopCapabilityExecutionMaintenance: (() => void) | null = null;
+let stopWorkflowEventRetention: (() => void) | null = null;
 
 let appSkillsAbort: AbortController | null = null;
 let appSkillsTask: Promise<void> | null = null;
@@ -134,6 +136,7 @@ export const startCoreServices = async (
     stopIdentityMaintenance = startIdentityKeyMaintenance();
     stopMandateMaintenance = startMandateMaintenance();
     stopCapabilityExecutionMaintenance = startCapabilityExecutionMaintenance();
+    stopWorkflowEventRetention = startWorkflowEventRetention();
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({
@@ -171,6 +174,8 @@ export const startCoreServices = async (
     stopMandateMaintenance = null;
     stopCapabilityExecutionMaintenance?.();
     stopCapabilityExecutionMaintenance = null;
+    stopWorkflowEventRetention?.();
+    stopWorkflowEventRetention = null;
     stopCloudAiRuntime?.();
     stopCloudAiRuntime = null;
     await Promise.allSettled([
@@ -202,6 +207,8 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     stopMandateMaintenance = null;
     stopCapabilityExecutionMaintenance?.();
     stopCapabilityExecutionMaintenance = null;
+    stopWorkflowEventRetention?.();
+    stopWorkflowEventRetention = null;
     await Promise.all([lifecycleJobs.stop(), appApprovalRuntime.stop()]);
   } finally {
     try {

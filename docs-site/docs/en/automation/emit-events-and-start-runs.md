@@ -5,7 +5,7 @@ section: Automation
 order: 690
 description: Start durable workflow runs from domain events or direct application requests.
 tags: [workflows, events, workers]
-updated: 2026-07-27
+updated: 2026-10-17
 ---
 
 # Emit events and start runs
@@ -71,6 +71,24 @@ a system identity.
 
 Repeated emission with the same key records one event and returns the original
 run IDs.
+
+## Size and retention
+
+`data` and `context` are each limited to 16 MiB. Cloud measures UTF-8 bytes of
+the serialized JSON. A larger emit throws `WorkflowEventTooLargeError` from
+`@k2b/cloud/workflows/store`, with code `WORKFLOW_EVENT_TOO_LARGE`, before
+anything is written. Pass references, such as IDs, instead of large bodies.
+The exported `WORKFLOW_EVENT_MAX_PAYLOAD_BYTES` constant defines this limit.
+
+After 30 days from dispatch or dead-lettering, Cloud deletes an event's
+deliveries and empties its data, context, and authorization snapshot. It waits
+until no queued, running, waiting, or needs-attention run references the event.
+The row keeps its type, dedupe key, and timestamps. Repeating the same
+`dedupeKey` stays deduplicated.
+
+Runs keep their own copy of inputs and context. Run details show the event
+payload as expired. `WORKFLOW_EVENT_RETENTION_DAYS` defines the 30-day window.
+Neither the size limit nor the retention window is configurable.
 
 ## Run a worker
 
