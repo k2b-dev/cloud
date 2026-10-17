@@ -1872,7 +1872,7 @@ test("an open row keeps the token and the list while it runs, then removes the t
   let resolve!: () => void;
   const drafts: { value: string; mentions: readonly ChatMention[] }[] = [];
   const h = await slash({
-    value: "Price /task",
+    value: "Price /tas",
     commands: [
       {
         name: "task",
@@ -1888,6 +1888,9 @@ test("an open row keeps the token and the list while it runs, then removes the t
     ],
   });
   const detail = () => h.rows()[0]!.querySelector(".k2b-chat-composer__command-detail")!;
+  // One typed step, so there is something to undo.
+  h.type("Price /task");
+  await flush();
   h.key("Enter");
   await flush();
   expect(drafts).toEqual([{ value: "Price ", mentions: [] }]);
@@ -1901,10 +1904,12 @@ test("an open row keeps the token and the list while it runs, then removes the t
   // The field stays enabled and focused, only read-only: a disabled field would lose focus and close the list.
   expect(h.input.disabled).toBe(false);
   expect(h.input.readOnly).toBe(true);
-  // Choosing again while it runs does nothing.
+  // Choosing again or undoing while it runs does nothing, so the saved draft stays the visible one.
   h.key("Enter");
+  h.key("z", { ctrlKey: true });
   await flush();
   expect(drafts).toHaveLength(1);
+  expect(h.value()).toBe("Price /task");
   resolve();
   await flush();
   expect(h.input.readOnly).toBe(false);

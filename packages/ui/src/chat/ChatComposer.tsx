@@ -753,6 +753,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setDismissed(false);
   };
   const restoreHistory = (direction: -1 | 1) => {
+    // A field that only stays enabled to keep focus, while an `open` row runs, is not edited by undo either.
+    if (editBlocked()) return;
     record();
     const next = history[historyIndex + direction];
     if (!next) return;
@@ -1195,14 +1197,22 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setOpenFailures(({ [row]: _, ...rest }) => rest);
     setOpeningRow(row);
     setExecuting(true);
+    const finish = () => {
+      setOpeningRow(undefined);
+      setExecuting(false);
+    };
     let result: ChatCommandOpenResult;
     try {
       if (heldHistory) {
         await dialogHistorySettled();
-        if (!inPlace()) return;
+        if (!inPlace()) {
+          finish();
+          return;
+        }
       }
       result = await open({ value: nextValue, mentions: nextMentions });
     } catch (error) {
+      finish();
       if (disposed) {
         props.onError?.(error);
         return;
@@ -1210,28 +1220,32 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       if (inPlace()) setClosedAt(token.start);
       showCommandStatus({ tone: "error", text: error instanceof Error && error.message ? error.message : chatMessages().commandFailed });
       return;
-    } finally {
-      setOpeningRow(undefined);
-      setExecuting(false);
     }
-    if (result === "cancelled") return;
-    if (result) {
-      if (inPlace()) {
-        setOpenFailures((failures) => ({ ...failures, [row]: result.failed }));
-        setAnnouncement({ text: result.failed });
-      } else if (disposed) props.onError?.(new Error(result.failed));
-      else showCommandStatus({ tone: "error", text: result.failed });
+    if (!result) {
+      // Success: the token leaves and the list closes in the same step that ends the opening, so a phone sheet never
+      // takes its Back entry again while the page navigates.
+      batch(() => {
+        if (!disposed && props.draftKey === key && props.value === value) {
+          edit(nextValue, nextMentions);
+          setDismissed(true);
+        }
+        finish();
+      });
+      queueMicrotask(() => {
+        if (disposed || props.draftKey !== key || props.value !== nextValue) return;
+        textareaRef?.setSelectionRange(token.start, token.start);
+        syncCaret();
+        autoResize();
+      });
       return;
     }
-    if (disposed || props.draftKey !== key || props.value !== value) return;
-    edit(nextValue, nextMentions);
-    setDismissed(true);
-    queueMicrotask(() => {
-      if (props.draftKey !== key || props.value !== nextValue) return;
-      textareaRef?.setSelectionRange(token.start, token.start);
-      syncCaret();
-      autoResize();
-    });
+    finish();
+    if (result === "cancelled") return;
+    if (inPlace()) {
+      setOpenFailures((failures) => ({ ...failures, [row]: result.failed }));
+      setAnnouncement({ text: result.failed });
+    } else if (disposed) props.onError?.(new Error(result.failed));
+    else showCommandStatus({ tone: "error", text: result.failed });
   };
 
   /** Replaces `start`–`end` with the emoji through the editing path, so the browser's undo restores the shortcode. */
@@ -1335,6 +1349,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const format = props.formatting && textareaRef ? formatShortcut(event) : undefined;
     if (format && textareaRef) {
       event.preventDefault();
+      if (editBlocked()) return;
       format.run(textareaRef);
       return;
     }
