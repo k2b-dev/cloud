@@ -1153,7 +1153,7 @@ tasks restore the plan automatically; switching chats resets the disclosure.
 ## Select commands and inline context
 
 Assistant recognizes `/` at a word boundary anywhere in the composer. Its
-sections stay in this order: **Skills**, **Files in this chat**, **Studio apps**,
+sections stay in this order: **Insert**, **Skills**, **Files in this chat**,
 **This chat**, **Scheduled tasks**. Files appear when searching or narrowing to
 files. Type a name, or narrow by typing one of these words followed by a space:
 
@@ -1182,6 +1182,22 @@ Suggestions temporarily replace the task list; closing restores it and its open
 state. Matching previous results stay visible while the next search loads.
 Switching lists clears previous results. Screen readers announce the number
 of suggestions once the search settles.
+
+**Insert** (**Einfügen**) starts with **Insert from Cloud** and **Attach file**.
+The file row uses the same device and app selection as the **+** menu. Search
+tags such as Notes appear here only while typing. In German, `/notiz q3` narrows
+the list to **Notizen aus Notebooks**; Enter opens Notes in the resource picker
+with `q3` already entered. `/app q` narrows to Studio apps from Assistant, even
+before the catalog loads.
+
+Cloud searches end with **Search Cloud for “…”**, or the corresponding search
+row for a tag scope. An unmatched `/xylo` shows **Nothing found for “xylo”** and
+that Cloud search row. The picker previews resources you can read. Choosing one
+inserts its name as a reference where `/…` was; Ctrl/⌘+Z restores the token in
+one step. Escape in the picker keeps `/…` and returns focus to the composer.
+References remain available while a response runs. File attachment waits for
+the response to finish. Cloud insert rows explain when the message has reached its
+16-item limit, counting attachments and inline references together.
 
 The Skills overview shows the first four enabled Skills. If there are more,
 **All N Skills** narrows to the full Skill list with Enter or Tab. If the Skill

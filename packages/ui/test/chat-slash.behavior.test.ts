@@ -1636,3 +1636,169 @@ test.each(["Enter", "Tab"])(
     expect(h.value()).toBe("/skill al");
   },
 );
+
+test("an action's mention replaces its token in one undo step; cancellation keeps the token", async () => {
+  const [mentions, setMentions] = createSignal<readonly ChatMention[]>([]);
+  const attachment = { id: "resource:note:one", name: "Quarter three" };
+  const h = await slash({
+    value: "Before /x",
+    get mentions() {
+      return mentions();
+    },
+    onMentionsChange: setMentions,
+    commands: [{ name: "x", description: "Choose", action: async () => ({ mention: attachment }) }],
+  });
+  h.key("Enter");
+  await flush();
+  expect(h.value()).toBe("Before Quarter three ");
+  expect(mentions()).toEqual([{ start: 7, end: 20, attachment }]);
+  h.key("z", { ctrlKey: true });
+  expect(h.value()).toBe("Before /x");
+  expect(mentions()).toEqual([]);
+  const cancelled = await slash({
+    value: "/x",
+    commands: [{ name: "x", description: "Choose", action: async () => "cancelled" as const }],
+  });
+  cancelled.key("Enter");
+  await flush();
+  expect(cancelled.value()).toBe("/x");
+});
+
+test("attachFiles chooses within Enter activation, removes the token, and restores an empty selection", async () => {
+  let inActivation = false;
+  let calls = 0;
+  let resolve!: (files: readonly File[]) => void;
+  const h = await slash({
+    value: "/attach",
+    commands: [{ name: "attach", description: "Choose", attachFiles: true }],
+    fileSelection: {
+      choose: () => {
+        expect(inActivation).toBe(true);
+        calls++;
+        return new Promise((done) => {
+          resolve = done;
+        });
+      },
+      onSelect: () => {
+        throw new Error("No files selected");
+      },
+    },
+  });
+  inActivation = true;
+  h.key("Enter");
+  inActivation = false;
+  expect(calls).toBe(1);
+  expect(h.value()).toBe("");
+  resolve([]);
+  await flush();
+  expect(h.value()).toBe("/attach");
+});
+
+test("a reasoned attachFiles row cannot choose files", async () => {
+  let calls = 0;
+  const h = await slash({
+    value: "/attach",
+    commands: [{ name: "attach", description: "Choose", attachFiles: true, reason: "Full" }],
+    fileSelection: {
+      choose: async () => {
+        calls++;
+        return [];
+      },
+      onSelect() {},
+    },
+  });
+  h.key("Enter");
+  await flush();
+  expect(calls).toBe(0);
+  expect(h.value()).toBe("/attach");
+});
+
+test("unscoped fallback follows Nothing found, runs on Enter, and does not prevent closing with a space", async () => {
+  let calls = 0;
+  const fallback = () => ({
+    name: "fallback",
+    label: "Search Cloud",
+    description: "All apps",
+    action: () => {
+      calls++;
+    },
+  });
+  const h = await slash({ value: "/xylo", commandFallback: fallback });
+  const list = h.root.querySelector('[role="listbox"]')!;
+  expect(list.textContent).toContain("Nothing found for “xylo”");
+  expect(list.textContent!.indexOf("Nothing found")).toBeLessThan(list.textContent!.indexOf("Search Cloud"));
+  h.key("Enter");
+  await flush();
+  expect(calls).toBe(1);
+  const next = await slash({ value: "/xylo", commandFallback: fallback });
+  next.type("/xylo ");
+  expect(next.root.querySelector('[role="listbox"]')).toBeNull();
+});
+
+test("the fallback row follows the query as it is typed and stays marked", async () => {
+  const h = await slash({
+    value: "/x",
+    commandFallback: ({ query }) => ({ id: "cloud", name: "cloud", label: `Search Cloud for “${query}”`, description: "All apps" }),
+  });
+  h.type("/xy");
+  h.type("/xylo");
+  const row = h.root.querySelector<HTMLElement>('[role="listbox"] [role="option"]')!;
+  expect(row.querySelector("strong")?.textContent).toBe("Search Cloud for “xylo”");
+  expect(row.getAttribute("aria-selected")).toBe("true");
+});
+
+test("a scoped fallback ends its group without Nothing found", async () => {
+  const h = await slash({
+    value: "/note q3",
+    commandScopes: [{ id: "note", title: "Notes from Notebooks", words: ["note"] }],
+    searchCommands: async () => [{ name: "q3", label: "Q3 plan", description: "Note" }],
+    commandFallback: () => ({ name: "fallback", label: "Search Notes", description: "With preview" }),
+  });
+  await Bun.sleep(160);
+  await flush();
+  const group = h.root.querySelector('[role="group"]')!;
+  expect(group.textContent).toContain("Notes from Notebooks");
+  expect([...group.querySelectorAll('[role="option"] strong')].map((node) => node.textContent)).toEqual(["Q3 plan", "Search Notes"]);
+  expect(h.root.textContent).not.toContain("Nothing found");
+});
+
+test("a pending picker never replaces a draft edited in the meantime", async () => {
+  let resolve!: (result: ChatCommandResult) => void;
+  const h = await slash({
+    value: "/x",
+    commands: [
+      {
+        name: "x",
+        description: "Choose",
+        action: () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      },
+    ],
+  });
+  h.key("Enter");
+  h.setValue("Changed while choosing");
+  resolve({ mention: { id: "one", name: "Note" } });
+  await flush();
+  expect(h.value()).toBe("Changed while choosing");
+  expect(h.status().textContent).toContain("The text changed in the meantime, so nothing was inserted.");
+});
+
+test("a synchronous file chooser failure restores the token and reaches onError", async () => {
+  const error = new Error("Cannot open selection");
+  const h = await slash({
+    value: "/attach",
+    commands: [{ name: "attach", description: "Choose", attachFiles: true }],
+    fileSelection: {
+      choose: () => {
+        throw error;
+      },
+      onSelect() {},
+    },
+  });
+  h.key("Enter");
+  await flush();
+  expect(h.value()).toBe("/attach");
+  expect(h.errors).toEqual([error]);
+});

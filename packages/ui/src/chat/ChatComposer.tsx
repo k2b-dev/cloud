@@ -71,8 +71,11 @@ export type ChatCommandContext = {
   openModelSelection: () => Promise<string | null>;
 };
 
-/** An action can cancel and restore its token, or report a short completion message. */
-export type ChatCommandResult = void | "cancelled" | { done: string };
+/**
+ * An action can cancel and restore its token, report a short completion message, or hand back a reference chosen in a
+ * dialog: `mention` takes the token's place exactly as a `mention` row does, and Ctrl/⌘+Z brings the token back.
+ */
+export type ChatCommandResult = void | "cancelled" | { done: string } | { mention: ChatAttachment };
 
 /** A fixed place in the slash list. Sections keep the given order, also while searching. */
 export type ChatCommandSection = {
@@ -120,6 +123,11 @@ export type ChatCommand = {
   action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
   /** Selecting a reference inserts its display name and retains its opaque payload. */
   mention?: ChatAttachment;
+  /**
+   * Opens the composer's own file selection, as "Attach files" in the add menu does, within the key or click that chose
+   * the row, so the device's file dialog can still open. The token leaves; choosing nothing brings it back.
+   */
+  attachFiles?: boolean;
   label?: string;
   disabled?: boolean;
 };
@@ -165,6 +173,11 @@ export type ChatComposerProps = {
   commandSections?: readonly ChatCommandSection[];
   commandScopes?: readonly ChatCommandScope[];
   searchCommands?: (query: string, signal: AbortSignal, search: ChatCommandSearch) => Promise<readonly ChatCommand[]>;
+  /**
+   * The last row for typed text or a scope, built at once from the query, such as "Search Cloud for “q3”". It is no
+   * match: unscoped it follows "Nothing found for …"; in a scope it ends the scope's rows. Not called for the overview.
+   */
+  commandFallback?: (search: { query: string; scope?: string }) => ChatCommand | undefined;
   mentions?: readonly ChatMention[];
   onMentionsChange?: (mentions: readonly ChatMention[]) => void;
   /** Shared surface above the editor; suggestions temporarily replace this content. */
@@ -426,6 +439,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     if (start !== undefined) setCommandOpening((opening) => opening + 1);
   });
   const parsedCommandQuery = createMemo(() => parseChatCommandQuery(commandQuery()?.query ?? "", props.commandScopes ?? []));
+  const commandFallbackRow = createMemo(() => {
+    const parsed = parsedCommandQuery();
+    const query = parsed.query.trim();
+    return commandQuery() && (query || parsed.scope) ? props.commandFallback?.({ query, scope: parsed.scope?.id }) : undefined;
+  });
   const currentCommandScope = createMemo(() => parsedCommandQuery().scope?.id);
   createEffect(() => {
     currentCommandScope();
@@ -443,9 +461,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       searchResultsFresh: searchResultsQuery() === commandQuery()?.query && searchResultsScope() === parsedCommandQuery().scope?.id,
       searchSettled: searchResultsQuery() !== undefined && searchResultsScope() === parsedCommandQuery().scope?.id,
       searching: searching(),
+      fallback: commandFallbackRow(),
     }),
   );
   const commandMatches = createMemo(() => (commandQuery() ? commandModel().rows.map((row) => row.command) : []));
+  /** Rows that matched; an unscoped fallback row only follows them. */
+  const foundCommandCount = () => commandMatches().length - (commandModel().fallback ? 1 : 0);
   const currentCommandQuery = createMemo(() => caretCommandToken()?.query);
   // Arrow marking belongs to one token in one draft; another draft or `/` starts at the top row again.
   createEffect(() => {
@@ -454,7 +475,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     currentCommandQuery();
     setCommandMoved(false);
   });
-  const commandsOpen = () => Boolean(!emojiOpen() && commandQuery() && (localCommands().length || props.searchCommands));
+  const commandsOpen = () =>
+    Boolean(!emojiOpen() && commandQuery() && (localCommands().length || props.searchCommands || commandFallbackRow()));
   const commandSheetHeld = createMemo(() => commandsOpen() && isTouchOnly());
   createEffect(() => {
     if (!commandSheetHeld()) return;
@@ -808,14 +830,77 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     </span>
   );
 
-  const chooseFiles = () => {
+  /** `onNothing` runs when the person closes the selection without a file. */
+  const chooseFiles = (onNothing?: () => void) => {
     const selection = props.fileSelection;
-    if (!selection?.choose) return fileInputRef?.click();
-    selection.choose().then(
+    if (!selection?.choose) {
+      const input = fileInputRef;
+      if (input && onNothing) {
+        const done = new AbortController();
+        input.addEventListener(
+          "cancel",
+          () => {
+            done.abort();
+            onNothing();
+          },
+          { signal: done.signal },
+        );
+        input.addEventListener("change", () => done.abort(), { signal: done.signal });
+      }
+      return input?.click();
+    }
+    const failed = (error: unknown) => {
+      onNothing?.();
+      (props.fileSelection?.onError ?? props.onError)?.(error);
+    };
+    let chosen: Promise<readonly File[]>;
+    try {
+      chosen = selection.choose();
+    } catch (error) {
+      failed(error);
+      return;
+    }
+    chosen.then(
       // A single-file composer keeps the first chosen file, as its file dialog and drops do.
-      (files) => void runFiles(selection.multiple === false ? files.slice(0, 1) : files),
-      (error: unknown) => (props.fileSelection?.onError ?? props.onError)?.(error),
+      (files) => {
+        if (files.length === 0) onNothing?.();
+        else void runFiles(selection.multiple === false ? files.slice(0, 1) : files);
+      },
+      failed,
     );
+  };
+
+  /**
+   * "Attach files" from the slash list: the token leaves as one edit, and the selection opens synchronously, inside the
+   * key or click that chose the row, because the device's file dialog needs that activation. Closing the selection
+   * without a file brings the token back, unless the draft changed meanwhile.
+   */
+  const attachFilesFromCommand = (token: { start: number; end: number }) => {
+    if (!canSelectFiles()) return;
+    const key = props.draftKey;
+    const previous = snapshot();
+    const previousHistory = { entries: [...history], index: historyIndex };
+    const nextValue = props.value.slice(0, token.start) + props.value.slice(token.end);
+    edit(nextValue, reconcileChatMentions(props.value, nextValue, mentions()));
+    setDismissed(true);
+    chooseFiles(() => {
+      if (props.draftKey !== key || props.value !== nextValue) return;
+      setDismissed(true);
+      props.onValueChange(previous.value);
+      props.onMentionsChange?.(previous.mentions);
+      history.splice(0, history.length, ...previousHistory.entries);
+      historyIndex = previousHistory.index;
+      queueMicrotask(() => {
+        textareaRef?.setSelectionRange(token.end, token.end);
+        syncCaret();
+        focus();
+      });
+    });
+    queueMicrotask(() => {
+      if (props.draftKey !== key || props.value !== nextValue) return;
+      textareaRef?.setSelectionRange(token.start, token.start);
+      syncCaret();
+    });
   };
 
   const runFiles = async (files: FileList | readonly File[]) => {
@@ -914,7 +999,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       setCommandOpening((opening) => opening + 1);
       return;
     }
-    if (command.scope && (tab || (!command.action && !command.mention)) && narrowCommand(command)) return;
+    if (command.scope && (tab || (!command.action && !command.mention && !command.attachFiles)) && narrowCommand(command)) return;
+    if (command.attachFiles) {
+      attachFilesFromCommand(token);
+      return;
+    }
     const previous = snapshot();
     const key = props.draftKey;
     const replacement = command.mention ? command.mention.name + " " : "";
@@ -929,6 +1018,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setExecuting(true);
     let submitRequested = false;
     let restored = false;
+    let mentioned: { value: string; caret: number } | undefined;
     const restore = () => {
       if (props.draftKey !== key || props.value !== nextValue) return;
       setDismissed(true);
@@ -958,6 +1048,21 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         submitRequested = false;
         restore();
         showCommandStatus();
+      } else if (result && "mention" in result) {
+        // One undo step from the token to the reference, as if the row had been a reference itself.
+        if (props.draftKey === key && props.value === nextValue) {
+          restore();
+          restored = false;
+          const name = result.mention.name;
+          const withMention = previous.value.slice(0, token.start) + name + " " + previous.value.slice(token.end);
+          edit(withMention, [
+            ...reconcileChatMentions(previous.value, withMention, previous.mentions),
+            { start: token.start, end: token.start + name.length, attachment: result.mention },
+          ]);
+          setDismissed(true);
+          mentioned = { value: withMention, caret: token.start + name.length + 1 };
+          showCommandStatus();
+        } else if (props.draftKey === key) showCommandStatus({ tone: "error", text: chatMessages().commandDraftChanged });
       } else if (result) {
         showCommandStatus({ tone: "done", text: result.done });
       }
@@ -975,8 +1080,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     if (submitRequested && props.draftKey === key) await submit();
     queueMicrotask(() => {
       if (props.draftKey !== key) return;
-      if (restored || props.value === nextValue) {
-        const position = restored ? token.end : token.start + replacement.length;
+      if (restored || props.value === nextValue || (mentioned && props.value === mentioned.value)) {
+        const position = restored ? token.end : (mentioned?.caret ?? token.start + replacement.length);
         textareaRef?.setSelectionRange(position, position);
       }
       syncCaret();
@@ -1199,7 +1304,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               aria-label={selection().label ?? chatMessages().attachFiles}
               content={selection().label ?? chatMessages().attachFiles}
               disabled={!canSelectFiles()}
-              onClick={chooseFiles}
+              onClick={() => chooseFiles()}
             >
               <i class={addingFiles() ? "ti ti-loader-2 k2b-spin" : "ti ti-plus"} aria-hidden="true" />
             </Tooltip.Trigger>
@@ -1630,9 +1735,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                 </For>
                 <Show
                   when={
-                    searching() &&
-                    commandMatches().length === 0 &&
-                    !commandModel().groups.some((group) => group.section || group.scopeTitle)
+                    searching() && foundCommandCount() === 0 && !commandModel().groups.some((group) => group.section || group.scopeTitle)
                   }
                 >
                   <div role="status" class="k2b-chat-composer__loading">
@@ -1645,12 +1748,17 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     <i class="ti ti-alert-circle" /> {messages().error}
                   </div>
                 </Show>
-                <Show when={!searching() && !searchError() && commandMatches().length === 0}>
+                <Show when={!searching() && !searchError() && foundCommandCount() === 0}>
                   <div role="status">
                     {!parsedCommandQuery().query.trim()
                       ? messages().noResults
                       : chatMessages().commandsNothingFound({ query: parsedCommandQuery().query.trim() })}
                   </div>
+                </Show>
+                {/* After "Nothing found", so the way to search further stays in the last place. */}
+                {/* Keyed: the row is built anew from each query, and its title says the query. */}
+                <Show when={commandModel().fallback?.command} keyed>
+                  {(command) => renderCommandRow(command)}
                 </Show>
               </div>
             </div>

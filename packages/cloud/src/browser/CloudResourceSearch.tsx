@@ -62,20 +62,20 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const locale = useLocale();
   const t = () => resourceSearchMessages.resolve([locale()]).t;
   const id = createUniqueId();
-  const [input, setInput] = createSignal("");
+  const [input, setInput] = createSignal(props.request?.query ?? "");
   const [tags, setTags] = createSignal<string[]>([]);
   const [scope, setScope] = createSignal<SearchScope | undefined>(
     props.request?.scope ?? (props.initialAppId ? { appId: props.initialAppId, label: props.initialAppId } : undefined),
   );
   const appId = () => scope()?.appId ?? scope()?.ref?.type.split(".")[0];
   const scopeLabel = () =>
-    !props.request && props.initialAppId
+    !props.request?.scope && props.initialAppId
       ? (catalogApps()?.find((app) => app.id === props.initialAppId)?.name ?? scope()?.label)
       : scope()?.label;
   createEffect(() => {
     const request = props.request;
     if (!request) return;
-    setScope(request.scope);
+    setScope(request.scope ?? (props.initialAppId ? { appId: props.initialAppId, label: props.initialAppId } : undefined));
     if (request.query !== undefined) {
       setInput(request.query);
       setCaret(request.query.length);

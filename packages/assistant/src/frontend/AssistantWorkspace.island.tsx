@@ -31,6 +31,7 @@ import {
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { type CloudSearchTag, loadCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
@@ -115,6 +116,8 @@ import {
   assistantCommandScopes,
   assistantCommandSections,
   assistantComposerCommands,
+  assistantExcludedRefs,
+  assistantInsertCommands,
   createAssistantCommandSession,
   createAssistantTaskRunKeys,
 } from "./composer-commands";
@@ -1378,6 +1381,21 @@ export default function AssistantWorkspace(props: Props) {
     const projectComposer = () => Boolean(composerProps.projectId);
     // A Project composer starts new chats; a response still running in the previous chat does not block it.
     const composerRunning = () => !projectComposer() && chat.running();
+    const [catalogTags, setCatalogTags] = createSignal<readonly CloudSearchTag[]>([]);
+    let catalogOpening: number | undefined;
+    const attachmentCount = createMemo(() => composerAttachmentsFor(sessionKey()).length);
+    const mentionCount = createMemo(() => mentionsFor(sessionKey()).length);
+    const insert = createMemo(() =>
+      assistantInsertCommands({
+        copy: commandCopy(),
+        locale: locale(),
+        tags: catalogTags(),
+        attachmentCount: attachmentCount(),
+        partCount: attachmentCount() + mentionCount(),
+        excludeRefs: () => assistantExcludedRefs(composerAttachmentsFor(sessionKey()), mentionsFor(sessionKey())),
+        fileSelectionDisabled: composerRunning(),
+      }),
+    );
     const commandSession = createAssistantCommandSession();
     onCleanup(() => commandSession.dispose());
     const searchChat = () => {
@@ -1473,61 +1491,72 @@ export default function AssistantWorkspace(props: Props) {
           mentions={mentionsFor(sessionKey())}
           onMentionsChange={(mentions) => setMentionsFor(sessionKey(), mentions)}
           commandSections={assistantCommandSections(commandCopy())}
-          commandScopes={assistantCommandScopes(commandCopy(), locale())}
-          commands={assistantBuiltInCommands({
-            copy: commandCopy(),
-            projectComposer: projectComposer(),
-            // A chat in a project counts as assigned even before the project list has its name.
-            projectName:
-              composerProps.projectName ??
-              (chat.conversation()?.projectId
-                ? (projects().find((project) => project.id === chat.conversation()?.projectId)?.name ?? "")
-                : undefined),
-            running: composerRunning(),
-            recording: dictation.recording(),
-            models: aiChatModelOptions(props.models),
-            selectedModelId: selectedModelId(),
-            searchChat,
-            hasMessages: chat.messages().length > 0,
-            hasAssistantMessage: chat.messages().some((message) => message.message.role === "assistant"),
-            compact: async () => {
-              const key = sessionKey();
-              if (!(await chat.compactConversation({ modelProfileId: selectedModelId() || undefined })))
-                throw commandFailure(key, commandCopy().compactFailed);
-              // The request queues a compaction turn; the chat shows its progress and result, so this only says it started.
-              return { done: commandCopy().compactDone };
-            },
-            fork: async () => {
-              const key = sessionKey();
-              const fail = () => commandFailure(key, commandCopy().forkFailed);
-              const target = [...chat.messages()].reverse().find((message) => message.message.role === "assistant");
-              if (!target) return "cancelled";
-              const saved = await saveComposer(key, key);
-              if (!saved) throw fail();
-              if (sessionKey() !== key) return "cancelled";
-              const fork = await chat.forkMessage(target.id, {});
-              if (!fork) throw fail();
-              hydrateComposer(fork.id, { ...fork.draft, content: saved.content });
-              editComposerSession(session(fork.id));
-              // The fork exists and is open now; only saving the copied draft there failed.
-              if (!(await saveComposer(fork.id, fork.id))) throw commandFailure(fork.id, commandCopy().forkDraftNotSaved, false);
-              if (chat.activeConversationId() === fork.id) focusComposer();
-              return { done: commandCopy().forkDone };
-            },
-            newChat: async () => {
-              const key = sessionKey();
-              const title = projectComposer() ? undefined : chat.conversation()?.title;
-              const hasRemainingDraft = Boolean(composerDraft(key).trim());
-              if (chat.activeConversationId() && !projectComposer() && !(await saveComposer(key, key)))
-                throw commandFailure(key, commandCopy().newChatFailed);
-              if (sessionKey() !== key) return "cancelled";
-              // A failed creation resolves to null; report it instead of a success line.
-              if (!(await createAndFocusConversation())) throw commandFailure(key, commandCopy().newChatFailed);
-              if (title && hasRemainingDraft) return { done: commandCopy().newChatDraftKept({ title }) };
-            },
-          })}
-          searchCommands={(query, signal, search) =>
-            assistantComposerCommands({
+          commandScopes={[...assistantCommandScopes(commandCopy(), locale()), ...insert().scopes]}
+          commandFallback={insert().fallback}
+          commands={[
+            ...insert().commands,
+            ...assistantBuiltInCommands({
+              copy: commandCopy(),
+              projectComposer: projectComposer(),
+              // A chat in a project counts as assigned even before the project list has its name.
+              projectName:
+                composerProps.projectName ??
+                (chat.conversation()?.projectId
+                  ? (projects().find((project) => project.id === chat.conversation()?.projectId)?.name ?? "")
+                  : undefined),
+              running: composerRunning(),
+              recording: dictation.recording(),
+              models: aiChatModelOptions(props.models),
+              selectedModelId: selectedModelId(),
+              searchChat,
+              hasMessages: chat.messages().length > 0,
+              hasAssistantMessage: chat.messages().some((message) => message.message.role === "assistant"),
+              compact: async () => {
+                const key = sessionKey();
+                if (!(await chat.compactConversation({ modelProfileId: selectedModelId() || undefined })))
+                  throw commandFailure(key, commandCopy().compactFailed);
+                // The request queues a compaction turn; the chat shows its progress and result, so this only says it started.
+                return { done: commandCopy().compactDone };
+              },
+              fork: async () => {
+                const key = sessionKey();
+                const fail = () => commandFailure(key, commandCopy().forkFailed);
+                const target = [...chat.messages()].reverse().find((message) => message.message.role === "assistant");
+                if (!target) return "cancelled";
+                const saved = await saveComposer(key, key);
+                if (!saved) throw fail();
+                if (sessionKey() !== key) return "cancelled";
+                const fork = await chat.forkMessage(target.id, {});
+                if (!fork) throw fail();
+                hydrateComposer(fork.id, { ...fork.draft, content: saved.content });
+                editComposerSession(session(fork.id));
+                // The fork exists and is open now; only saving the copied draft there failed.
+                if (!(await saveComposer(fork.id, fork.id))) throw commandFailure(fork.id, commandCopy().forkDraftNotSaved, false);
+                if (chat.activeConversationId() === fork.id) focusComposer();
+                return { done: commandCopy().forkDone };
+              },
+              newChat: async () => {
+                const key = sessionKey();
+                const title = projectComposer() ? undefined : chat.conversation()?.title;
+                const hasRemainingDraft = Boolean(composerDraft(key).trim());
+                if (chat.activeConversationId() && !projectComposer() && !(await saveComposer(key, key)))
+                  throw commandFailure(key, commandCopy().newChatFailed);
+                if (sessionKey() !== key) return "cancelled";
+                // A failed creation resolves to null; report it instead of a success line.
+                if (!(await createAndFocusConversation())) throw commandFailure(key, commandCopy().newChatFailed);
+                if (title && hasRemainingDraft) return { done: commandCopy().newChatDraftKept({ title }) };
+              },
+            }),
+          ]}
+          searchCommands={(query, signal, search) => {
+            if (catalogOpening !== search.opening) {
+              catalogOpening = search.opening;
+              void loadCloudComposerCatalog(locale()).then(
+                (catalog) => setCatalogTags(catalog.tags),
+                () => {},
+              );
+            }
+            return assistantComposerCommands({
               query,
               scope: search.scope,
               session: search.opening,
@@ -1571,8 +1600,8 @@ export default function AssistantWorkspace(props: Props) {
                   }),
                 ]);
               },
-            })
-          }
+            });
+          }}
           submitTools={<dictation.Control />}
           footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}
           value={composerDraft(sessionKey())}
