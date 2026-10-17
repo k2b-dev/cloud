@@ -20,5 +20,9 @@ export function openPanel(provider: string, options?: { search?: string }): bool
 
 /** Closes the panel when it is open. */
 export function closePanel(): void {
+  if (window.parent !== window && document.querySelector("[data-cloud-panel-page]")) {
+    window.parent.postMessage({ type: "cloud.panel.close" }, location.origin);
+    return;
+  }
   window.dispatchEvent(new CustomEvent<PanelRequest>("cloud.panel.request", { detail: { action: "close" } }));
 }

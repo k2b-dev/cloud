@@ -216,7 +216,8 @@ as a chat’s info. Below 48 rem it covers the window with the page surface and
 safe-area padding, without a grabber, detents, drag gestures, or extra space in
 Main; Escape and focus handling stay the same. From 48 rem it remains the
 normal floating Detail. While the page is open on a phone, the rest of the
-workspace is inert.
+workspace is inert. Tab from the body or chrome covered by the page enters the
+page, while controls visible above it keep their own Tab order.
 
 Pass `onClose` when the application can close or deselect the detail. Escape,
 a downward phone drag, and a rightward touch-tablet swipe call the same action

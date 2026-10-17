@@ -275,7 +275,7 @@ else {
 
   test("SSR-open keeps the server iframe and still hears its later ready", () => {
     const h = setup(1440, true);
-    expect(h.serverFrame).not.toBeNull();
+    if (!h.serverFrame) throw new Error("Expected an SSR iframe");
     expect(h.frame()).toBe(h.serverFrame);
     expect(h.slot.querySelectorAll("iframe")).toHaveLength(1);
     expect(h.slot.dataset.state).toBe("loading");
@@ -289,6 +289,7 @@ else {
     const h = setup(1440, true, true, (frame) => {
       frame.contentDocument!.documentElement.dataset.cloudPanelReady = "fixture";
     });
+    if (!h.serverFrame) throw new Error("Expected an SSR iframe");
     expect(h.frame()).toBe(h.serverFrame);
     expect(h.slot.dataset.state).toBe("ready");
   });

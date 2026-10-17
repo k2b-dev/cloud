@@ -14,18 +14,53 @@ else {
     cleanup();
     jest.useRealTimers();
   });
-  const mount = (embedded = true) => {
+  const mount = (embedded = true, crossOrigin = false) => {
     const dom = createDomTestHarness();
     const postMessage = mock((_message: unknown, _targetOrigin: string) => {});
-    Object.defineProperty(dom.window, "parent", { configurable: true, value: embedded ? { postMessage } : dom.window });
+    const parentDocument = document.implementation.createHTMLDocument();
+    parentDocument.documentElement.className = "dark host";
+    const parent = Object.assign(new dom.window.EventTarget(), { postMessage });
+    Object.defineProperty(parent, "document", {
+      get: () => {
+        if (crossOrigin) throw new DOMException("Blocked cross-origin parent", "SecurityError");
+        return parentDocument;
+      },
+    });
+    Object.defineProperty(dom.window, "parent", { configurable: true, value: embedded ? parent : dom.window });
+    document.documentElement.className = "light provider";
     document.cookie = `cloud.timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}; Path=/`;
     const dispose = render(() => createComponent(PanelRuntime, { provider: "fixture" }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();
     };
-    return { postMessage, dispose };
+    return { dom, postMessage, dispose, parent, parentDocument };
   };
+  for (const teardown of ["dispose", "pagehide"]) {
+    test(`mirrors the host theme live and removes its listener on ${teardown}`, () => {
+      const h = mount();
+      expect(document.documentElement.className).toBe("provider dark");
+      const changeTheme = (theme: string) => {
+        h.parentDocument.documentElement.className = `${theme} host`;
+        h.parent.dispatchEvent(new h.dom.window.Event("cloud:theme-preference"));
+      };
+      changeTheme("light");
+      expect(document.documentElement.className).toBe("provider light");
+      changeTheme("dark");
+      expect(document.documentElement.className).toBe("provider dark");
+      if (teardown === "dispose") h.dispose();
+      else window.dispatchEvent(new Event("pagehide"));
+      changeTheme("light");
+      expect(document.documentElement.className).toBe("provider dark");
+    });
+  }
+  test("a cross-origin parent cannot throw during mount and keys still post to the provider origin", () => {
+    const h = mount(true, true);
+    expect(document.documentElement.className).toBe("light provider");
+    const apple = keyboardPlatform() === "apple";
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "j", metaKey: apple, ctrlKey: !apple, cancelable: true }));
+    expect(h.postMessage.mock.calls.at(-1)).toEqual([{ type: "cloud.panel.close" }, "http://localhost"]);
+  });
   test("posts exact ready and mod+J close messages to the origin and cleans up", () => {
     const h = mount();
     expect(h.postMessage.mock.calls).toEqual([[{ type: "cloud.panel.ready", v: 1, provider: "fixture" }, "http://localhost"]]);
@@ -64,6 +99,7 @@ else {
   });
   test("a standalone provider installs input mode without posting or intercepting keys", () => {
     const h = mount(false);
+    expect(document.documentElement.className).toBe("light provider");
     const event = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
     window.dispatchEvent(event);
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));

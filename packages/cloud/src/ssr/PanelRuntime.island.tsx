@@ -8,6 +8,7 @@ export default function PanelRuntime(props: { provider?: string }) {
     const disposeInput = installInputModeController();
     const deferred = new Set<ReturnType<typeof setTimeout>>();
     const embedded = window.parent !== window;
+    let disposeTheme = () => {};
     const close = () => window.parent.postMessage({ type: "cloud.panel.close" }, location.origin);
     const key = (event: KeyboardEvent) => {
       if (event.isComposing || event.defaultPrevented || event.altKey || event.shiftKey) return;
@@ -24,6 +25,21 @@ export default function PanelRuntime(props: { provider?: string }) {
       }
     };
     if (embedded) {
+      try {
+        const parent = window.parent;
+        const parentRoot = parent.document.documentElement;
+        const syncTheme = () => {
+          for (const theme of ["light", "dark"]) {
+            document.documentElement.classList.toggle(theme, parentRoot.classList.contains(theme));
+          }
+        };
+        parent.addEventListener("cloud:theme-preference", syncTheme);
+        disposeTheme = () => parent.removeEventListener("cloud:theme-preference", syncTheme);
+        syncTheme();
+      } catch {
+        // A cross-origin parent cannot share its document or theme events.
+      }
+      window.addEventListener("pagehide", disposeTheme);
       // The shell reads this mark when its controller arrives after the message.
       if (props.provider) document.documentElement.dataset.cloudPanelReady = props.provider;
       window.parent.postMessage({ type: "cloud.panel.ready", v: 1, provider: props.provider }, location.origin);
@@ -31,6 +47,8 @@ export default function PanelRuntime(props: { provider?: string }) {
     }
     onCleanup(() => {
       disposeInput();
+      disposeTheme();
+      window.removeEventListener("pagehide", disposeTheme);
       window.removeEventListener("keydown", key);
       for (const timer of deferred) clearTimeout(timer);
     });

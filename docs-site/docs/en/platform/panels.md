@@ -62,6 +62,8 @@ flex column with the reader's theme. It includes the provider runtime, without
 Cloud's rail, header, footer, banners, or another panel slot. Use it for the
 provider page instead of nesting `Layout` inside the iframe. Keep same-origin
 embedding allowed; see [Build and deploy](/en/docs/operations/build-and-deploy#enable-panel-providers).
+The embedded provider page follows the host's light or dark theme live, without
+reloading.
 
 `requiresRoles` filters visibility only, using the same role rules as app
 navigation. **The slot grants nothing.** The provider route, APIs, and services
@@ -89,6 +91,8 @@ workspace detail drawer, and moves focus into the panel. `search` replaces the
 provider URL's query; a leading `?` is optional. Values other than strings and
 strings longer than 2048 characters are ignored. Search is never stored in the
 panel cookie.
+Inside a provider page, `openPanel()` returns `false` because that page has no
+slot.
 
 With multiple providers, Cloud shows tabs and a Panel button in the rail and
 phone header. A single provider has a title instead of tabs; use its app action
@@ -100,9 +104,10 @@ Ctrl+J, or Cmd+J on Apple devices, opens or closes the panel. It also closes the
 panel from inside a provider. Escape closes it when focus is inside the slot or
 provider. A provider's menu, dialog, or search field can keep Escape by calling
 `preventDefault()`; the provider runtime checks after event dispatch finishes.
-The close button and `closePanel()` also close it. Focus returns to the opener,
-or to the app's main area if the opener is gone or hidden. Opening a workspace
-Detail does not close the panel.
+The close button also closes it. `closePanel()` works both in the host app and
+inside the provider page. Focus returns to the opener, or to the app's main area
+if the opener is gone or hidden. Opening a workspace Detail does not close the
+panel.
 
 ## Size and persistence
 
