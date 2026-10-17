@@ -410,9 +410,8 @@ describe("standalone page load in a browser", () => {
       for (const locale of ["en", "de"] as const) {
         const context = `${viewport.name} ${locale}`;
         const page = await firstFrameAndLoad(viewport, locale);
-        expect(page.fonts, context).toEqual(
-          expect.arrayContaining(["IBM Plex Sans 400", "IBM Plex Sans 500", "IBM Plex Sans 600", "tabler-icons 400"]),
-        );
+        // Buttons and labels are semibold, so this page sets no medium text.
+        expect(page.fonts, context).toEqual(expect.arrayContaining(["IBM Plex Sans 400", "IBM Plex Sans 600", "tabler-icons 400"]));
         expect(page.loaded, context).toEqual(page.firstFrame);
         expect(page.shifts, context).toEqual([]);
       }
