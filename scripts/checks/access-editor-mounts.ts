@@ -7,10 +7,17 @@ import type { Finding, Rule } from "./rule";
 const refreshes = (node: ts.Node): boolean => {
   if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "refreshing")
     return true;
+  if (
+    ts.isPropertyAccessExpression(node) &&
+    node.name.text === "loading" &&
+    !(ts.isCallExpression(node.parent) && node.parent.expression === node)
+  )
+    return true;
   return ts.forEachChild(node, (child) => refreshes(child) || undefined) === true;
 };
 
 export const checkSource = (file: string, source: string): Finding[] => {
+  // App-local wrappers such as Assistant's StudioPermissions are not followed.
   if (isTestFile(file) || (!source.includes("<PermissionEditor") && !source.includes("<ScopedPermissionEditor"))) return [];
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const findings: Finding[] = [];
@@ -33,7 +40,7 @@ export const checkSource = (file: string, source: string): Finding[] => {
         file,
         line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
         message:
-          "Access editors must stay mounted across refetches: they merge new entries by id so keyboard focus and open member lists survive. Remove keyed and refreshing() gates from ancestor Show/Match elements.",
+          "Access editors must stay mounted across refetches: they merge new entries by id so keyboard focus and open member lists survive. Remove keyed, refreshing(), and loading property gates from ancestor Show/Match elements.",
       });
     }
     ts.forEachChild(node, (child) => visit(child, unstable));

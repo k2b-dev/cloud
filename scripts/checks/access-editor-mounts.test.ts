@@ -4,7 +4,14 @@ import { checkSource, rule } from "./access-editor-mounts";
 
 for (const tag of ["Show", "Match"]) {
   for (const editor of ["PermissionEditor", "ScopedPermissionEditor"]) {
-    for (const gate of ["keyed", "keyed={true}", 'keyed="false"', "keyed={flag()}", "when={!query.refreshing() && !query.error()}"]) {
+    for (const gate of [
+      "keyed",
+      "keyed={true}",
+      'keyed="false"',
+      "keyed={flag()}",
+      "when={!query.refreshing() && !query.error()}",
+      "when={!access.loading}",
+    ]) {
       test(`${tag} ${gate} must not remount ${editor}`, () => {
         const findings = checkSource("app.tsx", `<${tag} ${gate}><div>\n{() => <${editor} initialEntries={entries()} />}</div></${tag}>`);
         expect(findings).toHaveLength(1);
@@ -25,6 +32,7 @@ test("allows stable Show and Match ancestors, literal keyed false, and unrelated
     </Show>;
     <Show keyed when={data()}><OtherEditor /></Show>;
     <Show when={!query.refreshing()}><OtherEditor /></Show>;
+    <Show when={!query.loading()}><PermissionEditor /></Show>;
     <ScopedPermissionEditor initialEntries={data()} />;
   `,
     ),

@@ -27,9 +27,9 @@ export type GrantableLevel = Exclude<PermissionLevel, "none">;
 export type AllowedLevel = GrantableLevel | { level: GrantableLevel; scope?: string; label?: string; icon?: string; description?: string };
 
 type PermissionEditorProps = {
-  /** The editor mounts from this list and keeps its own copy after successful changes. A later
-   *  changed list merges by entry id once no change is saving. Keep the editor
-   *  mounted (no keyed Show or unmount during refresh) and pass refetched data. */
+  /** The editor mounts from this list and merges later lists by entry id once no change is saving.
+   *  Rows the caller changed since its last list win; unchanged rows keep the editor's confirmed result.
+   *  Keep the editor mounted (no keyed Show or unmount during refresh) and pass refetched data. */
   initialEntries: AccessEntry[];
 
   /** Whether the current user can edit permissions. When `false`, the
@@ -180,7 +180,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   // A store keeps each row's identity across level changes, so an expanded member list stays open. It holds
   // copies: store writes go into the objects themselves, and the caller's entries are not the editor's to change.
   const initialEntries = props.initialEntries;
-  let appliedCallerSnapshot = JSON.stringify(initialEntries);
+  let appliedCallerEntries = new Map(initialEntries.map((entry) => [entry.id, JSON.stringify(entry)]));
   const [entries, setEntries] = createStore<AccessEntry[]>(initialEntries.map((entry) => ({ ...entry })));
   const [pending, setPending] = createSignal<string | null>(null);
   const grantPending = () => pending() !== null;
@@ -285,16 +285,26 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   const busy = () => grantPending() || updateMut.loading() || revokeMut.loading();
   createEffect(() => {
     const next = props.initialEntries;
-    const snapshot = JSON.stringify(next);
+    const nextCallerEntries = new Map(next.map((entry) => [entry.id, JSON.stringify(entry)]));
     // Mutation loading clears before onSuccess; wait for its local writes and onFinally too.
-    if (busy() || updating() !== null || revoking() !== null || snapshot === appliedCallerSnapshot) return;
-    setEntries(
-      reconcile(
-        next.map((entry) => ({ ...entry })),
-        { key: "id" },
-      ),
-    );
-    appliedCallerSnapshot = snapshot;
+    if (busy() || updating() !== null || revoking() !== null) return;
+    if (
+      nextCallerEntries.size === appliedCallerEntries.size &&
+      next.every((entry) => nextCallerEntries.get(entry.id) === appliedCallerEntries.get(entry.id))
+    )
+      return;
+    // Rows the caller changed since its last list win; unchanged rows keep the editor's confirmed result.
+    const localEntries = new Map(entries.map((entry) => [entry.id, entry]));
+    const merged: AccessEntry[] = [];
+    for (const entry of next) {
+      const row = nextCallerEntries.get(entry.id) !== appliedCallerEntries.get(entry.id) ? entry : localEntries.get(entry.id);
+      if (row) merged.push({ ...row });
+    }
+    for (const entry of entries) {
+      if (!nextCallerEntries.has(entry.id) && !appliedCallerEntries.has(entry.id)) merged.push({ ...entry });
+    }
+    setEntries(reconcile(merged, { key: "id" }));
+    appliedCallerEntries = nextCallerEntries;
   });
   // The service refuses to remove the last manager; the row says so up front.
   const lastManagerId = createMemo(() => {

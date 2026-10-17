@@ -459,8 +459,9 @@ Public and service-account selection require `allowPublic` and
 
 `PermissionEditor` mounts from `initialEntries` and keeps its own copy after
 successful changes. It keeps rows by entry id and merges a later changed
-`initialEntries` list once no change is saving. Callers can pass refetched data;
-a list equal to the last applied caller list does not undo local changes.
+`initialEntries` list once no change is saving. Rows the caller changed since
+its previous list replace the editor's rows; unchanged rows keep the editor's
+confirmed result, so a refetch that started before a save does not undo it.
 
 Keep the editor mounted during a refresh. Do not wrap it in a keyed `Show` or
 `Match`, or hide it while a query is refreshing: remounting drops keyboard

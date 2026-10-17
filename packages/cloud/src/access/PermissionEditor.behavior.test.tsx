@@ -1081,8 +1081,8 @@ describe("PermissionEditor caller refreshes", () => {
       dom.root,
     );
     const chips = () => Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button.k2b-select-chip"));
-    const chooseEdit = () => {
-      const row = chips()[0]!.closest(".group\\/access-row")!;
+    const chooseEdit = (index = 0) => {
+      const row = chips()[index]!.closest(".group\\/access-row")!;
       Array.from(row.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
         .find((item) => item.textContent?.startsWith("Edit"))!
         .click();
@@ -1194,6 +1194,59 @@ describe("PermissionEditor caller refreshes", () => {
       view.setData(view.initial.map((entry) => ({ ...entry })));
       await Promise.resolve();
       expect(view.chips()[0]!.textContent).toBe("Edit");
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a stale caller list acknowledging one saved update preserves another saved update and both chips", async () => {
+    const view = await setup();
+    try {
+      const originals = view.chips();
+      view.chooseEdit(1);
+      view.finishUpdate();
+      await waitFor(() => !originals[1]!.disabled, "the first saved update");
+      // This refetch started before the next update and only saw the first one.
+      const stale = view.initial.map((entry, index) => ({ ...entry, permission: index === 1 ? ("write" as const) : entry.permission }));
+      view.chooseEdit();
+      view.finishUpdate();
+      await waitFor(() => !originals[0]!.disabled, "the second saved update");
+      view.setData(stale);
+      await Promise.resolve();
+      expect(view.chips().map((chip) => chip.textContent)).toEqual(["Edit", "Edit"]);
+      originals.forEach((chip, index) => expect(view.chips()[index]).toBe(chip));
+      expect(stale.map((entry) => entry.permission)).toEqual(["read", "write"]);
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a stale caller list with another changed row does not restore a confirmed local revoke", async () => {
+    const view = await setup();
+    try {
+      const survivor = view.chips()[1]!;
+      view.revokeFirst();
+      await waitFor(view.revokeStarted, "the confirmed revoke");
+      view.finishRevoke();
+      await waitFor(() => view.chips().length === 1 && !survivor.disabled, "the saved revoke");
+      view.setData(view.initial.map((entry, index) => ({ ...entry, permission: index === 1 ? ("write" as const) : entry.permission })));
+      await Promise.resolve();
+      expect(view.chips()).toHaveLength(1);
+      expect(view.chips()[0]).toBe(survivor);
+      expect(survivor.textContent).toBe("Edit");
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a caller list removes a row present in the base and keeps the surviving chip", async () => {
+    const view = await setup();
+    try {
+      const originals = view.chips();
+      view.setData([{ ...view.initial[1]! }]);
+      await waitFor(() => view.chips().length === 1, "the caller removal");
+      expect(originals[0]!.isConnected).toBe(false);
+      expect(view.chips()[0]).toBe(originals[1]!);
     } finally {
       view.done();
     }
