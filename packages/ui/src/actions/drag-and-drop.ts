@@ -297,7 +297,10 @@ export const bindDragSource = (
    * whole source inside editable content, such as a paragraph in an editor.
    */
   const ignored = (target: EventTarget | null) => {
-    if (target instanceof HTMLElement && target.isContentEditable) return true;
+    // An SVG part has no editable state of its own; its nearest HTML ancestor tells.
+    let html = target instanceof Element ? target : null;
+    while (html && !(html instanceof HTMLElement)) html = html.parentElement;
+    if (html instanceof HTMLElement && html.isContentEditable) return true;
     const found = target instanceof Element ? target.closest(IGNORE) : null;
     return found !== null && source.contains(found);
   };

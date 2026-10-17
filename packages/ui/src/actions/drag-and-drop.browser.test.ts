@@ -61,7 +61,8 @@ window.mountBare = () => {
 };
 window.mountEditable = () => {
   const editor = document.createElement("div"); editor.contentEditable = "true"; document.querySelector(".rail").append(editor);
-  const paragraph = document.createElement("p"); paragraph.className = "row paragraph"; paragraph.textContent = "Paragraph text";
+  const paragraph = document.createElement("p"); paragraph.className = "row paragraph";
+  paragraph.innerHTML = 'Paragraph text <svg class="inline-icon" width="16" height="16" aria-hidden="true"><rect width="16" height="16"></rect></svg>';
   const handle = document.createElement("span"); handle.className = "handle"; handle.contentEditable = "false"; handle.textContent = "::";
   render(() => createComponent(LocaleProvider, { locale: "en", get children() {
     return createComponent(DragSource, { class: "paragraph-source", payload: { type: "demo.row", value: "paragraph", label: "Paragraph" }, children: [handle, paragraph] });
@@ -486,6 +487,15 @@ describe(`drag and drop in ${browserName}`, () => {
       await page.evaluate("window.mountEditable()");
       // The touch-only rule that turns off text selection skips editable sources through this selector.
       expect(await page.locator(".paragraph-source").evaluate((el) => el.matches(":read-write"))).toBe(true);
+      // An inline SVG has no editable state of its own and still belongs to the editable text. Pressed first, so no
+      // selection exists yet that WebKit would drag natively.
+      const icon = await center(page, ".inline-icon");
+      await page.mouse.move(icon.x, icon.y);
+      await page.mouse.down();
+      await page.mouse.move(icon.x + 30, icon.y);
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      expect(await page.locator(".k2b-drag-preview, [data-dragging]").count()).toBe(0);
+      await page.mouse.up();
       const text = await center(page, ".paragraph");
       await page.mouse.move(text.x, text.y);
       await page.mouse.down();
