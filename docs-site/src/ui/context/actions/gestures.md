@@ -8,8 +8,9 @@ of that menu, so the same action is always reachable without the gesture.
 | --- | --- |
 | Swipe right or left (touch, pen) | Runs the item with `gesture: "swipe-right"` or `"swipe-left"` |
 | Double tap (touch, pen), double-click (mouse) | Runs the item with `gesture: "double-tap"` |
-| Long press (touch, pen) | Opens the whole menu as a [`BottomSheet`](../layout/bottom-sheet) |
-| Right-click, Context Menu key, Shift+F10 | Opens the menu beside the element, as [`ContextMenu`](../actions/menus) does |
+| Long press (touch, pen), narrower than 48rem | Opens the whole menu as a [`BottomSheet`](../layout/bottom-sheet) |
+| Long press (touch, pen), from 48rem | Opens the same menu at the finger, as [`ContextMenu`](../actions/menus) shows it |
+| Right-click, two-finger click, Context Menu key, Shift+F10 | Opens at the pointer, or beside the focused element from the keyboard |
 
 A chat uses it on each message: swipe right to reply, double-tap to react with
 👍, long press for reactions and every other action. A list of records can
@@ -29,9 +30,8 @@ let that gesture run it. Each gesture belongs to at most one item; a disabled
 item also disables its gesture. `label` names the element and its menu, for
 example "Message from Nora, 10:42".
 
-`sheetTop` renders above the menu in the long-press sheet, for example a row
-of quick reactions; its `close` closes the sheet. It appears only in the
-sheet, not in the menu that a right-click opens.
+`sheetTop` renders only in the phone sheet, above the menu, for example a row
+of quick reactions. Its `close` closes the sheet.
 
 `onOpen` runs right before the menu or the sheet shows its items, so the host
 can first act on what was pressed, as the month view of the
@@ -61,15 +61,23 @@ between, for example on a link, starts over. The page does not zoom on a
 double tap inside the element. With a mouse, a double-click runs the same
 action instead of selecting a word; dragging still selects text.
 
-**Long press.** Holding a finger still for 500 ms opens the sheet with the
-menu at touch size. Moving the finger first, or lifting it, cancels. The touch
-that opened the sheet never presses anything in it. An item chosen in the
-sheet runs once the sheet has closed and left the history, so it may navigate
-or open a dialog. The sheet closes when the element goes, for example when its
-message is deleted.
+**Long press.** Hold a finger still for 500 ms. Moving more than 10 px first
+lets the page scroll and opens nothing. Lifting first cancels the hold.
+Below 48rem, the hold opens the sheet with the menu at touch size. From 48rem,
+it opens the same menu at the point where the finger went down, clamped inside
+the viewport with an 8 px inset. The width is checked when the hold fires.
+The popover stays open after the lift. Further movement of the held finger
+never scrolls the page underneath it, and the lift never presses a menu item.
+Focus moves to the first item; Escape closes the menu and returns focus to
+the element. A tap outside or a scroll closes it.
+
+The touch that opened the sheet never presses anything in it either. An item
+chosen in the sheet runs once the sheet has closed and left the history, so
+it may navigate or open a dialog. The sheet closes when the element goes,
+for example when its message is deleted.
 
 **Other input.** A second finger anywhere on the screen ends a swipe or a
-long press. A touch or pen press that ran a gesture or opened the sheet does
+long press. A touch or pen press that ran a gesture or opened the menu does
 not click afterwards, so a clickable container around the element stays
 untouched.
 
@@ -100,7 +108,10 @@ it or inside it, the Context Menu key and Shift+F10 open its menu, so every
 gesture has a keyboard and screen reader equivalent. The long-press sheet
 keeps focus on itself, so a phone shows no focus ring; for a connected
 keyboard, the arrow keys, Home, and End move into and through the items. The
-sheet is named with `label`; the phone's Back closes it.
+sheet is named with `label`; the phone's Back closes it. The popover moves
+focus to its first item. Arrow keys, Home, and End move through the items;
+Escape closes it and returns focus to the previously focused element inside
+the group, or to the group itself.
 
 Gestures are shortcuts. Keep the important actions visible as well, for
 example in the toolbar of `MessageRow`, which hover and keyboard focus show.
@@ -138,7 +149,8 @@ type GestureMenuProps = {
 
 Gestures require browser code; the server renders the element and its
 menu semantics. The sheet opens through the shared `dialogCore`, so only one
-modal stack exists.
+modal stack exists. The popover is the `ContextMenu` portal, with the same
+keyboard navigation, focus return, and dismissal behavior.
 
 ## Example
 
