@@ -258,9 +258,9 @@ test.each(["write", "book"] as const)(
 );
 
 test.each([
-  ["attachments", "/app/notebooks/:id/attachments", "/app/notebooks/book01/attachments", attachmentsHandler, false],
-  ["tag", "/app/notebooks/:id/tags/:tag", "/app/notebooks/book01/tags/ideas", tagHandler, false],
-  ["book-mode tag", "/app/notebooks/:id/tags/:tag", "/app/notebooks/book01/tags/ideas?mode=book", tagHandler, true],
+  ["attachments", "/app/notebooks/:id/attachments", "/app/notebooks/book01/attachments?search=x&page=2", attachmentsHandler, false],
+  ["tag", "/app/notebooks/:id/tags/:tag", "/app/notebooks/book01/tags/ideas?search=x&page=2", tagHandler, false],
+  ["book-mode tag", "/app/notebooks/:id/tags/:tag", "/app/notebooks/book01/tags/ideas?mode=book&search=x&page=2", tagHandler, true],
 ] as const)("the %s page of a notebook also records the notebook", async (_name, route, path, pageHandler, bookMode) => {
   spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
@@ -292,6 +292,10 @@ test.each([
 
   expect(others).toEqual([]);
   expect(islandProps(island?.attributes["data-props"])).toEqual({ notebookId: "book01" });
+  const [links] = await select(html, ".notebook-sidebar-foot a");
+  expect(links?.attributes.href).toBe(
+    `/app/notebooks/book01?mode=graph${bookMode ? "&amp;from=book" : ""}&amp;back=${encodeURIComponent(path)}`,
+  );
 });
 
 const renderNotebookWithNotes = async (preferences: Record<string, unknown>, mode: "graph" | "write" | "readonly" = "graph") => {
@@ -718,3 +722,18 @@ test("an empty graph preserves the Read-only origin when closing to the notebook
   const close = await select(html, 'a[aria-label="Graph schließen"]');
   expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01?mode=readonly"]);
 });
+
+for (const permission of ["write", "read"] as const) {
+  test(`${permission} graph Close and Links preserve a return page with its query`, async () => {
+    const back = `/app/notebooks/book01/${permission === "read" ? "tags/garden?mode=book&search=x&page=2" : "attachments?search=x&page=2"}`;
+    const html = await renderLinkedNotebook(permission, `graph&back=${encodeURIComponent(back)}`);
+    expect((await select(html, 'a[aria-label="Close graph"]'))[0]?.attributes.href).toBe(back.replaceAll("&", "&amp;"));
+    const rows = await select(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
+    const href = `/app/notebooks/book01?mode=graph${permission === "read" ? "&note=note01&from=book" : ""}&back=${encodeURIComponent(back)}`;
+    expect(rows[0]?.attributes.href).toBe(href.replaceAll("&", "&amp;"));
+    const navigation: { items: { id: string; href?: string }[] } = JSON.parse(
+      (await select(html, "script[data-cloud-workspace-navigation]"))[0]!.text,
+    );
+    expect(navigation.items.find((item) => item.id === "graph")?.href).toBe(href);
+  });
+}

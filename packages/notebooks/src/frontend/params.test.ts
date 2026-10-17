@@ -24,3 +24,9 @@ test.each(["write", "readonly"] as const)("graph URLs preserve the %s origin", (
   expect(buildGraphUrl("book01", "note01", mode)).toBe(`/app/notebooks/book01?mode=graph&note=note01&from=${mode}`);
   expect(buildGraphUrl("book01", null, mode)).toBe(`/app/notebooks/book01?mode=graph&from=${mode}`);
 });
+
+test("graph URLs append the origin page after the presentation", () => {
+  const back = "/app/notebooks/book01/tags/garden?mode=book&search=x&page=2";
+  expect(buildGraphUrl("book01", null, "book", back)).toBe(`/app/notebooks/book01?mode=graph&from=book&back=${encodeURIComponent(back)}`);
+  expect(buildGraphUrl("book01", null, undefined, back)).toBe(`/app/notebooks/book01?mode=graph&back=${encodeURIComponent(back)}`);
+});

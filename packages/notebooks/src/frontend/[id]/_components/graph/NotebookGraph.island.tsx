@@ -13,6 +13,7 @@ type Props = {
   selectedNoteId: string | null;
   graph: NoteGraph;
   from?: PresentationMode;
+  backHref?: string;
 };
 
 /**
@@ -97,6 +98,7 @@ export default function NotebookGraph(props: Props) {
   let clearPointerGesture: (() => void) | undefined;
 
   const closeHref = () => {
+    if (props.backHref) return props.backHref;
     const selected = simNodes.find((node) => node.id === props.selectedNoteId);
     return selected
       ? buildNoteUrl(props.notebookId, selected.id, props.from)

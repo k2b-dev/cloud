@@ -55,6 +55,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const snapshotNotebook = await notebooksService.notebook.get({ id: notebookId });
   if (!snapshotNotebook) return { kind: "not_found" as const };
   notebook = snapshotNotebook;
+  const graphBack = isGraphMode ? parseGraphBack(c.req.query("back"), notebook.shortId) : undefined;
   const locale = getLocale(c);
   const internalTree = await notebooksService.note.getTree({ notebookId, locale });
   const tree = projectTree(internalTree, notebook.shortId);
@@ -152,7 +153,8 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const ctx: NotebookContext = {
     notebook: publicNotebook,
     tree,
-    selectedNoteId,
+    // A graph opened from a list has a focus note, but no note selected in its navigation.
+    selectedNoteId: graphBack ? null : selectedNoteId,
     userId: user.id,
     settings,
     navigationHidden: parseNavigationHidden(cookieHeader),
@@ -181,6 +183,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     isGraphMode,
     graphFrom,
     graphShell,
+    graphBack,
     selectedNoteId,
     selectedNote: selected.note,
     selectedRouteState: selected.routeState,
@@ -203,6 +206,20 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     initialCommentsPage,
     dateConfig: ctx.dateConfig,
   };
+}
+
+function parseGraphBack(back: string | undefined, notebookShortId: string): string | undefined {
+  if (!back?.startsWith("/") || back.startsWith("//") || back.startsWith("/\\")) return undefined;
+  try {
+    const url = new URL(back, "https://notebooks.invalid");
+    const notebookPath = `/app/notebooks/${notebookShortId}`;
+    if (url.origin !== "https://notebooks.invalid" || (url.pathname !== notebookPath && !url.pathname.startsWith(`${notebookPath}/`))) {
+      return undefined;
+    }
+    return url.pathname + url.search;
+  } catch {
+    return undefined;
+  }
 }
 
 async function resolveSelectedNoteId(params: {

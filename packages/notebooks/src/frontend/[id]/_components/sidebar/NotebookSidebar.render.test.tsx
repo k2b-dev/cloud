@@ -38,12 +38,12 @@ describe("Notebook workspace container head", () => {
     sidebarFilter: {},
   });
 
-  const renderSidebar = (value = ctx(), current?: "attachments" | "graph", locale = "en") =>
+  const renderSidebar = (value = ctx(), current?: "attachments" | "graph", locale = "en", graphBack?: string) =>
     renderToString(() =>
       createComponent(LocaleProvider, {
         locale,
         get children() {
-          return createComponent(NotebookSidebar, { ctx: value, current });
+          return createComponent(NotebookSidebar, { ctx: value, current, graphBack });
         },
       }),
     );
@@ -112,5 +112,17 @@ describe("Notebook workspace container head", () => {
     expect((await selectHtml(html, '.k2b-sidebar-switcher__actions a[href="/app/notebooks"]'))[0]?.text).toContain(
       locale === "en" ? "All notebooks" : "Alle Notizbücher",
     );
+  });
+
+  test.each([null, "note01"])("Links carries the return page only without a selected note (%s)", async (selectedNoteId) => {
+    const graphBack = "/app/notebooks/Book01/attachments?search=x&page=2";
+    const html = renderSidebar({ ...ctx(), selectedNoteId }, undefined, "en", graphBack);
+    const links = await selectHtml(html, ".notebook-sidebar-foot a");
+    const href = `/app/notebooks/Book01?mode=graph${selectedNoteId ? "&note=note01" : `&back=${encodeURIComponent(graphBack)}`}`;
+    expect(links[0]?.attributes.href).toBe(href.replaceAll("&", "&amp;"));
+    const navigation: { items: NavigationItem[] } = JSON.parse(
+      (await selectHtml(html, "script[data-cloud-workspace-navigation]"))[0]!.text,
+    );
+    expect(navigation.items.find((item) => item.id === "graph")?.href).toBe(href);
   });
 });

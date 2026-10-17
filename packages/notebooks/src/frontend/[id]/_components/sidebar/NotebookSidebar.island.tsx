@@ -45,6 +45,7 @@ type Props = {
   editorToolbar?: boolean;
   /** The notebook page this sidebar stands beside, when it is one of the footer's items. */
   current?: "attachments" | "graph";
+  graphBack?: string;
 };
 
 /** The filter in the address; showing a hidden navigation mounts the sidebar again after the address may have changed. */
@@ -90,7 +91,8 @@ export default function NotebookSidebar(props: Props) {
   };
   const attachmentsHref = () => buildAttachmentsUrl(notebook().id, props.ctx.presentationMode);
   // The graph starts from the open note; while it shows, its footer item is the current page instead of that note.
-  const graphHref = () => buildGraphUrl(notebook().id, selectedNoteId(), props.ctx.presentationMode);
+  const graphHref = () =>
+    buildGraphUrl(notebook().id, selectedNoteId(), props.ctx.presentationMode, selectedNoteId() ? undefined : props.graphBack);
   const currentNoteId = () => (props.current === "graph" ? null : selectedNoteId());
   const openSettings = () =>
     openNotebookSettingsDialog({

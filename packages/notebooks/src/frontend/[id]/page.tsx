@@ -54,6 +54,8 @@ export default ssr<AuthContext>(async (c) => {
           locked={!!data.selectedNote?.lockedAt}
           navigationHidden={data.ctx.navigationHidden}
           graph={graph}
+          backHref={data.graphBack}
+          graphBack={data.graphBack}
           appUrl={data.appUrl}
           cursor={data.ctx.workspaceCursor}
         />
@@ -140,7 +142,12 @@ export default ssr<AuthContext>(async (c) => {
         )}
 
         {/* The writable editor is the one with the toolbar and its navigation toggle. */}
-        <NotebookSidebar ctx={ctx} editorToolbar={editorOwnsWorkspaceSocket} current={isGraphMode ? "graph" : undefined} />
+        <NotebookSidebar
+          ctx={ctx}
+          editorToolbar={editorOwnsWorkspaceSocket}
+          current={isGraphMode ? "graph" : undefined}
+          graphBack={data.graphBack}
+        />
 
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false}>
@@ -156,7 +163,13 @@ export default ssr<AuthContext>(async (c) => {
                 initialTotal={versionHistory?.total}
               />
             ) : isGraphMode && graph ? (
-              <NotebookGraph notebookId={notebook.id} selectedNoteId={selectedNoteId} graph={graph} from={ctx.presentationMode} />
+              <NotebookGraph
+                notebookId={notebook.id}
+                selectedNoteId={selectedNoteId}
+                graph={graph}
+                from={ctx.presentationMode}
+                backHref={data.graphBack}
+              />
             ) : selectedNote ? (
               <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" data-full-width={ctx.fullWidth ? "" : undefined}>
                 {readonlyMode && (

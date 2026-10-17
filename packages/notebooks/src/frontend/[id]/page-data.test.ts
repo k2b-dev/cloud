@@ -366,3 +366,33 @@ for (const [permission, expected] of [
     expect(data.selectedNote?.id).toBe(expected);
   });
 }
+
+test.each([
+  "/app/notebooks/book01",
+  "/app/notebooks/book01/tags/garden?mode=book&search=x&page=2",
+  "/app/notebooks/book01/attachments?search=x&page=2#files",
+])("graph keeps a same-notebook return path (%s), without the hash", async (back) => {
+  fixtures("write");
+  const data = await load(`graph&back=${encodeURIComponent(back)}`, "/app/notebooks/book01");
+  expect(data.graphBack).toBe(back.split("#")[0]);
+});
+
+test.each([
+  "//evil.example/x",
+  "https://evil.example/app/notebooks/book01",
+  "https://notebooks.invalid/app/notebooks/book01",
+  "javascript:alert(1)",
+  "/app/notebooks/other/notes/x",
+  "/app/notebooksX",
+  "/app/notebooks/book01other",
+  "/app/notebooks/book01/../other",
+  "/\\evil.example",
+])("graph ignores an invalid return path (%s)", async (back) => {
+  fixtures("write");
+  expect((await load(`graph&back=${encodeURIComponent(back)}`, "/app/notebooks/book01")).graphBack).toBeUndefined();
+});
+
+test("return paths apply only to graph mode", async () => {
+  fixtures("write");
+  expect((await load(`readonly&back=${encodeURIComponent("/app/notebooks/book01/attachments")}`)).graphBack).toBeUndefined();
+});

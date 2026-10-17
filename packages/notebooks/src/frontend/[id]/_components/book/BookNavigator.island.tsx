@@ -33,6 +33,7 @@ export type BookNavigatorProps = {
   navigationHidden: boolean;
   /** The Book page this navigation stands beside, when it is its footer item; the open note then is not the current page. */
   current?: "graph";
+  graphBack?: string;
 };
 
 /** The notes that contain the selected note, outermost first; `undefined` when it is not in the tree. */
@@ -70,7 +71,13 @@ export default function BookNavigator(props: BookNavigatorProps) {
     onCleanup(() => window.removeEventListener(BOOK_SNAPSHOT_EVENT, update));
   });
   // The graph starts from the open note and keeps Book, so its links and Close lead back into Book.
-  const graphHref = () => buildGraphUrl(props.notebookId, state().selectedNoteId, "book");
+  const graphHref = () =>
+    buildGraphUrl(
+      props.notebookId,
+      state().selectedNoteId,
+      "book",
+      props.current === "graph" ? props.graphBack : state().selectedNoteId ? undefined : props.currentHref,
+    );
   const currentNoteId = () => (props.current === "graph" ? null : state().selectedNoteId);
   const items = (nodes: BookTreeNode[]) =>
     nodes.map((node) => (
