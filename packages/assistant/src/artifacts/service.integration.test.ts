@@ -78,7 +78,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   let originalTargets: string | undefined;
   beforeEach(() => {
     originalTargets = process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
-    process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = ["127.0.0.1", ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : [])].join(",");
+    process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = ["127.0.0.1", "localhost", ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : [])].join(",");
   });
   afterEach(() => {
     if (originalTargets === undefined) delete process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
