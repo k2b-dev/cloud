@@ -46,7 +46,15 @@ export * from "./login-method";
 export { markdown } from "./markdown";
 export { markdownCalloutSanitizeOptions } from "./markdown/callout-sanitizer";
 export type { ErrorCode, EvalContext, EvalError, EvalResult, EvalValue, ProgressValue } from "./markdown/formula";
-export { createProgressValue, evaluateFormula, formatValue, isFormula, isTotalRow, parseProgressValue } from "./markdown/formula";
+export {
+  createProgressValue,
+  evaluateFormula,
+  evaluateTableCell,
+  formatValue,
+  isFormula,
+  isTotalRow,
+  parseProgressValue,
+} from "./markdown/formula";
 export type { MockCover, MockCoverIcon, MockCoverOptions, MockCoverTheme } from "./mock-cover";
 export { createMockCover, createMockCoverSvg, parseDataUrl } from "./mock-cover";
 export * from "./network-address";

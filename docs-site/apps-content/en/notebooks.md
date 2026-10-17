@@ -46,7 +46,7 @@ including from Book view. Use the overview to start from a template.
 - Discuss a page in a durable Markdown thread. New comments appear live for
   other users viewing its detail panel, and comment authors can correct or
   remove their own comment for ten minutes.
-- Keep small tables, lists, todos, data blocks, and sections beside the prose
+- Keep small tables, lists, todos, data blocks, charts, and sections beside the prose
   that explains them.
 - Attach images and files to the notebook and reference them from notes. Drop
   or paste them into the editor, or choose them with the paperclip from this
@@ -69,7 +69,7 @@ export boundary.
 
 Users with read permission always use **Book**. It shows the note as a web page
 with navigation and tag filters, without an editor, detail panel, or discussion
-panel. Query blocks (`:::query`) and tables of contents (`:::toc`) are rendered
+panel. Query blocks (`:::query`), tables of contents (`:::toc`), and charts (`:::chart`) are rendered
 on the server with the page.
 
 Page links, tag filters, search, and pagination update the Book content without
@@ -79,7 +79,7 @@ and query results automatically. Without JavaScript, links and filters still
 work through regular page loads. Switching to Write or Read-only loads that
 workspace as a new page.
 
-In the editor, type `:::` to insert a query or table of contents. Rich mode shows
+In the editor, type `:::` to insert a query, table of contents, or chart. Rich mode shows
 a server-rendered preview; move the cursor into the block or choose **Show
 source** to edit it. Invalid settings are marked at their source lines. Previewing
 a draft does not save it or change the notes returned by the query.
@@ -186,6 +186,7 @@ fail with the same messages.
 | Link and tag | Connections and searchable labels parsed from note content |
 | Attachment | Notebook-owned file referenced from Markdown |
 | Named data and query | User-defined Markdown properties and filtered lists of notes in this notebook |
+| Chart | A chart from this note's tables, lists, or named data; PDF includes its data table |
 | Activity | Durable, permission-aware semantic changes across a notebook or note |
 | Saved version | Recoverable note snapshot with the set of contributors represented by that version |
 
@@ -202,6 +203,31 @@ the discussion panel. Users with write access can add comments in the detail
 panel, including on a locked note. Locking freezes the note body, not its
 discussion. Comment authors may edit or delete their own comment for ten
 minutes after posting.
+
+## Show data as a chart
+
+A chart reads only this note's data, including evaluated table formulas. Hover to see values. PDF export includes the chart and a data table.
+
+```text
+@sales
+| Date | Revenue | Costs |
+| --- | --- | --- |
+| 2026-01-01 | 1200 | 600 |
+| 2026-02-01 | 1400 | 700 |
+
+:::chart
+type: area
+title: Sales 2026
+data: @sales
+x: Date
+y: [Revenue, Costs]
+tooltip:
+  label: Amount
+  format: EUR
+:::
+```
+
+Choose `line`, `area`, `bar`, `pie`, `donut`, `scatter`, or `stat`. Line, area, and scatter need numeric or ISO-date x values. Bar uses one value column. You can also reference a named list or data block, or write inline `columns` and `rows`. A note allows 20 charts, each data list at most 480 values, and a chart at most 8 series. Invalid blocks keep their source with a diagnostic.
 
 ## Build a handbook index
 

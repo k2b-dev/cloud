@@ -319,6 +319,14 @@
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
+/* A rendered block in the editor, and the box the note's server preview reserves for a chart in its place. */
+.cm-query-block-widget {
+  display: block;
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--k2b-radius-control);
+}
 .cm-query-block-preview.notebook-book-content {
   max-width: none;
   margin: 0;
@@ -511,6 +519,59 @@
 .notebook-book-diagnostic {
   border-left: 3px solid var(--ui-border);
   padding: 0.75rem 1rem;
+}
+/* A chart block, flat in the text like the chart in an Assistant chat: title and subtitle as text, then a frame whose
+   height comes from the kind and never from the data. The editor's placeholder, the drawn chart and every redraw take
+   the same room, and a legend scrolls inside the frame instead of growing it. The SVG stretches to the column's width
+   through the shared `.k2b-chart` rules, which keep its text and marks at their pixel size. */
+.notebook-book-content .notebook-book-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  margin: 1.25rem 0;
+}
+.notebook-book-chart__header {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.notebook-book-chart__title {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.notebook-book-chart__subtitle {
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.notebook-book-chart__viewport {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  height: 18rem;
+}
+.notebook-book-chart[data-kind="stat"] .notebook-book-chart__viewport {
+  height: 10rem;
+}
+.notebook-book-chart__viewport > .k2b-chart {
+  flex: 1 1 0;
+  min-height: 60%;
+}
+.notebook-book-chart .k2b-chart__svg {
+  height: 100%;
+}
+/* Loading and failure messages stand inside the frame they wait for. */
+.notebook-book-content .notebook-book-chart__status {
+  margin: auto;
+  text-align: center;
+}
+/* Book images keep their aspect ratio; the chart's SVG fills its frame instead. */
+.notebook-book-content .notebook-book-chart svg {
+  max-width: none;
+  height: 100%;
 }
 .notebook-book-content .katex-display {
   overflow-x: auto;

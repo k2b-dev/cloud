@@ -571,7 +571,7 @@ const isCurrentFormulaCell = (row: number, col: number, ctx: EvalContext): boole
  * a column that's itself filled with `=hours * rate` formulas computes
  * the chain correctly instead of seeing the literal formula strings.
  */
-const evaluateCell = (row: number, col: number, ctx: EvalContext): EvalResult => {
+export const evaluateTableCell = (row: number, col: number, ctx: EvalContext): EvalResult => {
   const cell = cellAt(row, col, ctx);
   if (!cell.startsWith("=")) {
     const text = cell.trim();
@@ -623,7 +623,7 @@ const collectColumnValues = (arg: AST, state: EvalState): { values: string[] } |
   const values: string[] = [];
   for (let r = 0; r < state.ctx.rows.length; r++) {
     if (isCurrentFormulaCell(r, lookup.index, state.ctx)) continue;
-    const result = evaluateCell(r, lookup.index, state.ctx);
+    const result = evaluateTableCell(r, lookup.index, state.ctx);
     if (result.kind === "ok") values.push(toString(result.value));
     // errored cells silently skipped — same handling as non-numeric cells
   }
@@ -790,10 +790,10 @@ const FUNCTIONS: Record<string, FuncImpl> = {
     let total = 0;
     for (let r = 0; r < state.ctx.rows.length; r++) {
       if (isCurrentFormulaCell(r, condLookup.index, state.ctx) || isCurrentFormulaCell(r, sumLookup.index, state.ctx)) continue;
-      const condResult = evaluateCell(r, condLookup.index, state.ctx);
+      const condResult = evaluateTableCell(r, condLookup.index, state.ctx);
       if (condResult.kind !== "ok") continue;
       if (!isEqual(condResult.value, condValueArg.value)) continue;
-      const sumResult = evaluateCell(r, sumLookup.index, state.ctx);
+      const sumResult = evaluateTableCell(r, sumLookup.index, state.ctx);
       if (sumResult.kind !== "ok") continue;
       const n = toNumber(sumResult.value);
       if (n !== null) total += n;
@@ -841,7 +841,7 @@ const FUNCTIONS: Record<string, FuncImpl> = {
     let sum = 0;
     for (let i = 0; i < row.length; i++) {
       if (i === state.ctx.currentCol) continue;
-      const result = evaluateCell(state.ctx.currentRow, i, state.ctx);
+      const result = evaluateTableCell(state.ctx.currentRow, i, state.ctx);
       if (result.kind !== "ok") continue;
       const n = toNumber(result.value);
       if (n !== null) sum += n;
@@ -855,7 +855,7 @@ const FUNCTIONS: Record<string, FuncImpl> = {
     let count = 0;
     for (let i = 0; i < row.length; i++) {
       if (i === state.ctx.currentCol) continue;
-      const result = evaluateCell(state.ctx.currentRow, i, state.ctx);
+      const result = evaluateTableCell(state.ctx.currentRow, i, state.ctx);
       if (result.kind !== "ok") continue;
       const n = toNumber(result.value);
       if (n !== null) {
@@ -890,7 +890,7 @@ const FUNCTIONS: Record<string, FuncImpl> = {
       }
       const rawCell = cellAt(state.ctx.currentRow, lookup.index, state.ctx);
       if (rawCell.trim().length === 0) return state.evaluate(args[1]!);
-      return evaluateCell(state.ctx.currentRow, lookup.index, state.ctx);
+      return evaluateTableCell(state.ctx.currentRow, lookup.index, state.ctx);
     }
     const v = state.evaluate(args[0]!);
     if (v.kind === "error") return v;
@@ -1182,7 +1182,7 @@ const evaluateAst = (ast: AST, ctx: EvalContext): EvalResult => {
           lookup.suggestion,
         );
       }
-      return evaluateCell(ctx.currentRow, lookup.index, ctx);
+      return evaluateTableCell(ctx.currentRow, lookup.index, ctx);
     }
     case "neg": {
       const v = evaluateAst(ast.operand, ctx);
