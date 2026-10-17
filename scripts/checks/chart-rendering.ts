@@ -9,6 +9,8 @@ import type { Finding, Rule } from "./rule";
 const RENDERERS = new Set(["charts", ...Object.keys(charts)]);
 const CHART_COMPONENTS = new Set(["Chart", "ChartExplorer", "ChartSnapshotView", "StatCell"]);
 const LIBRARIES = new Set(["ui", "cloud", "ssr"]);
+/** The browser entries @k2b/ssr discovers (`**\/*.{island,client}.tsx`). */
+const BROWSER_ENTRY = /\.(?:island|client)\.tsx$/;
 const ALLOWED_RENDERERS = new Map([
   ["packages/ui/src/content/Chart.tsx", "The shared Chart wrapper renders with inspect: true and attaches createChartInspection."],
   [
@@ -111,7 +113,19 @@ const rawRenderers = (source: ts.SourceFile, report: (node: ts.Node, name: strin
   visit(source);
 };
 
-type ChartModule = { imports: string[]; chart?: { line: number; tag: string } };
+/**
+ * `named` marks an import that can reach more than a module's default export.
+ * @k2b/ssr wraps only the default import of an island or client module in its
+ * browser entry; a named import renders on the server only.
+ */
+type ModuleImport = { specifier: string; named: boolean };
+type ChartModule = { imports: ModuleImport[]; chart?: { line: number; tag: string } };
+
+const importsNamed = (clause: ts.ImportClause | undefined): boolean => {
+  const bindings = clause?.namedBindings;
+  if (!bindings) return false;
+  return ts.isNamespaceImport(bindings) || bindings.elements.some((element) => !element.isTypeOnly);
+};
 
 const chartModule = (source: ts.SourceFile): ChartModule => {
   const components = new Map<string, string>();
@@ -129,12 +143,16 @@ const chartModule = (source: ts.SourceFile): ChartModule => {
     }
   }
   const visit = (node: ts.Node): void => {
-    if ((ts.isImportDeclaration(node) && valueImport(node.importClause)) || (ts.isExportDeclaration(node) && valueExport(node))) {
-      const name = moduleName(node.moduleSpecifier);
-      if (name) result.imports.push(name);
+    if (ts.isImportDeclaration(node) && valueImport(node.importClause)) {
+      const specifier = moduleName(node.moduleSpecifier);
+      if (specifier) result.imports.push({ specifier, named: importsNamed(node.importClause) });
+    }
+    if (ts.isExportDeclaration(node) && valueExport(node)) {
+      const specifier = moduleName(node.moduleSpecifier);
+      if (specifier) result.imports.push({ specifier, named: true });
     }
     const dynamic = dynamicModule(node);
-    if (dynamic) result.imports.push(dynamic);
+    if (dynamic) result.imports.push({ specifier: dynamic, named: true });
     if (!result.chart && (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node))) {
       const tag = node.tagName;
       const name = ts.isIdentifier(tag)
@@ -157,7 +175,8 @@ const chartModule = (source: ts.SourceFile): ChartModule => {
 };
 
 const resolveModule = (file: string, specifier: string, src: string, texts: Map<string, string>): string | undefined => {
-  if (!specifier.startsWith("./") && !specifier.startsWith("../") && !specifier.startsWith("@/")) return;
+  const relativeSpecifier = specifier === "." || specifier === ".." || specifier.startsWith("./") || specifier.startsWith("../");
+  if (!relativeSpecifier && !specifier.startsWith("@/")) return;
   const target = resolve(
     specifier.startsWith("@/") ? src : dirname(file),
     specifier.startsWith("@/") ? specifier.slice(2) : specifier,
@@ -178,18 +197,27 @@ const parse = (file: string, text: string): ts.SourceFile =>
  * through its directory name or `.`, so its importers are searched in full.
  */
 const hydration = (texts: Map<string, string>, src: string, module: (file: string) => ChartModule) => {
-  const importerCache = new Map<string, string[]>();
-  const importers = (target: string): string[] => {
+  const importerCache = new Map<string, { file: string; named: boolean }[]>();
+  const importers = (target: string): { file: string; named: boolean }[] => {
     const cached = importerCache.get(target);
     if (cached) return cached;
     const stem = basename(target).replace(/\.tsx?$/, "");
-    const found: string[] = [];
+    const found: { file: string; named: boolean }[] = [];
     for (const [file, text] of texts) {
       if (file === target || (stem !== "index" && !text.includes(stem))) continue;
-      if (module(file).imports.some((specifier) => resolveModule(file, specifier, src, texts) === target)) found.push(file);
+      const edges = module(file).imports.filter(({ specifier }) => resolveModule(file, specifier, src, texts) === target);
+      if (edges.length > 0) found.push({ file, named: edges.some((edge) => edge.named) });
     }
     importerCache.set(target, found);
     return found;
+  };
+  // Island and client entries are hydrated through their default export, so
+  // only importers of their other exports must be hydrated themselves.
+  const relevantImporters = (target: string): string[] => {
+    const entry = BROWSER_ENTRY.test(target);
+    return importers(target)
+      .filter((edge) => !entry || edge.named)
+      .map((edge) => edge.file);
   };
   const memo = new Map<string, boolean>();
   const isHydrated = (file: string): boolean => {
@@ -197,14 +225,10 @@ const hydration = (texts: Map<string, string>, src: string, module: (file: strin
     const visit = (path: string): boolean => {
       const cached = memo.get(path);
       if (cached !== undefined) return cached;
-      if (/\.(?:island|client)\.tsx?$/.test(path)) {
-        memo.set(path, true);
-        return true;
-      }
       if (visiting.has(path)) return true;
       visiting.add(path);
-      const parents = importers(path);
-      const hydrated = parents.length > 0 && parents.every(visit);
+      const parents = relevantImporters(path);
+      const hydrated = BROWSER_ENTRY.test(path) ? parents.every(visit) : parents.length > 0 && parents.every(visit);
       if (!hydrated) memo.set(path, false);
       return hydrated;
     };
@@ -215,7 +239,7 @@ const hydration = (texts: Map<string, string>, src: string, module: (file: strin
     return hydrated;
   };
   /** After `isHydrated(file)` returned false: the direct importers known to run on the server only. */
-  const serverImporters = (file: string): string[] => importers(file).filter((path) => memo.get(path) === false);
+  const serverImporters = (file: string): string[] => relevantImporters(file).filter((path) => memo.get(path) === false);
   return { isHydrated, serverImporters };
 };
 

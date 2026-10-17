@@ -106,10 +106,60 @@ test("reports a chart component imported from a server page", async () => {
   ]);
 });
 
-test.each(["island.tsx", "client.tsx", "island.ts", "client.ts"])("accepts a component imported only from .%s", async (extension) => {
+test.each(["island.tsx", "client.tsx"])("accepts a component imported only from .%s", async (extension) => {
   expect(
     await findings({ [panelPath]: panel, [`packages/demo/src/frontend/Page.${extension}`]: "import { Panel } from './Panel';" }),
   ).toEqual([]);
+});
+
+// @k2b/ssr discovers only `*.{island,client}.tsx` as browser entries.
+test.each(["island.ts", "client.ts"])("does not treat .%s as a browser entry", async (extension) => {
+  expect(
+    await findings({ [panelPath]: panel, [`packages/demo/src/frontend/Page.${extension}`]: "import { Panel } from './Panel';" }),
+  ).toEqual([panelFinding]);
+});
+
+const islandPath = "packages/demo/src/frontend/Panel.island.tsx";
+const island = "import { Chart } from '@k2b/ui';\nexport const Inline = () => <Chart kind='bar' data={[]} />;\nexport default Inline;";
+
+// @k2b/ssr wraps only the default import of an island in its browser entry.
+test.each([
+  ["import Panel from './Panel.island';", []],
+  ["import Panel, { type Props } from './Panel.island';", []],
+  ["import './Panel.island';", []],
+  ["import { Inline } from './Panel.island';", [`${islandPath}:2`]],
+  ["import Panel, { Inline } from './Panel.island';", [`${islandPath}:2`]],
+  ["import * as panel from './Panel.island';", [`${islandPath}:2`]],
+  ["export { Inline } from './Panel.island';", [`${islandPath}:2`]],
+  ["const panel = import('./Panel.island');", [`${islandPath}:2`]],
+] as const)("checks how a server page imports an island: %s", async (dependency, expected) => {
+  expect(await findings({ [islandPath]: island, "packages/demo/src/frontend/page.tsx": dependency })).toEqual([...expected]);
+});
+
+test("named island imports from another island stay hydrated", async () => {
+  expect(
+    await findings({ [islandPath]: island, "packages/demo/src/frontend/Other.island.tsx": "import { Inline } from './Panel.island';" }),
+  ).toEqual([]);
+});
+
+test.each([".", "./"])("resolves the bare directory import '%s' through its index", async (specifier) => {
+  const files = {
+    [panelPath]: panel,
+    "packages/demo/src/frontend/index.ts": "export { Panel } from './Panel';",
+  };
+  expect(await findings({ ...files, "packages/demo/src/frontend/Page.island.tsx": `import { Panel } from '${specifier}';` })).toEqual([]);
+  expect(await findings({ ...files, "packages/demo/src/frontend/page.tsx": `import { Panel } from '${specifier}';` })).toEqual([
+    panelFinding,
+  ]);
+});
+
+test("resolves the bare parent import '..' through its index", async () => {
+  const files = {
+    [panelPath]: panel,
+    "packages/demo/src/frontend/index.ts": "export { Panel } from './Panel';",
+  };
+  expect(await findings({ ...files, "packages/demo/src/frontend/pages/Page.island.tsx": "import { Panel } from '..';" })).toEqual([]);
+  expect(await findings({ ...files, "packages/demo/src/frontend/pages/page.tsx": "import { Panel } from '..';" })).toEqual([panelFinding]);
 });
 
 test.each([
