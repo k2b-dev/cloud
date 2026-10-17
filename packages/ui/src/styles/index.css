@@ -62,6 +62,12 @@
   --k2b-action: var(--k2b-accent-700);
   --k2b-action-hover: var(--k2b-accent-800);
   --k2b-app-workspace-active: var(--k2b-action);
+  /* Fills of a selected navigation row and a selected content row, beside the
+     selected ink above. Optional host hooks: standalone they keep the platform
+     selection fill; Cloud maps both to the active app's selection fills.
+     Options and states of controls keep `--k2b-selected`. */
+  --k2b-nav-selected: var(--k2b-selected);
+  --k2b-row-selected: var(--k2b-selected);
   /* Neutral and translucent, so sidebar hover shows on any sidebar surface and
      never sits in the platform blue beside an app's accent. */
   --k2b-app-workspace-hover: color-mix(in srgb, var(--k2b-text) 5%, transparent);
@@ -1096,12 +1102,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-app-workspace__sidebar-item.is-active {
   color: var(--k2b-app-workspace-active);
-  background: transparent;
+  background: var(--k2b-nav-selected);
   font-weight: 600;
 }
 
+/* The current row keeps its selection fill under the pointer. */
 .k2b-ui .k2b-app-workspace__sidebar-item.is-active:hover {
-  background: var(--k2b-app-workspace-hover);
+  background: var(--k2b-nav-selected);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item:disabled {
@@ -5128,12 +5135,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-app-workspace__sidebar-icon-action.is-active {
   color: var(--k2b-app-workspace-active);
-  background: transparent;
+  background: var(--k2b-nav-selected);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-icon-action.is-active:hover {
   color: var(--k2b-app-workspace-active);
-  background: var(--k2b-app-workspace-hover);
+  background: var(--k2b-nav-selected);
 }
 
 /* The collapsed rail exists only beside the work area from 64 rem. Narrower,
@@ -7535,7 +7542,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__row[data-selected="true"] {
-  background: var(--k2b-selected);
+  background: var(--k2b-row-selected);
 }
 
 .k2b-ui .k2b-data-table__row[data-selected="true"] > td[data-highlighted="true"] {
@@ -7926,8 +7933,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-settings__tabs button[data-active="true"] {
-  color: var(--k2b-action);
-  background: var(--k2b-selected);
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-nav-selected);
 }
 
 .k2b-ui .k2b-settings__tabs button[data-tone="danger"] {
@@ -12774,7 +12781,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui [data-scroll-fade], .k2b-ui [data-scroll-fade][data-scroll-fade-axis="horizontal"] { mask-image: none; }
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"].is-active {
-  background: var(--k2b-app-workspace-hover);
+  background: var(--k2b-nav-selected);
   border-color: color-mix(in srgb, var(--k2b-app-workspace-active) 25%, var(--k2b-border));
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.has-action),
@@ -12804,6 +12811,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.625rem;
   padding: 0.375rem 0.5625rem;
   color: var(--k2b-text);
+}
+/* The current object row reads the selected ink, as every current row does. */
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"].is-active:not(.has-action),
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"].is-active .k2b-app-workspace__sidebar-item-main {
+  color: var(--k2b-app-workspace-active);
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-icon {
   width: 1.25rem;
@@ -12987,7 +12999,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border: 0; border-radius: var(--k2b-radius-control); text-decoration: none; cursor: pointer;
 }
 .k2b-ui .k2b-navigation__row[data-active] > .k2b-navigation__control {
-  color: var(--k2b-app-workspace-active); font-weight: 600; background: var(--k2b-surface-muted);
+  color: var(--k2b-app-workspace-active); font-weight: 600; background: var(--k2b-nav-selected);
 }
 .k2b-ui .k2b-navigation__control:hover { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-navigation__control:focus-visible,

@@ -103,6 +103,13 @@ Override tokens on your scoped root. Components derive focus, selection, and act
 
 Most themes only need the font and accent stack. Override semantic tokens such as `--k2b-action`, `--k2b-surface`, `--k2b-text`, or `--k2b-border` when a specific role needs different treatment. See [Theme and styles](./surfaces/utilities) for theme roles and overrides.
 
+`--k2b-app-workspace-active` controls selected navigation ink and defaults to
+`var(--k2b-action)`. The optional `--k2b-nav-selected` and `--k2b-row-selected`
+hooks control selected navigation and content fills; both default to
+`var(--k2b-selected)`. Cloud maps them to the active app's navigation and row
+selection fills. Controls and options keep their platform tokens, including
+`--k2b-selected`, rather than these app hooks.
+
 ## Solid and SSR
 
 Import components directly from `@k2b/ui`. Package conditions select the SSR build on the server and the interactive build in the browser. State remains controlled by your application:

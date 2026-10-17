@@ -46,6 +46,13 @@ layouts and floating UI keep their intended depth.
 
 Override a complete stack when its semantic aliases use several steps for hover, focus, selected, light, and dark states. Changing custom properties at runtime updates the scoped components immediately; the package does not maintain a separate theme store.
 
+`--k2b-app-workspace-active` controls selected navigation ink and defaults to
+`var(--k2b-action)`. The optional `--k2b-nav-selected` and `--k2b-row-selected`
+hooks control selected navigation and content fills; both default to
+`var(--k2b-selected)`. Cloud maps them to the active app's navigation and row
+selection fills. Controls and options keep their platform tokens, including
+`--k2b-selected`, rather than these app hooks.
+
 AI presentation has a separate semantic theme:
 `--k2b-ai-accent`, `--k2b-ai-accent-hover`, `--k2b-ai-border`,
 and `--k2b-ai-surface`. Override these roles when the assistant identity should

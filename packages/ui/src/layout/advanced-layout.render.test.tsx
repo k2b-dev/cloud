@@ -381,7 +381,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(actionRule).toContain("line-height: 1");
   });
 
-  test("keeps active sidebar navigation quiet and distinct from hover", async () => {
+  test("keeps active sidebar navigation filled and distinct from ordinary hover", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const activeItemRule = css.match(/\.k2b-ui \.k2b-app-workspace__sidebar-item\.is-active \{([^}]*)\}/)?.[1];
     const activeItemHoverRule = css.match(/\.k2b-ui \.k2b-app-workspace__sidebar-item\.is-active:hover \{([^}]*)\}/)?.[1];
@@ -390,13 +390,13 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     expect(css).toContain("--k2b-app-workspace-active: var(--k2b-action)");
     expect(activeItemRule).toContain("color: var(--k2b-app-workspace-active)");
-    expect(activeItemRule).toContain("background: transparent");
+    expect(activeItemRule).toContain("background: var(--k2b-nav-selected)");
     expect(activeItemRule).toContain("font-weight: 600");
-    expect(activeItemHoverRule).toContain("background: var(--k2b-app-workspace-hover)");
+    expect(activeItemHoverRule).toContain("background: var(--k2b-nav-selected)");
     expect(activeIconRule).toContain("color: var(--k2b-app-workspace-active)");
-    expect(activeIconRule).toContain("background: transparent");
-    expect(activeIconHoverRule).toContain("background: var(--k2b-app-workspace-hover)");
-    // Every hover in the sidebar uses the one neutral fill, so none sits in platform blue beside the app accent.
+    expect(activeIconRule).toContain("background: var(--k2b-nav-selected)");
+    expect(activeIconHoverRule).toContain("background: var(--k2b-nav-selected)");
+    // Ordinary hover uses one neutral fill; selected rows retain their navigation fill.
     expect(css).toContain("--k2b-app-workspace-hover: color-mix(in srgb, var(--k2b-text) 5%, transparent)");
     for (const selector of [
       ".k2b-app-workspace__sidebar-item:hover",

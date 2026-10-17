@@ -4,6 +4,9 @@
 data. They do not depend on Cloud storage, routes, permissions, or mutation
 APIs.
 
+Selected `FileGrid` items and `FileTree` rows use `--k2b-row-selected` without
+changing text weight or geometry.
+
 ## Use file components
 
 Use `FileBrowserPanel` for the ready tree-and-preview composition over a

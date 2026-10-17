@@ -11,7 +11,7 @@ const tooLarge = (id: string) => id === "archive";
 export function FileGridDemo() {
   const [view, setView] = createSignal("grid");
   const [opened, setOpened] = createSignal("");
-  const selection = createCollectionSelection({ ids: () => files.map((file) => file.id) });
+  const selection = createCollectionSelection({ ids: () => files.map((file) => file.id), initial: ["notes"] });
   // A picker: taps toggle, arrows only move focus, and the file that does not fit stays reachable but not selectable.
   const choice = createCollectionSelection({ ids: () => files.map((file) => file.id), isDisabled: tooLarge, checklist: true });
   return (

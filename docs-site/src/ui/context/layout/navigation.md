@@ -7,6 +7,8 @@ with the owning Solid component. `Navigation` renders readable, nested rows.
 The library does not own the app router, subscriptions, permissions, or a
 mobile launcher.
 
+Active rows use `--k2b-nav-selected` with `--k2b-app-workspace-active` ink.
+
 ## Import and example
 
 ```tsx

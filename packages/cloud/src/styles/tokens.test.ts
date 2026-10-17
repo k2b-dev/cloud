@@ -74,13 +74,18 @@ describe("Cloud tokens", () => {
         { property: "--ui-app-selected", value: `var(--app-selected-${theme})` },
         { property: "--ui-app-selected-nav", value: `var(--app-selected-nav-${theme})` },
       ];
+      const appMappings = [
+        ...mappings,
+        { property: "--k2b-nav-selected", value: "var(--ui-app-selected-nav)" },
+        { property: "--k2b-row-selected", value: "var(--ui-app-selected)" },
+      ];
       expect(
         compiled.some(
           ({ selector, declarations }) =>
             selector.includes(".cloud-app-canvas") &&
             selector.includes(".app-accent-scope") &&
             selector.includes(".dark") === hasDark &&
-            mappings.every(({ property, value }) => declarations.some((item) => item.property === property && item.value === value)),
+            appMappings.every(({ property, value }) => declarations.some((item) => item.property === property && item.value === value)),
         ),
         `${theme} app scope mappings`,
       ).toBe(true);

@@ -117,7 +117,7 @@ const saveShot = (page: Page, name: string) =>
 
 describe("sidebar row labels in the browser", () => {
   test(
-    "ordinary, current and card rows share the neutral hover fill in an accent scope",
+    "ordinary and card rows share neutral hover; the current row keeps its navigation fill",
     async () => {
       const page = await load();
       try {
@@ -140,12 +140,22 @@ describe("sidebar row labels in the browser", () => {
             }),
           );
         }
-        for (const color of backgrounds) {
+        for (const color of [backgrounds[0]!, backgrounds[2]!]) {
           expect(Math.max(...color.slice(0, 3)) - Math.min(...color.slice(0, 3))).toBeLessThanOrEqual(2);
           expect(color[0]).toBeLessThan(255);
         }
-        expect(backgrounds[0]).toEqual(backgrounds[1]);
-        expect(backgrounds[1]).toEqual(backgrounds[2]);
+        expect(backgrounds[0]).toEqual(backgrounds[2]);
+        await page.locator('[href="#weight"]').hover();
+        const selected = await page.locator('[href="#weight"]').evaluate((element) => {
+          const probe = document.createElement("span");
+          probe.style.background = "var(--k2b-nav-selected)";
+          element.append(probe);
+          const expected = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return { actual: getComputedStyle(element).backgroundColor, expected };
+        });
+        expect(selected.actual).toBe(selected.expected);
+        expect(backgrounds[1]).not.toEqual(backgrounds[0]);
       } finally {
         await page.close();
       }

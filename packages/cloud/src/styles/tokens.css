@@ -51,7 +51,6 @@
   --ui-data-divider: var(--ui-border);
   --ui-data-row-divider: color-mix(in srgb, var(--ui-border) 72%, transparent);
   --ui-data-row-hover: rgb(9 9 11 / 0.025);
-  --ui-data-row-selected: var(--ui-selected);
   --ui-data-column-hover: rgb(9 9 11 / 0.012);
   --ui-dialog-surface: var(--ui-surface-raised);
   --ui-dialog-border: var(--ui-border-strong);
@@ -208,6 +207,8 @@
   /* Portable UI components consume their own optional hook; Cloud alone maps
      it to the active app appearance. */
   --k2b-app-workspace-active: var(--ui-app-accent-text);
+  --k2b-nav-selected: var(--ui-app-selected-nav);
+  --k2b-row-selected: var(--ui-app-selected);
   --k2b-detail-panel-accent: var(--ui-app-accent-text);
   --k2b-link-accent: var(--ui-app-accent-text);
 }
@@ -218,6 +219,8 @@
   --ui-app-selected-nav: var(--app-selected-nav-dark);
   --ui-app-accent-border: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
   --k2b-app-workspace-active: var(--ui-app-accent-text);
+  --k2b-nav-selected: var(--ui-app-selected-nav);
+  --k2b-row-selected: var(--ui-app-selected);
   --k2b-detail-panel-accent: var(--ui-app-accent-text);
   --k2b-link-accent: var(--ui-app-accent-text);
 }
