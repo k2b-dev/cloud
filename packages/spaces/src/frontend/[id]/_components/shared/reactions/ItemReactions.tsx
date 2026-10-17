@@ -4,7 +4,7 @@ import { isServer } from "solid-js/web";
 import { MAX_ITEM_REACTION_EMOJI, type SpaceItemReaction } from "@/contracts";
 import type { RetryToast } from "../../../../lib/feedback";
 import { useSpaceMessages } from "../../../messages";
-import { queueReaction, type ReactionIntent, type ReactionNotice, showReactions, shownReactions } from "./reaction-queue";
+import { queueReaction, type ReactionIntent, type ReactionNotice, shownReactions, showReactions } from "./reaction-queue";
 import { readRecentEmoji, rememberRecentEmoji } from "./recent-emoji";
 
 type PickTarget = { anchor: HTMLElement; pick: (emoji: string) => void };
