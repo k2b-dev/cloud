@@ -95,11 +95,12 @@ async function open(page: Page, locale: "en" | "de", theme: "light" | "dark", fa
   // The first frame of the sheet, before its entrance settles, already has the final height.
   const first = await page.evaluate(
     (options) =>
-      new Promise<number>((done) => {
+      new Promise<string>((done) => {
         window.openDecision(options);
         const measure = () => {
           const dialog = document.querySelector("dialog[open]");
-          if (dialog) done(dialog.querySelector(".auth-decision")!.getBoundingClientRect().height);
+          // The layout height, not the box: the entrance transform is still running.
+          if (dialog) done(getComputedStyle(dialog.querySelector(".auth-decision")!).height);
           else requestAnimationFrame(measure);
         };
         requestAnimationFrame(measure);
@@ -127,7 +128,7 @@ describe("sign-in sheet", () => {
               const first = await open(tab, locale, theme, ending === "uncertain");
               const dialog = await box(tab, "dialog[open]");
               const cell = await box(tab, ".auth-decision");
-              expect(first).toBe(cell.height);
+              expect(first).toBe(await tab.locator(".auth-decision").evaluate((el) => getComputedStyle(el).height));
               expect(await tab.locator(".auth-decision__started").textContent()).toBe(
                 locale === "de" ? "Gestartet um 09:14" : "Started at 09:14",
               );
