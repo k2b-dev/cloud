@@ -454,6 +454,12 @@ solid-island {
   padding-inline-end: calc(var(--cloud-tab-bar-height) + 0.625rem);
 }
 
+/* The shell's live bar replaces the server's once the bar's content changes
+   in the browser. */
+.cloud-tab-bar__row:has(> :is(solid-island, solid-client) > .cloud-tab-bar__live) > .k2b-tab-bar {
+  display: none;
+}
+
 .cloud-tab-bar .k2b-tab-bar {
   flex: 1;
   min-width: 0;

@@ -1,5 +1,5 @@
 import { TabBar, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { AppLaunchpadButton, setAppLaunchpadContext } from "./app-launchpad";
 import GlobalSearchTrigger from "./GlobalSearchTrigger";
 import LayoutBreadcrumbs from "./LayoutBreadcrumbs";
@@ -29,7 +29,11 @@ export default function CloudShell(props: CloudShellProps) {
   return <HeaderControls {...props} />;
 }
 
-/** The phone bar; it follows saved rail preferences as the rail does. */
+/**
+ * The phone bar's live copy. It renders nothing while the server's bar is current, so mounting moves and refocuses
+ * nothing. When the saved rail preferences or the URL (a fragment, Back and Forward in the document) change what the
+ * bar shows, it renders the new bar, and CSS hides the server's.
+ */
 function BarNavigation(props: { currentPath: string }) {
   const data = useShellData();
   const locale = useLocale();
@@ -37,18 +41,29 @@ function BarNavigation(props: { currentPath: string }) {
   const initial = data?.rail;
   if (!data || !initial) return null;
   const [settings, setSettings] = createSignal(initial);
+  const [currentPath, setCurrentPath] = createSignal(props.currentPath);
+  const itemsFor = (rail: typeof initial, path: string) =>
+    phoneBarItems(projectRailNavigation(data.apps, rail, locale()), path, { label: t().home, path: data.home ?? "/" });
+  const served = JSON.stringify(itemsFor(initial, props.currentPath));
+  const items = createMemo(() => itemsFor(settings(), currentPath()));
   onMount(() => {
     const sync = () => setSettings(readRailContext()?.settings ?? initial);
+    const syncLocation = () => setCurrentPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+    syncLocation();
     window.addEventListener(RAIL_PREFERENCES_EVENT, sync);
-    onCleanup(() => window.removeEventListener(RAIL_PREFERENCES_EVENT, sync));
+    window.addEventListener("popstate", syncLocation);
+    window.addEventListener("hashchange", syncLocation);
+    onCleanup(() => {
+      window.removeEventListener(RAIL_PREFERENCES_EVENT, sync);
+      window.removeEventListener("popstate", syncLocation);
+      window.removeEventListener("hashchange", syncLocation);
+    });
   });
-  const items = createMemo(() =>
-    phoneBarItems(projectRailNavigation(data.apps, settings(), locale()), props.currentPath, {
-      label: t().home,
-      path: data.home ?? "/",
-    }),
+  return (
+    <Show when={JSON.stringify(items()) !== served}>
+      <TabBar variant="floating" class="cloud-tab-bar__live" label={t().apps} items={items()} />
+    </Show>
   );
-  return <TabBar variant="floating" label={t().apps} items={items()} />;
 }
 
 function RailNavigation(props: { currentPath: string }) {

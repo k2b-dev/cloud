@@ -152,10 +152,20 @@ describe("the phone bar follows saved rail preferences", () => {
       const markup = await html("/app/mail/inbox?overview=1");
       await page.route("https://shell.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }));
       await page.goto("https://shell.example.test/app/mail/inbox?overview=1");
+      // A person who reaches Home with the keyboard before the shell loads keeps their focus when it mounts.
+      await page.locator('.cloud-tab-bar a[href="/"]').focus();
       await page.addScriptTag({ content: client });
       await page.evaluate(() => (window as unknown as { mountShell: () => void }).mountShell());
-      const hrefs = () => page.locator(".cloud-tab-bar a").evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+      expect(
+        await page.evaluate(() => document.activeElement?.closest(".cloud-tab-bar") && document.activeElement.getAttribute("href")),
+      ).toBe("/");
+      const hrefs = () =>
+        page
+          .locator(".cloud-tab-bar a")
+          .evaluateAll((links) => links.filter((link) => link.checkVisibility()).map((link) => link.getAttribute("href")));
       expect(await hrefs()).toEqual(["/", "/app/mail"]);
+      // Mounting keeps the server's bar, so a link focused before the shell loaded keeps its focus.
+      expect(await page.locator(".cloud-tab-bar__live").count()).toBe(0);
       // What RailEditor's publishRailPreferences does after saving: new shell data, then the event.
       await page.evaluate(() => {
         const element = document.getElementById("cloud-shell-data")!;
