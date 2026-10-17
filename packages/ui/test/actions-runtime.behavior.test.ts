@@ -234,6 +234,11 @@ describe("@k2b/ui action runtime behavior", () => {
       expect(closed).toEqual([undefined, false, false, false, false]);
       expect(click(read, { button: 1 }, "auxclick")).toBe(false);
       expect(selected).toEqual(["read", "pinned"]);
+      // Space chooses a link-backed choice, as it does the button form, instead of scrolling the page.
+      const space = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+      read.dispatchEvent(space);
+      expect(space.defaultPrevented).toBe(true);
+      expect(selected).toEqual(["read", "pinned", "read"]);
       const segments = Array.from(dom.root.querySelectorAll<HTMLElement>(".k2b-dropdown__row > [role='menuitemradio']"));
       edit.focus();
       expect(focusRowSegment(segments, "ArrowRight")).toBe(true);

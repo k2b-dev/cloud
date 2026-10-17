@@ -77,7 +77,7 @@ Both components accept `DropdownItem[]`. An item is one of:
 - a radio or checkbox choice with `choice`, `checked`, and `action`;
 - a section with optional `sectionLabel` and nested actions or choices.
 
-A choice can also take `href`: a plain click runs its action, while modified clicks can open the link in a new tab.
+A choice can also take `href`: a plain click, Enter, or Space runs its action, while modified clicks and middle-click can open the link in a new tab.
 
 A section with `layout: "row"` sets a few short radio choices side by side as
 one segmented row, such as a sort direction or a color mode. Give it a

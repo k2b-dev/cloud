@@ -291,8 +291,12 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
 function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
   const menu = useContext(MenuContext);
   const checked = () => (typeof props.checked === "function" ? props.checked() : props.checked);
+  let element: HTMLElement | undefined;
   return (
     <Dynamic
+      ref={(node: HTMLAnchorElement | HTMLButtonElement) => {
+        element = node;
+      }}
       component={!props.disabled && props.href ? "a" : "button"}
       href={!props.disabled ? props.href : undefined}
       type={!props.disabled && props.href ? undefined : "button"}
@@ -313,6 +317,12 @@ function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
         event.stopPropagation();
         if (props.closeOnSelect !== false) menu?.close();
         props.action();
+      }}
+      onKeyDown={(event: KeyboardEvent) => {
+        // A link answers only Enter; as a menu choice it also answers Space, like the button form.
+        if (event.key !== " " || props.disabled || !props.href) return;
+        event.preventDefault();
+        element?.click();
       }}
     >
       <Show when={props.choice === "checkbox"}>

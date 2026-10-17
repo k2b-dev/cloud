@@ -68,7 +68,8 @@ its dialog. Decorative faces do not repeat their names to screen readers.
 The open list shows every person's name. Selectable rows are native buttons;
 other rows remain text. When a focused row stops being selectable or its
 person leaves, focus moves to the nearest selectable row, or to the list.
-Keyboard dismissal returns focus to the trigger.
+Keyboard dismissal returns focus to the trigger. The open list follows its
+trigger when the window resizes or scrolls, so it stays inside the window.
 
 ## Runtime
 

@@ -162,6 +162,18 @@ export function AvatarStack(props: AvatarStackProps): JSX.Element {
     popover.style.left = `${rect.left}px`;
     popover.style.top = `${rect.top}px`;
   };
+  // Like a dropdown menu, the open list follows its trigger when the window resizes or scrolls, and its own size.
+  let resizeObserver: ResizeObserver | undefined;
+  const follow = (on: boolean) => {
+    const method = on ? "addEventListener" : "removeEventListener";
+    window[method]("resize", place);
+    window[method]("scroll", place, true);
+    if (on && typeof ResizeObserver !== "undefined") {
+      resizeObserver ??= new ResizeObserver(place);
+      resizeObserver.observe(popover);
+    } else resizeObserver?.disconnect();
+  };
+  onCleanup(() => follow(false));
 
   const openSheet = () => {
     if (sheetOpen) return;
@@ -246,6 +258,7 @@ export function AvatarStack(props: AvatarStackProps): JSX.Element {
         onToggle={(event) => {
           const next = (event as ToggleEvent).newState === "open";
           setOpen(next);
+          follow(next);
           if (!next && document.activeElement && popover.contains(document.activeElement)) trigger.focus();
         }}
       >
