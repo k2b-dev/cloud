@@ -27,6 +27,8 @@ export const publicUploadClientBucket = (ip: string): string => {
   // their /64 names a translator or relay that unrelated clients share.
   if (g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) return ipv4(g6, g7);
   if (g0 === 0x2001 && g1 === 0) return ipv4(g6 ^ 0xffff, g7 ^ 0xffff);
+  // 6to4 (2002::/16) gives one IPv4 holder a whole /48; key it by that IPv4 address instead of 65,536 /64 budgets.
+  if (g0 === 0x2002) return ipv4(g1 ?? 0, g2 ?? 0);
   // One subscriber usually has at least a /64; rotating host addresses must not reset the budget.
   return `ip6:${groups
     .slice(0, 4)

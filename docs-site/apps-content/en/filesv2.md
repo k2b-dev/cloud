@@ -260,13 +260,18 @@ Unlock attempts are rate-limited. The browser receives an encrypted, share-scope
 HttpOnly cookie; transfers retain their existing short lease lifetime.
 
 Inbox upload requests (start, lease, commit and abort) are limited to 120 per
-minute per client address across all upload links. IPv6 clients count per /64
-network; NAT64 and Teredo addresses count per embedded IPv4 address. The uploader waits automatically when the limit is reached. Each file
-needs about two requests, allowing roughly 60 files per minute within that
-budget. Other public page requests keep their existing limit of 10 per minute
-per client address. For operators: guests behind one shared address (NAT or
-VPN) share the upload budget, so 429 responses on upload routes with
-`Retry-After` are expected under heavy shared use and are not an outage.
+minute per client address across all upload links. Requests with unknown or
+invalid links count against the same budget. IPv6 clients count per /64
+network. NAT64, Teredo and 6to4 addresses count per embedded IPv4 address. A
+client that controls a larger IPv6 prefix gets one budget per /64. Each file
+needs about two requests. When the limit is reached, the uploader waits for the
+time in `Retry-After` and then continues on its own. Other public share
+requests keep their limit of 10 per minute per client address.
+
+For operators: guests behind one shared address share the upload budget. This
+includes NAT, VPN and one IPv6 /64 network, such as campus Wi-Fi. Under heavy
+shared use, 429 responses with `Retry-After` on upload routes are expected and
+are not an outage.
 
 A share is either a download bundle of entries or an upload inbox for one
 folder, always inside one base. Download shares show the current contents,
