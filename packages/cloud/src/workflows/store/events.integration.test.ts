@@ -21,7 +21,12 @@ import {
   WORKFLOW_EVENT_MAX_PAYLOAD_BYTES,
   WorkflowEventTooLargeError,
 } from "./events";
-import { expireWorkflowEventPayloads, expireWorkflowEventPayloadsBatch, WORKFLOW_EVENT_RETENTION_DAYS } from "./retention";
+import {
+  ensureWorkflowEventRetentionIndexes,
+  expireWorkflowEventPayloads,
+  expireWorkflowEventPayloadsBatch,
+  WORKFLOW_EVENT_RETENTION_DAYS,
+} from "./retention";
 import { claimWorkflowRun } from "./runs";
 
 let readiness: Promise<boolean> | null = null;
@@ -102,12 +107,25 @@ suiteFor("database")("workflow events", () => {
         )
     `;
     expect(rows).toHaveLength(8);
-    const indexes = await sql<{ indexname: string }[]>`
-      SELECT indexname FROM pg_indexes WHERE schemaname = 'workflows'
-        AND indexname IN ('idx_workflows_event_retention', 'idx_workflows_run_event')
-      ORDER BY indexname
+  });
+
+  test("builds valid retention indexes concurrently and accepts them on subsequent calls", async () => {
+    expect(await ready()).toBe(true);
+    expect(await ensureWorkflowEventRetentionIndexes()).toBe(true);
+    const indexes = await sql<{ indexname: string; valid: boolean }[]>`
+      SELECT relation.relname AS indexname, index.indisvalid AS valid
+      FROM pg_catalog.pg_index index
+      JOIN pg_catalog.pg_class relation ON relation.oid = index.indexrelid
+      JOIN pg_catalog.pg_namespace namespace ON namespace.oid = relation.relnamespace
+      WHERE namespace.nspname = 'workflows'
+        AND relation.relname IN ('idx_workflows_event_retention', 'idx_workflows_run_event')
+      ORDER BY relation.relname
     `;
-    expect(indexes.map((row) => row.indexname)).toEqual(["idx_workflows_event_retention", "idx_workflows_run_event"]);
+    expect(indexes).toEqual([
+      { indexname: "idx_workflows_event_retention", valid: true },
+      { indexname: "idx_workflows_run_event", valid: true },
+    ]);
+    expect(await ensureWorkflowEventRetentionIndexes()).toBe(true);
   });
 
   test("an event starts one run per activation listening for it", async () => {

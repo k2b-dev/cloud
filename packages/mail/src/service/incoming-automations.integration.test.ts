@@ -9,6 +9,7 @@ import {
   dispatchPendingWorkflowEvents,
   wakeExpiredWorkflowRuns,
   wakeWorkflowRunsWaitingOn,
+  WORKFLOW_EVENT_MAX_PAYLOAD_BYTES,
 } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { Hono } from "hono";
@@ -639,6 +640,152 @@ suite("incoming automations", () => {
       });
     }
   });
+
+  for (const emissionPath of ["backfill", "sync"] as const) {
+    test(`accepts an oversized hydrated message through ${emissionPath} without dropping later candidates`, async () => {
+      const sender = `oversized-${emissionPath}-${suffix}@external.test`;
+      const bodyBytes = WORKFLOW_EVENT_MAX_PAYLOAD_BYTES / 2 + 1024 * 1024;
+      const normalBody = "Normal inline message body";
+      const envelopes: ConnectorEnvelope[] = [0, 1].map((index) => ({
+        remoteRef: {
+          folderStableKey: `incoming-automation-inbox-${suffix}`,
+          uidValidity: "1",
+          uid: String((emissionPath === "backfill" ? 21_000 : 21_010) + index),
+          modseq: "1",
+        },
+        providerMessageId: `oversized-${emissionPath}-${suffix}-${index}`,
+        providerThreadId: null,
+        messageId: `<oversized-${emissionPath}-${suffix}-${index}@external.test>`,
+        inReplyTo: null,
+        references: [],
+        subject: `Oversized ${emissionPath} ${index}`,
+        sentAt: new Date(`2026-10-01T08:0${index}:00.000Z`),
+        internalDate: new Date(`2026-10-01T08:0${index}:00.000Z`),
+        sizeBytes: index === 1 ? bodyBytes : normalBody.length,
+        flags: [],
+        labels: [],
+        addresses: { from: [{ name: "Sender", address: sender }], replyTo: [], to: [], cc: [], bcc: [] },
+        mimeStructure: {},
+      }));
+      const messageIds: string[] = [];
+      for (const [index, message] of envelopes.entries()) {
+        const messageId = await ingestEnvelope({
+          db: sql,
+          mailboxId,
+          remoteResourceId,
+          folderId: inboxFolderId,
+          message,
+          captureWorkflowTriggers: false,
+        });
+        messageIds.push(messageId);
+        // Only one large body; body and bodyText together exceed the event limit.
+        await sql`
+          UPDATE mail.message_contents
+          SET plain_text = ${index === 1 ? sql`repeat('a', ${bodyBytes}::integer)` : sql`${normalBody}`},
+              hydration_status = 'complete'
+          WHERE id = ${messageId}::uuid
+        `;
+      }
+      const created = await createIncomingAutomation({
+        context: ownerContext,
+        mailboxId,
+        input: {
+          name: `Oversized ${emissionPath} ${suffix}`,
+          enabled: true,
+          scope: { mode: "matching", conditions: { mode: "all", items: [{ field: "sender_address", operator: "is", value: sender }] } },
+          steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
+        },
+      });
+      if (!created.ok) throw new Error(created.error.message);
+      const operationId = crypto.randomUUID();
+      try {
+        if (emissionPath === "backfill") {
+          await startIncomingAutomationBackfillRuntime();
+          expect(
+            await runBackfillUntilSettled(
+              {
+                context: ownerContext,
+                mailboxId,
+                automationId: created.data.id,
+                input: { operationId, expectedRevision: created.data.revision },
+              },
+              20_000,
+            ),
+          ).toMatchObject({ state: "completed", candidateCount: 2, newlyAcceptedCount: 2, remainingCount: 0 });
+        } else {
+          // Model hydrated messages awaiting their first non-All-Mail receipt.
+          await sql`UPDATE mail.message_contents SET receipt_pending = true WHERE id = ANY(${toPgUuidArray(messageIds)}::uuid[])`;
+          // As in backfill, process the large newest message before the normal older one.
+          for (const message of [...envelopes].reverse()) {
+            await sql.begin(async (tx) => {
+              await ingestEnvelope({
+                db: tx,
+                mailboxId,
+                remoteResourceId,
+                folderId: inboxFolderId,
+                message,
+                captureWorkflowTriggers: true,
+              });
+            });
+          }
+        }
+        const events = await sql<
+          {
+            message_id: string;
+            message: Record<string, unknown>;
+            context_message: Record<string, unknown>;
+            matched_count: number;
+          }[]
+        >`
+          SELECT context #>> '{preconditions,message,id}' AS message_id,
+            data -> 'message' AS message,
+            context #> '{source,message}' AS context_message,
+            matched_count
+          FROM workflows.event
+          WHERE app_id = 'mail' AND scope_id = ${mailboxId}
+            AND target_workflow_id = ${created.data.workflowId}::uuid
+        `;
+        expect(events).toHaveLength(2);
+        for (const [index, messageId] of messageIds.entries()) {
+          const event = events.find((event) => event.message_id === messageId);
+          expect(event?.matched_count).toBe(1);
+          const expected = {
+            bodyAvailable: index !== 1,
+            body: index === 1 ? "" : normalBody,
+            bodyText: index === 1 ? "" : normalBody,
+            bodyHtml: "",
+          };
+          expect(event?.message).toMatchObject(expected);
+          expect(event?.context_message).toMatchObject(expected);
+        }
+      } finally {
+        if (emissionPath === "backfill") {
+          await cancelIncomingAutomationBackfill({ context: ownerContext, mailboxId, automationId: created.data.id, operationId });
+          await stopIncomingAutomationBackfillRuntime();
+        }
+        // No pending events or large payloads survive into later cases sharing this mailbox.
+        await sql`
+          DELETE FROM workflows.event
+          WHERE app_id = 'mail' AND scope_id = ${mailboxId}
+            AND context #>> '{preconditions,message,id}' = ANY(${toPgTextArray(messageIds)}::text[])
+        `;
+        await sql`
+          UPDATE mail.message_contents SET plain_text = NULL
+          WHERE id = ANY(${toPgUuidArray(messageIds)}::uuid[])
+        `;
+        await sql`
+          UPDATE mail.remote_message_refs SET stale_at = now()
+          WHERE message_id = ANY(${toPgUuidArray(messageIds)}::uuid[])
+        `;
+        await deleteIncomingAutomation({
+          context: ownerContext,
+          mailboxId,
+          automationId: created.data.id,
+          input: { expectedRevision: created.data.revision },
+        });
+      }
+    }, 30_000);
+  }
 
   test("requires admin and persists one unified managed workflow", async () => {
     const denied = await createIncomingAutomation({

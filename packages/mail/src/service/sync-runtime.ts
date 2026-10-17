@@ -56,7 +56,12 @@ import {
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
 import { reconcileMailStorageUsage } from "./storage-observability";
-import { getWorkflowSnapshot, mailWorkflowEventContext } from "./workflow-data";
+import {
+  getWorkflowSnapshot,
+  mailWorkflowEventContext,
+  mailWorkflowSnapshotWithoutBody,
+  type MailWorkflowTargetSnapshot,
+} from "./workflow-data";
 
 const log = logger("mail:sync");
 const ENVELOPE_BATCH_SIZE = 200;
@@ -970,39 +975,54 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
         array_position(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[], activation.workflow_id),
         activation.id
     `;
-    const triggerValues = {
-      message: snapshot.source.message,
-      conversation: snapshot.source.conversation,
-      occurredAt,
-    };
     for (const activation of activations) {
       const config = typeof activation.trigger_config === "string" ? JSON.parse(activation.trigger_config) : activation.trigger_config;
       const withValues =
         config.with !== null && typeof config.with === "object" && !Array.isArray(config.with)
           ? (config.with as Record<string, WorkflowJsonValue>)
           : {};
-      try {
-        await emitWorkflowEvent(
+      const emitSnapshot = (eventSnapshot: MailWorkflowTargetSnapshot) => {
+        const triggerValues = {
+          message: eventSnapshot.source.message,
+          conversation: eventSnapshot.source.conversation,
+          occurredAt,
+        };
+        return emitWorkflowEvent(
           {
             appId: MAIL_WORKFLOW_APP_ID,
             scopeId: params.mailboxId,
             type: MAIL_WORKFLOW_EVENT.messageReceived,
             targetWorkflowId: activation.workflow_id,
             data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
-            context: mailWorkflowEventContext(snapshot),
+            context: mailWorkflowEventContext(eventSnapshot),
             dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
             occurredAt: new Date(occurredAt),
           },
           { db: params.db },
         );
+      };
+      try {
+        await emitSnapshot(snapshot);
       } catch (error) {
         if (!(error instanceof WorkflowEventTooLargeError)) throw error;
-        log.warn("Skipped oversized message workflow event", {
+        log.info("Retrying oversized message workflow event without its body", {
           mailboxId: params.mailboxId,
           workflowId: activation.workflow_id,
           field: error.field,
           bytes: error.bytes,
         });
+        try {
+          await emitSnapshot(mailWorkflowSnapshotWithoutBody(snapshot));
+        } catch (retryError) {
+          if (!(retryError instanceof WorkflowEventTooLargeError)) throw retryError;
+          // A pathological body-less message must never stall mailbox sync.
+          log.warn("Skipped oversized message workflow event", {
+            mailboxId: params.mailboxId,
+            workflowId: activation.workflow_id,
+            field: retryError.field,
+            bytes: retryError.bytes,
+          });
+        }
       }
     }
   };

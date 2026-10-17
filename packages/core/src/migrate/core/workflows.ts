@@ -211,11 +211,6 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   // can say "expired", and the retention scan skips already expired payloads.
   await db`ALTER TABLE workflows.event ADD COLUMN IF NOT EXISTS payload_expired_at TIMESTAMPTZ`.simple();
   await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_event_retention
-    ON workflows.event ((COALESCE(dispatched_at, dispatch_failed_at)), id)
-    WHERE payload_expired_at IS NULL AND (dispatched_at IS NOT NULL OR dispatch_failed_at IS NOT NULL)
-  `.simple();
-  await db`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_workflows_event_dedupe
     ON workflows.event(app_id, scope_id, type, dedupe_key)
     WHERE dedupe_key IS NOT NULL
@@ -341,10 +336,6 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_workflows_run_dispatch
     ON workflows.run(claimable_at, created_at, id)
     WHERE state IN ('queued', 'running')
-  `.simple();
-  await db`
-    CREATE INDEX IF NOT EXISTS idx_workflows_run_event
-    ON workflows.run(event_id) WHERE event_id IS NOT NULL
   `.simple();
   // Parked runs the wake scan has to pick up once their deadline passes.
   await db`

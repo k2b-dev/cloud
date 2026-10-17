@@ -631,10 +631,6 @@ the table `approvals.requests`, adds `approval_id` to `ai.pending_actions` and
 `approval_decided_via` to `ai.tool_calls`, and gives every chat approval that
 is still open a request. Assistant adds `approval_id` to
 `assistant.capability_calls`. Core deletes a request 90 days after it expired.
-Core also expires workflow event payloads after a fixed 30 days from dispatch
-or dead-lettering, once no resumable run references the event, and keeps slim
-rows for deduplication; see
-[Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
 
 Update Core before Assistant. Until Core has created the table, Studio code
 that calls an Action which asks for approval fails. One behavior changes for
@@ -908,6 +904,30 @@ current permissions, including revocation after resolution. Missing access,
 offline apps and missing destinations show Core's 404 page. Existing readers
 without links keep working through capability calls. See
 [Resource links](/en/docs/platform/capabilities#resource-links).
+
+### Bound and expire workflow events
+
+This release limits workflow events and stops `workflows.event` from growing
+without bound. It needs no configuration change. Both limits are fixed:
+
+- An emit whose `data` or `context` is larger than 16 MiB fails with
+  `WORKFLOW_EVENT_TOO_LARGE`. Grids answers such a start with a bad-input
+  error. Mail emits an oversized message without its body, and the run reads
+  the body from Mail when a step needs it.
+- 30 days after dispatch or dead-lettering, Core deletes the event's
+  deliveries and empties its data, context, and authorization snapshot, once no
+  queued, running, waiting, or needs-attention run references it. The row and
+  its dedupe key stay, so deduplication keeps working. Run details show the
+  event payload as expired.
+
+The first Core start adds the column `workflows.event.payload_expired_at`.
+Core then builds two indexes for the retention sweep in the background with
+`CREATE INDEX CONCURRENTLY`, so event and run writes continue during the
+build. The first sweep starts when both indexes are valid and empties old
+payloads in batches of 1,000 every 6 hours. PostgreSQL reuses the freed space
+for new rows; the table files shrink only after `VACUUM FULL` or a similar
+rewrite. See
+[Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
 
 ## Coordinate an existing installation's identity upgrade
 
