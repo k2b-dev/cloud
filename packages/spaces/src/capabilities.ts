@@ -117,6 +117,7 @@ import {
   type SpaceComment,
   type SpaceItem,
   type SpaceItemAttachment,
+  type SpaceItemReaction,
   type SpaceItemTemplate,
   type TemplateDateRule,
 } from "./contracts";
@@ -391,8 +392,15 @@ const reviewTaskWork = async (
   });
 };
 
+/** Reactor names are bounded like assignee names, so 20 emoji with three named people stay within the result budget. */
+const boundReactionNames = (reactions: SpaceItemReaction[]) =>
+  reactions.map((reaction) => ({
+    ...reaction,
+    people: reaction.people.map((person) => ({ ...person, displayName: truncateText(person.displayName, 200).text })),
+  }));
+
 const mapRelations = (item: SpaceItem) => ({
-  reactions: item.reactions,
+  reactions: item.reactions && boundReactionNames(item.reactions),
   assignees: (item.assignees ?? [])
     .slice(0, 100)
     .map((entry) => ({ id: entry.id, displayName: truncateText(entry.displayName, 200).text })),
@@ -403,7 +411,8 @@ const mapRelations = (item: SpaceItem) => ({
     (item.assignees?.length ?? 0) > 100 ||
     (item.tags?.length ?? 0) > 100 ||
     (item.assignees ?? []).some((entry) => truncateText(entry.displayName, 200).truncated) ||
-    (item.tags ?? []).some((entry) => truncateText(entry.name, 100).truncated || truncateText(entry.color, 100).truncated),
+    (item.tags ?? []).some((entry) => truncateText(entry.name, 100).truncated || truncateText(entry.color, 100).truncated) ||
+    (item.reactions ?? []).some((reaction) => reaction.people.some((person) => truncateText(person.displayName, 200).truncated)),
 });
 
 const mapListRelations = (item: SpaceItem) => ({
@@ -3015,7 +3024,10 @@ export const spacesCapabilities = defineCapabilities({
             actor,
           });
           if (!result.ok) return fail(localizeSpacesError(result.error, context.locale));
-          return ok({ data: result.data, summary: spacesMessages(context.locale).addedReaction({ title: resolved.data.item.title }) });
+          return ok({
+            data: { reactions: boundReactionNames(result.data.reactions) },
+            summary: spacesMessages(context.locale).addedReaction({ title: resolved.data.item.title }),
+          });
         }),
     },
     "reaction.remove": {
@@ -3056,7 +3068,10 @@ export const spacesCapabilities = defineCapabilities({
             actor,
           });
           if (!result.ok) return fail(localizeSpacesError(result.error, context.locale));
-          return ok({ data: result.data, summary: spacesMessages(context.locale).removedReaction({ title: resolved.data.item.title }) });
+          return ok({
+            data: { reactions: boundReactionNames(result.data.reactions) },
+            summary: spacesMessages(context.locale).removedReaction({ title: resolved.data.item.title }),
+          });
         }),
     },
     "comment.create": {

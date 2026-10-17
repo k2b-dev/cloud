@@ -405,6 +405,35 @@ test("task list fits escaped maximum previews without skipping rows", async () =
   expect(capabilityResultSchema(TaskListDataSchema).safeParse(result.data).success).toBeTrue();
 });
 
+test("item.read and reaction actions bound reactor names within the result budget", async () => {
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+  // Profile names may hold 5,000 bytes; three of them on each of 20 emoji exceed the budget unbounded.
+  const people = Array.from({ length: 3 }, () => ({ kind: "user" as const, id: userId, displayName: "\u0001".repeat(5000) }));
+  const reactions = Array.from({ length: 20 }, (_, index) => ({
+    emoji: String.fromCodePoint(0x1f600 + index),
+    count: 4,
+    own: true,
+    people,
+  }));
+  spyOn(spacesService.item, "get").mockResolvedValue({ ...task, reactions });
+  spyOn(spacesService.item.reactions, "add").mockResolvedValue({ ok: true, data: { reactions } });
+  const read = await spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext);
+  const added = await spacesCapabilities.actions["reaction.add"].run({ itemId, emoji: "👍" }, userContext);
+  for (const [result, schema] of [
+    [read, spacesCapabilities.queries["item.read"].data],
+    [added, spacesCapabilities.actions["reaction.add"].data],
+  ] as const) {
+    if (!result.ok) throw new Error("Expected a bounded result");
+    expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+    expect(capabilityResultSchema(schema).safeParse(result.data).success).toBeTrue();
+  }
+  if (read.ok) expect(read.data.data).toMatchObject({ relationsTruncated: true });
+});
+
 test.each(["task.list", "event.list"] as const)("%s keeps a full page of maximum reactions within the result budget", async (id) => {
   spyOn(spacesService.space, "get").mockResolvedValue(space);
   spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
