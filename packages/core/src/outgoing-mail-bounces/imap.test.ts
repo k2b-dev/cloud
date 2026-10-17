@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import tls from "node:tls";
 import * as logging from "@k2b/cloud/services/logging";
 import * as messages from "@k2b/cloud/services/outgoing-mail/messages";
+import * as endpoint from "@k2b/cloud/services/outgoing-mail/resolve-host";
 import * as store from "@k2b/cloud/services/outgoing-mail/store";
 import { ImapFlow } from "imapflow";
 import { IMAP_SINK_CA, type ImapSinkMessage, imapSink } from "../../../../scripts/fixtures/imap-sink";
@@ -91,6 +92,9 @@ test("adapter connects with timeouts, uses EXAMINE and bounded BODY.PEEK queries
 });
 
 const realConnect = tls.connect;
+const resolveMailHost = endpoint.resolveMailHost;
+let target: ReturnType<typeof spyOn<typeof endpoint, "resolveMailHost">>;
+let originalAllowlist: string | undefined;
 let trust: ReturnType<typeof spyOn<typeof tls, "connect">>;
 let credentials: ReturnType<typeof spyOn<typeof store, "resolveImapMailCredentials">>;
 let saved: ReturnType<typeof spyOn<typeof store, "saveImapMailCheck">>;
@@ -99,6 +103,13 @@ let log: ReturnType<typeof spyOn<typeof logging, "logger">>;
 const warnings = mock((_message: string, _metadata?: Record<string, unknown>) => {});
 const errors = mock(() => {});
 beforeEach(() => {
+  originalAllowlist = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
+  process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1";
+  target = spyOn(endpoint, "resolveMailHost").mockImplementation((host, signal) =>
+    host === "imap.example.org"
+      ? Promise.resolve({ host, addresses: [{ address: "203.0.113.8", family: 4 }], servername: host })
+      : resolveMailHost(host, signal),
+  );
   // The sink's certificate names localhost, not the loopback IP. Trust its CA and check the
   // certificate against localhost, so validation stays on.
   trust = spyOn(tls, "connect").mockImplementation(
@@ -118,7 +129,9 @@ beforeEach(() => {
   log = spyOn(logging, "logger").mockReturnValue({ error: errors, warn: warnings, info: mock(() => {}), debug: mock(() => {}) });
 });
 afterEach(() => {
-  for (const spy of [trust, credentials, saved, applied, log]) spy.mockRestore();
+  if (originalAllowlist === undefined) delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
+  else process.env.OUTGOING_MAIL_ALLOWED_TARGETS = originalAllowlist;
+  for (const spy of [trust, credentials, saved, applied, log, target]) spy.mockRestore();
 });
 const dsn = (uid: number): ImapSinkMessage => ({ uid, bodyStructure: wireStructure, sections: { "2": status, "3.HEADER": headers } });
 const atSink = (sink: ReturnType<typeof imapSink>, secure = true): store.ImapMailProfile => ({
@@ -132,6 +145,32 @@ const pollSink = async (sink: ReturnType<typeof imapSink>) => {
   await pollProfileBounces(current, () => createImapBounceMailbox(current, signal), signal);
   return current;
 };
+test("real adapter falls back using only the pinned addresses", async () => {
+  const sink = imapSink({ implicitTls: true });
+  const addresses = [
+    { address: "::1", family: 6 as const },
+    { address: "127.0.0.1", family: 4 as const },
+  ];
+  target.mockResolvedValue({ host: "imap.example.org", addresses, servername: "imap.example.org" });
+  const mailbox = createImapBounceMailbox({ ...profile, imap: { ...profile.imap, port: sink.port } }, AbortSignal.timeout(3000));
+  try {
+    // The sink listens only on 127.0.0.1, so the first candidate cannot accept this connection.
+    expect(await mailbox.open("INBOX", { readOnly: true })).toEqual({ uidValidity: "42" });
+    const options = trust.mock.calls[0]?.[0];
+    if (!options || typeof options === "number") throw new Error("Expected TLS connection options");
+    expect(options).toMatchObject({ host: "imap.example.org", servername: "imap.example.org" });
+    let lookedUp = false;
+    options.lookup!("imap.example.org", { all: true }, (error, all) => {
+      lookedUp = true;
+      expect(error).toBeNull();
+      expect(all).toEqual(addresses);
+    });
+    expect(lookedUp).toBe(true);
+  } finally {
+    mailbox.close();
+    sink.stop();
+  }
+});
 test("real adapter skips an oversized BODYSTRUCTURE after reconnecting and collects both surrounding DSNs read-only", async () => {
   const oversized = `("TEXT" "PLAIN" ("NAME" "${"x".repeat(140 * 1024)}") NIL NIL "7BIT" 1 1)`;
   const sink = imapSink({ implicitTls: true, messages: [dsn(1), { uid: 2, bodyStructure: oversized, sections: {} }, dsn(3)] });
@@ -259,8 +298,17 @@ test("mocked adapter requires STARTTLS for non-implicit TLS and overrides server
       await mailbox.open("INBOX", { readOnly: true });
       mailbox.close();
     }
+    const lookup = captured[0]!.tls!.lookup!;
     expect(captured[0]).not.toHaveProperty("doSTARTTLS");
-    expect(captured[0]).not.toHaveProperty("tls");
+    expect(captured[0]).toMatchObject({
+      host: "imap.example.org",
+      servername: "imap.example.org",
+      tls: { servername: "imap.example.org", lookup: expect.any(Function) },
+    });
+    lookup("unvalidated.example", { all: true }, (error, addresses) => {
+      expect(error).toBeNull();
+      expect(addresses).toEqual([{ address: "203.0.113.8", family: 4 }]);
+    });
     expect(captured[1]).toMatchObject({ secure: true, tls: { servername: undefined } });
     expect(captured[1]).not.toHaveProperty("doSTARTTLS");
     expect(captured[2]).toMatchObject({ secure: false, doSTARTTLS: true, tls: { servername: undefined } });
@@ -336,5 +384,20 @@ test("mocked EXAMINE with an invalid UIDNEXT fails before searching", async () =
     opened.mockRestore();
     search.mockRestore();
     close.mockRestore();
+  }
+});
+
+test("blocked bounce IMAP host never constructs or connects a client", async () => {
+  target.mockRestore();
+  delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
+  const connect = spyOn(ImapFlow.prototype, "connect");
+  const mailbox = createImapBounceMailbox({ ...profile, imap: { ...profile.imap, host: "127.0.0.1" } }, new AbortController().signal);
+  try {
+    await expect(mailbox.open("INBOX", { readOnly: true })).rejects.toThrow("OUTGOING_MAIL_ALLOWED_TARGETS");
+    expect(connect).not.toHaveBeenCalled();
+    expect(credentials).not.toHaveBeenCalled();
+  } finally {
+    connect.mockRestore();
+    mailbox.close();
   }
 });

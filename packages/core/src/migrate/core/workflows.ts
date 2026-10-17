@@ -207,6 +207,9 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `.simple();
+  // Set after retention empties data/context/authorization_snapshot. Readers
+  // can say "expired", and the retention scan skips already expired payloads.
+  await db`ALTER TABLE workflows.event ADD COLUMN IF NOT EXISTS payload_expired_at TIMESTAMPTZ`.simple();
   await db`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_workflows_event_dedupe
     ON workflows.event(app_id, scope_id, type, dedupe_key)

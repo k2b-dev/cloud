@@ -564,6 +564,16 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             snoozedUntil: "Zeitpunkt für die erneute Anzeige oder null, um die Unterhaltung jetzt wieder anzuzeigen.",
           },
         },
+        "conversation.status.update.batch": {
+          title: "Status von Unterhaltungen aktualisieren",
+          description:
+            "Bis zu 50 Unterhaltungen eines Postfachs als erledigt markieren oder wieder öffnen. Meldet ok oder not_found je Unterhaltung.",
+          input: {
+            mailboxId: "Exakte mail.mailbox ID des Postfachs.",
+            conversationIds: "Exakte mail.conversation IDs desselben Postfachs, höchstens 50.",
+            status: "Unterhaltungen als erledigt markieren oder wieder öffnen.",
+          },
+        },
         "conversation.status.update": {
           title: "Konversationsstatus aktualisieren",
           description: "Markieren Sie ein Gespräch als erledigt oder öffnen Sie es erneut.",

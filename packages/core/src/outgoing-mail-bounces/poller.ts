@@ -1,5 +1,6 @@
 import type { MailBounceErrorCode } from "@k2b/cloud/contracts";
 import { logger } from "@k2b/cloud/services/logging";
+import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
 import { applyOutgoingMailBounce } from "@k2b/cloud/services/outgoing-mail/messages";
 import { type ImapMailProfile, saveImapMailCheck } from "@k2b/cloud/services/outgoing-mail/store";
 import { type BounceStructure, type DeliveryReport, DSN_PART_BYTES, dsnParts, parseDsn } from "./parser";
@@ -91,9 +92,9 @@ export const pollProfileBounces = async (profile: ImapMailProfile, connect: () =
     if (uids.length <= BOUNCE_BATCH_SIZE && scan.through > (lastUid ?? 0)) lastUid = scan.through;
     stage = "save_failed";
     await abortable(() => saveImapMailCheck(profile, { uidValidity: opened.uidValidity, lastUid }), signal);
-  } catch {
+  } catch (cause) {
     // Server exceptions can contain credentials and protocol frames. Store only our code.
-    const error = signal.aborted ? "interrupted" : stage;
+    const error = signal.aborted ? "interrupted" : cause instanceof NetworkTargetBlockedError ? "target_blocked" : stage;
     try {
       await abortable(
         () => saveImapMailCheck(profile, { ...(uidValidity !== undefined ? { uidValidity, lastUid } : {}), error }),

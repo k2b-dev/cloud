@@ -8,6 +8,7 @@ export { accountIdentities, AccountIdentityError } from "./accounts/identities";
 export type { AccountIdentityUser, AccountIdentityGroup, AccountIdentityPage, AccountIdentityAvailability } from "./accounts/identities";
 export type { AccountIdentityReconciliation } from "./accounts/identity-reconciliation";
 export { providers } from "./providers";
+export { createAllowedNetworkFetch } from "./allowed-network-fetch";
 export { requestPublicHttps, type PublicHttpInput } from "./public-http";
 export { authFlows } from "./auth-flows";
 export { toPgIntArray, toPgTextArray, toPgUuidArray, escapeLikePattern, isUniqueViolation } from "./postgres";

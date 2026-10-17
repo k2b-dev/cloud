@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { DropdownAction } from "../src/actions/Dropdown";
@@ -13,7 +13,9 @@ let dispose: (() => void) | undefined;
 const settle = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 const LONG_PRESS = 550;
 
-async function mount(options: { items?: (calls: Calls) => GestureMenuItem[]; sheetTop?: boolean; locale?: string } = {}) {
+async function mount(
+  options: { items?: (calls: Calls) => GestureMenuItem[]; sheetTop?: boolean; locale?: string; onOpen?: () => void } = {},
+) {
   const { GestureMenu } = await import("../src/actions/GestureMenu");
   const { LocaleProvider } = await import("../src/intl/locale");
   const calls: Calls = { reply: 0, react: 0, copy: 0, archive: 0 };
@@ -28,6 +30,7 @@ async function mount(options: { items?: (calls: Calls) => GestureMenuItem[]; she
         <GestureMenu
           label="Message from Nora"
           items={items}
+          onOpen={options.onOpen}
           sheetTop={
             options.sheetTop
               ? (close) => (
@@ -459,6 +462,147 @@ else
       expect(view.sheet()).toBeNull();
       const { dialogCore } = await import("../src/feedback/dialog-core");
       expect(dialogCore.isOpen()).toBe(false);
+    });
+
+    describe("long press from 48rem", () => {
+      beforeEach(() => {
+        Object.defineProperty(dom.window, "matchMedia", {
+          configurable: true,
+          writable: true,
+          value: (query: string) => ({ matches: query === "(min-width: 48rem)", media: query }),
+        });
+      });
+
+      const menu = () => dom.document.querySelector<HTMLElement>(".k2b-context-menu[role='menu']");
+
+      test("inside a modal dialog keeps the sheet, since the menu on the body would be inert", async () => {
+        const view = await mount();
+        const dialog = dom.document.createElement("dialog");
+        dom.root.append(dialog);
+        dialog.append(view.host);
+        dialog.showModal();
+        // happy-dom does not know `:modal`; the browser test checks it in a real engine.
+        const matches = dialog.matches.bind(dialog);
+        Object.defineProperty(dialog, "matches", { value: (selector: string) => selector === ":modal" || matches(selector) });
+        view.pointer("pointerdown", view.text, 120, 40);
+        await settle(LONG_PRESS);
+        expect(view.sheet()).not.toBeNull();
+        expect(menu()).toBeNull();
+        view.pointer("pointerup", view.text, 120, 40);
+        view.touchEnd(view.text);
+        dialog.close();
+      });
+
+      test("opens the same items at the press point once and consumes the release", async () => {
+        let opens = 0;
+        const view = await mount({ sheetTop: true, onOpen: () => opens++ });
+        view.pointer("pointerdown", view.text, 120, 40);
+        await settle(LONG_PRESS);
+        expect(menu()).not.toBeNull();
+        expect([...menu()!.querySelectorAll("[role='menuitem']")].map((item) => item.textContent)).toEqual([
+          "Reply",
+          "React with thumbs up",
+          "Copy text",
+        ]);
+        expect(menu()!.style.left).toBe("120px");
+        expect(menu()!.style.top).toBe("40px");
+        expect(view.sheet()).toBeNull();
+        expect(dom.document.querySelector(".quick")).toBeNull();
+        expect(view.host.getAttribute("aria-expanded")).toBe("true");
+        expect(opens).toBe(1);
+        expect(dom.document.activeElement).toBe(menu()!.querySelector("[role='menuitem']"));
+        view.pointer("pointerup", view.text, 120, 40);
+        expect(view.touchEnd(view.text)).toBe(true);
+        await settle(20);
+        expect(menu()).not.toBeNull();
+        expect(view.calls).toEqual({ reply: 0, react: 0, copy: 0, archive: 0 });
+        expect(opens).toBe(1);
+      });
+
+      test("a touch context-menu event opens at the press point immediately", async () => {
+        let opens = 0;
+        const view = await mount({ onOpen: () => opens++ });
+        view.pointer("pointerdown", view.text, 120, 40);
+        const event = new view.win.PointerEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          pointerType: "touch",
+          clientX: 200,
+          clientY: 80,
+        });
+        view.text.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
+        expect(menu()).not.toBeNull();
+        expect(menu()!.style.left).toBe("120px");
+        expect(menu()!.style.top).toBe("40px");
+        expect(view.sheet()).toBeNull();
+        await settle(LONG_PRESS);
+        expect(opens).toBe(1);
+        view.pointer("pointerup", view.text, 120, 40);
+        expect(view.touchEnd(view.text)).toBe(true);
+      });
+
+      test("moving more than 10 px before the hold opens nothing", async () => {
+        const view = await mount();
+        view.pointer("pointerdown", view.text, 120, 40);
+        view.pointer("pointermove", view.text, 120, 52);
+        await settle(LONG_PRESS);
+        expect(menu()).toBeNull();
+        expect(view.sheet()).toBeNull();
+        expect(view.host.getAttribute("aria-expanded")).toBe("false");
+        view.pointer("pointerup", view.text, 120, 52);
+        expect(view.touchEnd(view.text)).toBe(false);
+      });
+
+      test("touch movement scrolls freely before the hold and is prevented only while held afterwards", async () => {
+        const view = await mount();
+        const move = (cancelable = true) => {
+          const event = new view.win.Event("touchmove", { bubbles: true, cancelable });
+          view.text.dispatchEvent(event);
+          return event.defaultPrevented;
+        };
+        expect(move()).toBe(false);
+        view.pointer("pointerdown", view.text, 120, 40);
+        expect(move()).toBe(false);
+        await settle(LONG_PRESS);
+        view.pointer("pointermove", view.text, 120, 120);
+        expect(move()).toBe(true);
+        expect(move(false)).toBe(false);
+        expect(menu()).not.toBeNull();
+        expect(view.surface.dataset.swipe).toBeUndefined();
+        view.pointer("pointerup", view.text, 120, 120);
+        expect(move()).toBe(false);
+        expect(view.touchEnd(view.text)).toBe(true);
+      });
+
+      test("Escape closes the popover and returns focus to the host", async () => {
+        const view = await mount();
+        view.pointer("pointerdown", view.text, 120, 40);
+        await settle(LONG_PRESS);
+        view.pointer("pointerup", view.text, 120, 40);
+        view.touchEnd(view.text);
+        const first = menu()!.querySelector<HTMLElement>("[role='menuitem']")!;
+        expect(dom.document.activeElement).toBe(first);
+        first.dispatchEvent(new view.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        expect(menu()).toBeNull();
+        expect(view.host.getAttribute("aria-expanded")).toBe("false");
+        expect(dom.document.activeElement).toBe(view.host);
+      });
+
+      test("chooses the width when the hold fires, rather than when the component mounts or the press starts", async () => {
+        Reflect.deleteProperty(dom.window, "matchMedia");
+        const view = await mount();
+        view.pointer("pointerdown", view.text, 120, 40);
+        Object.defineProperty(dom.window, "matchMedia", {
+          configurable: true,
+          value: (query: string) => ({ matches: query === "(min-width: 48rem)", media: query }),
+        });
+        await settle(LONG_PRESS);
+        expect(menu()).not.toBeNull();
+        expect(view.sheet()).toBeNull();
+        view.pointer("pointerup", view.text, 120, 40);
+        view.touchEnd(view.text);
+      });
     });
 
     test("a sheet action runs once the sheet has closed and left the history, so it may navigate", async () => {

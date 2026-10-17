@@ -120,7 +120,7 @@ export const listStructureCases: Case[] = [
     markdown: ":::data\nroles:\n  - ops\n:::\n\n- after",
     items: [[6, 0, 0, "bullet", null, null, -1, 1, 2]],
   },
-  ...["query", "toc"].map(
+  ...["query", "toc", "chart"].map(
     (directive): Case => ({
       name: `${directive} directive`,
       markdown: `:::${directive}\n  - hidden\n:::\n\n- after`,

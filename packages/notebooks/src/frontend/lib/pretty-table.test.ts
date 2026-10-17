@@ -1,7 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { renderPrettyTableHtml } from "./pretty-table";
+import { evaluateFormula } from "@k2b/cloud/shared";
+import { evaluatePrettyTable, formatFormulaError, renderPrettyTableHtml } from "./pretty-table";
 
 describe("pretty table rendering", () => {
+  test("circular formulas keep the same referenced column as direct evaluation", () => {
+    const data = { headers: ["a", "b"], rows: [["=b+1", "=a+1"]] };
+    const result = evaluateFormula("=b+1", { ...data, currentRow: 0, currentCol: 0 });
+    expect(result).toMatchObject({ kind: "error", code: "CIRCULAR_REF" });
+    if (result.kind !== "error") throw new Error("Expected a circular reference");
+    expect(result.message).toContain('"b"');
+    expect(evaluatePrettyTable(data)[0]?.cells[0]?.result).toEqual(result);
+    expect(renderPrettyTableHtml(data, { locale: "en" })).toContain(`title="${formatFormulaError(result, "en")}">⚠ =b+1`);
+  });
+
   test("delegates only inline content while keeping raw formula context and results", () => {
     const rendered: string[] = [];
     const html = renderPrettyTableHtml(

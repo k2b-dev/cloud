@@ -4,7 +4,7 @@ import { isIndentedCodeLine, openingCodeFence } from "./markdown-fences";
 
 export const NOTEBOOK_DIRECTIVE_START = /^ {0,3}:::/;
 
-const NOTEBOOK_DIRECTIVE = /^ {0,3}:::(?:query|toc|data)[ \t]*$/;
+const NOTEBOOK_DIRECTIVE = /^ {0,3}:::(?:query|toc|data|chart)[ \t]*$/;
 const lineEnd = (source: string, from: number): number => {
   const end = source.indexOf("\n", from);
   return end < 0 ? source.length : end;
@@ -24,7 +24,7 @@ const container = (source: string, line: string, tokenizer: Tokenizer) => {
   if (/^ {0,3}</.test(line)) return tokenizer.html(source);
 };
 
-/** Notices follow the shared `@k2b/ui` info-block grammar; query, toc, and data blocks end at the next `:::`. */
+/** Notices follow the shared `@k2b/ui` info-block grammar; query, toc, data, and chart blocks end at the next `:::`. */
 const directiveLength = (source: string): number | null => {
   const notice = scanMarkdownInfoBlock(source);
   if (notice) return notice.length;

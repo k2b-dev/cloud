@@ -13,6 +13,7 @@ Every construct that Notebooks renders, with one compact example each. Read this
 - [Code, diagrams, and math](#code-diagrams-and-math)
 - [Named blocks](#named-blocks)
 - [Data blocks](#data-blocks)
+- [Charts](#charts)
 - [Contents and queries](#contents-and-queries)
 - [Complete example](#complete-example)
 
@@ -146,6 +147,56 @@ teams:
 
 Values are text, numbers, `true` or `false`, or flat lists with two spaces before each `-`. Quote text that would read as a number or boolean, such as `"42"` or `"true"`. Text that starts with `[`, `]`, `{`, `}`, `&`, `*`, `!`, `|`, `>`, `@`, or a backtick must be quoted, such as `"@ada"`, or the block is invalid. Values show as plain text, without links or formatting. Dates stay text: queries match them with `eq`, `in`, or `starts-with` (`2026-10`), not with `gt` or `lt`. Book shows the block as a card of keys and values. The complete rules are in [Declarative summaries](index.md#declarative-summaries).
 
+## Charts
+
+Type `:::` and choose **chart**. A chart reads only data from this note. Hover over a mark to see its values.
+
+```markdown
+@sales
+| Date | Revenue | Costs |
+| --- | --- | --- |
+| 2026-01-01 | 1200 | 600 |
+| 2026-02-01 | 1400 | 700 |
+
+:::chart
+type: area
+title: Sales 2026
+data: @sales
+x: Date
+y: [Revenue, Costs]
+tooltip:
+  label: Amount
+  format: EUR
+:::
+```
+
+Use `line`, `area`, `bar`, `pie`, `donut`, `scatter`, or `stat` as `type`. Every chart needs a `title`; `subtitle` is optional. An area chart fills a line chart.
+
+Set `data: @name` to a named table, list, or `:::data` block in this note. Use each name only once. Tables use evaluated formula values and exclude total rows. Lists such as `- Jan: 12` and numeric data entries supply columns called `label` and `value`. Data keys become readable labels, as in Book. For these sources, you may omit the column settings.
+
+Use `x` for the x column and `y` for one value column or a list such as `[Revenue, Costs]`. Line, area, and scatter charts need numeric x values or ISO dates: `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm[:ss]`, without an offset. Lines need at least two rows. For text labels, use `bar`. Each bar chart shows exactly one y column. Pie and donut use `label` and `value` column names. For stat, `value` can be a number, a key in the referenced data block, or a table column. A table column shows its last value and, with two or more rows, a small trend line.
+
+Instead of `data`, write inline `columns` and `rows`:
+
+```markdown
+:::chart
+type: bar
+title: Sales
+columns: [Month, Revenue]
+rows:
+  - [Jan, 1200]
+  - [Feb, 1400]
+x: Month
+y: Revenue
+:::
+```
+
+Indent row items and tooltip fields by two spaces. Each row must match the column count. Do not combine `data` with inline rows. This is a small YAML-like format, not general YAML.
+
+The optional `tooltip` section accepts `label`, `format`, and `unit`. Formats are `number`, `percent`, or an uppercase three-letter currency code such as `EUR`. `unit` adds a short suffix. Pie, donut, and stat also use this format for their displayed number. A single value column supplies the tooltip label by default; y column names label the series.
+
+A note can contain 20 charts. Each data list has at most 480 values, and a chart has at most 8 series. The shared chart also checks the total marks and whether the values and labels fit. Invalid settings show an error at the source line and keep the source visible. PDF export includes the chart followed by its data table.
+
 ## Contents and queries
 
 ```markdown
@@ -167,7 +218,7 @@ columns:
 :::
 ```
 
-`:::toc` lists the headings of this note. `:::query` lists notes of the same notebook as links or, with `columns`, as a table. Settings and operators are in [Declarative summaries](index.md#declarative-summaries). Write callouts, `:::data`, `:::query`, and `:::toc` at the top level, not inside lists, quotes, or code.
+`:::toc` lists the headings of this note. `:::query` lists notes of the same notebook as links or, with `columns`, as a table. Settings and operators are in [Declarative summaries](index.md#declarative-summaries). Write callouts, `:::data`, `:::query`, `:::toc`, and `:::chart` at the top level, not inside lists, quotes, or code.
 
 ## Complete example
 

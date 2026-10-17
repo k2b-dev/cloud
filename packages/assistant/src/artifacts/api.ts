@@ -161,19 +161,21 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
                 ? t.DB_LIMIT
                 : error.code === "CONFLICT"
                   ? t.DB_CHANGED
-                  : error.code === "DB_UNREACHABLE"
-                    ? t.DB_UNREACHABLE
-                    : error.code === "DB_TIMEOUT"
-                      ? t.DB_TIMEOUT
-                      : error.code === "DB_AUTH_FAILED"
-                        ? t.DB_AUTH_FAILED
-                        : error.code === "DB_NOT_CONFIGURED"
-                          ? t.DB_NOT_CONFIGURED
-                          : error.code === "DB_NOT_CONNECTED"
-                            ? t.DB_NOT_CONNECTED
-                            : error.code === "DB_SERVER_IN_USE"
-                              ? t.DB_SERVER_IN_USE
-                              : error.message;
+                  : error.code === "DB_TARGET_BLOCKED"
+                    ? t.DB_TARGET_BLOCKED
+                    : error.code === "DB_UNREACHABLE"
+                      ? t.DB_UNREACHABLE
+                      : error.code === "DB_TIMEOUT"
+                        ? t.DB_TIMEOUT
+                        : error.code === "DB_AUTH_FAILED"
+                          ? t.DB_AUTH_FAILED
+                          : error.code === "DB_NOT_CONFIGURED"
+                            ? t.DB_NOT_CONFIGURED
+                            : error.code === "DB_NOT_CONNECTED"
+                              ? t.DB_NOT_CONNECTED
+                              : error.code === "DB_SERVER_IN_USE"
+                                ? t.DB_SERVER_IN_USE
+                                : error.message;
         return respond(c, { ok: false, code: error.code, status: error.status, error: message });
       }
       const code = error instanceof ArtifactError ? error.code : error instanceof z.ZodError ? "INVALID_INPUT" : "REQUEST_FAILED";

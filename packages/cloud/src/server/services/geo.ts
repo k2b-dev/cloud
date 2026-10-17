@@ -1,6 +1,13 @@
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
 import { z } from "zod";
 import { readBoundedJson } from "../../_internal/bounded-json";
+import { env } from "../../config/env";
+import { createAllowedNetworkFetch } from "../../services/allowed-network-fetch";
+import { logger } from "../../services/logging";
+import { NetworkTargetBlockedError } from "../../services/network-security";
+import { parseNetworkAllowlistEnv } from "../../shared/network-address";
+
+export const geoAllowlist = () => parseNetworkAllowlistEnv("GEO_ALLOWED_TARGETS", env.GEO_ALLOWED_TARGETS);
 
 const GEO_TIMEOUT_MS = 2_000;
 const GEO_MAX_RESPONSE_BYTES = 256 * 1024;
@@ -118,8 +125,11 @@ const list = async (config: {
   }
 
   try {
-    const res = await fetch(`${baseUrlResult.data}/geo/search?${params}`, { signal: geoSignal(config.signal) });
+    const res = await createAllowedNetworkFetch(geoAllowlist())(`${baseUrlResult.data}/geo/search?${params}`, {
+      signal: geoSignal(config.signal),
+    });
     if (!res.ok) {
+      await res.body?.cancel();
       return unavailable();
     }
 
@@ -152,7 +162,9 @@ const list = async (config: {
       total: filtered.length,
       hasNext: page * perPage < filtered.length,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof NetworkTargetBlockedError)
+      logger("geo").warn("Geo target is on an internal network. An operator can allow it with GEO_ALLOWED_TARGETS.");
     return unavailable();
   }
 };
@@ -165,8 +177,11 @@ const get = async (config: { baseUrl: string; lat: number; lon: number }): Promi
   if (!baseUrlResult.ok) return baseUrlResult;
 
   try {
-    const res = await fetch(`${baseUrlResult.data}/geo/reverse?lat=${config.lat}&lng=${config.lon}`, { signal: geoSignal() });
+    const res = await createAllowedNetworkFetch(geoAllowlist())(`${baseUrlResult.data}/geo/reverse?lat=${config.lat}&lng=${config.lon}`, {
+      signal: geoSignal(),
+    });
     if (!res.ok) {
+      await res.body?.cancel();
       return unavailable();
     }
 
@@ -181,7 +196,9 @@ const get = async (config: { baseUrl: string; lat: number; lon: number }): Promi
       .find((place): place is GeoPlace => place !== null);
 
     return ok(first ?? null);
-  } catch {
+  } catch (error) {
+    if (error instanceof NetworkTargetBlockedError)
+      logger("geo").warn("Geo target is on an internal network. An operator can allow it with GEO_ALLOWED_TARGETS.");
     return unavailable();
   }
 };

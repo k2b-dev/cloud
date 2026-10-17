@@ -3,7 +3,13 @@
 `cloud.chart(options)` returns chart markup in Cloud colors. Use it as
 `innerHTML`, inside `cloud.html`, or in the HTML of `cloud.pdf.render`. It needs
 no DOM, so it works the same in apps, scripts and PDFs. In an app, cartesian
-charts redraw at their real width, so axes and labels fit phones.
+charts redraw at their real width, so axes and labels fit phones. App charts show
+tooltips by default on hover, keyboard focus and tap. Tab to a chart, use arrow
+keys or Home/End to inspect values, and press Escape to close the tooltip;
+tapping outside the chart also closes it. The markup carries every value for
+its tooltip, so a dense chart is large: 8 series × 480 points is about 3 MB.
+Draw dense charts in the app that shows them instead of returning their markup
+from an action or storing it in KV.
 
 For computed values in the chat, call `cloud.view.chart`, `cloud.view.group`,
 `cloud.view.table`, `cloud.view.stats`, `cloud.view.details` or `cloud.view.explorer`
@@ -37,8 +43,9 @@ same way:
 | `stat` | `value` | `unit`, `format`, `delta`, `better: "up" | "down"`, `sparkline` |
 
 All kinds accept `title` and `subtitle`; together they name the chart for screen
-readers (`role="img"`). An axis takes `label`, `domain: [min, max]`, `ticks`
-(2..12), `scale: "linear" | "log"` and declarative `format`. Number formats are
+readers (an image in static markup, an interactive group in apps). An axis
+takes `label`, `domain: [min, max]`, `ticks` (2..12), `scale: "linear" | "log"`
+and declarative `format`. Number formats are
 `{style?: "number" | "percent" | "currency", currency?, unit?, decimals?, compact?}`;
 percent takes fractions. Currency requires an uppercase three-letter code
 exactly when style is currency; decimals is 0..10, unit at most 12 characters.
@@ -52,8 +59,11 @@ the numeric value or y column in tooltips and the data table; `format` takes the
 number format above, without date formats or functions. For example,
 `tooltip: {label: "Umsatz", format: {style: "currency", currency: "EUR"}}`.
 Counts, shares, x values and axis ticks keep their formats; a kind's `unit`
-remains appended. Chat hosts use this field for tooltips and Copy data;
-`cloud.chart()` preserves it without changing the SVG drawing.
+remains appended. Tooltips in apps use the same text as chat tooltips and data
+tables. Give charts a meaningful title, series labels, axis labels and `tooltip`
+field so readers can identify each value. Function formats also apply to tooltip
+values when `tooltip.format` is absent: `format` takes precedence over
+`yAxis.format`, and `xAxis.format` formats x values and histogram bounds.
 
 x may be a number, `Date` or ISO date string. `YYYY`, `YYYY-MM`, `YYYY-MM-DD` and
 date-times without an offset (`T` or a space, fractions dropped) stay the

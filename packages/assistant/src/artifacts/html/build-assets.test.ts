@@ -2,10 +2,10 @@ import { expect, test } from "bun:test";
 import { appFrameAssets, checkFrameAssets } from "./assets";
 import { buildCheckPrelude, buildPrelude } from "./build-assets";
 
-test("normal mounts omit inspection and stay within the slice-3 prelude budget", async () => {
+test("normal mounts omit app checks and stay within the prelude budget", async () => {
   const [normal, check] = await Promise.all([buildPrelude(), buildCheckPrelude()]);
   // Slice 3 measured 248 KB. cloud.chart() drawing through the chat's chart mapping, with four more chart kinds and
-  // its app contract, brought normal mounts to 279 KB: allow 10% growth over that, not the 851 KB inspection bundle.
+  // its app contract, brought normal mounts to 279 KB: allow 10% growth over that, not the 851 KB app-check bundle.
   expect(Buffer.byteLength(normal)).toBeLessThan(279_000 * 1.1);
   expect(normal).not.toMatch(/axe\.run|axe-core|axeVersion/);
   expect(normal).not.toContain("check-result");

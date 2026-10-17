@@ -54,6 +54,7 @@ const BLOCKS: BlockEntry[] = [
   { name: "warning", detail: "Warning callout", icon: "ti-alert-circle" },
   { name: "danger", detail: "Danger callout", icon: "ti-alert-hexagon" },
   { name: "data", detail: "Referenceable data block", icon: "ti-database", kind: "data" },
+  { name: "chart", detail: "Chart from a table or list", icon: "ti-chart-bar" },
   { name: "query", detail: "Filtered note list or table", icon: "ti-filter" },
   { name: "toc", detail: "Table of contents", icon: "ti-list-details" },
 ];
@@ -68,6 +69,7 @@ const blockHelp = i18n.define({
       warning: "Warning callout",
       danger: "Danger callout",
       data: "Referenceable data block",
+      chart: "Chart from a table or list",
       query: "Filtered note list or table",
       toc: "Table of contents",
     },
@@ -78,6 +80,7 @@ const blockHelp = i18n.define({
       warning: "Warnungsblock",
       danger: "Gefahrenhinweis",
       data: "Referenzierbarer Datenblock",
+      chart: "Diagramm aus einer Tabelle oder Liste",
       query: "Gefilterte Notizliste oder Tabelle",
       toc: "Inhaltsverzeichnis",
     },
@@ -92,7 +95,10 @@ const blockHelp = i18n.define({
  *  is replaced. So we only need to emit the type name + body + the
  *  closing fence here; the user's typed `:::` stays in place.
  *  `${0}` parks the final cursor on the empty body line. */
-export const buildInfoBlockSnippet = (name: string): string => `${name}\n${name === "query" ? "source: notes\n" : ""}\${0}\n:::`;
+export const buildInfoBlockSnippet = (name: string): string =>
+  name === "chart"
+    ? "chart\ntype: bar\ntitle: Values\ncolumns: [Label, Value]\nrows:\n  - [Jan, 12]\n  - [Feb, 18]\nx: Label\ny: Value\n${0}\n:::"
+    : `${name}\n${name === "query" ? "source: notes\n" : ""}\${0}\n:::`;
 
 const COMPLETIONS: Completion[] = BLOCKS.map((b) => {
   if (b.kind === "data") {

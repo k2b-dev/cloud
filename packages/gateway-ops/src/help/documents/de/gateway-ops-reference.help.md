@@ -10,6 +10,8 @@ Gateway Ops fasst Signale der Plattform zusammen. Es zeigt keine rohen Redis-Sch
 
 ## Zustände lesen {icon="point"}
 
+Für interne Webhook-Ziele muss der Betreiber `GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` in Gateway Ops setzen; standardmäßig sind nur öffentliche Ziele erlaubt, Weiterleitungen werden nie verfolgt.
+
 :::reference
 - **OK:** Die berücksichtigten Apps sind online, und ihr Zustand ist für die Zustandsprüfung des Gateways aktuell genug.
 - **Warnung:** Eine App ist erreichbar, meldet aber veraltete Zustandsinformationen oder einen anderen beeinträchtigten Zustand.
