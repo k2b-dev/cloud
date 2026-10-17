@@ -111,6 +111,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphZoom: "Zoom",
       graphDisplay: "Display",
       graphDisplayNetwork: "Network",
+      graphDisplayCircle: "Circle",
+      graphKeyArea: "area",
       graphDisplayNeighborhood: "Neighborhood",
       graphDepth: "Depth",
       graphDepthOne: "1 step",
@@ -125,7 +127,7 @@ export const notebookWorkspaceMessages = i18n.define({
         `${count === 1 ? "1 match" : `${count} matches`} for “${query}” in this neighborhood, ${total} in the notebook · Enter goes to the first`,
       graphNeighborhoodSearchElsewhere: ({ query, count }: { query: string; count: number }) =>
         `“${query}” is not in this neighborhood, but ${count}× in the notebook`,
-      graphNeighborhoodPointerHints: "Click opens · Drag background pans · Scroll zooms",
+      graphFixedPointerHints: "Click opens · Drag background pans · Scroll zooms",
       graphLocalEmpty: ({ title }: { title: string }) => `“${title}” is not linked yet`,
       graphLocalFilteredTitle: ({ title }: { title: string }) => `No link of “${title}” matches the filters`,
       graphLocalDescription: "No other note links here, and this note does not link anywhere yet. Insert links in the editor with",
@@ -574,6 +576,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphZoom: "Zoom",
       graphDisplay: "Darstellung",
       graphDisplayNetwork: "Netz",
+      graphDisplayCircle: "Kreis",
+      graphKeyArea: "Bereich",
       graphDisplayNeighborhood: "Umgebung",
       graphDepth: "Tiefe",
       graphDepthOne: "1 Schritt",
@@ -586,7 +590,7 @@ export const notebookWorkspaceMessages = i18n.define({
       graphNeighborhoodSearchHits: ({ query, count, total }) =>
         `${count} Treffer für „${query}“ in dieser Umgebung, ${total} im Notizbuch · Enter springt zum ersten`,
       graphNeighborhoodSearchElsewhere: ({ query, count }) => `„${query}“ steht nicht in dieser Umgebung, aber ${count}× im Notizbuch`,
-      graphNeighborhoodPointerHints: "Klicken öffnet · Hintergrund ziehen verschiebt · Mausrad zoomt",
+      graphFixedPointerHints: "Klicken öffnet · Hintergrund ziehen verschiebt · Mausrad zoomt",
       graphLocalEmpty: ({ title }) => `„${title}“ ist noch nicht verknüpft`,
       graphLocalFilteredTitle: ({ title }) => `Keine Verknüpfung von „${title}“ passt zu den Filtern`,
       graphLocalDescription:
