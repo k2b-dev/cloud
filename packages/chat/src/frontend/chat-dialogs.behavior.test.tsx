@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from "bun:test";
 import { createComponent, createSignal, type JSX } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -90,6 +90,7 @@ describe("chat dialogs and info", () => {
   let dispose = () => {};
   const originalFetch = globalThis.fetch;
   beforeEach(() => {
+    setSystemTime(new Date(now));
     dom = createDomTestHarness();
     delegateEvents(["click", "input", "keydown"], dom.document);
     // happy-dom has no Popover API. Only emulate opening; the real picker,
@@ -123,6 +124,7 @@ describe("chat dialogs and info", () => {
     await settle();
     globalThis.fetch = originalFetch;
     dom.cleanup();
+    setSystemTime();
   });
   const mount = async (locale: string, children: () => JSX.Element) => {
     dispose = render(

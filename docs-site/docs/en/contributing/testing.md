@@ -139,6 +139,29 @@ its own document.
 loads its component after module mocks and registers delegated events in each
 test.
 
+## Pin the clock
+
+Tests that render dates use a fixed instant. In behavior tests, use
+`setSystemTime(new Date("2026-10-14T10:00:00.000Z"))` from `bun:test` and
+restore the clock with `setSystemTime()` after each test.
+
+In browser tests, fixtures stamp their data from a fixed clock, and each
+context gets an init script that replaces the page's `Date` with one that
+starts at that clock and flows from there. The Chat harness starts at
+`chatTestNow`, exposes its flowing clock as `harness.now()`, and pins pages
+with `pinPageClock` in `ChatWorkspace.browser.test.ts`. Do not use
+Playwright's `clock` for this: even `setSystemTime` replaces timers,
+animation frames, and `performance`, and the Chat read-state tests then
+failed in WebKit. Use `performance.now()` for durations and deadlines.
+
+The `test-clock` check rejects new `new Date()` and `Date.now()` reads in UI
+tests, fixtures, harnesses, and suites. A line comment
+`// real clock: <reason>` on the same line or directly above allows a read
+that needs the real clock. The reason must be non-empty. Known findings live
+in `scripts/checks/test-clock.baseline`. Its counts can only decrease;
+`bun scripts/check.ts test-clock --fix` lowers counts and removes entries
+when findings are gone.
+
 ## Test in Chromium and WebKit
 
 Layout, focus, touch, and paint need a real engine, so these tests drive one
