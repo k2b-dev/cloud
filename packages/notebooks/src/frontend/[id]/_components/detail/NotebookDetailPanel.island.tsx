@@ -202,6 +202,18 @@ export default function NotebookDetailPanel(props: Props) {
       return (await response.json()) as ActivityPage;
     },
     getNextCursor: (page) => page.nextCursor,
+    // A comment or a saved change of this note adds to its log, so the log reads again, like the comments do.
+    subscribe: ({ invalidate }) => {
+      const onWorkspaceEvent = (raw: Event) => {
+        const { event, cover } = (raw as CustomEvent<WorkspaceEventDetail>).detail;
+        const changed =
+          (event.type === "note.comments.changed" && event.noteId === noteId()) ||
+          (event.type === "note.updated" && event.note.id === noteId());
+        if (changed && event.notebookId === props.notebookId) cover(invalidate());
+      };
+      window.addEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
+      return () => window.removeEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
+    },
   });
   // Creation is always the last row and comes from the note itself, so it is not repeated from the log.
   const activityItems = createMemo(() =>

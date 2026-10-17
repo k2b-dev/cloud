@@ -32,6 +32,9 @@ describe("Notebook detail panel recovery and pagination", () => {
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL) => {
         const url = new URL(String(input), "http://localhost");
+        // The comments list reads its own route when a comment changes; it is not what these tests count.
+        if (url.pathname === "/api/notebooks/Book01/notes/Note01/comments/page")
+          return Response.json({ items: [], page: 1, perPage: 30, total: 0, hasNext: false });
         expect(url.pathname).toBe("/api/notebooks/overview/activity");
         expect(url.searchParams.get("notebook")).toBe("Book01");
         expect(url.searchParams.get("note")).toBe("Note01");
@@ -138,6 +141,38 @@ describe("Notebook detail panel recovery and pagination", () => {
       window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail: { connected: false, lastSavedAt: null } }));
       await Bun.sleep(0);
       expect(dom.root.querySelector(".notebook-offline-band")).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
+  test("a new comment or a saved change of this note reads its activity again; other notes do not", async () => {
+    const { WORKSPACE_EVENT } = await import("../sidebar/workspace-events");
+    const { notebook, other } = { notebook: "Book01", other: "Note02" };
+    let rows = 1;
+    answer = () => Response.json({ data: Array.from({ length: rows }, (_, i) => activity(i)), nextCursor: null });
+    const send = (event: Record<string, unknown>) => {
+      const covered: Promise<void>[] = [];
+      window.dispatchEvent(
+        new CustomEvent(WORKSPACE_EVENT, {
+          detail: { cursor: null, event: { v: 1, ...event }, cover: (p: Promise<void>) => covered.push(p) },
+        }),
+      );
+      return covered.length;
+    };
+    const dispose = await renderPanel();
+    try {
+      await until(() => authors().length === 1);
+      rows = 2;
+      // The comments list covers the same event; the activity log is the second reader.
+      expect(send({ type: "note.comments.changed", notebookId: notebook, noteId: "Note01", noteShortId: null })).toBe(2);
+      await until(() => authors().length === 2);
+      rows = 3;
+      expect(send({ type: "note.updated", notebookId: notebook, note: { id: "Note01" } })).toBe(1);
+      await until(() => authors().length === 3);
+      expect(send({ type: "note.comments.changed", notebookId: notebook, noteId: other, noteShortId: null })).toBe(0);
+      await Bun.sleep(30);
+      expect(requests).toHaveLength(3);
     } finally {
       dispose();
     }
