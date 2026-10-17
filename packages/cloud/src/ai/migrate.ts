@@ -1290,7 +1290,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       CONSTRAINT ai_memory_learning_runs_kind_check CHECK (run_kind IN ('turn', 'workflow')),
       CONSTRAINT ai_memory_learning_runs_evidence_check CHECK (
         (run_kind = 'turn' AND evidence_key IS NULL)
-        OR (run_kind = 'workflow' AND turn_id IS NOT NULL AND evidence_key IS NOT NULL)
+        OR (run_kind = 'workflow' AND evidence_key IS NOT NULL)
       ),
       CONSTRAINT ai_memory_learning_runs_changes_check CHECK (jsonb_typeof(changes) = 'array')
     )
@@ -1316,7 +1316,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`
     ALTER TABLE ai.memory_learning_runs ADD CONSTRAINT ai_memory_learning_runs_evidence_check CHECK (
       (run_kind = 'turn' AND evidence_key IS NULL)
-      OR (run_kind = 'workflow' AND turn_id IS NOT NULL AND evidence_key IS NOT NULL)
+      OR (run_kind = 'workflow' AND evidence_key IS NOT NULL)
     )
   `.simple();
   await sql`

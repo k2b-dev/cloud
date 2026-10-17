@@ -4,6 +4,7 @@ import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { mandates } from "../services/mandates";
 import { AiChatTaskIdempotencyConflictError, type AiChatTaskSchedule, aiChatTasks } from "./chat-tasks";
 import { authorizeCodeExecution } from "./code-execution";
+import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { migrateCloudAi } from "./migrate";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
@@ -95,7 +96,42 @@ suite("AI chat tasks", () => {
     }
   });
 
-  test("keeps a one-off task's current slot and evidence until its scheduled time changes, even after completion", async () => {
+  test("prunes expired run evidence while preserving workflow learning runs", async () => {
+    const now = new Date("2001-01-01T00:00:00.000Z");
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name, mail, given_name, sn)
+      VALUES (${`retention-learning-${suffix}`}, 'local', 'user', 'Retention', ${`${suffix}@example.test`}, 'AI', 'Test') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Retained workflow learning" });
+    try {
+      const run = await createRetentionRun({ userId: user!.id, conversation, now, ageDays: 91 });
+      const evidenceKey = `retention-workflow-${suffix}`;
+      const learningRunId = await aiMemoryLearningRuns.start({
+        userId: user!.id,
+        conversationId: conversation.id,
+        turnId: run.turnId,
+        runKind: "workflow",
+        evidenceKey,
+        modelProfileId: "test",
+        accountedTokens: 0,
+      });
+      expect(learningRunId).not.toBeNull();
+      expect(await aiChatTasks.pruneExpiredRuns({ now, limit: 100 })).toBe(1);
+      expect(await sql`SELECT id FROM ai.chat_task_occurrences WHERE id = ${run.occurrence.id}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM ai.turns WHERE id = ${run.turnId}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM ai.task_messages WHERE loop_id = ${run.turnId}`).toHaveLength(0);
+      expect(
+        await sql<
+          { turn_id: string | null; evidence_key: string | null; conversation_title: string }[]
+        >`SELECT turn_id, evidence_key, conversation_title FROM ai.memory_learning_runs
+        WHERE id = ${learningRunId}::uuid`,
+      ).toEqual([{ turn_id: null, evidence_key: evidenceKey, conversation_title: "Retained workflow learning" }]);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
+  test("keeps a one-off task's current slot row while its evidence expires, even after completion", async () => {
     const now = new Date("2001-01-01T00:00:00.000Z");
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name, mail, given_name, sn)
@@ -112,13 +148,18 @@ suite("AI chat tasks", () => {
       // Simulate a revision change during the run: the finished task stays active at the same slot.
       await sql`UPDATE ai.chat_tasks SET state = 'active', run_at = ${run.occurrence.scheduledFor}::timestamptz
         WHERE id = ${run.task.id}::uuid`;
-      const expectKept = async () => {
-        expect(await aiChatTasks.pruneExpiredRuns({ now })).toBe(0);
-        expect(await sql`SELECT id FROM ai.chat_task_occurrences WHERE id = ${run.occurrence.id}::uuid`).toHaveLength(1);
-        expect(await sql`SELECT id FROM ai.turns WHERE id = ${run.turnId}::uuid`).toHaveLength(1);
-        expect(await sql`SELECT id FROM ai.task_messages WHERE loop_id = ${run.turnId}`).toHaveLength(2);
+      const before = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(before).toHaveLength(1);
+      const expectKept = async (pruned: number) => {
+        expect(await aiChatTasks.pruneExpiredRuns({ now })).toBe(pruned);
+        expect(
+          await sql<{ turn_id: string | null }[]>`SELECT turn_id FROM ai.chat_task_occurrences WHERE id = ${run.occurrence.id}::uuid`,
+        ).toEqual([{ turn_id: null }]);
+        expect(await sql`SELECT id FROM ai.turns WHERE id = ${run.turnId}::uuid`).toHaveLength(0);
+        expect(await sql`SELECT id FROM ai.task_messages WHERE loop_id = ${run.turnId}`).toHaveLength(0);
+        expect(await aiConversations.listMessages({ conversationId: conversation.id })).toEqual(before);
       };
-      await expectKept();
+      await expectKept(1);
       // Exercise materialization's task-scoped insert; materializeDueOnce would affect other tests' tasks.
       expect(
         await aiChatTasks.createOccurrence({
@@ -128,8 +169,9 @@ suite("AI chat tasks", () => {
           requestKey: `once:${run.task.id}:${run.occurrence.scheduledFor}`,
         }),
       ).toBeNull();
+      await expectKept(0);
       await sql`UPDATE ai.chat_tasks SET state = 'completed' WHERE id = ${run.task.id}::uuid`;
-      await expectKept();
+      await expectKept(0);
       // A timezone edit with the same timestamp can reactivate a completed task without changing its slot.
       const reactivated = await aiChatTasks.update({
         userId: user!.id,
@@ -139,7 +181,7 @@ suite("AI chat tasks", () => {
       });
       expect(reactivated?.state).toBe("active");
       expect(reactivated?.schedule).toEqual({ kind: "once", runAt: run.occurrence.scheduledFor });
-      await expectKept();
+      await expectKept(0);
       await sql`UPDATE ai.chat_tasks SET run_at = '2099-01-02T09:00:00.000Z'::timestamptz WHERE id = ${run.task.id}::uuid`;
       expect(await aiChatTasks.pruneExpiredRuns({ now })).toBe(1);
       expect(await sql`SELECT id FROM ai.chat_task_occurrences WHERE id = ${run.occurrence.id}::uuid`).toHaveLength(0);

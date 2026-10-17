@@ -918,20 +918,23 @@ export const aiChatTasks = {
     return occurrences;
   },
 
-  /** Removes expired runs and their evidence, including background turns and transcripts left by deleted tasks. */
+  /** Removes expired runs and their evidence, preserving current once slot rows as dedupe guards. */
   pruneExpiredRuns: async (input: { now?: Date; limit?: number } = {}): Promise<number> => {
     const cutoff = new Date((input.now ?? new Date()).getTime() - AI_CHAT_TASK_RUN_RETENTION_DAYS * 86_400_000);
     const limit = Math.min(Math.max(input.limit ?? 100, 1), 500);
     return sql.begin(async (tx) => {
-      // Keep the current once slot's dedupe guard, even after completion: a timezone edit can reactivate it.
-      const occurrences = await tx<{ id: string; turn_id: string | null }[]>`
-        SELECT occurrence.id, occurrence.turn_id
+      // Keep the current once slot row as a dedupe guard while its turn and transcript expire.
+      const occurrences = await tx<{ id: string; turn_id: string | null; keep: boolean }[]>`
+        SELECT occurrence.id, occurrence.turn_id, EXISTS (
+          SELECT 1 FROM ai.chat_tasks task WHERE task.id = occurrence.task_id
+            AND task.schedule_kind = 'once' AND task.run_at = occurrence.scheduled_for
+        ) AS keep
         FROM ai.chat_task_occurrences occurrence
         WHERE occurrence.state IN ('completed', 'failed') AND occurrence.completed_at < ${cutoff}
-          AND NOT EXISTS (
+          AND (occurrence.turn_id IS NOT NULL OR NOT EXISTS (
             SELECT 1 FROM ai.chat_tasks task WHERE task.id = occurrence.task_id
               AND task.schedule_kind = 'once' AND task.run_at = occurrence.scheduled_for
-          )
+          ))
           AND NOT EXISTS (
             SELECT 1 FROM ai.turns turn WHERE turn.id = occurrence.turn_id
               AND turn.status NOT IN ('completed', 'failed', 'aborted')
@@ -941,14 +944,14 @@ export const aiChatTasks = {
         FOR UPDATE OF occurrence SKIP LOCKED
       `;
       if (occurrences.length > 0) {
-        const occurrenceIds = toPgUuidArray(occurrences.map((occurrence) => occurrence.id));
+        const occurrenceIds = toPgUuidArray(occurrences.filter((occurrence) => !occurrence.keep).map((occurrence) => occurrence.id));
         const turnIds = toPgUuidArray(occurrences.flatMap((occurrence) => (occurrence.turn_id ? [occurrence.turn_id] : [])));
         await tx`DELETE FROM ai.task_messages WHERE loop_id = ANY(${turnIds}::text[])`;
-        await tx`DELETE FROM ai.chat_task_occurrences WHERE id = ANY(${occurrenceIds}::uuid[])`;
         await tx`
           DELETE FROM ai.turns WHERE id = ANY(${turnIds}::uuid[])
             AND status IN ('completed', 'failed', 'aborted') AND run_config ? 'background'
         `;
+        await tx`DELETE FROM ai.chat_task_occurrences WHERE id = ANY(${occurrenceIds}::uuid[])`;
       }
       const remaining = limit - occurrences.length;
       if (remaining === 0) return occurrences.length;
