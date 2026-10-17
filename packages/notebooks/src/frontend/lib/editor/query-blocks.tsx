@@ -7,8 +7,8 @@ import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from
 import { render } from "solid-js/web";
 import { chartBlockFrame, notebookChartFrameHtml } from "../../../lib/chart-blocks";
 import { extractNotebookDirectiveRanges } from "../../../lib/query-blocks";
-import { enhanceNotebookCharts } from "../notebook-charts";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../../[id]/_components/sidebar/workspace-events";
+import { enhanceNotebookCharts } from "../notebook-charts";
 import {
   blockWidgetLineNavigationExtension,
   holdsDecorations,

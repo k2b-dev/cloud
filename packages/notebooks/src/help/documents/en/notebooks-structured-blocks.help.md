@@ -112,7 +112,7 @@ Leave out `value` for `exists` and `missing`. Membership operators take lists. O
 ## Charts {icon="chart-bar"}
 
 Type `:::` and choose **chart**. A chart reads only data from this note.
-Point at or tap a value to see its series, x label, and formatted value.
+Point at a value or choose it to see its series, x label, and formatted value.
 You can also focus the chart and use the arrow keys to read each value.
 Press Escape to close the tooltip.
 
