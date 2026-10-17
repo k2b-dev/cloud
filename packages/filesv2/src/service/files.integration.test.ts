@@ -9,7 +9,7 @@ import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { assertPrivateDatabase } from "../../test/private-database";
 import { bindings } from "../data/bases";
-import { withRootLock, withUploadLock } from "../data/operations";
+import { ROOT_LOCK_WAIT_MS, withRootLock, withUploadLock } from "../data/operations";
 import { resolveEntryRefId } from "../data/references";
 import type { DocumentFormat } from "../documents";
 import { migrate } from "../migrate";
@@ -1426,8 +1426,7 @@ suite("Files service and durable bindings", () => {
     expect(await crashed.acquire({ resource: `upload:${id}` })).not.toBeNull();
     expect(await crashed.acquire({ resource: `root:${root}` })).not.toBeNull();
     await expect(withUploadLock(id, async () => "ran")).rejects.toThrow("operation_busy");
-    // Root acquisition waits through this short abandoned lease; uploads still reject immediately.
-    expect(await withRootLock(root, async () => "ran")).toBe("ran");
+    await expect(withRootLock(root, async () => "ran")).rejects.toThrow("operation_busy");
     const recovered = async (attempt: () => Promise<string>) => {
       const deadline = Date.now() + 10_000;
       while (Date.now() < deadline) {
@@ -1441,6 +1440,20 @@ suite("Files service and durable bindings", () => {
     };
     expect(await recovered(() => withUploadLock(id, async () => "ran"))).toBe("ran");
     expect(await recovered(() => withRootLock(root, async () => "ran"))).toBe("ran");
+  });
+  test("root locks make one immediate attempt without a wait or with an already-spent budget", async () => {
+    const root = `fail-fast-${crypto.randomUUID()}`;
+    const spent = AbortSignal.abort();
+    await withRootLock(root, async () => {
+      const started = performance.now();
+      await expect(withRootLock(root, async () => "ran")).rejects.toThrow("operation_busy");
+      expect(performance.now() - started).toBeLessThan(1_000);
+      const abortedStarted = performance.now();
+      await expect(withRootLock(root, async () => "ran", spent)).rejects.toThrow("operation_busy");
+      expect(performance.now() - abortedStarted).toBeLessThan(1_000);
+    });
+    // An exhausted wait still tries once when the root is free.
+    expect(await withRootLock(root, async () => "ran", spent)).toBe("ran");
   });
   test("a commit whose response was lost is recovered from the Filegate session record", async () => {
     const actor = await user("alice", "ipa");
@@ -1600,6 +1613,23 @@ suite("Files service and durable bindings", () => {
     expect(duplicated.entries[0]!.path).toMatch(/^b-[0-9a-f]{32}\.txt$/);
     expect(nodes.get(`freeipa:users/alice/${duplicated.entries[0]!.path}`)).toMatchObject({ uid: 1001, gid: 2001, mode: "0600" });
   });
+  test("moving three entries in one root shares one root-lock wait budget", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Docs");
+    const paths = ["a.txt", "b.txt", "c.txt"];
+    for (const path of paths) directory("freeipa", `users/alice/${path}`, 1001, 2001, "0640", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    await withRootLock("freeipa", async () => {
+      const started = performance.now();
+      const moved = await service.move(actor, { baseId, paths, folder: "Docs" });
+      const elapsed = performance.now() - started;
+      expect(moved.entries).toEqual([]);
+      expect(moved.results).toEqual(paths.map((path) => ({ path, ok: false, error: "operation_busy" })));
+      expect(elapsed).toBeGreaterThanOrEqual(ROOT_LOCK_WAIT_MS - 100);
+      expect(elapsed).toBeLessThan(ROOT_LOCK_WAIT_MS + 3_000);
+    });
+  }, 20_000);
   test("copies may cross bases but moves never leave a base", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");

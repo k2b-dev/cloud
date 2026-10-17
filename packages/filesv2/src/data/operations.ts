@@ -25,8 +25,13 @@ export type Operation = {
   created_at: Date;
   updated_at: Date;
 };
-export const withRootLock = <T>(root: string, run: () => Promise<T>) =>
-  withFilesLock(rootLocks(), `root:${root}`, run, AbortSignal.timeout(ROOT_LOCK_WAIT_MS));
+export const withRootLock = <T>(root: string, run: () => Promise<T>, wait?: AbortSignal) =>
+  wait && !wait.aborted ? withFilesLock(rootLocks(), `root:${root}`, run, wait) : withFilesLock(filesLocks(), `root:${root}`, run);
+/**
+ * One wait budget per request. A caller that locks several entries creates one
+ * signal and passes it to every acquisition, waiting at most one budget in total.
+ */
+export const rootLockWait = () => AbortSignal.timeout(ROOT_LOCK_WAIT_MS);
 // Slow transfers must not occupy the domain query pool: reject overload before
 // the body is consumed instead of queueing unbounded request bodies.
 let activeUploads = 0;
@@ -46,9 +51,10 @@ export async function withUploadLock<T>(id: string, run: () => Promise<T>): Prom
  * every third of the TTL, so the operation itself (Filegate calls of up to ten
  * minutes, streamed uploads of any size) is not bounded by the TTL; only a
  * crashed holder keeps the root or file busy, and for at most the TTL.
- * Root acquisition waits up to five seconds, below the ten-second idle request
- * budget of other root-locked routes. A longer holder (such as a large commit)
- * still answers busy; browser and CLI upload queues retry busy with backoff.
+ * Acquisition defaults to a single attempt. User-facing publications opt into
+ * one shared bounded wait per request; background and listing paths do not wait.
+ * A longer holder (such as a large commit) still answers busy; browser and CLI
+ * upload queues retry busy with backoff.
  * Capability upload locks deliberately do not wait: reject overload before
  * consuming the request body.
  */
@@ -59,7 +65,7 @@ const rootLocks = lazySync((sync) =>
   sync.mutex({
     id: "filesv2:operations",
     ttlMs: FILES_LOCK_TTL_MS,
-    retry: { maxAttempts: ROOT_LOCK_WAIT_MS / 100 + 1, delayMs: 100 },
+    retry: { maxAttempts: Number.MAX_SAFE_INTEGER, delayMs: 100 },
   }),
 );
 async function withFilesLock<T>(

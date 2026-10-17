@@ -49,7 +49,7 @@ import type {
 import { BATCH_LIMIT } from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { favorites, recent } from "../data/marks";
-import { operations, withRootLock, withUploadLock } from "../data/operations";
+import { operations, rootLockWait, withRootLock, withUploadLock } from "../data/operations";
 import { entryRef, persistedEntryRefId, resolveEntryRefId } from "../data/references";
 import { shares } from "../data/shares";
 import { sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
@@ -523,9 +523,9 @@ export function createFilesService(
 
   // Reuse the lifecycle lock: no expiry, no per-process mutex, and the same root
   // cannot be archived/trashed while a document publication is in progress.
-  async function publish<T>(root: string, run: () => Promise<T>): Promise<T> {
+  async function publish<T>(root: string, run: () => Promise<T>, wait: AbortSignal = rootLockWait()): Promise<T> {
     try {
-      return await withRootLock(root, run);
+      return await withRootLock(root, run, wait);
     } catch (error) {
       if (error instanceof Error && error.message === "operation_busy") throw new FilesError("operation_busy", 503);
       throw error;
@@ -1223,25 +1223,30 @@ export function createFilesService(
         return { source, destination };
       };
       const base = (await authorized(actor, input.baseId, input.folder, true)).inspection.summary;
+      const wait = rootLockWait();
       const result = await runFileBatch(input.paths, prepare, async (prepared, path) =>
-        publish(prepared.source.root.name, async () => {
-          const { source, destination } = await prepare(path);
-          if (destination.relative === source.relative) return fileEntry(source.inspection.summary, source.relative, source.node);
-          const transferred = await source.root.transfer(source.target, source.root.name, joinPath(destination.target, source.name), {
-            move: true,
-            onConflict: "error",
-          });
-          if (transferred.state !== "completed") throw new FilesError("operation_pending", 409);
-          const node = transferred.node;
-          if (!node || node.root !== destination.root.name || !node.path.startsWith(`${destination.inspection.candidate.path}/`))
-            throw new FilesError("unavailable", 503);
-          await forgetMarks(source, source.relative);
-          return fileEntry(
-            destination.inspection.summary,
-            userPath(node.path.slice(destination.inspection.candidate.path.length + 1)),
-            node,
-          );
-        }),
+        publish(
+          prepared.source.root.name,
+          async () => {
+            const { source, destination } = await prepare(path);
+            if (destination.relative === source.relative) return fileEntry(source.inspection.summary, source.relative, source.node);
+            const transferred = await source.root.transfer(source.target, source.root.name, joinPath(destination.target, source.name), {
+              move: true,
+              onConflict: "error",
+            });
+            if (transferred.state !== "completed") throw new FilesError("operation_pending", 409);
+            const node = transferred.node;
+            if (!node || node.root !== destination.root.name || !node.path.startsWith(`${destination.inspection.candidate.path}/`))
+              throw new FilesError("unavailable", 503);
+            await forgetMarks(source, source.relative);
+            return fileEntry(
+              destination.inspection.summary,
+              userPath(node.path.slice(destination.inspection.candidate.path.length + 1)),
+              node,
+            );
+          },
+          wait,
+        ),
       );
       return { base, ...result };
     },
