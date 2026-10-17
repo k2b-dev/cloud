@@ -28,7 +28,9 @@ Wrap the element and pass its menu as `items`, the same model as
 [`Dropdown` and `ContextMenu`](../actions/menus). Give an action item a `gesture` to
 let that gesture run it. Each gesture belongs to at most one item; a disabled
 item also disables its gesture. `label` names the element and its menu, for
-example "Message from Nora, 10:42".
+example "Message from Nora, 10:42". The menu at the finger or the pointer also
+shows it as a muted title above the entries, because a finger covers what it
+presses; a title longer than about 16rem ends in an ellipsis.
 
 `sheetTop` renders only in the phone sheet, above the menu, for example a row
 of quick reactions. Its `close` closes the sheet.
