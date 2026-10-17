@@ -36,7 +36,7 @@ const open = async (page: Page, lang: "de" | "en") => {
     if (path === "/")
       return route.fulfill({
         contentType: "text/html",
-        body: `<!doctype html><html lang="${lang}"><head><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`,
+        body: `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`,
       });
     const asset = assets[path];
     return asset ? route.fulfill({ contentType: asset[0], body: asset[1] }) : route.fulfill({ status: 404 });
@@ -75,7 +75,7 @@ test("speed test sparklines name the metric and show each sample with its unit",
 }, 30_000);
 
 test("a tap on a phone shows the sample in the reader's locale", async () => {
-  const page = await browser.newPage({ viewport: { width: 390, height: 600 }, hasTouch: true, isMobile: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 600 }, hasTouch: true, isMobile: true, reducedMotion: "reduce" });
   try {
     await open(page, "en");
     const ping = '#ping [data-chart-kind="sparkline"]';
