@@ -3,6 +3,7 @@ import { exec, execFile, spawn } from "node:child_process";
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { setTimeout as sleepWithSignal } from "node:timers/promises";
 import { promisify } from "node:util";
 import type {
   CloudCliClientCredentialsProfile,
@@ -80,9 +81,18 @@ type TokenProviderConfig = {
   };
 };
 
+type OAuthLogin = {
+  method: "browser" | "device" | "user";
+  user?: string;
+  ttl?: number;
+  scope?: string;
+};
+
 type OAuthSessionConfig = {
   accessToken: string;
   accessTokenExpiresAt: string;
+  loginExpiresAt?: string;
+  login?: OAuthLogin;
   refreshToken?: string;
   refreshTokenFd0?: {
     name: string;
@@ -495,6 +505,7 @@ type OAuthTokenResponse = {
   token_type: "Bearer";
   expires_in: number;
   refresh_token?: string;
+  refresh_token_expires_in?: number;
   scope?: string;
   id_token?: unknown;
 };
@@ -515,6 +526,14 @@ const parseOAuthTokenResponse = (payload: unknown): OAuthTokenResponse => {
   if (token.scope !== undefined && typeof token.scope !== "string") {
     throw new CliError("OAuth server returned an invalid scope.");
   }
+  if (
+    token.refresh_token_expires_in !== undefined &&
+    (typeof token.refresh_token_expires_in !== "number" ||
+      !Number.isInteger(token.refresh_token_expires_in) ||
+      token.refresh_token_expires_in < 0)
+  ) {
+    throw new CliError("OAuth server returned an invalid refresh token lifetime.");
+  }
   return token as OAuthTokenResponse;
 };
 
@@ -525,7 +544,9 @@ const fetchOAuth = (url: string, init: RequestInit): Promise<Response> =>
   fetch(url, {
     ...init,
     redirect: "error",
-    signal: AbortSignal.timeout(OAUTH_REQUEST_TIMEOUT_MS),
+    signal: init.signal
+      ? AbortSignal.any([init.signal, AbortSignal.timeout(OAUTH_REQUEST_TIMEOUT_MS)])
+      : AbortSignal.timeout(OAUTH_REQUEST_TIMEOUT_MS),
   });
 
 type ResolvedAuth = {
@@ -540,6 +561,42 @@ type ResolvedCliOptions = CloudCliOptions & {
 const isOAuthAccessTokenFresh = (session: OAuthSessionConfig): boolean => {
   const expiresAt = Date.parse(session.accessTokenExpiresAt);
   return Number.isFinite(expiresAt) && expiresAt > Date.now() + OAUTH_REFRESH_SKEW_MS;
+};
+
+const formatLoginTtl = (ttl: number): string => {
+  for (const [unit, seconds] of [
+    ["d", 86400],
+    ["h", 3600],
+    ["m", 60],
+  ] as const) {
+    if (ttl % seconds === 0) return `${ttl / seconds}${unit}`;
+  }
+  return `${ttl}s`;
+};
+
+const loginCommand = (
+  profileName: string,
+  server: string,
+  login: OAuthLogin,
+  refreshTokenFd0?: OAuthSessionConfig["refreshTokenFd0"],
+): string => {
+  const args = ["cld", "login", profileName, "--server", server];
+  if (login.method === "user" && login.user) args.push("--user", login.user);
+  else if (login.method === "device") args.push("--device");
+  if (login.ttl !== undefined) args.push("--ttl", formatLoginTtl(login.ttl));
+  if (login.scope !== undefined) args.push("--scope", login.scope);
+  if (refreshTokenFd0) {
+    args.push("--fd0", refreshTokenFd0.name);
+    if (refreshTokenFd0.scope) args.push("--fd0-scope", refreshTokenFd0.scope);
+  }
+  return args.map((value) => (/^[A-Za-z0-9@%+=:,./_-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`)).join(" ");
+};
+
+const assertLoginNotExpired = (profileName: string, server: string, session: OAuthSessionConfig): void => {
+  if (session.loginExpiresAt && Date.parse(session.loginExpiresAt) <= Date.now()) {
+    const command = loginCommand(profileName, server, session.login ?? { method: "browser" }, session.refreshTokenFd0);
+    throw new CliError(`Login expired, sign in again: ${command}`, 1, `Login abgelaufen, melde dich neu an: ${command}`);
+  }
 };
 
 const readOAuthRefreshToken = async (session: OAuthSessionConfig): Promise<string> => {
@@ -645,6 +702,7 @@ const refreshOAuthSession = async (profileName: string, server: string, force = 
     const profile = config.profiles?.[profileName];
     const session = profile?.oauth;
     if (!profile || !session) throw new CliError(`Profile "${profileName}" is not logged in with OAuth.`);
+    assertLoginNotExpired(profileName, server, session);
     if (!force && isOAuthAccessTokenFresh(session)) return session.accessToken;
 
     const refreshToken = await readOAuthRefreshToken(session);
@@ -826,6 +884,7 @@ const resolveAuth = async (
         `OAuth profile "${profileName}" is bound to ${profile.server ?? "an unknown server"}. Run \`cld login\` for ${server}.`,
       );
     }
+    assertLoginNotExpired(profileName, server, profile.oauth);
     const token = isOAuthAccessTokenFresh(profile.oauth) ? profile.oauth.accessToken : await refreshOAuthSession(profileName, server);
     return { token, refresh: () => refreshOAuthSession(profileName, server, true) };
   }
@@ -1235,8 +1294,8 @@ Usage:
   cld auth [status] [--profile <name>] [--json]
 
 Shows how a profile signs in (default: the current profile): its server, the
-kind of credential, when the OAuth access token expires, and where the refresh
-token or client secret is stored. It never prints a secret.
+kind of credential, when the OAuth access token and login expire, and where
+the refresh token or client secret is stored. It never prints a secret.
 `,
     `cld auth
 
@@ -1244,8 +1303,8 @@ Verwendung:
   cld auth [status] [--profile <Name>] [--json]
 
 Zeigt, wie sich ein Profil anmeldet (Standard: aktuelles Profil): seinen Server,
-die Art der Zugangsdaten, wann das OAuth-Access-Token abläuft und wo das
-Refresh-Token oder Client-Secret liegt. Ein Secret gibt es nie aus.
+die Art der Zugangsdaten, wann das OAuth-Access-Token und die Anmeldung ablaufen
+und wo das Refresh-Token oder Client-Secret liegt. Ein Secret gibt es nie aus.
 `,
   );
 
@@ -1286,6 +1345,10 @@ Options:
   --device              Sign in with a code instead of a local browser. Use this over SSH
                         or on any machine without a browser: open the printed URL on your
                         laptop or phone, sign in, and enter the code.
+  --user <name>         Sign in by confirming a code in Cloud Login on your phone;
+                        username or email. Cannot be combined with --device or --no-open.
+  --ttl <duration>      End the login after this time, for example 30m, 8h, 2d.
+                        The Cloud may shorten it; cld shows the actual end.
   --no-open             Print the login URL instead of offering to open a browser
   --scope <scopes>      OAuth scopes (default: ${DEFAULT_OAUTH_SCOPE})
   --fd0 [name]          Store the refresh token in fd0 (default name: cloud-<profile>-oauth-refresh-token)
@@ -1294,10 +1357,13 @@ Options:
   --no-plugins          Do not offer the Cloud's plugins after signing in
 
 After signing in, cld offers to install the plugins this Cloud serves.
+Without --ttl, a --user login lasts the Cloud's session length;
+browser and --device logins last 90 days.
 
 Examples:
   cld login --server https://cloud.example
   cld login portal --server https://cloud.example --device
+  cld login portal --server https://cloud.example --user alice --ttl 8h
 `,
     `cld login
 
@@ -1312,6 +1378,11 @@ Optionen:
   --device              Mit einem Code statt mit einem lokalen Browser anmelden. Für SSH
                         und Rechner ohne Browser: Öffne die angezeigte URL auf Laptop oder
                         Smartphone, melde dich an und gib den Code ein.
+  --user <Name>         Anmelden, indem du einen Code in Cloud Login auf deinem Smartphone
+                        bestätigst; Benutzername oder E-Mail. Nicht mit --device oder
+                        --no-open kombinierbar.
+  --ttl <Dauer>         Anmeldung nach dieser Zeit beenden, zum Beispiel 30m, 8h, 2d.
+                        Die Cloud kann sie verkürzen; cld zeigt das tatsächliche Ende.
   --no-open             Anmelde-URL ausgeben, statt das Öffnen eines Browsers anzubieten
   --scope <Scopes>      OAuth-Scopes (Standard: ${DEFAULT_OAUTH_SCOPE})
   --fd0 [Name]          Refresh-Token in fd0 speichern (Standardname: cloud-<Profil>-oauth-refresh-token)
@@ -1320,10 +1391,13 @@ Optionen:
   --no-plugins          Nach der Anmeldung keine Plugins der Cloud anbieten
 
 Nach der Anmeldung bietet cld an, die Plugins dieser Cloud zu installieren.
+Ohne --ttl gilt für --user die Sitzungslänge der Cloud;
+Anmeldungen im Browser und mit --device dauern 90 Tage.
 
 Beispiele:
   cld login --server https://cloud.example
   cld login portal --server https://cloud.example --device
+  cld login portal --server https://cloud.example --user alice --ttl 8h
 `,
   );
 
@@ -2890,14 +2964,14 @@ const oauthErrorCode = async (response: Response): Promise<{ error: string; desc
 };
 
 /** RFC 8628: show a code, then poll until the person approves it in any browser. */
-const signInWithDeviceCode = async (server: string, scope: string, requestLocale?: string): Promise<OAuthTokenResponse> => {
+const signInWithDeviceCode = async (server: string, scope: string, requestLocale?: string, ttl?: number): Promise<OAuthTokenResponse> => {
   const locale = requestLocale ?? "en";
   const headers = new Headers({ "content-type": "application/x-www-form-urlencoded" });
   if (requestLocale) headers.set("accept-language", requestLocale);
   const started = await fetchOAuth(joinUrl(server, "/oauth/device_authorization"), {
     method: "POST",
     headers,
-    body: new URLSearchParams({ client_id: OAUTH_CLIENT_ID, scope }),
+    body: new URLSearchParams({ client_id: OAUTH_CLIENT_ID, scope, ...(ttl !== undefined ? { ttl: String(ttl) } : {}) }),
   });
   if (started.status === 404) {
     throw new CliError(
@@ -2961,6 +3035,161 @@ const signInWithDeviceCode = async (server: string, scope: string, requestLocale
   );
 };
 
+const cloudLoginUnsupported = (deviceCommand: string): CliError =>
+  new CliError(
+    `This Cloud cannot send sign-ins to Cloud Login yet. Sign in with \`${deviceCommand}\` or in the browser.`,
+    1,
+    `Diese Cloud kann Anmeldungen noch nicht an Cloud Login senden. Melde dich mit \`${deviceCommand}\` oder im Browser an.`,
+  );
+
+const readLoginDiscovery = async (server: string) => {
+  let status = "network error";
+  try {
+    const response = await fetchOAuth(joinUrl(server, "/.well-known/oauth-authorization-server"), {});
+    status = String(response.status);
+    if (response.status === 404) return {};
+    if (!response.ok) throw new Error();
+    const payload: unknown = await response.json();
+    return (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
+  } catch {
+    throw new CliError(
+      `Could not read the Cloud's OAuth discovery document (${status}).`,
+      1,
+      `Das OAuth-Discovery-Dokument der Cloud konnte nicht gelesen werden (${status}).`,
+    );
+  }
+};
+
+type CloudLoginAuthorization = {
+  device_code: string;
+  comparison: string;
+  expires_in: number;
+  interval?: number;
+};
+
+const parseCloudLoginAuthorization = (payload: unknown): CloudLoginAuthorization => {
+  const value = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
+  if (
+    typeof value.device_code !== "string" ||
+    !value.device_code ||
+    typeof value.comparison !== "string" ||
+    !/^\d+$/.test(value.comparison) ||
+    typeof value.expires_in !== "number" ||
+    !Number.isFinite(value.expires_in) ||
+    !(value.expires_in > 0) ||
+    (value.interval !== undefined && (typeof value.interval !== "number" || !Number.isFinite(value.interval) || !(value.interval > 0)))
+  ) {
+    throw new CliError("OAuth server returned an invalid Cloud Login authorization.");
+  }
+  return value as CloudLoginAuthorization;
+};
+
+/** Send a comparison code to Cloud Login and wait for approval without disclosing account state. */
+const signInWithCloudLogin = async (
+  server: string,
+  scope: string,
+  user: string,
+  deviceCommand: string,
+  requestLocale?: string,
+  ttl?: number,
+): Promise<OAuthTokenResponse> => {
+  const locale = requestLocale ?? "en";
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  process.once("SIGINT", cancel);
+  try {
+    const headers = new Headers({ "content-type": "application/x-www-form-urlencoded" });
+    if (requestLocale) headers.set("accept-language", requestLocale);
+    const started = await fetchOAuth(joinUrl(server, "/oauth/device_authorization"), {
+      method: "POST",
+      headers,
+      signal: controller.signal,
+      body: new URLSearchParams({
+        client_id: OAUTH_CLIENT_ID,
+        scope,
+        login_hint: user,
+        ...(ttl !== undefined ? { ttl: String(ttl) } : {}),
+      }),
+    });
+    if (started.status === 404) throw cloudLoginUnsupported(deviceCommand);
+    if (!started.ok) {
+      const { error, description } = await oauthErrorCode(started);
+      if (started.status === 503 || error === "temporarily_unavailable") {
+        throw new CliError(
+          `Cloud Login cannot take the sign-in right now. Try again later, or sign in with \`${deviceCommand}\` or in the browser.`,
+          1,
+          `Cloud Login kann die Anmeldung gerade nicht annehmen. Versuche es später erneut oder melde dich mit \`${deviceCommand}\` oder im Browser an.`,
+        );
+      }
+      if (error === "invalid_scope") {
+        throw new CliError(
+          `Cloud Login cannot approve these scopes. Choose other scopes with --scope, or sign in with \`${deviceCommand}\` or in the browser.`,
+          1,
+          `Cloud Login kann diese Scopes nicht bestätigen. Wähle andere Scopes mit --scope oder melde dich mit \`${deviceCommand}\` oder im Browser an.`,
+        );
+      }
+      if (error === "invalid_request") {
+        throw new CliError(
+          `This Cloud does not accept sign-ins through Cloud Login right now. Sign in with \`${deviceCommand}\` or in the browser.`,
+          1,
+          `Diese Cloud nimmt gerade keine Anmeldungen über Cloud Login an. Melde dich mit \`${deviceCommand}\` oder im Browser an.`,
+        );
+      }
+      throw new CliError(
+        `Cloud Login sign-in could not start: ${description ?? error}`,
+        1,
+        `Die Anmeldung über Cloud Login konnte nicht starten: ${description ?? error}`,
+      );
+    }
+    const device = parseCloudLoginAuthorization(await readJson<unknown>(started));
+    const comparison = device.comparison.replace(/(\d{3})(?=\d)/g, "$1 ");
+    printLine(text(locale, `Compare this code in Cloud Login: ${comparison}`, `Vergleiche diesen Code in Cloud Login: ${comparison}`));
+    printLine(text(locale, "Waiting for approval… (Ctrl+C cancels)", "Warte auf Bestätigung… (Strg+C bricht ab)"));
+
+    let intervalMs = (device.interval ?? 5) * 1_000;
+    const deadline = Date.now() + device.expires_in * 1_000;
+    while (Date.now() < deadline) {
+      await sleepWithSignal(Math.min(intervalMs, deadline - Date.now()), undefined, { signal: controller.signal });
+      if (Date.now() >= deadline) break;
+      const response = await fetchOAuth(joinUrl(server, "/oauth/token"), {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        signal: controller.signal,
+        body: new URLSearchParams({ grant_type: DEVICE_CODE_GRANT_TYPE, device_code: device.device_code, client_id: OAUTH_CLIENT_ID }),
+      });
+      if (response.ok) return await readOAuthTokenResponse(response);
+      const { error } = await oauthErrorCode(response);
+      if (error === "authorization_pending") continue;
+      if (error === "slow_down") {
+        intervalMs += 5_000;
+        continue;
+      }
+      if (error === "access_denied") {
+        throw new CliError("Sign-in was denied in Cloud Login.", 1, "Die Anmeldung wurde in Cloud Login abgelehnt.");
+      }
+      if (error === "expired_token") break;
+      throw new CliError(`Cloud Login sign-in failed: ${error}`, 1, `Die Anmeldung über Cloud Login ist fehlgeschlagen: ${error}`);
+    }
+    throw new CliError(
+      `No confirmation received. Is Cloud Login paired for this account? Sign in with \`${deviceCommand}\` or in the browser.`,
+      1,
+      `Keine Bestätigung erhalten. Ist Cloud Login für dieses Konto gekoppelt? Melde dich mit \`${deviceCommand}\` oder im Browser an.`,
+    );
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new CliError(
+        "Sign-in cancelled. A request that reached Cloud Login expires on its own within 5 minutes.",
+        130,
+        "Anmeldung abgebrochen. Eine Anfrage, die Cloud Login erreicht hat, läuft innerhalb von 5 Minuten von selbst ab.",
+      );
+    }
+    throw error;
+  } finally {
+    process.removeListener("SIGINT", cancel);
+    controller.abort();
+  }
+};
+
 /** Display name from the ID token the server just returned; only used for the greeting. */
 const signedInName = (idToken: unknown): string | null => {
   if (typeof idToken !== "string") return null;
@@ -2971,7 +3200,13 @@ const signedInName = (idToken: unknown): string | null => {
   return typeof name === "string" && name.trim() ? name.trim() : null;
 };
 
-const signInWithBrowser = async (server: string, scope: string, open: boolean, locale: string): Promise<OAuthTokenResponse> => {
+const signInWithBrowser = async (
+  server: string,
+  scope: string,
+  open: boolean,
+  locale: string,
+  ttl?: number,
+): Promise<OAuthTokenResponse> => {
   const verifier = randomBase64Url(32);
   const state = randomBase64Url(24);
 
@@ -2993,6 +3228,7 @@ const signInWithBrowser = async (server: string, scope: string, open: boolean, l
     code,
     redirect_uri: authorizationUrl.searchParams.get("redirect_uri") ?? "",
     code_verifier: verifier,
+    ...(ttl !== undefined ? { ttl: String(ttl) } : {}),
   });
   return readOAuthTokenResponse(
     await fetchOAuth(joinUrl(server, "/oauth/token"), {
@@ -3011,8 +3247,10 @@ const storeOAuthLogin = async (params: {
   scope: string;
   fd0Name: string | undefined;
   fd0Scope: string | undefined;
+  login: OAuthLogin;
+  loginExpiresAt: string | undefined;
 }): Promise<void> => {
-  const { name, server: normalizedServer, token, scope, fd0Name, fd0Scope } = params;
+  const { name, server: normalizedServer, token, scope, fd0Name, fd0Scope, login, loginExpiresAt } = params;
   let persisted = false;
   try {
     await withConfigLock(async () => {
@@ -3033,6 +3271,8 @@ const storeOAuthLogin = async (params: {
         accessToken: token.access_token,
         accessTokenExpiresAt: new Date(Date.now() + token.expires_in * 1000).toISOString(),
         scope: token.scope ?? scope,
+        login,
+        ...(loginExpiresAt !== undefined ? { loginExpiresAt } : {}),
         ...(refreshTokenFd0 ? { refreshTokenFd0 } : {}),
       };
 
@@ -3092,6 +3332,21 @@ const storeOAuthLogin = async (params: {
   }
 };
 
+const parseLoginTtl = (value: string | undefined): number => {
+  const match = value?.match(/^(\d+)([smhd])?$/);
+  const unit = match?.[2];
+  const multiplier = unit === "d" ? 86400 : unit === "h" ? 3600 : unit === "m" ? 60 : 1;
+  const seconds = match ? Number(match[1]) * multiplier : 0;
+  if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 999_999_999_999_999) {
+    throw new CliError(
+      "Invalid --ttl. Use a positive integer in seconds or <n>s, <n>m, <n>h, <n>d (for example 90s, 30m, 8h, 2d), at most 15 digits of seconds.",
+      1,
+      "Ungültiges --ttl. Nutze eine positive ganze Zahl in Sekunden oder <n>s, <n>m, <n>h, <n>d (zum Beispiel 90s, 30m, 8h, 2d), höchstens 15 Stellen in Sekunden.",
+    );
+  }
+  return seconds;
+};
+
 const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<number> => {
   const [maybeName, ...rest] = args;
   const config = await loadConfig();
@@ -3101,6 +3356,24 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   if ("client-id" in parsed.flags) {
     throw new CliError('cld login always uses the first-party "cloud-cli" OAuth client; --client-id is not supported.');
   }
+  const user = takeStringFlag(parsed.flags, "user")?.trim();
+  if ("user" in parsed.flags) {
+    if (!user || user.length > 254) {
+      throw new CliError(
+        "--user needs a username or email with 1 to 254 characters.",
+        1,
+        "--user braucht einen Benutzernamen oder eine E-Mail-Adresse mit 1 bis 254 Zeichen.",
+      );
+    }
+    if (takeBooleanFlag(parsed.flags, "device", "no-open")) {
+      throw new CliError(
+        "--user cannot be combined with --device or --no-open.",
+        1,
+        "--user kann nicht mit --device oder --no-open kombiniert werden.",
+      );
+    }
+  }
+  const ttl = "ttl" in parsed.flags ? parseLoginTtl(takeStringFlag(parsed.flags, "ttl")) : undefined;
   const existing = config.profiles?.[name] ?? {};
   const server = takeStringFlag(parsed.flags, "server") ?? global.server ?? envServer() ?? existing.server;
   if (!server) throw new CliError("Missing server. Run `cld login --server <url>`.");
@@ -3111,16 +3384,52 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   const fd0Scope = takeStringFlag(parsed.flags, "fd0-scope") ?? global.fd0Scope;
   const normalizedServer = canonicalServer(server);
   const device = takeBooleanFlag(parsed.flags, "device");
+  const login: OAuthLogin = {
+    method: user ? "user" : device ? "device" : "browser",
+    ...(user ? { user } : {}),
+    ...(ttl !== undefined ? { ttl } : {}),
+    ...(scope !== DEFAULT_OAUTH_SCOPE ? { scope } : {}),
+  };
+  const deviceCommand = loginCommand(
+    name,
+    normalizedServer,
+    { ...login, method: "device" },
+    fd0Name ? { name: fd0Name, scope: fd0Scope } : undefined,
+  );
+  if (user || ttl !== undefined) {
+    const discovery = await readLoginDiscovery(normalizedServer);
+    if (ttl !== undefined && discovery.cloud_login_ttl_supported !== true) {
+      throw new CliError(
+        "This Cloud cannot limit a login with --ttl yet. Update Cloud, or sign in without --ttl.",
+        1,
+        "Diese Cloud kann eine Anmeldung noch nicht mit --ttl begrenzen. Aktualisiere Cloud oder melde dich ohne --ttl an.",
+      );
+    }
+    if (user && discovery.cloud_login_hint_supported !== true) throw cloudLoginUnsupported(deviceCommand);
+  }
 
-  const token = device
-    ? await signInWithDeviceCode(normalizedServer, scope, global.requestLocale)
-    : await signInWithBrowser(normalizedServer, scope, !takeBooleanFlag(parsed.flags, "no-open"), global.locale);
+  const token = user
+    ? await signInWithCloudLogin(normalizedServer, scope, user, deviceCommand, global.requestLocale, ttl)
+    : device
+      ? await signInWithDeviceCode(normalizedServer, scope, global.requestLocale, ttl)
+      : await signInWithBrowser(normalizedServer, scope, !takeBooleanFlag(parsed.flags, "no-open"), global.locale, ttl);
   const refreshToken = token.refresh_token;
   if (!refreshToken) throw new CliError("OAuth server did not issue a refresh token. Check the offline_access scope.");
 
-  await storeOAuthLogin({ name, server: normalizedServer, token: { ...token, refresh_token: refreshToken }, scope, fd0Name, fd0Scope });
+  const loginExpiresAt =
+    token.refresh_token_expires_in !== undefined ? new Date(Date.now() + token.refresh_token_expires_in * 1000).toISOString() : undefined;
+  await storeOAuthLogin({
+    name,
+    server: normalizedServer,
+    token: { ...token, refresh_token: refreshToken },
+    scope,
+    fd0Name,
+    fd0Scope,
+    login,
+    loginExpiresAt,
+  });
 
-  const displayName = device ? signedInName(token.id_token) : null;
+  const displayName = device || user ? signedInName(token.id_token) : null;
   printLine(
     displayName
       ? text(global.locale, `✓ Signed in as ${displayName} (profile "${name}")`, `✓ Angemeldet als ${displayName} (Profil "${name}")`)
@@ -3130,6 +3439,9 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
           `Bei ${normalizedServer} als Profil "${name}" angemeldet.`,
         ),
   );
+  if ((user || ttl !== undefined) && loginExpiresAt) {
+    printLine(text(global.locale, `Login expires: ${loginExpiresAt}`, `Anmeldung läuft ab: ${loginExpiresAt}`));
+  }
   const yes = takeBooleanFlag(parsed.flags, "yes", "y");
   if (!takeBooleanFlag(parsed.flags, "no-plugins")) await offerCloudPlugins({ ...global, profile: name }, yes);
   const asked = await offerSkillTargets(global.locale, yes);
@@ -3269,6 +3581,7 @@ const runAuthCommand = async (args: string[], global: GlobalArgs): Promise<numbe
                 ? "token-command"
                 : "none",
     accessTokenExpiresAt: profile?.oauth?.accessTokenExpiresAt ?? null,
+    loginExpiresAt: profile?.oauth?.loginExpiresAt ?? null,
     refreshTokenStorage: profile?.oauth?.refreshTokenFd0 ? `fd0:${profile.oauth.refreshTokenFd0.name}` : profile?.oauth ? "config" : null,
     clientId: profile?.clientCredentials?.clientId ?? null,
     clientSecretStorage: profile?.clientCredentials
@@ -3285,6 +3598,13 @@ const runAuthCommand = async (args: string[], global: GlobalArgs): Promise<numbe
     printLine(`${text(global.locale, "Auth", "Authentifizierung")}: ${payload.kind}`);
     if (payload.accessTokenExpiresAt)
       printLine(`${text(global.locale, "Access token expires", "Access-Token läuft ab")}: ${payload.accessTokenExpiresAt}`);
+    if (payload.loginExpiresAt) {
+      const label =
+        Date.parse(payload.loginExpiresAt) <= Date.now()
+          ? text(global.locale, "Login expired", "Anmeldung abgelaufen")
+          : text(global.locale, "Login expires", "Anmeldung läuft ab");
+      printLine(`${label}: ${payload.loginExpiresAt}`);
+    }
     if (payload.refreshTokenStorage)
       printLine(`${text(global.locale, "Refresh token storage", "Speicherort des Refresh-Tokens")}: ${payload.refreshTokenStorage}`);
     if (payload.clientId) printLine(`${text(global.locale, "OAuth client", "OAuth-Client")}: ${payload.clientId}`);
@@ -3309,7 +3629,7 @@ type CoreCommand = {
 
 /** The built-in commands besides `help`. `main` answers a help request before a command reads or changes anything. */
 const coreCommands = new Map<string, CoreCommand>([
-  ["login", { help: loginHelp, run: runLoginCommand, valueFlags: ["server", "scope", "fd0", "fd0-scope"] }],
+  ["login", { help: loginHelp, run: runLoginCommand, valueFlags: ["server", "scope", "fd0", "fd0-scope", "user", "ttl"] }],
   ["logout", { help: logoutHelp, run: runLogoutCommand, valueFlags: ["profile", "p"] }],
   ["auth", { help: authHelp, run: runAuthCommand, valueFlags: ["profile", "p"] }],
   [
