@@ -768,18 +768,17 @@ describe(`slash command phone sheet in ${browserName}`, () => {
         await finishListAnimation(page);
         expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
         expect(await page.evaluate(() => history.length)).toBe(length + 1);
-        await page.evaluate(
-          () =>
-            new Promise<void>((done) => {
-              window.addEventListener("popstate", () => done(), { once: true });
-              history.back();
-            }),
-        );
+        // The page's own popstate listeners never see this Back: it only closes the sheet's same-URL entry.
+        await page.evaluate(() => {
+          window.addEventListener("popstate", () => document.body.setAttribute("data-page-popstate", ""));
+          history.back();
+        });
         await page.waitForFunction(() => !document.querySelector(".k2b-chat-composer__commands"));
         await expectPageHistory(page);
         expect(page.url()).toBe(url);
         expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
         expect(await field.inputValue()).toBe("/al");
+        expect(await page.evaluate(() => document.body.hasAttribute("data-page-popstate"))).toBe(false);
       } finally {
         await page.close();
       }

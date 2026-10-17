@@ -1,11 +1,25 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { createDialogCore } from "../src/feedback/dialog-core";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { createDialogCore, dialogCore } from "../src/feedback/dialog-core";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
 let dom: DomTestHarness;
+const popObservers = new Set<() => void>();
+beforeEach(() => {
+  dom = createDomTestHarness();
+  popObservers.clear();
+  // Observe before the core's capture listener: application listeners added afterwards must not see owned Back events.
+  window.addEventListener(
+    "popstate",
+    () => {
+      for (const resolve of popObservers) resolve();
+      popObservers.clear();
+    },
+    { capture: true },
+  );
+});
 afterEach(() => dom.cleanup());
 
-const popped = () => new Promise<void>((resolve) => window.addEventListener("popstate", () => resolve(), { once: true }));
+const popped = () => new Promise<void>((resolve) => popObservers.add(resolve));
 const settle = () => Bun.sleep(20);
 const marker = () => (history.state as { k2bDialog?: number } | null)?.k2bDialog;
 const view = (text: string) => () => {
@@ -14,9 +28,114 @@ const view = (text: string) => () => {
   return element;
 };
 
+describe("dialogCore popstate ownership", () => {
+  for (const kind of ["dialog", "holder"] as const) {
+    for (const synthetic of [false, true]) {
+      test(`${synthetic ? "closing" : "Back closes"} a ${kind} without notifying application listeners`, async () => {
+        const core = createDialogCore();
+        const addresses: string[] = [];
+        window.addEventListener("popstate", () => addresses.push(location.href));
+        let backCalls = 0;
+        const result = kind === "dialog" ? core.open(view("Sheet"), { history: true }) : undefined;
+        const release = kind === "holder" ? core.holdHistory(() => backCalls++) : () => core.close();
+        const back = popped();
+        if (synthetic) release();
+        else history.back();
+        await back;
+        await result;
+        await core.historySettled();
+        expect(core.isOpen()).toBe(false);
+        expect(marker()).toBeUndefined();
+        expect(backCalls).toBe(kind === "holder" && !synthetic ? 1 : 0);
+        expect(addresses).toEqual([]);
+      });
+    }
+  }
+
+  test("registers capture handling when created, before any entry is pushed", () => {
+    const listen = spyOn(window, "addEventListener");
+    createDialogCore();
+    expect(listen).toHaveBeenCalledWith("popstate", expect.any(Function), { capture: true });
+    listen.mockRestore();
+  });
+
+  test("capture runs before an earlier non-capture listener for a real history traversal", async () => {
+    const phases: string[] = [];
+    window.addEventListener("popstate", () => phases.push("application"));
+    window.addEventListener("popstate", () => phases.push("capture"), { capture: true });
+    const core = createDialogCore();
+    const result = core.open(view("Sheet"), { history: true });
+    history.back();
+    await result;
+    // Happy DOM, like browsers, runs capture-at-target before non-capture listeners, regardless of registration order.
+    expect(phases).toEqual(["capture"]);
+  });
+
+  test("Back to a different address propagates when no dialog has opened", async () => {
+    createDialogCore();
+    const addresses: string[] = [];
+    window.addEventListener("popstate", () => addresses.push(location.href));
+    history.pushState({ page: "next" }, "", "/next");
+    const back = popped();
+    history.back();
+    await back;
+    expect(addresses).toEqual(["http://localhost/"]);
+  });
+
+  test("Back past an open dialog to a different address propagates and closes it", async () => {
+    const core = createDialogCore();
+    const addresses: string[] = [];
+    window.addEventListener("popstate", () => addresses.push(location.href));
+    history.pushState({ page: "next" }, "", "/next");
+    const result = core.open(view("Sheet"), { history: true });
+    history.go(-2);
+    await result;
+    expect(core.isOpen()).toBe(false);
+    expect(addresses).toEqual(["http://localhost/"]);
+  });
+
+  test("a replaced address propagates even when Back lands on an own marker", async () => {
+    const core = createDialogCore();
+    const addresses: string[] = [];
+    window.addEventListener("popstate", () => addresses.push(location.href));
+    const outer = core.open(view("Outer"), { history: true });
+    history.replaceState(history.state, "", "/replaced");
+    const inner = core.open(view("Inner"), { history: true });
+    history.back();
+    await inner;
+    expect(core.isOpen()).toBe(true);
+    expect(addresses).toEqual(["http://localhost/replaced"]);
+    core.close();
+    await outer;
+  });
+
+  for (const synthetic of [false, true]) {
+    test(`clears the base after ${synthetic ? "closing" : "Back closes"} the last entry`, async () => {
+      const core = createDialogCore();
+      const addresses: string[] = [];
+      window.addEventListener("popstate", () => addresses.push(location.href));
+      const result = core.open(view("Sheet"), { history: true });
+      if (synthetic) core.close();
+      else history.back();
+      await result;
+      history.pushState({ page: "next" }, "", "/next");
+      const back = popped();
+      history.back();
+      await back;
+      expect(addresses).toEqual(["http://localhost/"]);
+
+      history.replaceState({}, "", "/new-base");
+      const next = core.open(view("Next sheet"), { history: true });
+      core.close();
+      await next;
+      expect(location.href).toBe("http://localhost/new-base");
+      expect(addresses).toEqual(["http://localhost/"]);
+    });
+  }
+});
+
 describe("dialogCore history option", () => {
   test("Back closes the dialog instead of leaving the page", async () => {
-    dom = createDomTestHarness();
     const core = createDialogCore();
     const start = history.length;
     const result = core.open(view("Sheet"), { history: true });
@@ -32,7 +151,6 @@ describe("dialogCore history option", () => {
   });
 
   test("closing removes the entry again before the promise settles", async () => {
-    dom = createDomTestHarness();
     const core = createDialogCore();
     const result = core.open<string>(
       (close) => {
@@ -46,7 +164,6 @@ describe("dialogCore history option", () => {
   });
 
   test("Back closes only the newest of nested dialogs, and everything opened after it", async () => {
-    dom = createDomTestHarness();
     const core = createDialogCore();
     const outer = core.open(view("Outer"), { history: true });
     const inner = core.open(view("Inner"), { history: true });
@@ -66,7 +183,6 @@ describe("dialogCore history option", () => {
   });
 
   test("closing every dialog returns to the page in one step, and the next dialog waits for it", async () => {
-    dom = createDomTestHarness();
     const core = createDialogCore();
     const start = history.length;
     const first = core.open(view("First"), { history: true });
@@ -90,7 +206,6 @@ describe("dialogCore history option", () => {
   });
 
   test("a reloaded page drops a stale dialog marker instead of reopening on Forward", async () => {
-    dom = createDomTestHarness();
     history.replaceState({ k2bDialog: 41, page: "tasks" }, "");
     const core = createDialogCore();
     const result = core.open(view("Sheet"), { history: true });
@@ -102,7 +217,6 @@ describe("dialogCore history option", () => {
   });
 
   test("dialogs without the option leave the history alone", async () => {
-    dom = createDomTestHarness();
     const core = createDialogCore();
     const start = history.length;
     const result = core.open(view("Plain"));
@@ -113,24 +227,31 @@ describe("dialogCore history option", () => {
   });
 
   test("prompts take the option, and Back dismisses them", async () => {
-    dom = createDomTestHarness();
+    const core = createDialogCore();
     const { prompts } = await import("../src/feedback/prompts");
-    const start = history.length;
-    const answer = prompts.confirm("Sign out of the app?", { history: true });
-    expect(history.length).toBe(start + 1);
-    const back = popped();
-    history.back();
-    await back;
-    expect(await answer).toBeUndefined();
-    expect(marker()).toBeUndefined();
+    // The shared core was evaluated without window. Test prompt delegation through this browser-created core.
+    const open = spyOn(dialogCore, "open").mockImplementation(core.open);
+    try {
+      const start = history.length;
+      const answer = prompts.confirm("Sign out of the app?", { history: true });
+      expect(history.length).toBe(start + 1);
+      const back = popped();
+      history.back();
+      await back;
+      expect(await answer).toBeUndefined();
+      expect(marker()).toBeUndefined();
+    } finally {
+      open.mockRestore();
+    }
   });
 });
 
 describe("dialogCore internal history holders", () => {
   test("holders close once on Back and stay gone on Forward", async () => {
-    dom = createDomTestHarness();
     history.replaceState({ sentinel: 1 }, "");
     const core = createDialogCore();
+    const addresses: string[] = [];
+    window.addEventListener("popstate", () => addresses.push(location.href));
     let calls = 0;
     const release = core.holdHistory(() => calls++);
     expect(marker()).toBeNumber();
@@ -140,20 +261,22 @@ describe("dialogCore internal history holders", () => {
     await back;
     expect(calls).toBe(1);
     expect(history.state).toEqual({ sentinel: 1 });
+    expect(addresses).toEqual([]);
     release();
     release();
     back = popped();
     history.forward();
     await back;
     expect(calls).toBe(1);
+    expect(addresses).toEqual(["http://localhost/"]);
     back = popped();
     history.back();
     await back;
     expect(calls).toBe(1);
+    expect(addresses).toEqual(["http://localhost/", "http://localhost/"]);
   });
 
   test("releasing holders is idempotent and restores page state in one traversal", async () => {
-    dom = createDomTestHarness();
     history.replaceState({ sentinel: 1 }, "");
     const core = createDialogCore();
     let calls = 0;
@@ -172,7 +295,6 @@ describe("dialogCore internal history holders", () => {
   });
 
   test("Back past the newest holder also removes an older released entry", async () => {
-    dom = createDomTestHarness();
     history.replaceState({ sentinel: 1 }, "");
     const core = createDialogCore();
     const release = core.holdHistory(() => {
@@ -191,8 +313,9 @@ describe("dialogCore internal history holders", () => {
   });
 
   test("releasing a holder leaves foreign history alone", async () => {
-    dom = createDomTestHarness();
     const core = createDialogCore();
+    const addresses: string[] = [];
+    window.addEventListener("popstate", () => addresses.push(location.href));
     const release = core.holdHistory(() => {});
     history.pushState({ foreign: true }, "");
     const go = spyOn(history, "go");
@@ -201,11 +324,14 @@ describe("dialogCore internal history holders", () => {
     expect(go).not.toHaveBeenCalled();
     expect(history.state).toEqual({ foreign: true });
     go.mockRestore();
+    const back = popped();
+    history.back();
+    await back;
+    expect(addresses).toEqual(["http://localhost/"]);
   });
 
   for (const inFlight of [false, true]) {
     test(`a new holder waits for ${inFlight ? "returning" : "a pending release"}`, async () => {
-      dom = createDomTestHarness();
       history.replaceState({ sentinel: 1 }, "");
       const core = createDialogCore();
       let calls = 0;
@@ -234,7 +360,6 @@ describe("dialogCore internal history holders", () => {
   }
 
   test("releasing a deferred holder prevents its entry being pushed", async () => {
-    dom = createDomTestHarness();
     history.replaceState({ sentinel: 1 }, "");
     const core = createDialogCore();
     const first = core.holdHistory(() => {});
@@ -250,7 +375,6 @@ describe("dialogCore internal history holders", () => {
   });
 
   test("a dialog replaces a released holder without leaving an extra entry", async () => {
-    dom = createDomTestHarness();
     history.replaceState({ sentinel: 1 }, "");
     const core = createDialogCore();
     const release = core.holdHistory(() => {});
@@ -268,7 +392,6 @@ describe("dialogCore internal history holders", () => {
   });
 
   test("a holder waits for a closing dialog and interleaves with dialogs", async () => {
-    dom = createDomTestHarness();
     history.replaceState({ sentinel: 1 }, "");
     const core = createDialogCore();
     const outer = core.open(view("Outer"), { history: true });

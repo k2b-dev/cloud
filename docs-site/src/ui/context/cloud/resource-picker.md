@@ -45,9 +45,7 @@ of resizing it.
 Small screens show one column with an optional **Details** view. Below 48rem
 the picker is a full-screen sheet: the whole width, from below the status bar
 to the bottom edge, rounded at the top, while global search keeps its floating
-card. The picker adds one same-URL history entry, so the browser's or phone's
-Back closes it without leaving the page; the returned promise settles after
-that entry is gone. The result list
+card. The result list
 uses `ScrollArea` fades. Each application's results appear as it answers and
 are appended below earlier ones; a quiet line below the results names the
 applications still searching or one that did not answer, with **Try again**

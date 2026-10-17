@@ -399,6 +399,9 @@ can navigate or open the next dialog right away. Dialogs closed together leave
 the history in one step. After a reload, a leftover entry never reopens a
 dialog or its transient state.
 
+Application `popstate` listeners do not receive the same-URL Back that only
+closes or removes a dialog or sheet entry.
+
 Use the option for dialogs a person opens on purpose. Leave it off for
 confirmations inside another dialog, which Back closes together with their
 parent. Back closes the dialog directly: the dismiss guard of

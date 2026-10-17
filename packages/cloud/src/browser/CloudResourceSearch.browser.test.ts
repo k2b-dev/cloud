@@ -160,6 +160,28 @@ const waitForRows = (page: Page, count: number) =>
 const waitForText = (page: Page, text: string) => page.locator("dialog").getByText(text, { exact: false }).first().waitFor();
 
 describe("streamed search in a browser", () => {
+  test("a phone shows the picker as a full-screen sheet and keeps global search floating", async () => {
+    for (const [path, sheet] of [
+      ["/?picker", true],
+      ["/", false],
+    ] as const) {
+      const { page, close } = await open(views[1]!, path);
+      try {
+        const [left, top, width, height] = (await layout(page)).dialog;
+        if (sheet) {
+          expect([left, width]).toEqual([0, 390]);
+          expect(top).toBeLessThanOrEqual(12);
+          expect(top + height).toBe(844);
+        } else {
+          expect(left).toBeGreaterThan(0);
+          expect(top + height).toBeLessThan(844);
+        }
+      } finally {
+        await close();
+      }
+    }
+  }, 30_000);
+
   test("shows each app as it answers, appends slower apps below, and moves nothing already shown", async () => {
     for (const view of views) {
       const files = gate();
