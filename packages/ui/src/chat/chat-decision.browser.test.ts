@@ -75,7 +75,7 @@ test("confirm collapses immediately, focuses and announces the outcome, and fini
   const page = await open();
   try {
     await page.getByRole("button", { name: "Send to Lea", exact: true }).click();
-    expect(await page.locator(".k2b-chat-decision").getAttribute("data-state")).toBe("sending");
+    expect(await page.locator(".k2b-chat-decision").first().getAttribute("data-state")).toBe("sending");
     expect(await activeOutcome(page).textContent()).toBe(running);
     expect(await focusedOutcome(page)).toBe(true);
     expect(await page.locator(".k2b-chat-outcome").getAttribute("data-enter")).toBe("true");
@@ -116,9 +116,14 @@ test("an expired outcome action reopens and focuses the question sentence", asyn
   try {
     await page.evaluate(() => window.__expire());
     await page.getByRole("button", { name: "Ask again", exact: true }).click();
-    expect(await page.locator(".k2b-chat-decision").getAttribute("data-state")).toBe("open");
-    expect(await page.locator(".k2b-chat-decision__sentence").evaluate((e) => e === document.activeElement)).toBe(true);
-    expect(await page.locator(".k2b-chat-decision__sentence").getAttribute("data-arrive")).toBe("true");
+    expect(await page.locator(".k2b-chat-decision").first().getAttribute("data-state")).toBe("open");
+    expect(
+      await page
+        .locator(".k2b-chat-decision__sentence")
+        .first()
+        .evaluate((e) => e === document.activeElement),
+    ).toBe(true);
+    expect(await page.locator(".k2b-chat-decision__sentence").first().getAttribute("data-arrive")).toBe("true");
   } finally {
     await page.close();
   }
@@ -155,7 +160,7 @@ for (const width of [1440, 390])
           weight: style.fontWeight,
         };
       });
-      expect(metrics.indent.length).toBe(7); // reason, four decision preview lines, the later-marked line, activity
+      expect(metrics.indent.length).toBe(8); // two reasons, four decision preview lines, the later-marked line, activity
       for (const indent of metrics.indent) expect(Math.abs(indent - 24)).toBeLessThanOrEqual(0.5);
       for (const left of metrics.flush) expect(Math.abs(left)).toBeLessThanOrEqual(0.5);
       for (const [index, expected] of [4, 20, 20].entries()) expect(Math.abs(metrics.gaps[index]! - expected)).toBeLessThanOrEqual(0.5);
@@ -231,8 +236,12 @@ test("a rejected outcome action reaches onActionError instead of going unhandled
   page.on("pageerror", (error) => unhandled.push(error.message));
   try {
     await page.evaluate(() => window.__fail());
-    await page.getByRole("button", { name: "Send again", exact: true }).click();
+    const again = page.getByRole("button", { name: "Send again", exact: true });
+    await again.click();
+    // A second press while the first is still running does not repeat it.
+    await again.click();
     await page.waitForFunction(() => window.__errors.length === 1);
+    expect(await page.evaluate(() => window.__calls)).toBe(1);
     expect(await page.evaluate(() => window.__errors)).toEqual(["Error: offline"]);
     expect(unhandled).toEqual([]);
   } finally {

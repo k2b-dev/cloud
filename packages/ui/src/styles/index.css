@@ -69,9 +69,9 @@
      hook, as for the workspace accent; Cloud maps it to the app accent. */
   --k2b-link-accent: var(--k2b-action);
   /* Chat questions: the type step of the question sentence (smaller on
-     phones), and the host hook for marks of new or removed words. */
+     phones). Marks of new words read the optional host hook
+     `--k2b-mark-accent`, which defaults to the AI accent. */
   --k2b-chat-decision-size: 1.125rem;
-  --k2b-mark-accent: var(--k2b-ai-accent);
   /* Reference pills: a neutral fill that follows any surface below it, and
      one icon colour per type. Icons keep at least 3:1 on the hover fill. */
   --k2b-reference-surface: rgb(9 9 11 / 0.045);
@@ -9502,8 +9502,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: var(--k2b-focus-offset);
 }
 
-/* At least 1rem wide, so the label starts 1.5rem from the edge, where the
-   body below it and every icon-led line of a chat question start. */
+/* At least 1rem wide, so the label starts 1.5rem from the edge, where its
+   expanded content and every icon-led line of a chat question start. */
 .k2b-ui .k2b-chat-activity__leading {
   display: inline-flex;
   min-width: 1rem;
@@ -10031,7 +10031,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0 0.125rem;
   border-radius: 0.1875rem;
   color: inherit;
-  background: color-mix(in srgb, var(--k2b-mark-accent) 22%, transparent);
+  background: color-mix(in srgb, var(--k2b-mark-accent, var(--k2b-ai-accent)) 22%, transparent);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }

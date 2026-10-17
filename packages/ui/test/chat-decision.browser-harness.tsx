@@ -17,6 +17,7 @@ declare global {
     __fail: () => void;
     __mark: () => void;
     __errors: string[];
+    __calls: number;
   }
 }
 
@@ -31,6 +32,7 @@ function Fixture() {
   // A retained element: marking its line later must not move it out of the page.
   const retained = <b id="retained">Retained words</b>;
   window.__errors = [];
+  window.__calls = 0;
   window.__mark = () => setMark("added");
   window.__check = () => setCurrent("checkfail");
   window.__fail = () => {
@@ -65,6 +67,8 @@ function Fixture() {
       action: {
         label: "Send again",
         onSelect: async () => {
+          window.__calls++;
+          await new Promise((settle) => setTimeout(settle, 200));
           throw new Error("offline");
         },
       },
@@ -148,6 +152,17 @@ function Fixture() {
           {retained}
         </Chat.Preview.Line>
       </Chat.Preview>
+      <Chat.Decision
+        state="open"
+        sentence={
+          <>
+            Share <ReferenceChip kind="object" title="四半期報告書の最終版と全ての添付資料" icon="ti ti-folder" href="#cjk" />?
+          </>
+        }
+        reason={{ text: "A long answer still fits a phone." }}
+        confirm={{ label: "An Lea Berg und das gesamte Betriebsteam von Nordwind senden", onSelect: () => {} }}
+        decline={{ label: "Nicht senden", onSelect: () => {} }}
+      />
       <p id="sentinel">The next conversation paragraph stays in place.</p>
       <Chat.Activity label="Checked the draft" icon="ti ti-alert-triangle" tone="warning" />
     </main>

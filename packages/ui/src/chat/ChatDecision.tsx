@@ -142,6 +142,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
           <div class="k2b-chat-decision__answers">
             <Button
               class="k2b-chat-decision__answer"
+              wrap
               variant={props.confirm.variant ?? "ai"}
               disabled={Boolean(props.unavailable)}
               onClick={() => answer(props.confirm, !props.unavailable)}
@@ -149,7 +150,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
               <Show when={props.confirm.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
               {props.confirm.label}
             </Button>
-            <Button class="k2b-chat-decision__answer" variant="subtle" onClick={() => answer(props.decline, true)}>
+            <Button class="k2b-chat-decision__answer" wrap variant="subtle" onClick={() => answer(props.decline, true)}>
               <Show when={props.decline.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
               {props.decline.label}
             </Button>
@@ -157,6 +158,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
               {(remember) => (
                 <Button
                   class="k2b-chat-decision__remember"
+                  wrap
                   variant="text"
                   disabled={Boolean(props.unavailable)}
                   onClick={() => answer(remember(), !props.unavailable)}
@@ -219,6 +221,7 @@ export function ChatOutcome(props: ChatOutcomeProps): JSX.Element {
   const entering = untrack(() => scope?.answered() ?? false);
   const [live, setLive] = createSignal("");
   let cell: HTMLDivElement | undefined;
+  let pending = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   // Read once: an object literal from the host builds its JSX again on every read.
   const lines = createMemo(() => props.lines);
@@ -286,13 +289,23 @@ export function ChatOutcome(props: ChatOutcomeProps): JSX.Element {
                       {(action) => (
                         <Button
                           class="k2b-chat-outcome__link"
+                          wrap
                           variant="text"
                           tabIndex={current() ? undefined : -1}
                           onClick={() => {
+                            // A second press while the first is still running would repeat its work.
+                            if (pending) return;
                             scope?.pressed();
                             try {
                               const result = action().onSelect();
-                              if (result instanceof Promise) result.catch((error: unknown) => props.onActionError?.(error));
+                              if (result instanceof Promise) {
+                                pending = true;
+                                result
+                                  .catch((error: unknown) => props.onActionError?.(error))
+                                  .finally(() => {
+                                    pending = false;
+                                  });
+                              }
                             } catch (error) {
                               props.onActionError?.(error);
                             }

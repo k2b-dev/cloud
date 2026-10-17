@@ -57,7 +57,9 @@ and does not split emoji or combining graphemes. Short and exact-length text
 stays unchanged; trimming whitespace around the cut may make the result shorter
 than `max`. A truncated chip retains the full text in a screen-reader-only span
 and its `title` tooltip; the visible shortened text is hidden from assistive
-technology. Above 30 visible characters, the chip may wrap within its fill.
+technology. A chip stays on one line up to the width of 30 narrow characters;
+wide characters such as CJK and emoji count twice. A wider chip may wrap within
+its fill.
 
 A linked object or place uses the optional `accent` as `--k2b-reference-icon`.
 Set `gone` when the target no longer exists: it becomes a struck-through span,

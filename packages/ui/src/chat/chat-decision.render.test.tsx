@@ -283,11 +283,18 @@ describe("ReferenceChip", () => {
       expect(body.firstElementChild!.getAttribute("data-long")).toBe(length > 30 ? "true" : null);
     }
   });
-  // Regression: ReferenceChip currently uses UTF-16 .length here instead of counting visible graphemes.
-  test("data-long counts visible graphemes at the 30-character boundary, including emoji", () => {
-    for (const length of [30, 31]) {
-      const body = render(() => createComponent(ReferenceChip, { kind: "object", title: "👩🏽‍💻".repeat(length) }));
-      expect(body.firstElementChild!.getAttribute("data-long")).toBe(length > 30 ? "true" : null);
+  // Wide characters and emoji count twice, so a chip of 16 of them already wraps instead of overflowing a phone.
+  test("data-long weighs wide characters and emoji by their width, never by UTF-16 length", () => {
+    for (const [title, long] of [
+      ["👩🏽‍💻".repeat(15), false],
+      ["👩🏽‍💻".repeat(16), true],
+      ["報".repeat(15), false],
+      ["報".repeat(16), true],
+      ["a".repeat(14) + "報".repeat(8), false],
+      ["a".repeat(14) + "報".repeat(9), true],
+    ] as const) {
+      const body = render(() => createComponent(ReferenceChip, { kind: "object", title }));
+      expect(body.firstElementChild!.getAttribute("data-long")).toBe(long ? "true" : null);
     }
   });
   test("truncateMiddle leaves short and exact strings alone, keeps endings and whole graphemes", () => {

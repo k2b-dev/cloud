@@ -4,8 +4,17 @@ import { Avatar } from "../surfaces/Avatar";
 /** The visible length of a chip; longer titles are cut in the middle. */
 export const REFERENCE_CHIP_MAX_CHARACTERS = 40;
 
-/** Up to this length a chip stays on one line; a longer one may wrap inside its fill. */
-const UNBROKEN_CHARACTERS = 30;
+/**
+ * Up to this width, in narrow characters, a chip stays on one line; a wider one may wrap inside its fill. 30 narrow
+ * characters fit a 390 px phone with room to spare.
+ */
+const UNBROKEN_WIDTH = 30;
+
+/** East Asian wide and fullwidth characters and emoji take about two narrow characters each. */
+const WIDE =
+  /\p{Extended_Pictographic}|[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/u;
+
+const narrowWidth = (text: string): number => graphemes(text).reduce((width, character) => width + (WIDE.test(character) ? 2 : 1), 0);
 
 const graphemes = (text: string): string[] =>
   typeof Intl.Segmenter === "function"
@@ -105,7 +114,7 @@ export function ReferenceChip(props: ReferenceChipProps): JSX.Element {
     class: `k2b-reference k2b-reference-chip${props.class ? ` ${props.class}` : ""}`,
     "data-kind": props.kind,
     "data-gone": gone() ? "true" : undefined,
-    "data-long": graphemes(visible()).length > UNBROKEN_CHARACTERS ? "true" : undefined,
+    "data-long": narrowWidth(visible()) > UNBROKEN_WIDTH ? "true" : undefined,
     title: cut() ? full() : undefined,
     style: accent() ? { "--k2b-reference-icon": accent() } : undefined,
   });

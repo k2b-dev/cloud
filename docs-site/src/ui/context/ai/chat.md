@@ -87,7 +87,9 @@ runtime-locale text, which keeps the server HTML and the browser render identica
 
 Use `Chat.Decision` for one question in a conversation. The host owns the answer,
 execution, expiry, and any policy change. Use verb-and-target answers such as
-"Send to Lea" and "Keep draft"; never offer "Approve all".
+"Send to Lea" and "Keep draft"; never offer "Approve all". Answers are at
+least 44 px high; on phones they share the row, and a long label wraps
+inside its button.
 
 The sentence, preview title, header rows, and answers share one left edge, with
 no separate column or card surface. Reason, preview line, outcome, and activity
@@ -117,7 +119,8 @@ accessible; inactive action links leave the tab order. `actions` under a line
 stay in the cell while the line is hidden, so a line with buttons reserves
 their row from the start. `running` sets `aria-busy` on the words only, never
 on an ancestor of the live region. Pass `onActionError` to receive an error a
-line's `action` throws or rejects with, and show a recoverable line. A polite
+line's `action` throws or rejects with, and show a recoverable line. While an
+action's promise is pending, further presses are ignored. A polite
 live region starts empty in SSR and on initial history
 mount; it announces an answer given here and every subsequent `current` change,
 including detail, time, and action link text with spaces between them; buttons
