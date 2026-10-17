@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { bigGraph, handbookGraph } from "./graph.fixtures";
-import { CIRCLE_STATUS_BAND, chordPath, circleRadius, fitCircle, layoutCircle, ringStep } from "./layout-circle";
+import { CIRCLE_STATUS_BAND, chordPath, circleInsets, circleRadius, fitCircle, layoutCircle, ringStep } from "./layout-circle";
 import { buildGraphModel, type GraphModel, type GraphNote, visibleNotes } from "./model";
 
 const TAU = 2 * Math.PI;
@@ -144,4 +144,21 @@ test("chords pull endpoints inside the band and control radius follows angular d
   }
   expect(controls[0]!).toBeGreaterThan(controls[1]!);
   expect(controls[1]!).toBeGreaterThan(controls[2]!);
+});
+test("chords and bands stay inside the ring across the whole zoom range", () => {
+  // Fit can give a radius of 40 px, and zoom goes down to 0.4 of the fit.
+  for (const k of [16, 40, 60, 200]) {
+    const inset = circleInsets(k);
+    expect(k - inset.upper).toBeGreaterThan(0);
+    expect(k - inset.chord).toBeGreaterThan(0);
+    expect(k - inset.bandInner).toBeLessThan(k - inset.bandOuter);
+    const screen = (p: { x: number; y: number }) => ({ x: p.x * k, y: p.y * k });
+    const [ax, ay] = chordPath({ x: 1, y: 0, th: 0 }, { x: 0, y: 1, th: Math.PI / 2 }, k, screen, 0)
+      .match(/-?\d+\.\d+/g)!
+      .map(Number) as [number, number];
+    // The chord starts on its own note's side of the centre.
+    expect(ax).toBeGreaterThan(0);
+    expect(Math.abs(ay)).toBeLessThan(0.1);
+  }
+  expect(circleInsets(200)).toEqual({ chord: 21, bandInner: 17, bandOuter: 11, name: 28, upper: 30, lower: 22 });
 });

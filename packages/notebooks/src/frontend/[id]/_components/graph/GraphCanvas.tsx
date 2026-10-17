@@ -5,7 +5,7 @@ import GraphFeedback from "./GraphFeedback";
 import { convexHull, fitView, type GraphView, type Rect, screenRadius, spatialNext, toScreen, toWorld, zoomView } from "./geometry";
 import { createGraphTextMeasure } from "./graph-text-measure";
 import { type AreaLabelInput, type LabelKind, type LabelNode, placeLabels } from "./labels";
-import { CIRCLE_STATUS_BAND, chordPath, circleRadius, fitCircle, layoutCircle, ringStep } from "./layout-circle";
+import { CIRCLE_STATUS_BAND, chordPath, circleInsets, circleRadius, fitCircle, layoutCircle, ringStep } from "./layout-circle";
 import {
   fitNeighborhood,
   layoutNeighborhood,
@@ -238,12 +238,13 @@ export default function GraphCanvas(props: GraphCanvasProps) {
         t1 = arc.t1 - 0.004;
       const big = t1 - t0 > Math.PI ? 1 : 0;
       const pt = (r: number, th: number) => `${f1(cx + Math.cos(th) * r)},${f1(cy + Math.sin(th) * r)}`;
-      const r0 = R - 17,
-        r1 = R - 11,
-        rt = R - 28;
+      const inset = circleInsets(R);
+      const r0 = R - inset.bandInner,
+        r1 = R - inset.bandOuter,
+        rt = R - inset.name;
       const name = arc.area.index === 0 ? t().graphTopLevel : arc.area.title || t().untitled;
       const lower = Math.sin((t0 + t1) / 2) > 0.05;
-      const rr = lower ? rt + 6 : rt - 2;
+      const rr = R - (lower ? inset.lower : inset.upper);
       // The name sits inside the ring and the titles outside it, so the two never meet; it shows only when it fits.
       const showName = fontsReady() && measure(name, { size: 12, weight: 600 }) + 10 < (t1 - t0) * rt;
       return {

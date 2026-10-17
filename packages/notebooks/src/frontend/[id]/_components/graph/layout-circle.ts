@@ -51,7 +51,18 @@ export function circleRadius(deg: number): number {
 }
 
 /**
- * A link as a quadratic chord between two ring notes. Both ends sit 21 px inside the ring, inside the area band; the
+ * Distances inside the ring, in screen pixels: chord ends, the area band, and the baseline of the area name. They keep
+ * the prototype's sizes from a radius of 60 px up and shrink with the ring below it, so a ring zoomed far out still
+ * has its chords and bands inside it, never across the centre.
+ */
+export function circleInsets(k: number) {
+  const scale = Math.min(1, k / 60);
+  // The name's room is measured at `name`; its baseline sits lower on the lower half, where the text is turned over.
+  return { chord: 21 * scale, bandInner: 17 * scale, bandOuter: 11 * scale, name: 28 * scale, upper: 30 * scale, lower: 22 * scale };
+}
+
+/**
+ * A link as a quadratic chord between two ring notes. Both ends sit `circleInsets(k).chord` inside the ring, inside the area band; the
  * curve bends toward the centre less the farther apart the notes are. `shift` moves the chord to its own right, so two
  * notes that link to each other keep two visible lines.
  */
@@ -62,7 +73,7 @@ export function chordPath(
   toScreen: (p: { x: number; y: number }) => { x: number; y: number },
   shift: number,
 ): string {
-  const r = 1 - 21 / k;
+  const r = 1 - circleInsets(k).chord / k;
   const ax = a.x * r,
     ay = a.y * r,
     bx = b.x * r,
