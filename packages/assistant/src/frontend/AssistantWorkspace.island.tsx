@@ -1467,8 +1467,8 @@ export default function AssistantWorkspace(props: Props) {
         // From here on, moving to another chat ends the opening, also while the link resolves.
         opening.key = opened;
       } catch (error) {
-        // The composer's status line names the failure once.
-        chat.setError(null);
+        // The composer's status line names the failure once; an error of a chat the person moved to stays there.
+        if (sessionKey() === key) chat.setError(null);
         throw error instanceof Error && error.message === commandCopy().commandSuperseded
           ? error
           : new Error(commandCopy().commandDraftNotSaved);

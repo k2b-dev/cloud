@@ -30,7 +30,8 @@ export const openCommand = async (
   const parsedOptions = contracts.CommandOptionsSchema.parse(options);
   const handled = requestCommandHandling({ command, input, options: parsedOptions });
   if (handled) return handled;
-  const result = await capabilities.resolveCommand(command, input, parsedOptions);
+  // An abort also ends the request, so a cancelled opening does not wait for its answer.
+  const result = await capabilities.resolveCommand(command, input, parsedOptions, { signal });
   if (signal?.aborted) return;
   if (!result.ok) throw new Error(result.error.message);
   window.location.assign(result.data.href);

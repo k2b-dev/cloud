@@ -122,6 +122,39 @@ if (!isServer) {
     }
   });
 
+  test("an aborted openCommand ends its pending request and never navigates", async () => {
+    const dom = createDomTestHarness();
+    const { openCommand } = await import("./commands");
+    const navigate = spyOn(window.location, "assign").mockImplementation(() => {});
+    const originalFetch = globalThis.fetch;
+    let requestSignal: AbortSignal | undefined;
+    const requested = Promise.withResolvers<void>();
+    globalThis.fetch = Object.assign(
+      (_input: RequestInfo | URL, init?: RequestInit) => {
+        requestSignal = init?.signal ?? undefined;
+        requested.resolve();
+        // Answers only through the abort, as a request the person left behind.
+        return new Promise<Response>((_resolve, reject) => {
+          requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason));
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      const controller = new AbortController();
+      const opening = openCommand("demo.edit", {}, { returnTo: "/app/assistant" }, controller.signal);
+      await requested.promise;
+      controller.abort();
+      await opening;
+      expect(requestSignal?.aborted).toBe(true);
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = originalFetch;
+      navigate.mockRestore();
+      dom.cleanup();
+    }
+  });
+
   test("openCommand validates options before dispatching to a local owner", async () => {
     const dom = createDomTestHarness();
     const { openCommand, registerCommandHandler } = await import("./commands");
