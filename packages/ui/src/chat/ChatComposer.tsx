@@ -143,9 +143,10 @@ export type ChatCommand = {
   /**
    * Leaves the composer, such as opening another app. Runs with the token and the list in place: the row shows
    * `busyLabel` (default "Opening …") with a spinner instead of its description, and editing waits. A rejection ends like
-   * an action's: the token stays, the list closes and the status line names the reason. See `ChatCommandOpenResult`.
+   * an action's: the token stays, the list closes and the status line names the reason. Closing the list, such as with
+   * Escape, cancels: `signal` aborts and the row ends at once. See `ChatCommandOpenResult`.
    */
-  open?: (draft: ChatCommandDraft) => Promise<ChatCommandOpenResult>;
+  open?: (draft: ChatCommandDraft, signal: AbortSignal) => Promise<ChatCommandOpenResult>;
   /** Selecting a reference inserts its display name and retains its opaque payload. */
   mention?: ChatAttachment;
   /**
@@ -332,6 +333,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   /** The `open` row running now, and why `open` rows failed in this opening, by row key. */
   const [openingRow, setOpeningRow] = createSignal<string>();
   const [openFailures, setOpenFailures] = createSignal<Readonly<Record<string, string>>>({});
+  /** Cancels the `open` row running now; `key` is the draft it started in. */
+  let openingRun: { controller: AbortController; key: unknown } | undefined;
   // Where the pending native edit starts; a selection replaced as a whole starts at its beginning.
   let inputStart: number | undefined;
   let inputEnd: number | undefined;
@@ -557,6 +560,14 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       { defer: true },
     ),
   );
+  // Escape, a press outside, or moving the caret away closes the list; while an `open` row runs, that cancels it, so
+  // nothing opens after the person backed out. Success ends the opening and closes the list in one step. A new draft
+  // is the opener's own move, such as a chat it creates to save into, and does not cancel.
+  createEffect(() => {
+    const run = openingRun;
+    if (openingRow() !== undefined && !commandsOpen() && run && run.key === props.draftKey) run.controller.abort();
+  });
+  onCleanup(() => openingRun?.controller.abort());
   // An `open` row gives the sheet's Back entry up first, so it never races the navigation it starts.
   const commandSheetHeld = createMemo(() => commandsOpen() && isTouchOnly() && openingRow() === undefined);
   createEffect(() => {
@@ -1194,10 +1205,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     // Still the same draft and `/…`, so the row is where the person chose it.
     const inPlace = () => !disposed && props.draftKey === key && props.value === value && commandQuery()?.start === token.start;
     const heldHistory = commandSheetHeld();
+    // Closing the list or leaving the composer cancels the opening; the row ends at once, without waiting for it.
+    const controller = new AbortController();
+    const run = { controller, key };
+    openingRun = run;
+    const cancelled = new Promise<"cancelled">((resolve) =>
+      controller.signal.addEventListener("abort", () => resolve("cancelled"), { once: true }),
+    );
     setOpenFailures(({ [row]: _, ...rest }) => rest);
     setOpeningRow(row);
     setExecuting(true);
     const finish = () => {
+      if (openingRun === run) openingRun = undefined;
       setOpeningRow(undefined);
       setExecuting(false);
     };
@@ -1210,7 +1229,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           return;
         }
       }
-      result = await open({ value: nextValue, mentions: nextMentions });
+      result = await Promise.race([open({ value: nextValue, mentions: nextMentions }, controller.signal), cancelled]);
     } catch (error) {
       finish();
       if (disposed) {

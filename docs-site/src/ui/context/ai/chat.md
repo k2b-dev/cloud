@@ -307,7 +307,7 @@ type ChatCommand = {
   section?: string; scope?: string; hiddenUntilSearch?: boolean; app?: string;
   action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
   mention?: ChatAttachment;
-  open?: (draft: ChatCommandDraft) => Promise<ChatCommandOpenResult>;
+  open?: (draft: ChatCommandDraft, signal: AbortSignal) => Promise<ChatCommandOpenResult>;
   selected?: boolean; searchAgain?: boolean; persistent?: boolean;
 };
 
@@ -324,14 +324,17 @@ type ChatPasteHandler = (event: ClipboardEvent & { currentTarget: HTMLTextAreaEl
 
 ```
 
-Use `open(draft)` for a row that saves before opening another application.
+Use `open(draft, signal)` for a row that saves before opening another application.
 `draft` contains the value without `/…` and the adjusted mentions. During the
 promise, editing waits, the token and list stay in place, and the row shows
 **Opening …** with a spinner (or `busyLabel`). A `void` result removes the token
 in one undo step. `"cancelled"` changes nothing. `{ failed }` keeps the list and
 draft unchanged and replaces the row description; choosing it again retries.
 A rejection keeps the token, closes the list, and shows the error message in
-the status line.
+the status line. Escape, a press outside, or moving the caret away closes the
+list and cancels the opening: `signal` aborts, editing returns at once, and
+the token stays; a later result changes nothing. A new `draftKey` that the
+opener sets itself, such as a chat it creates to save into, does not cancel.
 
 Set `ChatCommandSection.pending` while local rows are loading. Put this section
 last. Its heading spins and its end holds three placeholders in the overview,

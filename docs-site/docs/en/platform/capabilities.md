@@ -1595,6 +1595,8 @@ while the link resolves.
 
 `openCommand` offers the request to mounted handlers synchronously. Exactly one
 accepting handler owns it; with no owner Cloud resolves the link and navigates.
+If resolution fails, it throws an error with the resolver's message and the
+capability error (`{ code, message, status }`) in `cause`.
 Overlapping owners produce an error before either runs; use `accepts` to keep ownership unambiguous.
 A rejected handler surfaces an error and never triggers fallback navigation.
 Document events connect independent islands without a shared Solid context.

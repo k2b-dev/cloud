@@ -1,4 +1,5 @@
 import type { ChatCommand, ChatCommandDraft, ChatCommandOpenResult } from "@k2b/ui";
+import { CAPABILITY_FRAMEWORK_ERROR_CODES } from "../contracts/capabilities";
 import { isCommandPath } from "../contracts/command-path";
 import { openCommand } from "./commands";
 import type { CloudComposerCatalogState, CloudComposerCommand } from "./composer-catalog";
@@ -24,8 +25,24 @@ export const openComposerCommand = async (
   if (returnTo !== undefined && !isCommandPath(returnTo)) throw new Error("Invalid Command return path");
   try {
     await openCommand(command.id, command.input, { returnTo }, signal);
-  } catch {
+  } catch (error) {
     if (signal?.aborted) return "cancelled";
+    const cause = error instanceof Error ? error.cause : undefined;
+    if (
+      typeof cause === "object" &&
+      cause !== null &&
+      "code" in cause &&
+      typeof cause.code === "string" &&
+      "status" in cause &&
+      typeof cause.status === "number" &&
+      "message" in cause &&
+      typeof cause.message === "string" &&
+      cause.code !== CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable &&
+      ![502, 503, 504].includes(cause.status) &&
+      cause.message
+    ) {
+      return { failed: cause.message };
+    }
     return { failed: composerOpenMessages.resolve([options.locale]).t.appUnavailable({ app: command.appName }) };
   }
   if (signal?.aborted) return "cancelled";
@@ -73,11 +90,15 @@ export const cloudCommandMenu = (options: CloudCommandMenuOptions): CloudCommand
       keywords: [command.title, ...command.keywords, command.appName, command.description],
       app: command.appName,
       section: options.section,
-      open: (draft) =>
+      // The composer's signal aborts when the person closes the list; the opener's, when it leaves the chat.
+      open: (draft, closed) =>
         openComposerCommand(command, {
           before: () => options.before(draft),
           returnTo: options.returnTo,
-          signal: options.signal,
+          signal: () => {
+            const left = options.signal?.();
+            return left ? AbortSignal.any([closed, left]) : closed;
+          },
           locale: options.locale,
         }),
     })),

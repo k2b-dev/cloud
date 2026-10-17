@@ -122,6 +122,26 @@ if (!isServer) {
     }
   });
 
+  test("openCommand preserves the resolver's capability error as its rejection cause", async () => {
+    const dom = createDomTestHarness();
+    const { openCommand } = await import("./commands");
+    const navigate = spyOn(window.location, "assign").mockImplementation(() => {});
+    const originalFetch = globalThis.fetch;
+    const failure = { code: "CAPABILITY_NOT_FOUND", message: "Dieser Befehl ist nicht mehr verfügbar." };
+    globalThis.fetch = Object.assign(async () => Response.json(failure, { status: 404 }), { preconnect: originalFetch.preconnect });
+    try {
+      await expect(openCommand("demo.missing")).rejects.toMatchObject({
+        message: failure.message,
+        cause: { ...failure, status: 404 },
+      });
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = originalFetch;
+      navigate.mockRestore();
+      dom.cleanup();
+    }
+  });
+
   test("an aborted openCommand ends its pending request and never navigates", async () => {
     const dom = createDomTestHarness();
     const { openCommand } = await import("./commands");

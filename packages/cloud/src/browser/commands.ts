@@ -33,7 +33,7 @@ export const openCommand = async (
   // An abort also ends the request, so a cancelled opening does not wait for its answer.
   const result = await capabilities.resolveCommand(command, input, parsedOptions, { signal });
   if (signal?.aborted) return;
-  if (!result.ok) throw new Error(result.error.message);
+  if (!result.ok) throw new Error(result.error.message, { cause: result.error });
   window.location.assign(result.data.href);
 };
 

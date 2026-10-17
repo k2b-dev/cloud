@@ -2002,3 +2002,38 @@ test("an open row's failure after its draft moved goes to the status line", asyn
   await flush();
   expect(h.status().querySelector('[data-tone="error"]')?.textContent).toBe("Spaces is not reachable right now.");
 });
+
+test("Escape while an open row runs cancels it: the signal aborts, editing returns, and a late success changes nothing", async () => {
+  let resolve!: () => void;
+  let signal: AbortSignal | undefined;
+  const h = await slash({
+    value: "Plan /task",
+    commands: [
+      {
+        name: "task",
+        description: "Opens Spaces",
+        open: (_draft, abort) => {
+          signal = abort;
+          return new Promise<void>((done) => {
+            resolve = done;
+          });
+        },
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  expect(h.input.readOnly).toBe(true);
+  expect(signal?.aborted).toBe(false);
+  h.key("Escape");
+  await flush();
+  expect(signal?.aborted).toBe(true);
+  expect(h.rows()).toHaveLength(0);
+  expect(h.input.readOnly).toBe(false);
+  expect(h.value()).toBe("Plan /task");
+  resolve();
+  await flush();
+  // The person backed out: the token stays where they left it, with no status line.
+  expect(h.value()).toBe("Plan /task");
+  expect(h.status().querySelector('[data-tone="error"]')).toBeNull();
+});

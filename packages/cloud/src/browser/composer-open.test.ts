@@ -53,8 +53,29 @@ test("propagates the exact save rejection without resolving or opening", async (
   expect(openCommand).not.toHaveBeenCalled();
 });
 
-test("an unavailable app returns a localized row failure", async () => {
-  openCommand.mockRejectedValueOnce(new Error("Offline"));
+test.each([
+  new Error("Offline"),
+  new Error("Offline", { cause: { code: "APP_UNAVAILABLE", message: "Offline", status: 503 } }),
+  new Error("Offline", { cause: { code: "APP_UNAVAILABLE", message: "Offline", status: 500 } }),
+  ...[502, 503, 504].map((status) => new Error("Offline", { cause: { code: "INVALID_APP_RESPONSE", message: "Offline", status } })),
+])("an unavailable app or unknown failure returns a localized row failure: %s", async (error) => {
+  openCommand.mockRejectedValueOnce(error);
+  expect(await openComposerCommand(command, options())).toEqual({
+    failed: "Spaces ist gerade nicht erreichbar. Erneut wählen versucht es nochmal.",
+  });
+});
+
+test.each([
+  { code: "CAPABILITY_NOT_FOUND", message: "Dieser Befehl ist nicht mehr verfügbar.", status: 404 },
+  { code: "VALIDATION_FAILED", message: "Die Eingabe passt nicht zu diesem Befehl.", status: 400 },
+  { code: "UNAUTHORIZED", message: "Bitte erneut anmelden.", status: 401 },
+])("a capability failure keeps the resolver's localized message: $code", async (cause) => {
+  openCommand.mockRejectedValueOnce(new Error(cause.message, { cause }));
+  expect(await openComposerCommand(command, options())).toEqual({ failed: cause.message });
+});
+
+test("an empty capability message falls back to the localized unavailable copy", async () => {
+  openCommand.mockRejectedValueOnce(new Error("", { cause: { code: "CAPABILITY_NOT_FOUND", message: "", status: 404 } }));
   expect(await openComposerCommand(command, options())).toEqual({
     failed: "Spaces ist gerade nicht erreichbar. Erneut wählen versucht es nochmal.",
   });
@@ -82,8 +103,24 @@ test("menu rows carry localized presentation and forward the token-free draft", 
     keywords: ["Neue Aufgabe", "task", "Aufgabe", "Spaces", "Eine Aufgabe öffnen."],
   });
   const draft = { value: "Plan ", mentions: [] };
-  await menu.commands[0]!.open!(draft);
+  await menu.commands[0]!.open!(draft, new AbortController().signal);
   expect(before).toHaveBeenCalledWith(draft);
+});
+
+test("closing the list aborts a menu row's opening, alone or together with the opener's signal", async () => {
+  for (const left of [undefined, new AbortController()]) {
+    const closed = new AbortController();
+    const menu = cloudCommandMenu({
+      ...options(),
+      commands: [command],
+      state: "ready",
+      section: "apps",
+      before: async () => closed.abort(),
+      signal: () => left?.signal,
+    });
+    expect(await menu.commands[0]!.open!({ value: "", mentions: [] }, closed.signal)).toBe("cancelled");
+  }
+  expect(openCommand).not.toHaveBeenCalled();
 });
 
 test("loading reserves the final section and failure offers a persistent explicit retry", () => {
