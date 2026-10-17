@@ -11253,9 +11253,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui.k2b-drag-preview {
   position: fixed;
   z-index: 2147483000;
-  top: 0;
-  left: 0;
+  inset: 0 auto auto 0;
   display: flex;
+  overflow: visible;
+  margin: 0;
+  border: 0;
   max-width: 17rem;
   align-items: center;
   gap: 0.5rem;

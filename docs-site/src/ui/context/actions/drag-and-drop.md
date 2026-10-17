@@ -65,7 +65,8 @@ px per animation frame, up to 12 px. Leaving the edge zone stops scrolling.
 The document uses the viewport edges.
 
 **Cancel.** Escape, pointer cancellation, window blur, a second pointer, or
-unmounting the source cancels without a drop. Escape is consumed so it does
+unmounting the source cancels without a drop. A button still held after
+Escape does not click the row when it is released. Escape is consumed so it does
 not also close an enclosing dialog. Cleanup removes preview, target states,
 held state, listeners, timers, animation frames, and the text-selection hold.
 
@@ -78,7 +79,9 @@ The same handler serves the menu entry and `onDrop`.
 
 `useKeyboardDrag()` is an optional pick-up sequence started from a menu entry
 such as **Move…**. Call its returned function with the payload and the row
-element. It visits connected, enabled, accepting targets in document
+element. The drag is active at once, so targets a host shows only while
+dragging take part too. It then visits the enabled, accepting targets a
+pointer could reach (shown, not inert, not behind a modal dialog) in document
 order. With no destination, it announces that no place takes the item.
 
 | Key | Result |
@@ -126,7 +129,7 @@ still start `dragIn` itself; the application chooses the interaction it starts.
 
 One shared polite live region announces pickup, choices, refusal, drop, and
 cancellation in the inherited locale (English or German). Inside an open
-modal dialog, both the announcer and preview live in that dialog. Repeated
+modal dialog, the announcer lives in that dialog. Repeated
 identical announcements are refreshed for assistive technology.
 
 The refused state does not rely on colour alone: its announcement names the
@@ -171,7 +174,8 @@ appearance without changing layout.
 
 ## Runtime
 
-Gestures run only in the browser. Server rendering produces the two `div`
+Gestures run only in the browser. The preview opens as a manual popover in
+the top layer, so a transformed or modal dialog neither offsets nor covers it. Server rendering produces the two `div`
 wrappers and children without accessing `window`. There is one engine per
 document. Moves update once per animation frame. Hit testing walks ancestors
 from one `elementFromPoint` result, and autoscroll caches computed overflow

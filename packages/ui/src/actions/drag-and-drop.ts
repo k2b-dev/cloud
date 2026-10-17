@@ -60,6 +60,25 @@ const engineFor = (doc: Document): Engine => {
 };
 const accepts = (target: Target, payload: DragPayload) =>
   target.element.isConnected && !target.disabled && target.accept.includes(payload.type);
+/** The topmost modal dialog; everything outside of it is inert. */
+const topModal = (doc: Document): Element | undefined =>
+  Array.from(doc.querySelectorAll("dialog[open]"))
+    .filter((dialog) => {
+      try {
+        return dialog.matches(":modal");
+      } catch {
+        return false;
+      }
+    })
+    .at(-1);
+/** A keyboard destination must be one a pointer could reach: shown, not inert, and not behind a modal dialog. */
+const reachable = (target: Target) => {
+  const element = target.element;
+  if (element.closest("[inert]")) return false;
+  const modal = topModal(element.ownerDocument);
+  if (modal && !modal.contains(element)) return false;
+  return typeof element.checkVisibility === "function" ? element.checkVisibility() : element.getClientRects().length > 0;
+};
 const mark = (target: Target, payload?: DragPayload) => {
   if (payload && accepts(target, payload)) target.element.dataset.drop = "ok";
   else delete target.element.dataset.drop;
@@ -125,9 +144,31 @@ const clearSession = (engine: Engine, session: Session, source?: HTMLElement) =>
   setActiveDrag(undefined);
 };
 
-/** Suppresses the compatibility events dispatched immediately after the pointer release. */
-const swallowRelease = (doc: Document) => {
+/**
+ * Suppresses the click and touchend that follow the release of a drag or a hold. A drag cancelled while the button is
+ * still down waits for that pointer's release; a new press or a cancelled pointer drops the wait.
+ */
+const swallowRelease = (doc: Document, pointerId?: number) => {
   const win = doc.defaultView!;
+  if (pointerId !== undefined) {
+    const stop = () => {
+      win.removeEventListener("pointerup", released, true);
+      win.removeEventListener("pointercancel", gone, true);
+      win.removeEventListener("pointerdown", gone, true);
+    };
+    const released = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) return;
+      stop();
+      swallowRelease(doc);
+    };
+    const gone = (event: PointerEvent) => {
+      if (event.type === "pointerdown" || event.pointerId === pointerId) stop();
+    };
+    win.addEventListener("pointerup", released, true);
+    win.addEventListener("pointercancel", gone, true);
+    win.addEventListener("pointerdown", gone, true);
+    return;
+  }
   const click = (event: Event) => {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -201,6 +242,8 @@ export const bindDragSource = (
     let point = start;
     let held = false;
     let finished = false;
+    /** The pointer went up or away, so no click of this press is still to come. */
+    let released = false;
     let session: Session | undefined;
     let messages: DragAndDropMessages;
     let preview: HTMLElement | undefined;
@@ -235,8 +278,8 @@ export const bindDragSource = (
       if (abandon === cancel) abandon = undefined;
       if (session) {
         clearSession(engine, session, source);
-        swallowRelease(doc);
-      } else if (held) swallowRelease(doc);
+        swallowRelease(doc, released ? undefined : id);
+      } else if (held) swallowRelease(doc, released ? undefined : id);
     };
     const cancel = () => {
       if (finished) return;
@@ -321,7 +364,10 @@ export const bindDragSource = (
         count.textContent = String(payload.count);
         preview.append(count);
       }
+      // In the top layer the preview is placed against the viewport, also inside a transformed dialog, and stays above it.
+      preview.setAttribute("popover", "manual");
       containerFor(source).append(preview);
+      preview.showPopover?.();
       preview.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;
       for (const target of engine.targets) mark(target, payload);
       setActiveDrag(payload);
@@ -343,6 +389,7 @@ export const bindDragSource = (
     };
     const up = (event: PointerEvent) => {
       if (event.pointerId !== id || finished) return;
+      released = true;
       if (!session) {
         clean();
         return;
@@ -358,7 +405,9 @@ export const bindDragSource = (
       drop?.(payload);
     };
     const cancelPointer = (event: PointerEvent) => {
-      if (event.pointerId === id) cancel();
+      if (event.pointerId !== id) return;
+      released = true;
+      cancel();
     };
     const other = (event: PointerEvent) => {
       if (event.pointerId !== id) cancel();
@@ -415,23 +464,23 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
   const payload = { ...input };
   const choices = () =>
     [...engine.targets]
-      .filter((target) => accepts(target, payload))
+      .filter((target) => accepts(target, payload) && reachable(target))
       .sort((a, b) => (a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-  let targets = choices();
-  if (!targets.length) {
-    announce(engine, origin, messages.noTarget(payload));
-    return () => {};
-  }
-  let current = targets[0]!;
+  let targets: Target[] = [];
+  let current: Target | undefined;
+  /** Listening for keys: the first destination is chosen. */
+  let ready = false;
   let finished = false;
+  let frame = 0;
   const source = origin.closest<HTMLElement>(".k2b-drag-source") ?? undefined;
-  const end = (target?: Target) => {
+  const end = (target?: Target, text?: string) => {
     if (finished) return;
     finished = true;
+    win.cancelAnimationFrame(frame);
     doc.removeEventListener("keydown", key, true);
     doc.removeEventListener("pointerdown", cancel, true);
     win.removeEventListener("blur", cancel);
-    const result = target ? target.messages.dropped({ label: payload.label, target: target.label }) : messages.cancelled(payload);
+    const result = text ?? (target ? target.messages.dropped({ label: payload.label, target: target.label }) : messages.cancelled(payload));
     const drop = target?.drop;
     clearSession(engine, session, source);
     announce(engine, origin, result);
@@ -441,15 +490,15 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
   const cancel = () => end();
   const describe = (target: Target) =>
     target.messages.choice({ target: target.label, index: targets.indexOf(target) + 1, count: targets.length });
-  const choose = (target: Target) => {
-    mark(current, engine.targets.has(current) ? payload : undefined);
+  const choose = (target: Target, text = describe(target)) => {
+    if (current) mark(current, engine.targets.has(current) ? payload : undefined);
     current = target;
     current.element.dataset.drop = "over";
     current.element.scrollIntoView({ block: "nearest", inline: "nearest" });
-    announce(engine, origin, describe(current));
+    announce(engine, origin, text);
   };
   const key = (event: KeyboardEvent) => {
-    const index = targets.indexOf(current);
+    const index = current ? targets.indexOf(current) : -1;
     let next: number | undefined;
     if (["ArrowDown", "ArrowRight", "Tab"].includes(event.key)) next = index + (event.key === "Tab" && event.shiftKey ? -1 : 1);
     else if (["ArrowUp", "ArrowLeft"].includes(event.key)) next = index - 1;
@@ -460,33 +509,48 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
     event.stopPropagation();
     if (next !== undefined) choose(targets[(next + targets.length) % targets.length]!);
     else if (event.key === "Escape") cancel();
-    else end(accepts(current, payload) ? current : undefined);
+    else end(current && accepts(current, payload) && reachable(current) ? current : undefined);
+  };
+  /** Chooses the first destination and starts listening; without one, the sequence ends at once. */
+  const settle = () => {
+    targets = choices();
+    if (!targets.length) {
+      end(undefined, messages.noTarget(payload));
+      return;
+    }
+    ready = true;
+    // One announcement, so a screen reader does not drop the instructions for the first choice.
+    choose(targets[0]!, `${messages.pickedUpKeyboard({ label: payload.label, count: targets.length })} ${describe(targets[0]!)}`);
+    // A menu's activating key has already traversed capture. Defer the listener until that dispatch has ended.
+    queueMicrotask(() => {
+      if (finished) return;
+      doc.addEventListener("keydown", key, true);
+      doc.addEventListener("pointerdown", cancel, true);
+      win.addEventListener("blur", cancel);
+    });
   };
   const session: Session = {
     payload,
     origin,
     cancel,
     targetsChanged() {
+      if (!ready || finished) return;
       targets = choices();
       if (!targets.length) cancel();
-      else choose(targets.includes(current) ? current : targets[0]!);
+      else choose(current && targets.includes(current) ? current : targets[0]!);
     },
   };
+  // The drag is active before destinations are counted, so a host can mount the ones it shows only while dragging.
   engine.session = session;
   for (const target of engine.targets) mark(target, payload);
-  current.element.dataset.drop = "over";
-  current.element.scrollIntoView({ block: "nearest", inline: "nearest" });
   if (source) source.dataset.dragging = "";
   setActiveDrag(payload);
   if (finished) return cancel;
-  // One announcement, so a screen reader does not drop the instructions for the first choice.
-  announce(engine, origin, `${messages.pickedUpKeyboard({ label: payload.label, count: targets.length })} ${describe(current)}`);
-  // A menu's activating key has already traversed capture. Defer the listener until that dispatch has ended.
-  queueMicrotask(() => {
-    if (finished) return;
-    doc.addEventListener("keydown", key, true);
-    doc.addEventListener("pointerdown", cancel, true);
-    win.addEventListener("blur", cancel);
-  });
+  if (choices().length) settle();
+  else
+    frame = win.requestAnimationFrame(() => {
+      frame = 0;
+      if (!finished) settle();
+    });
   return cancel;
 };

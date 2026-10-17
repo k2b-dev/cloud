@@ -127,6 +127,8 @@ describe(`drag and drop in ${browserName}`, () => {
         .evaluate((el) => (/translate3d\(([-\d.]+)px, ([-\d.]+)px/.exec(el.style.transform) ?? []).slice(1).map(Number));
       expect(Math.abs(x! - target.x)).toBeLessThanOrEqual(1);
       expect(Math.abs(y! - target.y)).toBeLessThanOrEqual(1);
+      // In the top layer, so a transformed or modal dialog neither offsets nor covers it.
+      expect(await page.locator(".k2b-drag-preview").evaluate((el) => el.matches(":popover-open"))).toBe(true);
       expect(await page.evaluate<boolean>("window.announcements.some(text => text.startsWith('Row 2 picked up.'))")).toBe(true);
       await page.mouse.up();
       await clean(page);
@@ -373,6 +375,66 @@ describe(`drag and drop in ${browserName}`, () => {
       expect(await drops(page)).toEqual([{ target: "Archive", value: "row-2" }]);
       expect(await page.locator(".k2b-drag-announcer").textContent()).toBe("Row 2 dropped on Archive.");
       expect(await row.evaluate((el) => el === document.activeElement)).toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Escape with the button still down keeps the release from clicking the row", async () => {
+    const { page, context } = await open();
+    try {
+      const point = await startMouse(page);
+      await page.keyboard.press("Escape");
+      await clean(page);
+      await page.mouse.move(point.x, point.y);
+      await page.mouse.up();
+      await page.evaluate(() => new Promise((done) => setTimeout(done, 50)));
+      expect(await page.evaluate<number>("window.clicks")).toBe(0);
+      // The next press clicks as usual.
+      await page.mouse.click(point.x, point.y);
+      await until(page, "window.clicks === 1");
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("keyboard pickup waits for destinations shown only while dragging", async () => {
+    const { page, context } = await open();
+    try {
+      await page.evaluate("window.extraTarget = true; window.disableArchive()");
+      const row = page.getByRole("group", { name: "Row 2", exact: true });
+      await row.focus();
+      await page.keyboard.press("Shift+F10");
+      await until(page, `document.activeElement?.textContent === 'Reply'`);
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await until(page, `document.querySelector('.later')?.dataset.drop === 'over'`);
+      expect(await page.locator(".k2b-drag-announcer").textContent()).toEndWith("Later, 1 of 1.");
+      await page.keyboard.press("Enter");
+      await clean(page);
+      expect(await drops(page)).toEqual([{ target: "Later", value: "row-2" }]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("keyboard pickup skips a hidden destination", async () => {
+    const { page, context } = await open();
+    try {
+      await page.locator(".archive").evaluate((el) => {
+        (el as HTMLElement).style.display = "none";
+      });
+      const row = page.getByRole("group", { name: "Row 2", exact: true });
+      await row.focus();
+      await page.keyboard.press("Shift+F10");
+      await until(page, `document.activeElement?.textContent === 'Reply'`);
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await until(page, `document.querySelector('.k2b-drag-announcer')?.textContent === 'No place here takes Row 2.'`);
+      await clean(page);
+      expect(await row.evaluate((el) => el === document.activeElement)).toBe(true);
+      await page.keyboard.press("Enter");
+      expect(await drops(page)).toEqual([]);
     } finally {
       await context.close();
     }
