@@ -8,10 +8,15 @@ beforeAll(async () => {
 }, 30_000);
 afterAll(() => browser?.close());
 
-test("a test that hangs with an open page", async () => {
-  const page = await browser.newPage();
-  await page.setContent("<p>waiting</p>");
-  await new Promise(() => {});
+test("a test that hangs waiting on its page", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await page.setContent("<p>waiting</p>");
+    await page.locator("#never").waitFor();
+  } finally {
+    await page.context().close();
+  }
 }, 1_000);
 
 for (let n = 1; n <= 3; n++) {

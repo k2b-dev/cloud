@@ -117,6 +117,9 @@ export const serializeContact = (contact: Contact): string => {
 /** Joins multiple VCARDs with the standard CRLF separator. */
 export const serializeBook = (contacts: Contact[]): string => contacts.map(serializeContact).join(CRLF) + CRLF;
 
+/** Serialises a page without adding a separator for an empty page. */
+export const serializeBookPage = (contacts: Contact[]): string => contacts.map((contact) => serializeContact(contact) + CRLF).join("");
+
 // --- Parser ----------------------------------------------------------------
 
 type ParsedLine = {
@@ -392,6 +395,8 @@ const CSV_HEADER: string[] = [
   ...Array.from({ length: CSV_MAX_ADDRESSES }, (_, i) => `Address-${i + 1}`),
 ];
 
+export const CSV_HEADER_LINE = CSV_HEADER.join(",") + CRLF;
+
 /** Concatenates one address into a single human-readable line for the CSV. */
 const formatAddressLine = (a: Contact["addresses"][number] | undefined): string => {
   if (!a) return "";
@@ -406,8 +411,8 @@ const formatAddressLine = (a: Contact["addresses"][number] | undefined): string 
  * concatenated address. Designed for spreadsheet review and one-shot export
  * (no roundtrip — re-importing a CSV is unsupported; use vCard for that).
  */
-export const serializeBookCsv = (contacts: Contact[]): string => {
-  const lines: string[] = [CSV_HEADER.join(",")];
+export const serializeCsvRows = (contacts: Contact[]): string => {
+  const lines: string[] = [];
   for (const c of contacts) {
     const cells: string[] = [
       csvCell(c.firstName),
@@ -423,7 +428,9 @@ export const serializeBookCsv = (contacts: Contact[]): string => {
     for (let i = 0; i < CSV_MAX_PHONES; i++) cells.push(csvCell(c.phones?.[i]?.phone));
     for (let i = 0; i < CSV_MAX_WEBSITES; i++) cells.push(csvCell(c.websites?.[i]?.url));
     for (let i = 0; i < CSV_MAX_ADDRESSES; i++) cells.push(csvCell(formatAddressLine(c.addresses?.[i])));
-    lines.push(cells.join(","));
+    lines.push(cells.join(",") + CRLF);
   }
-  return lines.join(CRLF) + CRLF;
+  return lines.join("");
 };
+
+export const serializeBookCsv = (contacts: Contact[]): string => CSV_HEADER_LINE + serializeCsvRows(contacts);

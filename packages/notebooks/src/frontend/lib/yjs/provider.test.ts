@@ -847,3 +847,69 @@ describe("Yjs provider unconfirmed edits", () => {
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
 });
+
+describe("manual reconnect", () => {
+  test("retries immediately, cancels backoff, resets failures and avoids duplicate sockets", () => {
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    const timers: Array<{ fn: () => void; delay: number }> = [];
+    const originalTimeout = globalThis.setTimeout;
+    Object.assign(globalThis, {
+      setTimeout: (fn: () => void, delay: number) => {
+        timers.push({ fn, delay });
+        return timers.length;
+      },
+    });
+    const clear = spyOn(globalThis, "clearTimeout").mockImplementation(() => {});
+    const random = spyOn(Math, "random").mockReturnValue(0);
+    const provider = createYjsProvider({ doc, awareness, noteId: NOTE_ID, appUrl: "http://localhost" });
+    try {
+      provider.connect();
+      const first = FakeWebSocket.instances[0]!;
+      first.readyState = 0;
+      provider.reconnectNow();
+      first.open();
+      provider.reconnectNow();
+      expect(FakeWebSocket.instances).toHaveLength(1);
+      first.close();
+      first.onclose?.({ code: 1006, reason: "" });
+      const timer = timers.length;
+      expect(timers.at(-1)?.delay).toBe(reconnectDelayMs(0, 0));
+      provider.reconnectNow();
+      expect(clear).toHaveBeenCalledWith(timer);
+      expect(FakeWebSocket.instances).toHaveLength(2);
+      const second = FakeWebSocket.instances[1]!;
+      second.close();
+      second.onclose?.({ code: 1006, reason: "" });
+      expect(timers.at(-1)?.delay).toBe(reconnectDelayMs(0, 0));
+      provider.dispose();
+      provider.reconnectNow();
+      expect(FakeWebSocket.instances).toHaveLength(2);
+    } finally {
+      provider.dispose();
+      awareness.destroy();
+      doc.destroy();
+      Object.assign(globalThis, { setTimeout: originalTimeout });
+      clear.mockRestore();
+      random.mockRestore();
+    }
+  });
+
+  test("terminal sessions stay stopped", () => {
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    const provider = createYjsProvider({ doc, awareness, noteId: NOTE_ID, appUrl: "http://localhost" });
+    try {
+      provider.connect();
+      const socket = FakeWebSocket.instances[0]!;
+      socket.open();
+      socket.message({ type: notebooksYjs.wsType.error, payload: { code: "ACCESS_REVOKED" } });
+      provider.reconnectNow();
+      expect(FakeWebSocket.instances).toHaveLength(1);
+    } finally {
+      provider.dispose();
+      awareness.destroy();
+      doc.destroy();
+    }
+  });
+});

@@ -580,6 +580,10 @@ Actions that ask for every call cannot be scheduled. Before each run, Core
 checks that the owner is active, the chat is not archived, and the mandate is
 confirmed and unchanged.
 
+Finished scheduled task runs and their run evidence expire after
+[90 days](/en/docs/ai/structured-and-background-ai#keep-scheduled-task-run-history-for-90-days);
+the result messages delivered into the chat stay.
+
 ### Scheduled Code Mode
 
 Scheduled turns can run Code Mode without a user tab. Core binds each call and

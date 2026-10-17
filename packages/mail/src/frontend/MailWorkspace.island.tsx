@@ -2207,6 +2207,7 @@ function MailWorkspaceView(props: {
               initialCommentsCursor={data.commentsCursor}
               assignableUsers={data.assignableUsers}
               presence={presence().participants}
+              currentUserId={props.currentUserId}
               activity={conversationActivity()}
               initialReminder={data.reminder}
               detailErrors={data.detailErrors}

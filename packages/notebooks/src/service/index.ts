@@ -38,6 +38,7 @@ export const notebooksService = {
   activity: {
     list: activity.list,
     record: activity.record,
+    noteAuthors: activity.noteAuthors,
   },
   notebook: {
     list: async (config: {

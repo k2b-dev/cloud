@@ -7,7 +7,7 @@ import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { type ItemListResult, SetCompletedSchema, type Space, type SpaceColumn, type SpaceItem } from "@/contracts";
-import { launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 import { spaceMessages } from "../../messages";
 import { defaultFilter } from "../filter/types";
 
@@ -153,8 +153,8 @@ let caseCounter = 0;
 type View = { width: number; height: number; touch: boolean };
 const phone: View = { width: 390, height: 844, touch: true };
 const tablet: View = { width: 820, height: 1180, touch: true };
-const open = async (view: View) => {
-  items = [...tasks];
+const open = async (view: View, list: SpaceItem[] = tasks) => {
+  items = [...list];
   requests.splice(0);
   const id = `case${++caseCounter}`;
   pages.set(id, pageHtml());
@@ -223,4 +223,34 @@ describe("Spaces List completion in a browser", () => {
       }
     }, 30_000);
   }
+
+  test("a row puts the working assignee first in its avatar stack with one ring, in the server frame and hydrated", async () => {
+    const kim = { id: "22222222-2222-4222-8222-222222222222", displayName: "Kim Example", avatarHash: null };
+    const robin = { id: currentUserId, displayName: "Robin Example", avatarHash: null };
+    const claimed: SpaceItem = {
+      ...tasks[1]!,
+      assignees: [robin, kim],
+      claim: {
+        id: "44444444-4444-4444-8444-444444444444",
+        actor: { kind: "user", id: kim.id },
+        displayName: kim.displayName,
+        avatarHash: null,
+        claimedAt: "2026-10-01T08:00:00.000Z",
+      },
+    };
+    const page = await open(phone, [tasks[0]!, claimed, tasks[2]!]);
+    try {
+      const row = page.locator("[data-space-list-row]", { hasText: claimed.title });
+      await row.screenshot({ path: `/tmp/spaces-list-${browserName}-claimed-row-${phone.width}-light.png`, animations: "disabled" });
+      const avatars = await row
+        .locator(".k2b-avatar")
+        .evaluateAll((list) => list.map((avatar) => [avatar.getAttribute("aria-label"), avatar.getAttribute("data-ring")]));
+      expect(avatars).toEqual([
+        ["Kim Example is on it", "success"],
+        ["Robin Example avatar", null],
+      ]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 });

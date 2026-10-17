@@ -1,10 +1,15 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import type { AiChatTaskOccurrenceView, AiChatTaskView } from "@k2b/cloud/ai";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { AssistantLiveProvider, createAssistantLiveHub } from "./assistant-live";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 25));
+// The schedule line and the run retention window read the clock; keep it fixed.
+setSystemTime(new Date("2026-10-01T09:00:00.000Z"));
+afterAll(() => {
+  setSystemTime();
+});
 const task: AiChatTaskView = {
   id: "task01",
   chatId: "chat01",
@@ -136,6 +141,34 @@ test("task list opens the selected task without a manual form; details expose ac
     dispose();
     fetchMock.mockRestore();
     confirmation.mockRestore();
+    dom.cleanup();
+  }
+});
+
+test("a task older than the 90-day run window says no runs in that window instead of none yet", async () => {
+  const dom = createDomTestHarness();
+  const { AssistantTaskDetail } = await import("./AssistantTasksDialog");
+  const old = { ...task, createdAt: "2026-06-01T09:00:00Z" };
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(async () => Response.json({ task: old, occurrences: [], permissions: [] }), {
+      preconnect: globalThis.fetch.preconnect,
+    }),
+  );
+  const dispose = render(
+    () => (
+      <AssistantLiveProvider value={createAssistantLiveHub()}>
+        <AssistantTaskDetail taskId="task01" onOpenRun={() => {}} onEdit={() => {}} />
+      </AssistantLiveProvider>
+    ),
+    dom.root,
+  );
+  try {
+    await tick();
+    expect(dom.root.textContent).toContain("No runs in the last 90 days");
+    expect(dom.root.textContent).not.toContain("No occurrences yet");
+  } finally {
+    dispose();
+    fetchMock.mockRestore();
     dom.cleanup();
   }
 });

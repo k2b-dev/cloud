@@ -77,6 +77,10 @@ describe("scheduled chat recovery isolation", () => {
         calls.push("materialize");
         throw new Error("materialization failure");
       },
+      pruneExpiredRuns: async () => {
+        calls.push("prune");
+        throw new Error("prune failure");
+      },
       listQueued: async () => [{ occurrence: { id: "bad" } }, { occurrence: { id: "good" } }],
       submit: async (id) => {
         calls.push(`submit:${id}`);
@@ -87,7 +91,7 @@ describe("scheduled chat recovery isolation", () => {
       },
     });
     expect(result).toEqual({ queued: 1 });
-    expect(calls).toEqual(["reconcile", "finalize:bad", "finalize:good", "materialize", "submit:bad", "submit:good", "messages"]);
+    expect(calls).toEqual(["reconcile", "finalize:bad", "finalize:good", "prune", "materialize", "submit:bad", "submit:good", "messages"]);
   });
 
   test("listing failures do not prevent independent recovery work or message delivery", async () => {
@@ -99,6 +103,9 @@ describe("scheduled chat recovery isolation", () => {
       },
       finalize: async () => {
         throw new Error("must not finalize");
+      },
+      pruneExpiredRuns: async () => {
+        calls.push("prune");
       },
       materialize: async () => {
         calls.push("materialize");
@@ -115,6 +122,6 @@ describe("scheduled chat recovery isolation", () => {
       },
     });
     expect(result).toEqual({ queued: 0 });
-    expect(calls).toEqual(["materialize", "messages"]);
+    expect(calls).toEqual(["prune", "materialize", "messages"]);
   });
 });

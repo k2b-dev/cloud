@@ -772,11 +772,10 @@ export function AssistantChatSidebarContent(props: {
               title={copy().results}
               icon="ti ti-sparkles"
               class="assistant-sidebar-results"
+              // No count while empty: the body already says there are no results yet.
+              count={snapshot().results.length || undefined}
               meta={
                 <span class="assistant-sidebar-meta">
-                  <Show when={snapshot().results.length}>
-                    <span class="assistant-sidebar-count">{snapshot().results.length}</span>
-                  </Show>
                   {/* Always rendered, so the heading keeps its height when new results wait. */}
                   <Button
                     size="xs"
@@ -847,11 +846,7 @@ export function AssistantChatSidebarContent(props: {
             </DetailPanel.Section>
 
             <Show when={yourFiles().count}>
-              <DetailPanel.Section
-                title={copy().yourFiles}
-                icon="ti ti-upload"
-                meta={<span class="assistant-sidebar-count">{yourFiles().count}</span>}
-              >
+              <DetailPanel.Section title={copy().yourFiles} icon="ti ti-upload" count={yourFiles().count}>
                 <For each={yourFiles().recent}>{(file) => <FileRow file={file} open={() => void openUpload(file)} />}</For>
                 <Show when={yourFiles().olderCount}>
                   <Disclosure
@@ -909,7 +904,7 @@ export function AssistantChatSidebarContent(props: {
                 onOpenChange={setWorkingOpen}
                 title={copy().workingFiles}
                 icon="ti ti-archive"
-                meta={<span class="assistant-sidebar-count">{working().count}</span>}
+                count={working().count}
                 description={[
                   working()
                     .kinds.slice(0, 3)
@@ -1230,7 +1225,7 @@ function SourcesSection(props: { snapshot: AssistantChatContextSnapshot; actions
       onOpenChange={setOpen}
       title={copy().sources}
       icon="ti ti-world"
-      meta={<span class="assistant-sidebar-count">{props.snapshot.sourceCount}</span>}
+      count={props.snapshot.sourceCount}
     >
       <Show when={open()}>
         <Show

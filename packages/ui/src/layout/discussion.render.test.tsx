@@ -119,4 +119,50 @@ describe("Discussion", () => {
     expect(css).toContain("width: 1.25rem");
     expect(css).toContain("font-size: 0.6875rem");
   });
+
+  test("reads an empty discussion as one header line and folds older entries above the newest", () => {
+    const empty = renderToString(() =>
+      createComponent(Discussion, {
+        label: "Comments",
+        icon: "ti ti-message",
+        count: 0,
+        actions: "Comment",
+        get children() {
+          return createComponent(Discussion.List, {});
+        },
+      }),
+    );
+    expect(empty).toContain('<span class="k2b-detail-panel__none">None yet</span>');
+    expect(empty).not.toContain(">0<");
+
+    const folded = renderToString(() =>
+      createComponent(Discussion.List, {
+        fold: 3,
+        get children() {
+          return ["A", "B", "C", "D", "E"].map((author) => createComponent(Discussion.Item, { author, children: `From ${author}` }));
+        },
+      }),
+    );
+    expect(folded).toContain("Show 2 older");
+    expect(folded).toContain('aria-expanded="false"');
+    expect(folded).not.toContain("From A");
+    expect(folded).not.toContain("From B");
+    expect(folded).toContain("From C");
+    expect(folded).toContain("From E");
+    // The toggle comes before the entries, so expanding never moves anything above it.
+    expect(folded.indexOf("k2b-discussion__fold")).toBeLessThan(folded.indexOf("From C"));
+
+    // A failed refresh keeps the loaded entries, and with them the way to the older ones.
+    const failed = renderToString(() =>
+      createComponent(Discussion.List, {
+        fold: 3,
+        error: "Comments could not be refreshed.",
+        get children() {
+          return ["A", "B", "C", "D", "E"].map((author) => createComponent(Discussion.Item, { author, children: `From ${author}` }));
+        },
+      }),
+    );
+    expect(failed).toContain("Comments could not be refreshed.");
+    expect(failed).toContain("Show 2 older");
+  });
 });

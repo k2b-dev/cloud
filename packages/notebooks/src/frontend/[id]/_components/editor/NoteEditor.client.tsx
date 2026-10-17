@@ -12,7 +12,9 @@ import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { apiClient } from "@/api/client";
+import type { NoteAuthors } from "../../../../lib/activity-actions";
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "../../../../lib/named-blocks";
+import { extractHeadingLines, headingAtLine } from "../../../../lib/note-insights";
 import { deriveNoteTitle } from "../../../../lib/note-title";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
 import type { Backlink } from "../../../../service/links";
@@ -29,6 +31,8 @@ import { getNotebookPresenceColor, yjs } from "../../../lib/yjs";
 import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { notebookWorkspaceMessages } from "../../messages";
 import {
+  ACTIVE_HEADING_EVENT,
+  type ActiveHeadingEventDetail,
   ATTACHMENTS_UPDATE_EVENT,
   DETAIL_PANEL_STATE_EVENT,
   EDITOR_COPY_EVENT,
@@ -36,20 +40,26 @@ import {
   EDITOR_INSERT_ATTACHMENT_EVENT,
   EDITOR_PDF_EVENT,
   type EditorPdfEventDetail,
+  JUMP_TO_PARTICIPANT_EVENT,
+  type JumpToParticipantEventDetail,
   NAMED_BLOCK_SCROLL_EVENT,
   NAMED_BLOCKS_UPDATE_EVENT,
   NOTE_SOFT_NAVIGATED_EVENT,
   NOTE_TITLE_CHANGED_EVENT,
   PRESENCE_EVENT,
+  PRESENCE_LOCATIONS_EVENT,
+  RECONNECT_EVENT,
   RICH_MODE_CHANGED_EVENT,
   SIDEBAR_FILTER_CHANGED_EVENT,
+  SYNC_STATE_EVENT,
+  SYNC_STATE_REQUEST_EVENT,
   TASKS_UPDATE_EVENT,
   TOC_SCROLL_EVENT,
   TOC_UPDATE_EVENT,
   TOGGLE_RICH_MODE_EVENT,
 } from "../detail/events";
 import { extractTaskProgress } from "../detail/tasks";
-import { extractTocFromMarkdown } from "../detail/toc";
+import type { extractTocFromMarkdown } from "../detail/toc";
 import { followFullWidth } from "../full-width";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import {
@@ -66,9 +76,11 @@ import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
 import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { NOTE_PREVIEW_ID } from "./note-preview";
 import { createNotePrintCopy } from "./note-print-copy";
+import { participantCursors, presenceLocations } from "./presence-locations";
 import { keepReadingPosition, previewReadingPosition, type ReadingPosition, scrollToReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
 import { createSyncEnded, SyncEndedBar } from "./sync-ended";
+import { createSyncStateBridge } from "./sync-state";
 import { createTabKeyPreference } from "./tab-key-preference";
 
 const TOC_DEBOUNCE_MS = 300;
@@ -95,6 +107,7 @@ type EditorInstanceProps = {
 const CURSOR_IDLE_TIMEOUT_MS = 8_000;
 
 type SoftNavigatedDetail = {
+  noteAuthors: NoteAuthors;
   noteId: string;
   noteTitle: string;
   contentMd: string | null;
@@ -308,6 +321,13 @@ export default function NoteEditor(props: Props) {
 
     const onPopState = () => {
       if (restoringShownHref) return;
+      // A Back that lands on the address already shown, such as a closing sheet leaving its history entry, moves
+      // nothing: no heading jump, no reload. A note still loading from an earlier Back is dropped, so the editor stays
+      // with the address.
+      if (window.location.href === shownHref) {
+        navigation.cancel();
+        return;
+      }
       void navigateSoft(window.location.href, false, true).then((result) => {
         if (result.kind === "fallback") window.location.reload();
       });
@@ -419,7 +439,7 @@ function EditorInstance(
   const awareness = new Awareness(doc);
 
   const color = getNotebookPresenceColor(props.userId);
-  awareness.setLocalStateField("user", { name: props.displayName, color });
+  awareness.setLocalStateField("user", { userId: props.userId, name: props.displayName, color });
 
   const {
     ref: editorRef,
@@ -575,6 +595,12 @@ function EditorInstance(
       : [],
   );
 
+  const syncState = createSyncStateBridge({
+    hasUnsentChanges: () => provider?.hasUnsentChanges() ?? false,
+    emit: (detail) => {
+      if (!props.readOnly) window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail }));
+    },
+  });
   const provider = props.readOnly
     ? null
     : yjs.createYjsProvider({
@@ -582,13 +608,17 @@ function EditorInstance(
         awareness,
         noteId: props.noteId,
         appUrl: props.appUrl,
-        onConnectionChange: setConnected,
+        onConnectionChange: (value) => {
+          setConnected(value);
+          syncState.connectionChanged(value);
+        },
         onHistoryIncomplete: () => setHistoryIncomplete(true),
         onError: (error) => {
           if (error.code === "STORAGE_EXHAUSTED") setStorageExhausted(true);
         },
         onReady: () => {
           if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
+          syncState.ready();
           syncEnded.ready();
         },
         // Forwards every presence update to the OnlineSection island via a
@@ -603,17 +633,89 @@ function EditorInstance(
           onEvent: dispatchWorkspaceEvent,
           onCursorChange: props.onWorkspaceCursorChange,
         },
-        onFatal: syncEnded.end,
+        onFatal: (error) => {
+          syncState.end();
+          syncEnded.end(error);
+        },
         onUnsentChange: () => {
           if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
+          syncState.unsentChanged();
           syncEnded.refresh();
         },
       });
 
+  let disposed = false;
+  let headingLines = extractHeadingLines(ytext.toString());
+  let panelFrame: number | undefined;
+  let lastActiveHeading: string | null | undefined;
+  let presencePending = false;
+  let forcePresence = false;
+  let lastPresence: string | undefined;
+  const emitPanelLocations = () => {
+    panelFrame = undefined;
+    if (disposed) return;
+    const view = editorView();
+    if (view && scrollPort) {
+      const height = Math.max(0, scrollPort.getBoundingClientRect().top + 8 - view.documentTop);
+      const block = view.lineBlockAtHeight(height);
+      const line = view.state.doc.lineAt(block.from).number;
+      const id = headingAtLine(headingLines, line)?.id ?? null;
+      if (id !== lastActiveHeading) {
+        lastActiveHeading = id;
+        window.dispatchEvent(new CustomEvent<ActiveHeadingEventDetail>(ACTIVE_HEADING_EVENT, { detail: { id } }));
+      }
+    }
+    if (presencePending && view) {
+      const detail = presenceLocations(
+        participantCursors(awareness, ytext),
+        (position) => view.state.doc.lineAt(Math.min(position, view.state.doc.length)).number,
+        headingLines,
+      );
+      const serialized = JSON.stringify(Object.entries(detail).sort(([a], [b]) => a.localeCompare(b)));
+      if (forcePresence || serialized !== lastPresence) {
+        lastPresence = serialized;
+        window.dispatchEvent(new CustomEvent(PRESENCE_LOCATIONS_EVENT, { detail }));
+      }
+      presencePending = false;
+      forcePresence = false;
+    }
+    // Without a view yet, the request stays pending; the view's first geometry update sends it.
+  };
+  const schedulePanelLocations = () => {
+    if (disposed) return;
+    if (panelFrame === undefined) panelFrame = requestAnimationFrame(emitPanelLocations);
+  };
+  const schedulePresenceLocations = () => {
+    presencePending = true;
+    schedulePanelLocations();
+  };
+  awareness.on("change", schedulePresenceLocations);
+  addExtension(
+    EditorView.updateListener.of((update) => {
+      if (update.geometryChanged || update.viewportChanged) schedulePanelLocations();
+    }),
+  );
+  // A panel that mounts after the editor asks once for everything it mirrors, the text mode included.
+  const onSyncStateRequest = () => {
+    if (provider) syncState.request();
+    window.dispatchEvent(new CustomEvent(RICH_MODE_CHANGED_EVENT, { detail: { isRich: richMode() } }));
+    lastActiveHeading = undefined;
+    forcePresence = true;
+    schedulePresenceLocations();
+  };
+  const onReconnect = () => provider?.reconnectNow();
+  const onJumpToParticipant = (event: Event) => {
+    const detail = (event as CustomEvent<JumpToParticipantEventDetail>).detail;
+    const view = editorView();
+    if (!view || typeof detail?.userId !== "string") return;
+    const position = participantCursors(awareness, ytext).get(detail.userId)?.position;
+    if (position === null || position === undefined) return;
+    view.dispatch({ effects: EditorView.scrollIntoView(position, { y: "center" }) });
+  };
+
   let themeObserver: MutationObserver | undefined;
   let tocDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   const pendingFocusFrames = new Set<number>();
-  let disposed = false;
   let lastDerivedTitle = props.noteTitle;
 
   // Both `emitToc` and the task-progress emitter share the same debounced
@@ -622,6 +724,8 @@ function EditorInstance(
   // twice would scan a large note twice per debounce tick.)
   const emitDerivedDocState = () => {
     const md = ytext.toString();
+    headingLines = extractHeadingLines(md);
+    schedulePresenceLocations();
     const title = deriveNoteTitle(md);
     if (title !== lastDerivedTitle) {
       lastDerivedTitle = title;
@@ -636,7 +740,8 @@ function EditorInstance(
       });
       window.dispatchEvent(new CustomEvent(NOTE_TITLE_CHANGED_EVENT, { detail: { noteId: props.noteId, title } }));
     }
-    window.dispatchEvent(new CustomEvent(TOC_UPDATE_EVENT, { detail: extractTocFromMarkdown(md) }));
+    // The headings parsed above are the outline too; a second parse would double the cost on long notes.
+    window.dispatchEvent(new CustomEvent(TOC_UPDATE_EVENT, { detail: headingLines.map(({ line: _line, ...item }) => item) }));
     window.dispatchEvent(new CustomEvent(TASKS_UPDATE_EVENT, { detail: extractTaskProgress(md) }));
     window.dispatchEvent(new CustomEvent(ATTACHMENTS_UPDATE_EVENT, { detail: extractAttachmentIds(md) }));
     window.dispatchEvent(new CustomEvent(NAMED_BLOCKS_UPDATE_EVENT, { detail: extractNamedBlockSummaries(md) }));
@@ -647,6 +752,8 @@ function EditorInstance(
     tocDebounceTimer = setTimeout(emitDerivedDocState, TOC_DEBOUNCE_MS);
   };
 
+  // Typing only restarts the debounce; the heading index and the people's sections follow with the outline, so a
+  // long note is not parsed again on every keystroke or remote update.
   const onTextUpdate = () => {
     scheduleDerivedEmit();
     printCopy?.changed();
@@ -701,30 +808,10 @@ function EditorInstance(
     const view = editorView();
     if (!view) return;
 
-    // Re-extract from the current doc and match by id (slug). This stays
-    // correct even if the user has edited since the TOC was last emitted.
-    const items = extractTocFromMarkdown(ytext.toString());
-    const target = items.find((item) => item.id === detail.id);
-    if (!target) return;
-
-    // Find the heading line by linear scan of the doc — slug ordering matches
-    // document order, so we count how many headings precede our target and
-    // pick the Nth heading-line in the doc.
-    const targetIndex = items.indexOf(target);
-    let seenHeadings = 0;
-    let lineNumber = 1;
-    const totalLines = view.state.doc.lines;
-    for (let i = 1; i <= totalLines; i++) {
-      const text = view.state.doc.line(i).text;
-      if (/^#{1,6}\s+/.test(text)) {
-        if (seenHeadings === targetIndex) {
-          lineNumber = i;
-          break;
-        }
-        seenHeadings++;
-      }
-    }
-    const lineFrom = view.state.doc.line(lineNumber).from;
+    // Against the document as it is now: the cached index may lag an edit by the debounce.
+    const target = extractHeadingLines(view.state.doc.toString()).find((heading) => heading.id === detail.id);
+    if (!target || target.line > view.state.doc.lines) return;
+    const lineFrom = view.state.doc.line(target.line).from;
     view.dispatch({ selection: { anchor: lineFrom }, scrollIntoView: true });
   };
 
@@ -855,6 +942,11 @@ function EditorInstance(
     // First emit so the panel reflects the current doc immediately on mount,
     // not only after the first keystroke.
     emitDerivedDocState();
+    schedulePanelLocations();
+    scrollPort?.addEventListener("scroll", schedulePanelLocations, { passive: true });
+    window.addEventListener(SYNC_STATE_REQUEST_EVENT, onSyncStateRequest);
+    window.addEventListener(RECONNECT_EVENT, onReconnect);
+    window.addEventListener(JUMP_TO_PARTICIPANT_EVENT, onJumpToParticipant);
 
     // Showing or hiding the navigation rewraps the note; the same text stays at the top.
     let restoreReadingPosition: (() => void) | null = null;
@@ -917,6 +1009,13 @@ function EditorInstance(
   onCleanup(() => {
     disposed = true;
     printCopy?.dispose();
+    syncState.dispose();
+    if (panelFrame !== undefined) cancelAnimationFrame(panelFrame);
+    awareness.off("change", schedulePresenceLocations);
+    scrollPort?.removeEventListener("scroll", schedulePanelLocations);
+    window.removeEventListener(SYNC_STATE_REQUEST_EVENT, onSyncStateRequest);
+    window.removeEventListener(RECONNECT_EVENT, onReconnect);
+    window.removeEventListener(JUMP_TO_PARTICIPANT_EVENT, onJumpToParticipant);
     for (const frame of pendingFocusFrames) cancelAnimationFrame(frame);
     pendingFocusFrames.clear();
     if (cursorIdleTimer) {

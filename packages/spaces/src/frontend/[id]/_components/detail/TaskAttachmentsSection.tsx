@@ -219,7 +219,7 @@ export default function TaskAttachmentsSection(props: {
 
   return (
     <>
-      <DetailPanel.Section title={t.attachments} icon="ti ti-paperclip" tone="neutral" meta={media().length || undefined}>
+      <DetailPanel.Section title={t.attachments} icon="ti ti-paperclip" tone="neutral" count={media().length || undefined}>
         <div class="flex flex-col gap-2">
           <Show when={media().length > 0}>
             <div class="flex flex-wrap gap-2">
