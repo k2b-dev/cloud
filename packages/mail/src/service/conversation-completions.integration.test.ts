@@ -314,8 +314,8 @@ suite("batch conversation completion", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    let locked = () => {};
-    const holding = new Promise<void>((resolve) => {
+    let locked: (pid: number) => void = () => {};
+    const holding = new Promise<number>((resolve) => {
       locked = resolve;
     });
     // Another person removes the writer and holds the conversation lock until the batch waits behind it.
@@ -323,24 +323,29 @@ suite("batch conversation completion", () => {
       await tx`SELECT id FROM mail.conversations WHERE id = ${target.id}::uuid FOR UPDATE`;
       await tx`DELETE FROM mail.conversation_assignees WHERE conversation_id = ${target.id}::uuid AND user_id = ${writer.id}::uuid`;
       await tx`UPDATE mail.conversations SET revision = revision + 1 WHERE id = ${target.id}::uuid`;
-      locked();
+      const [connection] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      if (!connection) throw new Error("Expected the unassignment backend");
+      locked(connection.pid);
       await gate;
     });
-    await holding;
+    const blockerPid = await holding;
     const batch = complete([target.short_id], "done", writer);
-    let waiting = false;
-    for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
-      const [row] = await sql<{ count: number }[]>`
-        SELECT count(*)::int AS count FROM pg_stat_activity
-        WHERE datname = current_database() AND wait_event_type = 'Lock'
-          AND query LIKE '%jsonb_array_elements_text%' AND query LIKE '%FOR UPDATE%'
-      `;
-      waiting = (row?.count ?? 0) > 0;
-      if (!waiting) await Bun.sleep(50);
+    try {
+      // Only the batch can wait on this transaction: it alone holds the target conversation's row lock.
+      const deadline = Date.now() + 5_000;
+      while (true) {
+        const [row] = await sql<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM pg_stat_activity
+          WHERE wait_event_type = 'Lock' AND ${blockerPid}::int = ANY(pg_blocking_pids(pid))
+        `;
+        if ((row?.count ?? 0) > 0) break;
+        if (Date.now() >= deadline) throw new Error("Timed out waiting for the bulk completion to block on the conversation row");
+        await Bun.sleep(25);
+      }
+    } finally {
+      release();
+      await unassignment;
     }
-    release();
-    await unassignment;
-    expect(waiting).toBeTrue();
     expect(unwrap(await batch)).toEqual({ completion: "done", results: [{ conversationId: target.short_id, status: "not_found" }] });
     const after = await state(target.id);
     expect(after?.work_status).toBe("needs_action");
