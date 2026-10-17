@@ -319,8 +319,9 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
           </div>
         )}
       </Show>
-      {/* The toggle stays above the entries in both states, so nothing above it moves. */}
-      <Show when={folded() && !props.loading && !props.error}>
+      {/* The toggle stays above the entries in both states, so nothing above it moves. A failed refresh keeps it:
+          the entries it folds are still there. */}
+      <Show when={folded() && !props.loading}>
         <button type="button" class="k2b-discussion__fold" aria-expanded={hidden() === 0} onClick={() => setExpanded(hidden() > 0)}>
           <i class={`ti ${hidden() > 0 ? "ti-chevron-down" : "ti-chevron-up"}`} aria-hidden="true" />
           {hidden() > 0 ? foldMessages().showOlder({ count: hidden() }) : foldMessages().showLess}

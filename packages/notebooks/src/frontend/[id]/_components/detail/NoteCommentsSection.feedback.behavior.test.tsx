@@ -96,11 +96,24 @@ describe("Note comment feedback", () => {
       )!;
       older.click();
       expect(dom.root.querySelectorAll(".k2b-discussion__item")).toHaveLength(5);
-      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Kommentieren")!.click();
+      const comment = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent?.trim() === "Kommentieren",
+      )!;
+      comment.focus();
+      comment.click();
       await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
       const list = dom.root.querySelector(".k2b-discussion__list")!;
       const composer = dom.root.querySelector(".k2b-discussion__composer")!;
       expect(Boolean(list.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      // The button turns disabled, so focus moves into the composer below the list, which the panel scrolls to.
+      const textarea = composer.querySelector("textarea")!;
+      await until(() => dom.document.activeElement === textarea);
+      expect(dom.document.activeElement).toBe(textarea);
+      // Cancel hands focus back to the button.
+      [...composer.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Abbrechen")!.click();
+      await flush();
+      expect(dom.root.querySelector(".k2b-discussion__composer")).toBeNull();
+      expect(dom.document.activeElement).toBe(comment);
     } finally {
       dispose();
     }

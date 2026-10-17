@@ -149,6 +149,9 @@ export default function NoteCommentsSection(props: Props) {
     );
   };
 
+  let commentButton: HTMLButtonElement | undefined;
+  let composerForm: HTMLFormElement | undefined;
+
   const createMutation = mutations.create<{ target: CommentTarget; comment: PublicNoteComment }, CommentTarget & { content: string }>({
     mutation: async (target, { abortSignal }) => {
       const response = await apiClient[":id"].notes[":noteId"].comments.$post(
@@ -161,7 +164,12 @@ export default function NoteCommentsSection(props: Props) {
     // The new comment appears in the list and the composer closes, so a screen reader is told. A failure stays under
     // the composer, which keeps the draft.
     onSuccess: ({ target }) => {
-      if (source() === sourceFor(target.notebookId, target.noteId)) setComposerOpen(false);
+      if (source() === sourceFor(target.notebookId, target.noteId)) {
+        // Focus that was in the composer goes back to the button that opened it, not to the page.
+        const hadFocus = composerForm?.contains(document.activeElement) ?? false;
+        setComposerOpen(false);
+        if (hadFocus) commentButton?.focus();
+      }
       reconcile(target, t().commentAdded);
     },
   });
@@ -227,14 +235,31 @@ export default function NoteCommentsSection(props: Props) {
     }
   };
 
+  /**
+   * The composer opens below the newest comment, possibly outside the panel's view, and the button that opened it
+   * turns disabled: focus moves into the composer and the panel shows it. Cancel hands focus back to the button.
+   */
+  const revealComposer = (form: HTMLFormElement) => {
+    composerForm = form;
+    requestAnimationFrame(() => {
+      if (!form.isConnected) return;
+      form.scrollIntoView({ block: "nearest" });
+      form.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
+    });
+  };
+  const cancelComposer = () => {
+    setComposerOpen(false);
+    commentButton?.focus();
+  };
   const composer = () => (
     <Show when={props.canWrite && composerOpen()}>
       <Discussion.Composer
+        ref={revealComposer}
         label={t().addComment}
         placeholder={t().commentPlaceholder}
         submitLabel={t().postComment}
         cancelLabel={t().cancel}
-        onCancel={() => setComposerOpen(false)}
+        onCancel={cancelComposer}
         lines={5}
         onSubmit={async (content) => {
           await createMutation.mutate({ notebookId: props.notebookId, noteId: props.noteId, content });
@@ -260,7 +285,7 @@ export default function NoteCommentsSection(props: Props) {
             <Show
               when={props.offline}
               fallback={
-                <Button variant="ghost" size="xs" disabled={composerOpen()} onClick={() => setComposerOpen(true)}>
+                <Button ref={commentButton} variant="ghost" size="xs" disabled={composerOpen()} onClick={() => setComposerOpen(true)}>
                   <i class="ti ti-plus" aria-hidden="true" /> {t().comment}
                 </Button>
               }

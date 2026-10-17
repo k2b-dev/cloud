@@ -151,5 +151,18 @@ describe("Discussion", () => {
     expect(folded).toContain("From E");
     // The toggle comes before the entries, so expanding never moves anything above it.
     expect(folded.indexOf("k2b-discussion__fold")).toBeLessThan(folded.indexOf("From C"));
+
+    // A failed refresh keeps the loaded entries, and with them the way to the older ones.
+    const failed = renderToString(() =>
+      createComponent(Discussion.List, {
+        fold: 3,
+        error: "Comments could not be refreshed.",
+        get children() {
+          return ["A", "B", "C", "D", "E"].map((author) => createComponent(Discussion.Item, { author, children: `From ${author}` }));
+        },
+      }),
+    );
+    expect(failed).toContain("Comments could not be refreshed.");
+    expect(failed).toContain("Show 2 older");
   });
 });
