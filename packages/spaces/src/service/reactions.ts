@@ -15,9 +15,13 @@ type ReactionsResponse = { reactions: SpaceItemReaction[] };
 type ReactionIntent = { itemId: string; spaceId: string; emoji: string; actor: ReactionActor };
 
 /** One query for the whole page; only the first three other reactors enter the payload. */
-export const getReactionsByItemIds = async (itemIds: string[], viewer: ReactionViewer): Promise<Map<string, SpaceItemReaction[]>> => {
+export const getReactionsByItemIds = async (
+  itemIds: string[],
+  viewer: ReactionViewer,
+  db: typeof sql = sql,
+): Promise<Map<string, SpaceItemReaction[]>> => {
   if (!itemIds.length) return new Map();
-  const rows = await sql<{ item_id: string; emoji: string; count: number; own: boolean; people: SpaceItemReaction["people"] }[]>`
+  const rows = await db<{ item_id: string; emoji: string; count: number; own: boolean; people: SpaceItemReaction["people"] }[]>`
     WITH reactors AS (
       SELECT r.*, COALESCE(r.user_id, r.service_account_id) AS reactor_id,
         CASE WHEN r.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind,
@@ -27,7 +31,7 @@ export const getReactionsByItemIds = async (itemIds: string[], viewer: ReactionV
       FROM spaces.item_reactions r
       LEFT JOIN auth.users u ON u.id = r.user_id
       LEFT JOIN auth.service_accounts sa ON sa.id = r.service_account_id
-      WHERE r.item_id IN ${sql(itemIds)}
+      WHERE r.item_id IN ${db(itemIds)}
     ), ranked AS (
       SELECT *, row_number() OVER (PARTITION BY item_id, emoji, own ORDER BY created_at, id) AS position
       FROM reactors
@@ -46,8 +50,8 @@ export const getReactionsByItemIds = async (itemIds: string[], viewer: ReactionV
   return summaries;
 };
 
-export const listForItem = async (itemId: string, viewer: ReactionViewer): Promise<SpaceItemReaction[]> =>
-  (await getReactionsByItemIds([itemId], viewer)).get(itemId) ?? [];
+export const listForItem = async (itemId: string, viewer: ReactionViewer, db: typeof sql = sql): Promise<SpaceItemReaction[]> =>
+  (await getReactionsByItemIds([itemId], viewer, db)).get(itemId) ?? [];
 
 const mutate = async (
   operation: "add" | "remove",
@@ -56,7 +60,7 @@ const mutate = async (
   if (!ReactionEmojiSchema.safeParse(emoji).success) return fail(err.badInput("Expected one fully-qualified RGI emoji"));
   const userId = actor.kind === "user" ? actor.id : null;
   const serviceAccountId = actor.kind === "service_account" ? actor.id : null;
-  const result = await sql.begin(async (tx): Promise<Result<{ changed: boolean }>> => {
+  const result = await sql.begin(async (tx): Promise<Result<ReactionsResponse & { changed: boolean }>> => {
     // Item first, then reactions: also compatible with comments' FOR SHARE and item.move. The Space is the one the
     // caller was authorized for; an item moved to another Space since then is not found here.
     const [item] = await tx<{ space_id: string }[]>`
@@ -69,7 +73,7 @@ const mutate = async (
         SELECT id FROM spaces.item_reactions WHERE item_id = ${itemId} AND emoji = ${emoji}
           AND (user_id = ${userId}::uuid OR service_account_id = ${serviceAccountId}::uuid)
       `;
-      if (existing) return ok({ changed: false });
+      if (existing) return ok({ changed: false, reactions: await listForItem(itemId, actor, tx) });
       const [limit] = await tx<{ count: number; present: boolean }[]>`
         SELECT count(DISTINCT emoji)::int AS count, COALESCE(bool_or(emoji = ${emoji}), false) AS present
         FROM spaces.item_reactions WHERE item_id = ${itemId}
@@ -95,11 +99,11 @@ const mutate = async (
       changed = deleted.length > 0;
     }
     if (changed) await publishSpaceChange(tx, { type: "item.updated", spaceId: item.space_id, itemId });
-    return ok({ changed });
+    return ok({ changed, reactions: await listForItem(itemId, actor, tx) });
   });
   if (!result.ok) return result;
   if (result.data.changed) spacesLive.wake();
-  return ok({ reactions: await listForItem(itemId, actor) });
+  return ok({ reactions: result.data.reactions });
 };
 
 export const add = (params: ReactionIntent) => mutate("add", params);
