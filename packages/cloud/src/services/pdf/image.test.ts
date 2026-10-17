@@ -3,8 +3,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { crc32, deflateSync } from "node:zlib";
 import sharp from "sharp";
 import * as canvasWorker from "../../_internal/canvas-worker";
-import { readImageRecords } from "./image-protocol";
 import { PDF_IMAGE_MAX_INPUT_BYTES, type PdfImageVariant, type PreparePdfImageResult, preparePdfImage } from "./image";
+import { readImageRecords } from "./image-protocol";
 
 const runtime = process.platform === "linux" ? describe : describe.skip;
 const originalSpawn = canvasWorker.spawnCanvasWorker;
@@ -235,7 +235,9 @@ runtime("preparePdfImage", () => {
         return new Promise<ArrayBuffer>(() => {});
       }
     }
-    const runs = [0, 1].map(() => preparePdfImage({ data: new StalledBlob([new Uint8Array(webp)]), boxes: [box], maxBytes: cap }, { timeoutMs: 100 }));
+    const runs = [0, 1].map(() =>
+      preparePdfImage({ data: new StalledBlob([new Uint8Array(webp)]), boxes: [box], maxBytes: cap }, { timeoutMs: 100 }),
+    );
     expect(await Promise.all(runs)).toEqual([
       { ok: false, code: "timed_out" },
       { ok: false, code: "timed_out" },
