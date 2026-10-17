@@ -263,6 +263,9 @@ async function selfTest(): Promise<boolean> {
     ["header without a space", "feat(x): add y\n\nfix:`<dir>`", true],
     ["header with a tab", "feat(x): add y\n\nfix:\t<dir>", true],
     ["capitalized header", "feat(x): add y\n\nFix: cap <dir>", true],
+    ["breaking header of a custom type", "feat(x): add y\n\nIntro.\n\nsecurity!: use <dir>", true],
+    ["inline hyphenated breaking note", "feat(x): add y\n\nIntro.\n\n- BREAKING-CHANGE: use <dir>", true],
+    ["markup in a custom-type line and an indented note", "feat(x): add y\n\nNote: see <x>\n\n- BREAKING CHANGE: use <dir>", false],
     ["clean message", "feat(x): add y\n\nBREAKING CHANGE: migrate to DIR", false],
     ["markup only in prose and a bullet", "fix: add y\n\nUses `<Button>`\n\n- fix: x <c>", false],
   ] as const) {

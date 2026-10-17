@@ -139,6 +139,17 @@ describe("releaseNoteMarkup", () => {
     expect(findings.some((finding) => finding.includes(where) && finding.includes("<dir>"))).toBe(true);
   });
 
+  test.each(["security!: use <dir>", "x-y(z)!: use <dir>", "- BREAKING-CHANGE: use <dir>", "Text BREAKING-CHANGE: use <dir>"])(
+    "checks the breaking form %j",
+    (line) => {
+      expect(releaseNoteMarkup("feat(x): add y", `Intro.\n\n${line}`)).toHaveLength(1);
+    },
+  );
+
+  test("ignores custom types without a breaking marker and indented space-form notes, which release notes leave out", () => {
+    expect(releaseNoteMarkup("feat(x): add y", "Note: see <x>\n\n- BREAKING CHANGE: use <dir>\n\n  BREAKING CHANGE: <i>")).toEqual([]);
+  });
+
   test("ignores markup after a block ends", () => {
     expect(releaseNoteMarkup("feat(x): add y", "BEGIN_NESTED_COMMIT\nfix: use DIR\nEND_NESTED_COMMIT\n\nProse <dir>")).toEqual([]);
   });
