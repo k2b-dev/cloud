@@ -202,6 +202,40 @@ const touch = async (cdp: CDPSession, points: { x: number; y: number }[]) => {
   await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [], timestamp: at(points.length + 5) });
 };
 
+const hold = async (page: Page, context: BrowserContext, point: { x: number; y: number }, ms = 700) => {
+  if (browserName === "chromium") {
+    const cdp = await context.newCDPSession(page);
+    try {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point] });
+      await page.locator(".k2b-context-menu[role='menu'], dialog[open] .k2b-gesture-menu__sheet-menu").waitFor();
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    } finally {
+      await cdp.detach();
+    }
+  } else {
+    // Playwright drives WebKit touch only as a whole tap; synthetic events exercise the held pointer's lifecycle.
+    await page.evaluate(
+      async ({ point, ms }) => {
+        const target = document.elementFromPoint(point.x, point.y)!;
+        const init: PointerEventInit = {
+          pointerType: "touch",
+          isPrimary: true,
+          pointerId: 1,
+          bubbles: true,
+          cancelable: true,
+          clientX: point.x,
+          clientY: point.y,
+        };
+        target.dispatchEvent(new PointerEvent("pointerdown", init));
+        await new Promise((resolve) => setTimeout(resolve, ms));
+        target.dispatchEvent(new PointerEvent("pointerup", init));
+        target.dispatchEvent(new Event("touchend", { bubbles: true, cancelable: true }));
+      },
+      { point, ms },
+    );
+  }
+};
+
 /**
  * Waits until the page has handled the input sent so far and reached the state `ready` reports. Chromium hands touch
  * moves to the page at its next frame, after the protocol call returned, so reading the page right away can miss them.
@@ -469,4 +503,242 @@ describe(`GestureMenu in ${browserName}`, () => {
       await context.close();
     }
   });
+});
+
+describe(`GestureMenu on tablets in ${browserName}`, () => {
+  const portrait: BrowserContextOptions = {
+    viewport: { width: 834, height: 1194 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
+  };
+  const landscape: BrowserContextOptions = { ...portrait, viewport: { width: 1194, height: 834 } };
+  const labels = ["Reply", "React with thumbs up", "Copy text"];
+
+  for (const [name, options] of [
+    ["portrait", portrait],
+    ["landscape", landscape],
+  ] as const) {
+    test(`a ${name} hold opens the menu at the finger and keeps it open after the lift`, async () => {
+      const { page, context } = await open(options);
+      try {
+        const point = await center(page, ".k2b-gesture-menu >> nth=2 >> .text");
+        await hold(page, context, point);
+        const menu = page.locator(".k2b-context-menu[role='menu']");
+        await menu.waitFor();
+        const box = (await menu.boundingBox())!;
+        expect(Math.abs(box.x - point.x)).toBeLessThanOrEqual(24);
+        expect(Math.abs(box.y - point.y)).toBeLessThanOrEqual(24);
+        expect(await menu.locator("[role='menuitem']").allTextContents()).toEqual(labels);
+        // The finger covers the row, so the menu names it.
+        expect(await menu.locator(".k2b-context-menu__title").textContent()).toBe("Message 2");
+        expect(await page.locator("dialog[open]").count()).toBe(0);
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+        await page.waitForTimeout(300);
+        expect(await menu.isVisible()).toBe(true);
+        expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Reply");
+        expect(await page.evaluate(() => getSelection()?.toString() ?? "")).toBe("");
+        expect((await fixture(page)).calls).toEqual({ reply: 0, react: 0, copy: 0 });
+        await page.keyboard.press("Escape");
+        expect(await menu.count()).toBe(0);
+        expect(await page.getByRole("group", { name: "Message 2", exact: true }).evaluate((host) => host === document.activeElement)).toBe(
+          true,
+        );
+      } finally {
+        await context.close();
+      }
+    }, 30_000);
+  }
+
+  test("a hold near the list's bottom-right corner clamps the menu inside the viewport", async () => {
+    const { page, context } = await open(landscape);
+    try {
+      const viewport = page.viewportSize()!;
+      const list = (await page.locator(".list").boundingBox())!;
+      const point = { x: viewport.width - 20, y: Math.min(list.y + list.height, viewport.height) - 10 };
+      expect(
+        await page.evaluate(({ x, y }) => {
+          const target = document.elementFromPoint(x, y);
+          return !!target?.closest(".k2b-gesture-menu") && !target.closest("a, pre, [data-gesture-ignore]");
+        }, point),
+      ).toBe(true);
+      await hold(page, context, point);
+      const menu = page.locator(".k2b-context-menu[role='menu']");
+      await menu.waitFor();
+      const box = (await menu.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(8);
+      expect(box.y).toBeGreaterThanOrEqual(8);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 8);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height - 8);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+  // Everything outside a modal dialog is inert, also a menu on the body, so the hold keeps the sheet there.
+  test("inside a modal dialog a hold still opens the sheet", async () => {
+    const { page, context } = await open(landscape);
+    try {
+      await page.evaluate(() => {
+        const dialog = document.createElement("dialog");
+        dialog.className = "host";
+        document.getElementById("app")!.append(dialog);
+        dialog.append(document.querySelector(".list")!);
+        dialog.showModal();
+      });
+      await hold(page, context, await center(page, ".k2b-gesture-menu >> nth=2 >> .text"));
+      const sheet = page.locator("dialog[open] .k2b-gesture-menu__sheet-menu");
+      await sheet.waitFor();
+      expect(await page.locator(".k2b-context-menu").count()).toBe(0);
+      await page.keyboard.press("ArrowDown");
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Reply");
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+  test("a 390px phone still opens the bottom sheet", async () => {
+    const { page, context } = await open(phone);
+    try {
+      await hold(page, context, await center(page, ".k2b-gesture-menu >> nth=2 >> .text"));
+      const sheet = page.locator("dialog[open] .k2b-gesture-menu__sheet-menu");
+      await sheet.waitFor();
+      expect(await sheet.isVisible()).toBe(true);
+      expect(await page.locator(".k2b-context-menu").count()).toBe(0);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+  // Only Chromium's CDP input can exercise real scrolling; Playwright drives WebKit touch only as a whole tap.
+  test.skipIf(browserName === "webkit")(
+    "moving before the hold scrolls the list and opens nothing",
+    async () => {
+      const { page, context } = await open(portrait);
+      try {
+        const cdp = await context.newCDPSession(page);
+        const point = await center(page, ".k2b-gesture-menu >> nth=6 >> .text");
+        await touch(cdp, [point, ...Array.from({ length: 8 }, (_, step) => ({ x: point.x, y: point.y - 12 - step * 16 }))]);
+        await still(page);
+        expect(await page.evaluate(() => document.querySelector(".list")!.scrollTop)).toBeGreaterThan(0);
+        await page.waitForTimeout(700);
+        expect(await page.locator(".k2b-context-menu, dialog[open]").count()).toBe(0);
+        expect((await fixture(page)).calls).toEqual({ reply: 0, react: 0, copy: 0 });
+      } finally {
+        await context.close();
+      }
+    },
+    30_000,
+  );
+
+  test.skipIf(browserName === "webkit")(
+    "moving after the hold does not scroll or close the popover",
+    async () => {
+      const { page, context } = await open(portrait);
+      try {
+        const cdp = await context.newCDPSession(page);
+        const point = await center(page, ".k2b-gesture-menu >> nth=6 >> .text");
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point] });
+        const menu = page.locator(".k2b-context-menu[role='menu']");
+        await menu.waitFor();
+        const before = await page.evaluate(() => document.querySelector(".list")!.scrollTop);
+        const start = Date.now() / 1000;
+        for (let step = 1; step <= 5; step++)
+          await cdp.send("Input.dispatchTouchEvent", {
+            type: "touchMove",
+            touchPoints: [{ x: point.x, y: point.y - step * 16 }],
+            timestamp: start + step / 60,
+          });
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [], timestamp: start + 11 / 60 });
+        await still(page);
+        expect(await page.evaluate(() => document.querySelector(".list")!.scrollTop)).toBe(before);
+        expect(await menu.isVisible()).toBe(true);
+        expect((await fixture(page)).calls).toEqual({ reply: 0, react: 0, copy: 0 });
+      } finally {
+        await context.close();
+      }
+    },
+    30_000,
+  );
+
+  // WebKit has no held-touch protocol in Playwright; synthetic pointer movement checks cancellation before the timer.
+  test.skipIf(browserName !== "webkit")(
+    "moving a synthetic finger before the hold opens nothing",
+    async () => {
+      const { page, context } = await open(portrait);
+      try {
+        const point = await center(page, ".k2b-gesture-menu >> nth=2 >> .text");
+        await page.evaluate(async ({ x, y }) => {
+          const target = document.elementFromPoint(x, y)!;
+          const init: PointerEventInit = {
+            pointerType: "touch",
+            isPrimary: true,
+            pointerId: 1,
+            bubbles: true,
+            cancelable: true,
+            clientX: x,
+            clientY: y,
+          };
+          target.dispatchEvent(new PointerEvent("pointerdown", init));
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          target.dispatchEvent(new PointerEvent("pointermove", { ...init, clientY: y + 20 }));
+          await new Promise((resolve) => setTimeout(resolve, 700));
+          target.dispatchEvent(new PointerEvent("pointerup", { ...init, clientY: y + 20 }));
+          target.dispatchEvent(new Event("touchend", { bubbles: true, cancelable: true }));
+        }, point);
+        expect(await page.locator(".k2b-context-menu, dialog[open]").count()).toBe(0);
+        expect((await fixture(page)).calls).toEqual({ reply: 0, react: 0, copy: 0 });
+      } finally {
+        await context.close();
+      }
+    },
+    30_000,
+  );
+
+  test("right-click still opens at the pointer and Escape returns focus to the group", async () => {
+    const { page, context } = await open(landscape);
+    try {
+      const point = await center(page, ".k2b-gesture-menu >> nth=2 >> .text");
+      await page.mouse.click(point.x, point.y, { button: "right" });
+      const menu = page.locator(".k2b-context-menu[role='menu']");
+      await menu.waitFor();
+      const box = (await menu.boundingBox())!;
+      expect(Math.abs(box.x - point.x)).toBeLessThanOrEqual(24);
+      expect(Math.abs(box.y - point.y)).toBeLessThanOrEqual(24);
+      expect(await menu.locator("[role='menuitem']").allTextContents()).toEqual(labels);
+      await until(page, `document.activeElement?.textContent === "Reply"`);
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Reply");
+      await page.keyboard.press("Escape");
+      expect(await menu.count()).toBe(0);
+      expect(await page.getByRole("group", { name: "Message 2", exact: true }).evaluate((host) => host === document.activeElement)).toBe(
+        true,
+      );
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+  // Swipes need Chromium's held-touch protocol too.
+  test.skipIf(browserName === "webkit")(
+    "a horizontal swipe on a tablet still replies once",
+    async () => {
+      const { page, context } = await open(portrait);
+      try {
+        const cdp = await context.newCDPSession(page);
+        const from = await center(page, ".k2b-gesture-menu >> nth=8 >> .text");
+        const points = Array.from({ length: 10 }, (_, step) => ({ x: 60 + step * 14, y: from.y + step }));
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [points[0]!] });
+        for (const point of points.slice(1)) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point] });
+        await until(page, `document.querySelectorAll(".k2b-gesture-menu")[8].hasAttribute("data-armed")`);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await until(page, `window.calls.reply === 1 && !document.querySelector(".k2b-gesture-menu[data-swipe]")`);
+        expect(await fixture(page)).toMatchObject({ calls: { reply: 1, react: 0, copy: 0 }, swipes: 1 });
+        expect(await page.locator(".k2b-context-menu, dialog[open]").count()).toBe(0);
+        expect(await page.evaluate(() => document.querySelector(".list")!.scrollTop)).toBe(0);
+      } finally {
+        await context.close();
+      }
+    },
+    30_000,
+  );
 });

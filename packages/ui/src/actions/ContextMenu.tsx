@@ -35,6 +35,16 @@ const focusableItems = (menu: HTMLElement | undefined): HTMLElement[] =>
 
 /** Right-click menu with keyboard invocation, one-open-at-a-time behavior, and viewport clamping. */
 export function ContextMenu(props: ContextMenuProps): JSX.Element {
+  return ContextMenuBase(props);
+}
+
+/**
+ * Package-internal, not exported from the package index: `openAt` lets GestureMenu open the menu at a held finger, and
+ * `title` names what was pressed above the entries, since the finger covers it.
+ */
+export function ContextMenuBase(
+  props: ContextMenuProps & { openAt?: (open: (x: number, y: number) => void) => void; title?: string },
+): JSX.Element {
   const messages = useUiMessages();
   const generatedId = `k2b-context-${createUniqueId()}`;
   const menuId = `${generatedId}-menu`;
@@ -156,6 +166,8 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
     }
   };
 
+  props.openAt?.(open);
+
   onMount(() => {
     onCleanup(() => {
       detachOpenListeners();
@@ -206,6 +218,12 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
               style={{ left: `${point().x}px`, top: `${point().y}px` }}
               onPointerDown={(event) => event.stopPropagation()}
             >
+              {/* The menu carries the same name for assistive technology. */}
+              <Show when={props.title}>
+                <div class="k2b-context-menu__title" aria-hidden="true">
+                  {props.title}
+                </div>
+              </Show>
               <DropdownItems items={items()} close={close} />
             </div>
           </Portal>

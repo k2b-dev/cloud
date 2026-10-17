@@ -60,3 +60,5 @@ export const Chat = Object.assign(ChatRoot, {
 
 export { matchesChatCommand } from "./command-search";
 export { reconcileChatMentions } from "./composer-document";
+
+export { type ReactionPeopleInput, reactionPeople } from "./reaction-people";

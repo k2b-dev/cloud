@@ -275,6 +275,7 @@ const portableSections = [
         "ti ti-message-2",
         "Grouped conversation messages with safe Markdown, quotes, reactions, threads, and attachments that never move the layout.",
       ),
+      page("reaction-bar", "ReactionBar", "ti ti-mood-plus", "Emoji reactions with counts, names, and an optional picker anchor."),
       page("structured-data", "Structured data", "ti ti-braces", "Formatted and raw JSON-like data disclosure."),
       page("media", "Media previews", "ti ti-photo", "Image lightboxes, video, PDF previews, and zoomable content."),
       page("files", "Files", "ti ti-folders", "Generic file trees, browser composition, and content-aware previews."),
