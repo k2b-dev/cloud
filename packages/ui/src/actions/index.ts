@@ -6,6 +6,8 @@ export type { CopyButtonProps, CopyButtonValue } from "./CopyButton";
 export { CopyButton } from "./CopyButton";
 export type { DisclosureProps } from "./Disclosure";
 export { Disclosure } from "./Disclosure";
+export type { DragPayload, DragSourceProps, DropTargetProps } from "./DragAndDrop";
+export { activeDrag, DragSource, DropTarget, useKeyboardDrag } from "./DragAndDrop";
 export type {
   DropdownAction,
   DropdownActionBase,
