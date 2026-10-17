@@ -439,6 +439,12 @@ export const notebookWorkspaceMessages = i18n.define({
       pdfDataNotice: "The current note and CSS are processed in memory and are not stored as a PDF.",
       pdfGenerationFailed: "PDF generation failed",
       generatingPdf: "Generating PDF...",
+      pdfOmissionsTitle: ({ count }: { count: number }) =>
+        count === 1 ? "1 item is not in the PDF." : `${count} items are not in the PDF.`,
+      pdfOmissionsDetails: "Details",
+      pdfOmissionsMarked: "The PDF marks each one in place.",
+      pdfOmissionsMore: ({ count }: { count: number }) => `and ${count} more, marked in the PDF`,
+      close: "Close",
     },
     de: {
       failedCreateNote: "Die Notiz konnte nicht erstellt werden",
@@ -862,6 +868,11 @@ export const notebookWorkspaceMessages = i18n.define({
       pdfDataNotice: "Die aktuelle Notiz und das CSS werden im Arbeitsspeicher verarbeitet. Das PDF wird nicht gespeichert.",
       pdfGenerationFailed: "PDF-Erstellung fehlgeschlagen",
       generatingPdf: "PDF wird erstellt…",
+      pdfOmissionsTitle: ({ count }) => (count === 1 ? "1 Inhalt fehlt im PDF." : `${count} Inhalte fehlen im PDF.`),
+      pdfOmissionsDetails: "Details",
+      pdfOmissionsMarked: "Das PDF markiert jeden davon an seiner Stelle.",
+      pdfOmissionsMore: ({ count }) => `und ${count} weitere, im PDF markiert`,
+      close: "Schließen",
     },
   },
 });

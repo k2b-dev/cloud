@@ -41,6 +41,7 @@ import { z } from "zod";
 import { NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY } from "@/lib/note-delete-permission";
 import { NOTE_PATH_MAX_LENGTH, NOTE_PATH_MAX_SEGMENTS } from "@/lib/note-path";
 import { PRESENTATION_MODES } from "@/lib/presentation-mode";
+import { encodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES } from "../lib/pdf-omissions";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
 import { InvalidActivityCursorError, NOTEBOOK_ACTIVITY_ACTIONS } from "../service/activity";
@@ -1982,6 +1983,14 @@ const app = new Hono<AuthContext>()
       responses: {
         200: {
           description: "Generated PDF",
+          headers: {
+            [NOTE_PDF_OMISSIONS_HEADER]: {
+              required: false,
+              description:
+                "Optional base64url (no padding) of UTF-8 JSON {items:[{code,kind,label}],more}, at most 2048 bytes. Items list what the PDF could not include; each is also marked in place in the PDF. The more count is the number of items that did not fit in the header. Absent when nothing is omitted.",
+              schema: { type: "string", maxLength: NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES, pattern: "^[A-Za-z0-9_-]+$" },
+            },
+          },
           content: { "application/pdf": { schema: { type: "string", format: "binary" } } },
         },
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
@@ -2041,6 +2050,7 @@ const app = new Hono<AuthContext>()
           bypassAccess: subject.user ? hasRole(subject.user, "admin") : false,
           locale: getLocale(c),
         });
+        const omissionsHeader = encodeNotePdfOmissions(rendered.omissions);
         const buffer = rendered.pdf.buffer.slice(rendered.pdf.byteOffset, rendered.pdf.byteOffset + rendered.pdf.byteLength) as ArrayBuffer;
         return new Response(new Blob([buffer], { type: "application/pdf" }), {
           headers: {
@@ -2048,6 +2058,7 @@ const app = new Hono<AuthContext>()
             "Content-Disposition": notePdfDisposition(filename),
             "Content-Type": "application/pdf",
             "X-Content-Type-Options": "nosniff",
+            ...(omissionsHeader ? { [NOTE_PDF_OMISSIONS_HEADER]: omissionsHeader } : {}),
           },
         });
       } catch (cause) {

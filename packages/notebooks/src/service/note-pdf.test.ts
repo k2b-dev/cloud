@@ -6,7 +6,7 @@ const NOTICES = ["note", "info", "success", "warning", "danger"] as const;
 const TONES = { note: "neutral", info: "info", success: "success", warning: "warning", danger: "danger" } as const;
 
 const build = (markdown: string, extra: Partial<Parameters<typeof buildNotePdfHtml>[0]> = {}) =>
-  buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "en", ...extra });
+  buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "en", ...extra }).html;
 
 describe("note PDF HTML", () => {
   test("prints the editor and Book's ordered-label cycle and nested lists", () => {
@@ -140,4 +140,21 @@ test("note PDF includes the chart, data fallback and Cloud light palette", () =>
   expect(html).toContain("--stdlib-chart-c1:#14b8a6");
   expect(html).toContain("--stdlib-chart-c8:#ef4444");
   expect(html).toContain("aspect-ratio: 480 / 280");
+});
+
+test("PDF builder returns the renderer's omissions alongside unchanged print HTML", () => {
+  const built = buildNotePdfHtml({
+    markdown: "![Map](attach://ABC123)\n\n```mermaid\ngraph TD\nA-->B\n```",
+    notebookShortId: "ABC123",
+    locale: "en",
+  });
+  expect(built.omissions).toEqual([
+    { code: "not_rendered", kind: "image", label: "Map" },
+    { code: "not_rendered", kind: "diagram", label: "graph TD" },
+  ]);
+  expect(built.html).toContain('<span class="notebook-book-image-label">Image: Map</span>');
+  expect(built.html).toContain(
+    '<figcaption>Diagram source</figcaption><pre><code class="language-mermaid">graph TD\nA--&gt;B</code></pre>',
+  );
+  expect(buildNotePdfHtml({ markdown: "# Clean\n\nText.", notebookShortId: "ABC123", locale: "en" }).omissions).toEqual([]);
 });
