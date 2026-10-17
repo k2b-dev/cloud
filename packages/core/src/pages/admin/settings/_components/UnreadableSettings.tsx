@@ -42,7 +42,7 @@ export function UnreadableSettingsNotice(props: {
               <li class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1" data-setting={entry.key}>
                 <span class="flex min-w-0 flex-wrap items-baseline gap-x-2">
                   <span class="font-medium text-primary">{entry.label}</span>
-                  <code class="text-[10px] text-dimmed">{entry.key}</code>
+                  <code class="text-dimmed">{entry.key}</code>
                 </span>
                 <Button
                   type="button"
