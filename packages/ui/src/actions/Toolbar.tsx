@@ -293,7 +293,11 @@ const measureOverflow = (
   };
   // Stable sort retains DOM order for the menu, but removes later actions first on a priority tie.
   const candidates = actions
-    .filter((action) => action.props.priority !== undefined && visible(action.element))
+    // An action its application hides, even with `visibility: hidden`, must not reappear as a More row.
+    .filter(
+      (action) =>
+        action.props.priority !== undefined && visible(action.element) && getComputedStyle(action.element).visibility !== "hidden",
+    )
     .reverse()
     .sort((a, b) => b.props.priority! - a.props.priority!);
   tidy();
@@ -331,11 +335,13 @@ export const Toolbar = Object.assign(
         a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
       );
       const focused = document.activeElement;
+      // Cleared before measuring so the pending `visibility: hidden` does not hide every action from the check
+      // below; the whole measurement still runs before the next paint.
+      root.removeAttribute("data-overflow-pending");
       const next = measureOverflow(root, more, ordered, available);
       setMoved((previous) =>
         previous.length === next.length && previous.every((action, index) => action === next[index]) ? previous : next,
       );
-      root.removeAttribute("data-overflow-pending");
       navigation?.sync();
       // Focus on an action that moved, on a menu row whose action came back, or on a More that disappeared goes to
       // More, or to the toolbar's tab stop when nothing is left in More. Inside an effect the menu rows update after

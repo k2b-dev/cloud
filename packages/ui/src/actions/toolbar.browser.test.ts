@@ -502,31 +502,38 @@ test("reprioritising the focused More row hands focus to More instead of the pag
   }
 });
 
-test("actions an application hides leave More", async () => {
-  const page = await openFloating(340);
-  try {
-    await page.evaluate(() => {
-      window.toolbarFixture.override("Reply", { priority: 99 });
-      window.toolbarFixture.override("Forward", { priority: 99 });
-    });
-    expect(await movedLabels(page)).toEqual(expect.arrayContaining(["Reply", "Forward"]));
-    await selectionToolbar(page)
-      .getByRole("group", { name: "Respond", includeHidden: true })
-      .evaluate((group) => {
-        (group as HTMLElement).style.display = "none";
+for (const [property, value] of [
+  ["display", "none"],
+  ["visibility", "hidden"],
+] as const)
+  test(`actions an application hides with ${property}: ${value} leave More`, async () => {
+    const page = await openFloating(340);
+    try {
+      await page.evaluate(() => {
+        window.toolbarFixture.override("Reply", { priority: 99 });
+        window.toolbarFixture.override("Forward", { priority: 99 });
       });
-    await page.waitForFunction(() => !document.querySelector('[aria-label="Reply"]')?.hasAttribute("data-overflow"));
-    const moved = await movedLabels(page);
-    expect(moved).not.toContain("Reply");
-    expect(moved).not.toContain("Forward");
-    await selectionToolbar(page).getByRole("button", { name: "More actions", exact: true }).click();
-    const rows = await page.getByRole("menuitem").allTextContents();
-    expect(rows).not.toContain("Reply");
-    expect(rows).not.toContain("Forward");
-  } finally {
-    await page.close();
-  }
-});
+      expect(await movedLabels(page)).toEqual(expect.arrayContaining(["Reply", "Forward"]));
+      await selectionToolbar(page)
+        .getByRole("group", { name: "Respond", includeHidden: true })
+        .evaluate(
+          (group, style) => {
+            (group as HTMLElement).style.setProperty(style.property, style.value);
+          },
+          { property, value },
+        );
+      await page.waitForFunction(() => !document.querySelector('[aria-label="Reply"]')?.hasAttribute("data-overflow"));
+      const moved = await movedLabels(page);
+      expect(moved).not.toContain("Reply");
+      expect(moved).not.toContain("Forward");
+      await selectionToolbar(page).getByRole("button", { name: "More actions", exact: true }).click();
+      const rows = await page.getByRole("menuitem").allTextContents();
+      expect(rows).not.toContain("Reply");
+      expect(rows).not.toContain("Forward");
+    } finally {
+      await page.close();
+    }
+  });
 
 test("Toolbar.Action keeps the plain accessible label and ARIA shortcut while its tooltip names the shortcut", async () => {
   const page = await openFloating();
