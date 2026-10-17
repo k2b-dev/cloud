@@ -1,12 +1,14 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Page } from "playwright";
 import { dropdownPosition } from "@k2b/ui";
+import type { Page } from "playwright";
+import { launchBrowser } from "../../../ui/test/browser";
 import {
   attach,
   cardInset,
   cardRadius,
+  type Device,
   desktop,
   devices,
   html,
@@ -19,10 +21,9 @@ import {
   phone,
   smallLaptop,
   tabletBoundary,
-  type Device,
 } from "./compact-shell.browser-harness";
 
-installCompactShellHarness();
+installCompactShellHarness(launchBrowser);
 
 type Box = { left: number; top: number; right: number; bottom: number; width: number; height: number };
 type Geometry = {

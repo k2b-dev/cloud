@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { createComponent } from "solid-js";
-import { launchBrowser } from "../../../ui/test/browser";
+import type { launchBrowser } from "../../../ui/test/browser";
 
 // The shell's geometry at every width — which chrome exists, where the app
 // area ends, which edges draw lines — is decided by real layout, so a real
@@ -306,7 +306,11 @@ let controller: string;
 const spies: { mockRestore(): void }[] = [];
 // Register hooks in each importing test file; Bun caches this module across files.
 // Keeping hooks at module scope would leave the second file with a closed browser.
-export function installCompactShellHarness() {
+/**
+ * Each suite passes `launchBrowser` from packages/ui/test/browser itself, so the test runner and the
+ * browser-launch check find it as a browser suite and the gate also runs it in WebKit.
+ */
+export function installCompactShellHarness(launch: typeof launchBrowser) {
   beforeAll(async () => {
     spies.push(
       spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
@@ -329,7 +333,7 @@ window.installController = () => installAppWorkspaceController();`,
     });
     if (!bundle.success) throw new AggregateError(bundle.logs, "Could not bundle the workspace controller.");
     controller = await bundle.outputs[0]!.text();
-    browser = await launchBrowser();
+    browser = await launch();
   }, 60_000);
   afterAll(async () => {
     for (const spy of spies.splice(0)) spy.mockRestore();

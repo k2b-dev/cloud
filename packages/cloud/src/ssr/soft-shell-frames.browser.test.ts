@@ -3,9 +3,10 @@ import { dirname, resolve } from "node:path";
 import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import type { BunPlugin } from "bun";
+import { launchBrowser } from "../../../ui/test/browser";
 import { html, installCompactShellHarness, ipadPortrait, open, phone } from "./compact-shell.browser-harness";
 
-installCompactShellHarness();
+installCompactShellHarness(launchBrowser);
 
 const solid = (await import(Bun.resolveSync("babel-preset-solid", `${import.meta.dir}/`))).default;
 const compile: BunPlugin = {

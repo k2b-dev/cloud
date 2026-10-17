@@ -59,7 +59,8 @@ from the header to the first place of the floating bottom bar. The bar then
 shows the first four links of the person's app bar, shortcuts included, in
 the same order. When the current app comes later, it takes the fourth place,
 so the bar always marks it. The open item is the surface color on the bar's
-app gradient. Home is marked only on the start page.
+app gradient. Home is marked on the start page that `/` opens. When the
+person changes their app bar, the bar follows without a reload.
 
 The phone's content is a soft card with 28 px top corners. A regular signed-in
 page scrolls inside that card (`main`), while the window stays still. The card
