@@ -3,6 +3,8 @@ import type { Contact } from "../service/types";
 
 const log = logger("contacts:export");
 
+const nextMacrotask = () => new Promise<void>((resolve) => setImmediate(resolve));
+
 /** Pull one page at a time; a failed page must fail the download. */
 export const exportBody = (
   pages: (signal: AbortSignal) => AsyncIterable<Contact[]>,
@@ -15,12 +17,21 @@ export const exportBody = (
   const iterator = pages(signal)[Symbol.asyncIterator]();
   const encoder = new TextEncoder();
   let header = config.header;
+  let started = false;
   let cancelled = false;
 
   return new ReadableStream<Uint8Array>(
     {
       async pull(controller) {
         try {
+          if (!started) {
+            // Bun buffers a body stream that settles before the next macrotask and
+            // answers a later error there with a clean fixed-length response. One
+            // yield before the first byte makes it stream, so a failed page resets
+            // the connection instead of saving a truncated file.
+            started = true;
+            await nextMacrotask();
+          }
           signal.throwIfAborted();
           if (header !== undefined) {
             controller.enqueue(encoder.encode(header));

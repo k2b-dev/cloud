@@ -39,6 +39,33 @@ test("a mid-stream page failure rejects the response body", async () => {
   expect(logError).toHaveBeenCalledWith("Contacts export failed", { bookId: options.bookId, format: "csv", error: failure.message });
 });
 
+test("over HTTP, a failed page resets the connection instead of ending a truncated body cleanly", async () => {
+  // Pages that settle without real I/O are the case where Bun would otherwise send a clean partial response.
+  async function* pages(): AsyncGenerator<Contact[]> {
+    yield [];
+    throw new Error("Page query failed");
+  }
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () =>
+      new Response(
+        exportBody(
+          pages,
+          () => "row\r\n",
+          { ...config(), header: "header\r\n" },
+          () => {},
+        ),
+      ),
+  });
+  try {
+    // Bun may reset before or after the status line; either way the download fails.
+    await expect(fetch(server.url).then((response) => response.text())).rejects.toThrow();
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("consumer cancel returns the generator without loading another page", async () => {
   let loads = 0;
   let returned = false;
