@@ -84,6 +84,7 @@ export default function TimelineDisplay(props: Props) {
   // the delay keeps the previous pause: Chromium drops history writes made while the page unloads.
   const flushScroll = () => {
     if (scrollTimer !== undefined && location.href === scrolledAt) saveScroll();
+    clearTimeout(scrollTimer);
     scrollTimer = undefined;
   };
   let mounted = false;
