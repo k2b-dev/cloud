@@ -312,7 +312,6 @@ export default function NotebookGraph(props: Props) {
         </IconButtonLink>
       </Tooltip.Anchor>
       <Show when={simNodes.length > 0} fallback={<EmptyState />}>
-
         <svg
           ref={svgRef}
           class="w-full h-full select-none touch-none cursor-grab active:cursor-grabbing"

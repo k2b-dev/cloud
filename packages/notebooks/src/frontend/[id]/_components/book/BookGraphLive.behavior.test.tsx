@@ -50,6 +50,7 @@ describe("Book graph live updates", () => {
     const dispose = render(() => createComponent(BookGraphLive, { notebookId: "book01", bookHref }), dom.root);
     return {
       requests,
+      root: dom.root,
       cleanup: () => {
         dispose();
         globalThis.fetch = originalFetch;
@@ -110,13 +111,22 @@ describe("Book graph live updates", () => {
     }
   });
 
-  test("a failed refresh rejects, so the event is not acknowledged", async () => {
+  test("a failed refresh stays unacknowledged and shows a notice whose Retry brings the navigation back", async () => {
     const app = await mount();
     try {
       const coverage = dispatchWorkspaceEvent(changed, "2-0");
       await flush();
       app.requests[0]!.resolve(Response.json({ message: "Busy" }, { status: 503 }));
       await expect(coverage).rejects.toThrow();
+      await flush();
+      const notice = app.root.querySelector('[role="alert"]');
+      expect(notice?.textContent).toContain("Notebook updates could not be loaded.");
+      app.root.querySelector<HTMLButtonElement>('[role="alert"] button')!.click();
+      await flush();
+      expect(app.requests).toHaveLength(2);
+      app.requests[1]!.resolve(Response.json(snapshot));
+      await flush();
+      expect(app.root.querySelector('[role="alert"]')).toBeNull();
     } finally {
       app.cleanup();
     }

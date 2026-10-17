@@ -27,7 +27,7 @@ export default function BookGraphSurface(props: Props) {
           current="graph"
         />
         <AppWorkspace.Content>
-          <AppWorkspace.Main scroll={false}>
+          <AppWorkspace.Main scroll={false} class="relative">
             {/* Like Book and the workspace, the page follows live changes, and a revoked grant or an ended session reloads it. */}
             <WorkspaceEventBridge notebookId={props.notebookId} appUrl={props.appUrl} initialCursor={props.cursor} />
             <BookGraphLive notebookId={props.notebookId} bookHref={props.currentHref} />
