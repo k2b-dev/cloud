@@ -651,6 +651,42 @@ suite("mail conversation work-state projection", () => {
     }, 30_000);
   }
 
+  test("terminal failure locks the mailbox before the conversation", async () => {
+    const { secondId } = await terminalFailurePair("mailbox-lock-order");
+    const conversation = await conversationForMessage(secondId);
+    let failing: Promise<void> | undefined;
+    try {
+      await sql.begin(async (tx) => {
+        await tx`SELECT id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR UPDATE`;
+        const [holder] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        if (!holder) throw new Error("Lock holder backend was not found");
+        failing = failTooLarge(secondId);
+        void failing.catch(() => undefined);
+
+        const deadline = Date.now() + 5_000;
+        let waiting = 0;
+        while (Date.now() < deadline) {
+          const [activity] = await sql<{ waiting: number }[]>`
+            SELECT count(*)::int AS waiting FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND ${holder.pid}::int = ANY(pg_blocking_pids(pid))
+          `;
+          waiting = activity?.waiting ?? 0;
+          if (waiting > 0) break;
+          await Bun.sleep(20);
+        }
+        expect(waiting).toBeGreaterThan(0);
+
+        await tx`SET LOCAL lock_timeout = '3s'`;
+        await tx`SELECT id FROM mail.conversations WHERE id = ${conversation.id}::uuid FOR UPDATE`;
+      });
+      await failing;
+    } finally {
+      await failing?.catch(() => undefined);
+    }
+    await expectTerminalReopened(secondId);
+  }, 30_000);
+
   test("terminal missing source reopens Done only on the fifth attempt", async () => {
     const { secondId } = await terminalFailurePair("missing-source");
     const fence = await loadMailboxTransportFence(remoteResourceId);

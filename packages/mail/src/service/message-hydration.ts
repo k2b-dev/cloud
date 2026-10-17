@@ -483,6 +483,16 @@ const mergeVerifiedDuplicate = async (params: {
 
 /** Derives work state from a loaded message or a terminal failure's envelope. */
 const applyVerifiedConversationTransition = async (params: { db: typeof sql; messageId: string }): Promise<MailActivityChange | null> => {
+  // Lock mailbox, then conversation, as keeps, merges and command creation do.
+  // KEY SHARE satisfies the activity foreign key without blocking other hydration.
+  await params.db`
+    SELECT mailbox.id
+    FROM mail.conversation_messages link
+    JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+    JOIN mail.mailboxes mailbox ON mailbox.id = conversation.mailbox_id
+    WHERE link.message_id = ${params.messageId}::uuid
+    FOR KEY SHARE OF mailbox
+  `;
   const [lockedConversation] = await params.db<{ id: string }[]>`
     SELECT conversation.id
     FROM mail.message_contents message
@@ -629,6 +639,16 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
 // Locks the conversations of these messages in ID order, so batches of terminal failures cannot deadlock each other.
 const lockMessageConversations = async (db: typeof sql, messageIds: string[]): Promise<void> => {
   if (messageIds.length === 0) return;
+  await db`
+    SELECT id FROM mail.mailboxes
+    WHERE id IN (
+      SELECT conversation.mailbox_id
+      FROM mail.conversations conversation
+      JOIN mail.conversation_messages link ON link.conversation_id = conversation.id
+      WHERE link.message_id = ANY(${toPgUuidArray(messageIds)}::uuid[])
+    )
+    ORDER BY id FOR KEY SHARE
+  `;
   await db`
     SELECT id FROM mail.conversations
     WHERE id IN (
