@@ -308,9 +308,7 @@ test("closing a waiting detail with motion never shows a column", async () => {
 test("focus in a column opened later moves to Details when it starts waiting", async () => {
   const page = await load(1440, { scenario: "closed" });
   try {
-    await aside(page).evaluate((element) => {
-      element.hidden = false;
-    });
+    await aside(page).evaluate((element) => element.removeAttribute("hidden"));
     await workspaceFrames(page);
     await aside(page).getByRole("button", { name: "Contact action" }).focus();
     await resizeHost(page, 860);
