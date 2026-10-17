@@ -18,6 +18,7 @@ import { notebooksService } from "@/service";
 import { ssr } from "../../../config";
 import { requestedPresentationMode, withPresentationMode } from "../../../lib/presentation-url";
 import { parseSidebarFilter } from "../../../lib/sidebar-filter";
+import { notebooksPageMessages } from "../../messages";
 import { buildAttachmentsUrl } from "../../params";
 import AttachmentsOverview from "../_components/attachments-overview/AttachmentsOverview.island";
 import RememberNotebook from "../_components/RememberNotebook.island";
@@ -25,7 +26,6 @@ import { parseFullWidth, parseNavigationHidden, parseSettings } from "../_compon
 import NotebookSidebar from "../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../_components/sidebar/types";
 import WorkspaceEventBridge from "../_components/sidebar/WorkspaceEventBridge.island";
-import { notebooksPageMessages } from "../../messages";
 import { notebookWorkspaceMessages } from "../messages";
 import { projectNotebook, projectTree } from "../page-data";
 

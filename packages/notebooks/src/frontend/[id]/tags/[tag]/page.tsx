@@ -20,6 +20,7 @@ import { orderBookTree } from "../../../../lib/book-tree";
 import { resolvePresentationMode } from "../../../../lib/presentation-mode";
 import { requestedPresentationMode, withPresentationMode } from "../../../../lib/presentation-url";
 import { parseSidebarFilter } from "../../../../lib/sidebar-filter";
+import { notebooksPageMessages } from "../../../messages";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
 import BookSurface from "../../_components/book/BookSurface";
 import BookTagContent from "../../_components/book/BookTagContent";
@@ -28,7 +29,6 @@ import { parseFullWidth, parseNavigationHidden, parseSettings } from "../../_com
 import NotebookSidebar from "../../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../../_components/sidebar/types";
 import WorkspaceEventBridge from "../../_components/sidebar/WorkspaceEventBridge.island";
-import { notebooksPageMessages } from "../../../messages";
 import { notebookWorkspaceMessages } from "../../messages";
 import { projectNotebook, projectTree } from "../../page-data";
 
