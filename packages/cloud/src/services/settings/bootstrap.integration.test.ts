@@ -83,8 +83,13 @@ suite("environment-backed settings", () => {
       // Reads under the wrong key keep the documented fallback.
       expect(await settings.get<string>(key)).toBe("http://renderer.environment-of-b.test:3000");
       const messages = warn.mock.calls.map((call) => call.join(" "));
-      expect(messages.some((message) => message.includes(key))).toBe(true);
-      expect(messages.some((message) => message.includes(adminValue) || message.includes(ciphertext))).toBe(false);
+      expect(messages).toContain(
+        `[settings] cannot decrypt stored value for "${key}" with this APP_SECRET; keeping the row unchanged, reads use the environment fallback or default`,
+      );
+      for (const message of messages) {
+        expect(message).not.toContain(adminValue);
+        expect(message).not.toContain(ciphertext);
+      }
     } finally {
       warn.mockRestore();
       Object.defineProperty(env, "APP_SECRET", original);
