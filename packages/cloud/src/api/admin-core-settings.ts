@@ -46,9 +46,10 @@ const BulkSaveSchema = z.union([
     .object({
       updates: z.record(z.string(), z.unknown()).optional().default({}),
       resets: z.array(z.string()).optional().default([]),
+      replaceUnreadable: z.array(z.string()).optional().default([]),
     })
     .strict(),
-  z.record(z.string(), z.unknown()).transform((updates) => ({ updates, resets: [] as string[] })),
+  z.record(z.string(), z.unknown()).transform((updates) => ({ updates, resets: [] as string[], replaceUnreadable: [] as string[] })),
 ]);
 const LEGAL_DOCUMENTS = [
   { kind: "terms", path: "/legal/terms" },
@@ -57,6 +58,13 @@ const LEGAL_DOCUMENTS = [
 ] as const;
 
 type FieldErrors = Record<string, string>;
+
+const unreadableSettingMessage = (locale: string): string =>
+  locale.startsWith("de")
+    ? "Der gespeicherte Wert kann von dieser Anwendung nicht gelesen werden. Ersetze ihn ausdrücklich oder nutze den Standardwert."
+    : "The stored value cannot be read by this application. Replace it explicitly or use the default.";
+const settingsNotSavedMessage = (locale: string): string =>
+  locale.startsWith("de") ? "Die Einstellungen wurden nicht gespeichert." : "The settings were not saved.";
 
 const isKnownSetting = (key: string): boolean => SETTINGS_MAP.has(key);
 
@@ -335,168 +343,207 @@ const app = new Hono<AuthContext>()
     if (result.ok) return c.json({ ok: true });
     return c.json({ message: result.error, kind: result.kind }, result.status);
   })
-  .put("/", auth.requireRole("admin"), v("json", BulkSaveSchema), async (c) => {
-    const { updates, resets } = c.req.valid("json");
-    const updateKeys = Object.keys(updates);
-    const keys = [...updateKeys, ...resets];
+  .put(
+    "/",
+    auth.requireRole("admin"),
+    describeRoute({
+      tags: ["Administration"],
+      summary: "Save platform settings",
+      ...requiresAdmin,
+      responses: {
+        204: { description: "Settings saved" },
+        400: jsonResponse(z.object({ message: z.string(), errors: z.record(z.string(), z.string()).optional() }), "Invalid settings"),
+        409: jsonResponse(
+          z.object({ message: z.string(), errors: z.record(z.string(), z.string()) }),
+          "Stored setting unreadable or model access conflict",
+        ),
+      },
+    }),
+    v("json", BulkSaveSchema),
+    async (c) => {
+      const { updates, resets, replaceUnreadable } = c.req.valid("json");
+      const replace = new Set(replaceUnreadable);
+      const updateKeys = Object.keys(updates);
+      const keys = [...updateKeys, ...resets];
 
-    if (keys.length === 0) {
-      return c.body(null, 204);
-    }
-
-    const ownership: FieldErrors = {};
-    for (const key of keys) {
-      if (!isKnownSetting(key)) {
-        ownership[key] = `Unknown setting "${key}"`;
+      if (keys.length === 0 && replace.size === 0) {
+        return c.body(null, 204);
       }
-    }
-    for (const key of resets) {
-      if (key in updates) {
-        ownership[key] = `Setting "${key}" cannot be updated and reset in the same save`;
-      }
-    }
-    if (Object.keys(ownership).length > 0) {
-      return c.json({ message: "Invalid keys", errors: ownership }, 400);
-    }
 
-    // Strip AI provider keys before anything is validated or written, so the
-    // value that gets checked is the value that gets stored.
-    const aiSplit = AI_PROFILES_KEY in updates ? splitAiProfileCredentials(updates[AI_PROFILES_KEY]) : null;
-    if (AI_PROFILES_KEY in updates && !aiSplit) {
-      // Unsplittable means the keys could not be separated out, and storing the
-      // value as posted would put them back in a setting the browser reads.
-      return c.json({ message: "Invalid values", errors: { [AI_PROFILES_KEY]: "Model profiles must be a JSON array" } }, 400);
-    }
-    let accessChanges: AiModelAccessChange[] = [];
-    if (aiSplit) {
+      const ownership: FieldErrors = {};
+      for (const key of keys) {
+        if (!isKnownSetting(key)) {
+          ownership[key] = `Unknown setting "${key}"`;
+        }
+      }
+      for (const key of replace) {
+        if (!Object.hasOwn(updates, key)) ownership[key] = `Setting "${key}" must be included in updates to replace its unreadable value`;
+      }
+      for (const key of resets) {
+        if (key in updates) {
+          ownership[key] = `Setting "${key}" cannot be updated and reset in the same save`;
+        }
+      }
+      if (Object.keys(ownership).length > 0) {
+        return c.json({ message: "Invalid keys", errors: ownership }, 400);
+      }
+
+      const states = await settings.readStates(updateKeys);
+      const unreadable: FieldErrors = {};
+      for (const key of updateKeys) {
+        if (states.get(key)?.stored === "unreadable" && !replace.has(key)) unreadable[key] = unreadableSettingMessage(getLocale(c));
+      }
+      if (Object.keys(unreadable).length > 0) {
+        return c.json({ message: settingsNotSavedMessage(getLocale(c)), errors: unreadable }, 409);
+      }
+
+      // Strip AI provider keys before anything is validated or written, so the
+      // value that gets checked is the value that gets stored.
+      const aiSplit = AI_PROFILES_KEY in updates ? splitAiProfileCredentials(updates[AI_PROFILES_KEY]) : null;
+      if (AI_PROFILES_KEY in updates && !aiSplit) {
+        // Unsplittable means the keys could not be separated out, and storing the
+        // value as posted would put them back in a setting the browser reads.
+        return c.json({ message: "Invalid values", errors: { [AI_PROFILES_KEY]: "Model profiles must be a JSON array" } }, 400);
+      }
+      let accessChanges: AiModelAccessChange[] = [];
+      if (aiSplit) {
+        try {
+          aiSplit.profilesJson = prepareAiModelProfileImages(aiSplit.profilesJson);
+        } catch (error) {
+          if (error instanceof ImageMetadataError)
+            return c.json({ message: error.message, code: error.code, errors: { [AI_PROFILES_KEY]: error.message } }, 422);
+          throw error;
+        }
+        try {
+          const split = splitAiModelAccess(aiSplit.profilesJson);
+          aiSplit.profilesJson = split.profilesJson;
+          accessChanges = split.changes;
+        } catch {
+          return c.json(
+            {
+              message: "Invalid model permissions",
+              errors: { [AI_PROFILES_KEY]: "Invalid Assistant model permissions. Reload the settings and try again." },
+            },
+            400,
+          );
+        }
+      }
+      const finalValues: Record<string, unknown> = aiSplit ? { ...updates, [AI_PROFILES_KEY]: aiSplit.profilesJson } : updates;
+
+      // Validate everything up front. settings.set validates as it writes, so a
+      // single bad field used to leave the earlier keys already saved — with the
+      // AI profiles among them, whose save also prunes credentials.
+      const invalid: FieldErrors = {};
+      const validatedValues: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(finalValues)) {
+        const def = SETTINGS_MAP.get(key);
+        if (!def) continue;
+        const validated = validateSettingValue(def, value);
+        if (validated.ok) validatedValues[key] = validated.value;
+        else invalid[key] = validated.error;
+        if (key === "freeipa.ca_cert") {
+          const certificate = validateFreeIpaCaCert(value);
+          if (!certificate.ok) invalid[key] = certificate.error;
+        }
+        if (INTEGER_FREEIPA_SETTINGS.has(key) && (typeof value !== "number" || !Number.isInteger(value))) {
+          invalid[key] = "Value must be a whole number";
+        }
+      }
+      if (Object.keys(invalid).length > 0) {
+        return c.json({ message: "Invalid values", errors: invalid }, 400);
+      }
+
+      let aiPlan: AiSettingsMutationPlan;
       try {
-        aiSplit.profilesJson = prepareAiModelProfileImages(aiSplit.profilesJson);
+        aiPlan = await prepareAiSettingsMutation(validatedValues, resets, aiSplit, getLocale(c));
       } catch (error) {
-        if (error instanceof ImageMetadataError)
-          return c.json({ message: error.message, code: error.code, errors: { [AI_PROFILES_KEY]: error.message } }, 422);
-        throw error;
+        console.error("[settings] failed to validate the prospective AI configuration", error);
+        return c.json({ message: "Failed to validate AI settings" }, 500);
       }
+      if (Object.keys(aiPlan.errors).length > 0) {
+        return c.json({ message: aiSettingsNotSavedMessage(getLocale(c)), errors: aiPlan.errors, issues: aiPlan.issues ?? [] }, 400);
+      }
+
+      const fieldErrors: FieldErrors = {};
       try {
-        const split = splitAiModelAccess(aiSplit.profilesJson);
-        aiSplit.profilesJson = split.profilesJson;
-        accessChanges = split.changes;
-      } catch {
+        // Every settings and AI credential write runs on the transaction's own
+        // connection, so a failure rolls the whole save back.
+        await sql.begin(async (tx) => {
+          for (const [key, value] of Object.entries(validatedValues)) {
+            try {
+              await settings.set(key, value, tx, { replaceUnreadable: replace.has(key) });
+            } catch (error) {
+              fieldErrors[key] = `Failed to update ${key}`;
+              throw error;
+            }
+          }
+          for (const key of resets) {
+            try {
+              await settings.remove(key, tx);
+            } catch (error) {
+              fieldErrors[key] = `Failed to reset ${key}`;
+              throw error;
+            }
+          }
+          const categoryKeys = keys.filter((key) => key.startsWith("user.category."));
+          if (categoryKeys.length > 0)
+            await audit.record(
+              {
+                action: "accounts.categories.configure",
+                outcome: "allowed",
+                actor: { userId: c.get("user").id },
+                target: { type: "settings", id: "user.category" },
+                metadata: {
+                  keys: categoryKeys,
+                  updates: Object.fromEntries(
+                    categoryKeys.filter((key) => key in validatedValues).map((key) => [key, validatedValues[key]]),
+                  ),
+                  resets: resets.filter((key) => categoryKeys.includes(key)),
+                },
+              },
+              tx,
+            );
+          if (aiSplit && aiPlan.keepCredentialProfileIds) {
+            await storeAiCredentials(aiSplit, aiPlan.keepCredentialProfileIds, tx);
+          } else if (aiPlan.keepCredentialProfileIds) {
+            await pruneAiCredentials(aiPlan.keepCredentialProfileIds, tx);
+          }
+          if (aiPlan.headerPlan) await storeAiRequestHeaderPlan(aiPlan.headerPlan, tx);
+          if (aiPlan.modelProfileIds) {
+            await aiModelAccess.syncProfiles(aiPlan.modelProfileIds, accessChanges, tx);
+          }
+        });
+      } catch (error) {
+        if (error instanceof settings.SettingUnreadableError) {
+          return c.json(
+            { message: settingsNotSavedMessage(getLocale(c)), errors: { [error.key]: unreadableSettingMessage(getLocale(c)) } },
+            409,
+          );
+        }
+        if (error instanceof ImageMetadataError) return c.json({ message: error.message, code: error.code, errors: fieldErrors }, 422);
+        if (error instanceof AiModelAccessConflict || error instanceof AiModelAccessInvalid) {
+          return c.json(
+            { message: error.message, errors: { [AI_PROFILES_KEY]: error.message } },
+            error instanceof AiModelAccessConflict ? 409 : 400,
+          );
+        }
+        console.error("[settings] failed to commit settings update", error);
         return c.json(
           {
-            message: "Invalid model permissions",
-            errors: { [AI_PROFILES_KEY]: "Invalid Assistant model permissions. Reload the settings and try again." },
+            message: "Save failed",
+            errors: Object.keys(fieldErrors).length > 0 ? fieldErrors : { _form: "The settings could not be saved." },
           },
-          400,
+          500,
         );
       }
-    }
-    const finalValues: Record<string, unknown> = aiSplit ? { ...updates, [AI_PROFILES_KEY]: aiSplit.profilesJson } : updates;
 
-    // Validate everything up front. settings.set validates as it writes, so a
-    // single bad field used to leave the earlier keys already saved — with the
-    // AI profiles among them, whose save also prunes credentials.
-    const invalid: FieldErrors = {};
-    const validatedValues: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(finalValues)) {
-      const def = SETTINGS_MAP.get(key);
-      if (!def) continue;
-      const validated = validateSettingValue(def, value);
-      if (validated.ok) validatedValues[key] = validated.value;
-      else invalid[key] = validated.error;
-      if (key === "freeipa.ca_cert") {
-        const certificate = validateFreeIpaCaCert(value);
-        if (!certificate.ok) invalid[key] = certificate.error;
-      }
-      if (INTEGER_FREEIPA_SETTINGS.has(key) && (typeof value !== "number" || !Number.isInteger(value))) {
-        invalid[key] = "Value must be a whole number";
-      }
-    }
-    if (Object.keys(invalid).length > 0) {
-      return c.json({ message: "Invalid values", errors: invalid }, 400);
-    }
+      // Only now: dropping the cache before the commit would let another
+      // container miss, read the pre-commit row and cache it for the full TTL.
+      await invalidateCommittedSettings(keys);
 
-    let aiPlan: AiSettingsMutationPlan;
-    try {
-      aiPlan = await prepareAiSettingsMutation(validatedValues, resets, aiSplit, getLocale(c));
-    } catch (error) {
-      console.error("[settings] failed to validate the prospective AI configuration", error);
-      return c.json({ message: "Failed to validate AI settings" }, 500);
-    }
-    if (Object.keys(aiPlan.errors).length > 0) {
-      return c.json({ message: aiSettingsNotSavedMessage(getLocale(c)), errors: aiPlan.errors, issues: aiPlan.issues ?? [] }, 400);
-    }
-
-    const fieldErrors: FieldErrors = {};
-    try {
-      // Every settings and AI credential write runs on the transaction's own
-      // connection, so a failure rolls the whole save back.
-      await sql.begin(async (tx) => {
-        for (const [key, value] of Object.entries(validatedValues)) {
-          try {
-            await settings.set(key, value, tx);
-          } catch (error) {
-            fieldErrors[key] = `Failed to update ${key}`;
-            throw error;
-          }
-        }
-        for (const key of resets) {
-          try {
-            await settings.remove(key, tx);
-          } catch (error) {
-            fieldErrors[key] = `Failed to reset ${key}`;
-            throw error;
-          }
-        }
-        const categoryKeys = keys.filter((key) => key.startsWith("user.category."));
-        if (categoryKeys.length > 0)
-          await audit.record(
-            {
-              action: "accounts.categories.configure",
-              outcome: "allowed",
-              actor: { userId: c.get("user").id },
-              target: { type: "settings", id: "user.category" },
-              metadata: {
-                keys: categoryKeys,
-                updates: Object.fromEntries(categoryKeys.filter((key) => key in validatedValues).map((key) => [key, validatedValues[key]])),
-                resets: resets.filter((key) => categoryKeys.includes(key)),
-              },
-            },
-            tx,
-          );
-        if (aiSplit && aiPlan.keepCredentialProfileIds) {
-          await storeAiCredentials(aiSplit, aiPlan.keepCredentialProfileIds, tx);
-        } else if (aiPlan.keepCredentialProfileIds) {
-          await pruneAiCredentials(aiPlan.keepCredentialProfileIds, tx);
-        }
-        if (aiPlan.headerPlan) await storeAiRequestHeaderPlan(aiPlan.headerPlan, tx);
-        if (aiPlan.modelProfileIds) {
-          await aiModelAccess.syncProfiles(aiPlan.modelProfileIds, accessChanges, tx);
-        }
-      });
-    } catch (error) {
-      if (error instanceof ImageMetadataError) return c.json({ message: error.message, code: error.code, errors: fieldErrors }, 422);
-      if (error instanceof AiModelAccessConflict || error instanceof AiModelAccessInvalid) {
-        return c.json(
-          { message: error.message, errors: { [AI_PROFILES_KEY]: error.message } },
-          error instanceof AiModelAccessConflict ? 409 : 400,
-        );
-      }
-      console.error("[settings] failed to commit settings update", error);
-      return c.json(
-        {
-          message: "Save failed",
-          errors: Object.keys(fieldErrors).length > 0 ? fieldErrors : { _form: "The settings could not be saved." },
-        },
-        500,
-      );
-    }
-
-    // Only now: dropping the cache before the commit would let another
-    // container miss, read the pre-commit row and cache it for the full TTL.
-    await invalidateCommittedSettings(keys);
-
-    return c.body(null, 204);
-  })
+      return c.body(null, 204);
+    },
+  )
   .delete("/:key{.+}", auth.requireRole("admin"), async (c) => {
     const key = c.req.param("key");
     if (!isKnownSetting(key)) {

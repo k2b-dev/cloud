@@ -593,9 +593,9 @@ when the storage uses a prefix. Do not replace unknown values with zero.
 ### Configuration
 
 Read the configuration, edit the intended fields, then submit the complete
-configuration. `get` exposes `tokenConfigured`, never the backend token. The
-optional `collabora` block holds `url` (empty disables editing), `internalUrl`,
-`wopiOrigin`, and `documentFormat` (`odf` or `ooxml`). Each storage block
+configuration. `get` exposes `tokenConfigured` and `unreadable`, never the
+backend token. The optional `collabora` block holds `url` (empty disables
+editing), `internalUrl`, `wopiOrigin`, and `documentFormat` (`odf` or `ooxml`). Each storage block
 contains `enabled`, `root`, `prefix`, `homes`, `groups`, and `archive`; the
 top-level `url` is the Filegate backend URL. The Cloud block also contains
 `autoCreate` (default `false`) and `autoArchive` (default `true`).
@@ -610,6 +610,19 @@ cld filesv2 admin configuration set --input-file ./filesv2.json --json
 arguments. Omit `token` or leave it empty to keep the saved token; a nonempty
 `token` replaces it. Saving replaces both storages' configuration; preserve
 unrelated settings. Paths and prerequisites are validated by the server.
+
+When `unreadable` is `true`, Files cannot read its saved configuration and both
+areas are disabled in the returned fallback. Saving without a nonempty `token`
+fails with HTTP 409 `configuration_unreadable`. Restore the correct `APP_SECRET`
+to read the original configuration, or submit a complete configuration with a
+new token to replace it explicitly. To remove the saved configuration and use
+disabled defaults:
+
+```bash
+cld filesv2 admin configuration reset --yes
+```
+
+Reset requires an administrator and does not delete files in Filegate.
 
 ### Templates
 

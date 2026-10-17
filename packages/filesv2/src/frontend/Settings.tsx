@@ -1,8 +1,10 @@
 import { mutation } from "@k2b/stdlib/solid";
 import {
+  Button,
   Disclosure,
   InlineGuidance,
   NoticeCard,
+  prompts,
   Select,
   SettingsPage,
   SettingsPanelFooter,
@@ -58,9 +60,26 @@ export default function Settings(props: {
       await props.onSaved();
     },
   });
+  // Reset is the explicit recovery when the saved configuration cannot be read here.
+  const reset = mutation.create({
+    mutation: async (_: void, { abortSignal }) => {
+      const response = await apiClient.admin.configuration.$delete({}, { init: { signal: abortSignal } });
+      if (!response.ok) {
+        const error = ErrorSchema.safeParse(await response.json());
+        throw new Error(error.success ? error.data.message : a().resetConfigurationFailed);
+      }
+      setSaved(false);
+      await props.onSaved();
+    },
+  });
+  const confirmReset = async () => {
+    if (reset.loading() || save.loading()) return;
+    if (await prompts.confirm(a().resetConfigurationConfirm, { title: a().resetConfiguration, variant: "danger" })) void reset.mutate();
+  };
   createEffect(() => props.onDirtyChange(dirty(), save.loading()));
   onCleanup(() => {
     save.abort();
+    reset.abort();
     props.onDirtyChange(false, false);
   });
   onMount(() => {
@@ -108,6 +127,29 @@ export default function Settings(props: {
       }
     >
       <form ref={form} onSubmit={submit} class="flex flex-col gap-4" aria-label={t().settings}>
+        <Show when={props.configuration.unreadable}>
+          <NoticeCard tone="warning" title={a().configurationUnreadable} detail={a().configurationUnreadableDetail}>
+            <div class="flex flex-col items-start gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                loading={reset.loading()}
+                disabled={save.loading()}
+                onClick={() => void confirmReset()}
+              >
+                <i class="ti ti-arrow-back-up" /> {a().resetConfiguration}
+              </Button>
+              <Show when={reset.error()}>
+                {(error) => (
+                  <InlineGuidance tone="danger" role="alert">
+                    {error().message}
+                  </InlineGuidance>
+                )}
+              </Show>
+            </div>
+          </NoticeCard>
+        </Show>
         <SettingsSection title={t().connection} icon="ti ti-plug-connected">
           <fieldset class="grid min-w-0 gap-4 md:grid-cols-2" disabled={save.loading()}>
             <TextInput
@@ -124,7 +166,13 @@ export default function Settings(props: {
               password
               autocomplete="new-password"
               label={t().token}
-              description={props.configuration.tokenConfigured ? t().tokenPresent : t().tokenMissing}
+              description={
+                props.configuration.unreadable
+                  ? t().tokenUnreadable
+                  : props.configuration.tokenConfigured
+                    ? t().tokenPresent
+                    : t().tokenMissing
+              }
               value={token()}
               onValueChange={setToken}
             />

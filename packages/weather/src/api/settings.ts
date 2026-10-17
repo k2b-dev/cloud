@@ -9,6 +9,7 @@
  */
 
 import { type AuthContext, auth, getLocale, v } from "@k2b/cloud/server";
+import { SettingUnreadableError } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -47,7 +48,8 @@ export const weatherSettingsRouter = new Hono<AuthContext>()
           }
         }
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof SettingUnreadableError) throw error;
       const message = Object.values(fieldErrors)[0] ?? t.saveFailed;
       return c.json({ message, errors: Object.keys(fieldErrors).length > 0 ? fieldErrors : { _form: message } }, 400);
     }

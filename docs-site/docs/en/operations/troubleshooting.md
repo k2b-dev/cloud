@@ -74,13 +74,27 @@ See [Routing](/en/docs/build/routing).
 
 ## Application cannot read settings
 
-Check that every container uses the same `APP_SECRET`.
+In **Administration → Settings**, an **Unreadable** badge and a notice mean a saved row exists
+but this application cannot decrypt or validate it. The displayed value is the
+environment fallback or default currently in use. Files administration shows a
+notice when its saved configuration cannot be read. Ordinary saves fail with
+HTTP 409 `setting_unreadable`; they preserve the saved row.
 
-Then check the setting definition, stored value, environment fallback, and
-validation error. A changed secret can make existing encrypted values
-unreadable.
+Check that every container uses the same stable `APP_SECRET`, then check the
+setting definition and validation rules. Restoring the correct key lets the
+application read the original value again. If the saved value is no longer
+needed, explicitly replace it with a complete new value or reset it to the
+default. Reset deletes the saved row.
 
-See [Runtime configuration](/en/docs/operations/runtime-configuration).
+For Files, enter a nonempty Filegate token with the complete configuration to
+replace the unreadable configuration. Without a token, the API returns HTTP
+409 `configuration_unreadable`. Alternatively, choose **Reset configuration**
+in the Files notice or run `cld filesv2 admin configuration reset --yes`; both
+storage areas return to disabled defaults. This removes configuration, not
+files in Filegate.
+
+See [Runtime configuration](/en/docs/operations/runtime-configuration) and
+[Settings](/en/docs/platform/settings#access-settings-outside-a-request).
 
 ## Postgres or Valkey is unavailable
 

@@ -94,6 +94,8 @@ Shared resources need one owner and identical settings. Never declare one per
 entity: JetStream reserves each stream's bytes, so per-entity logs share one
 topic keyed by `tenantId` with watermark cursors (Topics and live events).
 
+A settings write over an unreadable stored value fails with `setting_unreadable`; merge only over `settings.read()` with `stored !== "unreadable"`.
+
 Cloud and every application are equal consumers of `@k2b/ui`. The standalone
 SolidJS library remains independent of Cloud and application domains.
 

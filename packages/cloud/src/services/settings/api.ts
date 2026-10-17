@@ -18,7 +18,7 @@
  */
 
 import type { AppSettingsMap, KindToType } from "../../contracts/settings-types";
-import { deleteKey, readKey, writeKey } from "./store";
+import { deleteKey, readKey, readKeyState, type StoredSettingState, writeKey } from "./store";
 
 /**
  * Per-app typed settings API. Keys constrained to those declared in the
@@ -26,7 +26,8 @@ import { deleteKey, readKey, writeKey } from "./store";
  */
 export interface SettingsAPI<F extends Record<string, unknown>> {
   get<K extends keyof F & string>(key: K): Promise<F[K]>;
-  set<K extends keyof F & string>(key: K, value: F[K]): Promise<void>;
+  read<K extends keyof F & string>(key: K): Promise<{ value: F[K]; stored: StoredSettingState }>;
+  set<K extends keyof F & string>(key: K, value: F[K], options?: { replaceUnreadable?: boolean }): Promise<void>;
   remove<K extends keyof F & string>(key: K): Promise<void>;
 }
 
@@ -40,7 +41,8 @@ export const createSettingsAPI = <S extends AppSettingsMap>(): SettingsAPI<{
   [K in keyof S]: KindToType<S[K]["kind"]>;
 }> => ({
   get: async (key) => readKey(key) as never,
-  set: async (key, value) => writeKey(key, value),
+  read: async (key) => readKeyState(key) as never,
+  set: async (key, value, options) => writeKey(key, value, undefined, options),
   remove: async (key) => deleteKey(key),
 });
 
@@ -56,6 +58,8 @@ export const createSettingsAPI = <S extends AppSettingsMap>(): SettingsAPI<{
  */
 export const coreSettings = {
   get: <T = unknown>(key: string): Promise<T> => readKey(key) as Promise<T>,
-  set: (key: string, value: unknown): Promise<void> => writeKey(key, value),
+  read: <T = unknown>(key: string): Promise<{ value: T; stored: StoredSettingState }> =>
+    readKeyState(key) as Promise<{ value: T; stored: StoredSettingState }>,
+  set: (key: string, value: unknown, options?: { replaceUnreadable?: boolean }): Promise<void> => writeKey(key, value, undefined, options),
   remove: (key: string): Promise<void> => deleteKey(key),
 };

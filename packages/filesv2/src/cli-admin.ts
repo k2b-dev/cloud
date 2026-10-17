@@ -168,11 +168,20 @@ export function adminCommands(locale?: string) {
         if (!printStructured(ctx, value.configuration)) ctx.print(JSON.stringify(value.configuration, null, 2));
       },
     }),
+    command("admin configuration reset", {
+      summary: t({ en: "Reset Files configuration to defaults", de: "Dateien-Konfiguration auf Standardwerte zurücksetzen" }),
+      flags: { yes },
+      examples: ["cld filesv2 admin configuration reset --yes"],
+      async run({ ctx, flags }) {
+        requireYes(flags.yes);
+        await result(ctx, await api(ctx).admin.configuration.$delete(), { en: "Configuration reset.", de: "Konfiguration zurückgesetzt." });
+      },
+    }),
     command("admin configuration set", {
       summary: t({ en: "Replace configuration from a JSON file or stdin", de: "Konfiguration aus JSON-Datei oder stdin ersetzen" }),
       description: t({
-        en: "Omit token or leave it empty to retain the saved token. Use --input-file or --stdin to keep secrets out of arguments.",
-        de: "Ohne token oder bei leerem token bleibt der gespeicherte Token erhalten. Verwende --input-file oder --stdin, damit Secrets nicht in Argumenten stehen.",
+        en: "Omit token or leave it empty to retain the saved token. When unreadable is true, a nonempty token is required to replace the configuration. Use --input-file or --stdin to keep secrets out of arguments.",
+        de: "Ohne token oder bei leerem token bleibt der gespeicherte Token erhalten. Wenn unreadable true ist, ist ein nicht leerer Token zum Ersetzen der Konfiguration erforderlich. Verwende --input-file oder --stdin, damit Secrets nicht in Argumenten stehen.",
       }),
       flags: {
         input: flag.input({

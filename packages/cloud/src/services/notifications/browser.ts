@@ -6,6 +6,7 @@ import { notificationGroupTag } from "../../contracts/notification-group";
 import { isSafeNotificationTargetHref } from "../../contracts/notification-types";
 import { type BrowserPushSubscription, BrowserPushSubscriptionSchema } from "../../contracts/user-notifications";
 import { decryptSecret, encryptSecret } from "../secrets";
+import { SettingUnreadableError } from "../settings/store";
 import { coreSettings } from "../settings/api";
 import { type NotificationDestination, registerNotificationChannel } from "./channels";
 import { NOTIFICATION_PREVIEW_LIMIT } from "./preview";
@@ -76,10 +77,16 @@ const ensureVapidConfig = (): Promise<{ publicKey: string; privateKey: string }>
   vapidConfigPromise = sql
     .begin(async (tx) => {
       await tx`SELECT pg_advisory_xact_lock(hashtextextended('notifications:web-push-vapid', 0))`;
-      let [publicKey, privateKey] = await Promise.all([
-        coreSettings.get<string>("notifications.web_push_public_key"),
-        coreSettings.get<string>("notifications.web_push_private_key"),
-      ]);
+      const keys = ["notifications.web_push_public_key", "notifications.web_push_private_key"] as const;
+      const states = await Promise.all(keys.map((key) => coreSettings.read<string>(key)));
+      for (const [index, state] of states.entries()) {
+        if (state.stored === "unreadable") {
+          const key = keys[index]!;
+          console.warn(`[notifications] cannot read setting "${key}"; keeping stored VAPID keys unchanged`);
+          throw new SettingUnreadableError(key);
+        }
+      }
+      let [publicKey, privateKey] = states.map((state) => state.value);
       if (!publicKey || !privateKey) {
         const generated = webpush.generateVAPIDKeys();
         publicKey = generated.publicKey;

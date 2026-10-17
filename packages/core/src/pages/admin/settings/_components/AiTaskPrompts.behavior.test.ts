@@ -31,6 +31,7 @@ describe("AI task prompt viewer", () => {
               valueSource: "default",
               resetValueSource: "default",
               isCustom: false,
+              unreadable: false,
               group: "ai",
             },
           ],

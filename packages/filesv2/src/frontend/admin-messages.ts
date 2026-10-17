@@ -116,6 +116,13 @@ export const adminMessages = i18n.define({
       capacity: "Capacity",
       versionBytes: "Version storage",
       saved: "Settings saved.",
+      configurationUnreadable: "The saved configuration cannot be read",
+      configurationUnreadableDetail:
+        "Files cannot decrypt or check its saved configuration, usually because it was saved with a different APP_SECRET. Files runs with the defaults shown here until you act. To replace the saved configuration, enter all values and the Filegate token again, then save. Or reset it to the defaults. Both change the configuration for every Files instance.",
+      resetConfiguration: "Reset configuration",
+      resetConfigurationConfirm:
+        "Delete the saved Files configuration and use the defaults? Storage areas stay off until you configure them again.",
+      resetConfigurationFailed: "The configuration could not be reset.",
       dirtyLeave: "Discard your unsaved settings before leaving this view?",
       emptyArchive: "No archived directories on this page.",
       noEntries: "No entries match this view.",
@@ -254,6 +261,13 @@ export const adminMessages = i18n.define({
       capacity: "Kapazität",
       versionBytes: "Versionsspeicher",
       saved: "Einstellungen gespeichert.",
+      configurationUnreadable: "Die gespeicherte Konfiguration ist nicht lesbar",
+      configurationUnreadableDetail:
+        "Dateien kann die gespeicherte Konfiguration nicht entschlüsseln oder prüfen, meist weil sie mit einem anderen APP_SECRET gespeichert wurde. Bis du handelst, läuft Dateien mit den hier gezeigten Standardwerten. Um die gespeicherte Konfiguration zu ersetzen, gib alle Werte und den Filegate-Token erneut ein und speichere. Oder setze sie auf die Standardwerte zurück. Beides ändert die Konfiguration für alle Dateien-Instanzen.",
+      resetConfiguration: "Konfiguration zurücksetzen",
+      resetConfigurationConfirm:
+        "Die gespeicherte Dateien-Konfiguration löschen und die Standardwerte nutzen? Die Dateibereiche bleiben aus, bis du sie neu konfigurierst.",
+      resetConfigurationFailed: "Die Konfiguration konnte nicht zurückgesetzt werden.",
       dirtyLeave: "Ungespeicherte Einstellungen vor dem Verlassen dieser Ansicht verwerfen?",
       emptyArchive: "Keine archivierten Verzeichnisse auf dieser Seite.",
       noEntries: "Keine Einträge für diese Ansicht.",

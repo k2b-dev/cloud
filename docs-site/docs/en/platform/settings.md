@@ -95,6 +95,39 @@ await app.settings.set("inventory.low_stock_threshold", 10);
 await app.settings.remove("inventory.low_stock_threshold");
 ```
 
+Use `app.settings.read(key)` when the stored state matters. It returns
+`{ value, stored }`, where `stored` is `"none"`, `"readable"`, or `"unreadable"`.
+For an unreadable row, `value` is the environment fallback or default in use.
+The administration list marks it with `unreadable: true` and `isCustom: true`;
+`valueSource` describes the fallback actually in use.
+
+Writes over unreadable rows fail with HTTP 409 `setting_unreadable` by default.
+`SettingUnreadableError`, `SettingRead`, and `StoredSettingState` are exported
+from `@k2b/cloud/services`. To replace a whole value with explicit input, pass
+`{ replaceUnreadable: true }` as the third argument to `app.settings.set()`.
+Never build that replacement by merging over a fallback.
+
+To change part of a value, read with `read()` and refuse an unreadable state:
+
+```ts
+import { SettingUnreadableError } from "@k2b/cloud/services";
+
+// The application declares inventory.connection as a JSON-encoded setting.
+const current = await app.settings.read("inventory.connection");
+if (current.stored === "unreadable") {
+  throw new SettingUnreadableError("inventory.connection");
+}
+const connection = JSON.parse(current.value);
+await app.settings.set("inventory.connection", JSON.stringify({ ...connection, timeout: 30 }));
+```
+
+The store checks again inside the write transaction, so a concurrent unreadable
+row also refuses the write. `coreSettings.read<T>(key)` and
+`coreSettings.set(key, value, options?)` offer the same behavior for platform
+services. The lower-level `settings.set(key, value, db?, options?)` accepts the
+replacement option after an optional transaction; transaction callers invalidate
+the settings cache after commit.
+
 `remove()` deletes the stored override. The next read uses the fallback or
 default.
 

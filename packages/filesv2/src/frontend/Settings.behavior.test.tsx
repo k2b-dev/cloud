@@ -1,0 +1,114 @@
+import { describe, expect, spyOn, test } from "bun:test";
+import { createComponent } from "solid-js";
+import { isServer, render } from "solid-js/web";
+import { createDomTestHarness } from "../../../ui/test/dom";
+import type { PublicConfiguration } from "../contracts";
+
+// #1303: an unreadable saved configuration is named, and reset is an explicit, confirmed action.
+const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+const TIMEOUT = 20_000;
+const area = { enabled: false, root: "cloud", prefix: "", homes: "users", groups: "groups", archive: "archive" };
+const configuration = (unreadable: boolean): PublicConfiguration => ({
+  url: "",
+  cloud: { ...area, autoCreate: false, autoArchive: true },
+  freeipa: { ...area, root: "freeipa" },
+  collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
+  tokenConfigured: false,
+  unreadable,
+});
+
+async function setup(unreadable: boolean) {
+  const dom = createDomTestHarness();
+  const { default: Settings } = await import("./Settings");
+  const { dialogCore } = await import("@k2b/ui");
+  const requests: Array<{ method: string; url: string }> = [];
+  let saved = 0;
+  const fetch = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async (input: unknown, init?: RequestInit) => {
+        requests.push({ method: init?.method ?? "GET", url: String(input instanceof Request ? input.url : input) });
+        return Response.json({ reset: true });
+      },
+      { preconnect: globalThis.fetch.preconnect },
+    ),
+  );
+  const dispose = render(
+    () =>
+      createComponent(Settings, {
+        configuration: configuration(unreadable),
+        availability: { localLinuxEnabled: true, freeipaEnabled: true },
+        onSaved: async () => {
+          saved += 1;
+        },
+        onDirtyChange: () => {},
+      }),
+    dom.root,
+  );
+  await tick();
+  const button = (text: string, scope: ParentNode = dom.document) =>
+    Array.from(scope.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent?.trim() === text);
+  return {
+    ...dom,
+    button,
+    requests,
+    saved: () => saved,
+    cleanup: () => {
+      dialogCore.close();
+      dispose();
+      fetch.mockRestore();
+      dom.cleanup();
+    },
+  };
+}
+
+describe("Files settings with an unreadable saved configuration", () => {
+  if (isServer) {
+    test.skip("requires browser conditions and Solid DOM preload", () => {});
+    return;
+  }
+
+  test(
+    "a readable configuration shows no notice and no reset",
+    async () => {
+      const ui = await setup(false);
+      try {
+        expect(ui.document.querySelector('.k2b-notice-card[data-tone="warning"]')).toBeNull();
+        expect(ui.button("Reset configuration")).toBeUndefined();
+        expect(ui.document.body.textContent).toContain("No token is configured yet.");
+      } finally {
+        ui.cleanup();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    "the notice explains the state and reset deletes only after confirmation",
+    async () => {
+      const ui = await setup(true);
+      try {
+        const notice = ui.document.querySelector<HTMLElement>('.k2b-notice-card[data-tone="warning"]');
+        expect(notice?.textContent).toContain("The saved configuration cannot be read");
+        expect(notice?.textContent).toContain("APP_SECRET");
+        expect(ui.document.body.textContent).toContain("Enter the token again to replace the unreadable saved configuration.");
+
+        ui.button("Reset configuration", notice!)!.click();
+        await tick();
+        const dialog = ui.document.querySelector("dialog");
+        expect(dialog?.textContent).toContain("Delete the saved Files configuration");
+        expect(ui.requests).toEqual([]);
+        const confirm = Array.from(dialog!.querySelectorAll<HTMLButtonElement>("button")).at(-1)!;
+        confirm.click();
+        await tick();
+        await tick();
+        expect(ui.requests).toHaveLength(1);
+        expect(ui.requests[0]!.method).toBe("DELETE");
+        expect(new URL(ui.requests[0]!.url, "http://cloud.test").pathname).toBe("/api/filesv2/admin/configuration");
+        expect(ui.saved()).toBe(1);
+      } finally {
+        ui.cleanup();
+      }
+    },
+    TIMEOUT,
+  );
+});

@@ -13,7 +13,7 @@
 import { redis, sql } from "bun";
 import { decryptValue, encryptValue, getAppSecret } from "./crypto";
 import { resolveSettingPresentation, SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
-import { bulkRead, deleteKey, readKey, writeKey } from "./store";
+import { deleteKey, readKey, readKeyState, readStates, type SettingRead, writeKey } from "./store";
 
 type SqlClient = typeof sql;
 
@@ -187,8 +187,12 @@ export async function get<T = unknown>(key: string): Promise<T> {
  * Write a setting. Pass `db` to run inside a caller's transaction — then the
  * caller must also call `invalidateSettingsCache` once it commits.
  */
-export async function set(key: string, value: unknown, db?: SqlClient): Promise<void> {
-  await writeKey(key, value, db);
+export async function set(key: string, value: unknown, db?: SqlClient, options?: { replaceUnreadable?: boolean }): Promise<void> {
+  await writeKey(key, value, db, options);
+}
+
+export async function read(key: string): Promise<SettingRead> {
+  return readKeyState(key);
 }
 
 export async function remove(key: string, db?: SqlClient): Promise<void> {
@@ -198,20 +202,17 @@ export async function remove(key: string, db?: SqlClient): Promise<void> {
 import type { SettingEntry } from "../../contracts/shared";
 
 export type { SettingEntry } from "../../contracts/shared";
-export { invalidateSettingsCache } from "./store";
+export { invalidateSettingsCache, readStates, SettingUnreadableError } from "./store";
+export type { SettingRead, StoredSettingState } from "./store";
 
 export async function getAll(locale?: string): Promise<SettingEntry[]> {
-  // Determine which keys have a custom row in Postgres (vs. falling back to
-  // env / code default). One indexed scan, then bulk-read all values.
-  const customRows = await sql<{ key: string }[]>`SELECT key FROM settings.entries`;
-  const customKeys = new Set(customRows.map((row) => row.key));
-
   const allKeys = SETTINGS.map((def) => def.key);
-  const values = await bulkRead(allKeys);
+  const values = await readStates(allKeys);
 
   return SETTINGS.map((def) => {
     const presentation = resolveSettingPresentation(def, locale);
-    const isCustom = customKeys.has(def.key);
+    const { value, stored } = values.get(def.key)!;
+    const isCustom = stored !== "none";
     const envFallback = resolveEnvValue(def, "fallback");
     const resetValue = envFallback ?? def.default;
 
@@ -222,12 +223,13 @@ export async function getAll(locale?: string): Promise<SettingEntry[]> {
       description: presentation.description ?? "",
       placeholder: presentation.placeholder,
       group: def.group,
-      value: values.get(def.key),
+      value,
       default: def.default,
       resetValue: def.kind === "secret" ? "" : resetValue,
-      valueSource: isCustom ? "custom" : envFallback === undefined ? "default" : "env",
+      valueSource: stored === "readable" ? "custom" : envFallback === undefined ? "default" : "env",
       resetValueSource: envFallback === undefined ? "default" : "env",
       isCustom,
+      unreadable: stored === "unreadable",
       templateVars: "templateVars" in def ? def.templateVars : undefined,
       options: presentation.options,
       min: "min" in def ? def.min : undefined,

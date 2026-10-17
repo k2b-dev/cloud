@@ -27,6 +27,19 @@ const REDIS_KEY = (k: string) => `settings:${k}`;
 
 type SqlClient = typeof sql;
 
+export type StoredSettingState = "none" | "readable" | "unreadable";
+export type SettingRead = { value: unknown; stored: StoredSettingState };
+
+export class SettingUnreadableError extends HTTPException {
+  readonly code = "setting_unreadable" as const;
+
+  constructor(readonly key: string) {
+    const message = `The stored value of setting "${key}" cannot be read by this application. Replace it with a new value or reset it to the default.`;
+    super(409, { message, res: Response.json({ code: "setting_unreadable", message }, { status: 409 }) });
+    this.name = "SettingUnreadableError";
+  }
+}
+
 /**
  * Forget cached values so every container re-reads on next access.
  *
@@ -70,9 +83,14 @@ const resolveFallback = (def: SettingDef | undefined): unknown => {
  */
 export const readKey = async (key: string): Promise<unknown> => (await bulkRead([key])).get(key);
 
+export const readKeyState = async (key: string): Promise<SettingRead> => (await readStates([key])).get(key)!;
+
+export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unknown>> =>
+  new Map([...(await readStates(keys))].map(([key, read]) => [key, read.value]));
+
 /** One warm MGET; missing rows are cached independently of local env/defaults. */
-export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unknown>> => {
-  const result = new Map<string, unknown>();
+export const readStates = async (keys: readonly string[]): Promise<Map<string, SettingRead>> => {
+  const result = new Map<string, SettingRead>();
   if (keys.length === 0) return result;
   let cached: Array<string | null>;
   try {
@@ -86,12 +104,12 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
   for (const [i, key] of keys.entries()) {
     const value = cached[i] ?? null;
     if (value === MISSING_SETTING) {
-      result.set(key, resolveFallback(SETTINGS_MAP.get(key)));
+      result.set(key, { value: resolveFallback(SETTINGS_MAP.get(key)), stored: "none" });
       continue;
     }
     if (value !== null) {
       try {
-        result.set(key, JSON.parse(value));
+        result.set(key, { value: JSON.parse(value), stored: "readable" });
         continue;
       } catch {
         /* An old/corrupt value or another reader's fill lease. */
@@ -114,12 +132,13 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
           await completeCacheFill(REDIS_KEY(key), fills.get(key) ?? null, MISSING_SETTING, REDIS_TTL_SEC);
           return;
         }
+        result.set(key, { value: resolveFallback(SETTINGS_MAP.get(key)), stored: "unreadable" });
         try {
           const value = await decryptValue(row.value);
           const def = SETTINGS_MAP.get(key);
           const validated = def ? validateSettingValue(def, value) : { ok: true as const, value };
           if (!validated.ok) return;
-          result.set(key, validated.value);
+          result.set(key, { value: validated.value, stored: "readable" });
           await completeCacheFill(REDIS_KEY(key), fills.get(key) ?? null, JSON.stringify(validated.value), REDIS_TTL_SEC);
         } catch {
           /* Preserve legacy undecryptable-row fallback behavior. */
@@ -127,7 +146,7 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
       }),
     );
   }
-  for (const key of keys) if (!result.has(key)) result.set(key, resolveFallback(SETTINGS_MAP.get(key)));
+  for (const key of keys) if (!result.has(key)) result.set(key, { value: resolveFallback(SETTINGS_MAP.get(key)), stored: "none" });
   return result;
 };
 
@@ -184,11 +203,10 @@ export const deleteLegacyKeys = async (extraKnownKeys: readonly string[] = []): 
 /**
  * Encrypt the value, upsert the DB row, invalidate the Redis key.
  *
- * Validation is the caller's responsibility — the typed wrapper API
- * (createSettingsAPI) validates against the declared SettingDef before reaching
- * here. Direct callers must ensure the value matches the setting's kind.
+ * Validate new values and refuse to overwrite unreadable stored rows unless
+ * the caller explicitly replaces them. The row check and write share a transaction.
  */
-export const writeKey = async (key: string, value: unknown, db?: SqlClient): Promise<void> => {
+export const writeKey = async (key: string, value: unknown, db?: SqlClient, options?: { replaceUnreadable?: boolean }): Promise<void> => {
   const def = SETTINGS_MAP.get(key);
   if (!def) throw new Error(`Unknown setting: ${key}`);
   const validated = validateSettingValue(def, value);
@@ -197,12 +215,26 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient): Pro
   const storedValue =
     def.kind === "image" && typeof validated.value === "string" ? stripImageDataUrlMetadata(validated.value) : validated.value;
   const encrypted = await encryptValue(storedValue);
-  await (db ?? sql)`
-    INSERT INTO settings.entries (key, value, updated_at)
-    VALUES (${key}, ${encrypted}, now())
-    ON CONFLICT (key)
-    DO UPDATE SET value = ${encrypted}, updated_at = now()
-  `;
+  const write = async (tx: SqlClient) => {
+    const [row] = await tx<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${key} FOR UPDATE`;
+    if (row && options?.replaceUnreadable !== true) {
+      let readable = false;
+      try {
+        readable = validateSettingValue(def, await decryptValue(row.value)).ok;
+      } catch {
+        // Only the key is exposed by the recovery error.
+      }
+      if (!readable) throw new SettingUnreadableError(key);
+    }
+    await tx`
+      INSERT INTO settings.entries (key, value, updated_at)
+      VALUES (${key}, ${encrypted}, now())
+      ON CONFLICT (key)
+      DO UPDATE SET value = ${encrypted}, updated_at = now()
+    `;
+  };
+  if (db) await write(db);
+  else await sql.begin(write);
 
   // Passing a transaction means the caller owns invalidation, because the row
   // is not visible to anyone else until they commit.

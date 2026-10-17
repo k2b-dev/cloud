@@ -82,6 +82,7 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     url: "http://filegate.test:4000",
     token: "test",
     tokenConfigured: true,
+    unreadable: false,
     cloud: {
       enabled: true,
       root: "cloud",
