@@ -1,6 +1,6 @@
 import { helpResourceUri } from "../src/_internal/help-catalog";
 import type { HelpArticle, HelpReaderFactory } from "../src/services/help";
-import { helpLocaleChain } from "../src/shared/help";
+import { type HelpAccessLevel, type HelpArticleLink, type HelpKind, helpLocaleChain } from "../src/shared/help";
 
 export type FixtureCorpus = {
   appId: string;
@@ -8,7 +8,19 @@ export type FixtureCorpus = {
   appIcon?: string;
   manifestHash: string;
   baseLocale?: string;
-  documents: { id: string; title: string; order: number; markdown: string; description?: string; searchText?: string }[];
+  documents: {
+    id: string;
+    title: string;
+    order: number;
+    markdown: string;
+    description?: string;
+    searchText?: string;
+    kind?: HelpKind;
+    needs?: HelpAccessLevel;
+    next?: string;
+    related?: string[];
+    links?: Record<string, HelpArticleLink>;
+  }[];
   documentsByLocale?: Record<string, FixtureCorpus["documents"]>;
 };
 /** Transport fixtures only. Ranking/locale/publication correctness is tested against real Postgres. */
@@ -35,6 +47,11 @@ export const fixtureHelpReader =
             description: doc.description,
             order: doc.order,
             markdown: doc.markdown,
+            kind: doc.kind ?? "task",
+            needs: doc.needs,
+            next: doc.next,
+            related: doc.related ?? [],
+            links: doc.links ?? {},
           };
         }),
       );

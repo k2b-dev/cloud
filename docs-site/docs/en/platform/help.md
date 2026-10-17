@@ -5,7 +5,7 @@ section: Platform services
 order: 580
 description: Declare app-owned Markdown once for the shared Help UI, full-page Help, Assistant, and MCP.
 tags: [help, markdown, product, agents]
-updated: 2026-10-10
+updated: 2026-10-14
 ---
 
 # In-product Help
@@ -71,11 +71,13 @@ src/help/
         └── inventory-start.help.md
 ```
 
-The base locale is complete and owns the logical article IDs, icons, and order.
+The base locale is complete and owns article IDs and navigation metadata.
 A localized folder may contain only the translated articles available today.
 It owns their title, description, and Markdown body. Keep the same `id`; do not
 create language-specific IDs or duplicate Help registrations. Localized
-frontmatter may omit `icon` and `order`; if repeated, they must match the base.
+frontmatter may omit `icon`, `order`, `kind`, `needs`, `next`, and `related`;
+omitted fields inherit the base value. If repeated, they must match exactly,
+including the order of the `related` list.
 
 Cloud resolves each article through the exact requested locale, its BCP 47
 ancestors, then the base locale. For example, `de-CH` can use a `de-CH` article,
@@ -95,6 +97,7 @@ covers the voice of all product text and translation equivalence.
 ---
 id: inventory-start
 title: Start with Inventory
+kind: start
 icon: ti ti-package
 description: Create and update inventory items.
 order: 10
@@ -104,9 +107,9 @@ order: 10
 
 **First steps**
 
-## Create an item {icon="plus"}
+## Create an item
 
-Open Inventory and choose **New item**.
+Open Inventory and choose **New item**{icon="plus"}.
 ```
 
 | Field | Required | Contract |
@@ -116,30 +119,60 @@ Open Inventory and choose **New item**.
 | `order` | No | Integer; defaults to `100` |
 | `icon` | No | Tabler icon classes for the article |
 | `description` | No | Short search and overview text |
+| `kind` | No | `start`, `task`, `reference`, or `troubleshoot`; defaults to `task` |
+| `needs` | No | One glossary access level: `view`, `edit`, or `manage`; never an app-specific permission |
+| `next` | No | Same-app document ID for the next task; cannot point to itself |
+| `related` | No | Ordered list of `<id>` or `<app>/<id>` references; defaults to `[]`; no duplicates |
 
 The body must not be empty. Articles are sorted by `order`, then by title.
 
-Every level-two heading in a registered application article ends with icon
-metadata:
+Level-two headings need no icon metadata. An optional trailing
+`{icon="plus"}` is removed from the title and ignored by the reader.
+Heading IDs keep the same slugging rules and must be unique.
 
-```md
-## Create an item {icon="plus"}
-```
+### Name keys, labels, and menu paths
 
-Cloud removes the metadata from the visible title and uses it in article
-navigation. Heading IDs must be unique after slugging.
+These forms belong to Help Markdown. Ordinary content Markdown keeps its
+existing syntax.
+
+| Source | Reader |
+| --- | --- |
+| `:kbd[mod+k]` | Key caps for the reader's platform: Ctrl and K, or ⌘ and K on Mac |
+| `**Hide**{icon="eye-off"}` | A label chip with the control's icon; inline Markdown stays supported |
+| `**Space settings → Sharing**` | Two label chips joined by ›, with → for screen readers |
+| `**Space settings → Sharing**{icon="settings"}` | A menu path with the icon on its first chip |
+
+Icon names use lowercase letters, digits, and hyphens. Plain bold text stays
+bold. A shortcut must format to at least one key; invalid shortcuts fail
+startup. Code spans and fenced examples remain literal.
+
+### Link related guidance
+
+Use `[Share](help:inventory-sharing#invite)` for a same-app article and
+`[Reply](help:mail/mail-invitations#reply)` for another app. The reader resolves
+each target in its current published corpus and language, using the same app
+visibility rule as article reads. Resolved links use
+`/help/apps/<app>/<id>#section`. Unknown or invisible targets render only the
+link text and expose no target address. `next` and `related` use this same
+resolution; unresolved entries are omitted. Write `help:` links inline: a reference
+definition, autolink, image, or HTML attribute with a `help:` target fails
+startup. The scheme must be lowercase `help:`; spellings such as `HELP:` fail
+startup. Help syntax that remains unconverted in agent text also fails startup.
 
 ### Use guided blocks
 
-Help supports three guided blocks:
+Help supports these guided blocks:
 
 | Block | Use |
 | --- | --- |
 | `steps` | Ordered task |
 | `reference` | Compact facts or controls |
 | `compare` | Alternatives or differences |
+| `details Question` | Collapsed reasons or special cases; a title is required |
 
-The block contains normal Markdown:
+Start a guided block after a blank line, at the start of the document, or
+after another block. An opener directly after a text line fails startup. The
+block contains normal Markdown:
 
 ```md
 :::steps
@@ -148,6 +181,26 @@ The block contains normal Markdown:
 3. Choose **Create**.
 :::
 ```
+
+Keep the main task short. Put reasons and special cases in details:
+
+```md
+:::details What happens to existing items?
+Inventory keeps the items you already created.
+
+:::steps
+1. Open **Items**.
+2. Choose **Export**{icon="download"}.
+:::
+:::
+```
+
+Details start collapsed. Their full body remains searchable and is given in
+full to agents. They can contain steps, reference, and compare blocks and
+ordinary Markdown, but no other details. A callout inside details fails
+startup: a warning or note belongs where the reader sees it. An opener directly
+after a text line, without a title, without a closing `:::`, or with details
+inside fails startup.
 
 A paragraph containing only bold text becomes an eyebrow. Use it as a short
 label, not another heading.
@@ -251,9 +304,16 @@ Cloud already knows the owning application's ID and base path when it starts.
 `defineHelp()` validates the article shape and creates an immutable source
 declaration. Startup compiles the complete collection, rejects duplicate IDs,
 and calculates its manifest hash before the application advertises Help.
+Same-app IDs in `next`, `related`, and `help:` links must exist in the base
+locale. This includes references prefixed with the owning app ID. Validation
+names the locale, document, and bad reference; code examples are ignored.
+Cross-app references resolve for the reader at read time and do not prevent
+startup. Unknown extra frontmatter fields are stripped. Help reserves `kind`,
+`needs`, `next`, and `related`: an article that uses one of these keys for
+something else fails startup. Third-party articles with only `id`, `title`,
+`icon`, `description`, and `order` keep working.
 
-One Markdown article is limited to 128 KiB. The former 512 KiB limit on the
-combined collection no longer applies, and search text is retained for every
+One Markdown article is limited to 128 KiB. Search text is retained for every
 language. Invalid articles fail startup before the application advertises Help.
 
 Core creates the shared Help schema in Postgres during setup. Applications
@@ -337,8 +397,12 @@ the topic list keeps the typed search, and an address with an unknown article
 shows the topic list. The phone menu or a dialog that closes does not move the
 open article. Other links navigate normally.
 
-The reader adapts to its own width in a dialog, on the full page, or inside an
-application's embedded reader.
+An article starts with its app path, title, and first paragraph as a short
+answer. One chip row shows “You need <level>” and the step count. A text table
+of contents stays at the side in a wide reader and becomes an “On this page”
+menu in a narrow reader. The article ends with one large “Next” tile and
+related articles in their app colour. Authors choose `next`; article order
+only sorts the topic list.
 
 SSR loads the current application's localized article metadata from Postgres.
 The browser receives this manifest and loads article bodies on demand. An
@@ -393,6 +457,27 @@ server that runs the database must keep `pg_textsearch` preloaded.
 relevant sections when a query is supplied. An exact level-two heading selects
 that section. Full article reads in the UI and MCP resources still return the
 complete article.
+
+### Agent text and Copy as Markdown
+
+`read_help`, `cloud__help__read`, MCP resource reads, and the Help API's
+`markdown` field return portable agent text rather than the Markdown source.
+“Copy as Markdown” uses that same field. Search returns metadata only.
+
+| Source | Agent text |
+| --- | --- |
+| `:kbd[mod+k]` in English | `Ctrl+K (⌘K on Mac)` |
+| `:kbd[mod+k]` in German | `Strg+K (⌘K auf dem Mac)` |
+| `:kbd[enter]` | `Enter`: a key without a platform modifier reads by its name |
+| `**Hide**{icon="eye-off"}` | `**Hide**` |
+| `## Hide {icon="eye-off"}` | `## Hide` |
+| `:::details Question` … `:::` | `**Question**`, a blank line, and the full body |
+| `[text](help:mail/mail-invitations#reply)` | `[text](/help/apps/mail/mail-invitations#reply)` when visible; otherwise `text` |
+
+Other locales use English shortcut explanations. Code spans and fenced code
+stay verbatim. Steps, reference, compare, and callout directives remain as
+written. The 7,000-character tool-read limit applies after conversion; MCP
+resources and the Help API return the complete converted article.
 
 ## Who can read Help
 

@@ -1,6 +1,7 @@
 import { type SQL, sql } from "bun";
 import { APP_REGISTRY_TTL_MS } from "../../_internal/registry";
-import { ensureSchema } from "../postgres";
+import type { HelpAccessLevel, HelpKind } from "../../shared/help";
+import { ensureSchema, toPgTextArray } from "../postgres";
 import type { HelpCorpus, HelpMetadata } from "./types";
 
 // One expired app lease of grace after an app can no longer be discovered.
@@ -26,6 +27,15 @@ export const migrateHelp = async (db: SQL = sql): Promise<void> => {
     PRIMARY KEY (app_id, manifest_hash, locale, document_id),
     FOREIGN KEY (app_id, manifest_hash) REFERENCES help.corpora ON DELETE CASCADE
   )`.simple();
+    const columns = await tx`SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'help' AND table_name = 'documents'
+        AND column_name IN ('kind', 'needs', 'next_id', 'related')`;
+    if (columns.length < 4)
+      await tx`ALTER TABLE help.documents
+      ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'task',
+      ADD COLUMN IF NOT EXISTS needs text,
+      ADD COLUMN IF NOT EXISTS next_id text,
+      ADD COLUMN IF NOT EXISTS related text[] NOT NULL DEFAULT '{}'`.simple();
     await tx`CREATE INDEX IF NOT EXISTS help_search_idx ON help.documents USING gin(search_document)`.simple();
   });
   // The operator enables the extension; Help never installs server extensions.
@@ -63,9 +73,9 @@ export const registerHelp = async (corpus: HelpCorpus, db: SQL = sql): Promise<v
       for (const document of documents) {
         const text = `${document.title}\n${document.description ?? ""}\n${document.searchText}`;
         await tx`INSERT INTO help.documents(app_id, manifest_hash, locale, document_id, title, description, icon,
-          sort_order, markdown, search_text, search_config, search_document)
+          sort_order, kind, needs, next_id, related, markdown, search_text, search_config, search_document)
           VALUES (${corpus.appId}, ${corpus.manifestHash}, ${locale}, ${document.id}, ${document.title},
-            ${document.description ?? null}, ${document.icon ?? null}, ${document.order}, ${document.markdown}, ${text}, ${config},
+            ${document.description ?? null}, ${document.icon ?? null}, ${document.order}, ${document.kind}, ${document.needs ?? null}, ${document.next ?? null}, ${toPgTextArray([...document.related])}::text[], ${document.markdown}, ${text}, ${config},
             setweight(to_tsvector(${config}::regconfig, ${document.id + " " + document.title}), 'A') ||
             setweight(to_tsvector(${config}::regconfig, ${document.description ?? ""}), 'B') ||
             setweight(to_tsvector(${config}::regconfig, ${document.searchText}), 'D'))`;
@@ -97,6 +107,10 @@ type Row = {
   description: string | null;
   icon: string | null;
   sort_order: number;
+  kind: HelpKind;
+  needs: HelpAccessLevel | null;
+  next_id: string | null;
+  related: string[];
   markdown?: string;
 };
 export const metadata = (row: Row): HelpMetadata => ({
@@ -109,6 +123,10 @@ export const metadata = (row: Row): HelpMetadata => ({
   description: row.description ?? undefined,
   icon: row.icon ?? undefined,
   order: row.sort_order,
+  kind: row.kind,
+  needs: row.needs ?? undefined,
+  next: row.next_id ?? undefined,
+  related: row.related,
 });
 
 export const hasHelpBm25 = async (db: SQL = sql): Promise<boolean> => {
@@ -130,6 +148,7 @@ export const queryHelp = async (
     limit?: number;
     cursor?: string;
     bm25?: boolean;
+    references?: readonly string[];
   },
   db: SQL = sql,
 ): Promise<Row[]> => {
@@ -145,10 +164,11 @@ export const queryHelp = async (
   const pending = db.unsafe<Row[]>(
     `WITH active AS (
     SELECT * FROM jsonb_to_recordset(($1::text)::jsonb) AS a(app_id text, app_name text, manifest_hash text, locales text[])
-  ) SELECT d.app_id, a.app_name, d.manifest_hash, d.locale, d.document_id, d.title, d.description, d.icon, d.sort_order
+  ) SELECT d.app_id, a.app_name, d.manifest_hash, d.locale, d.document_id, d.title, d.description, d.icon, d.sort_order, d.kind, d.needs, d.next_id, d.related
     ${input.body ? ", d.markdown" : ""}
     FROM help.documents d JOIN active a ON a.app_id=d.app_id AND a.manifest_hash=d.manifest_hash
     WHERE length($2::text) >= 0 AND d.locale=ANY(a.locales)
+      AND ($5::text[] IS NULL OR (d.app_id || '/' || d.document_id)=ANY($5::text[]))
       AND NOT EXISTS (SELECT 1 FROM help.documents preferred
         WHERE preferred.app_id=d.app_id AND preferred.manifest_hash=d.manifest_hash AND preferred.document_id=d.document_id
           AND preferred.locale=ANY(a.locales) AND array_position(a.locales, preferred.locale)<array_position(a.locales, d.locale))
@@ -162,12 +182,13 @@ export const queryHelp = async (
         : ""
     }
       d.app_id COLLATE "C", ${input.cursor !== undefined ? "" : "d.sort_order,"} d.document_id COLLATE "C"
-    ${input.limit !== undefined ? "LIMIT $5" : ""}`,
+    ${input.limit !== undefined ? "LIMIT $6" : ""}`,
     [
       JSON.stringify(selection),
       input.query ?? "",
       input.documentId ?? null,
       input.cursor ?? null,
+      input.references ? toPgTextArray([...input.references]) : null,
       ...(input.limit !== undefined ? [input.limit] : []),
     ],
   );

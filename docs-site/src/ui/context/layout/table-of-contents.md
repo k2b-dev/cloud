@@ -34,6 +34,8 @@ down its visible box becomes active. Before the first heading reaches that
 line, the first item stays active. At the end of scrolling, a visible last
 heading becomes active. `onActiveChange` receives the new ID, or `undefined`
 when the list becomes empty, once per change.
+Pass `contentRoot` as an element or accessor to find headings within that
+element when IDs occur more than once on the page; the default is the document.
 The active section also updates without scrolling when the scroll root, a
 direct child of it, or a heading's parent element changes size, for example
 after an image loads or a disclosure opens.

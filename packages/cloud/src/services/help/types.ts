@@ -1,6 +1,6 @@
 import type { AppRegistryHelpSummary } from "../../contracts/registry";
 import type { RequestActor } from "../../contracts/shared";
-import type { HelpDocumentManifest } from "../../shared/help";
+import type { HelpAccessLevel, HelpArticleLink, HelpDocumentManifest, HelpKind } from "../../shared/help";
 
 export type HelpDocument = {
   id: string;
@@ -8,6 +8,10 @@ export type HelpDocument = {
   icon?: string;
   description?: string;
   order: number;
+  kind: HelpKind;
+  needs?: HelpAccessLevel;
+  next?: string;
+  related: readonly string[];
   markdown: string;
   searchText: string;
 };
@@ -30,8 +34,12 @@ export type HelpMetadata = {
   description?: string;
   icon?: string;
   order: number;
+  kind: HelpKind;
+  needs?: HelpAccessLevel;
+  next?: string;
+  related: readonly string[];
 };
-export type HelpArticle = HelpMetadata & { markdown: string };
+export type HelpArticle = HelpMetadata & { markdown: string; links: Readonly<Record<string, HelpArticleLink>> };
 export type HelpMatch = Pick<HelpMetadata, "appId" | "appName" | "locale" | "documentId" | "title" | "description"> & { kind: "help" };
 export type HelpSearchInput = { query: string; appId?: string; limit?: number };
 export type HelpReadInput = { appId: string; documentId: string };

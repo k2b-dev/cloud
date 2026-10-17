@@ -6188,5 +6188,7 @@
 }
 
 .k2b-ui .k2b-steps { display: flex; flex-direction: column; gap: 0.875rem; margin: 1rem 0 1.25rem; padding: 0; list-style: none; counter-reset: k2b-step calc(var(--k2b-steps-start, 1) - 1); }
+/* Markdown content numbers its own lists; its built rule outranks a plain class selector. */
+.k2b-ui .k2b-content-markdown ol.k2b-steps { padding: 0; list-style: none; }
 .k2b-ui .k2b-steps > li { position: relative; min-height: 2rem; margin: 0; padding: 0.1875rem 0 0 2.875rem; counter-increment: k2b-step; }
 .k2b-ui .k2b-steps > li::before { content: counter(k2b-step); position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 999px; background: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 14%, transparent); color: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 70%, var(--k2b-text)); font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
