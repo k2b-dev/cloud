@@ -44,9 +44,10 @@ function release() {
 
 /**
  * Fit raw image bytes into 1..8 pixel boxes, without enlargement, in one isolated Linux worker (at most two at once).
- * Opaque images use sRGB JPEG q85; transparency uses PNG. Fitting upright sRGB JPEGs pass through unchanged.
+ * Opaque images use sRGB JPEG q85; transparency uses PNG. Fitting upright sRGB JPEGs pass through unchanged after a validation decode.
  * Results follow box order; null means that encoding exceeded maxBytes. Invalid arguments throw; image failures return codes.
- * Input is capped at 64 MiB (one eighth of the 512 MiB data limit); decoded RGBA at 32 MiP (one quarter).
+ * Input is capped at 32 MiB; the largest decoded variant at 16 MiP (64 MiB RGBA, versus about 5.8 MP for A4 at 300 dpi).
+ * Bun itself uses about half the 512 MiB data limit; decodes that exhaust the remaining memory return too_large.
  */
 export async function preparePdfImage(input: PreparePdfImageInput, options: PreparePdfImageOptions = {}): Promise<PreparePdfImageResult> {
   const request = ImageRequest.parse({ boxes: input.boxes, maxBytes: input.maxBytes, timeoutMs: options.timeoutMs });
@@ -81,7 +82,7 @@ export async function preparePdfImage(input: PreparePdfImageInput, options: Prep
         : inputData;
     if (signal.aborted || Date.now() >= deadline) return { ok: false, code: "timed_out" };
     if (data.byteLength > PDF_IMAGE_MAX_INPUT_BYTES) return { ok: false, code: "too_large" };
-    const header = `${JSON.stringify({ ...request, timeoutMs: Math.max(1, deadline - Date.now()) })}\n`;
+    const header = `${JSON.stringify({ ...request, bytes: data.byteLength, timeoutMs: Math.max(1, deadline - Date.now()) })}\n`;
     const child = spawnCanvasWorker(worker, "pdf-image", new Blob([header, data]));
     const stop = () => child.kill("SIGKILL");
     signal.addEventListener("abort", stop, { once: true });

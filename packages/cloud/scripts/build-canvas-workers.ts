@@ -116,7 +116,10 @@ async function smokeImageWorker(entry: string) {
   // A fixed 2x2 RGBA PNG; the build process never loads sharp.
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8DQAMIMMAYAOOgF/REzMMkAAAAASUVORK5CYII=", "base64");
   const child = Bun.spawn([process.execPath, "--no-env-file", entry], {
-    stdin: new Blob([`${JSON.stringify({ boxes: [{ width: 2, height: 2 }], maxBytes: 4096, timeoutMs: 10_000 })}\n`, png]),
+    stdin: new Blob([
+      `${JSON.stringify({ bytes: png.byteLength, boxes: [{ width: 2, height: 2 }], maxBytes: 4096, timeoutMs: 10_000 })}\n`,
+      png,
+    ]),
     stdout: "pipe",
     stderr: "ignore",
     env: { PATH: process.env.PATH },

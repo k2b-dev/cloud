@@ -32,7 +32,7 @@ test("three boxes inspect metadata and decode the source once at the largest nee
   }
 }, 30_000);
 
-test("an all-pass-through call reads metadata without decoding", async () => {
+test("an all-pass-through call validates the JPEG once before writing unchanged bytes", async () => {
   const source = await sharp({ create: { width: 32, height: 16, channels: 3, background: "red" } })
     .jpeg()
     .toBuffer();
@@ -54,7 +54,7 @@ test("an all-pass-through call reads metadata without decoding", async () => {
       },
     );
     expect(result.ok).toBe(true);
-    expect(factory.mock.calls.filter(([input]) => input === source)).toHaveLength(1);
+    expect(factory.mock.calls.filter(([input]) => input === source)).toHaveLength(2);
     expect(written).toEqual([source, source]);
   } finally {
     factory.mockRestore();
@@ -81,9 +81,9 @@ test("re-encodes a fitting JPEG with an embedded colour profile to sRGB", async 
   expect((await sharp(written[0]!).metadata()).hasProfile).toBe(false);
 }, 30_000);
 
-test("rejects an intermediate over 32 MiP before decoding", async () => {
+test("rejects an intermediate over 16 MiP before decoding", async () => {
   // A highly compressible image has modest encoded size but an oversized raw intermediate.
-  const source = await sharp({ create: { width: 8192, height: 4097, channels: 3, background: "red" } })
+  const source = await sharp({ create: { width: 4096, height: 4097, channels: 3, background: "red" } })
     .png()
     .toBuffer();
   const factory = spyOn(sharpModule, "default");
@@ -156,7 +156,7 @@ test("a grey+alpha PNG with a transparent pixel stays PNG with alpha", async () 
   expect(writes).toBe(1);
 });
 
-test("writes pass-throughs before decoding and awaits each write before encoding the next variant", async () => {
+test("validates before pass-through writes and awaits each write before encoding the next variant", async () => {
   const source = await sharp({ create: { width: 32, height: 16, channels: 3, background: "red" } })
     .jpeg()
     .toBuffer();
@@ -179,15 +179,69 @@ test("writes pass-throughs before decoding and awaits each write before encoding
         expect(header.bytes).toBe(bytes.byteLength);
         if (index === 1) expect(bytes).toBe(source);
         const calls = factory.mock.calls.length;
-        expect(calls).toBe(index === 1 ? 1 : index === 0 ? 3 : 4);
+        expect(calls).toBe(index === 1 ? 2 : index === 0 ? 4 : 5);
         await Bun.sleep(1);
         expect(factory.mock.calls).toHaveLength(calls);
       },
     );
     expect(result).toEqual({ ok: true });
     expect(order).toEqual([1, 0, 2]);
-    expect(factory.mock.calls.filter(([input]) => input === source)).toHaveLength(2);
+    expect(factory.mock.calls.filter(([input]) => input === source)).toHaveLength(3);
   } finally {
     factory.mockRestore();
   }
+});
+
+test.each(["out of memory", "insufficient memory", "memory allocation failed", "cannot allocate", "pixel limit exceeded"])(
+  "classifies %s before corrupt-header or unsupported-format messages",
+  async (message) => {
+    const metadata = spyOn(Object.getPrototypeOf(sharp()), "metadata").mockRejectedValueOnce(
+      new Error(`Input buffer has corrupt header: ${message}; unsupported image format`),
+    );
+    let writes = 0;
+    try {
+      expect(
+        await prepareImageVariants(
+          new Uint8Array([1]),
+          {
+            boxes: [{ width: 8, height: 8 }],
+            maxBytes: 1000,
+            timeoutMs: 30_000,
+          },
+          async () => {
+            writes++;
+          },
+        ),
+      ).toEqual({ ok: false, code: "too_large" });
+      expect(writes).toBe(0);
+    } finally {
+      metadata.mockRestore();
+    }
+  },
+);
+
+test("a corrupt JPEG writes no pass-through records, even with several fitting boxes", async () => {
+  const jpeg = await sharp({ create: { width: 800, height: 600, channels: 3, background: "red" } })
+    .jpeg()
+    .toBuffer();
+  const source = jpeg.subarray(0, Math.floor(jpeg.byteLength / 3));
+  let writes = 0;
+  expect(
+    await prepareImageVariants(
+      source,
+      {
+        boxes: [
+          { width: 2008, height: 2900 },
+          { width: 800, height: 600 },
+          { width: 8, height: 8 },
+        ],
+        maxBytes: 1_000_000,
+        timeoutMs: 30_000,
+      },
+      async () => {
+        writes++;
+      },
+    ),
+  ).toEqual({ ok: false, code: "unreadable" });
+  expect(writes).toBe(0);
 });

@@ -1,5 +1,5 @@
 // Standalone subprocess. No server imports or application credentials.
-import { ImageRequest, PDF_IMAGE_MAX_INPUT_BYTES, readImageFrame } from "./image-protocol";
+import { readImageFrame } from "./image-protocol";
 import { prepareImageVariants } from "./image-variants";
 
 const write = (chunk: string | Uint8Array) =>
@@ -10,12 +10,8 @@ const write = (chunk: string | Uint8Array) =>
 const expire = () => process.exit(1);
 let timer = setTimeout(expire, 240_000);
 try {
-  let frame: Awaited<ReturnType<typeof readImageFrame>> | undefined = await readImageFrame(
-    Bun.stdin.stream(),
-    4096,
-    PDF_IMAGE_MAX_INPUT_BYTES,
-  );
-  const request = ImageRequest.parse(frame.header);
+  let frame: Awaited<ReturnType<typeof readImageFrame>> | undefined = await readImageFrame(Bun.stdin.stream());
+  const request = frame.header;
   clearTimeout(timer);
   timer = setTimeout(expire, request.timeoutMs);
   const pending = prepareImageVariants(frame.body, request, async (index, header, bytes) => {

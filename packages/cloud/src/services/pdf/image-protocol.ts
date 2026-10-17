@@ -1,7 +1,10 @@
 import { z } from "zod";
 
-/** One eighth of the worker's 512 MiB data limit; pixels and encoders share the rest. */
-export const PDF_IMAGE_MAX_INPUT_BYTES = 64 * 1024 * 1024;
+/**
+ * Bun already reserves about 270..296 MiB of the 512 MiB data limit. A single 32 MiB input plus 64 MiB RGBA
+ * leaves about 120..146 MiB for codecs and temporary buffers. Notebooks defaults to 10 MB attachments.
+ */
+export const PDF_IMAGE_MAX_INPUT_BYTES = 32 * 1024 * 1024;
 /** Bound the number of encoders and the output envelope per call. */
 export const PDF_IMAGE_MAX_BOXES = 8;
 export const ImageBox = z.object({ width: z.number().int().min(1).max(16383), height: z.number().int().min(1).max(16383) });
@@ -22,6 +25,8 @@ export const ImageResponse = z.discriminatedUnion("ok", [
   z.strictObject({ ok: z.literal(true) }),
   z.strictObject({ ok: z.literal(false), code: ImageErrorCode }),
 ]);
+
+const ImageFrameHeader = ImageRequest.extend({ bytes: z.number().int().min(0).max(PDF_IMAGE_MAX_INPUT_BYTES) });
 
 const ImageRecord = z.union([ImageVariantHeader.extend({ index: z.number().int().min(0) }).strict(), ImageResponse]);
 type ImageVariant = { data: Blob; type: "image/jpeg" | "image/png"; width: number; height: number };
@@ -102,37 +107,37 @@ export async function readImageRecords(
   }
 }
 
-/** Read one bounded JSON line followed by a bounded binary body. */
-export async function readImageFrame(stream: ReadableStream<Uint8Array>, headerLimit: number, bodyLimit: number) {
+/** Read a 4 KiB JSON header, then fill one allocation of exactly the declared input length. */
+export async function readImageFrame(stream: ReadableStream<Uint8Array>) {
   const reader = stream.getReader();
   const headerChunks: Uint8Array[] = [];
-  const bodyChunks: Uint8Array[] = [];
+  let body: Uint8Array | undefined;
   let headerBytes = 0;
   let bodyBytes = 0;
-  let header: unknown;
-  let foundHeader = false;
+  let header: z.infer<typeof ImageFrameHeader> | undefined;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       let chunk = value;
-      if (!foundHeader) {
+      if (!header) {
         const newline = chunk.indexOf(10);
         const part = newline < 0 ? chunk : chunk.subarray(0, newline);
         headerBytes += part.byteLength;
-        if (headerBytes > headerLimit) throw new Error("Image frame header exceeds its limit.");
+        if (headerBytes > 4096) throw new Error("Image frame header exceeds its limit.");
         headerChunks.push(part);
         if (newline < 0) continue;
-        header = JSON.parse(Buffer.concat(headerChunks).toString("utf8"));
-        foundHeader = true;
+        header = ImageFrameHeader.parse(JSON.parse(Buffer.concat(headerChunks, headerBytes).toString("utf8")));
+        body = new Uint8Array(header.bytes);
         chunk = chunk.subarray(newline + 1);
       }
       bodyBytes += chunk.byteLength;
-      if (bodyBytes > bodyLimit) throw new Error("Image frame body exceeds its limit.");
-      bodyChunks.push(chunk);
+      if (bodyBytes > body!.byteLength) throw new Error("Image frame body exceeds its declared length.");
+      body!.set(chunk, bodyBytes - chunk.byteLength);
     }
-    if (!foundHeader) throw new Error("Missing image frame header.");
-    return { header, body: Buffer.concat(bodyChunks, bodyBytes) };
+    if (!header || !body) throw new Error("Missing image frame header.");
+    if (bodyBytes !== body.byteLength) throw new Error("Truncated image frame body.");
+    return { header, body };
   } catch (error) {
     await reader.cancel().catch(() => {});
     throw error;

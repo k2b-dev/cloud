@@ -5,8 +5,11 @@ import type { ImageRequest, ImageResponse, ImageVariantHeader } from "./image-pr
 sharp.concurrency(1);
 sharp.cache(false);
 
-/** 32 MiP of RGBA is 128 MiB, a quarter of the worker's 512 MiB data limit. */
-const MAX_DECODED_PIXELS = 32 * 1024 * 1024;
+/**
+ * 16 MiP is 64 MiB RGBA; A4 at 300 dpi needs about 5.8 MP. With 270..296 MiB for Bun and 32 MiB for input,
+ * about 120..146 MiB of the 512 MiB limit remains for codecs and temporary buffers. Some source decodes need more.
+ */
+const MAX_DECODED_PIXELS = 16 * 1024 * 1024;
 const MAX_SOURCE_PIXELS = 268402689; // sharp's unchanged default limitInputPixels.
 
 const fit = (width: number, height: number, box: { width: number; height: number }) => {
@@ -14,21 +17,16 @@ const fit = (width: number, height: number, box: { width: number; height: number
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 };
 
-/** Worker-only: emit each encoding before creating the next; never retain the source after its single decode. */
+/** Worker-only: validate pass-throughs, decode once for resized variants, then emit encodings sequentially. */
 export async function prepareImageVariants(
   source: Uint8Array | undefined,
   request: z.infer<typeof ImageRequest>,
   write: (index: number, header: z.infer<typeof ImageVariantHeader>, bytes: Uint8Array) => Promise<void>,
 ): Promise<z.infer<typeof ImageResponse>> {
+  let identified = false;
   try {
-    const metadata = await sharp(source)
-      .metadata()
-      .catch((error: unknown) => {
-        // An unidentified byte stream is unreadable; a recognized but missing codec is unsupported.
-        if (error instanceof Error && error.message.toLowerCase().includes("unsupported image format"))
-          throw new Error("Unidentified image bytes.");
-        throw error;
-      });
+    const metadata = await sharp(source).metadata();
+    identified = true;
     if (
       !["jpeg", "png", "webp", "gif", "tiff"].includes(metadata.format) &&
       !(metadata.format === "heif" && metadata.compression === "av1")
@@ -52,6 +50,8 @@ export async function prepareImageVariants(
         height <= box.height &&
         source!.byteLength <= request.maxBytes,
     );
+    // Metadata alone accepts truncated JPEGs. Validate once with default failOn before emitting any unchanged bytes.
+    if (passthrough.some(Boolean)) await sharp(source).resize(8, 8, { fit: "inside" }).toBuffer();
     for (let index = 0; index < sizes.length; index++) {
       if (!passthrough[index]) continue;
       await write(index, { type: "image/jpeg", width, height, bytes: source!.byteLength }, source!);
@@ -61,8 +61,9 @@ export async function prepareImageVariants(
     const largestIndex = needed.reduce((a, b) => (sizes[a]!.width * sizes[a]!.height >= sizes[b]!.width * sizes[b]!.height ? a : b));
     const largest = sizes[largestIndex]!;
     if (largest.width * largest.height > MAX_DECODED_PIXELS) return { ok: false, code: "too_large" };
-    const decoded = await sharp(source)
-      .autoOrient()
+    // Even a no-op autoOrient disables shrink-on-load for some codecs, forcing a full-resolution decode.
+    const needsOrientation = metadata.orientation !== undefined && metadata.orientation >= 2 && metadata.orientation <= 8;
+    const decoded = await (needsOrientation ? sharp(source).autoOrient() : sharp(source))
       // Fit the original box once: fitting already rounded dimensions can shrink an extra pixel.
       .resize({ ...request.boxes[largestIndex]!, fit: "inside", withoutEnlargement: true })
       .toColourspace("srgb")
@@ -97,9 +98,13 @@ export async function prepareImageVariants(
     return { ok: true };
   } catch (error) {
     const message = error instanceof Error ? error.message.toLowerCase() : "";
-    const code = message.includes("pixel limit")
+    // Codec allocation errors can also mention a corrupt header or unsupported format. Memory takes precedence.
+    // Unidentified byte streams are unreadable; a recognized but missing codec is unsupported.
+    const code = ["out of memory", "insufficient memory", "memory allocation", "cannot allocate", "pixel limit"].some((part) =>
+      message.includes(part),
+    )
       ? "too_large"
-      : message.includes("unsupported image format") || message.includes("compression format has not been built in")
+      : (identified && message.includes("unsupported image format")) || message.includes("compression format has not been built in")
         ? "unsupported_format"
         : "unreadable";
     return { ok: false, code };

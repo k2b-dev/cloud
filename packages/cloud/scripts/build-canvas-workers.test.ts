@@ -111,7 +111,10 @@ runtime("canvas worker packaging", () => {
       "base64",
     );
     const child = Bun.spawn([process.execPath, "--no-env-file", join(canvas, "image-worker.js")], {
-      stdin: new Blob([`${JSON.stringify({ boxes: [{ width: 2, height: 2 }], maxBytes: 4096, timeoutMs: 10_000 })}\n`, png]),
+      stdin: new Blob([
+        `${JSON.stringify({ bytes: png.byteLength, boxes: [{ width: 2, height: 2 }], maxBytes: 4096, timeoutMs: 10_000 })}\n`,
+        png,
+      ]),
       stdout: "pipe",
       stderr: "pipe",
       env: { PATH: process.env.PATH },
