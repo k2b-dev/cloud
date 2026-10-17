@@ -1,6 +1,22 @@
 import { sql } from "bun";
 import { backfillShortIds, type ShortIdTable } from "./lib/short-id";
 
+/** Repair existing user claims on every start; service-account claims have no assignee. */
+export const backfillClaimAssignees = async (db = sql): Promise<number> => {
+  const added = await db`
+    INSERT INTO spaces.item_assignees (item_id, user_id)
+    SELECT tw.item_id, u.id
+    FROM spaces.task_work tw
+    JOIN auth.users u ON u.id = CASE
+      WHEN tw.claim->'actor'->>'kind' = 'user' THEN (tw.claim->'actor'->>'id')::uuid
+    END
+    WHERE tw.claim IS NOT NULL AND tw.claim->'actor'->>'kind' = 'user'
+    ON CONFLICT DO NOTHING
+  `;
+  if (added.count > 0) console.log(`  ✓ spaces claim assignees backfill: ${added.count} task(s)`);
+  return added.count;
+};
+
 export const migrate = async (): Promise<void> => {
   await sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`.simple();
   await sql`CREATE EXTENSION IF NOT EXISTS btree_gist`.simple();
@@ -536,6 +552,7 @@ export const migrate = async (): Promise<void> => {
     ON spaces.item_assignees(user_id)
   `.simple();
   console.log("  ✓ spaces.item_assignees table");
+  await backfillClaimAssignees();
 
   await sql`
     CREATE TABLE IF NOT EXISTS spaces.item_tags (

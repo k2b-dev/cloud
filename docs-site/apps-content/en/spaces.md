@@ -62,6 +62,7 @@ When the installation runs the
 page and, when there is room, in its tab bar for people with the `user` role. Guests do not see it.
 The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
 **Upcoming** lists with their counts, across every Space you can read.
+Tasks you claim also count as yours in **For me**.
 
 - Each row shows the title, the Space with its color, and the deadline or, for
   an event, its time or **All day**. An overdue deadline is red.
@@ -407,17 +408,18 @@ latest progress note as **Latest status** and the latest result as **Last
 result**, below the **Assigned** list; reopening preserves the result. Earlier
 notes are recorded in task activity.
 
-A claim says who is working on a task right now; assignment says who is
-responsible, and the Kanban column stays the only status. People claim from the
+Assignees are responsible for a task. Claiming as a person also assigns you;
+the claim is the working state of one assignee. Releasing your own claim keeps
+you assigned. **Assigned to me** includes tasks you claimed, and
+**Unassigned** excludes tasks a person claimed. Service accounts cannot be
+assignees. The Kanban column stays the only status. People claim from the
 board card or the task details with **I'm on it** and release with a second
 click, optionally leaving a handoff note that is saved as progress. In any
 column, the board card puts the holder first in its avatar stack with a green
-ring, shows them once even when they are also assigned, and never hides them in
-the `+N` overflow. In the task details, the holder leads the **Assigned** list
-in the same row style with the green ring and the time they started working.
-An assigned holder appears once; a holder who is not assigned, such as a
-service account, still leads and is marked as not assigned. People and service
-accounts render the same way.
+ring, shows them once, and never hides them in the `+N` overflow. In the task
+details, the holder leads the **Assigned** list in the same row style with the
+green ring and the time they started working. A person holding a claim appears
+once. A service account still leads and is marked as not assigned.
 
 Claims coordinate work; they do not lock it. A claim guards completion, not the
 column: anyone who can edit the Space can move a claimed task between open
@@ -427,15 +429,27 @@ and completing ends the claim; the web UI sends it for your own claim. A
 wormhole transfer ends the claim too, because the task leaves the Space, so it
 needs the holder's claim ID in the same way. Anyone with write access may take
 over someone else's claim. In the task details, **Take over** ends the exact
-observed claim and claims the task for you. If someone else claimed a task,
-completing or reopening it from the board, the list, the calendar tray, or the
-details, or sending it through a wormhole, asks once, for example "Claimed by
-Jana Berger – take over and complete?", and then takes the claim over and makes
-the change in one step. Cancel leaves the task, and the card, where they were.
-Task activity records who took a claim over from whom. The previous holder's
-next progress, release, or completion call with the ended claim ID gets `409`
-"Task claim is no longer active", also when someone has claimed the task again
-since.
+observed claim and claims the task for you. For people, this moves the claim
+and assignment together: the previous holder is removed from the assignees,
+and you are assigned. Releasing someone else's claim with force also removes
+that person's assignment, even without a new claim.
+
+Removing the working person from **Assigned** ends their claim. Removing
+someone else asks once, for example "Jana Berger is working on this – remove
+them and end their claim?". A stale assignee list from a client that has not
+seen the new claim is refused with `409`; no fields change. API updates need
+the holder's `claimId`, plus `force` for someone else's claim. CLI `assign` and
+`set`, and the `task.update` and `event.update` capabilities, require you to
+release the claim first.
+
+If someone else claimed a task, completing or reopening it from the board, the
+list, the calendar tray, or the details, or sending it through a wormhole,
+asks once, for example "Claimed by Jana Berger – take over and complete?", and
+then takes the claim over and makes the change in one step. Cancel leaves the
+task, and the card, where they were. Task activity records who took a claim
+over from whom. The previous holder's next progress, release, or completion
+call with the ended claim ID gets `409` "Task claim is no longer active", also
+when someone has claimed the task again since.
 
 Use `cld spaces ls <space-id> --ready --json` to find open tasks without
 active blockers. Read `show <item> --context` before starting, then claim the task

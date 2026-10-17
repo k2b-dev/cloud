@@ -848,7 +848,10 @@ function spacesCommands(locale?: string) {
         },
       }),
       command("set", {
-        summary: t({ en: "Change item fields", de: "Felder eines Eintrags ändern" }),
+        summary: t({
+          en: "Change item fields; release an active claim before removing its holder from assignees (409)",
+          de: "Eintragsfelder ändern; vor dem Entfernen der arbeitenden Person ihre aktive Übernahme freigeben (409)",
+        }),
         args: itemArg,
         flags: {
           title: flag.string({ description: t({ en: "Title", de: "Titel" }) }),
@@ -856,7 +859,10 @@ function spacesCommands(locale?: string) {
           clearEstimate: flag.boolean({ name: "clear-estimate", description: t({ en: "Remove the estimate", de: "Schätzung entfernen" }) }),
           clearAssignees: flag.boolean({
             name: "clear-assignees",
-            description: t({ en: "Remove all assignees", de: "Alle Zuweisungen entfernen" }),
+            description: t({
+              en: "Remove all assignees; release an active claim first (409)",
+              de: "Alle Zuweisungen entfernen; eine aktive Übernahme zuerst freigeben (409)",
+            }),
           }),
           clearTags: flag.boolean({ name: "clear-tags", description: t({ en: "Remove all tags", de: "Alle Schlagwörter entfernen" }) }),
         },
@@ -960,7 +966,10 @@ function spacesCommands(locale?: string) {
         }),
       ),
       command("assign", {
-        summary: t({ en: "Assign an item to one person, or to nobody", de: "Einen Eintrag einer Person oder niemandem zuweisen" }),
+        summary: t({
+          en: "Assign to one person or nobody; release an active claim before removing its holder (409)",
+          de: "Einer Person oder niemandem zuweisen; vor dem Entfernen die aktive Übernahme freigeben (409)",
+        }),
         args: {
           ...itemArg,
           user: arg.required({
@@ -1202,8 +1211,8 @@ function spacesCommands(locale?: string) {
       }),
       command("claim", {
         summary: t({
-          en: "Claim an open, unblocked task for a worker",
-          de: "Eine offene, unblockierte Aufgabe für einen Worker übernehmen",
+          en: "Claim an open, unblocked task; claiming as a person also assigns you",
+          de: "Eine offene, unblockierte Aufgabe übernehmen; als Person wirst du auch zugewiesen",
         }),
         args: itemArg,
         flags: {
@@ -1219,14 +1228,17 @@ function spacesCommands(locale?: string) {
         },
       }),
       command("release", {
-        summary: t({ en: "Release a task claim", de: "Eine Aufgabenübernahme freigeben" }),
+        summary: t({
+          en: "Release your task claim; you stay assigned",
+          de: "Deine Aufgabenübernahme freigeben; du bleibst zugewiesen",
+        }),
         args: itemArg,
         flags: {
           claimId: flag.string({ name: "claim-id", required: true, description: t({ en: "Claim ID", de: "Übernahme-ID" }) }),
           force: flag.boolean({
             description: t({
-              en: "Take over the exact observed claim of another worker",
-              de: "Die genau beobachtete Übernahme einer anderen Person übernehmen",
+              en: "Release another worker's exact claim; also remove their assignment if they are a person",
+              de: "Die genaue Übernahme eines anderen Kontos freigeben; bei einer Person auch ihre Zuweisung entfernen",
             }),
           }),
         },

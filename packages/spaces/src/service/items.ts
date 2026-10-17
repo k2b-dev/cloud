@@ -1652,6 +1652,15 @@ export const update = async (params: {
     `;
     if (!locked) return { ok: false, error: "Item not found", status: 404 };
 
+    // Claim writes also hold this row lock. Refuse stale assignee replacements before any write.
+    const { claim } = await taskWork.read(id, tx);
+    const dropsClaimHolder = claim?.actor.kind === "user" && data.assigneeIds !== undefined && !data.assigneeIds.includes(claim.actor.id);
+    let takenOver: Awaited<ReturnType<typeof taskWork.checkClaim>> | null = null;
+    if (dropsClaimHolder) {
+      takenOver = await taskWork.checkClaim(id, params.actor ?? systemActor, data.claimId, tx, data.force);
+      if (!takenOver.ok) return takenOver;
+    }
+
     const current = mapToItem(locked);
     const columnId = data.columnId ?? current.columnId;
     const title = data.title ?? current.title;
@@ -1681,7 +1690,7 @@ export const update = async (params: {
         exdate: recurrence.exdate.map((value) => shiftIsoInstant(value, seriesShiftMilliseconds)),
       };
     }
-    if (!current.startsAt && !current.endsAt && (startsAt || endsAt) && (await taskWork.read(id, tx)).claim)
+    if (!current.startsAt && !current.endsAt && (startsAt || endsAt) && claim)
       return { ok: false, error: "Release the task claim before converting it to an event", status: 409 };
     if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
       return { ok: false, error: "End time must be after start time", status: 400 };
@@ -1767,7 +1776,13 @@ export const update = async (params: {
     if (!updated) return { ok: false, error: "Item not found", status: 404 };
 
     if (data.assigneeIds !== undefined) {
+      if (dropsClaimHolder) await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
       await replaceItemAssignees(tx, id, data.assigneeIds);
+      if (takenOver?.ok && takenOver.data)
+        await taskWork.recordTakeOver(
+          { spaceId: current.spaceId, itemId: id, itemTitle: current.title, actor: params.actor ?? systemActor, claim: takenOver.data },
+          tx,
+        );
     }
 
     if (data.tagIds !== undefined) {
@@ -2382,6 +2397,8 @@ export const setAssignees = async (params: {
   id: string;
   userIds: string[];
   actor?: SpaceActivityIdentity;
+  claimId?: string;
+  force?: boolean;
 }): Promise<MutationResult<void>> => {
   const { id, userIds } = params;
 
@@ -2399,6 +2416,17 @@ export const setAssignees = async (params: {
       SELECT space_id, title FROM spaces.items WHERE id = ${id} FOR UPDATE
     `;
     if (!current) return { ok: false, error: "Item not found", status: 404 };
+    const { claim } = await taskWork.read(id, tx);
+    if (claim?.actor.kind === "user" && !userIds.includes(claim.actor.id)) {
+      const check = await taskWork.checkClaim(id, params.actor ?? systemActor, params.claimId, tx, params.force);
+      if (!check.ok) return check;
+      await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
+      if (check.data)
+        await taskWork.recordTakeOver(
+          { spaceId: current.space_id, itemId: id, itemTitle: current.title, actor: params.actor ?? systemActor, claim: check.data },
+          tx,
+        );
+    }
     await replaceItemAssignees(tx, id, userIds);
     await activity.record(
       {
