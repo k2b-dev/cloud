@@ -4848,16 +4848,16 @@
 .k2b-ui .k2b-reference[data-reference="task"] { --k2b-reference-icon: var(--k2b-reference-task); }
 
 /* Typed chips (`ReferenceChip`) in a sentence: a little smaller than the
-   text around them. A short chip never breaks; a long one wraps inside its
-   fill. Only a link darkens on hover. A thing that is gone is struck
-   through and never a link. */
+   text around them. A chip moves to the next line as a whole and wraps
+   inside its fill only when it is wider than the line itself, so it never
+   overflows. Its tighter line height keeps the sentence's line spacing. Only
+   a link darkens on hover. A thing that is gone is struck through and never
+   a link. */
 .k2b-ui .k2b-reference-chip {
+  display: inline-block;
+  max-width: 100%;
   font-size: 0.94em;
-  white-space: nowrap;
-}
-
-.k2b-ui .k2b-reference-chip[data-long="true"] {
-  white-space: normal;
+  line-height: 1.3;
 }
 
 .k2b-ui .k2b-reference-chip:not(a):hover {

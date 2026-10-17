@@ -18,6 +18,8 @@ declare global {
     __mark: () => void;
     __errors: string[];
     __calls: number;
+    __request: () => void;
+    __reopen: () => void;
   }
 }
 
@@ -35,6 +37,11 @@ function Fixture() {
   window.__calls = 0;
   window.__mark = () => setMark("added");
   window.__check = () => setCurrent("checkfail");
+  window.__request = () => {
+    setCurrent("requested");
+    setState("decided");
+  };
+  window.__reopen = () => setState("open");
   window.__fail = () => {
     setCurrent("failed");
     setState("decided");
@@ -60,6 +67,12 @@ function Fixture() {
           </Button>
         </>
       ),
+    },
+    requested: {
+      tone: "waiting",
+      text: "Asked the managers.",
+      // Leaves the question decided, as an action that opens something elsewhere does.
+      action: { label: "Open the request", onSelect: () => {} },
     },
     failed: {
       tone: "error",
@@ -156,7 +169,8 @@ function Fixture() {
         state="open"
         sentence={
           <>
-            Share <ReferenceChip kind="object" title="四半期報告書の最終版と全ての添付資料" icon="ti ti-folder" href="#cjk" />?
+            Share <ReferenceChip kind="object" title="四半期報告書の最終版と全ての添付資料" icon="ti ti-folder" href="#cjk" /> and{" "}
+            <ReferenceChip kind="object" title={"W".repeat(30)} icon="ti ti-file" href="#wide" />?
           </>
         }
         reason={{ text: "A long answer still fits a phone." }}

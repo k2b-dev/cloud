@@ -267,6 +267,10 @@ describe("ReferenceChip", () => {
     expect(time.querySelector("time")!.getAttribute("data-kind")).toBe("time");
     expect(time.querySelector("time")!.textContent).toBe("Friday");
   });
+  test("never marks a chip as long: it wraps by layout, not by a character count", () => {
+    const body = render(() => createComponent(ReferenceChip, { kind: "object", title: "W".repeat(60) }));
+    expect(body.firstElementChild!.hasAttribute("data-long")).toBe(false);
+  });
   test("60-character titles show 40 graphemes, preserve .pdf and retain the full accessible title", () => {
     const title = `${"a".repeat(56)}.pdf`;
     const body = render(() => createComponent(ReferenceChip, { kind: "object", title, href: "/file" }));
@@ -276,26 +280,6 @@ describe("ReferenceChip", () => {
     expect(visible.endsWith(".pdf")).toBe(true);
     expect(chip.querySelector(".k2b-sr-only")!.textContent).toBe(title);
     expect(chip.title).toBe(title);
-  });
-  test("data-long begins above 30 visible characters", () => {
-    for (const length of [30, 31, 60]) {
-      const body = render(() => createComponent(ReferenceChip, { kind: "object", title: "a".repeat(length) }));
-      expect(body.firstElementChild!.getAttribute("data-long")).toBe(length > 30 ? "true" : null);
-    }
-  });
-  // Wide characters and emoji count twice, so a chip of 16 of them already wraps instead of overflowing a phone.
-  test("data-long weighs wide characters and emoji by their width, never by UTF-16 length", () => {
-    for (const [title, long] of [
-      ["👩🏽‍💻".repeat(15), false],
-      ["👩🏽‍💻".repeat(16), true],
-      ["報".repeat(15), false],
-      ["報".repeat(16), true],
-      ["a".repeat(14) + "報".repeat(8), false],
-      ["a".repeat(14) + "報".repeat(9), true],
-    ] as const) {
-      const body = render(() => createComponent(ReferenceChip, { kind: "object", title }));
-      expect(body.firstElementChild!.getAttribute("data-long")).toBe(long ? "true" : null);
-    }
   });
   test("truncateMiddle leaves short and exact strings alone, keeps endings and whole graphemes", () => {
     expect(truncateMiddle("short")).toBe("short");

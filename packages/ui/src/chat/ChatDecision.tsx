@@ -56,7 +56,7 @@ export type ChatDecisionProps = {
 };
 
 /** What an outcome inside a question needs from it: whether it was just answered here, and a link press inside it. */
-const DecisionScope = createContext<{ answered: () => boolean; pressed: () => void }>();
+const DecisionScope = createContext<{ answered: () => boolean; pressed: () => void; released: () => void }>();
 
 const reasonIcon = (reason: ChatDecisionReason) => reason.icon ?? "ti ti-info-circle";
 
@@ -75,7 +75,16 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
   const [answeredHere, setAnsweredHere] = createSignal(false);
   const [arrive, setArrive] = createSignal(false);
   let reopenedHere = false;
-  const scope = { answered: answeredHere, pressed: () => (reopenedHere = true) };
+  // A press counts only while its action runs: a reopen from elsewhere later must not take the focus.
+  const scope = {
+    answered: answeredHere,
+    pressed: () => {
+      reopenedHere = true;
+    },
+    released: () => {
+      reopenedHere = false;
+    },
+  };
 
   // Read once: an object literal from the host builds its JSX again on every read.
   const reason = createMemo(() => props.unavailable ?? props.reason);
@@ -304,11 +313,14 @@ export function ChatOutcome(props: ChatOutcomeProps): JSX.Element {
                                   .catch((error: unknown) => props.onActionError?.(error))
                                   .finally(() => {
                                     pending = false;
+                                    scope?.released();
                                   });
+                                return;
                               }
                             } catch (error) {
                               props.onActionError?.(error);
                             }
+                            scope?.released();
                           }}
                         >
                           {action().label}

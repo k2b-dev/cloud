@@ -261,3 +261,17 @@ test("marking a line later keeps its retained children in place", async () => {
     await page.close();
   }
 });
+
+test("a reopen from elsewhere after an unrelated outcome action leaves the focus alone", async () => {
+  const page = await open();
+  try {
+    await page.evaluate(() => window.__request());
+    await page.getByRole("button", { name: "Open the request", exact: true }).click();
+    await page.evaluate(() => window.__reopen());
+    const sentence = page.locator(".k2b-chat-decision__sentence").first();
+    expect(await sentence.evaluate((e) => e === document.activeElement)).toBe(false);
+    expect(await sentence.getAttribute("data-arrive")).toBeNull();
+  } finally {
+    await page.close();
+  }
+});
