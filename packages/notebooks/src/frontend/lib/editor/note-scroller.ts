@@ -30,9 +30,10 @@ const lockHeightWhileRendering = ViewPlugin.fromClass(
     constructor(private readonly view: EditorView) {}
 
     // Plugins update right before CodeMirror's DOM update, with the height it knows from its height map.
-    update(update: ViewUpdate) {
-      const content = update.view.contentDOM;
-      content.style.minHeight = `${update.view.contentHeight}px`;
+    // CSS pixels, as in CodeMirror's own lock.
+    update({ view }: ViewUpdate) {
+      const content = view.contentDOM;
+      content.style.minHeight = `${view.contentHeight / view.scaleY}px`;
       void getComputedStyle(content).minHeight;
       // An update that draws nothing ends without `docViewUpdate`.
       queueMicrotask(() => this.release());
