@@ -937,6 +937,29 @@ test(`${browserName}: Circle places all 49 notes on one ring with a band for eve
   }
 }, 30_000);
 
+for (const [notebook, viewport] of [
+  ["hand01", { width: 390, height: 844 }],
+  ["big001", { width: 1440, height: 900 }],
+] as const) {
+  test(`${browserName}: Circle pointer targets reach the note under every dot for ${notebook} at ${viewport.width}`, async () => {
+    const page = await open(graphPath(notebook, "&display=circle"), viewport);
+    try {
+      // Dots on the ring stand closer than a hit circle is wide; a press at a dot's centre must reach that note.
+      const wrong = await nodes(page).evaluateAll((items) =>
+        items.flatMap((item) => {
+          const box = item.querySelector(".notebook-graph__disc")!.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest("[data-node]");
+          const id = item.getAttribute("data-node")!;
+          return hit?.getAttribute("data-node") === id ? [] : [id];
+        }),
+      );
+      expect(wrong).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
+
 test(`${browserName}: Circle chords use their source area and isolate outgoing solid and incoming dashed links`, async () => {
   const page = await open(graphPath("hand01", "&display=circle"));
   try {

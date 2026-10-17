@@ -87,7 +87,7 @@ for (const [name, fixture] of [
   });
 }
 test("empty and single-note circles", () => {
-  expect(layoutCircle([])).toEqual({ pos: new Map(), arcs: [], order: [] });
+  expect(layoutCircle([])).toEqual({ pos: new Map(), arcs: [], order: [], step: 0 });
   expect(ringStep(layoutCircle([]), () => "top", "unknown", "PageUp")).toBeNull();
   const model = buildGraphModel(handbookGraph(), "en");
   assertLayout([model.notes[0]!]);

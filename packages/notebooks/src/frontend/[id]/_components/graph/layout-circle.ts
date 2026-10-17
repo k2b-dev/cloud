@@ -4,7 +4,8 @@ import type { GraphArea, GraphNote } from "./model";
 export const CIRCLE_STATUS_BAND = NEIGHBORHOOD_STATUS_BAND;
 export type CirclePoint = { x: number; y: number; th: number };
 export type CircleArc = { area: GraphArea; t0: number; t1: number };
-export type CircleLayout = { pos: Map<string, CirclePoint>; arcs: CircleArc[]; order: string[] };
+/** `step` is the angle of one note slot on the ring. */
+export type CircleLayout = { pos: Map<string, CirclePoint>; arcs: CircleArc[]; order: string[]; step: number };
 export type CircleKey = "ArrowRight" | "ArrowDown" | "ArrowLeft" | "ArrowUp" | "PageDown" | "PageUp";
 const TAU = 2 * Math.PI;
 const f1 = (value: number) => value.toFixed(1);
@@ -35,7 +36,21 @@ export function layoutCircle(notes: readonly GraphNote[]): CircleLayout {
     s += 1;
     arc.t1 = angle(s);
   }
-  return { pos, arcs, order: sorted.map((note) => note.id) };
+  return { pos, arcs, order: sorted.map((note) => note.id), step: slots ? TAU / slots : 0 };
+}
+
+/**
+ * A note's pointer target: its own slot of the ring, `reach` pixels inside and outside the ring, in coordinates around
+ * its dot. The slots of neighbouring notes meet but never overlap, so pressing a dot reaches that note however closely
+ * the dots stand.
+ */
+export function ringTarget(th: number, step: number, k: number, reach: number): string {
+  const a0 = th - step / 2,
+    a1 = th + step / 2;
+  const r0 = Math.max(0, k - reach),
+    r1 = k + reach;
+  const pt = (r: number, a: number) => `${f1(Math.cos(a) * r - Math.cos(th) * k)},${f1(Math.sin(a) * r - Math.sin(th) * k)}`;
+  return `M${pt(r0, a0)}L${pt(r1, a0)}A${f1(r1)},${f1(r1)} 0 0 1 ${pt(r1, a1)}L${pt(r0, a1)}A${f1(r0)},${f1(r0)} 0 0 0 ${pt(r0, a0)}Z`;
 }
 
 /** The ring in the canvas above the status line, with room outside it for the radial titles. */

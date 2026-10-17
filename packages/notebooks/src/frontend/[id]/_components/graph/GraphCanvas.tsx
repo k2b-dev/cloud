@@ -5,7 +5,7 @@ import GraphFeedback from "./GraphFeedback";
 import { convexHull, fitView, type GraphView, type Rect, screenRadius, spatialNext, toScreen, toWorld, zoomView } from "./geometry";
 import { createGraphTextMeasure } from "./graph-text-measure";
 import { type AreaLabelInput, type LabelKind, type LabelNode, placeLabels } from "./labels";
-import { CIRCLE_STATUS_BAND, chordPath, circleInsets, circleRadius, fitCircle, layoutCircle, ringStep } from "./layout-circle";
+import { CIRCLE_STATUS_BAND, chordPath, circleInsets, circleRadius, fitCircle, layoutCircle, ringStep, ringTarget } from "./layout-circle";
 import {
   fitNeighborhood,
   layoutNeighborhood,
@@ -816,7 +816,18 @@ export default function GraphCanvas(props: GraphCanvasProps) {
                       aria-current={current() ? "page" : undefined}
                       transform={`translate(${f1(at().x)},${f1(at().y)})`}
                     >
-                      <circle class="notebook-graph__hit" r={Math.max(at().r + 6, 12)} />
+                      {/* On the ring the dots can stand closer than a hit circle is wide; there each note owns its slot. */}
+                      <Show
+                        when={circleLayout()?.pos.get(note.id)}
+                        fallback={<circle class="notebook-graph__hit" r={Math.max(at().r + 6, 12)} />}
+                      >
+                        {(point) => (
+                          <path
+                            class="notebook-graph__hit"
+                            d={ringTarget(point().th, circleLayout()!.step, view().k, Math.max(at().r + 6, 12))}
+                          />
+                        )}
+                      </Show>
                       <Show when={current()}>
                         <circle class="notebook-graph__ring" r={f1(at().r + 4)} />
                       </Show>

@@ -2283,6 +2283,11 @@
   stroke-linejoin: round;
   stroke-width: 4px;
 }
+/* On the ring each note's slot is its only pointer target, so a dot or the current ring never takes a press meant for
+   the note beside it. */
+.notebook-graph__svg[data-display="circle"] .notebook-graph__node > :not(.notebook-graph__hit) {
+  pointer-events: none;
+}
 .notebook-graph__edge[data-edge-kind="chord"] {
   stroke: var(--area);
   stroke-opacity: 0.32;
