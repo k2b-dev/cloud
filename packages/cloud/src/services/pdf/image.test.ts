@@ -15,7 +15,6 @@ const box = { width: 2008, height: 2900 };
 const cap = 4 * 1024 * 1024;
 let webp: Buffer;
 let oversizedWebp: Buffer;
-let largeWebp: Buffer;
 let rotatedJpeg: Buffer;
 let transparentWebp: Buffer;
 let truncatedJpeg: Buffer;
@@ -23,14 +22,12 @@ const HEIC_BASE64 =
   "AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAX1tZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAACJpbG9jAAAAAERAAAEAAQAAAAABoQABAAAAAAAAAEkAAAAjaWluZgAAAAAAAQAAABVpbmZlAgAAAAABAABodmMxAAAAAA5waXRtAAAAAAABAAAA/WlwcnAAAADdaXBjbwAAAHZodmNDAQNwAAAAkAAAAAAAHvAA/P34+AAADwNgAAEAGEABDAH//wNwAAADAJAAAAMAAAMAHroCQGEAAQAqQgEBA3AAAAMAkAAAAwAAAwAeoCCBBZbq5Ka5uAhoMCAAAAMDIAAAAwAhYgABAAZEAcFzwIkAAAATY29scm5jbHgAAQANAAaAAAAAFGlzcGUAAAAAAAAAQAAAAEAAAAAoY2xhcAAAADAAAAABAAAAIAAAAAH////wAAAAAv///+AAAAACAAAAEHBpeGkAAAAAAwgICAAAABhpcG1hAAAAAAAAAAEAAQWBAgMFhAAAAFFtZGF0AAAARSgBr1jm+TodPuUbcCF5OoqkgneBYwmcDw33y4hfAewzkkwm3VY53EA95IHpB61vei/srL0XacJAbIWwgNtXlkJqmRs//g==";
 
 /** Fixed gradient and integer noise; no random generator or wall-clock fixtures. */
-function pixels(width: number, height: number, noisy = false) {
+function pixels(width: number, height: number) {
   const data = Buffer.alloc(width * height * 3);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const offset = (y * width + x) * 3;
-      let noise = Math.imul(y * width + x + 1, 0x45d9f3b);
-      noise = Math.imul(noise ^ (noise >>> 16), 0x45d9f3b);
-      data[offset] = noisy ? (noise ^ (noise >>> 16)) & 255 : (x * 7 + y * 13) % 256;
+      data[offset] = (x * 7 + y * 13) % 256;
       data[offset + 1] = Math.floor((x * 255) / width);
       data[offset + 2] = Math.floor((y * 255) / height);
     }
@@ -93,14 +90,11 @@ runtime("preparePdfImage", () => {
     oversizedWebp = await sharp({ create: { width: 10000, height: 10000, channels: 3, background: "red" } })
       .webp()
       .toBuffer();
-    largeWebp = await sharp(pixels(8000, 6000, true), { raw: { width: 8000, height: 6000, channels: 3 } })
-      .webp()
-      .toBuffer();
     rotatedJpeg = await sharp({ create: { width: 8000, height: 6000, channels: 3, background: "red" } })
       .withMetadata({ orientation: 6 })
       .jpeg()
       .toBuffer();
-    transparentWebp = await sharp({ create: { width: 6000, height: 4000, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 0.5 } } })
+    transparentWebp = await sharp({ create: { width: 4000, height: 3000, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 0.5 } } })
       .webp()
       .toBuffer();
     const jpeg = await sharp(pixels(800, 600), { raw: { width: 800, height: 600, channels: 3 } })
@@ -109,18 +103,11 @@ runtime("preparePdfImage", () => {
     truncatedJpeg = jpeg.subarray(0, Math.floor(jpeg.byteLength / 3));
   }, 120_000);
 
-  test("classifies a 10000x10000 WebP decode memory failure as too_large", async () => {
+  test("rejects a 10000x10000 WebP above the source pixel limit as too_large", async () => {
     expect(await preparePdfImage({ data: oversizedWebp, boxes: [box], maxBytes: cap }, { timeoutMs: 90_000 })).toEqual({
       ok: false,
       code: "too_large",
     });
-  }, 120_000);
-
-  test("fits an 8000x6000 opaque WebP within the real worker memory limit", async () => {
-    const image = variant(await preparePdfImage({ data: largeWebp, boxes: [box], maxBytes: cap }, { timeoutMs: 90_000 }));
-    expect([image.type, image.width, image.height]).toEqual(["image/jpeg", 2008, 1506]);
-    expect(await sharp(await bytes(image)).metadata()).toMatchObject({ format: "jpeg", width: 2008, height: 1506 });
-    expect(image.data.size).toBeLessThanOrEqual(cap);
   }, 120_000);
 
   test("fits an 8000x6000 JPEG with EXIF orientation 6 as an upright portrait", async () => {
@@ -131,10 +118,10 @@ runtime("preparePdfImage", () => {
     expect([metadata.format, metadata.width, metadata.height, metadata.orientation]).toEqual(["jpeg", 2008, 2677, undefined]);
   }, 120_000);
 
-  test("fits a 6000x4000 transparent WebP as PNG within the real worker memory limit", async () => {
+  test("fits a 4000x3000 transparent WebP as PNG within the real worker memory limit", async () => {
     const result = await preparePdfImage({ data: transparentWebp, boxes: [box], maxBytes: cap }, { timeoutMs: 90_000 });
     const image = variant(result);
-    expect([image.type, image.width, image.height]).toEqual(["image/png", 2008, 1339]);
+    expect([image.type, image.width, image.height]).toEqual(["image/png", 2008, 1506]);
     const decoded = await sharp(await bytes(image))
       .raw()
       .toBuffer({ resolveWithObject: true });
@@ -278,7 +265,7 @@ runtime("preparePdfImage", () => {
       variant(await preparePdfImage({ data: webp, boxes: [{ width: 8, height: 8 }], maxBytes: cap }));
       expect(bunSpawn.mock.calls).toHaveLength(1);
       expect(Object.keys(bunSpawn.mock.calls[0]![1]!.env!).sort()).toEqual(
-        ["PATH", "LANG", "UV_THREADPOOL_SIZE", "TOKIO_WORKER_THREADS", "BUN_JSC_numberOfGCMarkers"].sort(),
+        ["PATH", "LANG", "UV_THREADPOOL_SIZE", "TOKIO_WORKER_THREADS", "BUN_JSC_numberOfGCMarkers", "MIMALLOC_ARENA_EAGER_COMMIT"].sort(),
       );
     } finally {
       bunSpawn.mockRestore();
@@ -478,18 +465,28 @@ describe("image record protocol", () => {
 describe("image input frame protocol", () => {
   const header = { bytes: 3, boxes: [{ width: 8, height: 8 }], maxBytes: 1000, timeoutMs: 30_000 };
   const line = (record: unknown) => `${JSON.stringify(record)}\n`;
+  const read = (data: string | Uint8Array, size = 7) => {
+    const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+    let position = 0;
+    return (buffer: Uint8Array, offset: number, length: number) => {
+      const count = Math.min(size, length, bytes.byteLength - position);
+      buffer.set(bytes.subarray(position, position + count), offset);
+      position += count;
+      return count;
+    };
+  };
 
-  test.each([1, 7, 4096])("fills the exact declared input length across chunks of %i bytes", async (size) => {
-    const frame = await readImageFrame(stream(`${line(header)}abc`, size));
+  test.each([1, 7, 4096])("fills the exact declared input length across reads of %i bytes", (size) => {
+    const frame = readImageFrame(read(`${line(header)}abc`, size));
     expect(frame.header).toEqual(header);
     expect(frame.body).toBeInstanceOf(Uint8Array);
     expect(frame.body.buffer.byteLength).toBe(3);
     expect(new TextDecoder().decode(frame.body)).toBe("abc");
   });
 
-  test("accepts a 4 KiB header and an empty body", async () => {
+  test("accepts a 4 KiB header and an empty body", () => {
     const json = JSON.stringify({ ...header, bytes: 0 });
-    const frame = await readImageFrame(stream(`${" ".repeat(4096 - json.length)}${json}\n`));
+    const frame = readImageFrame(read(`${" ".repeat(4096 - json.length)}${json}\n`));
     expect(frame.body.byteLength).toBe(0);
   });
 
@@ -504,7 +501,7 @@ describe("image input frame protocol", () => {
     ["negative byte count", line({ ...header, bytes: -1 })],
     ["fractional byte count", line({ ...header, bytes: 1.5 })],
     ["byte count above the input cap", line({ ...header, bytes: PDF_IMAGE_MAX_INPUT_BYTES + 1 })],
-  ])("rejects %s", async (_name, data) => {
-    await expect(readImageFrame(stream(data, 1))).rejects.toThrow();
+  ])("rejects %s", (_name, data) => {
+    for (const size of [1, 7, 4096]) expect(() => readImageFrame(read(data, size))).toThrow();
   });
 });

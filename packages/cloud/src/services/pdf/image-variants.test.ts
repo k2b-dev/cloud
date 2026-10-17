@@ -99,6 +99,80 @@ test("rejects an intermediate over 16 MiP before decoding", async () => {
   }
 }, 30_000);
 
+test("rejects a WebP source just over 16 MiP before decoding", async () => {
+  const source = await sharp({ create: { width: 4096, height: 4097, channels: 3, background: "red" } })
+    .webp()
+    .toBuffer();
+  const factory = spyOn(sharpModule, "default");
+  let writes = 0;
+  try {
+    expect(
+      await prepareImageVariants(source, { boxes: [{ width: 8, height: 8 }], maxBytes: 1000, timeoutMs: 30_000 }, async () => {
+        writes++;
+      }),
+    ).toEqual({ ok: false, code: "too_large" });
+    expect(factory.mock.calls.filter(([input]) => input === source)).toHaveLength(1);
+    expect(writes).toBe(0);
+  } finally {
+    factory.mockRestore();
+  }
+}, 30_000);
+
+test("decodes a flat WebP source exactly at 16 MiP", async () => {
+  const source = await sharp({ create: { width: 4096, height: 4096, channels: 3, background: "red" } })
+    .webp()
+    .toBuffer();
+  const factory = spyOn(sharpModule, "default");
+  let writes = 0;
+  try {
+    expect(
+      await prepareImageVariants(source, { boxes: [{ width: 8, height: 8 }], maxBytes: 1000, timeoutMs: 30_000 }, async () => {
+        writes++;
+      }),
+    ).toEqual({ ok: true });
+    expect(factory.mock.calls.filter(([input]) => input === source)).toHaveLength(2);
+    expect(writes).toBe(1);
+  } finally {
+    factory.mockRestore();
+  }
+}, 30_000);
+
+test.each([1, 2, 3, 4, 5, 6, 7, 8])("resize before autoOrient preserves upright pixels for EXIF orientation %s", async (orientation) => {
+  // Transparency keeps the output lossless; the blue corner distinguishes rotations and reflections.
+  const pixels = Buffer.alloc(40 * 20 * 4);
+  for (let y = 0; y < 20; y++) {
+    for (let x = 0; x < 40; x++) {
+      pixels.set(x < 8 && y < 8 ? [0, 0, 255, 128] : [255, 0, 0, 128], (y * 40 + x) * 4);
+    }
+  }
+  const source = await sharp(pixels, { raw: { width: 40, height: 20, channels: 4 } })
+    .withMetadata({ orientation })
+    .png()
+    .toBuffer();
+  expect((await sharp(source).metadata()).orientation).toBe(orientation);
+  const box = { width: 20, height: 10 };
+  const expected = await sharp(source)
+    .autoOrient()
+    .resize({ ...box, fit: "inside", withoutEnlargement: true })
+    .toColourspace("srgb")
+    .raw({ depth: "uchar" })
+    .toBuffer({ resolveWithObject: true });
+  let writes = 0;
+  const result = await prepareImageVariants(source, { boxes: [box], maxBytes: 10_000, timeoutMs: 30_000 }, async (_, header, bytes) => {
+    writes++;
+    expect(header).toMatchObject({ type: "image/png", width: expected.info.width, height: expected.info.height });
+    const actual = await sharp(bytes).raw().toBuffer({ resolveWithObject: true });
+    expect([actual.info.width, actual.info.height, actual.info.channels]).toEqual([
+      expected.info.width,
+      expected.info.height,
+      expected.info.channels,
+    ]);
+    expect(actual.data).toEqual(expected.data);
+  });
+  expect(result).toEqual({ ok: true });
+  expect(writes).toBe(1);
+});
+
 test("fitting a rounded aspect ratio never shrinks then enlarges the decode", async () => {
   const source = await sharp({ create: { width: 5, height: 3, channels: 3, background: "red" } })
     .png()

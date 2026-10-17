@@ -108,40 +108,28 @@ export async function readImageRecords(
 }
 
 /** Read a 4 KiB JSON header, then fill one allocation of exactly the declared input length. */
-export async function readImageFrame(stream: ReadableStream<Uint8Array>) {
-  const reader = stream.getReader();
-  const headerChunks: Uint8Array[] = [];
-  let body: Uint8Array | undefined;
+export function readImageFrame(read: (buffer: Uint8Array, offset: number, length: number) => number) {
+  // Async stdin chunks made worker memory nondeterministic under its data limit, so read synchronously.
+  const headerBuffer = new Uint8Array(4097);
   let headerBytes = 0;
-  let bodyBytes = 0;
-  let header: z.infer<typeof ImageFrameHeader> | undefined;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      let chunk = value;
-      if (!header) {
-        const newline = chunk.indexOf(10);
-        const part = newline < 0 ? chunk : chunk.subarray(0, newline);
-        headerBytes += part.byteLength;
-        if (headerBytes > 4096) throw new Error("Image frame header exceeds its limit.");
-        headerChunks.push(part);
-        if (newline < 0) continue;
-        header = ImageFrameHeader.parse(JSON.parse(Buffer.concat(headerChunks, headerBytes).toString("utf8")));
-        body = new Uint8Array(header.bytes);
-        chunk = chunk.subarray(newline + 1);
-      }
-      bodyBytes += chunk.byteLength;
-      if (bodyBytes > body!.byteLength) throw new Error("Image frame body exceeds its declared length.");
-      body!.set(chunk, bodyBytes - chunk.byteLength);
-    }
-    if (!header || !body) throw new Error("Missing image frame header.");
-    if (bodyBytes !== body.byteLength) throw new Error("Truncated image frame body.");
-    return { header, body };
-  } catch (error) {
-    await reader.cancel().catch(() => {});
-    throw error;
-  } finally {
-    reader.releaseLock();
+  let newline = -1;
+  while (newline < 0) {
+    const size = read(headerBuffer, headerBytes, headerBuffer.byteLength - headerBytes);
+    if (size === 0) throw new Error("Missing image frame header.");
+    newline = headerBuffer.subarray(0, headerBytes + size).indexOf(10, headerBytes);
+    headerBytes += size;
+    if (newline < 0 && headerBytes === headerBuffer.byteLength) throw new Error("Image frame header exceeds its limit.");
   }
+  const header = ImageFrameHeader.parse(JSON.parse(Buffer.from(headerBuffer.buffer, 0, newline).toString("utf8")));
+  const body = new Uint8Array(header.bytes);
+  let bodyBytes = headerBytes - newline - 1;
+  if (bodyBytes > body.byteLength) throw new Error("Image frame body exceeds its declared length.");
+  body.set(headerBuffer.subarray(newline + 1, headerBytes));
+  while (bodyBytes < body.byteLength) {
+    const size = read(body, bodyBytes, body.byteLength - bodyBytes);
+    if (size === 0) throw new Error("Truncated image frame body.");
+    bodyBytes += size;
+  }
+  if (read(headerBuffer, 0, 1) !== 0) throw new Error("Image frame body exceeds its declared length.");
+  return { header, body };
 }

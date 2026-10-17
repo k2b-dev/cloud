@@ -11,6 +11,9 @@ sharp.cache(false);
  */
 const MAX_DECODED_PIXELS = 16 * 1024 * 1024;
 const MAX_SOURCE_PIXELS = 268402689; // sharp's unchanged default limitInputPixels.
+// Measured RGBA WebP peaks are non-monotonic: 440..473 MiB at 16 MiP, 476..495 at 24 MiP, 429..457 at 32 MiP.
+// Cap full-image decoders at 16 MiP to leave about 40 MiB below the worker's 512 MiB data limit.
+const MAX_FULL_DECODE_SOURCE_PIXELS = 16 * 1024 * 1024;
 
 const fit = (width: number, height: number, box: { width: number; height: number }) => {
   const scale = Math.min(1, box.width / width, box.height / height);
@@ -36,6 +39,9 @@ export async function prepareImageVariants(
     const width = metadata.width;
     const height = metadata.pageHeight ?? metadata.height;
     if (width * height > MAX_SOURCE_PIXELS) return { ok: false, code: "too_large" };
+    if (["webp", "gif", "tiff", "heif"].includes(metadata.format) && width * height > MAX_FULL_DECODE_SOURCE_PIXELS) {
+      return { ok: false, code: "too_large" };
+    }
     const rotated = (metadata.orientation ?? 1) >= 5;
     const upright = { width: rotated ? height : width, height: rotated ? width : height };
     const sizes = request.boxes.map((box) => fit(upright.width, upright.height, box));
@@ -61,11 +67,11 @@ export async function prepareImageVariants(
     const largestIndex = needed.reduce((a, b) => (sizes[a]!.width * sizes[a]!.height >= sizes[b]!.width * sizes[b]!.height ? a : b));
     const largest = sizes[largestIndex]!;
     if (largest.width * largest.height > MAX_DECODED_PIXELS) return { ok: false, code: "too_large" };
-    // Even a no-op autoOrient disables shrink-on-load for some codecs, forcing a full-resolution decode.
-    const needsOrientation = metadata.orientation !== undefined && metadata.orientation >= 2 && metadata.orientation <= 8;
-    const decoded = await (needsOrientation ? sharp(source).autoOrient() : sharp(source))
+    const decoded = await sharp(source)
       // Fit the original box once: fitting already rounded dimensions can shrink an extra pixel.
       .resize({ ...request.boxes[largestIndex]!, fit: "inside", withoutEnlargement: true })
+      // autoOrient before resize disables shrink-on-load.
+      .autoOrient()
       .toColourspace("srgb")
       .raw({ depth: "uchar" })
       .toBuffer({ resolveWithObject: true });

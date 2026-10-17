@@ -47,6 +47,7 @@ function release() {
  * Opaque images use sRGB JPEG q85; transparency uses PNG. Fitting upright sRGB JPEGs pass through unchanged after a validation decode.
  * Results follow box order; null means that encoding exceeded maxBytes. Invalid arguments throw; image failures return codes.
  * Input is capped at 32 MiB; the largest decoded variant at 16 MiP (64 MiB RGBA, versus about 5.8 MP for A4 at 300 dpi).
+ * WebP, GIF, TIFF and AVIF sources are capped at 16 MiP (about 16.8 MP).
  * Bun itself uses about half the 512 MiB data limit; decodes that exhaust the remaining memory return too_large.
  */
 export async function preparePdfImage(input: PreparePdfImageInput, options: PreparePdfImageOptions = {}): Promise<PreparePdfImageResult> {

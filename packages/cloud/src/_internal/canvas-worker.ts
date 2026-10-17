@@ -11,14 +11,16 @@ export const spawnCanvasWorker = (worker: URL, name: string, input: string | Blo
     stdout: "pipe",
     stderr: "ignore",
     // No application credentials or configuration reach the decoder, only fixed
-    // thread pool sizes: the Bun work pool, canvas tokio runtime, and JSC GC
+    // runtime settings: the Bun work pool, canvas tokio runtime, and JSC GC
     // markers otherwise grow with the host's cores, and RLIMIT_DATA also counts
     // each thread's stack and allocator memory.
+    // Bun's allocator otherwise commits whole arenas up front, which RLIMIT_DATA counts as used.
     env: {
       PATH: process.env.PATH,
       LANG: "C.UTF-8",
       UV_THREADPOOL_SIZE: "2",
       TOKIO_WORKER_THREADS: "2",
       BUN_JSC_numberOfGCMarkers: "2",
+      MIMALLOC_ARENA_EAGER_COMMIT: "0",
     },
   });

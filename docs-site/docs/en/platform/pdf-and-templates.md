@@ -316,6 +316,8 @@ HEVC decoder. SVG, PDF, and other formats are also unsupported.
 Pass 1..8 boxes with integer dimensions of 1..16383 pixels each. Input is limited
 to 32 MiB; `maxBytes` is an integer from 1 byte to 32 MiB per variant. Sharp's
 default input limit of 268,402,689 pixels still applies, counting one page.
+WebP, GIF, TIFF, and AVIF sources are limited to 16 MiP (about 16.8 MP) because
+their decoders need the whole image in memory; JPEG and PNG keep sharp's default pixel limit.
 The largest decoded variant is limited to 16 MiP (64 MiB as RGBA). A full A4
 page at 300 dpi needs about 5.8 MP.
 
