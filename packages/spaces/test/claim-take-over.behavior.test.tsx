@@ -55,10 +55,18 @@ const complete = mock(async (_input: { json: { completed: boolean; claimId?: str
   calls.push("complete");
   return Response.json({ ...item, claim: null, completedAt: now });
 });
+const patch = mock(async (_input: { json: { assigneeIds?: string[]; claimId?: string; force?: boolean } }) => {
+  calls.push("patch");
+  return Response.json({ ...item, claim: null, assignees: [] });
+});
 if (!isServer) {
   mock.module("@/api/client", () => ({
     apiClient: {
-      [":id"]: { items: { [":itemId"]: { release: { $post: release }, claim: { $post: claimTask }, completed: { $post: complete } } } },
+      [":id"]: {
+        items: {
+          [":itemId"]: { $patch: patch, release: { $post: release }, claim: { $post: claimTask }, completed: { $post: complete } },
+        },
+      },
     },
   }));
 }
@@ -116,11 +124,13 @@ describe("Spaces claim take-over", () => {
     const dialogButton = (label: string) =>
       [...(dialog()?.querySelectorAll<HTMLButtonElement>("footer button") ?? [])].find((button) => button.textContent === label);
 
-    expect(dom.root.textContent).not.toContain("Take over releases the claim");
+    expect(dom.root.textContent).not.toContain("Take over moves the task");
 
     expect(clickCreatedComputations(takeOver())).toBe(0);
     await waitFor(() => dialog() !== null);
-    expect(dialog()!.textContent).toContain("Take over releases the claim of Mira Beck and marks you as working on it.");
+    expect(dialog()!.textContent).toContain(
+      "Take over moves the task from Mira Beck to you: you become responsible and are marked as working on it.",
+    );
     dialogButton("Cancel")!.click();
     await waitFor(() => takeOver().getAttribute("aria-busy") !== "true");
     expect(calls).toEqual([]);
@@ -233,6 +243,61 @@ describe("Spaces claim take-over", () => {
     await waitFor(() => dialog() === null);
     for (let turn = 0; turn < 50; turn++) await Promise.resolve();
     expect(calls).toEqual([]);
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("removing somebody else who works on the task asks once, then ends their exact claim with the new assignees", async () => {
+    calls.splice(0);
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { default: ItemDetailPanel } = await import("../src/frontend/[id]/_components/detail/ItemDetailPanel");
+    const dispose = render(
+      () =>
+        createComponent(ItemDetailPanel, {
+          // The person working on a task is one of its assignees.
+          item: { ...item, assignees: [{ id: claim.actor.id, displayName: claim.displayName, avatarHash: null }] },
+          columns: [],
+          tags: [],
+          wormholes: [],
+          spaceId: item.spaceId,
+          baseUrl: "/app/spaces/Space1",
+          currentUserId: writerId,
+          initialCommentsPage: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
+          commentTarget: { itemId: item.id, recurrenceId: null },
+          recurringContext: null,
+          canWrite: true,
+          mailIntegrationAvailable: false,
+          scrollPreserveKey: "test-detail",
+        }),
+      dom.root,
+    );
+    const removeButton = () => dom.root.querySelector<HTMLButtonElement>('button[aria-label="Remove Mira Beck"]')!;
+    const dialog = () => dom.document.querySelector<HTMLDialogElement>('dialog[aria-label="Remove assignee"]');
+    const dialogButton = (label: string) =>
+      [...(dialog()?.querySelectorAll<HTMLButtonElement>("footer button") ?? [])].find((button) => button.textContent === label);
+
+    removeButton().click();
+    await waitFor(() => dialog() !== null);
+    expect(dialog()!.textContent).toContain("Mira Beck is working on this – remove them and end their claim?");
+    dialogButton("Cancel")!.click();
+    await waitFor(() => dialog() === null);
+    for (let turn = 0; turn < 50; turn++) await Promise.resolve();
+    expect(calls).toEqual([]);
+
+    // The panel reloads the Space data once the change is saved; the test ends after that, not before.
+    const { SPACES_DATA_INVALIDATED_EVENT } = await import("../src/frontend/[id]/_components/workspace/workspace-events");
+    let reloaded = false;
+    dom.window.addEventListener(SPACES_DATA_INVALIDATED_EVENT, () => {
+      reloaded = true;
+    });
+    removeButton().click();
+    await waitFor(() => dialogButton("Remove and end claim") !== undefined);
+    dialogButton("Remove and end claim")!.click();
+    await waitFor(() => reloaded);
+    expect(calls).toEqual(["patch"]);
+    expect(patch.mock.calls[0]![0].json).toEqual({ assigneeIds: [], claimId: claim.id, force: true });
 
     dispose();
     dom.cleanup();

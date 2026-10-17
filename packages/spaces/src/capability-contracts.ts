@@ -365,7 +365,9 @@ export const SpaceAssigneeDataSchema = z
 export const SpaceAssigneeListDataSchema = z.array(SpaceAssigneeDataSchema).max(100);
 
 const ItemRelationInputShape = {
-  assigneeIds: UserIdListSchema.optional().describe("Complete replacement set of user UUIDs returned by List assignable Space members."),
+  assigneeIds: UserIdListSchema.optional().describe(
+    "Complete replacement set of user UUIDs returned by List assignable Space members. Dropping the person holding an active claim is refused; release it first with task.release.",
+  ),
   tagIds: ResourceIdListSchema.optional().describe("Complete replacement set of tag IDs returned by Read space."),
 };
 

@@ -481,6 +481,17 @@ describe("mailHelp", () => {
     }
   });
 
+  test("keeps the working-model automation examples accepted by the incoming automation contract", async () => {
+    for (const file of ["../cli-references/index.md", "../../../../docs-site/apps-content/en/mail.md"]) {
+      const markdown = await Bun.file(new URL(file, import.meta.url)).text();
+      const examples = [...markdown.matchAll(/```yaml\n([\s\S]*?)```/g)].map((match) => match[1]!);
+      expect(examples.length).toBeGreaterThanOrEqual(1);
+      for (const source of examples) {
+        expect(createIncomingAutomationSchema.safeParse(Bun.YAML.parse(source)).success, source).toBe(true);
+      }
+    }
+  });
+
   test("keeps every documented workflow example valid for the Mail vocabulary", async () => {
     const markdown = [mailHelp.getMarkdown("mail-automation"), mailHelp.getMarkdown("mail-workflows")].join("\n");
     const examples = [...markdown.matchAll(/```yaml\n([\s\S]*?)```/g)].map((match) => match[1]!);

@@ -499,6 +499,20 @@ for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshootin
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
 
+### Upgrade Spaces user claims and assignments
+
+Spaces now assigns a person when they claim a task. On each start, an
+idempotent backfill adds missing assignee rows for active user claims. It skips
+claims whose user was deleted and service-account claims. No configuration is
+required. The backfill logs only when it adds rows.
+
+Assignee replacements that remove an active user claim holder now return
+`409` unless the caller supplies that holder's `claimId`, with `force` when
+acting for someone else. CLI and capability callers must release first.
+Releasing your own claim keeps your assignment; forcibly releasing another
+person's claim removes their assignment. See
+[Implementation tasks and agent handoffs](/en/apps/spaces#implementation-tasks-and-agent-handoffs).
+
 ### Upgrade Mail to several assignees
 
 This Mail release lets a conversation have several assignees and adds mailbox

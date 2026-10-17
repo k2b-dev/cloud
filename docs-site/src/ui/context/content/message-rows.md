@@ -195,13 +195,18 @@ the start.
 
 ### Reactions
 
-`reactions` shows a bar of chips: the emoji and the count, the reader's own
-reactions highlighted. With `onToggleReaction`, every chip is a toggle button
-that reports its `key`; without it, the chips are not controls.
-`onAddReaction` adds an "Add reaction" button at the end of the bar and
-receives that button, so a picker such as
-[`EmojiPicker.Popover`](/en/ui/input/emoji-picker) can open next to it. A chip's `label`, for
-example "Nora, Tobias", is read by screen readers and shown as a tooltip.
+`reactions` shows a [`ReactionBar`](/en/ui/content/reaction-bar) of chips:
+the emoji and the count, the reader's own reactions highlighted. With
+`onToggleReaction`, every chip is a toggle button that reports its `key`;
+without it, the chips are not controls. `onAddReaction` adds an "Add
+reaction" button at the end of the bar and receives that button, so a picker
+such as [`EmojiPicker.Popover`](/en/ui/input/emoji-picker) can open next to
+it. A chip's `label` is read by screen readers and shown in the bar's names
+hint: on hover, on keyboard focus, and on a touch screen after holding the
+chip for half a second, which never toggles it. A short tap on a read-only
+chip shows the names too. Build the label with `reactionPeople`, for example
+`reactionPeople({ names: ["Nora", "Tobias"], own: true, count: 3 })` returns
+"You, Nora and Tobias"; pass the inherited locale for German labels.
 
 Each chip keeps its element for its `key`. A toggled chip keeps focus when the
 application passes a new list of new objects, as long as the message itself

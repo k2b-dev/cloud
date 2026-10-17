@@ -580,6 +580,13 @@ function EmojiPickerPopover(props: EmojiPickerPopoverProps): JSX.Element {
   /** An anchor pressed while the picker was open closes it; the same click must not open it again. */
   let pressedAnchor: HTMLElement | undefined;
   const [shown, setShown] = createSignal<HTMLElement>();
+  let expandedAnchor: HTMLElement | undefined;
+  let previousExpanded: string | null = null;
+  const restoreExpanded = () => {
+    if (previousExpanded === null) expandedAnchor?.removeAttribute("aria-expanded");
+    else expandedAnchor?.setAttribute("aria-expanded", previousExpanded);
+    expandedAnchor = undefined;
+  };
 
   const place = () => {
     const anchor = shown();
@@ -618,6 +625,7 @@ function EmojiPickerPopover(props: EmojiPickerPopoverProps): JSX.Element {
   };
 
   const hide = () => {
+    restoreExpanded();
     restoreFocus();
     if (surface?.matches(":popover-open")) surface.hidePopover();
     setShown(undefined);
@@ -656,6 +664,10 @@ function EmojiPickerPopover(props: EmojiPickerPopoverProps): JSX.Element {
         previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         ring = ringOnReturn(previous ?? anchor);
       }
+      restoreExpanded();
+      expandedAnchor = anchor;
+      previousExpanded = anchor.getAttribute("aria-expanded");
+      anchor.setAttribute("aria-expanded", "true");
       setShown(anchor);
       if (!surface.matches(":popover-open")) surface.showPopover();
       place();
@@ -685,6 +697,7 @@ function EmojiPickerPopover(props: EmojiPickerPopoverProps): JSX.Element {
       window.visualViewport?.removeEventListener("scroll", place);
       document.removeEventListener("pointerdown", pressed, true);
       document.removeEventListener("click", clicked, true);
+      restoreExpanded();
       if (surface?.matches(":popover-open")) hide();
     });
   });
@@ -700,6 +713,7 @@ function EmojiPickerPopover(props: EmojiPickerPopoverProps): JSX.Element {
         if ((event as ToggleEvent).newState === "open") return;
         // Light dismissal by the browser: a click outside, Escape, or another popover.
         if (shown()) {
+          restoreExpanded();
           setShown(undefined);
           restoreFocus();
           props.onClose();

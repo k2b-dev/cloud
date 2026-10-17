@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "../intl/locale";
 
-const chatMessages = i18n.define({
+export const chatMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
@@ -36,6 +36,10 @@ const chatMessages = i18n.define({
       messageReaction: ({ emoji, count, names, own }: { emoji: string; count: number; names?: string; own?: boolean }) =>
         `${emoji} ${own && count === 1 ? "your reaction" : `${count} ${count === 1 ? "reaction" : "reactions"}${own ? ", including yours" : ""}`}${names ? `: ${names}` : ""}`,
       messageAddReaction: "Add reaction",
+      moreReactions: ({ count }: { count: number }) => (count === 1 ? "1 more reaction" : `${count} more reactions`),
+      reactionYou: "You",
+      reactionAnd: "and",
+      reactionMorePeople: ({ count }: { count: number }) => `and ${count} more`,
       messageReplies: ({ count }: { count: number }) => (count === 1 ? "1 reply" : `${count} replies`),
       messageLastReply: ({ time }: { time: string }) => `Last reply ${time}`,
       messageStop: "Stop",
@@ -131,6 +135,10 @@ const chatMessages = i18n.define({
       messageReaction: ({ emoji, count, names, own }) =>
         `${emoji} ${own && count === 1 ? "deine Reaktion" : `${count} ${count === 1 ? "Reaktion" : "Reaktionen"}${own ? ", einschließlich deiner" : ""}`}${names ? `: ${names}` : ""}`,
       messageAddReaction: "Reaktion hinzufügen",
+      moreReactions: ({ count }) => (count === 1 ? "1 weitere Reaktion" : `${count} weitere Reaktionen`),
+      reactionYou: "Du",
+      reactionAnd: "und",
+      reactionMorePeople: ({ count }) => `und ${count} weitere`,
       messageReplies: ({ count }) => (count === 1 ? "1 Antwort" : `${count} Antworten`),
       messageLastReply: ({ time }) => `Letzte Antwort ${time}`,
       messageStop: "Stoppen",
