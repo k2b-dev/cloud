@@ -22,12 +22,12 @@ test("sync snapshots debounce offline, confirm drained saves, answer late panels
   try {
     expect(states).toEqual([]);
     bridge.request();
-    expect(states.at(-1)).toEqual({ connected: true, lastSavedAt: null });
+    expect(states.at(-1)).toEqual({ connected: true, lastSavedAt: null, ended: false });
     bridge.connectionChanged(true);
     expect(timers.size).toBe(0);
     expect(states.at(-1)?.lastSavedAt).toBeNull();
     bridge.ready();
-    expect(states.at(-1)).toEqual({ connected: true, lastSavedAt: "2026-10-01T10:00:00.000Z" });
+    expect(states.at(-1)).toEqual({ connected: true, lastSavedAt: "2026-10-01T10:00:00.000Z", ended: false });
     unsent = true;
     setSystemTime(new Date("2026-10-01T10:01:00.000Z"));
     bridge.unsentChanged();
@@ -46,7 +46,12 @@ test("sync snapshots debounce offline, confirm drained saves, answer late panels
     setSystemTime(new Date("2026-10-01T10:02:00.000Z"));
     bridge.unsentChanged();
     bridge.request();
-    expect(states.at(-1)).toEqual({ connected: false, lastSavedAt: "2026-10-01T10:01:00.000Z" });
+    expect(states.at(-1)).toEqual({ connected: false, lastSavedAt: "2026-10-01T10:01:00.000Z", ended: false });
+    // An ended session says so, so the panel does not promise a resend; reconnecting clears it.
+    bridge.end();
+    expect(states.at(-1)?.ended).toBe(true);
+    bridge.connectionChanged(true);
+    expect(states.at(-1)).toEqual({ connected: true, lastSavedAt: "2026-10-01T10:01:00.000Z", ended: false });
     bridge.connectionChanged(false);
     bridge.dispose();
     expect(timers.size).toBe(0);

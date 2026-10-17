@@ -5,7 +5,7 @@ describe("Note editor surface", () => {
   test("terminal sync errors end in the inline recovery bar, never in an automatic reload", async () => {
     // sync-ended.behavior.test.tsx covers the bar itself; this pins the editor's wiring to it.
     const source = await Bun.file(resolve(import.meta.dir, "NoteEditor.client.tsx")).text();
-    expect(source).toContain("onFatal: syncEnded.end");
+    expect(source).toMatch(/onFatal: \(error\) => \{\s*syncState\.end\(\);\s*syncEnded\.end\(error\);/);
     expect(source).not.toContain("refreshCurrentPath");
   });
   test("moves the caret to the end only for presses that missed the editor", async () => {

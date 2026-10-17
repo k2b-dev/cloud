@@ -38,14 +38,27 @@ export function ViewMenu(props: ViewMenuProps) {
     onCleanup(() => query.removeEventListener("change", update));
   });
 
-  const open = (mode: "write" | "readonly" | "book") => () => void navigateTo(buildNoteUrl(props.notebookId, props.noteId, mode));
+  // Choosing the mode already shown keeps the page, the editor and its unsent text as they are.
+  const current = (mode: "write" | "readonly" | "book") =>
+    (mode === "write" && props.mode === "edit") || (mode === "readonly" && props.mode === "read");
+  const open = (mode: "write" | "readonly" | "book") => () => {
+    if (!current(mode)) void navigateTo(buildNoteUrl(props.notebookId, props.noteId, mode));
+  };
   const items = (): DropdownItem[] => [
     {
       sectionLabel: t().openAs,
       layout: "row",
       items: [
         ...(props.canEdit
-          ? [{ label: t().openAsEdit, icon: "ti ti-pencil", choice: "radio" as const, checked: props.mode === "edit", action: open("write") }]
+          ? [
+              {
+                label: t().openAsEdit,
+                icon: "ti ti-pencil",
+                choice: "radio" as const,
+                checked: props.mode === "edit",
+                action: open("write"),
+              },
+            ]
           : []),
         { label: t().openAsRead, icon: "ti ti-eye", choice: "radio" as const, checked: props.mode === "read", action: open("readonly") },
         { label: t().openAsBook, icon: "ti ti-book", choice: "radio" as const, checked: false, action: open("book") },

@@ -626,7 +626,10 @@ function EditorInstance(
           onEvent: dispatchWorkspaceEvent,
           onCursorChange: props.onWorkspaceCursorChange,
         },
-        onFatal: syncEnded.end,
+        onFatal: (error) => {
+          syncState.end();
+          syncEnded.end(error);
+        },
         onUnsentChange: () => {
           if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
           syncState.unsentChanged();

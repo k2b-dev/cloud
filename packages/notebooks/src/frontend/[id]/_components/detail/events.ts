@@ -64,7 +64,8 @@ export const NOTE_TITLE_CHANGED_EVENT = "notebooks.note.titleChanged";
 
 /** Editor → panel: connection (after a 1 s offline grace) and latest confirmed save. */
 export const SYNC_STATE_EVENT = "notebooks.editor.syncState";
-export type SyncStateEventDetail = { connected: boolean; lastSavedAt: string | null };
+/** `ended`: the session stopped for good (access or storage); the editor's recovery bar owns what comes next. */
+export type SyncStateEventDetail = { connected: boolean; lastSavedAt: string | null; ended?: boolean };
 /** Panel → editor: request current sync, active heading and presence locations on mount. */
 export const SYNC_STATE_REQUEST_EVENT = "notebooks.editor.syncStateRequest";
 export type SyncStateRequestEventDetail = undefined;

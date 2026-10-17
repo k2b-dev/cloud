@@ -767,7 +767,9 @@ export default function NotebookDetailPanel(props: Props) {
                   fullWidth={props.fullWidth}
                 />
               </nav>
-              <Show when={offline()}>
+              {/* Only a connection that will come back promises to resend; an ended session shows the editor's
+                  own recovery bar instead, which this band must not contradict. */}
+              <Show when={offline() && !sync().ended}>
                 <div class="notebook-offline-band" role="status">
                   <i class="ti ti-alert-triangle" aria-hidden="true" />
                   <div class="notebook-offline-band__copy">

@@ -126,6 +126,23 @@ describe("Notebook detail panel recovery and pagination", () => {
     }
   });
 
+  test("an ended session does not promise a resend or offer a reconnect that cannot work", async () => {
+    const dispose = await renderPanel();
+    try {
+      await until(() => requests.length === 1);
+      window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail: { connected: false, lastSavedAt: null, ended: true } }));
+      await Bun.sleep(0);
+      // The editor's own recovery bar owns this case.
+      expect(dom.root.querySelector(".notebook-offline-band")).toBeNull();
+      expect(button("Erneut verbinden")).toBeUndefined();
+      window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail: { connected: false, lastSavedAt: null } }));
+      await Bun.sleep(0);
+      expect(dom.root.querySelector(".notebook-offline-band")).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
   test("a failed older activity page keeps loaded rows and retries the same cursor", async () => {
     let olderAttempts = 0;
     answer = (url) => {

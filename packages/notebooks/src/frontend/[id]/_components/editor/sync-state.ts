@@ -6,8 +6,10 @@ export const createSyncStateBridge = (options: { hasUnsentChanges: () => boolean
   let ready = false;
   let reportedConnected = true;
   let lastSavedAt: string | null = null;
+  /** The session ended for good (access, storage); the editor's own recovery bar takes over until it reconnects. */
+  let ended = false;
   let offlineTimer: ReturnType<typeof setTimeout> | undefined;
-  const emit = () => options.emit({ connected: reportedConnected, lastSavedAt });
+  const emit = () => options.emit({ connected: reportedConnected, lastSavedAt, ended });
   const confirmSaved = () => {
     if (connected && ready && !options.hasUnsentChanges()) lastSavedAt = new Date().toISOString();
     emit();
@@ -18,6 +20,7 @@ export const createSyncStateBridge = (options: { hasUnsentChanges: () => boolean
     clearTimeout(offlineTimer);
     if (value) {
       reportedConnected = true;
+      ended = false;
       emit();
     } else {
       offlineTimer = setTimeout(() => {
@@ -35,6 +38,10 @@ export const createSyncStateBridge = (options: { hasUnsentChanges: () => boolean
     },
     unsentChanged: confirmSaved,
     request: emit,
+    end: () => {
+      ended = true;
+      emit();
+    },
     dispose: () => clearTimeout(offlineTimer),
   };
 };
