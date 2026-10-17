@@ -1,0 +1,173 @@
+import { expect, spyOn, test } from "bun:test";
+import sharp, * as sharpModule from "sharp";
+import { prepareImageVariants } from "./image-variants";
+
+test("three boxes inspect metadata and decode the source once at the largest needed size", async () => {
+  const source = await sharp({ create: { width: 2000, height: 1500, channels: 3, background: "red" } })
+    .png()
+    .toBuffer();
+  const resize = spyOn(Object.getPrototypeOf(sharp()), "resize");
+  const factory = spyOn(sharpModule, "default");
+  const written: { index: number; width: number; height: number }[] = [];
+  try {
+    const result = await prepareImageVariants(
+      source,
+      { boxes: [800, 1600, 400].map((width) => ({ width, height: 2000 })), maxBytes: 1_000_000, timeoutMs: 30_000 },
+      async (index, _header, bytes) => {
+        const metadata = await sharp(bytes).metadata();
+        written.push({ index, width: metadata.width, height: metadata.height });
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(factory.mock.calls.filter(([input]) => input === source)).toHaveLength(2);
+    expect(resize.mock.calls[0]).toEqual([{ width: 1600, height: 2000, fit: "inside", withoutEnlargement: true }]);
+    expect(written).toEqual([
+      { index: 0, width: 800, height: 600 },
+      { index: 1, width: 1600, height: 1200 },
+      { index: 2, width: 400, height: 300 },
+    ]);
+  } finally {
+    resize.mockRestore();
+    factory.mockRestore();
+  }
+}, 30_000);
+
+test("an all-pass-through call reads metadata without decoding", async () => {
+  const source = await sharp({ create: { width: 32, height: 16, channels: 3, background: "red" } })
+    .jpeg()
+    .toBuffer();
+  const factory = spyOn(sharpModule, "default");
+  const written: Uint8Array[] = [];
+  try {
+    const result = await prepareImageVariants(
+      source,
+      {
+        boxes: [
+          { width: 64, height: 64 },
+          { width: 32, height: 16 },
+        ],
+        maxBytes: 1_000_000,
+        timeoutMs: 30_000,
+      },
+      async (_, _header, bytes) => {
+        written.push(bytes);
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(factory.mock.calls.filter(([input]) => input === source)).toHaveLength(1);
+    expect(written).toEqual([source, source]);
+  } finally {
+    factory.mockRestore();
+  }
+}, 30_000);
+
+test("rejects an intermediate over 32 MiP before decoding", async () => {
+  // A highly compressible image has modest encoded size but an oversized raw intermediate.
+  const source = await sharp({ create: { width: 8192, height: 4097, channels: 3, background: "red" } })
+    .png()
+    .toBuffer();
+  const factory = spyOn(sharpModule, "default");
+  try {
+    expect(
+      await prepareImageVariants(source, { boxes: [{ width: 8192, height: 8192 }], maxBytes: 1_000_000, timeoutMs: 30_000 }, async () => {
+        throw new Error("Must not encode");
+      }),
+    ).toEqual({ ok: false, code: "too_large" });
+    expect(factory.mock.calls.filter(([input]) => input === source)).toHaveLength(1);
+  } finally {
+    factory.mockRestore();
+  }
+}, 30_000);
+
+test("fitting a rounded aspect ratio never shrinks then enlarges the decode", async () => {
+  const source = await sharp({ create: { width: 5, height: 3, channels: 3, background: "red" } })
+    .png()
+    .toBuffer();
+  const factory = spyOn(sharpModule, "default");
+  const decodedSizes: [number, number][] = [];
+  try {
+    const result = await prepareImageVariants(
+      source,
+      {
+        boxes: [
+          { width: 4, height: 3 },
+          { width: 3, height: 3 },
+        ],
+        maxBytes: 1000,
+        timeoutMs: 30_000,
+      },
+      async (_, _header, bytes) => {
+        const metadata = await sharp(bytes).metadata();
+        decodedSizes.push([metadata.width, metadata.height]);
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(decodedSizes).toEqual([
+      [4, 2],
+      [3, 2],
+    ]);
+    const rawPipeline = factory.mock.calls.find(([, options]) => options?.raw);
+    expect(rawPipeline?.[1]?.raw).toMatchObject({ width: 4, height: 2 });
+  } finally {
+    factory.mockRestore();
+  }
+}, 30_000);
+
+test("a grey+alpha PNG with a transparent pixel stays PNG with alpha", async () => {
+  const source = await sharp(Buffer.from([64, 0, 192, 255]), { raw: { width: 2, height: 1, channels: 2 } })
+    .toColourspace("b-w")
+    .png()
+    .toBuffer();
+  expect((await sharp(source).metadata()).channels).toBe(2);
+  let writes = 0;
+  const result = await prepareImageVariants(
+    source,
+    { boxes: [{ width: 2, height: 1 }], maxBytes: 1000, timeoutMs: 30_000 },
+    async (index, header, bytes) => {
+      writes++;
+      expect(index).toBe(0);
+      expect(header).toEqual({ type: "image/png", width: 2, height: 1, bytes: bytes.byteLength });
+      expect((await sharp(bytes).metadata()).hasAlpha).toBe(true);
+      const decoded = await sharp(bytes).raw().toBuffer({ resolveWithObject: true });
+      expect(decoded.data[decoded.info.channels - 1]).toBe(0);
+    },
+  );
+  expect(result).toEqual({ ok: true });
+  expect(writes).toBe(1);
+});
+
+test("writes pass-throughs before decoding and awaits each write before encoding the next variant", async () => {
+  const source = await sharp({ create: { width: 32, height: 16, channels: 3, background: "red" } })
+    .jpeg()
+    .toBuffer();
+  const factory = spyOn(sharpModule, "default");
+  const order: number[] = [];
+  try {
+    const result = await prepareImageVariants(
+      source,
+      {
+        boxes: [
+          { width: 16, height: 16 },
+          { width: 32, height: 16 },
+          { width: 8, height: 8 },
+        ],
+        maxBytes: 1000,
+        timeoutMs: 30_000,
+      },
+      async (index, header, bytes) => {
+        order.push(index);
+        expect(header.bytes).toBe(bytes.byteLength);
+        if (index === 1) expect(bytes).toBe(source);
+        const calls = factory.mock.calls.length;
+        expect(calls).toBe(index === 1 ? 1 : index === 0 ? 3 : 4);
+        await Bun.sleep(1);
+        expect(factory.mock.calls).toHaveLength(calls);
+      },
+    );
+    expect(result).toEqual({ ok: true });
+    expect(order).toEqual([1, 0, 2]);
+    expect(factory.mock.calls.filter(([input]) => input === source)).toHaveLength(2);
+  } finally {
+    factory.mockRestore();
+  }
+});

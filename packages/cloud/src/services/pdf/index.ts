@@ -46,3 +46,13 @@ export type {
   TemplatePdfPreviewResult,
 } from "./template-preview";
 export { renderTemplatePdfPreview } from "./template-preview";
+
+export type {
+  PdfImageBox,
+  PdfImageVariant,
+  PdfImageErrorCode,
+  PreparePdfImageInput,
+  PreparePdfImageOptions,
+  PreparePdfImageResult,
+} from "./image";
+export { preparePdfImage, PDF_IMAGE_MAX_INPUT_BYTES, PDF_IMAGE_MAX_BOXES } from "./image";

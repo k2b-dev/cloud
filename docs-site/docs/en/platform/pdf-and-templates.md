@@ -5,7 +5,7 @@ section: Platform services
 order: 590
 description: Render documents from application data with shared template and PDF services.
 tags: [pdf, templates, gotenberg]
-updated: 2026-09-29
+updated: 2026-10-17
 ---
 
 # PDF and templates
@@ -269,3 +269,67 @@ Gotenberg endpoints or connection settings. Operators must keep Gotenberg's
 file access limited to its working directory, `/tmp`, and should keep
 Gotenberg itself offline; see
 [Deployment requirements](/en/docs/operations/deployment-requirements#keep-gotenberg-offline).
+
+## Prepare images for print
+
+Use `preparePdfImage()` to fit raw image bytes into pixel boxes before adding
+them to a PDF. It accepts a `Uint8Array` or `Blob` and returns one variant per
+box, in the same order. Images keep their aspect ratio and never scale up.
+
+```ts
+import { preparePdfImage, renderHtmlToPdf } from "@k2b/cloud/services";
+
+const prepared = await preparePdfImage({
+  data: imageBytes,
+  boxes: [{ width: 1600, height: 1200 }],
+  maxBytes: 2 * 1024 * 1024,
+}, { signal: request.signal });
+if (!prepared.ok) throw new Error(prepared.code);
+const variant = prepared.variants[0];
+if (!variant) throw new Error("Image exceeds the encoded byte cap.");
+
+const result = await renderHtmlToPdf({
+  html: '<!doctype html><html><body><img src="img-1.jpg"></body></html>',
+  assets: [{ name: "img-1.jpg", data: variant.data }],
+}, { signal: request.signal });
+```
+
+The same API and types are exported from `@k2b/cloud/services/pdf`.
+Each variant has `data` (a typed `Blob`), `type`, `width`, and `height`.
+A `null` entry means that box's encoding exceeded `maxBytes`; other boxes
+still return their variants. The service does not reduce quality to meet the cap.
+
+Opaque images become 8-bit sRGB JPEG at quality 85. Images with any decoded
+alpha below 255 become PNG with transparency. A fully opaque alpha channel is
+removed. A JPEG passes through byte for byte only when its EXIF orientation is
+absent or 1, its colour space is sRGB or grayscale (not CMYK), its dimensions
+already fit the box, and its bytes fit `maxBytes`. Other images are re-encoded.
+EXIF rotation is applied before fitting. Animated GIF and WebP use the first
+frame; TIFF uses the first page.
+
+Accepted formats are JPEG, PNG, WebP, GIF, TIFF, and AVIF. HEIC/HEIF with HEVC
+compression returns `unsupported_format` because the prebuilt libvips has no
+HEVC decoder. SVG, PDF, and other formats are also unsupported.
+
+Pass 1..8 boxes with integer dimensions of 1..16383 pixels each. Input is limited
+to 64 MiB; `maxBytes` is an integer from 1 byte to 64 MiB per variant. Sharp's
+default input limit of 268,402,689 pixels still applies, counting one page.
+The largest decoded intermediate is limited to 32 MiP (128 MiB as RGBA).
+
+The service requires the Linux Cloud runtime. It runs at most two isolated
+workers per application process; further calls wait in FIFO order. Each worker
+has a 512 MiB data limit and receives no application credentials. The input cap
+reserves one eighth of that limit; decoded RGBA can use one quarter. Queuing,
+decoding, and encoding share a 30 s default deadline, matching PDF page decoding.
+Set `{ timeoutMs }` up to 240 s, the request idle-timeout ceiling. Aborting the
+signal or reaching the deadline returns `timed_out` after the child has exited.
+Invalid boxes, byte caps, and timeouts throw as programming errors.
+
+| Code | Meaning |
+| --- | --- |
+| `unsupported_format` | The recognized format or compression is unsupported |
+| `unreadable` | The bytes cannot be identified or decoded, or the worker failed |
+| `too_large` | Input bytes, source pixels, or decoded pixels exceed a limit |
+| `timed_out` | The caller aborted or the deadline ended, including queue time |
+
+An application image that uses this service ships sharp's libvips (about 18 MB).
