@@ -18,7 +18,7 @@ const css = (
   )
 ).join("\n");
 const assets: Record<string, [string, string | Buffer]> = {
-  "/harness.js": ["text/javascript", harness],
+  "/harness.js": ["text/javascript; charset=utf-8", harness],
   "/app.css": ["text/css", css],
   "/styles.css": ["text/css", readFileSync(`${uiRoot}dist/styles.css`, "utf8")],
 };
@@ -78,3 +78,47 @@ test("mixed image intake keeps every outcome in drop order in the main area with
     await tab.context().close();
   }
 }, 30_000);
+
+test("failure cards keep their whole reason and recovery hint visible from the narrowest card width up", async () => {
+  for (const lang of ["en", "de"]) {
+    for (const width of [12, 13, 14, 16, 20]) {
+      const tab = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
+      try {
+        await tab.route("http://image-converter.test/**", (route) => {
+          const path = new URL(route.request().url()).pathname;
+          if (path === "/")
+            return route.fulfill({
+              contentType: "text/html",
+              // The grid never makes a card narrower than 12rem; pin every column to one width from that minimum up.
+              body: `<!doctype html><html lang="${lang}"><head><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"><style>.tools-image-converter [role="list"]{grid-template-columns:repeat(auto-fill,${width}rem)!important}</style></head><body class="k2b-ui"><div id="root" style="height:100vh;display:flex"></div><script src="/harness.js"></script></body></html>`,
+            });
+          const asset = assets[path];
+          return asset ? route.fulfill({ contentType: asset[0], body: asset[1] }) : route.fulfill({ status: 404 });
+        });
+        await tab.goto("http://image-converter.test/?failures");
+        await tab.waitForFunction(() => document.querySelectorAll('.tools-image-converter [data-status="failed"]').length === 4);
+        const cards = await tab.evaluate(() =>
+          Array.from(document.querySelectorAll('.tools-image-converter [data-status="failed"]')).map((card) => {
+            const failure = card.querySelector(".tools-image-converter-card__failure")!;
+            const box = failure.getBoundingClientRect();
+            const texts = Array.from(failure.querySelectorAll("p"));
+            return {
+              width: Math.round(card.getBoundingClientRect().width),
+              texts: texts.length,
+              overflow: failure.scrollHeight - failure.clientHeight,
+              clipped: texts
+                .filter((text) => {
+                  const line = text.getBoundingClientRect();
+                  return line.top < box.top - 0.5 || line.bottom > box.bottom + 0.5;
+                })
+                .map((text) => text.textContent),
+            };
+          }),
+        );
+        for (const card of cards) expect({ lang, ...card }).toEqual({ lang, width: width * 16, texts: 2, overflow: 0, clipped: [] });
+      } finally {
+        await tab.context().close();
+      }
+    }
+  }
+}, 60_000);

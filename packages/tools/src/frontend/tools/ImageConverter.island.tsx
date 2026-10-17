@@ -493,7 +493,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                           <Show when={failed()}>
                             {(image) => (
                               <>
-                                <div class="tools-image-converter-card__failure flex h-full flex-col items-center justify-center gap-1 px-2 text-center">
+                                <div class="tools-image-converter-card__failure flex h-full flex-col items-center gap-1 px-2 text-center">
                                   <span class="tools-image-converter-card__failure-icon mb-1.5" aria-hidden="true">
                                     <i class="ti ti-photo-x" />
                                   </span>
