@@ -80,9 +80,11 @@ test("bar and line charts show the y-axis label beside the plot and the x-axis l
       ),
     );
     expect(bottom?.[1]).toBe(side?.[2]);
-    expect(html).toContain(
-      `<div class="k2b-chart flex-1 [&amp;_svg]:overflow-visible" data-chart-kind="${chartType}" style="${bottom?.[2]}"`,
+    // Inspection attributes (tab stop, crosshair) sit between kind and style; only the shared width matters here.
+    const wrapper = html.match(
+      new RegExp(`<div class="k2b-chart flex-1 \\[&amp;_svg\\]:overflow-visible" data-chart-kind="${chartType}"[^>]* style="([^"]*)"`),
     );
+    expect(wrapper?.[1]).toBe(bottom?.[2]);
     const below = bottom?.[3];
     expect(below).toContain("data-chart-x-axis-label");
     expect(below).toContain(`padding-left:${(start / width) * 100}%`);

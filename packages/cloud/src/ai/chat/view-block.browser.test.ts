@@ -844,7 +844,8 @@ test("a view file edited after present shows unavailable instead of what its sum
       const statuses = Array.from(document.querySelectorAll('[data-view-path] [role="status"]')).filter((node) => node.textContent?.trim());
       return statuses.length === 9 && statuses.every((node) => node.textContent?.startsWith("This view is no longer available"));
     });
-    expect(await page.locator('[data-view-path] [data-interactive="true"]').count()).toBe(0);
+    // Only the invisible size reserve of a stats view may still hold a (hidden, unfocusable) trend sparkline.
+    expect(await page.locator('[data-view-path] [data-interactive="true"]:visible').count()).toBe(0);
   } finally {
     await context.close();
   }
