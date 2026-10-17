@@ -149,6 +149,25 @@ test(`${browserName}: the Book update notice stays below the graph toolbars`, as
   }
 }, 30_000);
 
+test(`${browserName}: showing the navigation on a tablet keeps keyboard focus on the page`, async () => {
+  const page = await open(graphPath("hand01"), { width: 900, height: 900 });
+  try {
+    const tools = page.getByRole("toolbar", { name: "Graph tools" });
+    // At this width the navigation is hidden first through the shared command, then shown again with the toolbar.
+    await page.evaluate(() =>
+      window.dispatchEvent(new CustomEvent("notebooks.navigation.visibilityChanged", { detail: { hidden: true } })),
+    );
+    const show = tools.getByRole("button", { name: "Show navigation" });
+    await show.waitFor();
+    await show.focus();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.activeElement !== null && document.activeElement !== document.body);
+    expect(await page.evaluate(() => document.activeElement?.closest("#notebook-navigation, .notebook-graph") !== null)).toBe(true);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
 test(`${browserName}: the graph is one tab stop with arrows, Home and Enter inside`, async () => {
   const page = await open(graphPath("hand01"));
   try {

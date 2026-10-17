@@ -41,6 +41,7 @@ export default function NotebookGraph(props: Props) {
   const navigationHidden = createNavigationHidden(props.navigationHidden);
   const [controls, setControls] = createSignal<GraphZoomControls | null>(null);
   let focusNote: ((id: string) => void) | undefined;
+  let navigationToggle: HTMLDivElement | undefined;
 
   // The state is normalized with the URL's own limits first, so what renders is what a reload restores.
   const update = (patch: Partial<GraphViewState>) => {
@@ -87,8 +88,9 @@ export default function NotebookGraph(props: Props) {
   return (
     <div class="notebook-graph" data-display={state().display} data-list={state().list ? "" : undefined}>
       <Toolbar label={t().graphTools} class="notebook-graph__head">
-        {/* The navigation sidebar exists from md up; phones keep the header's menu. */}
-        <div class={`hidden shrink-0 ${navigationHidden() ? "md:flex" : "lg:flex"}`}>
+        {/* The navigation sidebar sits beside the graph from lg up; between md and lg the toggle only brings a hidden
+            navigation back, as the editor's does. Phones keep the header's menu. */}
+        <div ref={navigationToggle} class={`hidden shrink-0 ${navigationHidden() ? "md:flex" : "lg:flex"}`}>
           <Tooltip.Anchor content={navigationLabel()}>
             <IconButton
               label={navigationLabel()}
@@ -96,7 +98,22 @@ export default function NotebookGraph(props: Props) {
               size="sm"
               aria-expanded={!navigationHidden()}
               aria-controls={NOTEBOOK_NAVIGATION_ID}
-              onClick={() => setNavigationHidden(!navigationHidden())}
+              onClick={() => {
+                const showing = navigationHidden();
+                setNavigationHidden(!showing);
+                // Between md and lg the toggle hides itself once the navigation is back. Focus moves into the
+                // navigation when it can take it there, else to the graph's search, never to the page start.
+                if (showing)
+                  requestAnimationFrame(() => {
+                    if (!navigationToggle || navigationToggle.getClientRects().length) return;
+                    const navigation = document.getElementById(NOTEBOOK_NAVIGATION_ID);
+                    for (const element of navigation?.querySelectorAll<HTMLElement>("a[href], button:not(:disabled)") ?? []) {
+                      element.focus();
+                      if (document.activeElement === element) return;
+                    }
+                    navigationToggle.closest(".notebook-graph")?.querySelector<HTMLInputElement>(".notebook-graph__head input")?.focus();
+                  });
+              }}
             >
               <i
                 class={`ti ${navigationHidden() ? "ti-layout-sidebar-left-expand" : "ti-layout-sidebar-left-collapse"}`}
