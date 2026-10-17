@@ -60,11 +60,12 @@ theme lets reviewers compare screenshots across changes.
 
 ## Refresh the bundled location snapshot
 
-DB-IP serves only the current and previous month. Before a release whose
-snapshot pin is older than the previous month, run
+The image mirror keeps every pinned DB-IP month, so builds and rebuilds of old
+releases do not depend on db-ip.com. To ship newer data, run
 `bun scripts/geoip-snapshot.ts <YYYY-MM>` and review the Dockerfile pin and
 [sign-in location snapshot details](/en/docs/operations/sign-in-locations).
-A cold build with an older pin fails at the download or checksum step.
+The pull request's `mirror` job copies the new month to the mirror. Merge it
+while DB-IP still serves that month: the current or previous month.
 
 ## Let release-please cut the release
 

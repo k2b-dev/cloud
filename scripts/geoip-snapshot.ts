@@ -12,15 +12,13 @@ type Snapshot = { month: string; city: string; asn: string };
 export const rewriteGeoIpPin = (dockerfile: string, pin: Snapshot): string => {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(pin.month) || ![pin.city, pin.asn].every((hash) => /^[a-f0-9]{64}$/.test(hash)))
     throw new Error("Invalid GeoIP snapshot month or SHA-256");
-  let result = dockerfile;
+  const reference = /(ghcr\.io\/k2b-dev\/mirror\/dbip-lite:)\d{4}-\d{2}/g;
+  if ([...dockerfile.matchAll(reference)].length !== 1) throw new Error("Expected one DB-IP snapshot reference in Dockerfile");
+  let result = dockerfile.replace(reference, `$1${pin.month}`);
   for (const kind of ["city", "asn"] as const) {
-    const url = new RegExp(`https://download\\.db-ip\\.com/free/dbip-${kind}-lite-\\d{4}-\\d{2}\\.mmdb\\.gz`, "g");
-    const checksum = new RegExp(`[a-f0-9]{64}(  /geoip/dbip-${kind}-lite\\.mmdb\\.gz)`, "g");
-    if ([...result.matchAll(url)].length !== 1 || [...result.matchAll(checksum)].length !== 1)
-      throw new Error(`Expected one ${kind} URL and checksum in Dockerfile`);
-    result = result
-      .replace(url, `https://download.db-ip.com/free/dbip-${kind}-lite-${pin.month}.mmdb.gz`)
-      .replace(checksum, `${pin[kind]}$1`);
+    const checksum = new RegExp(`[a-f0-9]{64}(  dbip-${kind}-lite\\.mmdb\\.gz)`, "g");
+    if ([...result.matchAll(checksum)].length !== 1) throw new Error(`Expected one ${kind} checksum in Dockerfile`);
+    result = result.replace(checksum, `${pin[kind]}$1`);
   }
   return result;
 };
@@ -56,7 +54,7 @@ const download = async (kind: Kind, month: string, dir: string) => {
 const main = async (args: string[]) => {
   if (args.includes("--help") || args.includes("-h")) {
     console.log(
-      "Usage: bun scripts/geoip-snapshot.ts <YYYY-MM>\n\nDownload DB-IP City Lite and ASN Lite, print SHA-256 and byte sizes, and update the Dockerfile pin.\nDB-IP serves only the current and previous month. No runtime download is added.",
+      "Usage: bun scripts/geoip-snapshot.ts <YYYY-MM>\n\nDownload DB-IP City Lite and ASN Lite, print SHA-256 and byte sizes, and update the Dockerfile pin.\nThe pull request's mirror job copies the new month to the image mirror.\nDB-IP serves only the current and previous month; merge the pin bump within that window.\nA new GHCR package must be made public once. No runtime download is added.",
     );
     return;
   }
@@ -78,7 +76,7 @@ const main = async (args: string[]) => {
     ] as const)
       console.log(`${kind}: sha256 ${data.hash}; gzip ${data.compressed} bytes; mmdb ${data.uncompressed} bytes`);
     console.log(
-      `Dockerfile pinned to ${month}. Update the snapshot month, build date and sizes in docs-site/docs/en/operations/sign-in-locations.md.\nKeep attribution: IP Geolocation by DB-IP (https://db-ip.com), CC BY 4.0; see THIRD_PARTY_NOTICES.md.`,
+      `Dockerfile pinned to ${month}. Update the snapshot month, build date and sizes in docs-site/docs/en/operations/sign-in-locations.md.\nThe pull request's mirror job copies the new month to the image mirror.\nDB-IP serves only the current and previous month; merge the pin bump within that window.\nA new GHCR package must be made public once.\nKeep attribution: IP Geolocation by DB-IP (https://db-ip.com), CC BY 4.0; see THIRD_PARTY_NOTICES.md.`,
     );
   } finally {
     await rm(dir, { recursive: true, force: true });

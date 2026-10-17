@@ -698,6 +698,11 @@ on demand. A new package created by the first copy must be public; if the
 check reports that it is not, change its visibility in the package settings on
 GitHub once.
 
+The Core image's DB-IP snapshot is the one mirror entry that is not a Docker
+Hub image: `ghcr.io/k2b-dev/mirror/dbip-lite:<YYYY-MM>`. It is referenced by
+tag and pinned by the gzip checksums in the Dockerfile. `.github/mirror-images.sh`
+copies it from DB-IP while DB-IP still serves that month.
+
 The `mirror-images` check fails when a workflow or Dockerfile would pull a
 Docker Hub image directly, including through BuildKit's default SBOM generator,
 when a mirror reference does not carry the digest from the list, and when a

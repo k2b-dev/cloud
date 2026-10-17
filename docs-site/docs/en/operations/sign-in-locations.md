@@ -21,7 +21,8 @@ a new browser.
 Only the Core image contains the DB-IP IP to City Lite and IP to ASN Lite
 snapshot for **2026-10**, built on **2026-10-01**. The files live under
 `/app/geoip`: `dbip-city-lite.mmdb` (127 MB) and `dbip-asn-lite.mmdb` (9.6 MB)
-uncompressed, with about 65 MB of compressed downloads during the image build.
+uncompressed. The image build takes the gzip files (about 65 MB compressed)
+from Cloud's image mirror and checks their checksums.
 
 Upgrade Cloud to update the bundled snapshot: each release carries the snapshot
 pinned at build time. Uploading your own `.mmdb` files through administration
@@ -33,6 +34,10 @@ returns no place or network name. Browser and operating system descriptions
 still work. When first used, it logs each missing or invalid database once;
 Core does not load the module in a sign-in flow yet. A lookup failure also
 returns no details from the affected database and logs once.
+Core maps the files through Bun, which needs write access to open them,
+although Core never writes to them. With a read-only root filesystem, such as
+`readOnlyRootFilesystem` or `docker run --read-only`, Core therefore returns no
+place or network details and logs each database's failure once.
 
 The databases are © DB-IP.com, licensed under
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/):
