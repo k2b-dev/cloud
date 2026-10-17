@@ -70,9 +70,9 @@ convention still needs a check or a test.
 ### Access refetches drop keyboard focus and close member lists
 
 - **What happened:** Saving an access change dropped focus to the page body and closed expanded group members in several applications ([#1283](https://github.com/k2b-dev/cloud/issues/1283)).
-- **Root cause:** Consumers keyed the whole editor by refetched data or hid it during refresh. Contacts also replaced its pickers with read-only badges while reloading.
+- **Root cause:** Consumers keyed the whole editor by refetched data or hid it during refresh. Contacts also replaced its pickers with read-only badges while reloading. Keeping the editors mounted exposed two refresh races: mutation success could overwrite a caller's newer permission list after loading cleared, and key creation could insert a credential already supplied by the caller.
 - **Error class:** List re-keyed on refresh drops focus.
-- **Guard:** Check: `access-editor-mounts` rejects keyed or refreshing-gated `Show` and `Match` ancestors. Tests: `PermissionEditor.browser.test.ts` preserves the focused chip after a keyboard change and consumer refetch at phone and desktop widths; behavior tests cover merging by id, deferred updates, caller copies, and Contacts and Venue reloads.
+- **Guard:** Check: `access-editor-mounts` rejects keyed or refreshing-gated `Show` and `Match` ancestors. Tests: `PermissionEditor.browser.test.ts` preserves the focused chip after a keyboard change and consumer refetch at phone and desktop widths; behavior tests cover merging by id, deferred updates, caller copies, and Contacts and Venue reloads. `PermissionEditor.behavior.test.tsx` checks that caller refreshes win after update and revoke callbacks finish; `ResourceApiKeys.behavior.test.tsx` checks that creation replaces a refetched credential in place without duplicating it.
 
 ### A scrolling panel clipped an avatar's status ring
 

@@ -1044,12 +1044,16 @@ describe("PermissionEditor caller refreshes", () => {
     installPopoverApi(dom);
     setSystemTime(new Date("2026-10-17T12:00:00.000Z"));
     const { default: PermissionEditor } = await import("./PermissionEditor");
+    const { prompts } = await import("@k2b/ui");
+    const originalConfirm = prompts.confirm;
+    prompts.confirm = async () => true;
     const initial = [
       grant("lea", { type: "user", userId: "lea" }, "read", "Lea Sommer"),
       grant("jonas", { type: "user", userId: "jonas" }, "read", "Jonas Weber"),
     ];
     const [data, setData] = createSignal(initial);
     let finishUpdate!: () => void;
+    let finishRevoke!: () => void;
     delegateEvents(["click"], dom.document);
     const dispose = render(
       () => (
@@ -1065,7 +1069,11 @@ describe("PermissionEditor caller refreshes", () => {
                   finishUpdate = resolve;
                 })
               }
-              revokeAccess={async () => {}}
+              revokeAccess={() =>
+                new Promise<void>((resolve) => {
+                  finishRevoke = resolve;
+                })
+              }
             />
           )}
         </Show>
@@ -1086,8 +1094,12 @@ describe("PermissionEditor caller refreshes", () => {
       chips,
       chooseEdit,
       finishUpdate: () => finishUpdate(),
+      revokeFirst: () => dom.root.querySelector<HTMLButtonElement>('button[aria-label="Remove Lea Sommer"]')!.click(),
+      revokeStarted: () => typeof finishRevoke === "function",
+      finishRevoke: () => finishRevoke(),
       done: () => {
         dispose();
+        prompts.confirm = originalConfirm;
         setSystemTime();
         dom.cleanup();
       },
@@ -1127,6 +1139,47 @@ describe("PermissionEditor caller refreshes", () => {
       originals.forEach((chip, index) => expect(view.chips()[index] === chip).toBe(true));
       expect(view.chips().map((chip) => chip.textContent)).toEqual(["Edit", "Edit", "View"]);
       expect(refetched.map((entry) => entry.permission)).toEqual(["write", "write"]);
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a caller refresh during an update wins over the requested level and keeps the same chip", async () => {
+    const view = await setup();
+    try {
+      const original = view.chips()[0]!;
+      view.chooseEdit();
+      expect(original.textContent).toBe("Edit");
+      expect(original.disabled).toBe(true);
+      const refetched = view.initial.map((entry, index) => ({ ...entry, permission: index === 0 ? ("admin" as const) : entry.permission }));
+      view.setData(refetched);
+      expect(view.chips()[0]).toBe(original);
+      expect(original.textContent).toBe("Edit");
+      view.finishUpdate();
+      await waitFor(() => !original.disabled, "the update callbacks to finish");
+      expect(view.chips()[0]).toBe(original);
+      expect(original.textContent).toBe("Manage");
+      view.setData(refetched.map((entry) => ({ ...entry })));
+      expect(original.textContent).toBe("Manage");
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a caller refresh during a revoke wins over local filtering and keeps unaffected chips", async () => {
+    const view = await setup();
+    try {
+      const survivor = view.chips()[1]!;
+      view.revokeFirst();
+      await waitFor(view.revokeStarted, "the confirmed revoke");
+      // The later snapshot includes renewed access and another person's changed permission.
+      view.setData(view.initial.map((entry, index) => ({ ...entry, permission: index === 0 ? ("admin" as const) : ("write" as const) })));
+      expect(view.chips().map((chip) => chip.textContent)).toEqual(["View", "View"]);
+      expect(survivor.disabled).toBe(true);
+      view.finishRevoke();
+      await waitFor(() => !survivor.disabled, "the revoke callbacks to finish");
+      expect(view.chips().map((chip) => chip.textContent)).toEqual(["Manage", "Edit"]);
+      expect(view.chips()[1]).toBe(survivor);
     } finally {
       view.done();
     }

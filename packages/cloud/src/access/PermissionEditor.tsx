@@ -286,7 +286,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   createEffect(() => {
     const next = props.initialEntries;
     const snapshot = JSON.stringify(next);
-    if (busy() || snapshot === appliedCallerSnapshot) return;
+    // Mutation loading clears before onSuccess; wait for its local writes and onFinally too.
+    if (busy() || updating() !== null || revoking() !== null || snapshot === appliedCallerSnapshot) return;
     setEntries(
       reconcile(
         next.map((entry) => ({ ...entry })),
