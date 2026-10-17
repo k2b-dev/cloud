@@ -2,6 +2,7 @@ export { type AiAppSkillIssue, aiAppSkills, appSkillsRegistryState, reconcileApp
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
   AI_WEBSITE_APPROVAL_TOOL,
+  type AiToolApprovalChangeContext,
   type AiToolApprovalContext,
   type AiToolApprovalPreference,
   type AiToolApprovalRemember,

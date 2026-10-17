@@ -22,6 +22,7 @@ export type LabelNode = {
   sides?: readonly LabelSide[];
   maxWidth?: number;
   priority?: number;
+  radial?: { cx: number; cy: number; th: number };
 };
 export type AreaLabelInput = { key: string; text: string; x: number; y: number };
 export type PlacedLabel = {
@@ -34,6 +35,9 @@ export type PlacedLabel = {
   height: number;
   rect: Rect;
   chip: Rect | null;
+  rotate?: number;
+  anchor?: "start" | "end";
+  corners?: [number, number][];
 };
 export type PlacedAreaLabel = { key: string; text: string; x: number; y: number; rect: Rect };
 export type Measure = (text: string, font: LabelFont) => number;
@@ -62,9 +66,11 @@ export function placeLabels(input: {
   maxLabels: number;
   maxWidth: number;
   obstacles?: readonly Rect[];
+  bounds?: Rect;
 }): { labels: PlacedLabel[]; areaLabels: PlacedAreaLabel[] } {
   const { width, height, measure } = input;
-  const inside = (r: Rect) => r.x0 >= 2 && r.y0 >= 2 && r.x1 <= width - 2 && r.y1 <= height - 2;
+  const region = input.bounds ?? { x0: 2, y0: 2, x1: width - 2, y1: height - 2 };
+  const inside = (r: Rect) => r.x0 >= region.x0 && r.y0 >= region.y0 && r.x1 <= region.x1 && r.y1 <= region.y1;
   let areaLabels: PlacedAreaLabel[] = [];
   for (const area of input.areaLabels) {
     const w = measure(area.text, { size: 12, weight: 600 });
@@ -73,6 +79,7 @@ export function placeLabels(input: {
   }
   const obstacles = input.nodes.map((node) => rect(node.x - node.r - 1, node.y - node.r - 1, (node.r + 1) * 2, (node.r + 1) * 2));
   const labels: PlacedLabel[] = [];
+  const radial: { th: number; half: number }[] = [];
   const labelFree = (r: Rect) =>
     !labels.some((label) => rectsIntersect(r, label.rect)) && !(input.obstacles ?? []).some((other) => rectsIntersect(r, other));
   const free = (r: Rect) =>
@@ -92,10 +99,85 @@ export function placeLabels(input: {
     const forced = forcedRank(node.kind) > 0;
     if (!forced && count >= input.maxLabels) continue;
     const font = LABEL_FONTS[node.kind];
+    if (node.radial) {
+      const { cx, cy } = node.radial;
+      const h = font.size + 6;
+      const rs = Math.hypot(node.x - cx, node.y - cy) + node.r + 6;
+      const half = Math.atan(h / (2 * rs));
+      const turn = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+      const clashes = (angle: number) => radial.some((other) => Math.abs(turn(angle, other.th)) < half + other.half);
+      let th = node.radial.th;
+      // The pointed note's title never drops for the current note's title next to it on the ring: it turns just
+      // past that title, on the side of its own note, so both stay readable and neither covers the other.
+      if (forced && clashes(th)) {
+        const own = th;
+        const turned = radial
+          .flatMap((other) => [other.th - other.half - half - 1e-6, other.th + other.half + half + 1e-6])
+          .filter((angle) => !clashes(angle))
+          .sort((a, b) => Math.abs(turn(a, own)) - Math.abs(turn(b, own)))[0];
+        if (turned !== undefined) th = turned;
+      }
+      if (clashes(th)) continue;
+      const ux = Math.cos(th),
+        uy = Math.sin(th);
+      const x = cx + ux * rs,
+        y = cy + uy * rs;
+      const inner: [number, number][] = [
+        [x - (uy * h) / 2, y + (ux * h) / 2],
+        [x + (uy * h) / 2, y - (ux * h) / 2],
+      ];
+      if (inner.some(([px, py]) => !inside(rect(px, py, 0, 0)))) continue;
+      let room = Infinity;
+      for (const [px, py] of inner) {
+        if (ux > 0) room = Math.min(room, (region.x1 - px) / ux);
+        if (ux < 0) room = Math.min(room, (region.x0 - px) / ux);
+        if (uy > 0) room = Math.min(room, (region.y1 - py) / uy);
+        if (uy < 0) room = Math.min(room, (region.y0 - py) / uy);
+      }
+      const text = fitText(node.title, Math.min(node.maxWidth ?? input.maxWidth, room), font, measure);
+      if (!text) continue;
+      const w = measure(text, font);
+      const corners: [number, number][] = [
+        inner[0]!,
+        [inner[0]![0] + ux * w, inner[0]![1] + uy * w],
+        [inner[1]![0] + ux * w, inner[1]![1] + uy * w],
+        inner[1]!,
+      ];
+      const bounds = {
+        x0: Math.min(...corners.map(([x]) => x)),
+        y0: Math.min(...corners.map(([, y]) => y)),
+        x1: Math.max(...corners.map(([x]) => x)),
+        y1: Math.max(...corners.map(([, y]) => y)),
+      };
+      if (
+        (input.obstacles ?? []).some((other) => rectsIntersect(bounds, other)) ||
+        labels.some((other) => !other.corners && rectsIntersect(bounds, other.rect))
+      )
+        continue;
+      if (forced) areaLabels = areaLabels.filter((area) => !rectsIntersect(bounds, area.rect));
+      else if (areaLabels.some((area) => rectsIntersect(bounds, area.rect))) continue;
+      radial.push({ th, half });
+      labels.push({
+        id: node.id,
+        text,
+        kind: node.kind,
+        x,
+        y,
+        width: w,
+        height: h,
+        rect: bounds,
+        chip: null,
+        rotate: (th * 180) / Math.PI + (ux < 0 ? 180 : 0),
+        anchor: ux < 0 ? "end" : "start",
+        corners,
+      });
+      if (!forced) count++;
+      continue;
+    }
     const current = node.kind === "current";
     const paddingX = current ? 5 : 2,
       paddingY = current ? 2 : 0;
-    const text = fitText(node.title, Math.min(node.maxWidth ?? input.maxWidth, width - 4 - paddingX * 2), font, measure);
+    const text = fitText(node.title, Math.min(node.maxWidth ?? input.maxWidth, region.x1 - region.x0 - paddingX * 2), font, measure);
     if (!text) continue;
     const w = measure(text, font),
       h = font.size + 4;
@@ -117,13 +199,13 @@ export function placeLabels(input: {
           rh = h + paddingY * 2;
         // Clamp into the canvas. If the other forced label occupies that spot,
         // try its boundaries too; this preserves both labels even on an edge.
-        const clampX = (x: number) => Math.max(2, Math.min(width - 2 - rw, x));
-        const clampY = (y: number) => Math.max(2, Math.min(height - 2 - rh, y));
+        const clampX = (x: number) => Math.max(region.x0, Math.min(region.x1 - rw, x));
+        const clampY = (y: number) => Math.max(region.y0, Math.min(region.y1 - rh, y));
         const positions = candidates.map((candidate) => rect(clampX(candidate.x0), clampY(candidate.y0), rw, rh));
         const first = positions[0];
         if (first) {
-          const xs = [first.x0, 2, width - 2 - rw, ...labels.flatMap((label) => [label.rect.x0 - rw, label.rect.x1])];
-          const ys = [first.y0, 2, height - 2 - rh, ...labels.flatMap((label) => [label.rect.y0 - rh, label.rect.y1])];
+          const xs = [first.x0, region.x0, region.x1 - rw, ...labels.flatMap((label) => [label.rect.x0 - rw, label.rect.x1])];
+          const ys = [first.y0, region.y0, region.y1 - rh, ...labels.flatMap((label) => [label.rect.y0 - rh, label.rect.y1])];
           for (const y of ys) for (const x of xs) positions.push(rect(clampX(x), clampY(y), rw, rh));
         }
         bounds = positions.find((candidate) => inside(candidate) && labelFree(candidate));

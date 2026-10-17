@@ -123,3 +123,7 @@
 .spaces-pwa__when[data-overdue] { color: var(--k2b-danger-text); }
 .spaces-pwa__dot { width: .5rem; height: .5rem; flex: none; border-radius: 999px; }
 .spaces-pwa__more { margin: 0; color: var(--k2b-text-muted); font-size: .875rem; line-height: 1.25rem; text-align: center; }
+
+/* A Kanban card's footer lets the pointer through to the card link; only the reaction chips and "Add reaction" catch it.
+   "+n" stays text the pointer passes, so a click on it opens the item like the rest of the card. */
+.k2b-ui .spaces-card-reactions :is(.k2b-reaction-bar__chip, .k2b-reaction-bar__add) { pointer-events: auto; }

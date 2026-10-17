@@ -38,12 +38,13 @@ export const createProtectedPairing = async (link: string, pin: string) => {
   }
 };
 
-/** Discovery gates the additive commands; older Clouds keep serving pending sign-ins. */
+/** Opt in only when the app shows the terminal client, all scopes and lifetime before consent.
+ * Discovery gates the additive commands; older Clouds keep serving pending sign-ins. */
 export const readDeviceInbox = (
   client: Awaited<ReturnType<typeof appApproval.connect>>,
   device: AppApprovalDevice,
   signal?: AbortSignal,
-) => (client.actions ? client.inbox(device, signal) : client.pending(device, signal));
+) => (client.actions ? client.inbox(device, signal, { accept: ["terminal-logins"] }) : client.pending(device, signal));
 
 /** Load before presenting the choice: action() refuses a view whose digest does not match. */
 export const readAction = (

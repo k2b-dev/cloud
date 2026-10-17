@@ -3,7 +3,7 @@ import { Show } from "solid-js";
 import { notebookWorkspaceMessages } from "../../messages";
 import type { GraphNote } from "./model";
 
-/** Status and touch selection are the same interaction in both graph displays. */
+/** Status and touch selection are the same interaction in all graph displays. */
 export default function GraphFeedback(props: {
   statusNote: GraphNote | undefined;
   selected: GraphNote | undefined;
@@ -11,6 +11,8 @@ export default function GraphFeedback(props: {
   keyboard: boolean;
   idleText: string;
   now: string;
+  pointerHints: string;
+  areaKeys?: boolean;
   onOpen: (id: string) => void;
   onClearSelection: () => void;
   onCentre?: (id: string) => void;
@@ -38,7 +40,7 @@ export default function GraphFeedback(props: {
           fallback={
             <>
               <span class="notebook-graph__hints" data-input="pointer">
-                {props.onCentre ? t().graphNeighborhoodPointerHints : t().graphPointerHints}
+                {props.pointerHints}
               </span>
               <span class="notebook-graph__hints" data-input="touch">
                 {t().graphTouchHints}
@@ -55,6 +57,10 @@ export default function GraphFeedback(props: {
             <Show when={props.onCentre}>
               <Kbd keys="space" /> {t().graphKeyCenter} ·{" "}
             </Show>{" "}
+            <Show when={props.areaKeys}>
+              <Kbd keys="pageup" />
+              <Kbd keys="pagedown" /> {t().graphKeyArea} ·{" "}
+            </Show>
             <Kbd keys="escape" /> {t().graphKeyReset}
           </span>
         </Show>

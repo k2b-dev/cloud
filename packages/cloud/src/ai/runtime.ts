@@ -8,7 +8,13 @@ import { type ApprovalDecisionChannel, approvals } from "../services/approvals";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { coreSettings } from "../services/settings/api";
-import { AI_WEBSITE_APPROVAL_TOOL, type AiToolApprovalContext, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
+import {
+  AI_WEBSITE_APPROVAL_TOOL,
+  type AiToolApprovalChangeContext,
+  type AiToolApprovalContext,
+  aiTurnAllowsRememberedApprovals,
+  rememberAiToolApproval,
+} from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModelId } from "./assistant-models";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor, type ExecutorConfig } from "./executor";
@@ -331,7 +337,7 @@ export const submitAiTurnAction = async (input: {
   callId: string;
   action: AiTurnActionInput;
   decidedBy: { userId: string; via: ApprovalDecisionChannel; deviceId?: string };
-  toolApprovalContext?: AiToolApprovalContext;
+  toolApprovalContext?: AiToolApprovalChangeContext;
   /** Whether a person decides in a signed-in browser session; only such a decision may remember a website. */
   signedInSession?: boolean;
 }): Promise<{ ok: true } | { ok: false; status: 400 | 403 | 404 | 409; message: string }> => {

@@ -1556,6 +1556,7 @@ suite("incoming automations", () => {
               reason: "message_moved",
             });
             expect(await resolveIncomingAutomationMessageStateTurn({ ...turn, runId: crypto.randomUUID() })).toEqual({ state: "ready" });
+            expect(await resolveIncomingAutomationPlacementTurn({ ...turn, runId: crypto.randomUUID() })).toEqual({ state: "ready" });
             expect(await incomingAutomationMessageLeft({ ...turn, runId: crypto.randomUUID() })).toBe(false);
           }
           // A pending move skips the read immediately; a completed move skips it as message_moved.

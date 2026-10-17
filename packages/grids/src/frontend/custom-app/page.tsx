@@ -26,7 +26,8 @@ import FormSubmit from "../_components/forms/PublicFormSubmit.island";
 import RecordComments from "../_components/records/RecordComments.island";
 import type { WorkflowScannerState } from "../_components/workflows/WorkflowScannerSurface";
 import Actions, { type CustomAppRenderedAction } from "./Actions.island";
-import CustomAppChart from "./Chart";
+import { customAppChartRenderData } from "./Chart";
+import CustomAppChartIsland from "./Chart.island";
 import CustomAppNavigation from "./CustomAppNavigation.island";
 import FormDialog from "./FormDialog.island";
 import FormWorkspace from "./FormWorkspace.island";
@@ -111,14 +112,20 @@ const AppChart = (props: { block: ChartBlock; data: ChartBlockData; dateConfig: 
   return (
     <div>
       {props.block.subtitle ? <p class="mb-3 text-sm text-secondary">{props.block.subtitle}</p> : null}
-      <CustomAppChart
-        chartType={props.block.chartType}
-        data={props.data.chart}
-        valueFormat={props.block.valueFormat}
-        dateConfig={props.dateConfig}
-        xAxisLabel={props.block.xAxisLabel}
-        yAxisLabel={props.block.yAxisLabel}
-      />
+      {props.data.chart.kind === "error" ? (
+        <Placeholder variant="compact" description={messages().chartDataUnavailable} />
+      ) : (
+        <CustomAppChartIsland
+          chart={customAppChartRenderData(props.block.chartType, props.data.chart, {
+            locale: props.dateConfig.locale,
+            unknownRecordLabel: messages().unknownRecord,
+          })}
+          valueFormat={props.block.valueFormat}
+          dateConfig={props.dateConfig}
+          xAxisLabel={props.block.xAxisLabel}
+          yAxisLabel={props.block.yAxisLabel}
+        />
+      )}
     </div>
   );
 };

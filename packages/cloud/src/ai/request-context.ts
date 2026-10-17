@@ -3,7 +3,7 @@ import { userFromActor } from "../server/actor";
 import { type ApiErrorResponse, respond } from "../server/api";
 import type { AuthContext, RequestActor } from "../server/middleware/auth";
 import { err, fail } from "../server/services";
-import type { AiToolApprovalContext } from "./approvals";
+import type { AiToolApprovalChangeContext, AiToolApprovalContext } from "./approvals";
 import { personalAiModelPolicy } from "./personal-agent";
 import type { AiModelPolicy } from "./types";
 
@@ -13,6 +13,7 @@ export type AiChatRequestContext = {
   ownerUserId: string;
   modelPolicy: AiModelPolicy;
   toolApprovalContext: AiToolApprovalContext;
+  toolApprovalChangeContext: AiToolApprovalChangeContext;
   /** A person in a signed-in browser session, not `cld`, an API key, or another delegated credential. */
   signedInSession: boolean;
 };
@@ -28,6 +29,11 @@ export const resolveAiChatRequestContext = async <T extends AuthContext>(
     ownerUserId: user.id,
     modelPolicy: personalAiModelPolicy,
     toolApprovalContext: { actorUserId: user.id },
+    toolApprovalChangeContext: {
+      actorUserId: user.id,
+      actor,
+      requestId: c.req.header("x-request-id") ?? null,
+    },
     signedInSession: actor.kind === "user" && !actor.delegation && c.get("credentialKind") === "session",
   };
 };

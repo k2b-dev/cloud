@@ -77,7 +77,9 @@ export const openEditItemDialog = async (params: EditItemParams): Promise<ItemFo
           tags={params.tags}
           onSubmit={async (data) => {
             // Removing the person who works on the task asks as in the details; declining keeps the dialog open.
-            const claim = data.assigneeIds ? await resolveAssigneeClaim(params.item.claim, params.currentUserId, data.assigneeIds, t) : {};
+            const claim = data.assigneeIds
+              ? await resolveAssigneeClaim(params.item.claim, params.currentUserId, params.item.assignees ?? [], data.assigneeIds, t)
+              : {};
             if (!claim) return;
             await saveItemFormData({ spaceId: params.spaceId, itemId: params.item.id, data, claim, locale });
             close(data);

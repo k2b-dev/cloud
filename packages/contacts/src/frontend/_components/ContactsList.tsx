@@ -1,5 +1,5 @@
 import { Placeholder, Tag, Tooltip, useLocale } from "@k2b/ui";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import type { Contact } from "../../service";
 import { resolveContactInitials, resolveContactName } from "../../shared";
 import ContactFavoriteButton from "./ContactFavoriteButton";
@@ -22,6 +22,7 @@ type Props = {
   initialSelectedBookId: string | null;
   emptyTitle?: string;
   emptyDescription?: string;
+  emptyAction?: JSX.Element;
   detailBaseHref: string;
   initialFavoriteKeys: string[];
   selectionMode?: boolean;
@@ -103,6 +104,7 @@ export default function ContactsList(props: Props) {
           icon="ti ti-address-book"
           title={props.emptyTitle ?? t().noContacts}
           description={props.emptyDescription ?? t().noContactsInView}
+          action={props.emptyAction}
           variant="panel"
           class="h-full min-h-56 justify-center"
         />

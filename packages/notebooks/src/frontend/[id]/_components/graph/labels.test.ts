@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { fitView, type Rect, rectsIntersect, screenRadius, toScreen } from "./geometry";
 import { bigGraph, handbookGraph } from "./graph.fixtures";
-import { fitText, LABEL_FONTS, type LabelNode, type Measure, placeLabels } from "./labels";
+import { fitText, LABEL_FONTS, type LabelNode, type Measure, type PlacedLabel, placeLabels } from "./labels";
+import { CIRCLE_STATUS_BAND, circleRadius, fitCircle, layoutCircle } from "./layout-circle";
 import { layoutNetwork } from "./layout-net";
 import { buildGraphModel } from "./model";
 
@@ -210,4 +211,133 @@ test("far labels are smaller and hubs win among outer-ring notes; ring one adds 
   const result = place(nodes, [], 2);
   expect(result.labels.map((label) => label.id)).toEqual(["ring01", "hub001"]);
   expect(result.labels[1]!.height).toBe(15);
+});
+
+function quadsIntersect(a: readonly [number, number][], b: readonly [number, number][]): boolean {
+  for (const quad of [a, b]) {
+    for (let i = 0; i < quad.length; i++) {
+      const p = quad[i]!,
+        q = quad[(i + 1) % quad.length]!;
+      const nx = -(q[1] - p[1]),
+        ny = q[0] - p[0];
+      const project = (box: readonly [number, number][]) => box.map(([x, y]) => x * nx + y * ny);
+      const pa = project(a),
+        pb = project(b);
+      if (Math.max(...pa) <= Math.min(...pb) || Math.max(...pb) <= Math.min(...pa)) return false;
+    }
+  }
+  return true;
+}
+for (const [name, fixture] of [
+  ["handbook", handbookGraph],
+  ["big", bigGraph],
+] as const) {
+  for (const [width, height, compact] of [
+    [1440, 800, false],
+    [390, 640, true],
+  ] as const) {
+    test(`${name}: radial quads never overlap or leave bounds at ${width}`, () => {
+      const model = buildGraphModel(fixture(), "en"),
+        layout = layoutCircle(model.notes);
+      const view = fitCircle(width, height, compact);
+      const bounds = { x0: 2, y0: 2, x1: width - 2, y1: height - CIRCLE_STATUS_BAND };
+      const nodes = model.notes.map((note, i): LabelNode => {
+        const point = layout.pos.get(note.id)!;
+        return {
+          id: note.id,
+          title: note.title,
+          ...toScreen(view, point),
+          r: circleRadius(note.deg),
+          deg: note.deg,
+          kind: i === 0 ? "current" : i === 1 ? "hover" : "normal",
+          radial: { cx: view.tx, cy: view.ty, th: point.th },
+        };
+      });
+      const result = placeLabels({
+        width,
+        height,
+        nodes,
+        areaLabels: [],
+        measure,
+        bounds,
+        maxLabels: compact ? 60 : 400,
+        maxWidth: compact ? 130 : 220,
+      });
+      // The current and the pointed note are always labelled, also when they sit next to each other on the ring.
+      for (const forced of model.notes.slice(0, 2)) expect(result.labels.some((label) => label.id === forced.id)).toBe(true);
+      expect(result.labels.length).toBeGreaterThan(0);
+      expect(result.labels.length).toBeLessThanOrEqual(nodes.length);
+      for (const [i, label] of result.labels.entries()) {
+        expect(label.chip).toBeNull();
+        expect(label.corners).toHaveLength(4);
+        for (const [x, y] of label.corners!) {
+          expect(x).toBeGreaterThanOrEqual(bounds.x0 - 1e-9);
+          expect(x).toBeLessThanOrEqual(bounds.x1 + 1e-9);
+          expect(y).toBeGreaterThanOrEqual(bounds.y0 - 1e-9);
+          expect(y).toBeLessThanOrEqual(bounds.y1 + 1e-9);
+        }
+        for (const other of result.labels.slice(i + 1)) expect(quadsIntersect(label.corners!, other.corners!)).toBe(false);
+      }
+    });
+  }
+}
+for (const side of [1, -1]) {
+  test(`a radial hover next to the current note turns past its title instead of dropping (side ${side})`, () => {
+    const radialNode = (th: number, kind: "current" | "hover"): LabelNode =>
+      node({
+        id: kind,
+        kind,
+        deg: kind === "hover" ? 10000 : 0,
+        x: 195 + 80 * Math.cos(th),
+        y: 300 + 80 * Math.sin(th),
+        radial: { cx: 195, cy: 300, th },
+      });
+    const result = place([radialNode(0.01 * side, "hover"), radialNode(0, "current")]);
+    expect(result.labels.map((label) => label.id)).toEqual(["current", "hover"]);
+    const [current, hover] = result.labels as [PlacedLabel, PlacedLabel];
+    // The current title keeps its own ray; the pointed title moves to the side of its own note, clear of it.
+    expect(current.rotate).toBeCloseTo(0);
+    expect(Math.sign(hover.rotate!)).toBe(side);
+    expect(quadsIntersect(current.corners!, hover.corners!)).toBe(false);
+  });
+}
+test("radial labels fit all corners; off-canvas inner corners exclude forced labels", () => {
+  const result = place([node({ kind: "current", x: 389, y: 320, radial: { cx: 195, cy: 320, th: 0 } })]);
+  expect(result.labels).toEqual([]);
+});
+test("explicit bounds constrain normal labels and their forced fallback too", () => {
+  const bounds = { x0: 40, y0: 50, x1: 300, y1: 400 };
+  const result = placeLabels({
+    width: 390,
+    height: 640,
+    bounds,
+    nodes: [node({ x: 389, y: 639, kind: "current" })],
+    areaLabels: [{ key: "outside", text: "Outside", x: 320, y: 500 }],
+    maxLabels: 400,
+    maxWidth: 130,
+    measure,
+  });
+  expect(result.labels).toHaveLength(1);
+  expect(result.areaLabels).toEqual([]);
+  for (const { rect } of result.labels) {
+    expect(rect.x0).toBeGreaterThanOrEqual(bounds.x0);
+    expect(rect.y0).toBeGreaterThanOrEqual(bounds.y0);
+    expect(rect.x1).toBeLessThanOrEqual(bounds.x1);
+    expect(rect.y1).toBeLessThanOrEqual(bounds.y1);
+  }
+});
+
+test("radial labels keep out of obstacles", () => {
+  const target = node({ id: "radial", kind: "current", x: 275, y: 300, radial: { cx: 195, cy: 300, th: 0 } });
+  const blocked = placeLabels({
+    width: 390,
+    height: 640,
+    nodes: [target],
+    areaLabels: [],
+    obstacles: [{ x0: 285, y0: 285, x1: 360, y1: 315 }],
+    measure,
+    maxLabels: 400,
+    maxWidth: 130,
+  });
+  expect(blocked.labels).toEqual([]);
 });

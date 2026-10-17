@@ -8,7 +8,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, keptThrough, launchBrowser } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
 // Whether a property row keeps its boxes while hovered, edited, or open, and whether the claim ring and labels line up,
@@ -31,8 +31,8 @@ const styleEntries = [
 const spaceId = "Space1";
 const now = "2026-10-02T08:00:00.000Z";
 const me = "11111111-1111-4111-8111-111111111111";
-const lena = { id: "22222222-2222-4222-8222-222222222222", displayName: "Lena Example", avatarHash: null };
-const tom = { id: me, displayName: "Tom Sample", avatarHash: null };
+const lena = { id: "22222222-2222-4222-8222-222222222222", kind: "user" as const, displayName: "Lena Example", avatarHash: null };
+const tom = { id: me, kind: "user" as const, displayName: "Tom Sample", avatarHash: null };
 const columns: SpaceColumn[] = [{ id: "Col001", spaceId, name: "To do", color: "#3b82f6", rank: "1", isDone: false }];
 const tags: SpaceTag[] = [
   { id: "Tag001", spaceId, name: "Hardware", color: "#2563eb" },
@@ -198,7 +198,9 @@ beforeAll(async () => {
           stored = {
             ...stored,
             claim: { id: body.claimId, actor: { kind: "user", id: me }, displayName: tom.displayName, avatarHash: null, claimedAt: now },
-            assignees: stored.assignees?.some((person) => person.id === me) ? stored.assignees : [...(stored.assignees ?? []), tom],
+            assignees: stored.assignees?.some((person) => person.kind === "user" && person.id === me)
+              ? stored.assignees
+              : [...(stored.assignees ?? []), tom],
           };
           return Response.json(stored);
         }
@@ -442,9 +444,13 @@ describe("Spaces item detail in a browser", () => {
       const sizes = await peopleSizes(page);
       const height = await peopleListHeight(page);
       expect(sizes.map((row) => row.name)).toEqual([lena.displayName, tom.displayName]);
-      await page.getByRole("button", { name: "Ich übernehme", exact: true }).click();
       const holder = peopleRows(page).first();
-      await holder.locator('[data-ring="success"]').waitFor();
+      expect(
+        await keptThrough(peopleSection(page), async () => {
+          await page.getByRole("button", { name: "Ich übernehme", exact: true }).click();
+          await holder.locator('[data-ring="success"]').waitFor();
+        }),
+      ).toEqual({ replaced: false, heightChange: 0 });
       expect(await peopleRows(page).count()).toBe(2);
       expect(await peopleSection(page).getByText(tom.displayName, { exact: true }).count()).toBe(1);
       expect(await holder.getByText(tom.displayName, { exact: true }).count()).toBe(1);
@@ -535,6 +541,49 @@ describe("Spaces item detail in a browser", () => {
   }, 60_000);
 
   for (const theme of ["light", "dark"] as const) {
+    test(`an agent is an assignee like a person: working or idle, its row keeps the person rows' size in ${theme}`, async () => {
+      const agent = {
+        id: "66666666-6666-4666-8666-666666666666",
+        kind: "service_account" as const,
+        displayName: "Release agent",
+        avatarHash: null,
+      };
+      const claim = { ...task.claim!, actor: { kind: "service_account" as const, id: agent.id }, displayName: agent.displayName };
+      for (const [state, item] of [
+        ["working", { ...task, assignees: [tom, agent], claim }],
+        ["idle", { ...task, assignees: [tom, agent], claim: null }],
+      ] satisfies [string, SpaceItem][]) {
+        const page = await open(desktop, { locale: "de", item }, theme);
+        try {
+          const rows = peopleRows(page);
+          expect(await rows.count()).toBe(2);
+          const agentRow = rows.filter({ hasText: agent.displayName });
+          // The agent shows the service-account icon, never a picture or a person's initials.
+          expect(await agentRow.locator(".k2b-avatar i.ti-api").count()).toBe(1);
+          // As an assignee, the agent can be removed like a person, also while it works on the task.
+          expect(await agentRow.getByRole("button", { name: `${agent.displayName} entfernen` }).count()).toBe(1);
+          if (state === "working") {
+            expect(await rows.first().getByText(agent.displayName, { exact: true }).count()).toBe(1);
+            expect(await agentRow.locator('[data-ring="success"]').count()).toBe(1);
+            expect(await agentRow.getByText("arbeitet daran", { exact: true }).count()).toBe(1);
+          } else expect(await peopleSection(page).locator('[data-ring="success"]').count()).toBe(0);
+          const sizes = await rows.evaluateAll((elements) =>
+            elements.map((row) => {
+              const avatar = row.querySelector(".k2b-avatar")!.getBoundingClientRect();
+              return { row: row.getBoundingClientRect().height, avatar: [avatar.width, avatar.height] };
+            }),
+          );
+          expect(sizes[0]).toEqual(sizes[1]!);
+          await peopleSection(page).screenshot({
+            path: `/tmp/spaces-detail-${browserName}-agent-${state}-${theme}.png`,
+            animations: "disabled",
+          });
+        } finally {
+          await page.context().close();
+        }
+      }
+    }, 60_000);
+
     for (const width of [320, 480, "phone"] as const) {
       test(`people: assigned worker at ${width} in ${theme}`, async () => {
         const page = await open(width === "phone" ? phone : desktop, { locale: "de" }, theme);

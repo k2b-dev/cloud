@@ -729,7 +729,8 @@ for (const viewport of [
       const checked = switcher.locator('[aria-checked="true"]');
       await checked.focus();
       await page.keyboard.press(expected === "network" ? "ArrowRight" : "ArrowLeft");
-      expect(search(page).get("display")).toBe(expected === "network" ? "neighborhood" : "network");
+      expect(search(page).get("display")).toBe("circle");
+      expect(await page.locator(".notebook-graph__svg").getAttribute("data-display")).toBe("circle");
       await page.keyboard.press(expected === "network" ? "ArrowLeft" : "ArrowRight");
       expect(search(page).get("display")).toBe(expected);
       await switcher.getByRole("radio", { name: "Network", exact: true }).click();
@@ -894,6 +895,327 @@ test(`${browserName}: neighborhood search uses local hits and preserves zoom; dr
     await page.mouse.up();
     expect(page.url()).toContain("mode=graph");
     expect(await positions(page)).toEqual(before);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+const circleGeometry = (page: Page) =>
+  nodes(page).evaluateAll((items) => {
+    const points = items.map((item) => {
+      const box = item.querySelector(".notebook-graph__disc")!.getBoundingClientRect();
+      return {
+        id: item.getAttribute("data-node")!,
+        slot: item.getAttribute("data-slot")!,
+        x: box.left + box.width / 2,
+        y: box.top + box.height / 2,
+      };
+    });
+    const [a, b, c] = [points[0]!, points[Math.floor(points.length / 3)]!, points[Math.floor((points.length * 2) / 3)]!];
+    const d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
+    const sq = (p: { x: number; y: number }) => p.x * p.x + p.y * p.y;
+    const cx = (sq(a) * (b.y - c.y) + sq(b) * (c.y - a.y) + sq(c) * (a.y - b.y)) / d;
+    const cy = (sq(a) * (c.x - b.x) + sq(b) * (a.x - c.x) + sq(c) * (b.x - a.x)) / d;
+    const angle = (p: { x: number; y: number }) => (Math.atan2(p.y - cy, p.x - cx) + Math.PI / 2 + Math.PI * 2) % (Math.PI * 2);
+    return { cx, cy, radius: Math.hypot(a.x - cx, a.y - cy), ring: points.sort((p, q) => angle(p) - angle(q)) };
+  });
+const focusedNode = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("data-node"));
+
+test(`${browserName}: Circle places all 49 notes on one ring with a band for every area`, async () => {
+  const page = await open(graphPath("hand01", "&display=circle"));
+  try {
+    expect(await nodes(page).count()).toBe(49);
+    expect(await page.locator(".notebook-graph__svg").getAttribute("data-display")).toBe("circle");
+    expect(await page.locator(".notebook-graph__status").textContent()).toContain("49 notes");
+    const { ring, cx, cy, radius } = await circleGeometry(page);
+    for (const p of ring) expect(Math.abs(Math.hypot(p.x - cx, p.y - cy) - radius)).toBeLessThan(1.5);
+    const areas = await page.locator(".notebook-graph__area").count();
+    expect(areas).toBe(7);
+    expect(await page.locator("path.notebook-graph__band").count()).toBe(areas);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+for (const [notebook, viewport] of [
+  ["hand01", { width: 390, height: 844 }],
+  ["big001", { width: 1440, height: 900 }],
+] as const) {
+  test(`${browserName}: Circle pointer targets reach the note under every dot for ${notebook} at ${viewport.width}`, async () => {
+    const page = await open(graphPath(notebook, "&display=circle"), viewport);
+    try {
+      // Dots on the ring stand closer than a hit circle is wide; a press at a dot's centre must reach that note.
+      const wrong = await nodes(page).evaluateAll((items) =>
+        items.flatMap((item) => {
+          const box = item.querySelector(".notebook-graph__disc")!.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest("[data-node]");
+          const id = item.getAttribute("data-node")!;
+          return hit?.getAttribute("data-node") === id ? [] : [id];
+        }),
+      );
+      expect(wrong).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
+
+test(`${browserName}: Circle chords use their source area and isolate outgoing solid and incoming dashed links`, async () => {
+  const page = await open(graphPath("hand01", "&display=circle"));
+  try {
+    const sourceColours = await page.locator('[data-edge-kind="chord"]').evaluateAll((edges) =>
+      edges.map((edge) => {
+        const source = document.querySelector(`[data-node="${edge.getAttribute("data-source")}"] .notebook-graph__disc`)!;
+        return { stroke: getComputedStyle(edge).stroke, fill: getComputedStyle(source).fill };
+      }),
+    );
+    expect(sourceColours.length).toBeGreaterThan(0);
+    for (const colour of sourceColours) expect(colour.stroke).toBe(colour.fill);
+    const at = await nodeCenter(page, WAREHOUSE);
+    await page.mouse.move(at.x, at.y);
+    await page.waitForFunction(
+      (id) => document.querySelector(`.notebook-graph__edge[data-source="${id}"][data-near="out"]`) !== null,
+      WAREHOUSE,
+    );
+    const highlighted = await page.locator('[data-edge-kind="chord"]').evaluateAll((edges, id) => {
+      const fill = getComputedStyle(document.querySelector(`[data-node="${id}"] .notebook-graph__disc`)!).fill;
+      return {
+        fill,
+        edges: edges.map((edge) => {
+          const style = getComputedStyle(edge);
+          return {
+            source: edge.getAttribute("data-source"),
+            target: edge.getAttribute("data-target"),
+            near: edge.getAttribute("data-near"),
+            stroke: style.stroke,
+            opacity: style.strokeOpacity,
+            dash: style.strokeDasharray,
+          };
+        }),
+      };
+    }, WAREHOUSE);
+    expect(highlighted.edges.filter((edge) => edge.near === "out")).toHaveLength(7);
+    expect(highlighted.edges.filter((edge) => edge.near === "in")).toHaveLength(2);
+    for (const edge of highlighted.edges) {
+      expect(Number(edge.opacity)).toBe(edge.near ? 0.95 : 0.07);
+      if (!edge.near) continue;
+      expect(edge.stroke).toBe(highlighted.fill);
+      if (edge.near === "out") {
+        expect(edge.source).toBe(WAREHOUSE);
+        expect(edge.dash).toBe("none");
+      } else {
+        expect(edge.target).toBe(WAREHOUSE);
+        expect(edge.dash).not.toBe("none");
+      }
+    }
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: Circle arrow keys walk the full ring and wrap from the current note`, async () => {
+  const page = await open(graphPath("hand01", "&display=circle"));
+  try {
+    const { ring } = await circleGeometry(page);
+    const current = ring.findIndex((note) => note.id === WAREHOUSE);
+    await page.getByRole("button", { name: "Fit graph", exact: true }).focus();
+    await page.keyboard.press("Tab");
+    expect(await focusedNode(page)).toBe(WAREHOUSE);
+    expect(await page.locator('[data-node][tabindex="0"]').count()).toBe(1);
+    for (let step = 1; step <= 49; step++) {
+      await page.keyboard.press("ArrowRight");
+      expect(await focusedNode(page)).toBe(ring[(current + step) % ring.length]!.id);
+    }
+    await page.keyboard.press("ArrowLeft");
+    expect(await focusedNode(page)).toBe(ring[(current - 1 + ring.length) % ring.length]!.id);
+    await page.keyboard.press("ArrowUp");
+    expect(await focusedNode(page)).toBe(ring[(current - 2 + ring.length) % ring.length]!.id);
+    await page.keyboard.press("ArrowDown");
+    expect(await focusedNode(page)).toBe(ring[(current - 1 + ring.length) % ring.length]!.id);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+for (const hide of [null, HANDBOOK_IDS.komm!]) {
+  test(`${browserName}: Circle area jumps land at first notes and wrap${hide ? " with a hidden area" : ""}`, async () => {
+    const page = await open(graphPath("hand01", `&display=circle${hide ? `&hide=${hide}` : ""}`));
+    try {
+      const { ring } = await circleGeometry(page);
+      const starts = ring.filter((note, i) => i === 0 || note.slot !== ring[i - 1]!.slot);
+      const areaIndex = starts.findIndex((note) => note.slot === ring.find((note) => note.id === WAREHOUSE)!.slot);
+      if (hide) {
+        expect(ring.some((note) => note.id === hide)).toBe(false);
+        expect(starts).toHaveLength(6);
+      }
+      await page.locator(`[data-node="${WAREHOUSE}"]`).focus();
+      await page.keyboard.press("PageDown");
+      expect(await focusedNode(page)).toBe(starts[(areaIndex + 1) % starts.length]!.id);
+      await page.keyboard.press("PageUp");
+      expect(await focusedNode(page)).toBe(starts[areaIndex]!.id);
+      await page.locator(`[data-node="${starts[0]!.id}"]`).focus();
+      await page.keyboard.press("PageUp");
+      expect(await focusedNode(page)).toBe(starts.at(-1)!.id);
+      await page.keyboard.press("PageDown");
+      expect(await focusedNode(page)).toBe(starts[0]!.id);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
+
+type QuadPoint = { x: number; y: number };
+function labelQuadsOverlap(a: readonly QuadPoint[], b: readonly QuadPoint[]): boolean {
+  for (const quad of [a, b]) {
+    for (let i = 0; i < quad.length; i++) {
+      const p = quad[i]!,
+        q = quad[(i + 1) % quad.length]!;
+      const length = Math.hypot(q.x - p.x, q.y - p.y);
+      if (!length) continue;
+      const nx = -(q.y - p.y) / length,
+        ny = (q.x - p.x) / length;
+      const project = (points: readonly QuadPoint[]) => points.map((point) => point.x * nx + point.y * ny);
+      const pa = project(a),
+        pb = project(b);
+      if (Math.min(Math.max(...pa), Math.max(...pb)) - Math.max(Math.min(...pa), Math.min(...pb)) <= 0.5) return false;
+    }
+  }
+  return true;
+}
+for (const notebook of ["hand01", "big001"]) {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    test(`${browserName}: Circle labels stay separate and above the status line for ${notebook} at ${viewport.width}`, async () => {
+      const page = await open(graphPath(notebook, "&display=circle"), viewport);
+      try {
+        const { quads, canvas, statusTop, count } = await page.evaluate(() => {
+          const svg = document.querySelector<SVGSVGElement>(".notebook-graph__svg")!;
+          const box = svg.getBoundingClientRect();
+          const quad = (element: SVGGraphicsElement, b: DOMRect, owner: number) => ({
+            owner,
+            points: [
+              [b.x, b.y],
+              [b.x + b.width, b.y],
+              [b.x + b.width, b.y + b.height],
+              [b.x, b.y + b.height],
+            ].map(([x, y]) => {
+              const p = new DOMPoint(x, y).matrixTransform(element.getScreenCTM()!);
+              return { x: p.x, y: p.y };
+            }),
+          });
+          const titles = [...svg.querySelectorAll<SVGTextElement>(".notebook-graph__label")];
+          // An area name follows its arc, so its own box is a loose square; each glyph box is the shape it covers.
+          const names = [...svg.querySelectorAll<SVGTextElement>(".notebook-graph__band-label")];
+          return {
+            quads: [
+              ...titles.map((label, index) => quad(label, label.getBBox(), index)),
+              ...names.flatMap((name, index) =>
+                Array.from({ length: name.getNumberOfChars() }, (_, char) => quad(name, name.getExtentOfChar(char), titles.length + index)),
+              ),
+            ],
+            canvas: { x0: box.left, y0: box.top, x1: box.right, y1: box.bottom },
+            statusTop: document.querySelector(".notebook-graph__status")!.getBoundingClientRect().top,
+            count: titles.length,
+          };
+        });
+        expect(count).toBeGreaterThan(0);
+        for (const [i, quad] of quads.entries()) {
+          for (const point of quad.points) {
+            expect(point.x).toBeGreaterThanOrEqual(canvas.x0);
+            expect(point.x).toBeLessThanOrEqual(canvas.x1);
+            expect(point.y).toBeGreaterThanOrEqual(canvas.y0);
+            expect(point.y).toBeLessThanOrEqual(Math.min(canvas.y1, statusTop));
+          }
+          for (const other of quads.slice(i + 1))
+            if (other.owner !== quad.owner) expect(labelQuadsOverlap(quad.points, other.points)).toBe(false);
+        }
+        if (notebook === "hand01") expect(await page.locator(`[data-label="${WAREHOUSE}"]`).getAttribute("data-kind")).toBe("current");
+        // The status line keeps the true totals, also for the notes whose titles found no room.
+        expect(await page.locator(".notebook-graph__status").textContent()).toContain(notebook === "big001" ? "300 notes" : "49 notes");
+        if (notebook === "big001") console.info(`${browserName} Circle ${viewport.width}px: ${count} of 300 notes labelled`);
+      } finally {
+        await close(page);
+      }
+    }, 30_000);
+  }
+}
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`${browserName}: Circle titles the focused ring neighbour of the current note beside its title at ${viewport.width}`, async () => {
+    const page = await open(graphPath("hand01", "&display=circle"), viewport);
+    try {
+      const quad = (id: string) =>
+        page.locator(`[data-label="${id}"]`).evaluate((label: SVGTextElement) => {
+          const b = label.getBBox();
+          return [
+            [b.x, b.y],
+            [b.x + b.width, b.y],
+            [b.x + b.width, b.y + b.height],
+            [b.x, b.y + b.height],
+          ].map(([x, y]) => {
+            const p = new DOMPoint(x, y).matrixTransform(label.getScreenCTM()!);
+            return { x: p.x, y: p.y };
+          });
+        });
+      for (const key of ["ArrowRight", "ArrowLeft"]) {
+        await page.locator(`[data-node="${WAREHOUSE}"]`).focus();
+        await page.keyboard.press(key);
+        const neighbour = (await focusedNode(page))!;
+        expect(neighbour).not.toBe(WAREHOUSE);
+        await page.waitForSelector(`[data-label="${neighbour}"][data-kind="hover"]`, { timeout: 5_000 });
+        expect(await page.locator(`[data-label="${WAREHOUSE}"]`).getAttribute("data-kind")).toBe("current");
+        expect(labelQuadsOverlap(await quad(neighbour), await quad(WAREHOUSE))).toBe(false);
+      }
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
+
+test(`${browserName}: Circle area names read left to right, including the lower half`, async () => {
+  const page = await open(graphPath("hand01", "&display=circle"));
+  try {
+    const { cy } = await circleGeometry(page);
+    const labels = await page.locator(".notebook-graph__band-label").evaluateAll((items) =>
+      items.map((item) => {
+        const text = item as SVGTextElement,
+          n = text.getNumberOfChars(),
+          matrix = text.getScreenCTM()!;
+        const project = (p: DOMPoint) => new DOMPoint(p.x, p.y).matrixTransform(matrix);
+        const start = project(text.getStartPositionOfChar(0)),
+          end = project(text.getEndPositionOfChar(n - 1));
+        const mid = project(text.getStartPositionOfChar(Math.floor(n / 2)));
+        return { start: start.x, end: end.x, midY: mid.y };
+      }),
+    );
+    expect(labels.length).toBeGreaterThan(0);
+    for (const label of labels) expect(label.start).toBeLessThan(label.end);
+    expect(labels.some((label) => label.midY > cy)).toBe(true);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: Circle display and filters survive reload, opening a note and Back`, async () => {
+  const page = await open(graphPath("hand01", `&display=circle&links=linked&hide=${HANDBOOK_IDS.komm}`));
+  try {
+    const before = [...search(page)];
+    await page.reload();
+    await settled(page);
+    expect(await page.locator(".notebook-graph__svg").getAttribute("data-display")).toBe("circle");
+    expect([...search(page)]).toEqual(before);
+    await page.locator(`[data-node="${WAREHOUSE}"]`).focus();
+    await page.keyboard.press("Enter");
+    await page.waitForURL(`**/app/notebooks/hand01/notes/${WAREHOUSE}?mode=book`);
+    await page.goBack();
+    await settled(page);
+    expect(await page.locator(".notebook-graph__svg").getAttribute("data-display")).toBe("circle");
+    expect([...search(page)]).toEqual(before);
   } finally {
     await close(page);
   }

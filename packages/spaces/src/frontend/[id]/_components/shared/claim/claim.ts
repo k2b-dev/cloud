@@ -11,12 +11,9 @@ type Target = { spaceId: string; itemId: string };
 export const isOwnClaim = (claim: SpaceItemClaim | null | undefined, currentUserId: string) =>
   claim?.actor.kind === "user" && claim.actor.id === currentUserId;
 
-/**
- * Whether `assignee` is the account working on the task. Assignees are people, so only a person's claim matches, by
- * account kind and ID: a service account never matches an assignee, whatever its ID.
- */
-export const isClaimHolder = (claim: SpaceItemClaim | null | undefined, assignee: Pick<SpaceItemAssignee, "id">) =>
-  claim?.actor.kind === "user" && claim.actor.id === assignee.id;
+/** Whether `assignee` is the person or service account working on the task, matching principal kind and ID. */
+export const isClaimHolder = (claim: SpaceItemClaim | null | undefined, assignee: Pick<SpaceItemAssignee, "kind" | "id">) =>
+  claim?.actor.kind === assignee.kind && claim.actor.id === assignee.id;
 
 /** The claim ID to send whenever completion changes; the holder completes or reopens a claimed task with it. */
 export const ownClaimId = (claim: SpaceItemClaim | null | undefined, currentUserId: string) =>
@@ -69,17 +66,20 @@ export const resolveTransferClaim = (claim: SpaceItemClaim | null | undefined, c
   resolveClaim(claim, currentUserId, "transfer", t);
 
 /**
- * Claim fields to replace the assignees with `assigneeIds`. Removing the person who works on the task ends their claim:
+ * Claim fields to replace the assignees with `assigneeIds`. Removing the account that works on the task ends their claim:
  * your own at once, since you removed yourself, someone else's after one confirmation; see `resolveClaim`. A list that
- * keeps the holder needs no claim fields.
+ * keeps the holder, or whose current assignees do not include the holder, needs no claim fields.
  */
 export const resolveAssigneeClaim = async (
   claim: SpaceItemClaim | null | undefined,
   currentUserId: string,
+  currentAssignees: readonly Pick<SpaceItemAssignee, "kind" | "id">[],
   assigneeIds: readonly string[],
   t: Messages,
 ): Promise<ClaimFields | null> =>
-  claim?.actor.kind === "user" && !assigneeIds.includes(claim.actor.id) ? resolveClaim(claim, currentUserId, "unassign", t) : {};
+  claim && currentAssignees.some((assignee) => isClaimHolder(claim, assignee)) && !assigneeIds.includes(claim.actor.id)
+    ? resolveClaim(claim, currentUserId, "unassign", t)
+    : {};
 
 /** Claims the task with a fresh browser-generated claim ID, exactly like a CLI worker. */
 export const claimTask = async (target: Target, t: Messages) => {

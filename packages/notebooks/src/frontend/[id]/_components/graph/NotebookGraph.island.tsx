@@ -19,6 +19,7 @@ import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
 import { createNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "../sidebar/navigation-visibility";
+import CircleDisplay from "./CircleDisplay";
 import GraphList from "./GraphList";
 import { GraphDisplaySwitcher, graphDisplayLabel } from "./graph-displays";
 import { layoutNetworkInSlices, type NetPoint } from "./layout-net";
@@ -227,6 +228,26 @@ export default function NotebookGraph(props: Props) {
       now={props.now}
       filterKey={filterKey()}
       layout={networkLayout}
+      onOpen={open}
+      onClearQuery={() => update({ q: "" })}
+      controls={setControls}
+      focusRequest={(focus) => {
+        focusNote = focus;
+      }}
+      claimFocus={claimFocus}
+    />
+  );
+  const circle = () => (
+    <CircleDisplay
+      model={model}
+      notes={notes()}
+      edges={edges()}
+      currentId={currentId()}
+      query={query()}
+      notebookName={props.notebookName}
+      displayName={graphDisplayLabel("circle", t())}
+      now={props.now}
+      filterKey={filterKey()}
       onOpen={open}
       onClearQuery={() => update({ q: "" })}
       controls={setControls}
@@ -505,7 +526,10 @@ export default function NotebookGraph(props: Props) {
             />
           </Match>
           <Match when={true}>
-            <Show when={display() === null} fallback={display() === "neighborhood" ? neighborhood() : network()}>
+            <Show
+              when={display() === null}
+              fallback={display() === "circle" ? circle() : display() === "neighborhood" ? neighborhood() : network()}
+            >
               <div class="notebook-graph__desktop-default">{DEFAULT_GRAPH_DISPLAY === "network" ? network() : neighborhood()}</div>
               <div class="notebook-graph__phone-default">{PHONE_GRAPH_DISPLAY === "neighborhood" ? neighborhood() : network()}</div>
             </Show>

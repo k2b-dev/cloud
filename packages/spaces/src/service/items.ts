@@ -26,7 +26,7 @@ import { INACTIVE_ITEM_DAYS } from "@/contracts";
 import { newShortId, withShortId, withShortIdRetry } from "../lib/short-id";
 import { descriptionPreview } from "../presentation/description-preview";
 import { CompletionInputSchema, type TaskWork } from "../work-contracts";
-import { buildSpacePrincipalCondition, mayReadAcrossSpaces } from "./access";
+import { buildSpacePrincipalCondition, mayReadAcrossSpaces, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
 import { publishDependentsChange } from "./item-dependencies";
@@ -130,6 +130,7 @@ type DbOverlapItem = {
 };
 
 type DbItemAssignee = {
+  kind: SpaceItemAssignee["kind"];
   item_id: string;
   id: string;
   display_name: string;
@@ -301,16 +302,18 @@ export const persistCalendarEvent = async (params: {
 
 const shiftIsoInstant = (value: string, milliseconds: number) => new Date(new Date(value).getTime() + milliseconds).toISOString();
 
-const replaceItemAssignees = async (db: SqlExecutor, itemId: string, userIds: string[]): Promise<void> => {
+const replaceItemAssignees = async (db: SqlExecutor, itemId: string, principals: AssigneePrincipal[]): Promise<void> => {
   await db`DELETE FROM spaces.item_assignees WHERE item_id = ${itemId}`;
-
-  for (const userId of userIds) {
-    await db`
-      INSERT INTO spaces.item_assignees (item_id, user_id)
-      VALUES (${itemId}, ${userId})
-      ON CONFLICT DO NOTHING
-    `;
-  }
+  if (principals.length === 0) return;
+  await db`
+    INSERT INTO spaces.item_assignees (item_id, user_id, service_account_id)
+    SELECT ${itemId}::uuid, id, NULL::uuid
+    FROM unnest(${toPgUuidArray(principals.filter((principal) => principal.kind === "user").map((principal) => principal.id))}::uuid[]) AS id
+    UNION ALL
+    SELECT ${itemId}::uuid, NULL::uuid, id
+    FROM unnest(${toPgUuidArray(principals.filter((principal) => principal.kind === "service_account").map((principal) => principal.id))}::uuid[]) AS id
+    ON CONFLICT DO NOTHING
+  `;
 };
 
 const replaceItemTags = async (db: SqlExecutor, itemId: string, tagIds: string[]): Promise<void> => {
@@ -341,37 +344,154 @@ const assignableUserDescription = (user: AccessUser): string => {
 
 const uniqueIds = (ids: string[] | undefined): string[] => [...new Set(ids ?? [])];
 
+/** Accounts need their own readable grant; public and authenticated access never make them assignable. */
+export const listServiceAccountsWithAccess = async (params: {
+  spaceId: string;
+  search?: string;
+  ids?: string[];
+  excludeIds?: string[];
+  limit?: number;
+  db?: SqlExecutor;
+}): Promise<SpaceAssignableUser[]> => {
+  if (params.ids?.length === 0) return [];
+  const db = params.db ?? sql;
+  const ids = uniqueIds(params.ids);
+  const excluded = uniqueIds(params.excludeIds);
+  const query = params.search?.trim().toLowerCase();
+  const pattern = query ? `%${query.replace(/[\\%_]/g, "\\$&")}%` : null;
+  // Match the people directory's existing query budget.
+  const limit = Math.min(Math.max(params.limit ?? (ids.length || 20), 1), 500);
+  const rows = await db<{ id: string; name: string; kind: "standalone" | "agent" | "resource_bound" }[]>`
+    SELECT account.id, account.name, account.kind
+    FROM auth.service_accounts account
+    WHERE EXISTS (
+        SELECT 1 FROM auth.access access
+        JOIN spaces.space_access space_access ON space_access.access_id = access.id
+        WHERE access.service_account_id = account.id AND space_access.space_id = ${params.spaceId}::uuid
+          AND access.permission IN ('read', 'write', 'admin')
+      )
+      AND account.status = 'active'
+      AND (
+        account.kind IN ('standalone', 'agent')
+        OR (account.kind = 'resource_bound' AND account.app_id = ${SPACES_APP_ID}
+          AND account.resource_type = ${SPACE_RESOURCE_TYPE} AND account.resource_id = ${params.spaceId})
+      )
+      AND (${params.ids === undefined} OR account.id = ANY(${toPgUuidArray(ids)}::uuid[]))
+      AND account.id <> ALL(${toPgUuidArray(excluded)}::uuid[])
+      AND (${pattern}::text IS NULL OR LOWER(account.name) LIKE ${pattern} ESCAPE '\\')
+    ORDER BY (${query ?? null}::text IS NOT NULL AND LOWER(account.name) = ${query ?? null}) DESC, account.name, account.id
+    LIMIT ${limit}
+  `;
+  return rows.map((row) => ({
+    kind: "service_account",
+    id: row.id,
+    displayName: row.name,
+    avatarHash: null,
+    uid: row.name,
+    description: `${row.kind === "agent" ? "agent" : row.kind === "resource_bound" ? "Space API key" : "service account"} · direct access`,
+  }));
+};
+
+/** Lists the requested kinds together, ordered by exact search match, lowercased display name, then ID before limiting. */
 export const listAssignableUsers = async (params: {
   spaceId: string;
   search?: string;
   excludeUserIds?: string[];
   limit?: number;
+  kind?: SpaceAssignableUser["kind"];
 }): Promise<SpaceAssignableUser[]> => {
-  const accessIds = await listSpaceAccessIds(params.spaceId);
-  const users = await listUsersWithAccess({
-    accessIds,
-    search: params.search,
-    excludeUserIds: params.excludeUserIds,
-    limit: params.limit,
-  });
-
-  return users.map((user) => ({
+  const limit = Math.min(Math.max(params.limit ?? 20, 1), 500);
+  const [users, accounts] = await Promise.all([
+    params.kind === "service_account"
+      ? []
+      : listSpaceAccessIds(params.spaceId).then((accessIds) =>
+          listUsersWithAccess({ accessIds, search: params.search, excludeUserIds: params.excludeUserIds, limit }),
+        ),
+    params.kind === "user"
+      ? []
+      : listServiceAccountsWithAccess({
+          spaceId: params.spaceId,
+          search: params.search,
+          excludeIds: params.excludeUserIds,
+          limit,
+        }),
+  ]);
+  const people: SpaceAssignableUser[] = users.map((user) => ({
+    kind: "user",
     id: user.id,
     displayName: user.displayName,
     avatarHash: user.avatarHash,
     uid: user.uid,
     description: assignableUserDescription(user),
   }));
+  const query = params.search?.trim().toLowerCase();
+  const exact = (entry: SpaceAssignableUser) =>
+    Boolean(query && (entry.displayName.toLowerCase() === query || entry.uid.toLowerCase() === query));
+  return [...new Map([...accounts, ...people].map((entry) => [entry.id, entry])).values()]
+    .sort((a, b) => {
+      const matchOrder = Number(exact(b)) - Number(exact(a));
+      if (matchOrder) return matchOrder;
+      const aName = a.displayName.toLowerCase();
+      const bName = b.displayName.toLowerCase();
+      return aName < bName ? -1 : aName > bName ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    })
+    .slice(0, limit);
 };
 
-/** The given users that currently have access to the Space, in their given order. */
-export const filterAssigneeIdsWithAccess = async (spaceId: string, assigneeIds: string[]): Promise<string[]> => {
+type AssigneePrincipal = Pick<SpaceItemAssignee, "kind" | "id">;
+
+/** Principal-aware eligibility for filters, validation, template reads and replacement resolution. */
+export const listAssigneePrincipalsWithAccess = async (
+  spaceId: string,
+  assigneeIds: string[],
+  db: SqlExecutor = sql,
+): Promise<AssigneePrincipal[]> => {
   const ids = uniqueIds(assigneeIds);
   if (ids.length === 0) return [];
-  const users = await listUsersWithAccess({ accessIds: await listSpaceAccessIds(spaceId), userIds: ids, limit: ids.length });
-  const valid = new Set(users.map((user) => user.id));
-  return ids.filter((id) => valid.has(id));
+  const [users, accounts] = await Promise.all([
+    listUsersWithAccess({ accessIds: await listSpaceAccessIds(spaceId, db), userIds: ids, limit: ids.length, db }),
+    listServiceAccountsWithAccess({ spaceId, ids, limit: ids.length, db }),
+  ]);
+  return [
+    ...accounts.map((account): AssigneePrincipal => ({ kind: "service_account", id: account.id })),
+    ...users.map((user): AssigneePrincipal => ({ kind: "user", id: user.id })),
+  ];
 };
+
+/** The principals that currently have access to the Space, in their given order. */
+export const filterAssigneeIdsWithAccess = async (spaceId: string, assigneeIds: string[], db: SqlExecutor = sql): Promise<string[]> => {
+  const valid = new Set((await listAssigneePrincipalsWithAccess(spaceId, assigneeIds, db)).map((principal) => principal.id));
+  return uniqueIds(assigneeIds).filter((id) => valid.has(id));
+};
+
+/** Keeps current principals and resolves new validated IDs, preferring people over service accounts. */
+export const resolveAssigneePrincipals = async (
+  spaceId: string,
+  assigneeIds: string[],
+  db: SqlExecutor = sql,
+  current: AssigneePrincipal[] = [],
+): Promise<AssigneePrincipal[]> => {
+  const ids = uniqueIds(assigneeIds);
+  const principals = new Map(current.map((principal) => [principal.id, principal]));
+  const eligible = await listAssigneePrincipalsWithAccess(
+    spaceId,
+    ids.filter((id) => !principals.has(id)),
+    db,
+  );
+  // People follow accounts in the eligibility result and take precedence for new IDs.
+  for (const principal of eligible) principals.set(principal.id, principal);
+  return ids.flatMap((id) => {
+    const principal = principals.get(id);
+    return principal ? [principal] : [];
+  });
+};
+
+/** Caller holds the item row lock, shared with claim and assignee writes. */
+const readAssigneePrincipals = (itemId: string, db: SqlExecutor): Promise<AssigneePrincipal[]> => db<AssigneePrincipal[]>`
+  SELECT CASE WHEN user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind,
+    COALESCE(user_id, service_account_id) AS id
+  FROM spaces.item_assignees WHERE item_id = ${itemId}::uuid
+`;
 
 export const validateAssigneeIdsInSpace = async (
   spaceId: string,
@@ -379,18 +499,8 @@ export const validateAssigneeIdsInSpace = async (
   db: SqlExecutor = sql,
 ): Promise<MutationResult<void>> => {
   const ids = uniqueIds(assigneeIds);
-  if (ids.length === 0) return { ok: true, data: undefined };
-
-  const accessIds = await listSpaceAccessIds(spaceId, db);
-  const users = await listUsersWithAccess({
-    accessIds,
-    userIds: ids,
-    limit: ids.length,
-    db,
-  });
-  const validIds = new Set(users.map((user) => user.id));
+  const validIds = new Set(await filterAssigneeIdsWithAccess(spaceId, ids, db));
   const invalidCount = ids.filter((id) => !validIds.has(id)).length;
-
   if (invalidCount > 0) {
     return {
       ok: false,
@@ -401,18 +511,15 @@ export const validateAssigneeIdsInSpace = async (
   return { ok: true, data: undefined };
 };
 
-/** Caller holds the item row lock; existing concrete assignees can stay without re-validation. */
+/** Existing concrete assignees can stay without re-validation. */
 const validateAssigneeReplacementInSpace = async (
   spaceId: string,
-  itemId: string,
+  current: AssigneePrincipal[],
   assigneeIds: string[] | undefined,
   db: SqlExecutor,
 ): Promise<MutationResult<void>> => {
   if (assigneeIds === undefined) return { ok: true, data: undefined };
-  const current = await db<{ user_id: string }[]>`
-    SELECT user_id FROM spaces.item_assignees WHERE item_id = ${itemId}::uuid
-  `;
-  const keepIds = new Set(current.map((row) => row.user_id));
+  const keepIds = new Set(current.map((row) => row.id));
   return validateAssigneeIdsInSpace(
     spaceId,
     assigneeIds.filter((id) => !keepIds.has(id)),
@@ -548,14 +655,16 @@ const mapToItem = (row: DbItem): SpaceItem => ({
  * Get assignees for an item
  */
 const getAssignees = async (itemId: string): Promise<SpaceItemAssignee[]> => {
-  const rows = await sql<{ id: string; display_name: string; avatar_hash: string | null }[]>`
-    SELECT u.id, u.display_name, u.avatar_hash
+  const rows = await sql<Omit<DbItemAssignee, "item_id">[]>`
+    SELECT COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, sa.name) AS display_name, u.avatar_hash,
+      CASE WHEN ia.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind
     FROM spaces.item_assignees ia
-    JOIN auth.users u ON ia.user_id = u.id
+    LEFT JOIN auth.users u ON ia.user_id = u.id
+    LEFT JOIN auth.service_accounts sa ON ia.service_account_id = sa.id
     WHERE ia.item_id = ${itemId}
-    ORDER BY u.display_name
+    ORDER BY display_name, id
   `;
-  return rows.map((r) => ({ id: r.id, displayName: r.display_name, avatarHash: r.avatar_hash }));
+  return rows.map((r) => ({ kind: r.kind, id: r.id, displayName: r.display_name, avatarHash: r.avatar_hash }));
 };
 
 /**
@@ -580,17 +689,19 @@ const getTags = async (itemId: string): Promise<SpaceTag[]> => {
 const getAssigneesByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceItemAssignee[]>> => {
   if (itemIds.length === 0) return new Map();
   const rows = await sql<DbItemAssignee[]>`
-    SELECT ia.item_id, u.id, u.display_name, u.avatar_hash
+    SELECT ia.item_id, COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, sa.name) AS display_name, u.avatar_hash,
+      CASE WHEN ia.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind
     FROM spaces.item_assignees ia
-    JOIN auth.users u ON ia.user_id = u.id
+    LEFT JOIN auth.users u ON ia.user_id = u.id
+    LEFT JOIN auth.service_accounts sa ON ia.service_account_id = sa.id
     WHERE ia.item_id = ANY(${toPgUuidArray(itemIds)}::uuid[])
-    ORDER BY ia.item_id, u.display_name
+    ORDER BY ia.item_id, display_name, id
   `;
   const grouped = new Map<string, SpaceItemAssignee[]>();
   for (const row of rows) {
     grouped.set(row.item_id, [
       ...(grouped.get(row.item_id) ?? []),
-      { id: row.id, displayName: row.display_name, avatarHash: row.avatar_hash },
+      { kind: row.kind, id: row.id, displayName: row.display_name, avatarHash: row.avatar_hash },
     ]);
   }
   return grouped;
@@ -1040,11 +1151,12 @@ export const listFiltered = async (params: {
     )`;
   }
 
-  // Assignee filter (items assigned to ANY of the specified users)
+  // Assignee filter (items assigned to ANY of the specified principals)
   if (assigneeIds && assigneeIds.length > 0) {
     conditions = sql`${conditions} AND EXISTS (
       SELECT 1 FROM spaces.item_assignees ia
-      WHERE ia.item_id = i.id AND ia.user_id = ANY(${toPgUuidArray(assigneeIds)}::uuid[])
+      WHERE ia.item_id = i.id AND (ia.user_id = ANY(${toPgUuidArray(assigneeIds)}::uuid[])
+        OR ia.service_account_id = ANY(${toPgUuidArray(assigneeIds)}::uuid[]))
     )`;
   }
 
@@ -1608,7 +1720,16 @@ export const create = async (params: {
       if (!created) return null;
 
       if (assigneeIds !== undefined) {
-        await replaceItemAssignees(tx, created.id, assigneeIds);
+        await replaceItemAssignees(
+          tx,
+          created.id,
+          await resolveAssigneePrincipals(
+            spaceId,
+            assigneeIds,
+            tx,
+            data.assignCreator && createdBy ? [{ kind: "user", id: createdBy }] : [],
+          ),
+        );
       }
 
       for (const [index, label] of (data.checklist ?? []).entries()) {
@@ -1685,12 +1806,19 @@ export const update = async (params: {
       FOR UPDATE
     `;
     if (!locked) return { ok: false, error: "Item not found", status: 404 };
-    const assigneeCheck = await validateAssigneeReplacementInSpace(locked.space_id, id, data.assigneeIds, tx);
+    const currentAssignees = data.assigneeIds === undefined ? [] : await readAssigneePrincipals(id, tx);
+    const assigneeCheck = await validateAssigneeReplacementInSpace(locked.space_id, currentAssignees, data.assigneeIds, tx);
     if (!assigneeCheck.ok) return assigneeCheck;
 
     // Claim writes also hold this row lock. Refuse stale assignee replacements before any write.
     const { claim } = await taskWork.read(id, tx);
-    const dropsClaimHolder = claim?.actor.kind === "user" && data.assigneeIds !== undefined && !data.assigneeIds.includes(claim.actor.id);
+    const nextAssignees =
+      data.assigneeIds === undefined ? undefined : await resolveAssigneePrincipals(locked.space_id, data.assigneeIds, tx, currentAssignees);
+    const dropsClaimHolder =
+      claim !== null &&
+      nextAssignees !== undefined &&
+      currentAssignees.some((principal) => principal.kind === claim.actor.kind && principal.id === claim.actor.id) &&
+      !nextAssignees.some((principal) => principal.kind === claim.actor.kind && principal.id === claim.actor.id);
     let takenOver: Awaited<ReturnType<typeof taskWork.checkClaim>> | null = null;
     if (dropsClaimHolder) {
       takenOver = await taskWork.checkClaim(id, params.actor ?? systemActor, data.claimId, tx, data.force);
@@ -1811,9 +1939,9 @@ export const update = async (params: {
 
     if (!updated) return { ok: false, error: "Item not found", status: 404 };
 
-    if (data.assigneeIds !== undefined) {
+    if (nextAssignees !== undefined) {
       if (dropsClaimHolder) await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
-      await replaceItemAssignees(tx, id, data.assigneeIds);
+      await replaceItemAssignees(tx, id, nextAssignees);
       if (takenOver?.ok && takenOver.data)
         await taskWork.recordTakeOver(
           { spaceId: current.spaceId, itemId: id, itemTitle: current.title, actor: params.actor ?? systemActor, claim: takenOver.data },
@@ -1993,8 +2121,8 @@ export const splitRecurring = async (params: {
       if (!created) return { ok: false, error: "Failed to create split series", status: 500 };
 
       await tx`
-      INSERT INTO spaces.item_assignees (item_id, user_id)
-      SELECT ${created.id}, user_id
+      INSERT INTO spaces.item_assignees (item_id, user_id, service_account_id)
+      SELECT ${created.id}, user_id, service_account_id
       FROM spaces.item_assignees
       WHERE item_id = ${source.id}
       ON CONFLICT DO NOTHING
@@ -2449,10 +2577,16 @@ export const setAssignees = async (params: {
       SELECT space_id, title FROM spaces.items WHERE id = ${id} FOR UPDATE
     `;
     if (!current) return { ok: false, error: "Item not found", status: 404 };
-    const assigneeCheck = await validateAssigneeReplacementInSpace(current.space_id, id, userIds, tx);
+    const currentAssignees = await readAssigneePrincipals(id, tx);
+    const assigneeCheck = await validateAssigneeReplacementInSpace(current.space_id, currentAssignees, userIds, tx);
     if (!assigneeCheck.ok) return assigneeCheck;
     const { claim } = await taskWork.read(id, tx);
-    if (claim?.actor.kind === "user" && !userIds.includes(claim.actor.id)) {
+    const nextAssignees = await resolveAssigneePrincipals(current.space_id, userIds, tx, currentAssignees);
+    if (
+      claim &&
+      currentAssignees.some((principal) => principal.kind === claim.actor.kind && principal.id === claim.actor.id) &&
+      !nextAssignees.some((principal) => principal.kind === claim.actor.kind && principal.id === claim.actor.id)
+    ) {
       const check = await taskWork.checkClaim(id, params.actor ?? systemActor, params.claimId, tx, params.force);
       if (!check.ok) return check;
       await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
@@ -2462,7 +2596,7 @@ export const setAssignees = async (params: {
           tx,
         );
     }
-    await replaceItemAssignees(tx, id, userIds);
+    await replaceItemAssignees(tx, id, nextAssignees);
     await activity.record(
       {
         spaceId: current.space_id,

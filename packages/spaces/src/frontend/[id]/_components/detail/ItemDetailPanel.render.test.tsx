@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { SpaceComment, SpaceItem } from "@/contracts";
+import type { SpaceComment, SpaceItem, SpaceItemReaction } from "@/contracts";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-detail-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -55,7 +55,7 @@ const event: SpaceItem = {
   startsAt: "2026-08-10T10:00:00.000Z",
   endsAt: "2026-08-10T11:00:00.000Z",
   priority: "high",
-  assignees: [{ id: userId, displayName: "Valentin Kolb", avatarHash: null }],
+  assignees: [{ id: userId, kind: "user" as const, displayName: "Valentin Kolb", avatarHash: null }],
   tags: [{ id: "Tag001", spaceId, name: "Release", color: "#2563eb" }],
 };
 
@@ -639,8 +639,8 @@ test("renders work progress and preserved completion evidence in German", () => 
 
 describe("Spaces item detail groups", () => {
   const holderId = "44444444-4444-4444-8444-444444444444";
-  const mira = { id: holderId, displayName: "Mira Beck", avatarHash: null };
-  const valentin = { id: userId, displayName: "Valentin Kolb", avatarHash: null };
+  const mira = { id: holderId, kind: "user" as const, displayName: "Mira Beck", avatarHash: null };
+  const valentin = { id: userId, kind: "user" as const, displayName: "Valentin Kolb", avatarHash: null };
   const miraClaim = {
     id: "55555555-5555-4555-8555-555555555555",
     actor: { kind: "user" as const, id: holderId },
@@ -926,5 +926,77 @@ describe("Spaces item detail groups", () => {
     expect(html).toContain('aria-label="Planung bearbeiten"');
     expect(html).not.toContain("Einordnung");
     expect(html).not.toContain("Fortschritt");
+  });
+});
+
+describe("Spaces detail reactions", () => {
+  beforeEach(() => setSystemTime(new Date(now)));
+  const reactions: SpaceItemReaction[] = ["👍", "❤️", "🎉", "👀", "🚀"].map((emoji, index) => ({
+    emoji,
+    count: index === 0 ? 2 : 1,
+    own: index === 0,
+    people: [{ kind: "user", id: "other", displayName: "Nora Brandt" }],
+  }));
+  // Restrict assertions to the row: the rest of the detail has its own controls.
+  const row = (html: string) => {
+    const start = html.indexOf('class="k2b-reaction-bar spaces-item-reactions"');
+    return start < 0 ? "" : html.slice(start, html.indexOf('class="k2b-tooltip k2b-reaction-bar__hint', start));
+  };
+
+  test("writers see all reactions after the preceding groups and before comments", () => {
+    const html = renderPanel({ item: { ...task, description: "Current instructions", reactions } });
+    expect(html).toMatch(
+      /aria-label="Content"[\s\S]*aria-label="Work"[\s\S]*aria-label="Context"[\s\S]*spaces-item-reactions[\s\S]*k2b-discussion[\s\S]*aria-label="Item metadata"/,
+    );
+    const bar = row(html);
+    expect(bar).toContain('data-density="default"');
+    expect(bar).toContain('data-add="always"');
+    expect(bar.match(/<button[^>]*class="k2b-reaction-bar__chip"/g)).toHaveLength(reactions.length);
+    expect(bar.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(bar.match(/aria-pressed="false"/g)).toHaveLength(reactions.length - 1);
+    for (const { emoji } of reactions) expect(bar).toContain(`data-reaction-key="${emoji}"`);
+    expect(bar).not.toContain("k2b-reaction-bar__more");
+    expect(bar).toContain('aria-label="Add reaction"');
+  });
+
+  test("a writer without reactions sees only Add reaction", () => {
+    const bar = row(renderPanel({ item: { ...task, reactions: [] } }));
+    expect(bar).not.toBe("");
+    expect(bar).toContain('aria-label="Add reaction"');
+    expect(bar.match(/<button\b/g)).toHaveLength(1);
+    expect(bar).not.toContain("k2b-reaction-bar__chip");
+  });
+
+  test("a reader without reactions has no row", () => {
+    expect(renderPanel({ item: { ...task, reactions: [] }, canWrite: false })).not.toContain("spaces-item-reactions");
+  });
+
+  test("a reader sees all reactions as images without Add reaction", () => {
+    const bar = row(renderPanel({ item: { ...task, reactions }, canWrite: false }));
+    expect(bar.match(/class="k2b-reaction-bar__chip" role="img" aria-label=/g)).toHaveLength(reactions.length);
+    expect(bar).not.toContain("<button");
+    expect(bar).not.toContain("aria-pressed");
+    expect(bar).not.toContain('aria-label="Add reaction"');
+    expect(bar).not.toContain("k2b-reaction-bar__more");
+  });
+
+  test("generated occurrences have no controls even for writers; overrides have reactions", () => {
+    const recurringContext = {
+      seriesItemId: itemId,
+      recurrenceId: "2026-08-10T10:00:00.000Z",
+      startsAt: "2026-08-10T10:00:00.000Z",
+      endsAt: "2026-08-10T11:00:00.000Z",
+      allDay: false,
+      isOverride: false,
+    };
+    const generated = renderPanel({ item: { ...task, reactions }, recurringContext, canWrite: true });
+    expect(generated).not.toContain("spaces-item-reactions");
+    expect(generated).not.toContain("k2b-reaction-bar__chip");
+    expect(generated).not.toContain('aria-label="Add reaction"');
+    const override = row(
+      renderPanel({ item: { ...task, reactions }, recurringContext: { ...recurringContext, isOverride: true }, canWrite: true }),
+    );
+    expect(override).toContain('aria-pressed="true"');
+    expect(override).toContain('aria-label="Add reaction"');
   });
 });

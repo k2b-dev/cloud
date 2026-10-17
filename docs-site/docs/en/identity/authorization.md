@@ -439,6 +439,8 @@ names are presentation, never identity or authorization.
 pickers. It supports search, included and excluded user IDs, a minimum
 permission, and a limit from `1` to `500`. It does not expand `public` or
 `authenticated` into every account.
+Search results list exact login-name matches first, then exact display-name
+matches, so a limit never hides them.
 
 Keep grant editing and credential creation separate. The permission editor
 must not display raw keys or own secret lifecycle.

@@ -194,6 +194,12 @@ one. See `requests.next` in
 `packages/dashboard/src/frontend/dashboard-home.browser.test.ts`. An assertion
 that no request was sent can only cover what has already arrived.
 
+Use `keptThrough(locator, change)` from `packages/ui/test/browser.ts` to check
+that a mutation keeps an element and its height. Never read `boundingBox()`
+right after a change: it does not wait and returns `null` for an element that
+a refresh is replacing. See the claim test in
+`packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts`.
+
 ### Run WebKit locally
 
 Playwright's WebKit needs system libraries that most Linux machines do not

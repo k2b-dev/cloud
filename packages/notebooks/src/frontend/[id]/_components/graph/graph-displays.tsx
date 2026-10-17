@@ -8,6 +8,7 @@ type Messages = ReturnType<typeof notebookWorkspaceMessages.resolve>["t"];
 /** Every display the graph offers, in switcher order. Device defaults live in view-state. */
 export const GRAPH_DISPLAY_REGISTRY: readonly { id: GraphDisplay; icon: string; label: (t: Messages) => string }[] = [
   { id: "network", icon: "ti ti-affiliate", label: (t) => t.graphDisplayNetwork },
+  { id: "circle", icon: "ti ti-chart-donut-3", label: (t) => t.graphDisplayCircle },
   { id: "neighborhood", icon: "ti ti-topology-star-3", label: (t) => t.graphDisplayNeighborhood },
 ];
 

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
 import {
   APP_APPROVAL_LIMITS,
   APP_APPROVAL_PATH,
@@ -11,6 +11,9 @@ import {
   appPairingProofMessage,
 } from "../contracts/app-approval";
 import { AppApprovalClientError, appApproval } from "./app-approval";
+
+beforeAll(() => setSystemTime(new Date("2026-10-17T12:00:00Z")));
+afterAll(() => setSystemTime());
 
 const issuer = "https://cloud.example";
 const authenticatorOrigin = "https://auth.example";
@@ -210,5 +213,36 @@ test("older discovery and unknown features do not announce Actions", async () =>
   for (const discovery of [info, { ...info, features: ["future"] }]) {
     const client = await appApproval.connect({ issuer, authenticatorOrigin, fetch: async () => Response.json(discovery) });
     expect(client.actions).toBe(false);
+  }
+});
+
+test("terminal consent requires both Cloud support and an explicit app opt-in", async () => {
+  const key = await appApproval.createKey();
+  const device = { issuer, deviceId: id, key };
+  for (const features of [undefined, ["actions"], ["actions", "terminal-logins"]]) {
+    for (const asks of [false, true]) {
+      const optedIn = asks && features?.includes("terminal-logins") === true;
+      const terminal = { client: { id: "cli", name: "Terminal" }, scopes: ["openid", "profile"], lifetimeSeconds: 3600 };
+      const login = { requestId: id, challenge: secret, comparison: "000123", createdAt: new Date().toISOString(), expiresAt: expiresAt() };
+      const client = await appApproval.connect({
+        issuer,
+        authenticatorOrigin,
+        fetch: async (url, init) => {
+          if (url.endsWith("/info")) return Response.json({ ...info, ...(features ? { features } : {}) });
+          const request = AppDeviceRequestSchema.parse(JSON.parse(String(init.body)));
+          expect(request.proof.command).toEqual({ operation: "inbox", ...(optedIn ? { accept: ["terminal-logins"] } : {}) });
+          await verify(key, appDeviceProofMessage(request.proof), request.signature);
+          return Response.json({
+            logins: [{ ...login, ...(optedIn ? { terminal } : {}) }],
+            actions: [],
+            moreActions: 0,
+            pollAfterSeconds: 5,
+          });
+        },
+      });
+      expect(client.terminalLogins).toBe(features?.includes("terminal-logins") === true);
+      const inbox = await client.inbox(device, undefined, asks ? { accept: ["terminal-logins"] } : undefined);
+      expect(inbox.logins).toEqual([{ ...login, ...(optedIn ? { terminal } : {}) }]);
+    }
   }
 });

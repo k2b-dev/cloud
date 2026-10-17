@@ -56,6 +56,7 @@ export { createPwaPhoneRoutes } from "./pwa-phone";
  * the typed shape for the client.
  */
 export type CoreApiOptions = {
+  terminalLogins?: import("../services/app-approval").AppTerminalLogins;
   notifications: import("../services/auth-flows/notification-sender").AuthNotificationSender;
 };
 
@@ -68,7 +69,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
   const widgetRoutes = createWidgetRoutes();
   return new Hono()
     .use(prettyJSON())
-    .route("/auth/app-approval/v1", createAppApprovalRoutes())
+    .route("/auth/app-approval/v1", createAppApprovalRoutes(undefined, undefined, options.terminalLogins))
     .route("/auth/pwa/v1", createPwaRoutes())
     .route("/auth", createAuthRoutes(options.notifications))
     .route("/me", meRoutes)
