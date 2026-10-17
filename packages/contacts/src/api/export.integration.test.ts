@@ -1,4 +1,5 @@
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
+import { ErrorResponseSchema } from "@k2b/cloud/contracts";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
@@ -50,6 +51,32 @@ suite("Contacts book export (#1241)", () => {
       await sql`DELETE FROM contacts.books WHERE id = ${id}::uuid`;
     }
     for (const id of created.users.splice(0)) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
+  });
+
+  test("CSV export returns the documented authentication and book access errors (#1239)", async () => {
+    const book = { id: crypto.randomUUID(), shortId: newShortId() };
+    await sql`INSERT INTO contacts.books (id, short_id, name) VALUES (${book.id}::uuid, ${book.shortId}, 'Export access test')`;
+    created.books.push(book.id);
+    const grantedUser = await manager(book.id);
+    const [userWithoutGrant] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name, admin)
+      VALUES (${`contacts-export-${crypto.randomUUID()}`}, 'local', 'user', 'Export access test', false) RETURNING id`;
+    created.users.push(userWithoutGrant!.id);
+    const cookie = `session_token=${await createTestSession(userWithoutGrant!.id)}`;
+
+    const unauthenticated = await contactsApi.request(`/books/${book.shortId}/export.csv`, {
+      headers: { "x-forwarded-for": uniqueCallerAddress(), "accept-language": "en" },
+    });
+    expect(unauthenticated.status).toBe(401);
+    expect(ErrorResponseSchema.parse(await unauthenticated.json()).message).toBe("Authentication required");
+
+    const forbidden = await download(`/books/${book.shortId}/export.csv`, { cookie });
+    expect(forbidden.status).toBe(403);
+    ErrorResponseSchema.parse(await forbidden.json());
+
+    const missing = await download(`/books/${newShortId()}/export.csv`, grantedUser);
+    expect(missing.status).toBe(404);
+    ErrorResponseSchema.parse(await missing.json());
   });
 
   test("CSV and vCard exports contain every contact of a book with more than 1,000 contacts", async () => {
