@@ -1,3 +1,4 @@
+export { type ChartCursor, createChartCursor } from "./content/chart-cursor";
 export {
   type ChartDatumRef,
   type ChartInspection,
@@ -10,4 +11,3 @@ export {
   isChartDatum,
   sameChartDatum,
 } from "./content/chart-inspection-core";
-export { type ChartCursor, createChartCursor } from "./content/chart-cursor";
