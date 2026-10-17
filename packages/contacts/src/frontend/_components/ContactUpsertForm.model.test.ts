@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import type { Contact } from "../../service";
-import { contactFormMessages, contactRowLabels } from "./contact-form-messages";
 import {
   applyQuickEditFields,
   buildContactPayload,
@@ -11,6 +10,7 @@ import {
   initialBankAccountRows,
   initialEmailRows,
 } from "./ContactUpsertForm.model";
+import { contactFormMessages, contactRowLabels } from "./contact-form-messages";
 
 const rowLabels = contactRowLabels(contactFormMessages.resolve(["en"]).t);
 

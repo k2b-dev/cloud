@@ -8,8 +8,8 @@ import { readErrorMessage } from "./api";
 import { openBookSettingsDialog } from "./BookSettingsDialog";
 import ContactSearchPicker from "./ContactSearchPicker";
 import ContactTagsPicker from "./ContactTagsPicker";
-import { contactFormMessages, contactRowLabels } from "./contact-form-messages";
 import { applyQuickEditFields, buildContactPayload, contactToUpsertDraft } from "./ContactUpsertForm.model";
+import { contactFormMessages, contactRowLabels } from "./contact-form-messages";
 import { detailMessages } from "./detail-messages";
 
 type Props = {

@@ -6,12 +6,11 @@ import { apiClient } from "@/api/client";
 import type { Contact, ContactPresenceFilter, ContactSort, ContactTag } from "../../service";
 import { buildContactsQueryHref, readContactsQueryOptions } from "../contacts-query";
 import { readErrorMessage } from "./api";
-import { bookMessages } from "./book-messages";
-import { contactsEmptyState, type ContactsScope } from "./contacts-empty-state";
-import { createBookController } from "./create-book";
 import { openContactDuplicatesDialog } from "./ContactDuplicatesDialog";
 import ContactsBulkActions from "./ContactsBulkActions";
 import ContactsList from "./ContactsList";
+import CreateBookAction from "./CreateBookAction";
+import { type ContactsScope, contactsEmptyState } from "./contacts-empty-state";
 import { listenForContactFavoriteChanges } from "./contacts-favorites";
 import { listenForContactsLiveInvalidation, requiresContactsResultsRefresh } from "./contacts-live";
 import { createContactsResultsNavigation, selectContactsResultsSnapshot } from "./contacts-results-navigation";
@@ -152,18 +151,6 @@ const loadContactsResults = async (
   };
 };
 
-function CreateFirstBookAction() {
-  const locale = useLocale();
-  const t = () => bookMessages.resolve([locale()]).t;
-  const { createBook, busy } = createBookController();
-  return (
-    <Button variant="secondary" size="sm" loading={busy()} loadingLabel={t().creatingBook} onClick={() => void createBook()}>
-      <i class="ti ti-cube-plus" aria-hidden="true" />
-      {t().newBook}
-    </Button>
-  );
-}
-
 export default function ContactsResults(props: Props) {
   const locale = useLocale();
   const t = () => resultsMessages.resolve([locale()]).t;
@@ -227,7 +214,7 @@ export default function ContactsResults(props: Props) {
   const currentHref = () => current()?.href ?? source();
 
   // The scope comes from SSR and never changes inside this island, so the action is created once.
-  const createBookAction = props.scope === "noBooks" ? <CreateFirstBookAction /> : undefined;
+  const createBookAction = props.scope === "noBooks" ? <CreateBookAction /> : undefined;
   const emptyState = () => {
     const href = currentHref();
     const url = new URL(href, "http://contacts.local");

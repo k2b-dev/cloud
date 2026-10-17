@@ -1,8 +1,8 @@
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import type { Contact, ContactTag } from "../../service";
-import type { ContactsScope } from "./contacts-empty-state";
 import ContactsResults from "./ContactsResults.island";
 import CreateContactButton from "./CreateContactButton.island";
+import type { ContactsScope } from "./contacts-empty-state";
 import { resultsMessages } from "./results-messages";
 
 type ContactBookOption = {

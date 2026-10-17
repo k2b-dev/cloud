@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { contactsEmptyState, type ContactsScope } from "./contacts-empty-state";
+import { type ContactsScope, contactsEmptyState } from "./contacts-empty-state";
 import { resultsMessages } from "./results-messages";
 
 const baseInput = {
