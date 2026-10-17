@@ -488,6 +488,92 @@ const ToolbarDemo = () => (
   </DemoCard>
 );
 
+const FloatingToolbarDemo = () => {
+  const [width, setWidth] = createSignal("1194");
+  const [lastAction, setLastAction] = createSignal("Select an action");
+  const widths: Record<string, number> = { "1194": 575, "834": 437, "694": 340 };
+  const actions = [
+    { label: "Reply", icon: "ti ti-arrow-back-up", priority: 2, keys: "r" },
+    { label: "Forward", icon: "ti ti-arrow-forward-up", priority: 7, keys: "f" },
+    { label: "Archive", icon: "ti ti-archive", priority: 1, keys: "e" },
+    { label: "Later", icon: "ti ti-clock", priority: 3, keys: "h" },
+    { label: "Move", icon: "ti ti-folder", priority: 4, keys: "v" },
+    { label: "Delete", icon: "ti ti-trash", priority: 6, keys: "delete" },
+    { label: "Assistant", icon: "ti ti-sparkles", priority: 5, keys: "mod+j" },
+  ];
+  return (
+    <DemoCard
+      id="toolbar-floating"
+      chip={{ kind: "component", name: "Toolbar", from: "@k2b/ui" }}
+      description="Selection actions stay at the column bottom. Switch viewport widths to move lower-priority actions into More; the message rows keep their full scroll space."
+      code={`const [width, setWidth] = createSignal("1194");
+const [lastAction, setLastAction] = createSignal("Select an action");
+const widths: Record<string, number> = { "1194": 575, "834": 437, "694": 340 };
+const actions = [
+  { label: "Reply", icon: "ti ti-arrow-back-up", priority: 2, keys: "r" },
+  { label: "Forward", icon: "ti ti-arrow-forward-up", priority: 7, keys: "f" },
+  { label: "Archive", icon: "ti ti-archive", priority: 1, keys: "e" },
+  { label: "Later", icon: "ti ti-clock", priority: 3, keys: "h" },
+  { label: "Move", icon: "ti ti-folder", priority: 4, keys: "v" },
+  { label: "Delete", icon: "ti ti-trash", priority: 6, keys: "delete" },
+  { label: "Assistant", icon: "ti ti-sparkles", priority: 5, keys: "mod+j" },
+];
+
+<SegmentedControl
+  ariaLabel="Viewport width"
+  value={width}
+  onValueChange={setWidth}
+  options={["1194", "834", "694"].map((value) => ({ value, label: value }))}
+/>
+<div style={{ display: "flex", "flex-direction": "column", width: \`\${widths[width()]}px\`, "max-width": "100%", height: "380px" }}>
+  <h3>Inbox</h3>
+  <div style={{ flex: "1", "min-height": "0", overflow: "auto" }}>
+    <For each={Array.from({ length: 30 }, (_, index) => index + 1)}>
+      {(row) => <div style={{ height: "44px", padding: "0.75rem" }}>Message {row}</div>}
+    </For>
+  </div>
+  <Toolbar label="Selection actions" variant="floating">
+    <Toolbar.Label>3 selected</Toolbar.Label>
+    <For each={actions.slice(0, 2)}>
+      {(action) => <Toolbar.Action {...action} onClick={() => setLastAction(action.label)} />}
+    </For>
+    <Toolbar.Separator />
+    <For each={actions.slice(2)}>
+      {(action) => <Toolbar.Action {...action} onClick={() => setLastAction(action.label)} />}
+    </For>
+    <Toolbar.Separator />
+    <Toolbar.Action label="Done" icon="ti ti-check" keys="escape" onClick={() => setLastAction("Done")} />
+  </Toolbar>
+</div>
+<output aria-live="polite">{lastAction()}</output>`}
+    >
+      <SegmentedControl
+        ariaLabel="Viewport width"
+        value={width}
+        onValueChange={setWidth}
+        options={["1194", "834", "694"].map((value) => ({ value, label: value }))}
+      />
+      <div style={{ display: "flex", "flex-direction": "column", width: `${widths[width()]}px`, "max-width": "100%", height: "380px" }}>
+        <h3>Inbox</h3>
+        <div style={{ flex: "1", "min-height": "0", overflow: "auto" }}>
+          <For each={Array.from({ length: 30 }, (_, index) => index + 1)}>
+            {(row) => <div style={{ height: "44px", padding: "0.75rem" }}>Message {row}</div>}
+          </For>
+        </div>
+        <Toolbar label="Selection actions" variant="floating">
+          <Toolbar.Label>3 selected</Toolbar.Label>
+          <For each={actions.slice(0, 2)}>{(action) => <Toolbar.Action {...action} onClick={() => setLastAction(action.label)} />}</For>
+          <Toolbar.Separator />
+          <For each={actions.slice(2)}>{(action) => <Toolbar.Action {...action} onClick={() => setLastAction(action.label)} />}</For>
+          <Toolbar.Separator />
+          <Toolbar.Action label="Done" icon="ti ti-check" keys="escape" onClick={() => setLastAction("Done")} />
+        </Toolbar>
+      </div>
+      <output aria-live="polite">{lastAction()}</output>
+    </DemoCard>
+  );
+};
+
 export const FilterDemo = () => {
   const [clearValue, setClearValue] = createSignal<string[]>(["open", "ui"]);
   const [resetValue, setResetValue] = createSignal<string[]>(["done"]);
@@ -739,6 +825,7 @@ const demos: DemoSection = {
   toolbar: () => (
     <DemoGrid columns="one">
       <ToolbarDemo />
+      <FloatingToolbarDemo />
     </DemoGrid>
   ),
   spotlight: () => (

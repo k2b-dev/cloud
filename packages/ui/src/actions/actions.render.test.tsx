@@ -23,6 +23,7 @@ const {
   FilterChip,
   IconButton,
   IconButtonLink,
+  LocaleProvider,
   RemoveButton,
   SegmentedControl,
   SplitButton,
@@ -944,4 +945,81 @@ describe("@k2b/ui action geometry parity", () => {
       expect(actionsCss).toContain(`.k2b-ui .k2b-button${variant}:not(:disabled, [aria-disabled="true"]):hover {`);
     expect(actionsCss).not.toMatch(/\.k2b-button[^{}\n]*:not\(:disabled\):(hover|active)/);
   });
+});
+
+test("floating Toolbar renders a space-keeping pending pill with every action and keyboard hint", () => {
+  const html = renderToString(() =>
+    createComponent(Toolbar, {
+      label: "Selection actions",
+      variant: "floating",
+      orientation: "vertical",
+      wrap: true,
+      class: "selection-tools",
+      get children() {
+        return [
+          createComponent(Toolbar.Label, { children: "3 selected" }),
+          createComponent(Toolbar.Action, { label: "Archive", icon: "ti ti-archive", keys: "e", priority: 1 }),
+          createComponent(Toolbar.Action, { label: "Forward", icon: "ti ti-forward", priority: 7, disabled: true }),
+          createComponent(Toolbar.Action, { label: "Done", icon: "ti ti-check", keys: "escape" }),
+        ];
+      },
+    }),
+  );
+  expect(html).toMatch(/<div class="k2b-toolbar-float"><div[^>]*class="k2b-toolbar selection-tools"[^>]*role="toolbar"/);
+  expect(html).toContain('data-variant="floating"');
+  expect(html).toContain("data-overflow-pending");
+  expect(html).toContain('data-orientation="horizontal"');
+  expect(html).not.toContain('data-wrap="true"');
+  expect(html.match(/<button[^>]*k2b-toolbar__action/g)).toHaveLength(3);
+  expect(html).toContain('class="k2b-kbd k2b-kbd-hint k2b-toolbar__hint"');
+  expect(html).toContain('aria-label="Archive"');
+  expect(html).toContain('title="Archive (E)"');
+  expect(html).toContain('aria-keyshortcuts="E"');
+  expect(html).toContain('aria-keyshortcuts="Escape"');
+  // Only the idle More wrapper is hidden on the server; all actions are present.
+  expect(html.match(/data-overflow="hidden"/g)).toHaveLength(1);
+  expect(html).toContain('aria-label="More actions"');
+});
+
+test("Toolbar.Action uses ARIA key names independently of shortcut cap labels", () => {
+  for (const [keys, expected] of [
+    ["mod+j", "Control+J"],
+    ["ctrl+alt+shift+meta+x", "Control+Alt+Shift+Meta+X"],
+    ["shift+arrowdown", "Shift+ArrowDown"],
+    ["arrowup", "ArrowUp"],
+    ["esc", "Escape"],
+    ["backspace", "Backspace"],
+    ["enter", "Enter"],
+    ["delete", "Delete"],
+    ["space", "Space"],
+    ["", undefined],
+    ["mod", undefined],
+    ["ctrl+", undefined],
+    ["unknown+e", undefined],
+    ["not-a-key", undefined],
+  ] as const) {
+    const html = renderToString(() => createComponent(Toolbar.Action, { label: "Action", icon: "ti ti-check", keys }));
+    if (expected) expect(html).toContain(`aria-keyshortcuts="${expected}"`);
+    else expect(html).not.toContain("aria-keyshortcuts=");
+  }
+});
+
+test("Toolbar inherits the More label and shortcut tooltip locale without translating ARIA key names", () => {
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(Toolbar, {
+          label: "Auswahl",
+          variant: "floating",
+          get children() {
+            return createComponent(Toolbar.Action, { label: "Assistent", icon: "ti ti-sparkles", keys: "mod+j", priority: 1 });
+          },
+        });
+      },
+    }),
+  );
+  expect(html).toContain('aria-label="Weitere Aktionen"');
+  expect(html).toContain('title="Assistent (Strg+J)"');
+  expect(html).toContain('aria-keyshortcuts="Control+J"');
 });

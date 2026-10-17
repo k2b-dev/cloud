@@ -18,6 +18,28 @@ Enable `wrap` where actions may outgrow the available width. Button variants rem
 
 Separators automatically follow the toolbar orientation: they are vertical in a horizontal toolbar and horizontal in a vertical toolbar.
 
+## Floating variant
+
+Use `variant="floating"` for selection actions at the bottom of a column. It is always horizontal and never wraps. Its buttons have 44 × 44 px targets.
+
+Place it last in a flex column: a heading, a scroll area with `flex: 1` and `min-height: 0`, then the toolbar. The column reserves the toolbar's height, keeping the final row clear. It can also be the last child inside a scroll container: the strip sticks to the bottom and reserves its own height after the rows. It never leaves its column: when the column is taller than the screen, the toolbar stays at the bottom of the visible part of the column.
+
+Render it in an island. The browser measures it before its first paint, so it never rearranges after it appears; until then it is invisible but keeps its space. A toolbar under a hidden ancestor waits until it is shown. Without scripting, the server layout stays visible.
+
+## Toolbar.Action
+
+Use `Toolbar.Action` for ghost icon buttons. `label` names the button, its tooltip, and its row in the More menu; `icon` takes a class such as `"ti ti-archive"`. `disabled` applies to both the button and its menu row. `onClick` runs from either place.
+
+In a floating toolbar, `priority` lets an action move into More when the column is too narrow. **1 is most important.** Larger numbers move first; equal priorities move the later action first. Omit `priority` to keep an action fixed. More is the last control and lists the moved actions in their original order. Widening the column brings them back. Inline toolbars keep every action in place; use `wrap` there.
+
+`keys` uses the `Kbd` format, such as `"e"`, `"mod+j"`, or `"shift+arrowdown"`. It adds a hint under the icon, the platform shortcut to the tooltip, and `aria-keyshortcuts`. Hints appear with the [keyboard input flag](/en/ui/input-mode) and never move icons or resize buttons. The application still owns shortcut handlers.
+
+In a floating toolbar, empty groups and leading, trailing, or repeated separators are hidden. Keep fixed content compact. Actions move before a `Toolbar.Label` truncates; only when the fixed items alone are too wide does the label shrink.
+
+## Toolbar.Label
+
+`Toolbar.Label` is non-interactive text for a selection count or event title. It never moves into More. It stays on one line, can shrink, and truncates with an ellipsis at about 10rem.
+
 ## Accessibility
 
 Always provide `label`. Name groups when their purpose is not obvious.
@@ -27,6 +49,8 @@ The roving group has one Tab stop: the last focused item, or the first item init
 Roving items are buttons, links with `href`, checkboxes and other button-like inputs, and controls with `tabindex`. Text fields, textareas, selects, sliders, radio buttons, and editable regions stay their own Tab stops. They keep their arrow, Home, and End keys.
 
 Hidden and natively disabled controls are skipped, as are controls inside menus, listboxes, dialogs, or popovers. The tab stop follows visibility. A toolbar that becomes visible later, or whose tab stop is hidden, picks the first visible control. `aria-disabled="true"` controls remain reachable; their handlers must guard unavailable actions.
+
+More is the last roving control. Enter opens its menu; menu arrows navigate its rows. Escape closes the menu and returns focus to More. If a focused action moves into More after a resize, focus follows it to the More trigger.
 
 Set `aria-pressed="true"` or `"false"` on toggle buttons. Pressed buttons use the action colour and selected background without changing their size or position. Forced colours use HighlightText on Highlight.
 
@@ -48,3 +72,29 @@ The layout renders on the server without roving `tabindex` attributes. Keyboard 
   <Button size="sm">Publish</Button>
 </Toolbar>
 ```
+
+## Example: mail selection
+
+```tsx
+<div style={{ display: "flex", "flex-direction": "column", height: "600px" }}>
+  <h2>Inbox</h2>
+  <div style={{ flex: "1", "min-height": "0", overflow: "auto" }}>
+    {/* Message rows */}
+  </div>
+  <Toolbar label="Selection actions" variant="floating">
+    <Toolbar.Label>3 selected</Toolbar.Label>
+    <Toolbar.Action label="Reply" icon="ti ti-arrow-back-up" priority={2} keys="r" onClick={reply} />
+    <Toolbar.Action label="Forward" icon="ti ti-arrow-forward-up" priority={7} keys="f" onClick={forward} />
+    <Toolbar.Separator />
+    <Toolbar.Action label="Archive" icon="ti ti-archive" priority={1} keys="e" onClick={archive} />
+    <Toolbar.Action label="Later" icon="ti ti-clock" priority={3} keys="h" onClick={later} />
+    <Toolbar.Action label="Move" icon="ti ti-folder" priority={4} keys="v" onClick={move} />
+    <Toolbar.Action label="Delete" icon="ti ti-trash" priority={6} keys="delete" onClick={remove} />
+    <Toolbar.Action label="Assistant" icon="ti ti-sparkles" priority={5} keys="mod+j" onClick={assistant} />
+    <Toolbar.Separator />
+    <Toolbar.Action label="Done" icon="ti ti-check" keys="escape" onClick={clearSelection} />
+  </Toolbar>
+</div>
+```
+
+The application provides the message rows and action handlers. Done and the selection count stay in the toolbar at every width.
