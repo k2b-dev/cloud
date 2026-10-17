@@ -125,7 +125,7 @@ const LoginLifetimeSchema = z
 const capLoginLifetime = async (requested: number): Promise<number> => {
   const hours = await settings.get<number>("user.session.expiry_hours");
   if (!Number.isFinite(hours) || hours < 1) throw new Error("user.session.expiry_hours must be a positive number");
-  return Math.min(requested, Math.floor(hours * 3600));
+  return Math.min(requested, Math.floor(hours * 3600), DEFAULT_LOGIN_LIFETIME_SECONDS);
 };
 
 const TokenBodySchema = z.discriminatedUnion("grant_type", [

@@ -998,15 +998,16 @@ See [Scheduled task run history](/en/docs/ai/structured-and-background-ai#keep-s
 ### End OAuth sign-ins sooner
 
 OAuth logins can request a shorter absolute lifetime with `ttl`, capped at
-`user.session.expiry_hours`; see
+`user.session.expiry_hours` and the 90-day default; see
 [Login lifetime](/en/docs/identity/oauth#login-lifetime). It needs no
 configuration change. Without `ttl`, logins keep their 90-day refresh family.
 
 Deploy Core with or before OAuth. OAuth now asks Core for access and ID tokens
-shorter than one hour when a login ends within the hour, and an older Core
-rejects any lifetime other than 3600 seconds, so such a sign-in or refresh
-fails with `invalid_grant`. Core also caps every refreshed token at its
-refresh family's end. OAuth's first start adds the nullable column
+shorter than one hour when a login ends within the hour. An older Core
+rejects any lifetime other than 3600 seconds with HTTP 400. Such a sign-in or
+refresh fails with `server_error` (HTTP 500). OAuth maps only Core's HTTP 403
+to `invalid_grant`. Core also caps every refreshed token at its refresh
+family's end. OAuth's first start adds the nullable column
 `oauth.device_authorizations.login_lifetime_seconds`. A rollback ignores it
 and issues 90-day logins again.
 

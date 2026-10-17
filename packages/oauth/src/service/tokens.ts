@@ -280,7 +280,8 @@ export const createTokens = async (params: {
   return {
     accessToken,
     idToken,
-    expiresIn,
+    // Account for time spent signing when Core caps refreshed tokens at the family end.
+    expiresIn: "endsAt" in params.login ? Math.min(expiresIn, Math.max(0, Math.floor((endsAt.getTime() - Date.now()) / 1000))) : expiresIn,
     scope: scopeValue,
     ...(refreshToken
       ? { refreshToken: refreshToken.refreshToken, refreshTokenExpiresIn: Math.max(0, Math.floor((endsAt.getTime() - Date.now()) / 1000)) }

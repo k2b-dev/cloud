@@ -144,12 +144,12 @@ negative values, fractions, and empty values return `invalid_request`.
 Sending `ttl` with any other token grant also returns `invalid_request`.
 A refresh request cannot set or extend the login lifetime.
 
-Cloud caps `ttl` at the session length setting `user.session.expiry_hours`,
-converted to whole seconds. It can only shorten that limit. For device
-requests, Cloud stores the capped lifetime when authorization starts and
-checks the current cap again when issuing tokens. Lowering the setting does
-not shorten logins that already exist. Without `ttl`, this setting does not
-change the 90-day OAuth lifetime.
+Cloud caps `ttl` at the session length setting `user.session.expiry_hours`
+(converted to whole seconds) and the 90-day default, whichever is shorter.
+For device requests, Cloud stores the capped lifetime when authorization
+starts and checks the current cap again when issuing tokens. Lowering the
+setting does not shorten logins that already exist. Without `ttl`, this
+setting does not change the 90-day OAuth lifetime.
 
 Every token response that carries `refresh_token` also includes
 `refresh_token_expires_in`: the whole seconds remaining until the family's

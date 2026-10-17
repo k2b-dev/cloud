@@ -250,6 +250,22 @@ suite("OAuth device authorization grant", () => {
     });
   }
 
+  test("a one-year ttl and session setting cannot extend the 90-day default", async () => {
+    const previous = await settings.get<number>("user.session.expiry_hours");
+    try {
+      await settings.set("user.session.expiry_hours", 8760);
+      const who = await person();
+      const started = await startDevice({ scope: "openid offline_access", ttl: "31536000" });
+      expect((await oauth.device.getPending((await deviceRow(started.device_code)).id))?.loginLifetimeSeconds).toBe(7776000);
+      await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
+      const tokens = await poll(started.device_code);
+      expect(tokens.status).toBe(200);
+      expectRemaining(tokens.body.refresh_token_expires_in, 7776000);
+    } finally {
+      await settings.set("user.session.expiry_hours", previous);
+    }
+  });
+
   test("device authorization stores its cap and rechecks a lowered setting at issuance", async () => {
     const previous = await settings.get<number>("user.session.expiry_hours");
     try {
