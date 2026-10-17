@@ -329,13 +329,18 @@ The client name comes from the registry. It is plain text, shortened to
 60 code points. Render it as text. The scope list contains 1–16 codes.
 Show the lifetime as a duration. Compare the six-digit code with the terminal
 and require an explicit choice. Never approve on arrival.
+The shown lifetime is already capped by `user.session.expiry_hours` and the
+90-day maximum; issued tokens never outlive it.
 
 Use the existing signed `decide` command. **Approve** authenticates the account
 and consents to exactly the shown client, scopes and login lifetime.
-**Deny** denies both linked requests. Both state changes and their audits commit
+**Approve** rechecks the client's access and scopes. **Deny** reaches the linked
+OAuth grant while the request is pending, even if the client's access or scopes
+changed, and denies both requests. Both state changes and their audits commit
 together. The device authorization and client IDs come from the stored request.
 The `admin` scope is never offered through this channel; use browser consent.
-A decided, expired, stale or no longer allowed authorization returns `409`.
+A decided, expired or stale authorization returns `409`, as does an approval
+that is no longer allowed.
 Reload the inbox after a conflict. Do not retry an uncertain decision.
 
 Browser and terminal sign-ins share five outstanding requests per account.
@@ -345,11 +350,13 @@ response shape and no wake-up.
 
 Before token issuance, Core checks that the approving device still exists,
 is active and belongs to the account, and that the account's authentication
-epoch still matches. Revocation or signing out everywhere between approval and
-issuance prevents tokens. Approved terminal evidence stays until issuance
-consumes it or the linked OAuth authorization row is deleted, even when that
-row has expired. Existing browser approvals of OAuth device grants keep their
-current behavior.
+epoch still matches. As with browser completion, app approval must still be
+enabled, and the request and device must belong to the current issuer.
+Revocation, signing out everywhere, disabling app approval or changing the
+issuer between approval and issuance prevents tokens. Approved terminal evidence
+stays until issuance consumes it or the linked OAuth authorization row is deleted,
+even when that row has expired. Existing browser approvals of OAuth device grants
+keep their current behavior.
 
 ### Upgrade the three components
 

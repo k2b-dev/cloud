@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { env } from "@k2b/cloud/config";
-import { isAccountCategoryAllowed } from "@k2b/cloud/services";
+import { AppApprovalError, appApproval, isAccountCategoryAllowed } from "@k2b/cloud/services";
 import { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import * as settings from "@k2b/cloud/services/settings";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
@@ -151,18 +151,28 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
       grant = row ?? null;
       if (grant) {
         // Keep the approval until this boundary, even after the sign-in UI expires.
-        const [login] = await db<{ id: string; user_id: string | null; approved_by: string | null; auth_epoch: string | null }[]>`
-          SELECT id,user_id,approved_by,auth_epoch FROM auth.app_logins
+        const [login] = await db<
+          { id: string; issuer: string; user_id: string | null; approved_by: string | null; auth_epoch: string | null }[]
+        >`
+          SELECT id,issuer,user_id,approved_by,auth_epoch FROM auth.app_logins
           WHERE device_authorization_id=${params.request.grant.deviceAuthorizationId}::uuid
             AND kind='terminal' AND state='approved'`;
         if (login) {
+          let cfg;
+          try {
+            cfg = await appApproval.config();
+          } catch (error) {
+            if (error instanceof AppApprovalError) return null;
+            throw error;
+          }
+          if (login.issuer !== cfg.issuer) return null;
           // Lock user, device, then login, matching sign-out everywhere and signed decisions. FOR SHARE holds the
           // epoch still without blocking the key-share lock a concurrent decision's grant update takes on the user.
           const [user] = await db`SELECT id FROM auth.users WHERE id=${grant.user_id}::uuid
             AND id=${login.user_id}::uuid AND auth_epoch=${login.auth_epoch}::bigint FOR SHARE`;
           if (!user) return null;
           const [device] = await db`SELECT id FROM auth.app_devices
-            WHERE id=${login.approved_by}::uuid AND revoked_at IS NULL
+            WHERE id=${login.approved_by}::uuid AND issuer=${cfg.issuer} AND revoked_at IS NULL
               AND user_id=${grant.user_id}::uuid FOR UPDATE`;
           if (!device) return null;
           const [consumed] = await db`UPDATE auth.app_logins SET state='consumed'

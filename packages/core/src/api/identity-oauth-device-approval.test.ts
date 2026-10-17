@@ -251,6 +251,66 @@ databaseSuite()("Core terminal authorization bridge", () => {
     }
   });
 
+  test("caps the shown terminal lifetime at the current session expiry", async () => {
+    const savedHours = await settings.get("user.session.expiry_hours");
+    const f = await fixture();
+    try {
+      await settings.set("user.session.expiry_hours", 1);
+      const id = await f.authorization();
+      await sql`UPDATE oauth.device_authorizations SET login_lifetime_seconds=86400 WHERE id=${id}::uuid`;
+      const response = await request(createIdentityOAuthDeviceApprovalRoutes(), {
+        ...input(id, f.clientId, f.uid),
+        lifetimeSeconds: 86400,
+      });
+      expect(response.status).toBe(200);
+      const [login] = await sql`SELECT lifetime_seconds FROM auth.app_logins WHERE device_authorization_id=${id}::uuid`;
+      expect(login.lifetime_seconds).toBe(3600);
+    } finally {
+      await settings.set("user.session.expiry_hours", savedHours);
+      await f.cleanup();
+    }
+  });
+
+  test.each(["access", "scopes", "access-and-scopes"] as const)(
+    "signed Deny survives changed client %s while Approve still conflicts",
+    async (changed) => {
+      const f = await fixture();
+      try {
+        const id = await f.authorization();
+        expect((await request(createIdentityOAuthDeviceApprovalRoutes(), input(id, f.clientId, f.uid))).status).toBe(200);
+        if (changed !== "scopes") await sql`UPDATE oauth.clients SET access_mode='specific' WHERE id=${f.clientPk}::uuid`;
+        if (changed !== "access") await sql`UPDATE oauth.clients SET scopes=ARRAY['openid'] WHERE id=${f.clientPk}::uuid`;
+
+        await expect(f.decide(id, "approve")).rejects.toMatchObject({ status: 409 });
+        const [pendingGrant] =
+          await sql`SELECT status,user_id,login_lifetime_seconds FROM oauth.device_authorizations WHERE id=${id}::uuid`;
+        expect(pendingGrant).toMatchObject({ status: "pending", user_id: null, login_lifetime_seconds: 7200 });
+        const [pendingLogin] = await sql`SELECT state FROM auth.app_logins WHERE device_authorization_id=${id}::uuid`;
+        expect(pendingLogin.state).toBe("pending");
+        expect(
+          await sql`SELECT 1 FROM audit.events WHERE action='oauth.device.authorize' AND metadata->>'deviceGrantId'=${id}`,
+        ).toHaveLength(0);
+
+        expect(await f.decide(id, "deny")).toEqual({ state: "denied" });
+        const [grant] = await sql`SELECT status,user_id,login_lifetime_seconds FROM oauth.device_authorizations WHERE id=${id}::uuid`;
+        expect(grant).toMatchObject({ status: "denied", user_id: f.userId, login_lifetime_seconds: 7200 });
+        const [login] = await sql`SELECT state FROM auth.app_logins WHERE device_authorization_id=${id}::uuid`;
+        expect(login.state).toBe("denied");
+        const events = await sql`SELECT outcome,actor_user_id,target_id,reason FROM audit.events
+          WHERE action='oauth.device.authorize' AND metadata->>'deviceGrantId'=${id}`;
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+          outcome: "denied",
+          actor_user_id: f.userId,
+          target_id: f.clientPk,
+          reason: "resource_owner_denied",
+        });
+      } finally {
+        await f.cleanup();
+      }
+    },
+  );
+
   test("cleanup retains approved terminal evidence until the expired OAuth row is gone", async () => {
     const f = await fixture();
     try {
@@ -304,7 +364,7 @@ databaseSuite()("Core terminal authorization bridge", () => {
         expect(grant).toMatchObject({
           status: decision === "approve" ? "approved" : "denied",
           user_id: f.userId,
-          login_lifetime_seconds: 3600,
+          login_lifetime_seconds: decision === "approve" ? 3600 : 7200,
         });
         const [untouched] = await sql`SELECT status,user_id FROM oauth.device_authorizations WHERE id=${other}::uuid`;
         expect(untouched).toMatchObject({ status: "pending", user_id: null });
