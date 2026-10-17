@@ -7,15 +7,20 @@ const fillShares = {
 } as const;
 
 /**
- * Opaque theme backgrounds checked for readable app ink; tests pin these to
- * tokens.css. `sidebar` is `--ui-surface-subtle`, `hover` is `--ui-hover`, and
- * `platformSelected` is the blue `--ui-selected` fill some app ink sits on.
+ * Opaque theme backgrounds checked for readable app ink; a test pins them to
+ * tokens.css and @k2b/ui. `sidebar` is the workspace sidebar
+ * (`--k2b-surface-muted`) and `sidebarHover` its row hover over it; `subtle`,
+ * `muted`, `hover`, and `platformSelected` are the `--ui-surface-subtle`,
+ * `--ui-surface-muted`, `--ui-hover`, and blue `--ui-selected` fills app ink
+ * also sits on.
  */
 export const appColorSurfaces = {
   light: {
     canvas: "#fafafa",
     surface: "#ffffff",
-    sidebar: "#f8f8f8",
+    sidebar: "#f4f4f5",
+    sidebarHover: "#e8e8e9",
+    subtle: "#f8f8f8",
     muted: "#f3f4f3",
     raised: "#ffffff",
     hover: "#f0f1f0",
@@ -24,7 +29,9 @@ export const appColorSurfaces = {
   dark: {
     canvas: "#090d12",
     surface: "#11151b",
-    sidebar: "#161a20",
+    sidebar: "#20242a",
+    sidebarHover: "#2b2f34",
+    subtle: "#161a20",
     muted: "#20242a",
     raised: "#181d24",
     hover: "#252c35",

@@ -7,17 +7,21 @@ import { appColors, appColorStyle, appColorSurfaces, contrastRatio, mixHex, rela
 type HexColor = `#${string}`;
 const workspaceRoot = resolve(import.meta.dir, "../../../..");
 const tokens = readFileSync(resolve(import.meta.dir, "../styles/tokens.css"), "utf8");
+const uiStyles = readFileSync(resolve(workspaceRoot, "packages/ui/src/styles/index.css"), "utf8");
 const tailwindTheme = readFileSync(resolve(workspaceRoot, "node_modules/tailwindcss/theme.css"), "utf8");
 const themes = ["light", "dark"] as const;
 
 const declarations = (body: string) =>
   new Map([...body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map(([, key, value]) => [key!, value!.trim()]));
-const firstBlock = (selector: string) => {
-  const body = tokens.match(new RegExp(`(?:^|\\n)${selector} \\{([^}]+)\\}`))?.[1];
-  if (!body) throw new Error(`Missing first ${selector} block in tokens.css`);
+const firstBlock = (source: string, selector: string) => {
+  const body = source.match(new RegExp(`(?:^|\\n)${selector} \\{([^}]+)\\}`))?.[1];
+  if (!body) throw new Error(`Missing first ${selector} block`);
   return declarations(body);
 };
-const themeTokens = { light: firstBlock(":root"), dark: firstBlock("\\.dark") };
+const themeTokens = { light: firstBlock(tokens, ":root"), dark: firstBlock(tokens, "\\.dark") };
+// @k2b/ui's own roles; its dark block (the last line of its selector list) inherits the rest.
+const uiLight = firstBlock(uiStyles, "\\.k2b-ui");
+const uiTokens = { light: uiLight, dark: new Map([...uiLight, ...firstBlock(uiStyles, "\\.dark \\.k2b-ui")]) };
 const tailwindTokens = declarations(tailwindTheme);
 
 const required = (values: Map<string, string>, name: string) => {
@@ -35,13 +39,18 @@ const toHex = (channels: number[]): HexColor =>
     .join("")}`;
 const toChannels = (hex: HexColor) => [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
 
-/** Resolve only the color forms used by the surface tokens; unknown forms must fail. */
-const resolveColor = (value: string, theme: (typeof themes)[number]): HexColor => {
+/**
+ * Resolve only the color forms used by the surface tokens; unknown forms must
+ * fail. `transparent` resolves to `base`, the surface a translucent mix sits on.
+ */
+const resolveColor = (value: string, theme: (typeof themes)[number], base?: HexColor): HexColor => {
   if (/^#[\da-f]{6}$/i.test(value)) return `#${value.slice(1).toLowerCase()}`;
-  const variable = value.match(/^var\((--(?:ui|color)-[\w-]+)\)$/);
+  if (value === "transparent" && base) return base;
+  const variable = value.match(/^var\((--(?:ui|color|k2b)-[\w-]+)\)$/);
   if (variable) {
     const name = variable[1]!;
-    return resolveColor(required(name.startsWith("--color-") ? tailwindTokens : themeTokens[theme], name), theme);
+    const source = name.startsWith("--color-") ? tailwindTokens : name.startsWith("--k2b-") ? uiTokens[theme] : themeTokens[theme];
+    return resolveColor(required(source, name), theme, base);
   }
   const rgb = value.match(/^rgb\((\d+(?:\.\d+)?) (\d+(?:\.\d+)?) (\d+(?:\.\d+)?) \/ (\d*\.?\d+)\)$/);
   if (rgb) {
@@ -51,8 +60,8 @@ const resolveColor = (value: string, theme: (typeof themes)[number]): HexColor =
   }
   const mix = value.match(/^color-mix\(in srgb, (.+) ([\d.]+)%, (.+)\)$/);
   if (mix) {
-    const a = toChannels(resolveColor(mix[1]!, theme));
-    const b = toChannels(resolveColor(mix[3]!, theme));
+    const a = toChannels(resolveColor(mix[1]!, theme, base));
+    const b = toChannels(resolveColor(mix[3]!, theme, base));
     const share = Number(mix[2]) / 100;
     return toHex(a.map((channel, index) => channel * share + b[index]! * (1 - share)));
   }
@@ -124,7 +133,7 @@ describe("app colors", () => {
 
   test("derives the specified selection fills and ordered plain hex declarations", () => {
     expect(appColorStyle("#14b8a6")).toBe(
-      "--app-ink-light:#0d796e;--app-ink-dark:#14b8a6;--app-selected-light:#effaf9;--app-selected-dark:#112c2e;--app-selected-nav-light:#e1f2f0;--app-selected-nav-dark:#163537",
+      "--app-ink-light:#0d7469;--app-ink-dark:#14b8a6;--app-selected-light:#effaf9;--app-selected-dark:#112c2e;--app-selected-nav-light:#deeeed;--app-selected-nav-dark:#1e3d3f",
     );
     const colors = appColors("#eab308");
     expect(colors.light.selected).toBe(mixHex("#eab308", appColorSurfaces.light.surface, 0.07));
@@ -161,20 +170,26 @@ describe("app colors", () => {
     expect(backgrounds.some((bg) => contrastRatio(mixHex("#000000", "#ffffff", (step + 1) / 100), bg) < 4.5)).toBe(true);
   });
 
-  test("surface constants match the resolved tokens.css surfaces", () => {
+  test("surface constants match the resolved Cloud and @k2b/ui surfaces", () => {
     const surfaceTokens = [
       ["canvas", "--ui-canvas"],
       ["surface", "--ui-surface"],
-      ["sidebar", "--ui-surface-subtle"],
+      ["subtle", "--ui-surface-subtle"],
       ["muted", "--ui-surface-muted"],
       ["raised", "--ui-surface-raised"],
       ["hover", "--ui-hover"],
       ["platformSelected", "--ui-selected"],
     ] as const;
     for (const theme of themes) {
+      const surfaces = appColorSurfaces[theme];
       for (const [surface, token] of surfaceTokens) {
-        expect(resolveColor(required(themeTokens[theme], token), theme), `${theme}/${token}`).toBe(appColorSurfaces[theme][surface]);
+        expect(resolveColor(required(themeTokens[theme], token), theme), `${theme}/${token}`).toBe(surfaces[surface]);
       }
+      // The @k2b/ui workspace sidebar and its row hover, laid over that sidebar.
+      expect(resolveColor("var(--k2b-surface-muted)", theme), `${theme}/--k2b-surface-muted`).toBe(surfaces.sidebar);
+      expect(resolveColor("var(--k2b-app-workspace-hover)", theme, surfaces.sidebar), `${theme}/--k2b-app-workspace-hover`).toBe(
+        surfaces.sidebarHover,
+      );
     }
   });
 

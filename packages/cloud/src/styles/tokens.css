@@ -16,12 +16,12 @@
   --ui-active: rgb(229 231 230 / 0.94);
   --ui-selected: color-mix(in srgb, var(--color-blue-500) 7%, var(--ui-surface));
   /* app-color.ts computes these defaults from --color-blue-500; app-color.test.ts pins them. */
-  --app-ink-light: #2367cf;
-  --app-ink-dark: #4991ff;
+  --app-ink-light: #2264c9;
+  --app-ink-dark: #589aff;
   --app-selected-light: #f0f6ff;
   --app-selected-dark: #15243b;
-  --app-selected-nav-light: #e4ecf9;
-  --app-selected-nav-dark: #1a2b46;
+  --app-selected-nav-light: #e0e8f6;
+  --app-selected-nav-dark: #22334e;
   --ui-app-accent-text: var(--app-ink-light);
   --ui-app-selected: var(--app-selected-light);
   --ui-app-selected-nav: var(--app-selected-nav-light);
