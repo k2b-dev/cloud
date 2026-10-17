@@ -156,6 +156,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
   const reposition = () => open() && place();
   const resize = () => open() && place(true);
   // Arriving options, an error, or the search field grow the panel after it opened, so its size places it too.
+  // The trigger changes size when a host turns the rail into the expanded overlay, without a window resize.
   let resizing: ResizeObserver | undefined;
   const listen = (on: boolean) => {
     const method = on ? "addEventListener" : "removeEventListener";
@@ -164,6 +165,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
     if (on && panel) {
       resizing ??= new ResizeObserver(reposition);
       resizing.observe(panel);
+      if (trigger) resizing.observe(trigger);
     } else resizing?.disconnect();
   };
   // Server rendering cleans up too, where no window exists.

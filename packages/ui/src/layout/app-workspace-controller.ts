@@ -1491,6 +1491,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     reconcileFrame = requestAnimationFrame(() => {
       reconcileFrame = null;
       reconcile();
+      // Reconciling can restore a drawer's persisted width; its trail space follows.
+      for (const root of allRoots()) for (const aside of rootElements(root, DETAIL_DRAWER_SELECTOR)) syncDetailDrawerSpace(aside);
     });
   };
   const onResize = () => {

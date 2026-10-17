@@ -541,6 +541,18 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
         const bounds = await page.locator(panel).boundingBox();
         expect(bounds!.y).toBeGreaterThanOrEqual(button!.y + button!.height);
         expect(bounds!.width).toBeGreaterThanOrEqual(button!.width);
+        // Widening the host turns the overlay back into the rail; the open panel follows its trigger.
+        await page.locator("#app").evaluate((app) => {
+          app.style.width = "1100px";
+        });
+        await page.waitForFunction(
+          ([triggerSelector, panelSelector]) => {
+            const button = document.querySelector(triggerSelector)!.getBoundingClientRect();
+            const panel = document.querySelector(panelSelector)!.getBoundingClientRect();
+            return panel.width > 0 && panel.left >= button.right;
+          },
+          [trigger, panel] as const,
+        );
       } finally {
         await page.close();
       }
