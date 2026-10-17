@@ -1,0 +1,73 @@
+import type { ChatCommand, ChatCommandDraft, ChatCommandOpenResult } from "@k2b/ui";
+import { isCommandPath } from "../contracts/command-path";
+import { openCommand } from "./commands";
+import type { CloudComposerCatalogState, CloudComposerCommand } from "./composer-catalog";
+import { composerOpenMessages } from "./composer-open-messages";
+
+export type OpenComposerCommandOptions = {
+  before: () => Promise<void>;
+  returnTo: () => string | undefined;
+  locale: string;
+};
+
+/** Save first, then resolve and open. Save errors reach the status line; resolution errors stay on the retryable row. */
+export const openComposerCommand = async (
+  command: CloudComposerCommand,
+  options: OpenComposerCommandOptions,
+): Promise<ChatCommandOpenResult> => {
+  await options.before();
+  const returnTo = options.returnTo();
+  if (returnTo !== undefined && !isCommandPath(returnTo)) throw new Error("Invalid Command return path");
+  try {
+    await openCommand(command.id, command.input, { returnTo });
+  } catch {
+    return { failed: composerOpenMessages.resolve([options.locale]).t.appUnavailable({ app: command.appName }) };
+  }
+};
+
+export type CloudCommandMenuOptions = {
+  locale: string;
+  commands: readonly CloudComposerCommand[];
+  state: CloudComposerCatalogState;
+  section?: string;
+  before: (draft: ChatCommandDraft) => Promise<void>;
+  returnTo: () => string | undefined;
+};
+export type CloudCommandMenu = { commands: ChatCommand[]; pending: boolean };
+
+/** Put this section last. Pending placeholders reserve its end; a failed catalog offers one explicit reload. */
+export const cloudCommandMenu = (options: CloudCommandMenuOptions): CloudCommandMenu => {
+  const t = composerOpenMessages.resolve([options.locale]).t;
+  if (options.state === "loading") return { commands: [], pending: true };
+  if (options.state === "failed")
+    return {
+      commands: [
+        {
+          id: "cloud-commands-retry",
+          name: "cloud-commands-retry",
+          label: t.commandsFailed,
+          description: t.tryAgain,
+          icon: "ti ti-alert-circle",
+          searchAgain: true,
+          persistent: true,
+          section: options.section,
+        },
+      ],
+      pending: false,
+    };
+  return {
+    commands: options.commands.map((command) => ({
+      id: `cloud-command:${command.id}`,
+      name: command.id,
+      label: command.title,
+      description: `${command.appName} · ${command.description}`,
+      icon: command.icon,
+      keywords: [command.title, ...command.keywords, command.appName, command.description],
+      app: command.appName,
+      section: options.section,
+      open: (draft) =>
+        openComposerCommand(command, { before: () => options.before(draft), returnTo: options.returnTo, locale: options.locale }),
+    })),
+    pending: false,
+  };
+};

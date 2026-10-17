@@ -338,12 +338,12 @@ const compileOperationPresentation = (
   operation: CapabilityQueryManifest | CapabilityActionManifest | CapabilityCommandManifest,
   label: string,
   strict = true,
-): CapabilityOperationPresentationTranslation => {
+): CapabilityOperationPresentationTranslation & { keywords?: readonly string[] } => {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   const translation = value as Record<string, unknown>;
   const allowed = new Set(
     "path" in operation
-      ? ["title", "description", "input"]
+      ? ["title", "description", "input", "keywords"]
       : ["title", "description", "input", "data", "searchTags", ...(isAction(operation) ? ["sentences"] : [])],
   );
   const extra = Object.keys(translation).find((key) => !allowed.has(key));
@@ -356,6 +356,10 @@ const compileOperationPresentation = (
     if (typeof translation.description !== "string") throw new Error(`${label}.description must be text`);
     assertText(translation.description, `${label}.description`, 1000);
   }
+  const keywords =
+    "path" in operation && translation.keywords !== undefined
+      ? CapabilityCommandManifestSchema.shape.keywords.parse(translation.keywords)
+      : undefined;
   let searchTags: CapabilityOperationPresentationTranslation["searchTags"];
   const universalSearch = "universalSearch" in operation ? operation.universalSearch : undefined;
   // A reader skips search-tag copy for an operation without Universal Search instead of losing its other copy.
@@ -398,6 +402,7 @@ const compileOperationPresentation = (
   return {
     ...(typeof translation.title === "string" ? { title: translation.title.trim() } : {}),
     ...(typeof translation.description === "string" ? { description: translation.description.trim() } : {}),
+    ...(keywords ? { keywords } : {}),
     ...(input ? { input } : {}),
     ...(data ? { data } : {}),
     ...(searchTags ? { searchTags } : {}),
@@ -954,6 +959,7 @@ export const resolveCapabilityManifestPresentation = (
               title: copy.title ?? operation.title,
               description: copy.description ?? operation.description,
               inputSchema: applySchemaPresentation(operation.inputSchema, copy.input),
+              keywords: copy.keywords ? [...copy.keywords] : operation.keywords,
             }
           : operation;
       }),

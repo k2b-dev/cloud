@@ -244,3 +244,123 @@ describe(`Insert from the Assistant's slash list in ${browserName}`, () => {
     }
   }, 60_000);
 });
+
+const commandCatalog = {
+  protocolVersion: 2,
+  apps: [
+    {
+      appId: "spaces",
+      appName: "Spaces",
+      appIcon: "ti ti-layout-kanban",
+      appDescription: "Tasks",
+      manifest: {
+        protocolVersion: 2,
+        appId: "spaces",
+        manifestHash: "a".repeat(64),
+        types: [],
+        queries: [],
+        actions: [],
+        commands: [
+          {
+            localId: "task.compose",
+            title: "Neue Aufgabe",
+            description: "Eine Aufgabe öffnen.",
+            icon: "ti ti-checkbox",
+            keywords: ["task", "Aufgabe"],
+            inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            path: "/app/spaces",
+          },
+        ],
+      },
+    },
+  ],
+  page: { hasMore: false },
+};
+
+describe(`App Commands in the Assistant slash list in ${browserName}`, () => {
+  test.each(views)(
+    "at $width px, delayed Commands fill the final placeholders without moving the first visible row or composer",
+    async (view) => {
+      const { page, close } = await open(view, "?commands&text=");
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let requests = 0;
+      await page.route("**/api/capabilities/v1/catalog?*", async (route) => {
+        requests++;
+        await gate;
+        await route.fulfill({ json: commandCatalog });
+      });
+      try {
+        const requested = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/capabilities/v1/catalog");
+        await page.keyboard.type("/");
+        await requested;
+        const list = page.locator('[role="listbox"]');
+        await page.waitForFunction(() => document.querySelectorAll(".k2b-chat-composer__command-placeholder").length === 3);
+        expect(requests).toBe(1);
+        const placeholders = list.locator(".k2b-chat-composer__command-placeholder");
+        expect(await placeholders.count()).toBe(3);
+        const lastGroup = list.locator('[role="group"]').last();
+        expect(await lastGroup.locator(".k2b-chat-composer__command-heading").textContent()).toContain("In Apps öffnen");
+        expect(await lastGroup.locator(".k2b-chat-composer__command-placeholder").count()).toBe(3);
+        expect(await placeholders.last().evaluate((element) => element.nextElementSibling === null)).toBe(true);
+        const first = await box(page, '[role="listbox"] [role="option"]');
+        const composer = await box(page, ".k2b-chat-composer");
+        release();
+        await option(page, "Neue Aufgabe").waitFor({ state: "attached" });
+        expect(await placeholders.count()).toBe(0);
+        expect(await box(page, '[role="listbox"] [role="option"]')).toEqual(first);
+        expect(await box(page, ".k2b-chat-composer")).toEqual(composer);
+        expect(requests).toBe(1);
+      } finally {
+        release();
+        await close();
+      }
+    },
+    60_000,
+  );
+
+  test.each(views)(
+    "at $width px, the persistent error row retries exactly one catalog load",
+    async (view) => {
+      const { page, close } = await open(view, "?commands&text=");
+      let requests = 0;
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route("**/api/capabilities/v1/catalog?*", async (route) => {
+        requests++;
+        if (requests === 1) await route.fulfill({ status: 503, json: { message: "Offline" } });
+        else {
+          await gate;
+          await route.fulfill({ json: commandCatalog });
+        }
+      });
+      try {
+        await page.keyboard.type("/");
+        const retry = option(page, "Befehle aus Apps konnten nicht geladen werden");
+        await retry.waitFor();
+        // A persistent retry remains reachable even for a query with no match.
+        await page.keyboard.type("zzzz");
+        await retry.waitFor();
+        expect(requests).toBe(1);
+        const retried = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/capabilities/v1/catalog");
+        await retry.click();
+        await retried;
+        await page.waitForFunction(() => document.querySelectorAll(".k2b-chat-composer__command-placeholder").length > 0);
+        expect(requests).toBe(2);
+        release();
+        await page.keyboard.press("Escape");
+        await page.locator("textarea").fill("/");
+        await option(page, "Neue Aufgabe").waitFor({ state: "attached" });
+        expect(requests).toBe(2);
+      } finally {
+        release();
+        await close();
+      }
+    },
+    60_000,
+  );
+});

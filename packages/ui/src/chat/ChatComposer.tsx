@@ -8,6 +8,7 @@ import {
   For,
   Index,
   type JSX,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -510,6 +511,36 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   });
   const commandsOpen = () =>
     Boolean(!emojiOpen() && commandQuery() && (localCommands().length || props.searchCommands || commandFallbackRow()));
+  // Rows that arrive for a pending section never move a visible row: until the person types again, the list keeps the
+  // height it had with its placeholders and scrolls what does not fit. A list below its maximum height grows upward
+  // from the field, so a change of height alone would move its first row.
+  const commandsPending = createMemo(() => commandsOpen() && commandModel().groups.some((group) => group.pendingRows > 0));
+  let pendingListHeight: number | undefined;
+  const releaseCommandListHeight = () => {
+    commandListRef?.style.removeProperty("height");
+    commandListRef?.removeAttribute("data-held");
+  };
+  createEffect(() => {
+    const list = commandListRef;
+    if (!commandsPending() || !list || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      pendingListHeight = list.getBoundingClientRect().height;
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    onCleanup(() => observer.disconnect());
+  });
+  createEffect(
+    on(commandsPending, (pending, wasPending) => {
+      if (pending || !wasPending || pendingListHeight === undefined || !commandListRef?.isConnected) return;
+      commandListRef.style.height = `${pendingListHeight}px`;
+      commandListRef.setAttribute("data-held", "");
+    }),
+  );
+  // Typing, another opening or closing the list lets it size itself again.
+  const commandListSizeKey = createMemo(() => (commandsOpen() ? `${commandOpening()}\u0000${caretCommandToken()?.query}` : undefined));
+  createEffect(on(commandListSizeKey, releaseCommandListHeight, { defer: true }));
   const commandSheetHeld = createMemo(() => commandsOpen() && isTouchOnly());
   createEffect(() => {
     if (!commandSheetHeld()) return;

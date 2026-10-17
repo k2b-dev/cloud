@@ -10639,6 +10639,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: var(--k2b-shadow-float);
 }
 
+/* A list held at its height while late rows arrive keeps its rows at the top instead of stretching them. */
+.k2b-ui .k2b-chat-composer__commands[data-held] { align-content: start; }
+
 .k2b-ui .k2b-chat-composer__commands button,
 .k2b-ui .k2b-chat-composer__commands > [role="status"] {
   display: flex;

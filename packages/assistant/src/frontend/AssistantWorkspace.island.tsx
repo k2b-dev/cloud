@@ -31,7 +31,7 @@ import {
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
+import { cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
@@ -46,6 +46,7 @@ import {
   Chat,
   type ChatMention,
   dialogCore,
+  type ChatCommandDraft,
   IconButton,
   LocaleProvider,
   openSpotlightSearch,
@@ -562,21 +563,26 @@ export default function AssistantWorkspace(props: Props) {
     );
     return next;
   };
-  const composerInput = (key: string) =>
+  type ComposerOverride = { text: string; mentions: readonly ChatMention[] };
+  const composerInput = (key: string, override?: ComposerOverride) =>
     aiComposerSendInput({
       intent: "send",
-      text: composerDraft(key),
-      mentions: mentionsFor(key),
+      text: override?.text ?? composerDraft(key),
+      mentions: override?.mentions ?? mentionsFor(key),
       attachments: aiChatAttachments(composerAttachmentsFor(key)),
     });
-  const saveComposer = (key: string, target: string) =>
+  const saveComposer = (key: string, target: string, override?: ComposerOverride) =>
     serializeComposer(key, async () => {
       const local = session(key);
       if (local.conflict) return null;
       const generation = local.editGeneration;
       local.saving = true;
       try {
-        const saved = await chat.saveDraft({ ...composerInput(key), conversationId: target, expectedDraftRevision: local.baseRevision });
+        const saved = await chat.saveDraft({
+          ...composerInput(key, override),
+          conversationId: target,
+          expectedDraftRevision: local.baseRevision,
+        });
         if (saved) confirmComposerSave(local, saved.revision, generation);
         else {
           local.conflict = true;
@@ -1408,6 +1414,52 @@ export default function AssistantWorkspace(props: Props) {
     // A Project composer starts new chats; a response still running in the previous chat does not block it.
     const composerRunning = () => !projectComposer() && chat.running();
     const catalog = createCloudComposerCatalog();
+    let commandTarget: string | undefined;
+    // Saves the draft without its "/…" before an app opens, through the revisioned path, with references and
+    // attachments. A chat that does not exist yet is created first, as "Assign project" and dictation do.
+    const beforeCommand = async (draft: ChatCommandDraft) => {
+      const conflict = new Error(commandCopy().commandDraftConflict);
+      let key = sessionKey();
+      const projectId = composerProps.projectId;
+      let target = projectId ? pendingProjectChats()[projectId]?.id : chat.activeConversationId();
+      try {
+        if (!target) {
+          const text = composerDraft(key),
+            attachments = composerAttachmentsFor(key),
+            mentions = mentionsFor(key);
+          const created = await createConversation(false, projectId, !projectId);
+          if (!created) throw new Error(commandCopy().commandDraftNotSaved);
+          target = created.id;
+          if (projectId) {
+            session(key).baseRevision = created.draft.revision;
+            setPendingProjectChats((all) => ({ ...all, [projectId]: created }));
+          } else {
+            key = created.id;
+            setComposerDraft(key, text);
+            setComposerAttachmentsFor(key, attachments);
+            setMentionsFor(key, mentions);
+            session(key).baseRevision = created.draft.revision;
+          }
+        }
+        const saved = await saveComposer(key, target, { text: draft.value, mentions: draft.mentions });
+        if (!saved) throw conflict;
+        commandTarget = target;
+      } catch (error) {
+        // The composer's status line names the reason once.
+        chat.setError(null);
+        throw error === conflict ? error : new Error(commandCopy().commandDraftNotSaved);
+      }
+    };
+    const appCommands = createMemo(() =>
+      cloudCommandMenu({
+        locale: locale(),
+        commands: catalog.commands(),
+        state: catalog.state(),
+        section: "apps",
+        before: (draft) => trackComposerPicking(beforeCommand(draft)),
+        returnTo: () => (commandTarget ? assistantConversationHref(window.location.href, commandTarget) : undefined),
+      }),
+    );
     const attachmentCount = createMemo(() => composerAttachmentsFor(sessionKey()).length);
     const mentionCount = createMemo(() => mentionsFor(sessionKey()).length);
     const insert = createMemo(() =>
@@ -1515,11 +1567,12 @@ export default function AssistantWorkspace(props: Props) {
           draftKey={sessionKey()}
           mentions={mentionsFor(sessionKey())}
           onMentionsChange={(mentions) => setMentionsFor(sessionKey(), mentions)}
-          commandSections={assistantCommandSections(commandCopy())}
+          commandSections={assistantCommandSections(commandCopy(), appCommands().pending)}
           commandScopes={[...assistantCommandScopes(commandCopy(), locale()), ...insert().scopes]}
           commandFallback={insert().fallback}
           commands={[
             ...insert().commands,
+            ...appCommands().commands,
             ...assistantBuiltInCommands({
               copy: commandCopy(),
               projectComposer: projectComposer(),

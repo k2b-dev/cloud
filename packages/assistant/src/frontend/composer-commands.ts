@@ -18,12 +18,13 @@ import { assistantMessages } from "./messages";
 import { assistantTaskTitle, formatAssistantTaskScheduleInline } from "./scheduled-task-format";
 import { type AssistantCopy, assistantCopyFor } from "./ui-copy";
 
-export const assistantCommandSections = (copy: AssistantCopy): ChatCommandSection[] => [
+export const assistantCommandSections = (copy: AssistantCopy, pending = false): ChatCommandSection[] => [
   { id: "insert", label: copy.commandInsert },
   { id: "skills", label: copy.commandSkills, searched: true },
   { id: "files", label: copy.commandFiles, searched: true, searchOnly: true },
   { id: "chat", label: copy.commandChat },
   { id: "tasks", label: copy.commandTasks, searched: true },
+  { id: "apps", label: copy.commandApps, pending },
 ];
 
 export const assistantCommandScopes = (copy: AssistantCopy, locale: string): ChatCommandScope[] => [
@@ -93,7 +94,7 @@ export function assistantInsertCommands(input: {
     appName: t.assistant,
     appIcon: "ti ti-sparkles",
     tag: "studio-app",
-    title: input.copy.commandApps,
+    title: input.copy.commandStudioApps,
     description: "",
     aliases: ["studio-apps", "studio"],
   };

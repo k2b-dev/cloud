@@ -297,7 +297,9 @@ type ChatCommandContext = {
   openModelSelection: () => Promise<string | null>;
 };
 
-type ChatCommandResult = void | "cancelled" | { done: string };
+type ChatCommandResult = void | "cancelled" | { done: string } | { mention: ChatAttachment };
+type ChatCommandDraft = { value: string; mentions: readonly ChatMention[] };
+type ChatCommandOpenResult = void | "cancelled" | { failed: string };
 
 type ChatCommand = {
   id?: string; name: string; description: string; icon?: string; label?: string;
@@ -305,10 +307,11 @@ type ChatCommand = {
   section?: string; scope?: string; hiddenUntilSearch?: boolean; app?: string;
   action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
   mention?: ChatAttachment;
-  selected?: boolean; searchAgain?: boolean;
+  open?: (draft: ChatCommandDraft) => Promise<ChatCommandOpenResult>;
+  selected?: boolean; searchAgain?: boolean; persistent?: boolean;
 };
 
-type ChatCommandSection = { id: string; label: string; searched?: boolean; searchOnly?: boolean };
+type ChatCommandSection = { id: string; label: string; searched?: boolean; searchOnly?: boolean; pending?: boolean };
 type ChatCommandScope = { id: string; title: string; words: readonly string[] };
 type ChatCommandSearch = { scope?: string; opening: number };
 
@@ -320,6 +323,23 @@ type ChatFileSelection = {
 type ChatPasteHandler = (event: ClipboardEvent & { currentTarget: HTMLTextAreaElement; target: Element }) => void;
 
 ```
+
+Use `open(draft)` for a row that saves before opening another application.
+`draft` contains the value without `/…` and the adjusted mentions. During the
+promise, editing waits, the token and list stay in place, and the row shows
+**Opening …** with a spinner (or `busyLabel`). A `void` result removes the token
+in one undo step. `"cancelled"` changes nothing. `{ failed }` keeps the list and
+draft unchanged and replaces the row description; choosing it again retries.
+A rejection keeps the token, closes the list, and shows the error message in
+the status line.
+
+Set `ChatCommandSection.pending` while local rows are loading. Put this section
+last. Its heading spins and its end holds three placeholders in the overview,
+one while searching; **Nothing found** waits for it. When the rows arrive, the
+list keeps the height it had with the placeholders until the next keystroke and
+scrolls what does not fit, so no visible row moves. `persistent` keeps a row in every search of
+its section, after matching rows, so an explicit retry remains reachable.
+`searchAgain: true` starts a new opening and runs `searchCommands` again.
 
 Give `commandSections` in display order and each command a `section` id. The
 order stays fixed while searching. The overview keeps consumer row order;

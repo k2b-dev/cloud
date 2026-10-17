@@ -1117,6 +1117,13 @@ An installation that started Contacts on any release from v0.7.0 through
 v0.45.0 needs no action. See the
 [Contacts short-ID upgrade path](/en/docs/reference/deprecations-and-migrations#contacts-requires-finished-short-ids).
 
+### Discover Commands from navigation apps
+
+The global palette now hides Commands from apps outside a person's navigation.
+No configuration change is needed. The slash menu offers the same Commands in
+**Open in apps**, except those of its own app. Both surfaces require Commands
+that accept an empty input. The target page still checks access.
+
 ## Coordinate an existing installation's identity upgrade
 
 Use one maintenance window for the gateway, Core, OAuth, applications, and
