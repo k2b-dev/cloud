@@ -1,5 +1,9 @@
+import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { DirectSession, FilegateError } from "@k2b/filegate/utils";
 import type { UploadSession } from "./contracts";
+
+// Let the server answer, including the gateway's roughly 8 s timer slack, before the client gives up.
+export const UPLOAD_COMMIT_DEADLINE_MS = (REQUEST_IDLE_TIMEOUT_MAX_SECONDS + 15) * 1000;
 
 // Tiny control requests get margin for a commit holding Filegate's root lock.
 const CONTROL_DEADLINE = 30_000;

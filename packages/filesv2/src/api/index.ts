@@ -4,10 +4,13 @@ import {
   getLocale,
   jsonResponse,
   middleware,
+  REQUEST_IDLE_TIMEOUT_MAX_SECONDS,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
   rateLimit,
   requiresAdmin,
   requiresAuth,
   respond,
+  setRequestTimeout,
   v,
 } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
@@ -195,7 +198,14 @@ const api = new Hono<AuthContext>()
     "/bases/:baseId/uploads/:id/commit",
     middleware.openapi({ summary: "Publish a fully transferred upload session", ...requiresAuth }),
     v("param", UploadIdSchema.extend({ baseId: z.string() })),
-    async (c) => respond(c, ok(await filesService.commitUpload(c.get("actor"), c.req.valid("param")))),
+    async (c) => {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_MAX_SECONDS);
+      try {
+        return respond(c, ok(await filesService.commitUpload(c.get("actor"), c.req.valid("param"))));
+      } finally {
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+      }
+    },
   )
   .post(
     "/bases/:baseId/uploads/:id/abort",

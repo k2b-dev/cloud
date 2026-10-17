@@ -1,4 +1,14 @@
-import { type AuthContext, auth, getLocale, rateLimit, respond, v } from "@k2b/cloud/server";
+import {
+  type AuthContext,
+  auth,
+  getLocale,
+  REQUEST_IDLE_TIMEOUT_MAX_SECONDS,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
+  rateLimit,
+  respond,
+  setRequestTimeout,
+  v,
+} from "@k2b/cloud/server";
 import { FilegateError } from "@k2b/filegate";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
@@ -66,9 +76,17 @@ export const publicApi = new Hono<AuthContext>()
   .post("/inbox/:token/api/uploads/:id/lease", v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })), async (c) =>
     respond(c, ok(await filesService.publicInboxLease(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c)))),
   )
-  .post("/inbox/:token/api/uploads/:id/commit", v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })), async (c) =>
-    respond(c, ok(await filesService.publicInboxCommit(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c)))),
-  )
+  .post("/inbox/:token/api/uploads/:id/commit", v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })), async (c) => {
+    setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_MAX_SECONDS);
+    try {
+      return respond(
+        c,
+        ok(await filesService.publicInboxCommit(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c))),
+      );
+    } finally {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
+  })
   .post("/inbox/:token/api/uploads/:id/abort", v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })), async (c) => {
     await filesService.publicInboxAbort(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c));
     return respond(c, ok({ aborted: true }));

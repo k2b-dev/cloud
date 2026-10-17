@@ -14,6 +14,11 @@ test("each failing step keeps its own code: template, storage, coordination, and
   expect(apiError(new TypeError("fetch failed"))).toEqual({ code: "internal", status: 500 });
 });
 
+test("storage deadlines are unavailable while other aborts remain internal", () => {
+  expect(apiError(new DOMException("The operation timed out.", "TimeoutError"))).toEqual({ code: "unavailable", status: 503 });
+  expect(apiError(new DOMException("The operation was aborted.", "AbortError"))).toEqual({ code: "internal", status: 500 });
+});
+
 test("the log entry names the underlying cause", () => {
   const error = new FilesError("template_missing", 503, { cause: new Error("No template at /app/assets/templates/empty.odt") });
   expect(describeError(error)).toEqual({
