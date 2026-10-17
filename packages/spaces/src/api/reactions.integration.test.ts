@@ -68,7 +68,9 @@ const fixture = async (
     async (path, method = "GET", body) =>
       spacesApi.request(path, {
         method,
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        // API tokens are rate-limited by client IP; without one, every test file shares the `ip:unknown` bucket and
+        // the concurrent bursts here get 429s from unrelated traffic. A fresh address keeps each request on its own budget.
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-forwarded-for": crypto.randomUUID() },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
   const grant = async (userId: string | null, accountId: string | null, permission: string) => {
