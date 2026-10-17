@@ -46,6 +46,8 @@ export async function prepareImageVariants(
         metadata.format === "jpeg" &&
         (metadata.orientation === undefined || metadata.orientation === 1) &&
         (metadata.space === "srgb" || metadata.space === "b-w") &&
+        // `space` describes the pixels, not the profile: a Display P3 or Adobe RGB JPEG also reports srgb.
+        !metadata.hasProfile &&
         width <= box.width &&
         height <= box.height &&
         source!.byteLength <= request.maxBytes,

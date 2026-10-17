@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
 import { readImageRecords } from "../src/services/pdf/image-protocol";
 import { CLOUD_LOGO_SVG } from "../src/shared/branding";
-import { buildCanvasWorkers, reachedBundleInputs } from "./build-canvas-workers";
+import { buildCanvasWorkers, CANVAS_WORKER_DEFINES } from "./build-canvas-workers";
 
 const dirs: string[] = [];
 const dist = () => {
@@ -26,13 +26,13 @@ const runtime = process.platform === "linux" ? describe : describe.skip;
 runtime("canvas worker packaging", () => {
   test("packages nothing for bundles that start no canvas worker", async () => {
     const out = dist();
-    await buildCanvasWorkers(out, ["/app/src/index.ts"]);
+    await buildCanvasWorkers(out, "console.log(1);");
     expect(existsSync(join(out, "canvas"))).toBe(false);
   });
 
   test("packages both workers with one copy of the native canvas", async () => {
     const out = dist();
-    await buildCanvasWorkers(out, ["/x/packages/cloud/src/ai/pdf-render.ts", "/x/packages/cloud/src/services/branding/app-icons.ts"]);
+    await buildCanvasWorkers(out, 'new URL("./canvas/pdf-worker.js");new URL("./canvas/icon-worker.js");');
     const canvas = join(out, "canvas");
     expect(readdirSync(canvas).sort()).toEqual(["icon-worker.js", "node_modules", "pdf-worker.js"]);
     const modules = readdirSync(join(canvas, "node_modules"));
@@ -42,7 +42,7 @@ runtime("canvas worker packaging", () => {
 
   test("the packaged icon worker draws icons on its own", async () => {
     const out = dist();
-    await buildCanvasWorkers(out, ["/x/packages/cloud/src/services/branding/app-icons.ts"]);
+    await buildCanvasWorkers(out, 'new URL("./canvas/icon-worker.js");');
     expect(readdirSync(join(out, "canvas", "node_modules"))).toEqual(["@napi-rs"]);
     const child = Bun.spawn([process.execPath, "--no-env-file", join(out, "canvas", "icon-worker.js")], {
       stdin: new Blob([
@@ -72,29 +72,30 @@ runtime("canvas worker packaging", () => {
     }
   }, 60_000);
 
-  test("reaches only code that survives a real Bun server bundle", async () => {
-    const out = dist();
-    const pdf = resolve(import.meta.dir, "../src/services/pdf/index.ts");
-    for (const name of ["renderHtmlToPdf", "preparePdfImage"]) {
+  test("ships a worker only when the minified server code still starts it", async () => {
+    // Both entries import the barrels that re-export preparePdfImage; only the caller keeps its worker path.
+    const services = resolve(import.meta.dir, "../src/services/index.ts");
+    const calls = {
+      renderHtmlToPdf: '{ html: "<p>Hello</p>" }',
+      preparePdfImage: "{ data: new Uint8Array(), boxes: [{ width: 1, height: 1 }], maxBytes: 1024 }",
+    };
+    for (const [name, input] of Object.entries(calls)) {
+      const out = dist();
       const entry = join(out, `${name}.ts`);
-      const input =
-        name === "preparePdfImage"
-          ? "{ data: new Uint8Array(), boxes: [{ width: 1, height: 1 }], maxBytes: 1024 }"
-          : '{ html: "<p>Hello</p>" }';
-      await Bun.write(entry, `import { ${name} } from ${JSON.stringify(pdf)}; console.log(${name}(${input}));`);
-      const build = await Bun.build({ entrypoints: [entry], target: "bun", metafile: true });
+      await Bun.write(entry, `import { ${name} } from ${JSON.stringify(services)}; console.log(${name}(${input}));`);
+      const build = await Bun.build({ entrypoints: [entry], target: "bun", minify: true, define: CANVAS_WORKER_DEFINES });
       expect(build.success).toBe(true);
-      expect(build.metafile).toBeDefined();
-      expect(Object.keys(build.metafile!.inputs).some((path) => path.endsWith("/services/pdf/image.ts"))).toBe(true);
-      const reached = reachedBundleInputs(build.metafile);
-      expect(reached.some((path) => path.endsWith("/services/pdf/image.ts"))).toBe(name === "preparePdfImage");
-      expect(reached.some((path) => path.endsWith("/image-variants.ts") || path.includes("/sharp/"))).toBe(false);
+      await buildCanvasWorkers(out, await build.outputs[0]!.text());
+      const canvas = join(out, "canvas");
+      expect(existsSync(canvas) ? readdirSync(canvas).filter((file) => file.endsWith(".js")) : []).toEqual(
+        name === "preparePdfImage" ? ["image-worker.js"] : [],
+      );
     }
   }, 60_000);
 
   test("packages only sharp's host closure, and the isolated image worker converts a PNG", async () => {
     const out = dist();
-    await buildCanvasWorkers(out, ["/x/packages/cloud/src/services/pdf/image.ts"]);
+    await buildCanvasWorkers(out, 'new URL("./canvas/image-worker.js");');
     const canvas = join(out, "canvas");
     expect(readdirSync(canvas).sort()).toEqual(["image-worker.js", "node_modules"]);
     expect(readdirSync(join(canvas, "node_modules")).sort()).toEqual(["@img", "detect-libc", "semver", "sharp"]);

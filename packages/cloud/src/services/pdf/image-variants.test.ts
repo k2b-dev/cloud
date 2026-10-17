@@ -61,6 +61,26 @@ test("an all-pass-through call reads metadata without decoding", async () => {
   }
 }, 30_000);
 
+test("re-encodes a fitting JPEG with an embedded colour profile to sRGB", async () => {
+  const source = await sharp({ create: { width: 32, height: 16, channels: 3, background: "red" } })
+    .withIccProfile("p3")
+    .jpeg()
+    .toBuffer();
+  expect((await sharp(source).metadata()).hasProfile).toBe(true);
+  const written: Uint8Array[] = [];
+  const result = await prepareImageVariants(
+    source,
+    { boxes: [{ width: 64, height: 64 }], maxBytes: 1_000_000, timeoutMs: 30_000 },
+    async (_, _header, bytes) => {
+      written.push(bytes);
+    },
+  );
+  expect(result.ok).toBe(true);
+  expect(written).toHaveLength(1);
+  expect(Buffer.from(written[0]!).equals(source)).toBe(false);
+  expect((await sharp(written[0]!).metadata()).hasProfile).toBe(false);
+}, 30_000);
+
 test("rejects an intermediate over 32 MiP before decoding", async () => {
   // A highly compressible image has modest encoded size but an oversized raw intermediate.
   const source = await sharp({ create: { width: 8192, height: 4097, channels: 3, background: "red" } })

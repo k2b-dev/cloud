@@ -4,37 +4,26 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { readImageRecords } from "../src/services/pdf/image-protocol";
 
-/** Native workers are shipped only when their caller contributes code to the server bundle. */
 const CANVAS_WORKERS = [
   {
-    reachedBy: "/ai/pdf-render.ts",
+    define: "__CLOUD_PDF_RENDER_WORKER__",
     entry: "src/ai/pdf-render-worker.ts",
     output: "pdf-worker.js",
     packages: ["@napi-rs/canvas", "pdfjs-dist"],
   },
   {
-    reachedBy: "/services/branding/app-icons.ts",
+    define: "__CLOUD_ICON_RENDER_WORKER__",
     entry: "src/services/branding/icon-render-worker.ts",
     output: "icon-worker.js",
     packages: ["@napi-rs/canvas"],
   },
-  { reachedBy: "/services/pdf/image.ts", entry: "src/services/pdf/image-worker.ts", output: "image-worker.js", packages: ["sharp"] },
+  { define: "__CLOUD_PDF_IMAGE_WORKER__", entry: "src/services/pdf/image-worker.ts", output: "image-worker.js", packages: ["sharp"] },
 ] as const;
 
-/** Metafile inputs include tree-shaken modules; only output contributions establish reachability. */
-export function reachedBundleInputs(
-  metafile: { outputs: Record<string, { inputs: Record<string, { bytesInOutput: number }> }> } | undefined,
-) {
-  return [
-    ...new Set(
-      Object.values(metafile?.outputs ?? {}).flatMap((output) =>
-        Object.entries(output.inputs)
-          .filter(([, input]) => input.bytesInOutput > 0)
-          .map(([name]) => name),
-      ),
-    ),
-  ];
-}
+/** Server bundle defines: each caller starts its worker from `canvas/` next to `server.js`. */
+export const CANVAS_WORKER_DEFINES = Object.fromEntries(
+  CANVAS_WORKERS.map((worker) => [worker.define, JSON.stringify(`./canvas/${worker.output}`)]),
+);
 
 const Manifest = z.object({
   version: z.string(),
@@ -52,8 +41,10 @@ const matches = (values: string[] | undefined, target: string) =>
  * dereferenced and filtered by OS, CPU and libc; reject version collisions and missing native binaries. Smoke-test sharp
  * in the packaged subprocess so the build proves that its native closure loads on this architecture.
  */
-export async function buildCanvasWorkers(dist: string, bundledInputs: readonly string[]) {
-  const workers = CANVAS_WORKERS.filter((worker) => bundledInputs.some((path) => path.endsWith(worker.reachedBy)));
+export async function buildCanvasWorkers(dist: string, serverCode: string) {
+  // A worker ships only when the server code still contains its path, which only the code that starts it carries.
+  // Metafile inputs also list tree-shaken modules, and a retained module binding contributes bytes without its caller.
+  const workers = CANVAS_WORKERS.filter((worker) => serverCode.includes(`./canvas/${worker.output}`));
   if (workers.length === 0) return;
   const framework = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const out = resolve(dist, "canvas");

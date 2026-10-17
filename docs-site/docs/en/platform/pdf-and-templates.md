@@ -302,8 +302,9 @@ still return their variants. The service does not reduce quality to meet the cap
 Opaque images become 8-bit sRGB JPEG at quality 85. Images with any decoded
 alpha below 255 become PNG with transparency. A fully opaque alpha channel is
 removed. A JPEG passes through byte for byte only when its EXIF orientation is
-absent or 1, its colour space is sRGB or grayscale (not CMYK), its dimensions
-already fit the box, and its bytes fit `maxBytes`. Other images are re-encoded.
+absent or 1, its colour space is sRGB or grayscale (not CMYK), it has no
+embedded colour profile, its dimensions already fit the box, and its bytes fit
+`maxBytes`. Other images are re-encoded.
 EXIF rotation is applied before fitting. Animated GIF and WebP use the first
 frame; TIFF uses the first page.
 
