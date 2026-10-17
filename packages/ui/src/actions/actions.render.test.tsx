@@ -931,7 +931,7 @@ describe("@k2b/ui action geometry parity", () => {
 
     expect(button).toContain("transition:");
     expect(button).toContain("user-select: none");
-    expect(button).toContain("font-weight: 500");
+    expect(button).toContain("font-weight: 600");
     expect(active).toContain("scale: 0.98");
     expect(active).not.toContain("box-shadow");
     expect(split).toContain("transition: scale 100ms ease-out");
