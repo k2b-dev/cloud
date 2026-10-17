@@ -31,6 +31,7 @@ import {
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
@@ -117,7 +118,6 @@ import {
   assistantComposerCommands,
   assistantExcludedRefs,
   assistantInsertCommands,
-  createAssistantCatalogTags,
   createAssistantCommandSession,
   createAssistantTaskRunKeys,
 } from "./composer-commands";
@@ -392,9 +392,35 @@ export default function AssistantWorkspace(props: Props) {
   // A picker or file selection inserts into, or gives back the `/…` of, the draft it came from; saving a new chat
   // meanwhile would move that draft to another key and lose the choice.
   const [composerPicking, setComposerPicking] = createSignal(0);
-  const trackComposerPicking = <T,>(picking: Promise<T>): Promise<T> => {
+  /** Holds saving until `until` settles or the returned release runs, whichever comes first. */
+  const holdComposerSave = (until: Promise<unknown>) => {
+    let held = true;
     setComposerPicking((count) => count + 1);
-    return picking.finally(() => setComposerPicking((count) => count - 1));
+    const release = () => {
+      if (!held) return;
+      held = false;
+      setComposerPicking((count) => count - 1);
+    };
+    void until.then(release, release);
+    return release;
+  };
+  const trackComposerPicking = <T,>(picking: Promise<T>): Promise<T> => {
+    holdComposerSave(picking);
+    return picking;
+  };
+  /**
+   * Some browsers never report that the device's file dialog was dismissed, so its promise may never settle; the page
+   * getting focus back ends the hold too, and saving resumes instead of staying off until a reload.
+   */
+  const trackComposerFileChoice = (choosing: Promise<readonly File[]>): Promise<readonly File[]> => {
+    const release = holdComposerSave(choosing);
+    const returned = new AbortController();
+    window.addEventListener("focus", release, { once: true, signal: returned.signal });
+    void choosing.then(
+      () => returned.abort(),
+      () => returned.abort(),
+    );
+    return choosing;
   };
   const [pendingProjectChats, setPendingProjectChats] = createSignal<Record<string, AiConversation>>({});
   const [filesDialogOpen, setFilesDialogOpen] = createSignal(false);
@@ -1390,7 +1416,7 @@ export default function AssistantWorkspace(props: Props) {
     const projectComposer = () => Boolean(composerProps.projectId);
     // A Project composer starts new chats; a response still running in the previous chat does not block it.
     const composerRunning = () => !projectComposer() && chat.running();
-    const catalog = createAssistantCatalogTags();
+    const catalog = createCloudComposerCatalog();
     const attachmentCount = createMemo(() => composerAttachmentsFor(sessionKey()).length);
     const mentionCount = createMemo(() => mentionsFor(sessionKey()).length);
     const insert = createMemo(() =>
@@ -1557,7 +1583,6 @@ export default function AssistantWorkspace(props: Props) {
             }),
           ]}
           searchCommands={async (query, signal, search) => {
-            void catalog.ready(search, locale());
             const [rows] = await Promise.all([
               assistantComposerCommands({
                 query,
@@ -1604,8 +1629,8 @@ export default function AssistantWorkspace(props: Props) {
                   ]);
                 },
               }),
-              // Only an unscoped search can turn into a tag scope; the Assistant's own scopes never wait for apps.
-              search.scope ? undefined : catalog.ready(search, locale()),
+              // Starts this opening's catalog load; only typed text outside a scope waits for it.
+              catalog.ready(query, search, locale()),
             ]);
             return rows;
           }}
@@ -1621,7 +1646,7 @@ export default function AssistantWorkspace(props: Props) {
           fileSelection={{
             onSelect: (files) => addComposerFiles(sessionKey(), files),
             // Called within the activation, as the device's file dialog needs; only its answer is tracked.
-            choose: () => trackComposerPicking(chooseComposerFiles(sessionKey())),
+            choose: () => trackComposerFileChoice(chooseComposerFiles(sessionKey())),
             accept: aiComposerFileAccept,
             disabled: !projectComposer() && chat.running(),
             label: t().attachFiles,

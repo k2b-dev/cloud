@@ -8,6 +8,7 @@ import { ok } from "@k2b/stdlib";
 import type { ChatMention } from "@k2b/ui";
 import { batch, createMemo, createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
+import { z } from "zod";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
 const picker = mock<(options?: CloudResourcePickerOptions) => Promise<CloudResourcePickerItem | undefined>>(async () => undefined);
@@ -29,7 +30,17 @@ const catalog = {
         "notebooks",
         defineCapabilities({
           protocolVersion: 2,
+          // An app needs a resource reader for its tags to reach the composer.
+          types: { note: { title: "Note", description: "One note.", reader: "read" } },
           queries: {
+            read: {
+              title: "Read a note",
+              description: "Read one note.",
+              input: z.object({ id: z.string().describe("Note id.") }).strict(),
+              data: z.object({ title: z.string().describe("Note title.") }).strict(),
+              openWorld: false,
+              run: async () => ok({ data: { title: "Q3 plan" } }),
+            },
             search: {
               title: "Search notes",
               description: "Find notes and notebooks.",
@@ -161,11 +172,11 @@ const mount = async (
     assistantComposerCommands,
     assistantExcludedRefs,
     assistantInsertCommands,
-    createAssistantCatalogTags,
     createAssistantCommandSession,
     createAssistantTaskRunKeys,
   } = await import("./composer-commands");
   const { assistantCopyFor } = await import("./ui-copy");
+  const { createCloudComposerCatalog } = await import("@k2b/cloud/browser/composer-insert");
   const requests: { url: URL; init?: RequestInit }[] = [];
   const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
@@ -219,7 +230,7 @@ const mount = async (
     { id: "beta", label: "Beta" },
   ];
   const copy = assistantCopyFor(locale);
-  const catalogTags = createAssistantCatalogTags();
+  const catalogTags = createCloudComposerCatalog();
   const insert = createMemo(() =>
     assistantInsertCommands({
       copy,
@@ -276,8 +287,7 @@ const mount = async (
           }),
         ]}
         searchCommands={(query, signal, search) => {
-          // As the workspace does: every unscoped search of an opening waits for its catalog answer.
-          void catalogTags.ready(search, locale);
+          // As the workspace does: typed text outside a scope waits for the opening's catalog answer.
           return Promise.all([
             assistantComposerCommands({
               query,
@@ -296,7 +306,7 @@ const mount = async (
               running: state() === "running",
               assignProject: async () => {},
             }),
-            search.scope ? undefined : catalogTags.ready(search, locale),
+            catalogTags.ready(query, search, locale),
           ]).then(([rows]) => rows);
         }}
       />

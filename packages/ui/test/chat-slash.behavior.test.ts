@@ -1785,6 +1785,30 @@ test("a pending picker never replaces a draft edited in the meantime", async () 
   expect(h.status().textContent).toContain("The text changed in the meantime, so nothing was inserted.");
 });
 
+test("a pick that returns after the draft moved to another key says that nothing was inserted", async () => {
+  let resolve!: (result: ChatCommandResult) => void;
+  const h = await slash({
+    value: "Hello /x",
+    commands: [
+      {
+        name: "x",
+        description: "Choose",
+        action: () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      },
+    ],
+  });
+  h.key("Enter");
+  // As when a new chat is saved while the picker is open: the draft continues under another key.
+  h.setDraftKey("moved");
+  resolve({ mention: { id: "one", name: "Note" } });
+  await flush();
+  expect(h.value()).toBe("Hello ");
+  expect(h.status().textContent).toContain("The text changed in the meantime, so nothing was inserted.");
+});
+
 test("a synchronous file chooser failure restores the token and reaches onError", async () => {
   const error = new Error("Cannot open selection");
   const h = await slash({

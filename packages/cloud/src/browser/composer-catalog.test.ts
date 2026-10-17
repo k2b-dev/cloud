@@ -2,15 +2,16 @@ import { afterEach, expect, test } from "bun:test";
 import { currentLibrary } from "../../test/future-capability-manifest";
 import type { CapabilityCatalog, CapabilitySearchTagManifest } from "../contracts/capabilities";
 import { LOCALE_HEADER } from "../shared/locale";
-import { loadCloudComposerCatalog } from "./composer-catalog";
+import { type CloudComposerCatalog, createCloudComposerCatalog, loadCloudComposerCatalog } from "./composer-catalog";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 const note = { tag: "note", title: "Notizen", description: "Notizen durchsuchen", aliases: ["notiz", "markdown"] };
-const app = (appId: string, tags: CapabilitySearchTagManifest[] = [note]): CapabilityCatalog["apps"][number] => {
+const app = (appId: string, tags: CapabilitySearchTagManifest[] = [note], readers = true): CapabilityCatalog["apps"][number] => {
   const manifest = structuredClone(currentLibrary.manifest);
+  if (!readers) manifest.types = manifest.types.map(({ reader: _reader, ...type }) => type);
   const search = manifest.queries.find((query) => query.universalSearch)!;
   return {
     appId,
@@ -110,4 +111,53 @@ test("rejects a non-monotonic catalog cursor", async () => {
   });
   await expect(loadCloudComposerCatalog("it-CH")).rejects.toThrow("cursor");
   expect(requests).toBe(2);
+});
+
+test("leaves out the tags of apps without a resource reader, whose pickers could show nothing", async () => {
+  stubFetch(async () => Response.json(page([app("library"), app("accounts", [{ ...note, tag: "account", title: "Konten" }], false)])));
+  expect((await loadCloudComposerCatalog("nl-BE")).tags.map((tag) => tag.appId)).toEqual(["library"]);
+});
+
+test("a composer catalog loads once per opening and lets only typed unscoped text wait for it", async () => {
+  const loads: Array<(catalog: CloudComposerCatalog) => void> = [];
+  const catalog = createCloudComposerCatalog(
+    () =>
+      new Promise((resolve) => {
+        loads.push(resolve);
+      }),
+  );
+  let waited = false;
+  // The overview and a scoped search answer at once; both belong to the opening whose load has just started.
+  await catalog.ready("", { opening: 1 }, "de");
+  await catalog.ready("q3", { opening: 1, scope: "skill" }, "de");
+  const typed = catalog.ready("notiz", { opening: 1 }, "de").then(() => {
+    waited = true;
+  });
+  await Promise.resolve();
+  expect(loads).toHaveLength(1);
+  expect(waited).toBe(false);
+  const tag = { appId: "library", appName: "Library", appIcon: "ti ti-book", tag: "note", title: "Notizen", description: "", aliases: [] };
+  loads[0]!({ tags: [tag] });
+  await typed;
+  expect(catalog.tags()).toEqual([tag]);
+  const next = catalog.ready("notiz", { opening: 2 }, "de");
+  expect(loads).toHaveLength(2);
+  loads[1]!({ tags: [tag] });
+  await next;
+});
+
+test("after a failed load no search waits again, and the tags it had stay", async () => {
+  const tag = { appId: "library", appName: "Library", appIcon: "ti ti-book", tag: "note", title: "Notizen", description: "", aliases: [] };
+  const answers: Array<() => Promise<CloudComposerCatalog>> = [
+    () => Promise.resolve({ tags: [tag] }),
+    () => Promise.reject(new Error("Offline")),
+    // A stalled retry must not hold the list.
+    () => new Promise(() => {}),
+  ];
+  const catalog = createCloudComposerCatalog(() => answers.shift()!());
+  await catalog.ready("notiz", { opening: 1 }, "de");
+  await catalog.ready("notiz", { opening: 2 }, "de");
+  expect(catalog.tags()).toEqual([tag]);
+  await catalog.ready("notiz", { opening: 3 }, "de");
+  expect(answers).toHaveLength(0);
 });

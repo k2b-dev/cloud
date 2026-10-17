@@ -4,7 +4,12 @@ import type { CloudSearchTag } from "./composer-catalog";
 import { composerInsertMessages } from "./composer-insert-messages";
 import { type CloudResourcePickerItem, openCloudResourcePicker } from "./resource-picker";
 
-export { type CloudComposerCatalog, type CloudSearchTag, loadCloudComposerCatalog } from "./composer-catalog";
+export {
+  type CloudComposerCatalog,
+  type CloudSearchTag,
+  createCloudComposerCatalog,
+  loadCloudComposerCatalog,
+} from "./composer-catalog";
 
 export type CloudInsertMenuOptions = {
   locale: string;

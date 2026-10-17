@@ -490,17 +490,21 @@ narrows the slash list. A selection returns `{ mention }` for the token's place;
 cancelling keeps `/…`. Supply `mention` to build the reference your draft stores,
 and `excludeRefs` to omit resources already in it.
 
-`loadCloudComposerCatalog(locale)` shares one catalog load per page and locale.
-Load it on each new menu opening, identified by `search.opening`, rather than on
-every keystroke. Successful loads remain cached; failures can retry at the next
-opening. Keep the previous tags if loading fails. Let each unscoped search of an
-opening wait for that load, so a typed tag word does not settle as **Nothing
-found** before its tag arrives. Searches in your own scopes need not wait. Each
-catalog page has a 15-second deadline, so a stalled load fails and the next
-opening retries it.
+`createCloudComposerCatalog()` gives one composer its tags from a catalog load
+shared by every composer on the page. Call `catalog.ready(query, search, locale)`
+at the start of each `searchCommands` run. The first run of a menu opening,
+identified by `search.opening`, starts the load, so no keystroke sends a request.
+A successful load stays cached for the page; a failed one is retried at the next
+opening and keeps the previous tags. Only typed text outside a scope waits for
+the load, so a tag word does not settle as **Nothing found** before its tag
+arrives. The overview and scoped searches do not wait, and after a failed load
+no search waits again. Each catalog page has a 15-second deadline.
+
+The catalog leaves out the tags of apps that declare no resource reader,
+because a picker with `requireReader: true` can show none of their results.
 
 ```tsx
-import { type CloudSearchTag, cloudInsertMenu, loadCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
+import { cloudInsertMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { Chat, type ChatMention, useLocale } from "@k2b/ui";
 import { createMemo, createSignal } from "solid-js";
 
@@ -508,17 +512,15 @@ export function ResourceComposer() {
   const locale = useLocale();
   const [text, setText] = createSignal("");
   const [mentions, setMentions] = createSignal<readonly ChatMention[]>([]);
-  const [tags, setTags] = createSignal<readonly CloudSearchTag[]>([]);
+  const catalog = createCloudComposerCatalog();
   const menu = createMemo(() =>
     cloudInsertMenu({
       locale: locale(),
-      tags: tags(),
+      tags: catalog.tags(),
       section: "insert",
       mention: (item) => ({ id: `resource:${item.ref.type}:${item.ref.id}`, name: item.title, data: item.ref }),
     }),
   );
-  let opening: number | undefined;
-  let catalogReady: Promise<void> = Promise.resolve();
   return (
     <Chat.Composer
       value={text()}
@@ -529,19 +531,9 @@ export function ResourceComposer() {
       commands={[menu().insert, ...menu().tags]}
       commandScopes={menu().scopes}
       commandFallback={menu().fallback}
-      searchCommands={async (_query, _signal, search) => {
-        if (opening !== search.opening) {
-          opening = search.opening;
-          // A failure keeps the current tags; the next opening asks again.
-          catalogReady = loadCloudComposerCatalog(locale()).then(
-            (catalog) => {
-              setTags(catalog.tags);
-            },
-            () => {},
-          );
-        }
-        // Every search of the opening waits, so "/notiz" never reads as "nothing found" before its tag arrives.
-        await catalogReady;
+      searchCommands={async (query, _signal, search) => {
+        // Starts this opening's catalog load; typed text outside a scope waits for it.
+        await catalog.ready(query, search, locale());
         return [];
       }}
       onSubmit={(input) => {
@@ -556,9 +548,10 @@ Compose these rows and scopes with your own commands. Pass their scope words as
 `reservedWords` so a catalog tag cannot claim them. `reason` disables the insert,
 tag, and fallback rows with a visible explanation, such as a full message.
 Use `ownReaders` only for a resource type your composer reads itself, for
-example `{ "assistant:studio-app": "assistant.app" }`. That tag's picker then
-lists only this type, also without a Cloud reader, even after the person
-removes the scope chip. A word that two tags share narrows to neither, so it
+example `{ "assistant:studio-app": "assistant.app" }`, and add that tag to
+`tags` yourself when its app has no reader. That tag's picker then lists only
+this type, also without a Cloud reader, even after the person removes the scope
+chip. A word that two tags share narrows to neither, so it
 does not become a scope word.
 The example stores the reference in `attachment.data`; adapt that value to your
 application's draft format and persist the submitted mentions.

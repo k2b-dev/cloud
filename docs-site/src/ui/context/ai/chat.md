@@ -213,8 +213,9 @@ row keeps its reason and never narrows.
 An action may return `{ mention: attachment }` after a picker resolves. The
 reference replaces the original token at its position, using the same edit as
 a row's `mention`. Ctrl/⌘+Z restores `/…` in one step. Returning `"cancelled"`
-keeps the token. If the draft changed while the picker was open, the composer
-inserts nothing and shows a visible explanation.
+keeps the token. If the draft changed, or moved to another `draftKey`, while
+the picker was open, the composer inserts nothing and shows a visible
+explanation.
 
 Set `attachFiles: true` to use the composer's `fileSelection` from a slash row.
 Its `choose` function runs synchronously inside the key or click activation so

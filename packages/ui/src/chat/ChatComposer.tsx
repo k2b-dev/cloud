@@ -1062,7 +1062,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           setDismissed(true);
           mentioned = { value: withMention, caret: token.start + name.length + 1 };
           showCommandStatus();
-        } else if (props.draftKey === key) showCommandStatus({ tone: "error", text: chatMessages().commandDraftChanged });
+        } else {
+          // The pick is lost; say so, also when the draft moved to another key meanwhile (such as a new chat saved
+          // while the dialog was open), so it never ends in silence.
+          showCommandStatus({ tone: "error", text: chatMessages().commandDraftChanged });
+        }
       } else if (result) {
         showCommandStatus({ tone: "done", text: result.done });
       }

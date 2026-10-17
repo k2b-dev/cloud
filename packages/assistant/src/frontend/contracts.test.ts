@@ -96,7 +96,7 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).not.toContain("type ChatCommand");
     expect(workspace).not.toContain("const slashCommands");
     expect(workspace).toMatch(/searchCommands=\{async \(query, signal, search\) => \{[\s\S]*?assistantComposerCommands\(/);
-    expect(workspace).toContain("catalog.ready(search, locale())");
+    expect(workspace).toContain("catalog.ready(query, search, locale())");
     // Saving a new chat moves its draft to another key; it waits while a slash-list picker is open.
     expect(workspace).toContain("if (activeProject() || composerSubmitting() || composerPicking()) return;");
     expect(workspace).toContain("track: trackComposerPicking");
@@ -140,7 +140,7 @@ describe("Assistant frontend contracts", () => {
   test("Attach files reads from Cloud apps only within what the draft can still take", async () => {
     const workspace = await read("./AssistantWorkspace.island.tsx");
 
-    expect(workspace).toContain("choose: () => trackComposerPicking(chooseComposerFiles(sessionKey()))");
+    expect(workspace).toContain("choose: () => trackComposerFileChoice(chooseComposerFiles(sessionKey()))");
     expect(workspace).toContain("aiComposerChooseMaxBytes(composerPartCount(sessionKey))");
     expect(workspace).toContain("chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxBytes })");
   });

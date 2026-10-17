@@ -1,11 +1,6 @@
 import type { AiChatTaskView, AiProject, AiSkillSummary } from "@k2b/cloud/ai";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS, type AiComposerAttachment, aiChatAttachments, aiComposerAttachmentRecords } from "@k2b/cloud/ai/ui";
-import {
-  type CloudComposerCatalog,
-  type CloudSearchTag,
-  cloudInsertMenu,
-  loadCloudComposerCatalog,
-} from "@k2b/cloud/browser/composer-insert";
+import { type CloudSearchTag, cloudInsertMenu } from "@k2b/cloud/browser/composer-insert";
 import type { CloudResourcePickerItem } from "@k2b/cloud/browser/resource-picker";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import {
@@ -18,7 +13,6 @@ import {
   type ChatModelOption,
   matchesChatCommand,
 } from "@k2b/ui";
-import { createSignal } from "solid-js";
 import { AssistantTaskRunError, assistantApi } from "../api/client";
 import { assistantMessages } from "./messages";
 import { assistantTaskTitle, formatAssistantTaskScheduleInline } from "./scheduled-task-format";
@@ -51,34 +45,6 @@ export const assistantCommandScopes = (copy: AssistantCopy, locale: string): Cha
   },
   { id: "task", title: copy.commandTasks, words: ["routine", "routinen"] },
 ];
-
-/**
- * The page's search tags for one composer. Each menu opening asks once; the platform keeps a successful load for the
- * page, so only the first opening, or one after a failure, sends a request. Unscoped searches wait for that answer,
- * so "/notiz" never settles as "nothing found" (and closes on the next space) before the tags could match it; the
- * Assistant's own scopes do not. A failure keeps the tags the composer had.
- */
-export function createAssistantCatalogTags(load: (locale: string) => Promise<CloudComposerCatalog> = loadCloudComposerCatalog) {
-  const [tags, setTags] = createSignal<readonly CloudSearchTag[]>([]);
-  let opening: number | undefined;
-  let settled: Promise<void> = Promise.resolve();
-  return {
-    tags,
-    /** Starts this opening's load once and resolves when it has settled, successfully or not. */
-    ready(search: { opening: number }, locale: string): Promise<void> {
-      if (opening !== search.opening) {
-        opening = search.opening;
-        settled = load(locale).then(
-          (catalog) => {
-            setTags(catalog.tags);
-          },
-          () => {},
-        );
-      }
-      return settled;
-    },
-  };
-}
 
 /**
  * The reference a chosen resource becomes in the text, with the id the saved draft rebuilds it with, so it keeps its
@@ -121,7 +87,7 @@ export function assistantInsertCommands(input: {
   track?: <T>(picking: Promise<T>) => Promise<T>;
 }) {
   const t = assistantMessages.resolve([input.locale]).t;
-  // The Assistant's own Studio-app tag works before, and without, the catalog; the catalog's copy replaces it.
+  // Studio apps have no Cloud reader, so the catalog leaves their tag out; the Assistant adds it and reads them itself.
   const ownTag: CloudSearchTag = {
     appId: "assistant",
     appName: t.assistant,
