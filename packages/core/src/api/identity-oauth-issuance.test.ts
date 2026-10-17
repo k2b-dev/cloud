@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { generateKeyPair, jwtVerify } from "jose";
+import { z } from "zod";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { createIdentityOAuthIssuanceRoutes } from "./identity-oauth-issuance";
 
@@ -24,6 +25,7 @@ const authorityState = (overrides: Record<string, unknown> = {}) => ({
   grantedAudiences: ["cloud", "test-client"],
   resource: null,
   nonce: null,
+  notAfter: null,
   user: {
     id: USER_ID,
     uid: "alice",
@@ -142,6 +144,7 @@ describe("Core OAuth issuance authority", () => {
       principal_type: "user",
       client_id: "test-client",
       scope: "openid profile",
+      exp: 1_788_224_400,
     });
   });
 
@@ -301,7 +304,19 @@ describe("Core OAuth issuance authority", () => {
     for (const token of [
       { ...userAccess, admin: true },
       { ...userAccess, userId: "forged" },
-      { ...userAccess, expiresIn: 7_200 },
+      ...[3601, 0, 1.5].flatMap((expiresIn) => [
+        { ...userAccess, expiresIn },
+        { ...userAccess, kind: "user_id", expiresIn },
+        {
+          kind: "service_access",
+          grant: {
+            kind: "client_credentials",
+            grantId: "dd8cc597-4268-43f2-abdf-ec008245ef10",
+            nonce: "a771d825-b5d4-44d7-a0c2-17f97f37bd02",
+          },
+          expiresIn,
+        },
+      ]),
       { ...userAccess, kind: "arbitrary" },
       {
         kind: "service_access",
@@ -320,6 +335,54 @@ describe("Core OAuth issuance authority", () => {
         body: JSON.stringify({ tokens: [token] }),
       });
       expect(response.status).toBe(400);
+    }
+  });
+
+  test("signs access and ID tokens for a shorter requested lifetime", async () => {
+    const { routes, publicKey } = await setup();
+    const response = await routes.request("/oauth/token", {
+      method: "POST",
+      headers: { authorization: "Bearer broker", "content-type": "application/json" },
+      body: JSON.stringify({
+        tokens: [
+          { ...userAccess, expiresIn: 600 },
+          { ...userAccess, kind: "user_id", expiresIn: 600 },
+        ],
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = z.object({ tokens: z.array(z.string()) }).parse(await response.json());
+    for (const token of body.tokens) {
+      const verified = await jwtVerify(token, publicKey, { currentDate: new Date(1_788_220_800_000) });
+      expect(verified.payload.exp).toBe(1_788_221_400);
+    }
+  });
+
+  test("independently clamps refreshed access and ID tokens to the family's absolute expiry", async () => {
+    const now = 1_788_220_800;
+    const grant = { kind: "refresh_token", tokenId: USER_ID, nonce: userAccess.grant.nonce };
+    for (const remaining of [120, 0, -1]) {
+      const { routes, publicKey } = await setup(true, authorityState({ notAfter: new Date((now + remaining) * 1000) }));
+      const response = await routes.request("/oauth/token", {
+        method: "POST",
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
+        body: JSON.stringify({
+          tokens: [
+            { kind: "user_access", grant, expiresIn: 3600 },
+            { kind: "user_id", grant, expiresIn: 3600 },
+          ],
+        }),
+      });
+      expect(response.status).toBe(remaining > 0 ? 200 : 403);
+      if (remaining > 0) {
+        const body = z.object({ tokens: z.array(z.string()) }).parse(await response.json());
+        for (const token of body.tokens) {
+          const verified = await jwtVerify(token, publicKey, { currentDate: new Date(now * 1000) });
+          expect(verified.payload.exp).toBe(now + remaining);
+        }
+      } else {
+        expect(await response.json()).toEqual({ message: "Forbidden" });
+      }
     }
   });
 
@@ -556,6 +619,7 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
     const familyId = crypto.randomUUID();
     const tokenId = crypto.randomUUID();
     const authorityNonce = crypto.randomUUID();
+    const familyExpiresAt = new Date(Date.now() + 120_000);
     const { privateKey, publicKey } = await generateKeyPair("RS256");
     try {
       await sql`
@@ -569,7 +633,7 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
       `;
       await sql`
         INSERT INTO oauth.refresh_token_families (id, client_id, user_id, scopes, audiences, status, expires_at)
-        VALUES (${familyId}::uuid, ${clientId}, ${userId}::uuid, ARRAY['openid'], ARRAY['cloud', ${clientId}], 'active', now() + INTERVAL '1 day')
+        VALUES (${familyId}::uuid, ${clientId}, ${userId}::uuid, ARRAY['openid'], ARRAY['cloud', ${clientId}], 'active', ${familyExpiresAt})
       `;
       await sql`
         INSERT INTO oauth.refresh_tokens (
@@ -577,7 +641,7 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
           authority_scopes, authority_audiences
         ) VALUES (
           ${tokenId}::uuid, ${familyId}::uuid, ${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}, 'not-used', 'issuing', 1,
-          now() + INTERVAL '1 day', ${authorityNonce}::uuid, now(), ARRAY['openid'], ARRAY['cloud', ${clientId}]
+          ${familyExpiresAt}, ${authorityNonce}::uuid, now(), ARRAY['openid'], ARRAY['cloud', ${clientId}]
         )
       `;
       const routes = createIdentityOAuthIssuanceRoutes({
@@ -597,7 +661,10 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
           method: "POST",
           headers: { authorization: "Bearer broker", "content-type": "application/json" },
           body: JSON.stringify({
-            tokens: [{ kind: "user_access", grant: { kind: "refresh_token", tokenId, nonce: authorityNonce }, expiresIn: 3_600 }],
+            tokens: [
+              { kind: "user_access", grant: { kind: "refresh_token", tokenId, nonce: authorityNonce }, expiresIn: 3_600 },
+              { kind: "user_id", grant: { kind: "refresh_token", tokenId, nonce: authorityNonce }, expiresIn: 3_600 },
+            ],
           }),
         });
       const issued = await request();
@@ -605,6 +672,9 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
       const issuedBody = (await issued.json()) as { tokens: string[] };
       const verified = await jwtVerify(issuedBody.tokens[0]!, publicKey, { issuer: "https://cloud.example.test" });
       expect(verified.payload.aud).toEqual(["cloud", clientId]);
+      expect(verified.payload.exp).toBe(Math.floor(familyExpiresAt.getTime() / 1000));
+      const idToken = await jwtVerify(issuedBody.tokens[1]!, publicKey, { issuer: "https://cloud.example.test" });
+      expect(idToken.payload.exp).toBe(verified.payload.exp);
       const [token] = await sql<{ authority_issued_at: Date | null }[]>`
         SELECT authority_issued_at FROM oauth.refresh_tokens WHERE id = ${tokenId}::uuid
       `;

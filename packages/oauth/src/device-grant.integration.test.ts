@@ -1,7 +1,8 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
+import * as settings from "@k2b/cloud/services/settings";
 import { redis, sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
@@ -67,10 +68,14 @@ type DeviceStart = {
   interval: number;
 };
 
-const startDevice = async (params: { clientId?: string; scope?: string } = {}): Promise<DeviceStart> => {
+const startDevice = async (params: { clientId?: string; scope?: string; ttl?: string } = {}): Promise<DeviceStart> => {
   const response = await oauthRoutes.request(
     "/oauth/device_authorization",
-    form({ client_id: params.clientId ?? "cloud-cli", ...(params.scope ? { scope: params.scope } : {}) }),
+    form({
+      client_id: params.clientId ?? "cloud-cli",
+      ...(params.scope ? { scope: params.scope } : {}),
+      ...(params.ttl !== undefined ? { ttl: params.ttl } : {}),
+    }),
   );
   expect(response.status).toBe(200);
   return (await response.json()) as DeviceStart;
@@ -123,6 +128,38 @@ const confirmRequest = async (who: { cookie: string; ip: string }, userCode: str
   return result.view;
 };
 
+const familyFor = async (refreshToken: string) => {
+  const [row] = await sql<{ id: string; expires_at: Date; token_expires_at: Date }[]>`
+    SELECT family.id, family.expires_at, token.expires_at AS token_expires_at
+    FROM oauth.refresh_tokens token
+    JOIN oauth.refresh_token_families family ON family.id = token.family_id
+    WHERE token.token_prefix = ${refreshToken.split("_")[2]!}
+  `;
+  if (!row) throw new Error("Refresh family is missing");
+  return row;
+};
+
+const approveDevice = async (ttl?: string) => {
+  const who = await person();
+  const started = await startDevice({ scope: "openid offline_access", ttl });
+  await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
+  const tokens = await poll(started.device_code);
+  expect(tokens.status).toBe(200);
+  return tokens.body;
+};
+
+const expectRemaining = (seconds: unknown, expected: number) => {
+  expect(Number.isInteger(seconds)).toBe(true);
+  expect(Number(seconds)).toBeGreaterThanOrEqual(expected - 5);
+  expect(Number(seconds)).toBeLessThanOrEqual(expected);
+};
+
+const expectTokensEndBy = (tokens: Record<string, unknown>, endsAt: Date) => {
+  for (const token of [tokens.access_token, tokens.id_token]) {
+    expect(jose.decodeJwt(String(token)).exp).toBeLessThanOrEqual(Math.floor(endsAt.getTime() / 1000));
+  }
+};
+
 suite("OAuth device authorization grant", () => {
   beforeAll(async () => {
     await migrate();
@@ -135,9 +172,14 @@ suite("OAuth device authorization grant", () => {
 
   test("discovery advertises the device endpoint and grant", async () => {
     const response = await oauthRoutes.request("/.well-known/oauth-authorization-server");
-    const metadata = (await response.json()) as { device_authorization_endpoint: string; grant_types_supported: string[] };
+    const metadata = (await response.json()) as {
+      device_authorization_endpoint: string;
+      grant_types_supported: string[];
+      cloud_login_ttl_supported: boolean;
+    };
     expect(metadata.device_authorization_endpoint).toBe(`${ISSUER}/oauth/device_authorization`);
     expect(metadata.grant_types_supported).toContain(DEVICE_GRANT);
+    expect(metadata.cloud_login_ttl_supported).toBe(true);
   });
 
   test("full happy path issues refreshable tokens with the requested scopes and audits the approval", async () => {
@@ -149,6 +191,7 @@ suite("OAuth device authorization grant", () => {
     expect(started.verification_uri_complete).toBe(`${ISSUER}/oauth/device?user_code=${started.user_code}`);
     expect(started.expires_in).toBe(600);
     expect(started.interval).toBe(5);
+    expect((await oauth.device.getPending((await deviceRow(started.device_code)).id))?.loginLifetimeSeconds).toBeNull();
 
     const [stored] = await sql<{ device_code_hash: string; user_code_hash: string }[]>`
       SELECT device_code_hash, user_code_hash FROM oauth.device_authorizations WHERE device_code_hash = ${sha256(started.device_code)}
@@ -182,6 +225,190 @@ suite("OAuth device authorization grant", () => {
     `;
     expect(event?.outcome).toBe("allowed");
     expect(event?.metadata.clientId).toBe("cloud-cli");
+  });
+
+  for (const [ttl, expected] of [
+    ["3600", 3600],
+    ["2592000", 28800],
+    ["600", 600],
+    [undefined, 7776000],
+  ] as const) {
+    test(`device login ttl=${ttl ?? "omitted"} has an absolute lifetime of ${expected} seconds`, async () => {
+      const previous = await settings.get<number>("user.session.expiry_hours");
+      try {
+        await settings.set("user.session.expiry_hours", 8);
+        const tokens = await approveDevice(ttl);
+        const family = await familyFor(String(tokens.refresh_token));
+        expectRemaining(Math.floor((family.expires_at.getTime() - Date.now()) / 1000), expected);
+        expectRemaining(tokens.refresh_token_expires_in, expected);
+        expectRemaining(tokens.expires_in, Math.min(3600, expected));
+        expectTokensEndBy(tokens, family.expires_at);
+        expect(family.token_expires_at.getTime()).toBe(family.expires_at.getTime());
+      } finally {
+        await settings.set("user.session.expiry_hours", previous);
+      }
+    });
+  }
+
+  test("a failed lifetime lookup leaves device approval available for the next poll", async () => {
+    const previous = await settings.get<number>("user.session.expiry_hours");
+    try {
+      await settings.set("user.session.expiry_hours", 8);
+      const who = await person();
+      const started = await startDevice({ scope: "openid offline_access", ttl: "600" });
+      await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
+
+      const lookup = spyOn(settings, "get").mockRejectedValueOnce(new Error("Settings temporarily unavailable"));
+      try {
+        expect(await poll(started.device_code)).toMatchObject({ status: 500, body: { error: "server_error" } });
+        expect(lookup).toHaveBeenCalledTimes(1);
+        expect(lookup).toHaveBeenCalledWith("user.session.expiry_hours");
+        expect((await deviceRow(started.device_code)).status).toBe("approved");
+      } finally {
+        lookup.mockRestore();
+      }
+
+      await allowNextPoll(started.device_code);
+      const tokens = await poll(started.device_code);
+      expect(tokens.status).toBe(200);
+      expect(typeof tokens.body.refresh_token).toBe("string");
+      expectRemaining(tokens.body.refresh_token_expires_in, 600);
+    } finally {
+      await settings.set("user.session.expiry_hours", previous);
+    }
+  });
+
+  test("a one-year ttl and session setting cannot extend the 90-day default", async () => {
+    const previous = await settings.get<number>("user.session.expiry_hours");
+    try {
+      await settings.set("user.session.expiry_hours", 8760);
+      const who = await person();
+      const started = await startDevice({ scope: "openid offline_access", ttl: "31536000" });
+      expect((await oauth.device.getPending((await deviceRow(started.device_code)).id))?.loginLifetimeSeconds).toBe(7776000);
+      await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
+      const tokens = await poll(started.device_code);
+      expect(tokens.status).toBe(200);
+      expectRemaining(tokens.body.refresh_token_expires_in, 7776000);
+    } finally {
+      await settings.set("user.session.expiry_hours", previous);
+    }
+  });
+
+  test("device authorization stores its cap and rechecks a lowered setting at issuance", async () => {
+    const previous = await settings.get<number>("user.session.expiry_hours");
+    try {
+      await settings.set("user.session.expiry_hours", 8);
+      const who = await person();
+      const started = await startDevice({ scope: "openid offline_access", ttl: "2592000" });
+      const row = await deviceRow(started.device_code);
+      expect((await oauth.device.getPending(row.id))?.loginLifetimeSeconds).toBe(28800);
+      expect((await oauth.device.findPendingByUserCode(started.user_code.replace("-", "")))?.loginLifetimeSeconds).toBe(28800);
+      await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
+      await settings.set("user.session.expiry_hours", 1);
+      const tokens = await poll(started.device_code);
+      expect(tokens.status).toBe(200);
+      expectRemaining(tokens.body.refresh_token_expires_in, 3600);
+      expectTokensEndBy(tokens.body, (await familyFor(String(tokens.body.refresh_token))).expires_at);
+    } finally {
+      await settings.set("user.session.expiry_hours", previous);
+    }
+  });
+
+  test("lowering the setting does not shorten a login that already exists", async () => {
+    const previous = await settings.get<number>("user.session.expiry_hours");
+    try {
+      await settings.set("user.session.expiry_hours", 8);
+      const tokens = await approveDevice("2592000");
+      const family = await familyFor(String(tokens.refresh_token));
+      await settings.set("user.session.expiry_hours", 1);
+      const response = await oauthRoutes.request(
+        "/oauth/token",
+        form({
+          grant_type: "refresh_token",
+          client_id: "cloud-cli",
+          refresh_token: String(tokens.refresh_token),
+        }),
+      );
+      expect(response.status).toBe(200);
+      const refreshed: Record<string, unknown> = await response.json();
+      expectRemaining(refreshed.refresh_token_expires_in, 28800);
+      expect((await familyFor(String(refreshed.refresh_token))).expires_at.getTime()).toBe(family.expires_at.getTime());
+    } finally {
+      await settings.set("user.session.expiry_hours", previous);
+    }
+  });
+
+  test("refresh near family expiry caps both JWTs and preserves the absolute family end", async () => {
+    const tokens = await approveDevice();
+    const family = await familyFor(String(tokens.refresh_token));
+    const [updated] = await sql<{ expires_at: Date }[]>`
+      UPDATE oauth.refresh_token_families SET expires_at = now() + INTERVAL '10 minutes'
+      WHERE id = ${family.id}::uuid RETURNING expires_at
+    `;
+    if (!updated) throw new Error("Refresh family is missing");
+    await sql`UPDATE oauth.refresh_tokens SET expires_at = ${updated.expires_at} WHERE family_id = ${family.id}::uuid`;
+    const response = await oauthRoutes.request(
+      "/oauth/token",
+      form({
+        grant_type: "refresh_token",
+        client_id: "cloud-cli",
+        refresh_token: String(tokens.refresh_token),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const refreshed: Record<string, unknown> = await response.json();
+    expectRemaining(refreshed.refresh_token_expires_in, 600);
+    expectRemaining(refreshed.expires_in, 600);
+    expectTokensEndBy(refreshed, updated.expires_at);
+    const rotated = await familyFor(String(refreshed.refresh_token));
+    expect(rotated.expires_at.getTime()).toBe(updated.expires_at.getTime());
+    expect(rotated.token_expires_at.getTime()).toBe(updated.expires_at.getTime());
+  });
+
+  test("refresh after the absolute family expiry is invalid_grant", async () => {
+    const tokens = await approveDevice();
+    const family = await familyFor(String(tokens.refresh_token));
+    await sql`UPDATE oauth.refresh_token_families SET expires_at = now() - INTERVAL '1 second' WHERE id = ${family.id}::uuid`;
+    await sql`UPDATE oauth.refresh_tokens SET expires_at = now() - INTERVAL '1 second' WHERE family_id = ${family.id}::uuid`;
+    const response = await oauthRoutes.request(
+      "/oauth/token",
+      form({
+        grant_type: "refresh_token",
+        client_id: "cloud-cli",
+        refresh_token: String(tokens.refresh_token),
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid_grant" });
+  });
+
+  test("rejects malformed device lifetimes through the existing validator", async () => {
+    for (const ttl of ["0", "-1", "abc", "1.5", "", "01", " 1", "1\n", "1000000000000000"]) {
+      const response = await oauthRoutes.request("/oauth/device_authorization", form({ client_id: "cloud-cli", ttl }));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "invalid_request",
+        error_description: "Device authorization request validation failed",
+      });
+    }
+  });
+
+  test("refuses ttl on refresh, device polling and client credentials", async () => {
+    const started = await startDevice();
+    const grants: Record<string, string>[] = [
+      { grant_type: "refresh_token", refresh_token: "unused" },
+      { grant_type: DEVICE_GRANT, device_code: started.device_code },
+      { grant_type: "client_credentials" },
+    ];
+    for (const grant of grants) {
+      const response = await oauthRoutes.request("/oauth/token", form({ ...grant, client_id: "cloud-cli", ttl: "600" }));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "invalid_request",
+        error_description: "ttl is only accepted for the authorization_code grant and the device authorization request",
+      });
+    }
+    expect(await poll(started.device_code)).toMatchObject({ body: { error: "authorization_pending" } });
   });
 
   test("polling reports pending until approval, and too-fast polling earns slow_down", async () => {
@@ -340,7 +567,11 @@ suite("OAuth device authorization grant", () => {
     const consume = async () => {
       const started = await startDevice({ clientId: created.data.clientId });
       await decide(who, (await confirmRequest(who, started.user_code)).request, "approve");
-      const result = await oauth.device.poll({ deviceCode: started.device_code, clientId: created.data.clientId });
+      const result = await oauth.device.poll({
+        deviceCode: started.device_code,
+        clientId: created.data.clientId,
+        resolveLoginLifetime: async () => oauth.refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS,
+      });
       if (!result.ok) throw new Error(`poll failed: ${result.error}`);
       return result.authorityGrant;
     };

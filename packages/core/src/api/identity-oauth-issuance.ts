@@ -16,7 +16,7 @@ const RefreshTokenGrantSchema = z.object({ kind: z.literal("refresh_token"), tok
 const DeviceCodeGrantSchema = z.object({ kind: z.literal("device_code"), deviceAuthorizationId: UUID, nonce: UUID }).strict();
 const ClientCredentialsGrantSchema = z.object({ kind: z.literal("client_credentials"), grantId: UUID, nonce: UUID }).strict();
 const UserGrantSchema = z.discriminatedUnion("kind", [AuthorizationCodeGrantSchema, RefreshTokenGrantSchema, DeviceCodeGrantSchema]);
-const common = { expiresIn: z.literal(3_600) };
+const common = { expiresIn: z.number().int().min(1).max(3600) };
 const OAuthTokenRequestSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("user_access"), grant: UserGrantSchema, ...common }).strict(),
   z.object({ kind: z.literal("user_id"), grant: UserGrantSchema, ...common }).strict(),
@@ -44,6 +44,7 @@ type AuthorityState = {
   grantedAudiences: string[];
   resource: string | null;
   nonce: string | null;
+  notAfter: Date | null;
   user: null | {
     id: string;
     uid: string;
@@ -95,6 +96,7 @@ type AuthorityRow = {
 };
 
 type GrantRow = {
+  family_expires_at: Date | null;
   client_id: string;
   user_id: string | null;
   scopes: string[];
@@ -114,7 +116,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
         AND nonce = ${params.request.grant.nonce}::uuid
         AND consumed_at IS NULL
         AND expires_at > now()
-      RETURNING client_id, NULL::uuid AS user_id, scopes, audiences, resource, NULL::text AS nonce
+      RETURNING client_id, NULL::uuid AS user_id, scopes, audiences, resource, NULL::text AS nonce, NULL::timestamptz AS family_expires_at
     `;
     grant = row ?? null;
   } else {
@@ -127,7 +129,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
           AND used = true
           AND authority_issued_at IS NULL
           AND expires_at >= now()
-        RETURNING client_id, user_id, scopes, audiences, resource, nonce
+        RETURNING client_id, user_id, scopes, audiences, resource, nonce, NULL::timestamptz AS family_expires_at
       `;
       grant = row ?? null;
     } else if (params.request.grant.kind === "device_code") {
@@ -144,7 +146,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
           AND client.client_id = device.client_id
           AND client.is_public
           AND client.allow_device_grant
-        RETURNING device.client_id, device.user_id, device.scopes, device.audiences, NULL::text AS resource, NULL::text AS nonce
+        RETURNING device.client_id, device.user_id, device.scopes, device.audiences, NULL::text AS resource, NULL::text AS nonce, NULL::timestamptz AS family_expires_at
       `;
       grant = row ?? null;
     } else {
@@ -161,7 +163,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
           AND family.status = 'active'
           AND family.expires_at > now()
         RETURNING family.client_id, family.user_id, token.authority_scopes AS scopes,
-          token.authority_audiences AS audiences, token.authority_resource AS resource, NULL::text AS nonce
+          token.authority_audiences AS audiences, token.authority_resource AS resource, NULL::text AS nonce, family.expires_at AS family_expires_at
       `;
       grant = row ?? null;
     }
@@ -229,6 +231,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
     grantedAudiences: grant?.audiences ?? [],
     resource: grant?.resource ?? null,
     nonce: grant?.nonce ?? null,
+    notAfter: grant?.family_expires_at ?? null,
     user:
       resolvedUserId !== null && uid !== null && profile !== null
         ? {
@@ -402,11 +405,13 @@ const sign = async (
   grantedScopes: string[],
   options: { issuer: string; kid: string; key: CryptoKey; now: number },
 ): Promise<string> => {
+  const exp = Math.min(options.now + request.expiresIn, state.notAfter ? Math.floor(state.notAfter.getTime() / 1000) : Infinity);
+  if (exp <= options.now) throw new InvalidOAuthGrantAuthorityError();
   let token = new SignJWT(claims(request, state, grantedScopes))
     .setProtectedHeader({ alg: "RS256", kid: options.kid })
     .setIssuer(options.issuer)
     .setIssuedAt(options.now)
-    .setExpirationTime(options.now + request.expiresIn);
+    .setExpirationTime(exp);
   if (request.kind === "service_access") {
     const audiences = resolveAudiences(state, options.issuer);
     if (!audiences) throw new Error("Validated OAuth audience is missing");

@@ -12,6 +12,7 @@ const TokenResponse = z
     expires_in: z.literal(3600),
     scope: z.string(),
     refresh_token: z.string().optional(),
+    refresh_token_expires_in: z.number().int().min(0).optional(),
     id_token: z.string().optional(),
   })
   .strict();

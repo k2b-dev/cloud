@@ -7,6 +7,7 @@ import { DYNAMIC_CLIENT_SCOPES, type OAuthClient, type OAuthScope } from "@/cont
 import * as refreshTokens from "./refresh-tokens";
 import {
   issueOAuthTokenBatch,
+  OAuthAuthorityGrantRejectedError,
   type OAuthTokenRequest,
   type OAuthUserGrantReference,
   type ServiceAccessTokenRequest,
@@ -202,6 +203,7 @@ export const getOpenIdConfiguration = (issuer: string) => ({
   code_challenge_methods_supported: ["S256"],
   grant_types_supported: ["authorization_code", "refresh_token", "client_credentials", "urn:ietf:params:oauth:grant-type:device_code"],
   resource_parameter_supported: true,
+  cloud_login_ttl_supported: true,
   // Authorization responses include RFC 9207 `iss`; keep its optional support
   // flag unadvertised until current loopback MCP clients preserve the value.
 });
@@ -218,19 +220,25 @@ export const createTokens = async (params: {
   issueRefreshToken?: boolean;
   refreshTokenLabel?: string | null;
   authorityGrant: OAuthUserGrantReference;
+  login: { lifetimeSeconds: number } | { endsAt: Date };
 }): Promise<{
   accessToken: string;
   idToken: string | null;
   expiresIn: number;
   scope: string;
   refreshToken?: string;
+  refreshTokenExpiresIn?: number;
 }> => {
   const { userId, client, authorityGrant } = params;
   const scopes = params.scopes ?? client.scopes;
   const audiences = params.audiences ?? client.audiences;
   const accessTokenAudiences = params.audiences ? dedupe(params.audiences) : dedupe(["cloud", client.clientId, ...audiences]);
 
-  const expiresIn = ACCESS_TOKEN_LIFETIME_SECONDS;
+  const expiresIn = Math.min(
+    ACCESS_TOKEN_LIFETIME_SECONDS,
+    "lifetimeSeconds" in params.login ? params.login.lifetimeSeconds : Math.floor((params.login.endsAt.getTime() - Date.now()) / 1000),
+  );
+  if (expiresIn < 1) throw new OAuthAuthorityGrantRejectedError();
   const scopeValue = scopes.join(" ");
 
   const requests: OAuthTokenRequest[] = [
@@ -254,6 +262,8 @@ export const createTokens = async (params: {
   const accessToken = signed[0]!;
   const idToken = signed[1] ?? null;
 
+  // Start the absolute login lifetime after Core signed, so its tokens cannot outlive the family.
+  const endsAt = "lifetimeSeconds" in params.login ? new Date(Date.now() + params.login.lifetimeSeconds * 1000) : params.login.endsAt;
   const refreshToken =
     params.issueRefreshToken && refreshTokens.shouldIssueRefreshToken(scopes)
       ? await refreshTokens.create({
@@ -263,15 +273,19 @@ export const createTokens = async (params: {
           audiences: accessTokenAudiences,
           resource: params.resource,
           label: params.refreshTokenLabel,
+          expiresAt: endsAt,
         })
       : null;
 
   return {
     accessToken,
     idToken,
-    expiresIn,
+    // Account for time spent signing when Core caps refreshed tokens at the family end.
+    expiresIn: "endsAt" in params.login ? Math.min(expiresIn, Math.max(0, Math.floor((endsAt.getTime() - Date.now()) / 1000))) : expiresIn,
     scope: scopeValue,
-    ...(refreshToken ? { refreshToken: refreshToken.refreshToken } : {}),
+    ...(refreshToken
+      ? { refreshToken: refreshToken.refreshToken, refreshTokenExpiresIn: Math.max(0, Math.floor((endsAt.getTime() - Date.now()) / 1000)) }
+      : {}),
   };
 };
 
