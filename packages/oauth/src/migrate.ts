@@ -353,6 +353,10 @@ export const migrate = async (): Promise<void> => {
     ALTER TABLE oauth.device_authorizations
     ADD COLUMN IF NOT EXISTS login_lifetime_seconds INTEGER
   `.simple();
+  await sql`
+    ALTER TABLE oauth.device_authorizations
+    ADD COLUMN IF NOT EXISTS app_approval BOOLEAN NOT NULL DEFAULT false
+  `.simple();
   console.log("  ✓ oauth.device_authorizations table");
 
   await sql`

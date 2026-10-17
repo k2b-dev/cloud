@@ -303,6 +303,8 @@ A terminal sign-in links an OAuth device authorization (RFC 8628) to the
 paired app. The app approves authentication and consent in one step.
 Only the OAuth app can create it, through Core's broker-authenticated internal
 endpoint. Browser sign-in endpoints cannot create or complete it.
+OAuth sends these requests when a first-party client supplies
+[`login_hint`](/en/docs/identity/oauth#approve-in-cloud-login).
 
 Check for `"terminal-logins"` in `/info.features`. Opt in only when your app can
 show the client, every scope code, and the login lifetime before a decision:
@@ -374,7 +376,7 @@ The handoff and Cloud Login's consent UI are separate changes.
 | Component version capability | Required behavior |
 | --- | --- |
 | Core with `terminal-logins` | Internal broker endpoint, signed inbox extension, atomic decisions and issuance recheck. |
-| OAuth with app-approval handoff | Creates the linked request and uses the existing browser flow when the channel is unavailable. |
+| OAuth with app-approval handoff | Creates the linked request for `login_hint`; clients can start without the hint to use browser approval. |
 | Cloud Login with terminal consent | Shows client, scope codes and lifetime, then opts in explicitly. |
 
 ## Approve an Action
