@@ -1168,7 +1168,7 @@ export const aiRoutes = (() => {
                 client: c.req.header(APPROVAL_CLIENT_HEADER),
               }),
             },
-            toolApprovalContext: ctx.toolApprovalContext,
+            toolApprovalContext: ctx.toolApprovalChangeContext,
             signedInSession: ctx.signedInSession,
           });
           if (!result.ok) return toAiActionFailureResponse(c, result);
