@@ -6,10 +6,30 @@ const fillShares = {
   dark: { selected: 0.14, selectedNav: 0.17 },
 } as const;
 
-/** Opaque theme surfaces checked for readable app ink; tests pin these to tokens.css. */
+/**
+ * Opaque theme backgrounds checked for readable app ink; tests pin these to
+ * tokens.css. `sidebar` is `--ui-surface-subtle`, `hover` is `--ui-hover`, and
+ * `platformSelected` is the blue `--ui-selected` fill some app ink sits on.
+ */
 export const appColorSurfaces = {
-  light: { canvas: "#fafafa", surface: "#ffffff", sidebar: "#f8f8f8", muted: "#f3f4f3", raised: "#ffffff" },
-  dark: { canvas: "#090d12", surface: "#11151b", sidebar: "#161a20", muted: "#20242a", raised: "#181d24" },
+  light: {
+    canvas: "#fafafa",
+    surface: "#ffffff",
+    sidebar: "#f8f8f8",
+    muted: "#f3f4f3",
+    raised: "#ffffff",
+    hover: "#f0f1f0",
+    platformSelected: "#f0f6ff",
+  },
+  dark: {
+    canvas: "#090d12",
+    surface: "#11151b",
+    sidebar: "#161a20",
+    muted: "#20242a",
+    raised: "#181d24",
+    hover: "#252c35",
+    platformSelected: "#192636",
+  },
 } as const;
 
 const channels = (hex: HexColor) =>

@@ -86,7 +86,14 @@ describe("app colors", () => {
     });
     expect(builtIn.length).toBeGreaterThan(0);
     expect(builtIn).toContainEqual({ id: "notebooks", accent: "#eab308" });
-    const accents: HexColor[] = [...builtIn.map(({ accent }) => accent), "#ffff00", "#ffffff", "#000000", "#808080", "#3b82f6"];
+    const accents: HexColor[] = [
+      ...builtIn.map(({ accent }) => accent),
+      "#ffff00",
+      "#ffffff",
+      "#000000",
+      "#808080",
+      resolveColor("var(--color-blue-500)", "light"),
+    ];
     for (const accent of accents) {
       const colors = appColors(accent);
       for (const theme of themes) {
@@ -161,6 +168,8 @@ describe("app colors", () => {
       ["sidebar", "--ui-surface-subtle"],
       ["muted", "--ui-surface-muted"],
       ["raised", "--ui-surface-raised"],
+      ["hover", "--ui-hover"],
+      ["platformSelected", "--ui-selected"],
     ] as const;
     for (const theme of themes) {
       for (const [surface, token] of surfaceTokens) {
@@ -169,8 +178,8 @@ describe("app colors", () => {
     }
   });
 
-  test("platform defaults match the computed blue-500 colors", () => {
-    const colors = appColors("#3b82f6");
+  test("platform defaults match the colors computed for Tailwind's blue-500", () => {
+    const colors = appColors(resolveColor("var(--color-blue-500)", "light"));
     for (const theme of themes) {
       for (const [name, value] of Object.entries({
         ink: colors[theme].ink,
