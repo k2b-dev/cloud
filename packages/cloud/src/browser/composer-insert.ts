@@ -23,10 +23,11 @@ export type CloudInsertMenuOptions = {
   /** More first words for one tag, keyed `appId:tag`, such as a short word an app uses for its own tag. */
   scopeWords?: Readonly<Record<string, readonly string[]>>;
   /**
-   * Tags, keyed `appId:tag`, whose results this composer reads itself, so their picker also lists resources without a
-   * Cloud reader. Every other picker shows only resources with one (`requireReader`).
+   * Tags, keyed `appId:tag`, whose resources of one type this composer reads itself, such as
+   * `{ "assistant:studio-app": "assistant.app" }`. Their picker lists only that type, also without a Cloud reader, even
+   * after the person removes the scope chip. Every other picker lists only resources with a reader (`requireReader`).
    */
-  ownReaders?: readonly string[];
+  ownReaders?: Readonly<Record<string, string>>;
 };
 
 export type CloudInsertMenu = {
@@ -51,29 +52,36 @@ const scopeId = (tag: Pick<CloudSearchTag, "appId" | "tag">) => `cloud-tag:${tag
 export const cloudInsertMenu = (options: CloudInsertMenuOptions): CloudInsertMenu => {
   const t = composerInsertMessages.resolve([options.locale]).t;
   const pick = async (tag: CloudSearchTag | undefined, query: string): Promise<ChatCommandResult> => {
+    const ownType = tag ? options.ownReaders?.[tagKey(tag)] : undefined;
     const item = await openCloudResourcePicker({
       title: tag ? t.insertTag({ tag: tag.title }) : t.insertFromCloud,
       scope: tag ? { appId: tag.appId, tag: tag.tag, label: `${tag.title} · ${tag.appName}`, icon: tag.appIcon } : undefined,
       query: query || undefined,
-      requireReader: !(tag && options.ownReaders?.includes(tagKey(tag))),
+      ...(ownType ? { resourceType: ownType } : { requireReader: true }),
       excludeRefs: options.excludeRefs?.(),
     });
     return item ? { mention: options.mention(item) } : "cancelled";
   };
 
   const reserved = new Set((options.reservedWords ?? []).map(fold));
-  const scoped = new Map<string, CloudSearchTag>();
-  const scopes: ChatCommandScope[] = [];
-  const tags = options.tags.map((tag): ChatCommand => {
+  // The title comes first, so Tab writes the word the person reads ("notizen ").
+  const candidates = options.tags.map((tag) => {
     const title = fold(tag.title);
-    // The title comes first, so Tab writes the word the person reads ("notizen ").
-    const words = [
+    return [
       ...new Set(
         [...(/\s/.test(title) ? [] : [title]), tag.tag, ...tag.aliases, ...(options.scopeWords?.[tagKey(tag)] ?? [])]
           .map(fold)
           .filter((word) => word && !/\s/.test(word) && !reserved.has(word)),
       ),
     ];
+  });
+  // A word two tags share narrows to neither, so Tab on either row would leave the list unscoped; neither keeps it.
+  const uses = new Map<string, number>();
+  for (const word of candidates.flat()) uses.set(word, (uses.get(word) ?? 0) + 1);
+  const scoped = new Map<string, CloudSearchTag>();
+  const scopes: ChatCommandScope[] = [];
+  const tags = options.tags.map((tag, index): ChatCommand => {
+    const words = candidates[index]!.filter((word) => uses.get(word) === 1);
     if (words.length) {
       scoped.set(scopeId(tag), tag);
       scopes.push({ id: scopeId(tag), title: t.tagFromApp({ tag: tag.title, app: tag.appName }), words });

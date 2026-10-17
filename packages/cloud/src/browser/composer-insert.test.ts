@@ -89,3 +89,45 @@ test("row selection forwards the reader restriction, display chip, exclusions an
     excludeRefs: excluded,
   });
 });
+
+test("a word two tags share narrows to neither, so Tab never writes an ambiguous word", () => {
+  const files = {
+    appId: "files",
+    appName: "Files",
+    appIcon: "ti ti-folder",
+    tag: "file",
+    title: "Dateien",
+    description: "",
+    aliases: ["files"],
+  };
+  const drive = { ...files, appId: "drive", appName: "Drive", aliases: ["drive"] };
+  const result = cloudInsertMenu({ locale: "de", tags: [files, drive], mention: () => mention });
+  expect(result.scopes.map((scope) => [scope.id, scope.words])).toEqual([
+    ["cloud-tag:files:file", ["files"]],
+    ["cloud-tag:drive:file", ["drive"]],
+  ]);
+});
+
+test("an own reader lists only its type, without a reader, even once the chip is gone", async () => {
+  const studio = {
+    appId: "assistant",
+    appName: "Assistent",
+    appIcon: "ti ti-sparkles",
+    tag: "studio-app",
+    title: "Studio-Apps",
+    description: "",
+    aliases: [],
+  };
+  const result = cloudInsertMenu({
+    locale: "de",
+    tags: [studio],
+    ownReaders: { "assistant:studio-app": "assistant.app" },
+    mention: () => mention,
+  });
+  await result.tags[0]!.action!(context);
+  expect(picker.mock.calls[0]![0]).toMatchObject({ resourceType: "assistant.app" });
+  expect(picker.mock.calls[0]![0]!.requireReader).toBeUndefined();
+  await result.insert.action!(context);
+  expect(picker.mock.calls[1]![0]).toMatchObject({ requireReader: true });
+  expect(picker.mock.calls[1]![0]!.resourceType).toBeUndefined();
+});

@@ -89,7 +89,7 @@ export function assistantInsertCommands(input: {
     reservedWords: assistantCommandScopes(input.copy, input.locale).flatMap((scope) => scope.words),
     scopeWords: { "assistant:studio-app": ["app", "apps"] },
     // Studio apps have no Cloud reader; the Assistant reads them as `assistant.artifact`, as it did before.
-    ownReaders: ["assistant:studio-app"],
+    ownReaders: { "assistant:studio-app": "assistant.app" },
     reason: input.partCount >= AI_TURN_ATTACHMENT_MAX_ITEMS ? limit : undefined,
     excludeRefs: input.excludeRefs,
     mention: (item) => {

@@ -778,14 +778,15 @@ test("a Studio app chosen through /app becomes the artifact reference the Assist
   const h = await mount({ value: "/app rech", skills: [], tasks: [] });
   h.key("Enter");
   await flush();
-  // Studio apps have no Cloud reader, so this one picker lists them without one.
+  // Studio apps have no Cloud reader, so this one picker lists only them, also after the chip is removed.
   expect(picker).toHaveBeenLastCalledWith(
     expect.objectContaining({
       scope: expect.objectContaining({ appId: "assistant", tag: "studio-app" }),
       query: "rech",
-      requireReader: false,
+      resourceType: "assistant.app",
     }),
   );
+  expect(picker.mock.calls.at(-1)?.[0]?.requireReader).toBeUndefined();
   await settled();
   expect(h.mentions()[0]?.attachment.data).toMatchObject({ kind: "resource", ref: { type: "assistant.artifact", id: "App1" } });
 });
