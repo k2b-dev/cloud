@@ -77,8 +77,9 @@ export const parseDateValue = (value: string | null | undefined, context?: DateC
   return dates.parseCalendarDate(value.slice(0, 10), pickerContext(context));
 };
 
+/** A date key names a calendar day, so it is formatted at noon UTC in UTC: no runtime or picker zone can move it. */
 export const displayDate = (value: string | null | undefined, context?: DateContext): string =>
-  value ? dates.formatDate(`${value.slice(0, 10)}T12:00`, pickerContext(context)) : "";
+  value ? dates.formatDate(`${value.slice(0, 10)}T12:00:00.000Z`, { ...pickerContext(context), timeZone: "UTC" }) : "";
 
 const localDateTimeInput = (value: string): string => {
   if (!hasInstantOffset(value)) return value.slice(0, 16);
