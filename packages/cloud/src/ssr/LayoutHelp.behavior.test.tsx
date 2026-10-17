@@ -484,6 +484,37 @@ else {
     });
   }
 
+  test("copy: a refused clipboard write ends in an error toast with Try again, never in a success", async () => {
+    const reader = await setup("modal", undefined, "/app/spaces/help");
+    const writes: string[] = [];
+    const clipboard = {
+      writeText: async (text: string) => {
+        writes.push(text);
+        throw new DOMException("Denied", "NotAllowedError");
+      },
+    };
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: clipboard });
+    try {
+      await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
+      reader.button("Article first").click();
+      await until(() => !!reader.dom.document.querySelector(".help-document a"));
+      reader.dom.document.querySelector<HTMLButtonElement>("[data-help-menu]")!.click();
+      await until(() => !!reader.dom.document.querySelector('[role="menuitem"]'));
+      [...reader.dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+        .find((item) => item.textContent?.includes("Copy as Markdown"))!
+        .click();
+      await until(() => reader.dom.document.body.textContent?.includes("Could not copy the article") ?? false);
+      expect(writes).toHaveLength(1);
+      expect(reader.dom.document.body.textContent).not.toContain("Article copied as Markdown");
+      [...reader.dom.document.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent?.trim() === "Try again")!
+        .click();
+      await until(() => writes.length === 2);
+    } finally {
+      await reader.cleanup();
+    }
+  });
+
   test("search: a failed full-text request says so in the results line and Try again repeats the request", async () => {
     const reader = await setup("page", undefined, "/app/spaces/help", html, { searchFails: true });
     try {

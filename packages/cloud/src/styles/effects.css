@@ -646,10 +646,12 @@
   gap: 1.25rem 2rem;
 }
 
+/* From two columns each group has a fixed cell, so a group that arrives late never pushes another one along. */
 @container help-shell (min-width: 34rem) {
   .help-shortcut-groups {
     min-height: 17rem;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: "everywhere app" "selection .";
   }
 }
 
@@ -657,6 +659,21 @@
   .help-shortcut-groups {
     min-height: 11rem;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas: "everywhere app selection";
+  }
+}
+
+@container help-shell (min-width: 34rem) {
+  .help-shortcut-group[data-help-shortcut-group="everywhere"] {
+    grid-area: everywhere;
+  }
+
+  .help-shortcut-group[data-help-shortcut-group="app"] {
+    grid-area: app;
+  }
+
+  .help-shortcut-group[data-help-shortcut-group="selection"] {
+    grid-area: selection;
   }
 }
 

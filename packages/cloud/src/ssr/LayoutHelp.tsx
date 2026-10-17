@@ -16,8 +16,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show, sharedConfig } from "solid-js";
-import { isServer } from "solid-js/web";
+import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { COMMANDS_CHANGED, contextCommandsWithShortcuts } from "../browser/command-shortcuts";
 import { HELP_ACCESS_LEVELS, HELP_KINDS } from "../shared/help";
 import { appAccentStyle } from "./app-appearance";
@@ -93,21 +92,21 @@ const GROUP_ICONS: Record<HelpStartGroupKind, string> = {
 };
 
 /**
- * Keyboard shortcuts come last in the start. The browser knows the page's commands; the server renders the shell's own
- * shortcuts, which every Layout page registers, so their key caps exist in the first frame and keep their place. The
- * groups reserve their height in CSS, so the ones the browser adds fill space that is already there.
+ * Keyboard shortcuts come last in the start. The browser knows the page's commands. On a Layout page (it has shell
+ * data) the shell always registers its own Search and Help shortcuts, so they show from the server render and every
+ * first client render on, also before the shell has registered them. The groups reserve their height and place in CSS,
+ * so the ones the browser adds fill space that is already there.
  */
 const StartShortcuts = (props: { appName?: string }) => {
   const locale = useLocale();
   const t = () => helpMessages.resolve([locale()]).t;
   const shell = useShellData();
-  const hydrating = isServer || !!sharedConfig.context;
-  const seed: HelpShortcutCommand[] = hydrating ? shellShortcuts(platformMessages.resolve([locale()]).t) : [];
+  const seed: HelpShortcutCommand[] = shell ? shellShortcuts(platformMessages.resolve([locale()]).t) : [];
   const read = (): HelpShortcutCommand[] => {
     const commands = contextCommandsWithShortcuts();
     return [...seed.filter((command) => !commands.some((other) => other.id === command.id)), ...commands];
   };
-  const [commands, setCommands] = createSignal<HelpShortcutCommand[]>(hydrating ? seed : read());
+  const [commands, setCommands] = createSignal<HelpShortcutCommand[]>(read());
   onMount(() => {
     const update = () => setCommands(read());
     update();
@@ -186,8 +185,9 @@ const HelpShell = (props: {
   const [copyingAll, setCopyingAll] = createSignal(false);
   const [activeSectionId, setActiveSectionId] = createSignal<string | null>(null);
   const [tocScrollRoot, setTocScrollRoot] = createSignal<HTMLElement>();
-  const articleClipboard = clipboard.create(1800);
-  const allHelpClipboard = clipboard.create(1800);
+  const writeText = (text: string) => navigator.clipboard.writeText(text);
+  const articleClipboard = clipboard.createWriter({ write: writeText, copiedFor: 1800 });
+  const allHelpClipboard = clipboard.createWriter({ write: writeText, copiedFor: 1800 });
   /** The article a search started from; clearing the search returns to it. */
   let searchReturnId: string | null = null;
   let root: HTMLDivElement | undefined;
@@ -485,26 +485,25 @@ const HelpShell = (props: {
     });
   });
 
-  const copyArticle = (topic: HelpTopic, document: HelpDocumentPayload | null) => {
+  /**
+   * Copies the open article. The article's own buttons show "Copied" in place; the menu closes on choice, so it confirms
+   * with a toast. A failed write always ends in an error toast with Try again.
+   */
+  const copyArticle = async (topic: HelpTopic, document: HelpDocumentPayload | null, confirm = false) => {
     if (!document) return;
-    return articleClipboard.copy(formatHelpDocumentMarkdown({ ...topic, markdown: document.markdown }));
-  };
-
-  /** The menu closes on choice, so a toast reports progress, the result, and a way to try again. */
-  const copyFromMenu = async () => {
-    const topic = activeTopic();
-    if (view() === "article" && topic) {
-      try {
-        await copyArticle(topic, payload());
-        toast.success(t().articleCopied);
-      } catch (error) {
-        toast.error(t().copyFailed({ message: error instanceof Error ? error.message : t().copyFallback }), {
-          action: { label: t().tryAgain, onClick: () => void copyFromMenu() },
-        });
-      }
+    if (await articleClipboard.copy(formatHelpDocumentMarkdown({ ...topic, markdown: document.markdown }))) {
+      if (confirm) toast.success(t().articleCopied);
       return;
     }
-    await copyAllHelp();
+    toast.error(t().copyFailed({ message: articleClipboard.error()?.message ?? t().copyFallback }), {
+      action: { label: t().tryAgain, onClick: () => void copyArticle(topic, document, confirm) },
+    });
+  };
+
+  const copyFromMenu = async () => {
+    const topic = activeTopic();
+    if (view() === "article" && topic) await copyArticle(topic, payload(), true);
+    else await copyAllHelp();
   };
 
   const copyAllHelp = async () => {
@@ -523,7 +522,8 @@ const HelpShell = (props: {
           return { ...topic, markdown: document.markdown };
         }),
       );
-      await allHelpClipboard.copy(formatHelpBundleMarkdown(documents));
+      if (!(await allHelpClipboard.copy(formatHelpBundleMarkdown(documents))))
+        throw allHelpClipboard.error() ?? new Error(t().copyFallback);
       progress.dismiss();
       toast.success(t().helpCopied);
     } catch (error) {

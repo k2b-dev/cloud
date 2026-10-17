@@ -85,15 +85,23 @@ const clientBuild = await Bun.build({
     [fixturePath]: fixture,
     [clientEntry]: `
 import { createComponent } from "solid-js";
-import { hydrate } from "solid-js/web";
+import { hydrate, render } from "solid-js/web";
 import { Fixture } from "./LayoutHelp.hydration-fixture";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 const root = document.getElementById("app");
 const shortcuts = root.querySelector("[data-help-shortcuts]");
-hydrate(() => createComponent(Fixture, { mode: document.body.dataset.mode }), root);
-// Before any command has registered, the server seed must survive onMount too.
-document.body.dataset.seedPreserved = String(shortcuts === root.querySelector("[data-help-shortcuts]"));
-document.body.dataset.seedKeys = shortcuts.querySelector(".help-shortcut .k2b-kbd__keys")?.textContent;
+const island = document.body.dataset.mount === "island";
+if (island) {
+  // Cloud islands mount as @k2b/ssr's mount() does: clear the server markup and render.
+  root.innerHTML = "";
+  render(() => createComponent(Fixture, { mode: document.body.dataset.mode }), root);
+} else hydrate(() => createComponent(Fixture, { mode: document.body.dataset.mode }), root);
+// Before any command has registered, the server's rows must be there in the first client frame too.
+const current = root.querySelector("[data-help-shortcuts]");
+document.body.dataset.seedPreserved = String(island ? current?.querySelectorAll(".help-shortcut").length === 2 : shortcuts === current);
+document.body.dataset.seedKeys = current?.querySelector(".help-shortcut .k2b-kbd__keys")?.textContent;
+const box = current?.getBoundingClientRect();
+document.body.dataset.firstBox = box ? JSON.stringify([box.x, box.y, box.width, box.height]) : "";
 const unregister = [
   { id: "cloud.shell.focus", title: "Hide sidebar", shortcut: "mod+\\\\" },
   { id: "cloud.help", title: "Open shortcut help", shortcut: "shift+/" },
@@ -122,48 +130,55 @@ afterAll(async () => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-for (const mode of ["apple", "other"] as const) {
-  // Exercise all three reserved shortcut layouts: one, two and three columns.
-  for (const width of [390, 768, 1440]) {
-    test(`${mode} ${width}: real Help hydration preserves shortcut geometry and server key caps`, async () => {
-      const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
-      const errors: string[] = [];
-      page.on("pageerror", (error) => errors.push(error.message));
-      page.on("console", (message: ConsoleMessage) => {
-        if (message.type() === "error") errors.push(message.text());
-      });
-      try {
-        await page.route("http://cloud.test/**", (route) =>
-          route.fulfill({
-            contentType: "text/html",
-            body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" data-mode="${mode}" style="margin:0"><div id="app">${render(mode)}</div>${hydrationScript}</body></html>`,
-          }),
-        );
-        await page.goto("http://cloud.test/app/spaces/help");
-        await page.evaluate((mode) => {
-          Object.defineProperty(navigator, "platform", { configurable: true, value: mode === "apple" ? "MacIntel" : "Win32" });
-        }, mode);
-        await page.evaluate(() => document.fonts.ready);
-        const shortcuts = page.locator("[data-help-shortcuts]");
-        const searchRow = shortcuts.locator(".help-shortcut").filter({ hasText: "Open global search" });
-        const before = await shortcuts.boundingBox();
-        expect(before).not.toBeNull();
-        expect(await shortcuts.locator(".help-shortcut").count()).toBe(2);
-        const keysBefore = await searchRow.locator(".k2b-kbd__keys").textContent();
-        expect(keysBefore).toBe(mode === "apple" ? "⌘K" : "CtrlK");
-        await page.addScriptTag({ content: script });
-        await page.locator('body[data-hydrated="true"]').waitFor();
-        await shortcuts.locator(".help-shortcut").filter({ hasText: "New task" }).waitFor();
-        await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-        expect(await page.locator("body").getAttribute("data-seed-preserved")).toBe("true");
-        expect(await page.locator("body").getAttribute("data-seed-keys")).toBe(keysBefore);
-        expect(await shortcuts.boundingBox()).toEqual(before);
-        expect(await searchRow.locator(".k2b-kbd__keys").textContent()).toBe(keysBefore);
-        expect(await shortcuts.locator(".help-shortcut").count()).toBe(4);
-        expect(errors).toEqual([]);
-      } finally {
-        await page.close();
-      }
-    }, 30_000);
+for (const mount of ["island", "hydrate"] as const)
+  for (const mode of ["apple", "other"] as const) {
+    // Exercise all three reserved shortcut layouts: one, two and three columns.
+    for (const width of [390, 768, 1440]) {
+      test(`${mount} ${mode} ${width}: the client keeps the server's shortcut geometry and key caps`, async () => {
+        const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+        const errors: string[] = [];
+        page.on("pageerror", (error) => errors.push(error.message));
+        page.on("console", (message: ConsoleMessage) => {
+          if (message.type() === "error") errors.push(message.text());
+        });
+        try {
+          await page.route("http://cloud.test/**", (route) =>
+            route.fulfill({
+              contentType: "text/html",
+              body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" data-mode="${mode}" data-mount="${mount}" style="margin:0"><div id="app">${render(mode)}</div>${hydrationScript}</body></html>`,
+            }),
+          );
+          await page.goto("http://cloud.test/app/spaces/help");
+          await page.evaluate((mode) => {
+            Object.defineProperty(navigator, "platform", { configurable: true, value: mode === "apple" ? "MacIntel" : "Win32" });
+          }, mode);
+          await page.evaluate(() => document.fonts.ready);
+          const shortcuts = page.locator("[data-help-shortcuts]");
+          const searchRow = shortcuts.locator(".help-shortcut").filter({ hasText: "Open global search" });
+          const before = await shortcuts.boundingBox();
+          expect(before).not.toBeNull();
+          expect(await shortcuts.locator(".help-shortcut").count()).toBe(2);
+          const keysBefore = await searchRow.locator(".k2b-kbd__keys").textContent();
+          expect(keysBefore).toBe(mode === "apple" ? "⌘K" : "CtrlK");
+          await page.addScriptTag({ content: script });
+          await page.locator('body[data-hydrated="true"]').waitFor();
+          await shortcuts.locator(".help-shortcut").filter({ hasText: "New task" }).waitFor();
+          await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+          expect(await page.locator("body").getAttribute("data-seed-preserved")).toBe("true");
+          expect(await page.locator("body").getAttribute("data-seed-keys")).toBe(keysBefore);
+          expect(JSON.parse((await page.locator("body").getAttribute("data-first-box")) ?? "[]")).toEqual([
+            before!.x,
+            before!.y,
+            before!.width,
+            before!.height,
+          ]);
+          expect(await shortcuts.boundingBox()).toEqual(before);
+          expect(await searchRow.locator(".k2b-kbd__keys").textContent()).toBe(keysBefore);
+          expect(await shortcuts.locator(".help-shortcut").count()).toBe(4);
+          expect(errors).toEqual([]);
+        } finally {
+          await page.close();
+        }
+      }, 30_000);
+    }
   }
-}
