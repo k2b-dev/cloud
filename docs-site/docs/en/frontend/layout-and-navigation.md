@@ -63,7 +63,8 @@ app gradient. Home is marked on the start page that `/` opens. When the
 person changes their app bar, the bar follows without a reload.
 
 The phone's content is a soft card with 28 px top corners. A regular signed-in
-page scrolls inside that card (`main`), while the window stays still. The card
+page scrolls inside that card (`main`), while the window stays still. Content
+wider than the card scrolls sideways inside it, as from 768 px. The card
 keeps space for the bar at its end and when scrolling to a focused control.
 The bar sits 8 px above the bottom safe area; the title row and canvas keep
 the top and side safe areas. Anonymous phones retain Home in the header, its
@@ -155,10 +156,10 @@ without the shell, such as a pop-out window or an unattended display, takes its
 height from `dvh` too, with `h-dvh` or `min-h-dvh`.
 
 The layout reserves a stable scrollbar gutter on every page scroller it owns:
-the content area of regular pages from 768 px and, below 768 px, the document
-of anonymous pages except full-page and focus-mode surfaces. Switching
-between short and long pages or tabs therefore does not shift the content sideways where
-scrollbars take layout space.
+the content area of regular pages from 768 px and, below 768 px, the soft card
+of signed-in pages and the document of anonymous pages, except full-page and
+focus-mode surfaces. Switching between short and long pages or tabs therefore
+does not shift the content sideways where scrollbars take layout space.
 
 Every Cloud page, with any layout, preloads the Latin IBM Plex Sans faces at
 weights 400, 500, and 600 next to its stylesheets. The first frame therefore
