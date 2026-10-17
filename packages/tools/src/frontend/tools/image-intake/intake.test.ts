@@ -120,6 +120,34 @@ describe("image intake", () => {
       "too-large",
     );
   });
+  test("a failed lazy decoder import reports decoder unavailable", async () => {
+    // Isolate the failed module load so it cannot poison other tests' import cache.
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "--eval",
+        `
+      import { defaultDeps, prepareImage } from ${JSON.stringify(import.meta.resolve("./intake"))};
+      Bun.plugin({ name: "unavailable-heif", setup(build) {
+        build.onResolve({ filter: /^\\.\\/heif-decoder$/ }, () => { throw new Error("Offline chunk"); });
+      } });
+      try {
+        await prepareImage(new File(["heif"], "photo.heic"), {
+          signal: new AbortController().signal, onStage() {},
+        }, { ...defaultDeps, decodeNative: async () => { throw new Error("No native HEIF"); } });
+        process.exitCode = 1;
+      } catch (error) {
+        console.log(error.reason);
+      }
+    `,
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
+    expect(stdout.trim()).toBe("decoder-unavailable");
+  });
   test("cancels before work and while a native decode is pending", async () => {
     const controller = new AbortController();
     const injected = deps();
@@ -156,6 +184,15 @@ describe("image intake", () => {
 });
 
 describe("accepted input class guard", () => {
+  for (const reason of ["unsupported", "too-large", "decode-failed", "decoder-unavailable"] satisfies ImageIntakeFailure["reason"][]) {
+    test(`${reason} has an English and German title and recovery hint`, () => {
+      for (const locale of ["en", "de"]) {
+        const message = imageIntakeMessages.resolve([locale]).t;
+        expect(message[`${reason}Title`].trim().length).toBeGreaterThan(0);
+        expect(message[`${reason}Hint`].trim().length).toBeGreaterThan(0);
+      }
+    });
+  }
   for (const accepted of IMAGE_ACCEPT.split(",")) {
     for (const native of [true, false]) {
       test(`${accepted}: native ${native ? "success" : "failure"} has a ready image or a localized recovery`, async () => {

@@ -157,6 +157,7 @@ test("image file failures stay in the main preview region when the inspector is 
     initialLoadFailures: [
       { file: new File([], "broken.heic", { type: "image/heic" }), reason: "decode-failed" },
       { file: new File([], "scan.tiff", { type: "image/tiff" }), reason: "unsupported" },
+      { file: new File([], "offline.heic", { type: "image/heic" }), reason: "decoder-unavailable" },
     ],
   });
   const main = html.slice(0, html.indexOf('id="k2b-workspace-detail-image-processor-inspector"'));
@@ -166,6 +167,19 @@ test("image file failures stay in the main preview region when the inspector is 
   expect(main).toContain("Export it again from the source app, or choose another file.");
   expect(main).toContain("scan.tiff");
   expect(main).toContain("This format is not supported.");
+  expect(main).toContain("offline.heic");
+  expect(main).toContain("The HEIC decoder could not be loaded.");
+  expect(main).toContain("Reload the page and try again. Or convert the photo to JPEG first.");
   expect(main).toContain('aria-label="Dismiss file errors"');
   expect(main).toContain("absolute inset-x-[var(--ui-space-shell)] bottom-[var(--ui-space-shell)]");
+});
+
+test("crop refusals render per file in the main area without a hint line", () => {
+  const html = renderImageProcessorView({
+    initialLoadFailures: [{ file: new File([], "later.png", { type: "image/png" }), reason: "crop-active" }],
+  });
+  const main = html.slice(0, html.indexOf('id="k2b-workspace-detail-image-processor-inspector"'));
+  expect(main).toContain("later.png");
+  expect(main).toContain("Apply or cancel the crop before adding images");
+  expect(main).not.toContain('<p class="text-dimmed">');
 });

@@ -13,6 +13,8 @@ export const imageIntakeMessages = i18n.define({
       "too-largeHint": `HEIC photos up to ${megapixels} MP and ${mebibytes} MiB work. Make the photo smaller first, or choose another file.`,
       "decode-failedTitle": "This image could not be read.",
       "decode-failedHint": "The file may be damaged. Export it again from the source app, or choose another file.",
+      "decoder-unavailableTitle": "The HEIC decoder could not be loaded.",
+      "decoder-unavailableHint": "Reload the page and try again. Or convert the photo to JPEG first.",
       waiting: "Waiting",
       "loading-decoder": "Loading the HEIC decoder",
       decoding: "Converting",
@@ -29,6 +31,8 @@ export const imageIntakeMessages = i18n.define({
       "decode-failedTitle": "Dieses Bild konnte nicht gelesen werden.",
       "decode-failedHint":
         "Die Datei ist möglicherweise beschädigt. Exportiere sie erneut aus der ursprünglichen App oder wähle eine andere Datei.",
+      "decoder-unavailableTitle": "Der HEIC-Decoder konnte nicht geladen werden.",
+      "decoder-unavailableHint": "Lade die Seite neu und versuche es noch einmal. Oder wandle das Foto zuerst in JPEG um.",
       waiting: "Wartet",
       "loading-decoder": "HEIC-Decoder wird geladen",
       decoding: "Wird konvertiert",

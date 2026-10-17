@@ -62,11 +62,13 @@ const MARKUP_COLORS = [
 // Component
 // ====================================
 
+type LoadFailure = { file: File; reason: ImageIntakeFailure["reason"] | "crop-active" };
+
 type ImageProcessorViewProps = {
   readonly initialImages?: readonly ImageEntry[];
   readonly initialEditorMode?: "edit" | "markup";
   readonly initialCropActive?: boolean;
-  readonly initialLoadFailures?: readonly (ImageIntakeFailure & { file: File })[];
+  readonly initialLoadFailures?: readonly LoadFailure[];
 };
 
 /** @internal Controlled render seam; the route-facing island below remains zero-prop. */
@@ -80,7 +82,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   const [images, setImages] = createSignal<ImageEntry[]>([...(props.initialImages ?? [])]);
   const [activeIndex, setActiveIndex] = createSignal(0);
   const [error, setError] = createSignal("");
-  const [loadFailures, setLoadFailures] = createSignal<(ImageIntakeFailure & { file: File })[]>([...(props.initialLoadFailures ?? [])]);
+  const [loadFailures, setLoadFailures] = createSignal<LoadFailure[]>([...(props.initialLoadFailures ?? [])]);
   const [currentLoad, setCurrentLoad] = createSignal<{ name: string; stage: ImageIntakeStage; index: number; count: number } | null>(null);
   const [basePreview, setBasePreview] = createSignal(props.initialImages?.[0]?.thumbUrl ?? "");
   const [previewBusy, setPreviewBusy] = createSignal(false);
@@ -224,71 +226,84 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   // File Loading
   // ====================================
 
+  let loadingFiles: File[] = [];
   const loadMutation = mutations.create<void, File[]>({
     mutation: async (files, { abortSignal }) => {
-      const entries: ImageEntry[] = [];
-      for (const [index, file] of files.entries()) {
-        abortSignal.throwIfAborted();
-        setCurrentLoad({ name: file.name, stage: "waiting", index: index + 1, count: files.length });
-        try {
-          const prepared = await prepareImage(file, {
-            signal: abortSignal,
-            onStage: (stage) => {
-              if (!abortSignal.aborted) setCurrentLoad({ name: file.name, stage, index: index + 1, count: files.length });
-            },
-          });
-          const source = await imageTools.create(prepared.source);
-          const previewSource = await makePreviewSource(source);
-          const thumbUrl = await imageTools.presets.thumbnail(prepared.source, 64, "#000", "jpeg");
+      let index = 0;
+      // Drops can also arrive while rebuilding the final preview.
+      do {
+        const entries: ImageEntry[] = [];
+        for (; index < files.length; index++) {
+          const file = files[index]!;
           abortSignal.throwIfAborted();
-          entries.push({
-            id: uid(),
-            file,
-            source,
-            previewSource,
-            originalSource: source,
-            originalPreviewSource: previewSource,
-            thumbUrl,
-            name: file.name,
-            adj: { ...DEFAULT_ADJ },
-            markup: [],
-            markupUndo: [],
-            markupRedo: [],
-            cropped: false,
-            cropBounds: { ...FULL_CROP_BOUNDS },
-          });
-        } catch (loadError) {
-          abortSignal.throwIfAborted();
-          const reason = loadError instanceof ImageIntakeError ? loadError.reason : "decode-failed";
-          setLoadFailures((current) => [...current, { file, reason }]);
+          setCurrentLoad({ name: file.name, stage: "waiting", index: index + 1, count: files.length });
+          try {
+            const prepared = await prepareImage(file, {
+              signal: abortSignal,
+              onStage: (stage) => {
+                if (!abortSignal.aborted) setCurrentLoad({ name: file.name, stage, index: index + 1, count: files.length });
+              },
+            });
+            const source = await imageTools.create(prepared.source);
+            const previewSource = await makePreviewSource(source);
+            const thumbUrl = await imageTools.presets.thumbnail(prepared.source, 64, "#000", "jpeg");
+            abortSignal.throwIfAborted();
+            entries.push({
+              id: uid(),
+              file,
+              source,
+              previewSource,
+              originalSource: source,
+              originalPreviewSource: previewSource,
+              thumbUrl,
+              name: file.name,
+              adj: { ...DEFAULT_ADJ },
+              markup: [],
+              markupUndo: [],
+              markupRedo: [],
+              cropped: false,
+              cropBounds: { ...FULL_CROP_BOUNDS },
+            });
+          } catch (loadError) {
+            abortSignal.throwIfAborted();
+            const reason = loadError instanceof ImageIntakeError ? loadError.reason : "decode-failed";
+            setLoadFailures((current) => [...current, { file, reason }]);
+          }
         }
-      }
-      abortSignal.throwIfAborted();
-      if (entries.length === 0) return;
+        abortSignal.throwIfAborted();
+        if (entries.length === 0) continue;
 
-      const wasEmpty = images().length === 0;
-      setImages((prev) => [...prev, ...entries]);
-      if (wasEmpty) setActiveIndex(0);
-      await rebuildBasePreview();
+        const wasEmpty = images().length === 0;
+        setImages((prev) => [...prev, ...entries]);
+        if (wasEmpty) setActiveIndex(0);
+        await rebuildBasePreview();
+      } while (index < files.length);
     },
     onError: (err) => {
       if (err.message !== "File dialog cancelled") setError(err.message);
     },
-    onFinally: () => setCurrentLoad(null),
+    onFinally: () => {
+      loadingFiles = [];
+      setCurrentLoad(null);
+    },
   });
 
   const loadFiles = (files: File[]) => {
     if (files.length === 0) return;
     if (cropActive() || cropBusy()) {
-      setError(t().applyOrCancelCrop);
+      setLoadFailures((current) => [...current, ...files.map((file) => ({ file, reason: "crop-active" as const }))]);
       return;
     }
     if (loadMutation.loading()) {
-      setError(t().waitForLoading);
+      // The running mutation drains this same array.
+      loadingFiles.push(...files);
+      setCurrentLoad((current) => current && { ...current, count: loadingFiles.length });
       return;
     }
     setError("");
-    loadMutation.mutate(files);
+    setLoadFailures([]);
+    loadingFiles = [...files];
+    loadMutation.mutate(loadingFiles);
   };
 
   const selectFiles = async () => {
@@ -1197,9 +1212,12 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     {(failure) => (
                       <li class="min-w-0">
                         <p class="truncate text-primary">
-                          <span class="font-medium">{failure.file.name}</span> · {intakeT()[`${failure.reason}Title`]}
+                          <span class="font-medium">{failure.file.name}</span> ·{" "}
+                          {failure.reason === "crop-active" ? t().applyOrCancelCrop : intakeT()[`${failure.reason}Title`]}
                         </p>
-                        <p class="text-dimmed">{intakeT()[`${failure.reason}Hint`]}</p>
+                        <Show when={failure.reason !== "crop-active" && failure.reason}>
+                          {(reason) => <p class="text-dimmed">{intakeT()[`${reason()}Hint`]}</p>}
+                        </Show>
                       </li>
                     )}
                   </For>

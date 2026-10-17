@@ -51,6 +51,7 @@ Eine Fehlerkarte zeigt weiterhin den Dateinamen, den Grund und einen Hinweis zur
 - **Format nicht unterstützt:** Wandle die Datei zuerst in JPEG, PNG, WebP oder HEIC um. Oder wähle eine andere Datei.
 - **Foto zu groß:** Wenn der HEIC-Decoder benötigt wird, gilt eine Grenze von 50 MP und 64 MiB pro Foto. Verkleinere das Foto zuerst oder wähle eine andere Datei.
 - **Bild nicht lesbar:** Die Datei ist möglicherweise beschädigt. Exportiere sie erneut aus der ursprünglichen App oder wähle eine andere Datei.
+- **HEIC-Decoder nicht verfügbar:** Lade die Seite neu und versuche es noch einmal. Oder wandle das Foto zuerst in JPEG um.
 :::
 
 Entferne eine Fehlerkarte mit ihrem Papierkorb. **Alle entfernen** leert die ganze Liste, sobald alle Dateien fertig geladen sind.

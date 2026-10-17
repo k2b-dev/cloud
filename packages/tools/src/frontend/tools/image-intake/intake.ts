@@ -1,6 +1,6 @@
 import { HEIF_MAX_BYTES, HEIF_MAX_PIXELS, IMAGE_ACCEPT, isHeif } from "./formats";
 
-export type ImageIntakeFailure = { reason: "unsupported" | "too-large" | "decode-failed" };
+export type ImageIntakeFailure = { reason: "unsupported" | "too-large" | "decode-failed" | "decoder-unavailable" };
 export class ImageIntakeError extends Error {
   constructor(public readonly reason: ImageIntakeFailure["reason"]) {
     super(reason);
@@ -66,7 +66,9 @@ export const defaultDeps: ImageIntakeDeps = {
     }),
   decodeHeif: async (file, options) => {
     options.onStage("loading-decoder");
-    const module = await import("./heif-decoder");
+    const module = await import("./heif-decoder").catch(() => {
+      throw new ImageIntakeError("decoder-unavailable");
+    });
     options.signal.throwIfAborted();
     decoder = module;
     return module.decodeHeif(file, options);

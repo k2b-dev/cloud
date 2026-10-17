@@ -4,41 +4,81 @@ import { type HeifOptions, ImageIntakeError } from "./intake";
 // The UMD factory and its synchronous wasm compilation run only in this worker.
 const handler = `
 const heif = libheif();
-self.onmessage = async ({ data: { id, bytes, maxPixels } }) => {
+let currentJobId;
+const failJob = () => {
+  if (currentJobId !== undefined) self.postMessage({ id: currentJobId, error: "decode-failed", fatal: true });
+};
+self.onunhandledrejection = event => {
+  if (currentJobId === undefined) return;
+  event.preventDefault();
+  failJob();
+};
+self.onerror = event => {
+  if (currentJobId === undefined) return;
+  event.preventDefault();
+  failJob();
+};
+async function decode(bytes, maxPixels) {
+  const decoder = new heif.HeifDecoder();
   let images = [];
   try {
-    if (typeof OffscreenCanvas === "undefined") throw new Error();
-    images = new heif.HeifDecoder().decode(new Uint8Array(bytes));
+    images = decoder.decode(new Uint8Array(bytes));
     const image = images.find(image => image.is_primary()) || images[0];
-    if (!image) throw new Error();
+    if (!image) return { error: "decode-failed" };
     const width = image.get_width(), height = image.get_height();
-    if (!(width > 0 && height > 0)) throw new Error();
-    if (width * height > maxPixels) {
-      self.postMessage({ id, error: "too-large" });
-      return;
+    if (!(width > 0 && height > 0)) return { error: "decode-failed" };
+    if (width * height > maxPixels) return { error: "too-large" };
+    const pixels = new ImageData(width, height);
+    const result = await heif.heif_js_decode_image2(
+      image.handle, heif.heif_colorspace.heif_colorspace_RGB, heif.heif_chroma.heif_chroma_interleaved_RGBA
+    );
+    try {
+      if (!result || result.code) return { error: "decode-failed" };
+      for (const channel of result.channels) {
+        if (channel.id !== heif.heif_channel.heif_channel_interleaved) continue;
+        if (channel.stride === channel.width * 4) pixels.data.set(channel.data);
+        else for (let row = 0; row < channel.height; row++) {
+          pixels.data.set(channel.data.slice(row * channel.stride, row * channel.stride + channel.width * 4), row * channel.width * 4);
+        }
+      }
+    } finally {
+      if (result && result.image) heif.heif_image_release(result.image);
     }
-    const pixels = await new Promise((resolve, reject) => image.display(
-      new ImageData(width, height), data => data ? resolve(data) : reject(new Error())
-    ));
     const canvas = new OffscreenCanvas(width, height);
     const context = canvas.getContext("2d");
     if (!context) throw new Error();
     context.putImageData(pixels, 0, 0);
     const blob = await canvas.convertToBlob({ type: "image/png" });
-    self.postMessage({ id, blob, width, height });
-  } catch {
-    self.postMessage({ id, error: "decode-failed" });
+    return { blob, width, height };
   } finally {
-    for (const image of images) image.free();
+    try {
+      for (const image of images) image.free();
+    } finally {
+      if (decoder.decoder) {
+        heif.heif_context_free(decoder.decoder);
+        decoder.decoder = null;
+      }
+    }
+  }
+}
+self.onmessage = async ({ data: { id, bytes, maxPixels } }) => {
+  currentJobId = id;
+  try {
+    self.postMessage({ id, ...await decode(bytes, maxPixels) });
+  } catch {
+    failJob();
+  } finally {
+    currentJobId = undefined;
   }
 };
+if (typeof OffscreenCanvas === "undefined") throw new Error("OffscreenCanvas unavailable");
 self.postMessage({ ready: true });
 `;
 
 type Reply =
   | { ready: true }
   | { id: number; blob: Blob; width: number; height: number }
-  | { id: number; error: "too-large" | "decode-failed" };
+  | { id: number; error: "too-large" | "decode-failed"; fatal?: boolean };
 type Job = {
   id: number;
   file: File;
@@ -66,11 +106,11 @@ function settle(job: Job, error?: unknown, blob?: Blob) {
   if (error) job.reject(error);
   else if (blob) job.resolve(blob);
 }
-function failBatch() {
+function failBatch(reason: "decoder-unavailable" | "decode-failed" = "decode-failed") {
   const jobs = [...(active ? [active] : []), ...queue.splice(0)];
   active = undefined;
   stopWorker();
-  for (const job of jobs) settle(job, new ImageIntakeError("decode-failed"));
+  for (const job of jobs) settle(job, new ImageIntakeError(reason));
 }
 async function send(job: Job, target: Worker) {
   try {
@@ -92,7 +132,7 @@ function pump() {
   const job = active;
   try {
     if (typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined") {
-      failBatch();
+      failBatch("decoder-unavailable");
       return;
     }
     if (!worker) {
@@ -101,9 +141,9 @@ function pump() {
       worker = new Worker(workerUrl);
       worker.onerror = (event) => {
         event.preventDefault();
-        failBatch();
+        failBatch(ready ? "decode-failed" : "decoder-unavailable");
       };
-      worker.onmessageerror = failBatch;
+      worker.onmessageerror = () => failBatch(ready ? "decode-failed" : "decoder-unavailable");
       worker.onmessage = ({ data }: MessageEvent<Reply>) => {
         if ("ready" in data) {
           ready = true;
@@ -113,13 +153,15 @@ function pump() {
         if (!active || data.id !== active.id) return;
         const completed = active;
         active = undefined;
-        if ("error" in data) settle(completed, new ImageIntakeError(data.error));
-        else settle(completed, undefined, data.blob);
+        if ("error" in data) {
+          if (data.fatal) stopWorker();
+          settle(completed, new ImageIntakeError(data.error));
+        } else settle(completed, undefined, data.blob);
         pump();
       };
     } else if (ready) void send(job, worker);
   } catch {
-    failBatch();
+    failBatch(ready ? "decode-failed" : "decoder-unavailable");
   }
 }
 

@@ -51,6 +51,7 @@ A failed card keeps the file name, the reason, and a recovery hint. Other images
 - **Unsupported format:** Convert the file to JPEG, PNG, WebP, or HEIC first. Or choose another file.
 - **Photo too large:** When the HEIC decoder is needed, the limit is 50 MP and 64 MiB per photo. Make the photo smaller first, or choose another file.
 - **Image could not be read:** The file may be damaged. Export it again from the source app, or choose another file.
+- **HEIC decoder unavailable:** Reload the page and try again. Or convert the photo to JPEG first.
 :::
 
 Remove a failed card with its trash button. **Clear all** removes the whole list when loading has finished.
