@@ -152,6 +152,9 @@ const open = async (options: BrowserContextOptions = {}) => {
 const enhance = (page: Page) => page.evaluate(() => window.enhance());
 const showFirst = async (figure: Locator) => {
   await drawing(figure).focus();
+  // Focus scrolls a chart below the fold into view, and the browser fires that scroll on the next frame. Inspection
+  // closes on scroll, so a late scroll would close the tooltip Home opens and waitFor would never resolve (#1355).
+  await figure.page().evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => done())));
   await drawing(figure).press("Home");
   await tooltip(figure).waitFor({ state: "visible" });
 };
@@ -434,7 +437,9 @@ test(`${browserName}: repeated enhancement mounts once and cleanup restores the 
     expect(await page.getByRole("button", { name: "Daten kopieren", exact: true }).count()).toBe(5);
     for (const figure of await figures(page).all()) {
       await showFirst(figure);
-      await figure.getByRole("button", { name: "Als Tabelle", exact: true }).click();
+      // By keyboard: a pointer left on this button would rest over the next chart once focus scrolls it into view,
+      // and WebKit's hover update after that scroll closes the inspection (#1355).
+      await figure.getByRole("button", { name: "Als Tabelle", exact: true }).press("Enter");
     }
     await page.evaluate(() => window.restore());
     expect(await figures(page).evaluateAll((nodes) => nodes.map((node) => node.outerHTML))).toEqual(original);
