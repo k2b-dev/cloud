@@ -2037,3 +2037,33 @@ test("Escape while an open row runs cancels it: the signal aborts, editing retur
   expect(h.value()).toBe("Plan /task");
   expect(h.status().querySelector('[data-tone="error"]')).toBeNull();
 });
+
+test("an open row whose draft moved to a new key shows its busy line in the status line, and Escape still cancels it", async () => {
+  let signal: AbortSignal | undefined;
+  const h = await slash({
+    value: "Plan /task",
+    commands: [
+      {
+        name: "task",
+        description: "Opens Spaces",
+        open: (_draft, abort) => {
+          signal = abort;
+          return new Promise<void>(() => {});
+        },
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  // The opener saved into a chat it created: the composer now shows that chat's draft, without the token.
+  h.setDraftKey("created");
+  await flush();
+  expect(signal?.aborted).toBe(false);
+  expect(h.rows()).toHaveLength(0);
+  expect(h.status().querySelector('[data-tone="busy"]')?.textContent).toBe("Opening …");
+  h.key("Escape");
+  await flush();
+  expect(signal?.aborted).toBe(true);
+  expect(h.input.readOnly).toBe(false);
+  expect(h.status().querySelector('[data-tone="busy"]')).toBeNull();
+});

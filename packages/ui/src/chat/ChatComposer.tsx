@@ -333,8 +333,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   /** The `open` row running now, and why `open` rows failed in this opening, by row key. */
   const [openingRow, setOpeningRow] = createSignal<string>();
   const [openFailures, setOpenFailures] = createSignal<Readonly<Record<string, string>>>({});
-  /** Cancels the `open` row running now; `key` is the draft it started in. */
-  let openingRun: { controller: AbortController; key: unknown } | undefined;
+  /** Cancels the `open` row running now; `key` is the draft it started in, `label` its busy line. */
+  let openingRun: { controller: AbortController; key: unknown; label: string } | undefined;
   // Where the pending native edit starts; a selection replaced as a whole starts at its beginning.
   let inputStart: number | undefined;
   let inputEnd: number | undefined;
@@ -562,10 +562,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   );
   // Escape, a press outside, or moving the caret away closes the list; while an `open` row runs, that cancels it, so
   // nothing opens after the person backed out. Success ends the opening and closes the list in one step. A new draft
-  // is the opener's own move, such as a chat it creates to save into, and does not cancel.
+  // is the opener's own move, such as a chat it creates to save into, and does not cancel: the busy line moves to the
+  // status line, and Escape still cancels there.
   createEffect(() => {
     const run = openingRun;
-    if (openingRow() !== undefined && !commandsOpen() && run && run.key === props.draftKey) run.controller.abort();
+    if (openingRow() === undefined || commandsOpen() || !run) return;
+    if (run.key === props.draftKey) run.controller.abort();
+    else showCommandStatus({ tone: "busy", text: run.label });
   });
   onCleanup(() => openingRun?.controller.abort());
   // An `open` row gives the sheet's Back entry up first, so it never races the navigation it starts.
@@ -1207,7 +1210,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const heldHistory = commandSheetHeld();
     // Closing the list or leaving the composer cancels the opening; the row ends at once, without waiting for it.
     const controller = new AbortController();
-    const run = { controller, key };
+    const run = { controller, key, label: command.busyLabel ?? chatMessages().commandOpening };
     openingRun = run;
     const cancelled = new Promise<"cancelled">((resolve) =>
       controller.signal.addEventListener("abort", () => resolve("cancelled"), { once: true }),
@@ -1217,6 +1220,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setExecuting(true);
     const finish = () => {
       if (openingRun === run) openingRun = undefined;
+      if (commandStatus()?.tone === "busy") showCommandStatus();
       setOpeningRow(undefined);
       setExecuting(false);
     };
@@ -1311,6 +1315,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const onKeyDown = (event: KeyboardEvent) => {
     // WebKit ends the composition before the keydown of the Enter that confirms it; that keydown keeps keyCode 229.
     if (event.isComposing || event.keyCode === 229 || composing()) return;
+    // Escape cancels a running `open` row, also once its list is gone because the draft moved to a new chat.
+    if (event.key === "Escape" && openingRun) {
+      event.preventDefault();
+      openingRun.controller.abort();
+      if (commandsOpen()) setClosedAt(commandQuery()?.start);
+      return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
       event.preventDefault();
       restoreHistory(event.shiftKey ? 1 : -1);
