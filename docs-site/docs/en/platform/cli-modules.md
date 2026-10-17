@@ -807,6 +807,14 @@ cld plugins update --all         # newer versions for every profile
 cld plugins remove inventory
 ```
 
+`cld plugins update` covers every plugin of the current profile, or of the
+profile that `--profile` names. `--all` covers every profile, also when
+`--profile` is given. A profile that cannot sign in, for example because its
+fd0 vault is locked, prints `cld: <profile>: <reason>`; the other profiles still
+update, and the command exits with 1. When a Cloud ships the same plugin files
+under a new version, `update` only refreshes the version label in the lock and
+the skill.
+
 `cld login` offers to install the plugins that the Cloud serves once the
 sign-in succeeds. `--yes` installs them without asking, and `--no-plugins`
 skips the offer. A command whose plugin is not installed fails with a hint to

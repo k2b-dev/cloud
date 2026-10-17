@@ -15,6 +15,7 @@ import { formatQueryBucket } from "./date-format";
 import {
   formatMetricValue,
   gaugeMax,
+  metricChartTooltip,
   type PulseDateContext,
   pointsToBars,
   pointsToHeatmap,
@@ -65,10 +66,20 @@ function QueryExplorerChart(props: {
   const valueFormat = (value: number) => formatMetricValue(value, props.unit());
   const data = () => props.points();
   const last = () => data().at(-1)?.value ?? null;
+  const tooltip = () =>
+    metricChartTooltip({
+      title: props.title(),
+      unit: props.unit(),
+      points: data(),
+      bucket: props.bucket(),
+      dateContext: props.dateContext(),
+      countLabel: t().count,
+    });
 
   if (props.visual() === "stat") {
     return (
       <Chart
+        tooltip={tooltip()}
         kind="stat"
         class="h-full min-h-0 text-primary"
         label={props.title()}
@@ -82,6 +93,7 @@ function QueryExplorerChart(props: {
     return (
       <Show when={last() !== null} fallback={<p class="text-dimmed">{t().noPoints}</p>}>
         <Chart
+          tooltip={tooltip()}
           kind="gauge"
           class="h-full min-h-0 text-primary"
           value={value}
@@ -98,6 +110,7 @@ function QueryExplorerChart(props: {
     return (
       <Show when={last() !== null} fallback={<p class="text-dimmed">{t().noPoints}</p>}>
         <Chart
+          tooltip={tooltip()}
           kind="barGauge"
           class="h-full min-h-0 text-primary"
           data={[{ label: props.title(), value, min: 0, max: gaugeMax(props.unit(), value) }]}
@@ -111,6 +124,7 @@ function QueryExplorerChart(props: {
   if (props.visual() === "bar") {
     return (
       <Chart
+        tooltip={tooltip()}
         kind="bar"
         class="h-full min-h-0 text-dimmed"
         data={pointsToBars(data(), props.dateContext(), props.bucket())}
@@ -120,12 +134,20 @@ function QueryExplorerChart(props: {
   }
   if (props.visual() === "histogram") {
     return (
-      <Chart kind="histogram" class="h-full min-h-0 text-dimmed" data={pointsToHistogram(data())} bins={12} yAxis={{ label: t().count }} />
+      <Chart
+        tooltip={tooltip()}
+        kind="histogram"
+        class="h-full min-h-0 text-dimmed"
+        data={pointsToHistogram(data())}
+        bins={12}
+        yAxis={{ label: t().count }}
+      />
     );
   }
   if (props.visual() === "heatmap") {
     return (
       <Chart
+        tooltip={tooltip()}
         kind="heatmap"
         class="h-full min-h-0 text-dimmed"
         data={pointsToHeatmap(data(), props.dateContext(), props.bucket())}
@@ -136,6 +158,7 @@ function QueryExplorerChart(props: {
   }
   return (
     <Chart
+      tooltip={tooltip()}
       kind="line"
       class="h-full min-h-0 text-dimmed"
       series={props.series()}

@@ -15,7 +15,13 @@ import {
   AppPairingStartSchema,
 } from "../contracts/app-approval";
 import { type AuthContext, auth, rateLimit, v } from "../server";
-import { type AppApprovalActor, AppApprovalError, appApproval, type createAppApprovalService } from "../services/app-approval";
+import {
+  type AppApprovalActor,
+  AppApprovalError,
+  type AppTerminalLogins,
+  appApproval,
+  type createAppApprovalService,
+} from "../services/app-approval";
 import { appNameIn } from "../ssr/runtime";
 import { createDeviceActions } from "./app-approval-actions";
 
@@ -24,7 +30,7 @@ const DevicePageSchema = z.object({ after: z.string().uuid().optional() }).stric
 type Service = ReturnType<typeof createAppApprovalService>;
 
 /** This is a separate credential surface, never a user API-key or OAuth scope. */
-export const createAppApprovalRoutes = (service: Service = appApproval, actions = createDeviceActions) => {
+export const createAppApprovalRoutes = (service: Service = appApproval, actions = createDeviceActions, terminal?: AppTerminalLogins) => {
   const actor = async (c: Parameters<typeof auth.session.getToken>[0]): Promise<AppApprovalActor> => {
     // The web session (or an explicit bearer session), never the mobile app's session: a phone
     // that pairs sign-in devices would hand out authority that outlives its removal.
@@ -111,6 +117,7 @@ export const createAppApprovalRoutes = (service: Service = appApproval, actions 
           await service.deviceCommand(
             c.req.valid("json"),
             actions((appId, locale) => appNameIn(c, appId, locale, appId)),
+            terminal,
           ),
         ),
     )

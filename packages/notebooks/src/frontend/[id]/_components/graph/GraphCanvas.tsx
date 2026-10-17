@@ -1,10 +1,11 @@
 import { suppressTextSelection, useLocale } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { notebookWorkspaceMessages } from "../../messages";
 import GraphFeedback from "./GraphFeedback";
 import { convexHull, fitView, type GraphView, type Rect, screenRadius, spatialNext, toScreen, toWorld, zoomView } from "./geometry";
 import { createGraphTextMeasure } from "./graph-text-measure";
 import { type AreaLabelInput, type LabelKind, type LabelNode, placeLabels } from "./labels";
+import { CIRCLE_STATUS_BAND, chordPath, circleInsets, circleRadius, fitCircle, layoutCircle, ringStep, ringTarget } from "./layout-circle";
 import {
   fitNeighborhood,
   layoutNeighborhood,
@@ -41,8 +42,9 @@ export type GraphDisplayProps = {
 
 export type GraphCanvasProps = GraphDisplayProps &
   (
-    | { layout: () => Promise<Map<string, NetPoint> | null>; neighborhood?: never }
-    | { layout?: never; neighborhood: { depth: 1 | 2; onCentre: (id: string, hadFocus: boolean) => void } }
+    | { layout: () => Promise<Map<string, NetPoint> | null>; neighborhood?: never; circle?: never }
+    | { layout?: never; neighborhood: { depth: 1 | 2; onCentre: (id: string, hadFocus: boolean) => void }; circle?: never }
+    | { layout?: never; neighborhood?: never; circle: true }
   );
 
 type ScreenNode = { note: GraphNote; x: number; y: number; r: number };
@@ -60,9 +62,11 @@ const f1 = (value: number) => value.toFixed(1);
 /**
  * Shared canvas drawing and interaction lifecycle. Network retains its force layout and node dragging;
  * Neighborhood fits its directional rings when the centre, depth, filters or canvas orientation change.
- * Both use the same roving focus, pointer gestures, label placement, status and touch selection.
+ * Circle places all visible notes on a ring with chords and radial titles.
+ * All displays use the same roving focus, pointer gestures, label placement, status and touch selection.
  */
 export default function GraphCanvas(props: GraphCanvasProps) {
+  const canvasId = createUniqueId();
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   let container!: HTMLDivElement;
@@ -93,7 +97,8 @@ export default function GraphCanvas(props: GraphCanvasProps) {
         })
       : null,
   );
-  const positions = () => localLayout()?.pos ?? networkPositions();
+  const circleLayout = createMemo(() => (props.circle ? layoutCircle(props.notes) : null));
+  const positions = () => circleLayout()?.pos ?? localLayout()?.pos ?? networkPositions();
   const shownNotes = createMemo(() => {
     const local = localLayout();
     return local ? props.model.notes.filter((note) => local.pos.has(note.id)) : props.notes;
@@ -123,14 +128,16 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   const fitted = () =>
     props.neighborhood
       ? fitNeighborhood({ ...size(), ext: ext(), portrait: portrait() })
-      : fitView(visiblePoints(), size().width, size().height, compact());
+      : props.circle
+        ? fitCircle(size().width, size().height, compact())
+        : fitView(visiblePoints(), size().width, size().height, compact());
 
   // Fit when the canvas gets its size, when the layout arrives, and when the filters change the visible notes.
   createEffect(
     on([positions, size, () => props.filterKey], () => {
       if (!positions() || size().width === 0) return;
       // A queued pan/zoom from the old neighbourhood must not overwrite its newly fitted layout.
-      if (props.neighborhood) {
+      if (props.neighborhood || props.circle) {
         pendingView = null;
         if (frame) cancelAnimationFrame(frame);
         frame = 0;
@@ -176,7 +183,11 @@ export default function GraphCanvas(props: GraphCanvasProps) {
         note,
         x: projected.x,
         y: projected.y,
-        r: localLayout() ? neighborhoodRadius(localLayout()!.pos.get(note.id)!.ring, note.deg) : screenRadius(note.deg, current.k),
+        r: props.circle
+          ? circleRadius(note.deg)
+          : localLayout()
+            ? neighborhoodRadius(localLayout()!.pos.get(note.id)!.ring, note.deg)
+            : screenRadius(note.deg, current.k),
       });
     }
     return nodes;
@@ -191,7 +202,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   });
 
   const hulls = createMemo(() => {
-    if (props.neighborhood) return [];
+    if (props.neighborhood || props.circle) return [];
     const nodes = screen();
     const pad = Math.max(14, 22 * Math.sqrt(view().k));
     const groups = new Map<number, ScreenNode[]>();
@@ -219,6 +230,35 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   });
 
   const { ready: fontsReady, measure } = createGraphTextMeasure(() => svg);
+
+  const bands = createMemo(() =>
+    (circleLayout()?.arcs ?? []).map((arc, index) => {
+      const { k: R, tx: cx, ty: cy } = view();
+      const t0 = arc.t0 + 0.004,
+        t1 = arc.t1 - 0.004;
+      const big = t1 - t0 > Math.PI ? 1 : 0;
+      const pt = (r: number, th: number) => `${f1(cx + Math.cos(th) * r)},${f1(cy + Math.sin(th) * r)}`;
+      const inset = circleInsets(R);
+      const r0 = R - inset.bandInner,
+        r1 = R - inset.bandOuter,
+        rt = R - inset.name;
+      const name = arc.area.index === 0 ? t().graphTopLevel : arc.area.title || t().untitled;
+      const lower = Math.sin((t0 + t1) / 2) > 0.05;
+      const rr = R - (lower ? inset.lower : inset.upper);
+      // The name sits inside the ring and the titles outside it, so the two never meet; it shows only when it fits.
+      const showName = fontsReady() && measure(name, { size: 12, weight: 600 }) + 10 < (t1 - t0) * rt;
+      return {
+        area: arc.area,
+        name,
+        id: `${canvasId}-area-${index}`,
+        path: `M${pt(r1, t0)}A${f1(r1)},${f1(r1)} 0 ${big} 1 ${pt(r1, t1)}L${pt(r0, t1)}A${f1(r0)},${f1(r0)} 0 ${big} 0 ${pt(r0, t0)}Z`,
+        labelPath: lower
+          ? `M${pt(rr, t1)}A${f1(rr)},${f1(rr)} 0 ${big} 0 ${pt(rr, t0)}`
+          : `M${pt(rr, t0)}A${f1(rr)},${f1(rr)} 0 ${big} 1 ${pt(rr, t1)}`,
+        showName,
+      };
+    }),
+  );
 
   const headings = createMemo(() => {
     const local = localLayout();
@@ -252,6 +292,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   const placed = createMemo(() => {
     if (!fontsReady() || size().width === 0) return { labels: [], areaLabels: [] };
     const nodes: LabelNode[] = [...screen().values()].map((node) => {
+      const radial = circleLayout()?.pos.get(node.note.id);
       const point = localLayout()?.pos.get(node.note.id);
       const cos = Math.cos(point?.th ?? 0),
         sin = Math.sin(point?.th ?? 0);
@@ -263,6 +304,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
         r: node.r,
         deg: node.note.deg,
         kind: labelKind(node.note),
+        ...(radial ? { radial: { cx: view().tx, cy: view().ty, th: radial.th }, maxWidth: compact() ? 130 : 220 } : {}),
         ...(point
           ? {
               priority: point.ring === 1 ? 300 : 0,
@@ -286,6 +328,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
       height: size().height,
       nodes,
       areaLabels: hulls().map((hull) => hull.label),
+      bounds: props.circle ? { x0: 2, y0: 2, x1: size().width - 2, y1: size().height - CIRCLE_STATUS_BAND } : undefined,
       measure,
       // The status line covers the bottom of the canvas; the rings leave it free, and so do their labels.
       obstacles: [
@@ -335,6 +378,14 @@ export default function GraphCanvas(props: GraphCanvasProps) {
     const id = (event.target as Element | null)?.closest<SVGGElement>("[data-node]")?.dataset.node;
     // Modified keys stay with the browser, such as Ctrl/Cmd+- and Ctrl/Cmd+0 for page zoom.
     if (!id || event.ctrlKey || event.metaKey || event.altKey) return;
+    const ring = circleLayout();
+    const ringKey = (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown"] as const).find((key) => key === event.key);
+    if (ring && ringKey) {
+      event.preventDefault();
+      const next = ringStep(ring, (noteId) => props.model.byId.get(noteId)!.area.key, id, ringKey);
+      if (next) focusNote(next);
+      return;
+    }
     // Page Down and Page Up go through the notes in page order, so every note is reachable, wherever it lies.
     if (event.key === "PageDown" || event.key === "PageUp") {
       event.preventDefault();
@@ -444,7 +495,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
       scheduleView(() => ({ ...start, tx: start.tx + dx, ty: start.ty + dy }));
       return;
     }
-    if (props.neighborhood) return;
+    if (props.neighborhood || props.circle) return;
     // Drag: the note follows the pointer and its neighbours follow softly; nothing else moves.
     const all = positions();
     const at = all?.get(gesture.id);
@@ -514,7 +565,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
     // One headless layout per graph, run in the browser in slices, so the page stays responsive. The canvas never
     // animates: the notes appear once, at their final places.
     let alive = true;
-    if (!props.neighborhood)
+    if (props.layout)
       void props.layout().then((result) => {
         if (alive && result) setPositions(result);
       });
@@ -621,7 +672,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
       <svg
         ref={svg}
         class="notebook-graph__svg"
-        data-display={props.neighborhood ? "neighborhood" : "network"}
+        data-display={props.circle ? "circle" : props.neighborhood ? "neighborhood" : "network"}
         role="group"
         aria-label={t().graphGroupLabel({ notebook: props.notebookName, display: props.displayName, count: shownNotes().length })}
         data-highlight={highlight() ? "" : undefined}
@@ -661,6 +712,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
               )}
             </For>
           </Show>
+          <For each={bands()}>{(band) => <path class="notebook-graph__band" data-slot={band.area.slot} d={band.path} />}</For>
           <For each={hulls()}>
             {(hull) => <path class="notebook-graph__hull" data-slot={hull.area.slot} d={hull.path} stroke-width={f1(hull.pad * 2)} />}
           </For>
@@ -675,6 +727,9 @@ export default function GraphCanvas(props: GraphCanvasProps) {
                 const a = screen().get(edge.source);
                 const b = screen().get(edge.target);
                 if (!a || !b) return "";
+                const ca = circleLayout()?.pos.get(edge.source),
+                  cb = circleLayout()?.pos.get(edge.target);
+                if (ca && cb) return chordPath(ca, cb, view().k, (p) => toScreen(view(), p), shift);
                 const pa = localLayout()?.pos.get(edge.source),
                   pb = localLayout()?.pos.get(edge.target);
                 const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
@@ -688,14 +743,18 @@ export default function GraphCanvas(props: GraphCanvasProps) {
                 return `M${f1(a.x + nx)},${f1(a.y + ny)}L${f1(b.x + nx)},${f1(b.y + ny)}`;
               };
               const edgeClass = () => {
+                if (props.circle) return "chord";
                 const a = localLayout()?.pos.get(edge.source),
                   b = localLayout()?.pos.get(edge.target);
                 return !a || !b ? undefined : a.ring === 0 || b.ring === 0 ? "centre" : a.ring === 1 && b.ring === 1 ? "cross" : "far";
               };
+              // A chord takes the colour of the area it starts from; a centre link the colour of the other note.
               const edgeSlot = () =>
-                edgeClass() === "centre"
-                  ? props.model.byId.get(edge.source === props.currentId ? edge.target : edge.source)?.area.slot
-                  : undefined;
+                props.circle
+                  ? props.model.byId.get(edge.source)?.area.slot
+                  : edgeClass() === "centre"
+                    ? props.model.byId.get(edge.source === props.currentId ? edge.target : edge.source)?.area.slot
+                    : undefined;
               return (
                 <path
                   data-edge-kind={edgeClass()}
@@ -711,6 +770,18 @@ export default function GraphCanvas(props: GraphCanvasProps) {
           </For>
         </g>
         <g aria-hidden="true">
+          <For each={bands()}>
+            {(band) => (
+              <Show when={band.showName}>
+                <path id={band.id} d={band.labelPath} fill="none" />
+                <text class="notebook-graph__band-label" data-slot={band.area.slot} data-area={band.area.key}>
+                  <textPath href={`#${band.id}`} startOffset="50%" text-anchor="middle">
+                    {band.name}
+                  </textPath>
+                </text>
+              </Show>
+            )}
+          </For>
           <For each={placed().areaLabels}>
             {(label) => {
               const slot = hulls().find((hull) => hull.area.key === label.key)?.area.slot ?? 0;
@@ -745,7 +816,18 @@ export default function GraphCanvas(props: GraphCanvasProps) {
                       aria-current={current() ? "page" : undefined}
                       transform={`translate(${f1(at().x)},${f1(at().y)})`}
                     >
-                      <circle class="notebook-graph__hit" r={Math.max(at().r + 6, 12)} />
+                      {/* On the ring the dots can stand closer than a hit circle is wide; there each note owns its slot. */}
+                      <Show
+                        when={circleLayout()?.pos.get(note.id)}
+                        fallback={<circle class="notebook-graph__hit" r={Math.max(at().r + 6, 12)} />}
+                      >
+                        {(point) => (
+                          <path
+                            class="notebook-graph__hit"
+                            d={ringTarget(point().th, circleLayout()!.step, view().k, Math.max(at().r + 6, 12))}
+                          />
+                        )}
+                      </Show>
                       <Show when={current()}>
                         <circle class="notebook-graph__ring" r={f1(at().r + 4)} />
                       </Show>
@@ -772,6 +854,8 @@ export default function GraphCanvas(props: GraphCanvasProps) {
                   x={f1(label.x)}
                   y={f1(label.y)}
                   dy="0.34em"
+                  text-anchor={label.anchor}
+                  transform={label.rotate === undefined ? undefined : `rotate(${f1(label.rotate)} ${f1(label.x)} ${f1(label.y)})`}
                 >
                   {label.text}
                 </text>
@@ -790,6 +874,8 @@ export default function GraphCanvas(props: GraphCanvasProps) {
         onOpen={props.onOpen}
         onClearSelection={() => setSelected(null)}
         onCentre={props.neighborhood ? centre : undefined}
+        pointerHints={props.circle || props.neighborhood ? t().graphFixedPointerHints : t().graphPointerHints}
+        areaKeys={props.circle}
       />
     </div>
   );

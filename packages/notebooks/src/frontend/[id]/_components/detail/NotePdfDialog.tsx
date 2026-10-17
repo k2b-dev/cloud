@@ -9,8 +9,10 @@ import {
   Select,
   useLocale,
 } from "@k2b/ui";
-import { createSignal, onCleanup, Show } from "solid-js";
+import { createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { notePdfOmissionText } from "@/lib/book-renderer-messages";
+import { decodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, type NotePdfOmissionReport } from "@/lib/pdf-omissions";
 import { notebookWorkspaceMessages } from "../../messages";
 
 type NotePdfTemplateId = "document" | "report" | "compact" | "custom";
@@ -71,6 +73,11 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
   const [customCss, setCustomCss] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
+  // What the last downloaded PDF left out. It stays until the next answer replaces it, so nothing blinks while loading.
+  const [report, setReport] = createSignal<NotePdfOmissionReport | null>(null);
+  const [detailsOpen, setDetailsOpen] = createSignal(false);
+  const detailsId = createUniqueId();
+  const omissionSummary = () => t().pdfOmissionsTitle({ count: (report()?.items.length ?? 0) + (report()?.more ?? 0) });
   let request: AbortController | null = null;
 
   const close = () => {
@@ -125,10 +132,20 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
       if (!response.ok) throw new Error(await responseError(response, t().pdfRateLimited, t().pdfFailed));
       const blob = await response.blob();
       if (blob.type !== "application/pdf") throw new Error(t().pdfUnexpectedType);
+      if (controller.signal.aborted) return;
       downloadBlob(blob, pdfFilename(props.noteTitle));
-      props.close();
+      // A complete PDF closes the dialog as before; otherwise the dialog stays and says what the PDF left out.
+      const omissions = decodeNotePdfOmissions(response.headers.get(NOTE_PDF_OMISSIONS_HEADER));
+      if (!omissions || omissions.items.length + omissions.more === 0) {
+        props.close();
+        return;
+      }
+      setReport(omissions);
     } catch (cause) {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : t().pdfFailed);
+      if (!controller.signal.aborted) {
+        setReport(null);
+        setError(cause instanceof Error ? cause.message : t().pdfFailed);
+      }
     } finally {
       if (request === controller) {
         request = null;
@@ -166,7 +183,82 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
                 spellcheck={false}
               />
             </Show>
-            <InlineGuidance icon="ti ti-server">{t().pdfDataNotice}</InlineGuidance>
+            {/* One reserved place: the data notice and the summary of what the PDF left out share one cell that
+                always holds both, so the summary arrives without moving anything. The live region exists from the
+                start, so screen readers announce the summary. */}
+            <div class="grid">
+              <InlineGuidance
+                icon="ti ti-server"
+                class="[grid-area:1/1]"
+                classList={{ invisible: Boolean(report()) }}
+                aria-hidden={report() ? "true" : undefined}
+              >
+                {t().pdfDataNotice}
+              </InlineGuidance>
+              <InlineGuidance
+                tone="warning"
+                icon="ti ti-alert-triangle"
+                class="[grid-area:1/1]"
+                classList={{ invisible: !report() }}
+                aria-hidden={report() ? undefined : "true"}
+                data-pdf-omissions={report() ? "" : undefined}
+              >
+                {omissionSummary()}{" "}
+                <Button
+                  type="button"
+                  variant="text"
+                  size="xs"
+                  aria-expanded={detailsOpen()}
+                  aria-controls={detailsId}
+                  onClick={() => setDetailsOpen((open) => !open)}
+                >
+                  {t().pdfOmissionsDetails}
+                  <i
+                    class="ti ti-chevron-down transition-transform motion-reduce:transition-none"
+                    classList={{ "rotate-180": detailsOpen() }}
+                    aria-hidden="true"
+                  />
+                </Button>
+              </InlineGuidance>
+              <span class="sr-only" role="status" aria-live="polite">
+                {report() ? omissionSummary() : ""}
+              </span>
+            </div>
+            <Show when={report() && detailsOpen() ? report() : null}>
+              {(current) => (
+                <ul id={detailsId} class="flex min-w-0 flex-col gap-2.5 text-sm" data-pdf-omission-list="">
+                  <For each={current().items}>
+                    {(item) => {
+                      const text = () => notePdfOmissionText(item, locale());
+                      return (
+                        <li class="flex min-w-0 flex-col gap-0.5">
+                          <span class="min-w-0 break-words">
+                            <span class="font-medium">{text().kind}</span>
+                            <Show when={item.label}>
+                              {(label) => (
+                                <>
+                                  <span class="text-dimmed" aria-hidden="true">
+                                    {" · "}
+                                  </span>
+                                  <span class="sr-only">: </span>
+                                  {label()}
+                                </>
+                              )}
+                            </Show>
+                          </span>
+                          <span class="text-dimmed">
+                            {text().reason} {text().hint}
+                          </span>
+                        </li>
+                      );
+                    }}
+                  </For>
+                  <li class="text-dimmed">
+                    {current().more > 0 ? t().pdfOmissionsMore({ count: current().more }) : t().pdfOmissionsMarked}
+                  </li>
+                </ul>
+              )}
+            </Show>
             <Show when={error()}>
               <div role="alert">
                 <NoticeCard tone="danger" title={t().pdfGenerationFailed}>
@@ -179,7 +271,13 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <Button type="button" variant="secondary" size="sm" onClick={close}>
-          {t().cancel}
+          {/* Both labels share one cell, so the button keeps its width when Cancel becomes Close. */}
+          <span class="grid">
+            <span class="[grid-area:1/1]">{report() && !busy() ? t().close : t().cancel}</span>
+            <span class="invisible [grid-area:1/1]" aria-hidden="true">
+              {report() && !busy() ? t().cancel : t().close}
+            </span>
+          </span>
         </Button>
         <Button type="button" size="sm" onClick={() => void generate()} loading={busy()} loadingLabel={t().generatingPdf}>
           <i class="ti ti-download" aria-hidden="true" /> {t().downloadPdf}

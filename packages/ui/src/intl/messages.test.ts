@@ -22,6 +22,7 @@ const catalogs = {
   FileBrowser: (await import("../content/file-browser-messages")).checkFileBrowserMessages,
   FileView: (await import("../content/file-view-messages")).checkFileViewMessages,
   FileInput: (await import("../inputs/file-input-messages")).checkFileInputMessages,
+  DragAndDrop: (await import("../actions/drag-and-drop-messages")).checkDragAndDropMessages,
   FileDrop: (await import("../inputs/file-drop-messages")).checkFileDropMessages,
   Pdf: (await import("../content/pdf-messages")).checkPdfMessages,
   MarkdownInfoBlock: (await import("../content/markdown-info-block-messages")).checkMarkdownInfoBlockMessages,

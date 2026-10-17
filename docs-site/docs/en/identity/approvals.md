@@ -5,7 +5,7 @@ section: Identity and access
 order: 357
 description: How Cloud records, decides, and uses one approval for exactly the Action a person saw.
 tags: [identity, approvals, capabilities, audit]
-updated: 2026-10-11
+updated: 2026-10-17
 ---
 
 # Action approvals
@@ -199,6 +199,7 @@ stored as preferences in Assistant and resolve a later call without a new
 request. Only a person in a signed-in browser session can remember a website.
 Scheduled tasks and mandates never ask and never use a remembered approval;
 see [Background mandates](/en/docs/identity/background-mandates).
+Remembering and revoking a preference each write an [audit event](/en/docs/platform/audit-events#remembered-ai-approvals).
 
 ## Show approvals in your app
 

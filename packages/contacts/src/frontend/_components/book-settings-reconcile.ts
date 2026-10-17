@@ -7,7 +7,7 @@ export const createQueuedReconciliation = (reload: () => Promise<void>, updateSt
   let disposed = false;
   let running = false;
   let error: string | null = null;
-  const queue: string[] = [];
+  const queue: { message: string; resolve: () => void }[] = [];
 
   const drain = async (): Promise<void> => {
     if (disposed || running || error || queue.length === 0) return;
@@ -15,13 +15,15 @@ export const createQueuedReconciliation = (reload: () => Promise<void>, updateSt
     updateState({ reconciling: true, error: null });
     try {
       while (!disposed && queue.length > 0) {
-        const message = queue[0]!;
+        const item = queue[0]!;
         try {
           await reload();
           queue.shift();
+          item.resolve();
         } catch {
           if (disposed) return;
-          error = message;
+          error = item.message;
+          for (const queued of queue) queued.resolve();
           break;
         }
       }
@@ -31,10 +33,15 @@ export const createQueuedReconciliation = (reload: () => Promise<void>, updateSt
     }
   };
 
-  const run = (message: string) => {
-    if (disposed) return;
-    queue.push(message);
-    void drain();
+  // A successful write waits for its covering reload. Failed reloads remain queued
+  // for retry, but release the writer: the visible error owns recovery from here.
+  const run = (message: string): Promise<void> => {
+    if (disposed) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      queue.push({ message, resolve });
+      if (error) resolve();
+      else void drain();
+    });
   };
 
   const retry = async (): Promise<void> => {
@@ -45,6 +52,7 @@ export const createQueuedReconciliation = (reload: () => Promise<void>, updateSt
 
   const dispose = () => {
     disposed = true;
+    for (const item of queue) item.resolve();
     queue.length = 0;
     error = null;
   };

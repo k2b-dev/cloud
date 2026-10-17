@@ -111,6 +111,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphZoom: "Zoom",
       graphDisplay: "Display",
       graphDisplayNetwork: "Network",
+      graphDisplayCircle: "Circle",
+      graphKeyArea: "area",
       graphDisplayNeighborhood: "Neighborhood",
       graphDepth: "Depth",
       graphDepthOne: "1 step",
@@ -125,7 +127,7 @@ export const notebookWorkspaceMessages = i18n.define({
         `${count === 1 ? "1 match" : `${count} matches`} for “${query}” in this neighborhood, ${total} in the notebook · Enter goes to the first`,
       graphNeighborhoodSearchElsewhere: ({ query, count }: { query: string; count: number }) =>
         `“${query}” is not in this neighborhood, but ${count}× in the notebook`,
-      graphNeighborhoodPointerHints: "Click opens · Drag background pans · Scroll zooms",
+      graphFixedPointerHints: "Click opens · Drag background pans · Scroll zooms",
       graphLocalEmpty: ({ title }: { title: string }) => `“${title}” is not linked yet`,
       graphLocalFilteredTitle: ({ title }: { title: string }) => `No link of “${title}” matches the filters`,
       graphLocalDescription: "No other note links here, and this note does not link anywhere yet. Insert links in the editor with",
@@ -460,6 +462,12 @@ export const notebookWorkspaceMessages = i18n.define({
       pdfDataNotice: "The current note and CSS are processed in memory and are not stored as a PDF.",
       pdfGenerationFailed: "PDF generation failed",
       generatingPdf: "Generating PDF...",
+      pdfOmissionsTitle: ({ count }: { count: number }) =>
+        count === 1 ? "1 item is not in the PDF." : `${count} items are not in the PDF.`,
+      pdfOmissionsDetails: "Details",
+      pdfOmissionsMarked: "The PDF marks each one in place.",
+      pdfOmissionsMore: ({ count }: { count: number }) => `and ${count} more, marked in the PDF`,
+      close: "Close",
     },
     de: {
       failedCreateNote: "Die Notiz konnte nicht erstellt werden",
@@ -568,6 +576,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphZoom: "Zoom",
       graphDisplay: "Darstellung",
       graphDisplayNetwork: "Netz",
+      graphDisplayCircle: "Kreis",
+      graphKeyArea: "Bereich",
       graphDisplayNeighborhood: "Umgebung",
       graphDepth: "Tiefe",
       graphDepthOne: "1 Schritt",
@@ -580,7 +590,7 @@ export const notebookWorkspaceMessages = i18n.define({
       graphNeighborhoodSearchHits: ({ query, count, total }) =>
         `${count} Treffer für „${query}“ in dieser Umgebung, ${total} im Notizbuch · Enter springt zum ersten`,
       graphNeighborhoodSearchElsewhere: ({ query, count }) => `„${query}“ steht nicht in dieser Umgebung, aber ${count}× im Notizbuch`,
-      graphNeighborhoodPointerHints: "Klicken öffnet · Hintergrund ziehen verschiebt · Mausrad zoomt",
+      graphFixedPointerHints: "Klicken öffnet · Hintergrund ziehen verschiebt · Mausrad zoomt",
       graphLocalEmpty: ({ title }) => `„${title}“ ist noch nicht verknüpft`,
       graphLocalFilteredTitle: ({ title }) => `Keine Verknüpfung von „${title}“ passt zu den Filtern`,
       graphLocalDescription:
@@ -903,6 +913,11 @@ export const notebookWorkspaceMessages = i18n.define({
       pdfDataNotice: "Die aktuelle Notiz und das CSS werden im Arbeitsspeicher verarbeitet. Das PDF wird nicht gespeichert.",
       pdfGenerationFailed: "PDF-Erstellung fehlgeschlagen",
       generatingPdf: "PDF wird erstellt…",
+      pdfOmissionsTitle: ({ count }) => (count === 1 ? "1 Inhalt fehlt im PDF." : `${count} Inhalte fehlen im PDF.`),
+      pdfOmissionsDetails: "Details",
+      pdfOmissionsMarked: "Das PDF markiert jeden davon an seiner Stelle.",
+      pdfOmissionsMore: ({ count }) => `und ${count} weitere, im PDF markiert`,
+      close: "Schließen",
     },
   },
 });

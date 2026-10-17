@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import { createEffect } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { Venue, VenueDashboard } from "../src/contracts";
 import {
@@ -181,6 +182,68 @@ describe("Venue settings lifecycle behavior", () => {
     dispose();
     globalThis.fetch = originalFetch;
     dom.cleanup();
+  });
+
+  test("keeps the access editor mounted while a saved change refreshes settings", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const reload = deferred<Response>();
+    let reads = 0;
+    let saved: AccessEntry = {
+      id: "access-1",
+      principal: { type: "user", userId: "ada" },
+      displayName: "Ada Lovelace",
+      permission: "read",
+      createdAt: "2026-08-11T00:00:00.000Z",
+    };
+    const payload = () => ({ venue, openingRules: [], overrides: [], templates: [], accessEntries: [saved], apiKeys: [] });
+    globalThis.fetch = Object.assign(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "PATCH") {
+          saved = { ...saved, permission: "write" };
+          return new Response(null, { status: 204 });
+        }
+        reads += 1;
+        return reads === 1 ? Response.json(payload()) : reload.promise;
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    setSystemTime(new Date("2026-10-17T12:00:00.000Z"));
+    const { SettingsDialog } = await import("../src/frontend/_components/venue-workspace/settings.tsx");
+    delegateEvents(["click"], dom.document);
+    const dispose = render(
+      () => SettingsDialog({ dashboard, accessEntries: [saved], apiKeys: [], initialTab: "access", close: () => {} }),
+      dom.root,
+    );
+    const chip = () => dom.root.querySelector<HTMLButtonElement>("button.k2b-select-chip");
+    const waitFor = async (condition: () => boolean) => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (condition()) return;
+        await Bun.sleep(10);
+      }
+      throw new Error("Timed out waiting for Venue access refresh");
+    };
+    try {
+      await waitFor(() => reads === 1 && chip() !== null);
+      await flush();
+      const original = chip()!;
+      Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+        .find((item) => item.textContent?.startsWith("Staff"))!
+        .click();
+      await waitFor(() => reads === 2);
+      expect(chip() === original).toBe(true);
+      expect(original.disabled).toBe(true);
+      expect(original.textContent).toBe("Staff");
+      reload.resolve(Response.json(payload()));
+      await waitFor(() => chip() !== null && !chip()!.disabled);
+      expect(chip() === original).toBe(true);
+      expect(original.textContent).toBe("Staff");
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      setSystemTime();
+      dom.cleanup();
+    }
   });
 
   test("allows closing after the initial settings read fails", async () => {

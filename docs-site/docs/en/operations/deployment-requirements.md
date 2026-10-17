@@ -1011,6 +1011,14 @@ family's end. OAuth's first start adds the nullable column
 `oauth.device_authorizations.login_lifetime_seconds`. A rollback ignores it
 and issues 90-day logins again.
 
+### Upgrade Contacts from before short IDs
+
+If Contacts never finished assigning short IDs, start it once on Cloud v0.45.0
+and wait until `/_cloud/ready` answers ready before upgrading further.
+An installation that started Contacts on any release from v0.7.0 through
+v0.45.0 needs no action. See the
+[Contacts short-ID upgrade path](/en/docs/reference/deprecations-and-migrations#contacts-requires-finished-short-ids).
+
 ## Coordinate an existing installation's identity upgrade
 
 Use one maintenance window for the gateway, Core, OAuth, applications, and

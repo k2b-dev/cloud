@@ -11205,6 +11205,102 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   z-index: 1;
 }
 
+/* Drag and drop: the source keeps its box while dragged; only its look
+   changes. A press that may become a drag selects no text and shows no
+   callout. */
+.k2b-ui .k2b-drag-source {
+  -webkit-touch-callout: none;
+}
+
+/* Text in editable content stays selectable; there a handle drags. */
+@media (any-pointer: coarse) and (not (any-pointer: fine)) {
+  .k2b-ui .k2b-drag-source:not([data-drag-disabled], :read-write) {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+.k2b-ui .k2b-drag-source[data-pressing] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.k2b-ui .k2b-drag-source[data-held] {
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-drag-source[data-dragging] {
+  opacity: 0.45;
+}
+
+/* Targets change colour only, never size: "ok" while a drag they take is
+   active, "over" under the pointer. "refused" keeps the calm look; the
+   announcement says why. */
+.k2b-ui .k2b-drop-target {
+  border-radius: var(--k2b-radius-control);
+}
+
+.k2b-ui .k2b-drop-target[data-drop="ok"] {
+  background: var(--k2b-selected);
+}
+
+.k2b-ui .k2b-drop-target[data-drop="over"] {
+  background: var(--k2b-action-solid);
+  color: #ffffff;
+}
+
+/* The preview rides above the pointer, so neither a finger nor the preview
+   hides the target and its "over" state. */
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) {
+  position: fixed;
+  z-index: 2147483000;
+  inset: 0 auto auto 0;
+  display: flex;
+  overflow: visible;
+  margin: 0;
+  border: 0;
+  max-width: 17rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 0.75rem;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  pointer-events: none;
+  translate: -20px calc(-100% - 0.75rem);
+}
+
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) > i {
+  flex: none;
+  color: var(--k2b-action);
+  font-size: 1.1rem;
+}
+
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) > .k2b-drag-preview__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) > .k2b-drag-preview__count {
+  position: absolute;
+  top: -0.5rem;
+  right: -0.5rem;
+  display: grid;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  place-items: center;
+  padding: 0 0.3rem;
+  border-radius: 0.65rem;
+  background: var(--k2b-action-solid);
+  color: #ffffff;
+  font-size: 0.6875rem;
+}
+
 .k2b-ui .k2b-select-chip {
   min-width: 0;
   max-width: 100%;

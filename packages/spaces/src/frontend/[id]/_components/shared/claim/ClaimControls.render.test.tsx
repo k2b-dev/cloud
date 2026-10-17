@@ -62,6 +62,7 @@ const avatar = (props: Partial<Parameters<typeof ClaimAvatar>[0]>, locale = "en"
 const stack = (props: Partial<Parameters<typeof AssigneeAvatars>[0]>) =>
   withLocale("en", () => createComponent(AssigneeAvatars, { assignees: [], currentUserId: me, max: 3, ...props }));
 const person = (index: number) => ({
+  kind: "user" as const,
   id: `66666666-6666-4666-8666-${String(index).padStart(12, "0")}`,
   displayName: `Person ${index}`,
   avatarHash: null,
@@ -203,7 +204,7 @@ describe("Spaces claim controls", () => {
   });
 
   test("keeps a service account and an assignee with the same id as distinct avatars", () => {
-    const html = stack({ claim: botClaim, assignees: [{ id: other, displayName: "Mira Beck", avatarHash: null }] });
+    const html = stack({ claim: botClaim, assignees: [{ id: other, kind: "user" as const, displayName: "Mira Beck", avatarHash: null }] });
     expect(avatarNames(html)).toEqual(["Task worker is on it", "Mira Beck avatar"]);
     expect(html.match(/data-ring="success"/g)).toHaveLength(1);
     expect(html).toMatch(/data-ring="success"[^>]*aria-label="Task worker is on it"/);
@@ -211,8 +212,18 @@ describe("Spaces claim controls", () => {
     expect(html).not.toContain(">+");
   });
 
+  test("renders an assigned service-account holder once in the working position", () => {
+    const html = stack({
+      claim: botClaim,
+      assignees: [person(1), { id: botClaim.actor.id, kind: "service_account", displayName: "Task worker", avatarHash: null }],
+    });
+    expect(avatarNames(html)).toEqual(["Task worker is on it", "Person 1 avatar"]);
+    expect(html.match(/data-ring="success"/g)).toHaveLength(1);
+    expect(html).not.toContain(">+");
+  });
+
   test("names people in stack order and includes holders outside the assignees", () => {
-    const assignees = [person(1), person(2), { id: other, displayName: "Mira Beck", avatarHash: null }];
+    const assignees = [person(1), person(2), { id: other, kind: "user" as const, displayName: "Mira Beck", avatarHash: null }];
     const assigned = stack({ assignees, claim: otherClaim, showNames: true });
     expect(assigned).toContain('title="Mira Beck, Person 1, Person 2"');
     expect(assigned).toContain(">Mira Beck, Person 1, Person 2</span>");

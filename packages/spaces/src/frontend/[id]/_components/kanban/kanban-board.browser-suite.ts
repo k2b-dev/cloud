@@ -7,7 +7,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceWormhole } from "@/contracts";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, keptThrough, launchBrowser } from "../../../../../../ui/test/browser";
 import type { KanbanBucketInitial } from "./types";
 
 // Where the board starts, whether the toolbar stays one row, and how a folded column takes a drop are
@@ -62,8 +62,8 @@ const item = (id: string, columnId: string, title: string, extra: Partial<SpaceI
   tags: [],
   ...extra,
 });
-const me = { id: "11111111-1111-4111-8111-111111111111", displayName: "Robin Example", avatarHash: null };
-const kim = { id: "22222222-2222-4222-8222-222222222222", displayName: "Kim Example", avatarHash: null };
+const me = { id: "11111111-1111-4111-8111-111111111111", kind: "user" as const, displayName: "Robin Example", avatarHash: null };
+const kim = { id: "22222222-2222-4222-8222-222222222222", kind: "user" as const, displayName: "Kim Example", avatarHash: null };
 const items = [
   item("Item01", "Col001", "Order banners for the spring fair", { assignees: [me], priority: "high" }),
   item("Item02", "Col001", "Ask the bakery about a stand"),
@@ -151,7 +151,8 @@ const wormhole: SpaceWormhole = {
   createdAt: "2026-09-20T10:00:00.000Z",
   updatedAt: "2026-09-20T10:00:00.000Z",
 };
-const assignedToMe = () => bucketsFor((entry) => entry.assignees?.some((assignee) => assignee.id === me.id) ?? false);
+const assignedToMe = () =>
+  bucketsFor((entry) => entry.assignees?.some((assignee) => assignee.kind === "user" && assignee.id === me.id) ?? false);
 
 const workspaceColumns: SpaceColumn[] = Array.from({ length: 8 }, (_, index) => ({
   ...columns[index % columns.length]!,
@@ -828,7 +829,7 @@ describe("Spaces Kanban board in a browser", () => {
       expect(moves).toEqual([]);
       expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("");
 
-      // The swipe runs first: the drop refreshes every column, and the refresh replaces the rows a later step would read.
+      // The swipe runs first: the drop moves this card to another column.
       const title = page.locator('[data-item-id="Item02"] p').first();
       const from = await center(title);
       const to = await center(page.locator('[data-spaces-kanban-column="column:Col002"] article').first());
@@ -855,7 +856,7 @@ describe("Spaces Kanban board in a browser", () => {
       await saved;
       expect(moves).toContainEqual(expect.objectContaining({ columnId: "Col002" }));
       await page.waitForSelector('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]');
-      // The drop refreshes every column and replaces its rows; a single read can land between two renders.
+      // The moved card ends its held press when it leaves the source column.
       await waitForLiftedCards(page, []);
       expect(await liftedCards(page)).toEqual([]);
     } finally {
@@ -863,31 +864,54 @@ describe("Spaces Kanban board in a browser", () => {
     }
   }, 30_000);
 
-  test("iPad landscape: refreshing a held card ends its press and lets the replacement scroll", async () => {
+  test("iPad landscape: a refresh keeps a held card's press until it leaves its column, then its new card scrolls", async () => {
+    claimedItem = null;
     const page = await open(iPadLandscape, { locale: "en" });
     try {
       moves.splice(0);
-      const card = page.locator('[data-item-id="Item02"]');
-      const oldCard = await card.elementHandle();
+      const card = page.locator('article:has([data-item-id="Item02"])');
       const title = card.locator("p").first();
       const from = await center(title);
+      const refresh = () =>
+        page.evaluate(async () => {
+          const coverage: Promise<void>[] = [];
+          window.dispatchEvent(
+            new CustomEvent("spaces-data-invalidated", {
+              detail: { domains: ["view"], cursor: null, itemId: null, cover: (promise: Promise<void>) => coverage.push(promise) },
+            }),
+          );
+          await Promise.all(coverage);
+        });
+
       await touchPointer(title, "pointerdown", 9, from);
       await waitForLiftedCards(page, ["Item02"]);
-      const refreshed = page.waitForResponse((response) => response.url().endsWith("/items/filter"));
-      await page.evaluate(() =>
-        window.dispatchEvent(
-          new CustomEvent("spaces-data-invalidated", { detail: { domains: ["view"], cursor: null, itemId: null, cover: () => undefined } }),
-        ),
-      );
-      await refreshed;
-      await page.waitForFunction((oldCard) => oldCard !== null && !oldCard.isConnected, oldCard);
-      expect(await card.count()).toBe(1);
-      expect(await liftedCards(page)).toEqual([]);
-      expect(await touchMovePrevented(title)).toBe(false);
+      expect(await keptThrough(card, refresh)).toEqual({ replaced: false, heightChange: 0 });
+      expect(await liftedCards(page)).toEqual(["Item02"]);
+      expect(await touchMovePrevented(title)).toBe(true);
       await touchPointer(title, "pointerup", 9, from);
+      await waitForLiftedCards(page, []);
       expect(moves).toEqual([]);
       expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
+
+      await touchPointer(title, "pointerdown", 10, from);
+      await waitForLiftedCards(page, ["Item02"]);
+      const moved = await keptThrough(card, async () => {
+        // The fixture override also models a card that someone else moved to another column.
+        claimedItem = { ...items[1]!, columnId: "Col002" };
+        await refresh();
+        await page.locator('[data-spaces-kanban-column="column:Col001"] [data-item-id="Item02"]').waitFor({ state: "detached" });
+        await page.locator('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]').waitFor();
+      });
+      expect(moved.replaced).toBe(true);
+      expect(await card.count()).toBe(1);
+      await waitForLiftedCards(page, []);
+      expect(await liftedCards(page)).toEqual([]);
+      expect(await touchMovePrevented(title)).toBe(false);
+      await touchPointer(title, "pointerup", 10, from);
+      expect(moves).toEqual([]);
+      expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item03"]);
     } finally {
+      claimedItem = null;
       await page.context().close();
     }
   }, 30_000);
@@ -2029,20 +2053,22 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
     }
   }, 30_000);
 
-  test("claiming a card refreshes its assigned avatar with one ring and keeps its height", async () => {
+  test("claiming a card refreshes its assigned avatar with one ring in the same card element and keeps its height", async () => {
     claimedItem = null;
     const page = await open(desktop, { locale: "en" });
     try {
       const card = page.locator("article", { has: page.locator('[data-spaces-kanban-card][data-item-id="Item01"]') });
-      const height = (await card.boundingBox())!.height;
       expect(await card.locator('[data-ring="success"]').count()).toBe(0);
-      await card.hover();
-      await card.getByRole("button", { name: "I'm on it", exact: true }).click();
-      await card.locator('[data-ring="success"]').waitFor();
+      expect(
+        await keptThrough(card, async () => {
+          await card.hover();
+          await card.getByRole("button", { name: "I'm on it", exact: true }).click();
+          await card.locator('[data-ring="success"]').waitFor();
+        }),
+      ).toEqual({ replaced: false, heightChange: 0 });
       expect(await card.locator('[data-ring="success"]').count()).toBe(1);
       expect(await card.getByRole("img", { name: "You're on it", exact: true }).count()).toBe(1);
       expect(await card.getByRole("img", { name: "Robin Example avatar", exact: true }).count()).toBe(0);
-      expect((await card.boundingBox())!.height).toBe(height);
     } finally {
       claimedItem = null;
       await page.context().close();

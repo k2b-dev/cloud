@@ -105,10 +105,13 @@ test.each([
 });
 
 test("shows the working assignee once, first, with one green ring", () => {
-  const mira = { id: "44444444-4444-4444-8444-444444444444", displayName: "Mira Beck", avatarHash: null };
+  const mira = { id: "44444444-4444-4444-8444-444444444444", kind: "user" as const, displayName: "Mira Beck", avatarHash: null };
   const html = renderRow(
     task({
-      assignees: [{ id: "33333333-3333-4333-8333-333333333333", displayName: "Valentin Kolb", avatarHash: null }, mira],
+      assignees: [
+        { id: "33333333-3333-4333-8333-333333333333", kind: "user" as const, displayName: "Valentin Kolb", avatarHash: null },
+        mira,
+      ],
       claim: {
         id: "55555555-5555-4555-8555-555555555555",
         actor: { kind: "user", id: mira.id },

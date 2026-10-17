@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
+import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { PulseDashboardSnapshot, PulsePublicDashboardMetricWidget } from "../contracts";
@@ -12,7 +13,7 @@ Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { PublicDashboardSections } = await import("./PublicDashboardSections");
 const dateContext = { timeZone: "UTC", locale: "en", firstDayOfWeek: 1, now: "2026-01-01T00:05:00.000Z" } as const;
-const render = (visual: PulsePublicDashboardMetricWidget["visual"]) => {
+const render = (visual: PulsePublicDashboardMetricWidget["visual"], locale = "en") => {
   const widget: PulsePublicDashboardMetricWidget = {
     id: "metric",
     kind: "metric",
@@ -46,7 +47,14 @@ const render = (visual: PulsePublicDashboardMetricWidget["visual"]) => {
     states: {},
     maps: {},
   };
-  return renderToString(() => createComponent(PublicDashboardSections, { snapshot, dateContext }));
+  return renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(PublicDashboardSections, { snapshot, dateContext: { ...dateContext, locale } });
+      },
+    }),
+  );
 };
 test("line dashboards render with explicit gaps", () => {
   expect(render("line")).toContain("<svg");
@@ -57,4 +65,10 @@ test("missing latest values never produce zero gauges", () => {
     expect(html).toContain("No points yet.");
     expect(html).not.toContain("<svg");
   }
+});
+
+test("public histograms localize the count axis in German", () => {
+  const html = render("histogram", "de");
+  expect(html).toMatch(/>Anzahl<\/text>/);
+  expect(html).not.toContain(">Count<");
 });

@@ -4,7 +4,7 @@ navTitle: JSON metadata upgrade
 section: Operations
 order: 1115
 tags: [database, maintenance, json]
-updated: 2026-09-15
+updated: 2026-10-17
 description: Understand automatic JSON metadata repairs and discarded legacy records during upgrade.
 ---
 
@@ -14,6 +14,9 @@ Older writers could store objects or arrays as JSON strings inside JSONB columns
 The corrected writers and application startup migrations handle the production
 upgrade from revision `9ab9ec45c614` (June 23, 2026). A separate repair command is
 not required for this upgrade.
+Current releases cannot upgrade Contacts directly from that revision; upgrade
+through Cloud v0.45.0 first, following the
+[Contacts short-ID upgrade path](/en/docs/reference/deprecations-and-migrations#contacts-requires-finished-short-ids).
 
 Before starting updated services, back up PostgreSQL and stop the old Core,
 application replicas, and background workers together. Start updated Core first,
