@@ -317,7 +317,18 @@ describe("Contacts detail panels", () => {
             companyName: "US Navy",
             jobTitle: "Rear admiral",
             parentContactId: "ada",
-            children: [],
+            children: [
+              {
+                id: "katherine",
+                label: null,
+                firstName: "Katherine",
+                lastName: "Johnson",
+                companyName: "NASA",
+                jobTitle: "Mathematician",
+                parentContactId: "grace",
+                children: [],
+              },
+            ],
           },
         ],
       },
@@ -331,6 +342,14 @@ describe("Contacts detail panels", () => {
     expect(html).toContain('class="k2b-detail-panel__header-icon"');
     expect(html).toContain('aria-label="Organization context"');
     expect(html).toContain("Grace Hopper");
+    expect(html).toContain("Katherine Johnson");
+    expect(html).not.toMatch(/(?<![\w-])border-[lt](?![\w-])/);
+    expect(html.match(/aria-current="true"/g)).toHaveLength(1);
+    const selectedButton = html.match(/<button\b[^>]*aria-current="true"[^>]*>([\s\S]*?)<\/button>/)?.[1];
+    expect(selectedButton).toContain("Grace Hopper");
+    expect(html.match(/<ul\b/g)).toHaveLength(3);
+    expect(html.match(/<ul class="[^"]*\bpl-9\b[^"]*"/g)).toHaveLength(2);
+    expect(html).toMatch(/<ul\b[^>]*>[\s\S]*<ul\b[^>]*>[\s\S]*<ul\b[^>]*>[\s\S]*<\/ul>[\s\S]*<\/ul>[\s\S]*<\/ul>/);
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
     for (const className of legacyDetailClasses) expect(html).not.toContain(className);
   });
