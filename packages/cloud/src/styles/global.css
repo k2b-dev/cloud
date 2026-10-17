@@ -393,9 +393,6 @@ solid-island {
        color. Built-in apps declare less. */
     --cloud-canvas-strength: min(var(--app-canvas-strength, 0%), 30%);
     --cloud-canvas-dark-strength: min(var(--app-canvas-dark-strength, 0%), 15%);
-    --cloud-tab-bar-height: 3.875rem;
-    --cloud-tab-bar-end: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
-    --cloud-tab-bar-space: calc(var(--cloud-tab-bar-end) + var(--cloud-tab-bar-height) + 0.75rem);
     height: 100dvh;
     overflow: hidden;
     padding-bottom: 0;
@@ -412,8 +409,6 @@ solid-island {
   .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
     overflow-x: hidden;
     overflow-y: auto;
-    padding-bottom: var(--cloud-tab-bar-space);
-    scroll-padding-bottom: var(--cloud-tab-bar-space);
     border-top: 1px solid transparent;
     border-radius: 1.75rem 1.75rem 0 0;
     background: var(--k2b-surface);
@@ -422,6 +417,22 @@ solid-island {
   /* Dark: a faint top edge keeps the card apart from the dark gradient. */
   .dark .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
     border-top-color: var(--k2b-border);
+  }
+}
+
+/* The bar and the room it takes switch with `md`, as the header and the rail
+   do, so Home stays reachable also where a larger default font size moves
+   that switch above 768 px. */
+.cloud-app-canvas[data-layout-authenticated] {
+  --cloud-tab-bar-height: 3.875rem;
+  --cloud-tab-bar-end: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+  --cloud-tab-bar-space: calc(var(--cloud-tab-bar-end) + var(--cloud-tab-bar-height) + 0.75rem);
+}
+
+@media not all and (min-width: 48rem) {
+  .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
+    padding-bottom: var(--cloud-tab-bar-space);
+    scroll-padding-bottom: var(--cloud-tab-bar-space);
   }
   .cloud-app-canvas[data-layout-authenticated] > .cloud-tab-bar {
     position: fixed;

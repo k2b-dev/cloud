@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { dropdownPosition } from "@k2b/ui";
 import type { Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { browserName, launchBrowser } from "../../../ui/test/browser";
 import {
   attach,
   cardInset,
@@ -1150,6 +1150,26 @@ describe("soft tablet and phone shell", () => {
       );
       await page.locator('.cloud-tab-bar a[href="/app/amber"]').click();
       expect(await page.locator("body").getAttribute("data-click-prevented")).toBe("false");
+    } finally {
+      await context.close();
+    }
+  });
+
+  // The header and the rail switch with `md` (48rem); the bar must switch with them, so a larger default font size,
+  // which moves that switch above 768 px, leaves Home reachable. Chromium alone can set the default font size.
+  test.skipIf(browserName === "webkit")("a 20 px default font size keeps Home reachable up to the md switch", async () => {
+    const { context, page } = await open({ name: "large font", width: 800, height: 900, touch: false }, "/app/mail/inbox?overview=1");
+    try {
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Page.setFontSizes", { fontSizes: { standard: 20 } });
+      await page.setContent(await html("/app/mail/inbox?overview=1"));
+      const shell = await page.evaluate(() => ({
+        rail: getComputedStyle(document.querySelector(".layout-rail")!).display,
+        header: getComputedStyle(document.querySelector(".layout-header")!).display,
+        home: !!document.querySelector<HTMLElement>('.cloud-tab-bar a[href="/"]')?.checkVisibility(),
+        mainPadding: Number.parseFloat(getComputedStyle(document.querySelector(".layout-content-main")!).paddingBottom),
+      }));
+      expect(shell).toEqual({ rail: "none", header: "flex", home: true, mainPadding: 8 + 62 + 12 });
     } finally {
       await context.close();
     }
