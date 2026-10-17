@@ -25,6 +25,7 @@ export {
   cloudAiChartRenderOptions,
   cloudAiChartRows,
   cloudAiChartTable,
+  cloudAiChartTooltip,
   cloudAiChartXValueFormat,
   cloudAiNumberFormatters,
 } from "./chart-block";

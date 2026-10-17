@@ -9,7 +9,6 @@ import {
 } from "@k2b/ui";
 import { createMemo, createUniqueId, Index, type JSX, Show } from "solid-js";
 import {
-  type CloudAiChartColumn,
   type CloudAiChartRow,
   type CloudAiChartTable,
   cloudAiChartLegend,
@@ -17,20 +16,12 @@ import {
   cloudAiChartReferenceMark,
   cloudAiChartRenderOptions,
   cloudAiChartRows,
+  cloudAiChartTooltip,
   cloudAiChartXValueFormat,
 } from "../chart-block";
 import type { CloudAiChartInput } from "../default-tool-contracts";
 import { type CloudAiGroupView, parseCloudAiChartToolView } from "../view-block";
 import { aiChatMessages } from "./messages";
-
-const tooltip = (columns: CloudAiChartColumn[], row: CloudAiChartRow) => {
-  const [first, ...rest] = columns;
-  const named = first && !first.numeric;
-  return {
-    title: named ? row.cells[first.id] : undefined,
-    rows: (named ? rest : columns).map((column) => ({ label: column.label, value: row.cells[column.id] ?? "" })),
-  };
-};
 
 type Kind = CloudAiChartInput["kind"];
 type DrawnChart = { input: CloudAiChartInput; table: CloudAiChartTable; snapshot: ChartSnapshot; legend: ChartLegendEntry[] };
@@ -44,7 +35,7 @@ const drawChart = (input: CloudAiChartInput, locale: string): DrawnChart | null 
       key: ({ datum }) => cloudAiChartMarkKey(datum),
       tooltip: ({ datum }) => {
         const row = rows.add(datum);
-        return tooltip(rows.columns(), row);
+        return cloudAiChartTooltip(rows.columns(), row);
       },
       reference: ({ datum }) => cloudAiChartReferenceMark(input, datum),
     });

@@ -201,6 +201,14 @@ Date x axes take `{date: "day" | "minute" | "second"}`. With `showValues` on
 bars, y ticks use the value format. Pie and donut slices show shares, so their
 format applies to the values in tooltips and the data table.
 
+Every chart kind accepts `tooltip: {label?, format?}`; groups do not. `label`
+names the numeric value or y column in the data table and tooltips, ahead of
+an axis label. `format` takes the number format above, without date
+formats, and overrides value cells and tooltips. Counts, shares, x values and
+axis ticks keep their own formats. For example,
+`tooltip: {label: "Umsatz", format: {style: "currency", currency: "EUR"}}`
+shows `1.200,00 €` for 1200 in German. A kind's `unit` remains appended.
+
 `references` holds at most 8 `{value, axis?, label?}` lines, defaulting to y.
 Only line, scatter and histogram accept x references. Reference values match
 the axis type; automatic domains include them, and explicit domains must contain

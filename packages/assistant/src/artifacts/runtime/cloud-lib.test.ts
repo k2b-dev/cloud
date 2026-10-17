@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createCloud } from "./cloud";
+import { CloudError } from "./errors";
 import { boundMoney, chart, chartOptions, chartSvg, html } from "./lib";
 import { parseCsv, toCsv } from "./sheet-lib";
 
@@ -440,4 +441,14 @@ test("an app stat shows its title like every other kind", () => {
   const markup = String(chart({ kind: "stat", title: "Revenue", subtitle: "EUR", value: 12, delta: 2, better: "up" }, "en"));
   expect(markup).toContain(">Revenue</text>");
   expect(markup).toContain('aria-label="Revenue — EUR"');
+});
+
+test("cloud.chart preserves shared tooltip data and rejects unknown tooltip keys", () => {
+  const tooltip = { label: "Umsatz", format: { style: "currency" as const, currency: "EUR" } };
+  const options = { kind: "bar", data: [{ label: "Jan", value: 1200 }], tooltip };
+  const markup = String(chart(options, "de-DE"));
+  const id = /data-chart-id="([^"]+)"/.exec(markup)?.[1];
+  expect(chartOptions.get(id ?? "")?.input).toMatchObject({ tooltip });
+  expect(() => chart({ ...options, tooltip: { ...tooltip, unknown: true } }, "de-DE")).toThrow(CloudError);
+  expect(() => chart({ ...options, tooltip: { ...tooltip, unknown: true } }, "de-DE")).toThrow(/tooltip/);
 });
