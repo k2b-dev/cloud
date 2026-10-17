@@ -53,7 +53,7 @@ export type CloudCommandMenuOptions = {
   commands: readonly CloudComposerCommand[];
   state: CloudComposerCatalogState;
   section?: string;
-  before: (draft: ChatCommandDraft) => Promise<void>;
+  before: (draft: ChatCommandDraft, signal: AbortSignal) => Promise<void>;
   returnTo: () => string | undefined;
   /** See `OpenComposerCommandOptions.signal`. */
   signal?: () => AbortSignal | undefined;
@@ -93,7 +93,7 @@ export const cloudCommandMenu = (options: CloudCommandMenuOptions): CloudCommand
       // The composer's signal aborts when the person closes the list; the opener's, when it leaves the chat.
       open: (draft, closed) =>
         openComposerCommand(command, {
-          before: () => options.before(draft),
+          before: () => options.before(draft, closed),
           returnTo: options.returnTo,
           signal: () => {
             const left = options.signal?.();

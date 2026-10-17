@@ -88,8 +88,8 @@ test("rejects external, malformed, or overlong return paths after saving", async
   expect(openCommand).not.toHaveBeenCalled();
 });
 
-test("menu rows carry localized presentation and forward the token-free draft", async () => {
-  const before = mock(async (_draft: ChatCommandDraft) => {});
+test("menu rows carry localized presentation and forward the token-free draft and composer signal", async () => {
+  const before = mock(async (_draft: ChatCommandDraft, _signal: AbortSignal) => {});
   const menu = cloudCommandMenu({ ...options(), commands: [command], state: "ready", section: "apps", before });
   expect(menu.pending).toBe(false);
   expect(menu.commands[0]).toMatchObject({
@@ -103,8 +103,9 @@ test("menu rows carry localized presentation and forward the token-free draft", 
     keywords: ["Neue Aufgabe", "task", "Aufgabe", "Spaces", "Eine Aufgabe öffnen."],
   });
   const draft = { value: "Plan ", mentions: [] };
-  await menu.commands[0]!.open!(draft, new AbortController().signal);
-  expect(before).toHaveBeenCalledWith(draft);
+  const signal = new AbortController().signal;
+  await menu.commands[0]!.open!(draft, signal);
+  expect(before).toHaveBeenCalledWith(draft, signal);
 });
 
 test("closing the list aborts a menu row's opening, alone or together with the opener's signal", async () => {

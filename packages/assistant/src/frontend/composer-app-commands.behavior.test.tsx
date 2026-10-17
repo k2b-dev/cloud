@@ -342,6 +342,31 @@ test("a plain new chat creates its target before saving and keeps the saved draf
   );
 });
 
+test("cancelling an app Command while a plain chat is being created preserves later edits", async () => {
+  let release!: () => void;
+  const createGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const h = await mount({ newChat: true, createGate });
+  h.choose();
+  await waitFor(() => h.creates.length === 1);
+  expect(h.input.readOnly).toBe(true);
+  h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await waitFor(() => !h.input.readOnly);
+  expect(h.input.disabled).toBe(false);
+  batch(() => {
+    h.input.value = "New edits after cancel";
+    h.input.setSelectionRange(h.input.value.length, h.input.value.length);
+    h.input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  release();
+  await waitFor(() => h.saves.length === 1);
+  await Bun.sleep(50);
+  expect(h.root.querySelector("textarea")?.value).toBe("New edits after cancel");
+  expect(h.saves).toEqual([{ expectedRevision: 0, content: [{ type: "text", text: "New edits after cancel" }] }]);
+  expect(openCommand).not.toHaveBeenCalled();
+});
+
 test("an unreachable app from a plain new chat names the failure in the status line of the chat it created", async () => {
   openCommand.mockRejectedValueOnce(new Error("Offline"));
   const h = await mount({ newChat: true });

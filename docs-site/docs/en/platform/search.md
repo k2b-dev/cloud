@@ -513,10 +513,12 @@ fresh shared load and returns to `"loading"`.
 Use `cloudCommandMenu` from the same import to build **Open in apps** rows.
 Pass its `pending` to the last section: three placeholders reserve its end in
 the overview, one while searching. The failed catalog offers a persistent
-retry row that starts another opening. The row's `before(draft)` must save
+retry row that starts another opening. The row's `before(draft, signal)` must save
 `draft.value` and `draft.mentions`, which already leave out `/…`, together with
 the attachments, through your revisioned draft path. Read `returnTo()` after
-saving, so a newly created chat can supply its path.
+saving, so a newly created chat can supply its path. The signal comes from the
+composer and aborts when the person closes the list. If `before` creates a chat
+first, preserve later edits once that signal aborts.
 
 `openComposerCommand(command, { before, returnTo, signal, locale })` provides
 the same save-then-open behavior for a custom row. A rejected `before()` reaches

@@ -1420,6 +1420,7 @@ export default function AssistantWorkspace(props: Props) {
     const composerRunning = () => !projectComposer() && chat.running();
     const catalog = createCloudComposerCatalog();
     let commandTarget: string | undefined;
+    const [commandCreating, setCommandCreating] = createSignal(false);
     // One app opening at a time; it ends when this composer goes away or the person moves to another chat, so a late
     // answer never navigates over where they are now.
     let commandOpening: { controller: AbortController; key?: string } | undefined;
@@ -1430,7 +1431,8 @@ export default function AssistantWorkspace(props: Props) {
     });
     // Saves the draft without its "/…" before an app opens, through the revisioned path, with references and
     // attachments. A chat that does not exist yet is created first, as "Assign project" and dictation do.
-    const beforeCommand = async (draft: { value: string; mentions: readonly ChatMention[] }) => {
+    const beforeCommand = async (draft: { value: string; mentions: readonly ChatMention[] }, signal: AbortSignal) => {
+      if (signal.aborted) return;
       let key = sessionKey();
       // A draft already in conflict says so; the conflict notice offers the way out.
       if (session(key).conflict) throw new Error(commandCopy().commandDraftConflict);
@@ -1444,26 +1446,38 @@ export default function AssistantWorkspace(props: Props) {
           // The new chat starts with the draft as it is saved, without "/…": its key changes, so the composer cannot
           // take the token out there itself.
           const attachments = composerAttachmentsFor(key);
-          const created = await createConversation(false, projectId, projectId ? false : () => !opening.controller.signal.aborted);
+          setCommandCreating(true);
+          const created = await createConversation(false, projectId, projectId ? false : () => !opening.controller.signal.aborted).finally(
+            () => setCommandCreating(false),
+          );
           if (!created) throw new Error("Chat not created");
           target = created.id;
           if (projectId) {
             session(key).baseRevision = created.draft.revision;
             setPendingProjectChats((all) => ({ ...all, [projectId]: created }));
           } else {
+            const from = key;
             key = created.id;
-            setComposerDraft(key, draft.value);
-            setComposerAttachmentsFor(key, attachments);
-            setMentionsFor(key, draft.mentions);
+            if (signal.aborted) {
+              setComposerDraft(key, composerDraft(from));
+              setComposerAttachmentsFor(key, composerAttachmentsFor(from));
+              setMentionsFor(key, mentionsFor(from));
+            } else {
+              setComposerDraft(key, draft.value);
+              setComposerAttachmentsFor(key, attachments);
+              setMentionsFor(key, draft.mentions);
+            }
             session(key).baseRevision = created.draft.revision;
           }
         }
         const opened = key;
+        // Once the person cancelled, they may have edited since choosing, also in a project composer: save the live draft.
+        const override = signal.aborted ? undefined : { text: draft.value, mentions: draft.mentions };
         // A failed save answers null for a revision conflict and for any other failure alike; a conflict also
         // shows the composer's conflict notice.
-        if (!(await saveComposer(key, target, { text: draft.value, mentions: draft.mentions }))) throw new Error("Draft not saved");
+        if (!(await saveComposer(key, target, override))) throw new Error("Draft not saved");
         // This composer went away meanwhile, such as for Approvals: the opening just ends.
-        if (opening.controller.signal.aborted) return;
+        if (signal.aborted || opening.controller.signal.aborted) return;
         // The person moved to another chat while it saved: the app does not open over that one.
         if (sessionKey() !== opened) {
           opening.controller.abort();
@@ -1486,7 +1500,7 @@ export default function AssistantWorkspace(props: Props) {
         commands: catalog.commands(),
         state: catalog.state(),
         section: "apps",
-        before: (draft) => trackComposerPicking(beforeCommand(draft)),
+        before: (draft, signal) => trackComposerPicking(beforeCommand(draft, signal)),
         returnTo: () => (commandTarget ? assistantConversationHref(window.location.href, commandTarget) : undefined),
         signal: () => commandOpening?.controller.signal,
       }),
@@ -1738,7 +1752,7 @@ export default function AssistantWorkspace(props: Props) {
               onRefresh={quotas.refresh}
             />
           }
-          disabled={!canUseComposer() || newConversation.loading() || chat.loadingConversation()}
+          disabled={!canUseComposer() || (newConversation.loading() && !commandCreating()) || chat.loadingConversation()}
           state={
             projectComposer()
               ? newConversation.loading()
