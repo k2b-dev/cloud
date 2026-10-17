@@ -92,13 +92,6 @@
 .k2b-ui .k2b-avatar[data-size="xl"] { width: 5rem; height: 5rem; font-size: 1.25rem; }
 /* Agents and service accounts: the same tint and size, with square corners. */
 .k2b-ui .k2b-avatar[data-shape="square"] { border-radius: 28%; }
-/* Initials stay readable in dark mode: a stronger tint behind lighter text. */
-.k2b-ui[data-theme="dark"] .k2b-avatar,
-.k2b-ui.k2b-dark .k2b-avatar,
-.dark .k2b-ui .k2b-avatar {
-  color: color-mix(in srgb, var(--k2b-avatar-hue, var(--k2b-neutral-500)) 35%, var(--k2b-text));
-  background: color-mix(in srgb, var(--k2b-avatar-hue, var(--k2b-neutral-500)) 50%, var(--k2b-surface));
-}
 /* A status ring lies inside the avatar's own border box: the border is the ring, the
  * padding a transparent gap, and the face fills the content box. The avatar keeps
  * its size when the ring comes and goes, and a scrolling or clipping ancestor
