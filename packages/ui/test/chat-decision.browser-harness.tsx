@@ -21,6 +21,7 @@ declare global {
     __request: () => void;
     __reopen: () => void;
     __sendFailed: () => void;
+    __expireSlow: () => void;
   }
 }
 
@@ -50,6 +51,10 @@ function Fixture() {
   window.__fail = () => {
     setCurrent("failed");
     setState("decided");
+  };
+  window.__expireSlow = () => {
+    setCurrent("expiredSlow");
+    setState("expired");
   };
   window.__expire = () => {
     setCurrent("expired");
@@ -106,6 +111,21 @@ function Fixture() {
     },
     retrying: { tone: "running", text: "Sending the request again." },
     retried: { tone: "waiting", text: "Asked the managers again." },
+    // A reopen that loads first passes through `sending` before the question opens again.
+    expiredSlow: {
+      tone: "off",
+      text: "This question expired.",
+      icon: "ti ti-clock-x",
+      action: {
+        label: "Load and ask again",
+        onSelect: async () => {
+          setCurrent("running");
+          setState("sending");
+          await new Promise((settle) => setTimeout(settle, 150));
+          setState("open");
+        },
+      },
+    },
     expired: {
       tone: "off",
       text: "This question expired.",

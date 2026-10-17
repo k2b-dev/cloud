@@ -306,3 +306,22 @@ test("a question the host returns from sending to open gives the focus back to i
     await page.close();
   }
 });
+
+test("a reopen that passes through sending still returns the focus to the sentence", async () => {
+  const page = await open();
+  try {
+    await page.evaluate(() => window.__expireSlow());
+    await page.getByRole("button", { name: "Load and ask again", exact: true }).click();
+    expect(await page.locator(".k2b-chat-decision").first().getAttribute("data-state")).toBe("sending");
+    await page.waitForFunction(() => document.querySelector(".k2b-chat-decision")?.getAttribute("data-state") === "open");
+    expect(
+      await page
+        .locator(".k2b-chat-decision")
+        .first()
+        .locator(".k2b-chat-decision__sentence")
+        .evaluate((e) => e === document.activeElement),
+    ).toBe(true);
+  } finally {
+    await page.close();
+  }
+});

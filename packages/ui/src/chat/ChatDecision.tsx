@@ -122,8 +122,9 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
             sentence?.focus({ preventScroll: true });
             setArrive(true);
           }
+          // Handled. Until then the marker holds through states in between, such as `sending` while a reopen loads.
+          reopenedHere = false;
         }
-        reopenedHere = false;
       },
     ),
   );
