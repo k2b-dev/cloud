@@ -37,6 +37,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout
       c={c}
+      printHint={t.printHint}
       fullPage
       workspaceSidebarCollapsible={false}
       title={[

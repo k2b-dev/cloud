@@ -52,6 +52,8 @@ export default function BookController(props: Props) {
       );
       if (!response.ok) {
         if ([401, 403, 404].includes(response.status) && !abortSignal.aborted && !pending?.settled) {
+          article?.removeAttribute("data-print-region");
+          document.getElementById("notebook-book-history-warning")?.removeAttribute("data-print-region");
           article?.replaceChildren();
           window.location.assign(pending?.href ?? window.location.href);
         }
@@ -104,9 +106,14 @@ export default function BookController(props: Props) {
     // This string is produced only by the permission-aware server renderer.
     if (html !== null) article.innerHTML = html;
     else article.textContent = metadata.tree.length ? t().selectNote : t().empty;
+    article.toggleAttribute("data-print-region", html !== null);
     article.setAttribute("aria-label", metadata.title ?? metadata.notebookName);
     const historyWarning = document.getElementById("notebook-book-history-warning");
-    if (historyWarning) historyWarning.hidden = !metadata.historyIncomplete;
+    if (historyWarning) {
+      historyWarning.hidden = !metadata.historyIncomplete;
+      // The warning prints with the note it qualifies, never on its own.
+      historyWarning.toggleAttribute("data-print-region", html !== null && metadata.historyIncomplete);
+    }
     const heading = document.getElementById("notebook-book-name");
     if (heading) heading.textContent = metadata.notebookName;
     document.title = metadata.title ? `${metadata.title} · ${metadata.notebookName}` : metadata.notebookName;

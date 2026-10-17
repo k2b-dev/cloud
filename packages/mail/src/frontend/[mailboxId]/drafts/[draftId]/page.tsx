@@ -36,7 +36,11 @@ export default ssr<AuthContext>(async (c) => {
     { label: "Bcc", value: addressList(draft.bcc) },
   ].filter((row) => row.value);
   return () => (
-    <Layout c={c} title={[{ title: t.breadcrumbMail, href: `/app/mail/${encodeURIComponent(mailboxShortId)}` }, { title: subject }]}>
+    <Layout
+      c={c}
+      printHint={t.printHint}
+      title={[{ title: t.breadcrumbMail, href: `/app/mail/${encodeURIComponent(mailboxShortId)}` }, { title: subject }]}
+    >
       <article class="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4">
         {/* The shell's page title already shows the subject. */}
         <p class="flex items-center gap-2 text-xs font-medium text-dimmed">

@@ -20,6 +20,7 @@ import { orderBookTree } from "../../../../lib/book-tree";
 import { resolvePresentationMode } from "../../../../lib/presentation-mode";
 import { requestedPresentationMode, withPresentationMode } from "../../../../lib/presentation-url";
 import { parseSidebarFilter } from "../../../../lib/sidebar-filter";
+import { notebooksPageMessages } from "../../../messages";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
 import BookSurface from "../../_components/book/BookSurface";
 import BookTagContent from "../../_components/book/BookTagContent";
@@ -41,6 +42,7 @@ const parsePage = (raw: string | undefined): number => {
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const t = notebookWorkspaceMessages.resolve([locale]).t;
+  const printHint = notebooksPageMessages.resolve([locale]).t.printHint;
   const formatDate = (iso: string): string => new Intl.DateTimeFormat(locale).format(new Date(iso));
   const user = expectUserBackedActor(c);
   const notebookShortId = c.req.param("id")!;
@@ -135,7 +137,7 @@ export default ssr<AuthContext>(async (c) => {
       />
     ));
     return () => (
-      <Layout c={c} fullPage fullWidth title={notebook.name}>
+      <Layout printHint={printHint} c={c} fullPage fullWidth title={notebook.name}>
         <RememberNotebook notebookId={notebook.shortId} />
         <BookSurface
           userId={ctx.userId}
@@ -233,6 +235,7 @@ export default ssr<AuthContext>(async (c) => {
   );
   return () => (
     <Layout
+      printHint={printHint}
       c={c}
       fullPage
       title={[

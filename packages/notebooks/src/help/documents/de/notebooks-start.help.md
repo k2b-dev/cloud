@@ -44,3 +44,9 @@ Notizbücher sind Arbeitsbereiche für Wissen in Markdown. Dein Text bleibt zuer
 - **Kleine Daten pflegen:** Nutze Markdown-Tabellen und benannte Blöcke für kleine Datenbestände, die neben ihren Text gehören.
 - **Verzeichnis erstellen:** Frage Notizen nach Tags und eigenen benannten Daten ab. Ergebnisse aktualisieren sich nach gespeicherten Änderungen und führen keinen Code aus.
 :::
+
+## Eine offene Notiz drucken {icon="printer"}
+
+Mit **Cmd/Strg+P** druckst du die offene Notiz wie in der Buchansicht, ohne Editor und Seitenpanel. Diagramme erscheinen wie gezeichnet; Abfragen als ihre Definition.
+
+Für die Druckstile **Dokument**, **Bericht**, **Kompakt** und **Eigenes CSS** nutze **PDF herunterladen** in den Details der Notiz.

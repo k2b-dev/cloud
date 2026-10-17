@@ -77,6 +77,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout
       c={c}
+      printHint={t.printHint}
       fullPage
       focusMode
       flushCanvas={popout}

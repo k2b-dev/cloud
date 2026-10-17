@@ -19,6 +19,7 @@
     "!src/**/*.test.tsx",
     "!src/**/*.integration.test.ts",
     "!src/**/*.test-fixture.ts",
+    "!src/**/*.test-fixture.tsx",
     "!scripts/**/*.test.ts",
     "!scripts/runtime-recovery-*.ts"
   ],

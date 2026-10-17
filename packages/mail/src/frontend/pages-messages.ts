@@ -5,6 +5,7 @@ export const mailPageMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      printHint: "To print a conversation, open it and choose More conversation actions › Print conversation.",
       breadcrumbStart: "Start",
       breadcrumbMail: "Mail",
       breadcrumbAutomations: "Automations",
@@ -136,6 +137,7 @@ export const mailPageMessages = i18n.define({
       findingIdentityExplanation: "This protected identity normally sends from another domain.",
     },
     de: {
+      printHint: "Um eine Unterhaltung zu drucken, öffne sie und wähle Weitere Unterhaltungsaktionen › Unterhaltung drucken.",
       breadcrumbStart: "Start",
       breadcrumbMail: "Mail",
       breadcrumbAutomations: "Automatisierungen",

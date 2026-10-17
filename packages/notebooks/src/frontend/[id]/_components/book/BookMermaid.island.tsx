@@ -1,6 +1,7 @@
 import { mermaidConfig } from "@k2b/cloud/browser/mermaid";
 import { useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
+import { renderMermaid } from "../../../lib/mermaid-render";
 import { enhanceBookMermaid } from "./book-mermaid";
 import { BOOK_CONTENT_EVENT } from "./book-state";
 import { bookMessages } from "./messages";
@@ -33,7 +34,7 @@ export default function BookMermaid(props: { rootId: string }) {
         return;
       }
       // SVG images cannot render HTML labels.
-      mermaid.initialize({ ...mermaidConfig({ dark: isDark }), htmlLabels: false });
+      const config = { ...mermaidConfig({ dark: isDark }), htmlLabels: false };
       await enhanceBookMermaid(
         root,
         async (source, id) => {
@@ -45,7 +46,7 @@ export default function BookMermaid(props: { rootId: string }) {
           const remove = () => scratch.remove();
           controller.signal.addEventListener("abort", remove, { once: true });
           try {
-            return (await mermaid.render(id, source, scratch)).svg;
+            return (await renderMermaid(mermaid, config, id, source, scratch)).svg;
           } finally {
             controller.signal.removeEventListener("abort", remove);
             remove();

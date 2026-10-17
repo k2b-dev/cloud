@@ -41,7 +41,7 @@ export const makeLegalPage = (kind: LegalKind) =>
 
     return () => (
       <Layout c={c} title={title}>
-        <div class="container max-w-3xl p-4 sm:p-8">
+        <div class="container max-w-3xl p-4 sm:p-8" data-print-region="">
           <h1 class="text-xl font-bold mb-4">{title}</h1>
           {html ? (
             <MarkdownView trustedHtml={html} />

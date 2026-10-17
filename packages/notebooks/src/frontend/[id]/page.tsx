@@ -32,7 +32,7 @@ export default ssr<AuthContext>(async (c) => {
   if (data.isBookMode) {
     c.get("page").title = data.selectedNote?.title ?? data.notebook.name;
     return () => (
-      <Layout c={c} fullPage fullWidth title={data.notebook.name}>
+      <Layout printHint={t.printHint} c={c} fullPage fullWidth title={data.notebook.name}>
         <RememberNotebook notebookId={data.notebook.id} />
         <BookSurface
           userId={data.ctx.userId}
@@ -85,6 +85,7 @@ export default ssr<AuthContext>(async (c) => {
   const editorOwnsWorkspaceSocket = !!selectedNote && !isVersionsMode && !isGraphMode && !readonlyMode;
   return () => (
     <Layout
+      printHint={t.printHint}
       c={c}
       fullPage
       title={[

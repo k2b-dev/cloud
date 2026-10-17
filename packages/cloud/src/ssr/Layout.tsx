@@ -40,6 +40,8 @@ type LayoutProps = {
   fullWidth?: boolean /** Delegate scrolling and clipping to the page's work surface. */;
   focusMode?: boolean /** Render only the app canvas and content for dedicated editors or pop-out windows. */;
   flushCanvas?: boolean /** Remove app-canvas spacing for edge-to-edge focus surfaces such as pop-out windows. */;
+  /** Final localized app-specific export or printing guidance, shown when no data-print-region exists. */
+  printHint?: string;
   workspaceSidebarCollapsible?: boolean /** Resolve persisted sidebar geometry for the page's sidebar policy during SSR. */;
 }; // ==========================
 // Helpers
@@ -235,6 +237,10 @@ export default function Layout(props: LayoutProps) {
               <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
             </main>
           </PageTrailProvider>
+          <div data-print-fallback="">
+            <p>{t.printFallbackTitle}</p>
+            <p>{props.printHint ?? t.printFallbackHint}</p>
+          </div>
         </div>
       </LocaleProvider>
     );
@@ -292,6 +298,10 @@ export default function Layout(props: LayoutProps) {
             {!fullPage && !showRail && <LayoutFooter appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />}
           </div>
         </ShellDataProvider>
+        <div data-print-fallback="">
+          <p>{t.printFallbackTitle}</p>
+          <p>{props.printHint ?? t.printFallbackHint}</p>
+        </div>
       </div>
     </LocaleProvider>
   );

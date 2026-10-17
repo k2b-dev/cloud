@@ -776,21 +776,30 @@ test.skipIf(isServer)("message display actions toggle colors on the same frame a
   }
 });
 
-test.skipIf(isServer)("printing uses original HTML colors and restores dark mode afterward", async () => {
+test.skipIf(isServer)("printing marks the complete conversation as a region and restores dark mode afterward", async () => {
   const dom = createDomTestHarness();
   const { MailConversationReader } = modules!;
-  const print = spyOn(window, "print").mockImplementation(() => {});
+  const print = spyOn(window, "print").mockImplementation(() => {
+    expect(dom.root.querySelector("[data-mail-print-root]")?.hasAttribute("data-print-region")).toBe(true);
+    expect(dom.root.querySelectorAll("iframe")).toHaveLength(2);
+  });
   const dispose = render(
     () =>
       createComponent(MailConversationReader, {
         ...readerProps,
         theme: "dark",
         readingFormat: "automatic",
-        messages: [{ ...envelopeOnly, hydrationStatus: "complete", plainText: "", sanitizedHtml: "<p>HTML message</p>" }],
+        messages: [
+          { ...envelopeOnly, hydrationStatus: "complete", plainText: "", sanitizedHtml: "<p>HTML message</p>" },
+          { ...envelopeOnly, id: "Msg002", hydrationStatus: "complete", plainText: "", sanitizedHtml: "<p>Another message</p>" },
+        ],
       }),
     dom.root,
   );
   try {
+    const reader = dom.root.querySelector("[data-mail-print-root]")!;
+    expect(reader.hasAttribute("data-print-region")).toBe(false);
+    expect(dom.root.querySelectorAll("iframe")).toHaveLength(1);
     const frame = dom.root.querySelector("iframe")!;
     expect(frame.classList.contains("bg-transparent")).toBe(true);
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="More conversation actions"]')!.click();
@@ -807,6 +816,8 @@ test.skipIf(isServer)("printing uses original HTML colors and restores dark mode
     await waitFor(() => frame.classList.contains("bg-transparent"));
     expect(frame.classList.contains("bg-white")).toBe(false);
     expect(dom.root.querySelector("iframe")).toBe(frame);
+    expect(dom.root.querySelectorAll("iframe")).toHaveLength(1);
+    expect(reader.hasAttribute("data-print-region")).toBe(false);
   } finally {
     dispose();
     print.mockRestore();
