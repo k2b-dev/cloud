@@ -189,6 +189,7 @@ suite("Admin credential matrix", () => {
         userId,
         client: cli,
         scopes,
+        expiresAt: new Date(Date.now() + refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
       });
       const exchanged = await oauthRoutes.request("/oauth/token", {
         method: "POST",

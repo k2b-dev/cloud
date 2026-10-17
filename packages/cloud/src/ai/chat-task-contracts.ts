@@ -9,8 +9,8 @@ import { normalizeWorkflowSchedule } from "../workflows/runtime";
 import type { AiChatTask, AiChatTaskOccurrence, AiChatTaskOccurrenceState, AiChatTaskSchedule, AiChatTaskState } from "./chat-tasks";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 
-export const ChatTaskIdSchema = z.string().regex(AI_SHORT_ID_PATTERN).describe("Readable six-character scheduled task ID.");
-export const ChatTaskOccurrenceIdSchema = z.string().regex(AI_SHORT_ID_PATTERN).describe("Readable six-character task occurrence ID.");
+export const ChatTaskIdSchema = z.string().regex(AI_SHORT_ID_PATTERN).describe("Readable six-character routine ID.");
+export const ChatTaskOccurrenceIdSchema = z.string().regex(AI_SHORT_ID_PATTERN).describe("Readable six-character routine run ID.");
 export const AiConversationIdSchema = z.string().regex(AI_SHORT_ID_PATTERN).describe("Readable six-character AI conversation ID.");
 
 export type AiChatTaskView = {

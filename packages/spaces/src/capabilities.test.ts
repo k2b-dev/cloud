@@ -84,6 +84,8 @@ test("declares remembered approval for bounded Space changes", () => {
     "item.reference.add",
     "item.reference.remove",
     "item.tags.set",
+    "reaction.add",
+    "reaction.remove",
     "task.blocker.add",
     "task.blocker.remove",
     "task.checklist.create",
@@ -385,7 +387,12 @@ test("task list fits escaped maximum previews without skipping rows", async () =
       ...task,
       title: "\u0001".repeat(200),
       description: "\u0001".repeat(1000),
-      assignees: Array.from({ length: 11 }, () => ({ id: userId, displayName: "\u0001".repeat(100), avatarHash: null })),
+      assignees: Array.from({ length: 11 }, () => ({
+        id: userId,
+        kind: "user" as const,
+        displayName: "\u0001".repeat(100),
+        avatarHash: null,
+      })),
     })),
     page: 1,
     pageSize: 100,
@@ -403,6 +410,84 @@ test("task list fits escaped maximum previews without skipping rows", async () =
   expect(capabilityResultSchema(TaskListDataSchema).safeParse(result.data).success).toBeTrue();
 });
 
+test("item.read and reaction actions bound reactor names within the result budget", async () => {
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+  // Profile names may hold 5,000 bytes; three of them on each of 20 emoji exceed the budget unbounded.
+  const people = Array.from({ length: 3 }, () => ({ kind: "user" as const, id: userId, displayName: "\u0001".repeat(5000) }));
+  const reactions = Array.from({ length: 20 }, (_, index) => ({
+    emoji: String.fromCodePoint(0x1f600 + index),
+    count: 4,
+    own: true,
+    people,
+  }));
+  spyOn(spacesService.item, "get").mockResolvedValue({ ...task, reactions });
+  spyOn(spacesService.item.reactions, "add").mockResolvedValue({ ok: true, data: { reactions } });
+  const read = await spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext);
+  const added = await spacesCapabilities.actions["reaction.add"].run({ itemId, emoji: "👍" }, userContext);
+  for (const [result, schema] of [
+    [read, spacesCapabilities.queries["item.read"].data],
+    [added, spacesCapabilities.actions["reaction.add"].data],
+  ] as const) {
+    if (!result.ok) throw new Error("Expected a bounded result");
+    expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+    expect(capabilityResultSchema(schema).safeParse(result.data).success).toBeTrue();
+  }
+  if (read.ok) expect(read.data.data).toMatchObject({ relationsTruncated: true });
+});
+
+test("item.read of a fully populated task keeps reaction counts within the result budget", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  const escaped = (length: number) => "\u0001".repeat(length);
+  const people = Array.from({ length: 3 }, () => ({ kind: "user" as const, id: userId, displayName: escaped(200) }));
+  spyOn(spacesService.item, "get").mockResolvedValue({
+    ...task,
+    title: escaped(200),
+    description: escaped(5000),
+    assignees: Array.from({ length: 100 }, () => ({ kind: "user" as const, id: userId, displayName: escaped(200), avatarHash: null })),
+    tags: Array.from({ length: 100 }, () => ({ ...tag, name: escaped(100) })),
+    reactions: Array.from({ length: 20 }, (_, index) => ({ emoji: String.fromCodePoint(0x1f600 + index), count: 4, own: false, people })),
+  });
+  spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+  const read = await spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext);
+  if (!read.ok) throw new Error("Expected a bounded item");
+  expect(Buffer.byteLength(JSON.stringify(read.data))).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+  expect(read.data.data).toMatchObject({
+    relationsTruncated: true,
+    reactions: expect.arrayContaining([{ emoji: "😀", count: 4, own: false, people: [] }]),
+  });
+});
+
+test.each(["task.list", "event.list"] as const)("%s keeps a full page of maximum reactions within the result budget", async (id) => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  spyOn(spacesService.column, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false });
+  const people = Array.from({ length: 3 }, () => ({ kind: "user" as const, id: userId, displayName: "\u0001".repeat(200) }));
+  spyOn(spacesService.item, "listFiltered").mockResolvedValue({
+    items: Array.from({ length: 100 }, () => ({
+      ...(id === "task.list" ? task : event),
+      description: "\u0001".repeat(1000),
+      reactions: Array.from({ length: 20 }, (_, index) => ({ emoji: String.fromCodePoint(0x1f600 + index), count: 99, own: true, people })),
+    })),
+    page: 1,
+    pageSize: 100,
+    total: 100,
+    totalPages: 1,
+  });
+  const query = spacesCapabilities.queries[id];
+  const result = await query.run(query.input.parse({ spaceId, limit: 100 }), userContext);
+  if (!result.ok) throw new Error("Expected bounded item page");
+  expect(result.data.data).toHaveLength(100);
+  // Lists carry counts only; item.read names the people.
+  expect(result.data.data[0]?.reactions?.[0]).toEqual({ emoji: "😀", count: 99, own: true });
+  expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+  expect(capabilityResultSchema(query.data).safeParse(result.data).success).toBeTrue();
+});
+
 test.each(["task.list", "event.list"] as const)("%s reports total assignees independently of the relation preview", async (id) => {
   spyOn(spacesService.space, "get").mockResolvedValue(space);
   spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
@@ -411,7 +496,12 @@ test.each(["task.list", "event.list"] as const)("%s reports total assignees inde
   spyOn(spacesService.item, "listFiltered").mockResolvedValue({
     items: [11, 2, 0].map((count) => ({
       ...item,
-      assignees: Array.from({ length: count }, (_, index) => ({ id: userId, displayName: `Assignee ${index}`, avatarHash: null })),
+      assignees: Array.from({ length: count }, (_, index) => ({
+        id: userId,
+        kind: index === 0 ? ("service_account" as const) : ("user" as const),
+        displayName: `Assignee ${index}`,
+        avatarHash: null,
+      })),
     })),
     page: 1,
     pageSize: 25,
@@ -422,6 +512,7 @@ test.each(["task.list", "event.list"] as const)("%s reports total assignees inde
   const result = await query.run(query.input.parse({ spaceId }), userContext);
   if (!result.ok) throw new Error("Expected item page");
   const envelope = capabilityResultSchema(query.data).parse(result.data);
+  expect(envelope.data[0]?.assignees[0]?.kind).toBe("service_account");
   expect(
     envelope.data.map(({ assignees, assigneeCount, relationsTruncated }) => ({
       assignees: assignees.length,
@@ -794,6 +885,8 @@ describe("spaces capabilities", () => {
       "item.reference.add",
       "item.reference.remove",
       "item.tags.set",
+      "reaction.add",
+      "reaction.remove",
       "task.blocker.add",
       "task.blocker.remove",
       "task.checklist.create",
@@ -831,6 +924,8 @@ describe("spaces capabilities", () => {
       "item.reference.add",
       "item.reference.remove",
       "item.tags.set",
+      "reaction.add",
+      "reaction.remove",
       "task.blocker.add",
       "task.blocker.remove",
       "task.checklist.create",
@@ -862,7 +957,22 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
     const listAssignable = spyOn(spacesService.item, "listAssignableUsers").mockResolvedValue([
-      { id: userId, displayName: user.displayName, avatarHash: null, uid: "spaces-user", description: "spaces-user · direct access" },
+      {
+        id: userId,
+        kind: "user",
+        displayName: user.displayName,
+        avatarHash: null,
+        uid: "spaces-user",
+        description: "spaces-user · direct access",
+      },
+      {
+        id: blockerUuid,
+        kind: "service_account",
+        displayName: "Spaces agent",
+        avatarHash: null,
+        uid: "Spaces agent",
+        description: "agent · direct access",
+      },
     ]);
 
     const result = await spacesCapabilities.queries["space.assignee.list"].run({ spaceId, query: "Spaces", limit: 5 }, userContext);
@@ -870,7 +980,12 @@ describe("spaces capabilities", () => {
     expect(listAssignable).toHaveBeenCalledWith({ spaceId: spaceUuid, search: "Spaces", limit: 5 });
     expect(result).toEqual({
       ok: true,
-      data: { data: [{ id: userId, displayName: user.displayName, description: "spaces-user · direct access" }] },
+      data: {
+        data: [
+          { id: userId, kind: "user", displayName: user.displayName, description: "spaces-user · direct access" },
+          { id: blockerUuid, kind: "service_account", displayName: "Spaces agent", description: "agent · direct access" },
+        ],
+      },
     });
   });
 
@@ -1322,6 +1437,8 @@ describe("spaces capabilities", () => {
     });
 
     const results: CapabilityActionReviewResult[] = [
+      await spacesCapabilities.actions["reaction.add"].review({ itemId, emoji: "👍" }, userContext),
+      await spacesCapabilities.actions["reaction.remove"].review({ itemId, emoji: "👍" }, userContext),
       await spacesCapabilities.actions["task.checklist.create"].review({ itemId, label: "New" }, userContext),
       await spacesCapabilities.actions["task.checklist.update"].review({ itemId, entryId: "Chk001", completed: true }, userContext),
       await spacesCapabilities.actions["item.reference.add"].review!(
@@ -2037,7 +2154,7 @@ describe("spaces capabilities", () => {
       activeBlockerCount: 0,
       priority: "urgent" as const,
       completedAt: null,
-      assignees: Array.from({ length: 3 }, () => ({ id: userId, displayName: "a".repeat(100) })),
+      assignees: Array.from({ length: 3 }, () => ({ id: userId, kind: "user", displayName: "a".repeat(100) })),
       assigneeCount: 11,
       tags: Array.from({ length: 3 }, () => ({ id: itemId, name: "n".repeat(50), color: "c".repeat(20) })),
       relationsTruncated: true,
@@ -2273,4 +2390,75 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
     assertResourceOpenLink(result.data);
   }
+});
+
+test("reaction actions enforce write permission, use actor identity and preserve coded service failures", async () => {
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  const get = spyOn(spacesService.item, "get").mockResolvedValue({
+    ...task,
+    reactions: [{ emoji: "👍", count: 1, own: true, people: [] }],
+  });
+  const permission = spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  const add = spyOn(spacesService.item.reactions, "add").mockResolvedValue({ ok: true, data: { reactions: [] } });
+  const remove = spyOn(spacesService.item.reactions, "remove").mockResolvedValue({ ok: true, data: { reactions: [] } });
+  const input = { itemId, emoji: "👍🏽" };
+  for (const operation of ["reaction.add", "reaction.remove"] as const) {
+    expect((await spacesCapabilities.actions[operation].run(input, userContext)).ok).toBe(false);
+    expect((await spacesCapabilities.actions[operation].review(input, userContext)).ok).toBe(false);
+  }
+  expect(add).not.toHaveBeenCalled();
+  expect(remove).not.toHaveBeenCalled();
+  permission.mockResolvedValue("write");
+  expect((await spacesCapabilities.actions["reaction.add"].run(input, userContext)).ok).toBe(true);
+  expect(add).toHaveBeenLastCalledWith({
+    itemId: itemUuid,
+    spaceId: spaceUuid,
+    emoji: input.emoji,
+    actor: { kind: "user", id: userId },
+  });
+  const agent = {
+    ...serviceAccountContext,
+    actor: {
+      ...serviceAccountContext.actor,
+      scopes: ["read", "write"],
+      serviceAccount: {
+        ...serviceAccountContext.actor.serviceAccount,
+        kind: "agent" as const,
+        appId: null,
+        resourceType: null,
+        resourceId: null,
+      },
+    },
+  };
+  expect((await spacesCapabilities.actions["reaction.remove"].run(input, agent)).ok).toBe(true);
+  expect(remove).toHaveBeenLastCalledWith({
+    itemId: itemUuid,
+    spaceId: spaceUuid,
+    emoji: input.emoji,
+    actor: { kind: "service_account", id: serviceAccountId },
+  });
+  expect((await spacesCapabilities.actions["reaction.add"].run(input, serviceAccountContext)).ok).toBe(false);
+  // A delegated call uses the person even though its access principal is an account.
+  const delegated = { ...agent, actor: { ...agent.actor, delegatedUser: user }, user };
+  expect((await spacesCapabilities.actions["reaction.add"].run(input, delegated)).ok).toBe(true);
+  expect(add).toHaveBeenLastCalledWith({
+    itemId: itemUuid,
+    spaceId: spaceUuid,
+    emoji: input.emoji,
+    actor: { kind: "user", id: userId },
+  });
+  add.mockResolvedValue({
+    ok: false,
+    error: { code: "REACTION_LIMIT_REACHED", status: 409, message: "An item can have at most 20 different emoji reactions" },
+  });
+  expect(await spacesCapabilities.actions["reaction.add"].run(input, userContext)).toMatchObject({
+    ok: false,
+    error: { code: "REACTION_LIMIT_REACHED", status: 409 },
+  });
+  spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+  const read = await spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext);
+  expect(read).toMatchObject({ ok: true, data: { data: { reactions: [{ emoji: "👍", count: 1, own: true, people: [] }] } } });
+  expect(get).toHaveBeenLastCalledWith({ id: itemUuid, viewer: { kind: "user", id: userId } });
 });

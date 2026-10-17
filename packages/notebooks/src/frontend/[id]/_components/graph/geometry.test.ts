@@ -116,3 +116,21 @@ test("rectangles may touch but cannot overlap", () => {
   expect(rectsIntersect(a, { x0: 12, y0: 2, x1: 22, y1: 12 })).toBe(false);
   expect(rectsIntersect(a, { x0: 11, y0: 2, x1: 22, y1: 12 })).toBe(true);
 });
+
+test("ellipse projection and zoom preserve the world anchor and vertical stretch", () => {
+  const view = { k: 60, ay: 2.6, tx: 195, ty: 350 };
+  const point = { x: 1, y: -1 };
+  expect(toScreen(view, point)).toEqual({ x: 255, y: 194 });
+  expect(toWorld(view, toScreen(view, point))).toEqual(point);
+  const anchor = { x: 70, y: 500 };
+  const world = toWorld(view, anchor);
+  for (const factor of [0.001, 0.5, 2, 1000]) {
+    const next = zoomView(view, factor, anchor.x, anchor.y, 60);
+    expect(next.ay).toBe(view.ay);
+    expect(next.k).toBeGreaterThanOrEqual(24);
+    expect(next.k).toBeLessThanOrEqual(360);
+    const projected = toScreen(next, world);
+    expect(projected.x).toBeCloseTo(anchor.x, 10);
+    expect(projected.y).toBeCloseTo(anchor.y, 10);
+  }
+});

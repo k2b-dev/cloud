@@ -5,6 +5,7 @@ import type { Browser, Page } from "playwright";
 import { z } from "zod";
 import { launchBrowser } from "../../../../ui/test/browser";
 import type { CloudResourceRef } from "../../contracts/capabilities";
+import { cloudAiNumberFormatters } from "../chart-block";
 import type { AiTurnBlock } from "../protocol";
 import { cloudAiViewSummary, parseCloudAiView } from "../view-block";
 
@@ -612,6 +613,35 @@ for (const view of [
       }
     });
 
+test("a stats trend tooltip uses the item label and number format", async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+    await page.evaluate((value) => window.show(value), [widgets[0]!]);
+    await page.waitForFunction(() => document.querySelectorAll("[data-view-path] .k2b-stat-cell").length === 5);
+    const tile = page.locator("[data-view-path] .k2b-stat-cell").filter({
+      has: page.locator(".k2b-stat-cell__label", { hasText: /^Acceptance$/ }),
+    });
+    await tile.locator(".k2b-stat-cell__trend [data-chart-datum] circle").last().hover();
+    const tooltip = tile.locator('[role="tooltip"]:popover-open');
+    await tooltip.waitFor({ state: "visible" });
+    const expected = cloudAiNumberFormatters({ style: "percent" }, "en").value(0.31);
+    expect(await tooltip.locator(".k2b-chart__tooltip-title").count()).toBe(0);
+    expect(
+      await tooltip
+        .locator(".k2b-chart__tooltip-row")
+        .evaluateAll((rows) =>
+          rows.map((row) => [row.querySelector("span")?.textContent?.replace(/:\s*$/, ""), row.querySelector("b")?.textContent]),
+        ),
+    ).toEqual([["Acceptance", expected]]);
+    expect(await tooltip.locator("b").textContent()).toBe(await tile.locator(".k2b-stat-cell__value").textContent());
+    expect(await tooltip.textContent()).not.toMatch(/\b[XY]:/);
+  } finally {
+    await context.close();
+  }
+});
+
 test("a record reserves the lines of values and labels that wrap on a phone", async () => {
   const context = await browser.newContext({
     viewport: { width: 360, height: 800 },
@@ -844,7 +874,8 @@ test("a view file edited after present shows unavailable instead of what its sum
       const statuses = Array.from(document.querySelectorAll('[data-view-path] [role="status"]')).filter((node) => node.textContent?.trim());
       return statuses.length === 9 && statuses.every((node) => node.textContent?.startsWith("This view is no longer available"));
     });
-    expect(await page.locator('[data-view-path] [data-interactive="true"]').count()).toBe(0);
+    // Only the invisible size reserve of a stats view may still hold a (hidden, unfocusable) trend sparkline.
+    expect(await page.locator('[data-view-path] [data-interactive="true"]:visible').count()).toBe(0);
   } finally {
     await context.close();
   }

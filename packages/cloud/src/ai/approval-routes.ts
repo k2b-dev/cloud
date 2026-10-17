@@ -56,7 +56,7 @@ type AiApprovalRouteDependencies = {
   limit?: MiddlewareHandler<AuthContext>;
   authenticate?: MiddlewareHandler<AuthContext>;
   listPreferences?: (actorUserId: string, options: { conversationId?: string }) => Promise<AiToolApprovalPreference[]>;
-  revokePreference?: (actorUserId: string, preferenceId: string) => Promise<boolean>;
+  revokePreference?: typeof revokeAiToolApprovalPreference;
   listCapabilities?: () => Promise<CapabilityRegistryEntry[]>;
   /** Resolves a chat the user owns by its ID or short ID. */
   findConversation?: (ownerUserId: string, conversation: string) => Promise<{ id: string } | null>;
@@ -157,7 +157,10 @@ export const createAiApprovalPreferenceRoutes = (dependencies: AiApprovalRouteDe
       v("param", AiApprovalPreferenceParamSchema),
       async (c) => {
         const user = expectUserBackedActor(c);
-        const deleted = await revokePreference(user.id, c.req.valid("param").preferenceId);
+        const deleted = await revokePreference(user.id, c.req.valid("param").preferenceId, {
+          actor: c.get("actor"),
+          requestId: c.req.header("x-request-id") ?? null,
+        });
         return deleted ? c.json({ deleted: true as const }) : c.json({ message: "Approval not found", code: "NOT_FOUND" }, 404);
       },
     );

@@ -37,7 +37,10 @@ test("browser delivery carries localized previews, namespaces groups, and preser
     }});
     mock.module("web-push", () => ({ default: { setVapidDetails: () => {} } }));
     mock.module(${JSON.stringify(new URL("../settings/api.ts", import.meta.url).pathname)}, () => ({
-      coreSettings: { get: async key => key === "app.url" ? "https://cloud.example.org" : "configured" },
+      coreSettings: {
+        get: async key => key === "app.url" ? "https://cloud.example.org" : "configured",
+        read: async key => ({ value: key === "app.url" ? "https://cloud.example.org" : "configured", stored: "readable" }),
+      },
     }));
     mock.module(${JSON.stringify(new URL("./web-push-transport.ts", import.meta.url).pathname)}, () => ({
       sendPinnedWebPush: async (subscription, payload, options) => { sent.push({ subscription, payload, options }); },

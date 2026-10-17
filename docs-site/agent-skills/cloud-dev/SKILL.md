@@ -68,6 +68,7 @@ and durable data.
   Use NATS-backed Sync for distributed coordination and Valkey for caches
   and Cloud rate limits. Commit state before retryable effects with stable keys; an effect
   that must survive a crash is an outbox row in the same transaction (`defineLive`, `createPgOutbox`).
+  A settings write over an unreadable stored value fails with `setting_unreadable`; merge only over `settings.read()` with `stored !== "unreadable"`.
 
 ## Reuse public building blocks
 
@@ -98,7 +99,7 @@ Cloud and every application are equal consumers of `@k2b/ui`. The standalone
 SolidJS library remains independent of Cloud and application domains.
 
 - Use existing `@k2b/ui` components whenever they express the required
-  control, feedback, surface, or layout behavior. A hierarchy of columns (settings areas, list and reader) uses `AppWorkspace.Main level` with the selection in the URL.
+  control, feedback, surface, or layout behavior. A hierarchy of columns (settings areas, list and reader) uses `AppWorkspace.Main level` with the selection in the URL. Drag and drop inside the page uses `DragSource` and `DropTarget`, and every drop also has a menu entry such as "Move to …", the guaranteed path for keyboard and screen reader users.
 - Do not recreate generic component contracts inside an application. If no
   primitive fits, surface the gap and agree with the application author
   whether to extend `@k2b/ui` or build application-owned UI.

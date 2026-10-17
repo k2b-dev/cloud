@@ -20,9 +20,10 @@ COPY scripts/fixtures/test-infra.ts scripts/fixtures/test-infra-env.ts scripts/f
 ARG CLOUD_VERSION=0.0.0-local
 ARG CLOUD_RELEASE=local
 ENV CLOUD_VERSION=$CLOUD_VERSION CLOUD_RELEASE=$CLOUD_RELEASE
+# The image has no browser; the gate runs the browser tests in Chromium and WebKit.
 RUN bun packages/ui/scripts/build.ts \
   && bun run --cwd pwas/pwa-auth typecheck \
-  && bun run --cwd pwas/pwa-auth test \
+  && bun run --cwd pwas/pwa-auth test --path-ignore-patterns '**/*.browser.test.*' \
   && bun test packages/cloud/src/browser/app-approval-vault.test.ts \
   && bun run --cwd pwas/pwa-auth build \
   && bun build pwas/pwa-auth/scripts/serve.ts --target=bun --minify --outfile pwas/pwa-auth/server-dist/scripts/serve.js

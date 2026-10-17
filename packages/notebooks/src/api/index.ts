@@ -40,6 +40,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY } from "@/lib/note-delete-permission";
 import { NOTE_PATH_MAX_LENGTH, NOTE_PATH_MAX_SEGMENTS } from "@/lib/note-path";
+import { encodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES } from "@/lib/pdf-omissions";
 import { PRESENTATION_MODES } from "@/lib/presentation-mode";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
@@ -1982,6 +1983,14 @@ const app = new Hono<AuthContext>()
       responses: {
         200: {
           description: "Generated PDF",
+          headers: {
+            [NOTE_PDF_OMISSIONS_HEADER]: {
+              required: false,
+              description:
+                "Optional base64url (no padding) of UTF-8 JSON {items:[{code,kind,label}],more}, at most 2048 bytes. Items list what the PDF could not include; each is also marked in place in the PDF. The more count is the number of items that did not fit in the header. Absent when nothing is omitted.",
+              schema: { type: "string", maxLength: NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES, pattern: "^[A-Za-z0-9_-]+$" },
+            },
+          },
           content: { "application/pdf": { schema: { type: "string", format: "binary" } } },
         },
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
@@ -2041,6 +2050,7 @@ const app = new Hono<AuthContext>()
           bypassAccess: subject.user ? hasRole(subject.user, "admin") : false,
           locale: getLocale(c),
         });
+        const omissionsHeader = encodeNotePdfOmissions(rendered.omissions);
         const buffer = rendered.pdf.buffer.slice(rendered.pdf.byteOffset, rendered.pdf.byteOffset + rendered.pdf.byteLength) as ArrayBuffer;
         return new Response(new Blob([buffer], { type: "application/pdf" }), {
           headers: {
@@ -2048,6 +2058,7 @@ const app = new Hono<AuthContext>()
             "Content-Disposition": notePdfDisposition(filename),
             "Content-Type": "application/pdf",
             "X-Content-Type-Options": "nosniff",
+            ...(omissionsHeader ? { [NOTE_PDF_OMISSIONS_HEADER]: omissionsHeader } : {}),
           },
         });
       } catch (cause) {
@@ -3404,10 +3415,12 @@ const SettingEntrySchema = z.object({
   default: z.unknown(),
   value: z.unknown(),
   isCustom: z.boolean(),
+  unreadable: z.boolean(),
 });
 
 const UpdateSettingSchema = z.object({
   value: z.unknown(),
+  replaceUnreadable: z.boolean().optional(),
 });
 
 const requireAdmin = (c: Context<AuthContext>) => {
@@ -3451,6 +3464,7 @@ const appWithAdmin = appWithLimits
         200: jsonResponse(MessageResponseSchema, "Updated"),
         400: jsonResponse(ErrorResponseSchema, "Invalid key or value"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        409: jsonResponse(ErrorResponseSchema, "Stored setting unreadable"),
       },
     }),
     v("json", UpdateSettingSchema),
@@ -3461,11 +3475,11 @@ const appWithAdmin = appWithLimits
       if (!key.startsWith(NOTEBOOKS_SETTING_PREFIX)) {
         return respond(c, fail(err.badInput(messages(c).settingOutsideNamespace({ key }))));
       }
-      const { value } = c.req.valid("json");
+      const { value, replaceUnreadable } = c.req.valid("json");
       const result =
         key === "notebooks.snapshot_cron" && typeof value === "string"
-          ? await notebooksService.backup.updateCron(value)
-          : await settingsService.entry.update({ key, value });
+          ? await notebooksService.backup.updateCron(value, { replaceUnreadable })
+          : await settingsService.entry.update({ key, value, replaceUnreadable });
       if (!result.ok) {
         const message =
           key === "notebooks.snapshot_cron"

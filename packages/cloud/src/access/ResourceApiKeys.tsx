@@ -176,7 +176,11 @@ export default function ResourceApiKeys(props: ResourceApiKeysProps) {
   const createMutation = mutations.create<{ credential: ResourceApiKey; token: string }, CreateResourceApiKeyInput>({
     mutation: props.createKey,
     onSuccess: async (data) => {
-      setKeys([data.credential, ...keys()]);
+      setKeys((current) =>
+        current.some((key) => key.id === data.credential.id)
+          ? current.map((key) => (key.id === data.credential.id ? data.credential : key))
+          : [data.credential, ...current],
+      );
       await prompts.dialog<void>(() => <TokenDialog token={data.token} />, {
         title: t().keyCreated,
         icon: "ti ti-key",

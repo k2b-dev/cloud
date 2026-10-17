@@ -31,7 +31,7 @@ const notificationMessages = i18n.define({
       responseReady: "Assistant response ready",
       responseFinished: "Your Assistant response has finished.",
       responseEmail: ({ target }: { target: string }) => `Your Assistant response has finished. Open it at ${target}`,
-      taskAttention: ({ taskId }: { taskId: string }) => `Scheduled task ${taskId} needs attention`,
+      taskAttention: ({ taskId }: { taskId: string }) => `Routine ${taskId} needs attention`,
     },
     de: {
       costWarning: "Kostenwarnung für Hintergrund-AI",
@@ -45,7 +45,7 @@ const notificationMessages = i18n.define({
       responseReady: "Antwort des Assistenten ist bereit",
       responseFinished: "Die Antwort des Assistenten ist fertig.",
       responseEmail: ({ target }) => `Die Antwort des Assistenten ist fertig. Öffne sie unter ${target}`,
-      taskAttention: ({ taskId }) => `Geplante Aufgabe ${taskId} erfordert deine Aufmerksamkeit`,
+      taskAttention: ({ taskId }) => `Routine ${taskId} braucht deine Aufmerksamkeit`,
     },
   },
 });
@@ -120,12 +120,9 @@ export const AI_NOTIFICATIONS = {
   }),
   taskNeedsAttention: notification({
     recipient: "user",
-    label: "Assistant scheduled tasks",
-    description: "A notification when a scheduled Assistant task cannot continue.",
-    presentation: presentation(
-      "Geplante Aufgaben des Assistenten",
-      "Benachrichtigung, wenn eine geplante Aufgabe nicht fortgesetzt werden kann.",
-    ),
+    label: "Assistant routines",
+    description: "A notification when an Assistant routine cannot continue.",
+    presentation: presentation("Assistant-Routinen", "Benachrichtigung, wenn eine Assistant-Routine nicht weiterlaufen kann."),
     delivery: { recommended: ["browser"] },
     data: z.object({
       conversationId: z.string().regex(AI_SHORT_ID_PATTERN),

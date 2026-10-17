@@ -52,7 +52,7 @@ if (!isServer) {
           [":itemId"]: {
             $patch: async ({ param }: { param: { itemId: string } }) => {
               calls.push(`assign:${param.itemId}`);
-              return response({ ...third, assignees: [{ id: USER_ID, displayName: "Valentin", avatarHash: null }] });
+              return response({ ...third, assignees: [{ id: USER_ID, kind: "user", displayName: "Valentin", avatarHash: null }] });
             },
             completed: {
               $post: async ({ param }: { param: { itemId: string } }) => {

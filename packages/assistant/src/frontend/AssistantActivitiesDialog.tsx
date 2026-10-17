@@ -71,7 +71,8 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
             .filter(Boolean)
             .join("\n")
         : "";
-    return content.replace(/^Scheduled task [^\n]+:\s*\n/u, "").trim() || value?.task.prompt || "";
+    // Runs started before the rename to routines keep the "Scheduled task" prefix in their stored prompt.
+    return content.replace(/^(?:Routine|Scheduled task) [^\n]+:\s*\n/u, "").trim() || value?.task.prompt || "";
   });
   // A refresh after expiry answers 404 while the query keeps its last data; removal wins over that copy.
   const unavailable = () => detail.error() instanceof RunUnavailableError;
@@ -126,7 +127,7 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
                 </AiChatActionsProvider>
               }
             >
-              <NoticeCard tone="neutral" title={text("Task instructions")} detail={instruction()} />
+              <NoticeCard tone="neutral" title={text("Routine instructions")} detail={instruction()} />
               <div class="assistant-activity-result">
                 <Show
                   when={value().occurrence.resultText}
@@ -174,7 +175,7 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
               {text("Open chat")}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => openAssistantTask(value().task)}>
-              {text("Manage task")}
+              {text("Manage routine")}
             </Button>
           </div>
         )}
@@ -240,7 +241,7 @@ export function AssistantActivitiesView() {
                   <Placeholder
                     icon="ti ti-calendar-time"
                     title={text("No background activity yet")}
-                    description={text("Ask in the chat for a reminder or a recurring task.")}
+                    description={text("Ask in the chat for a reminder or a routine.")}
                   />
                 }
               >

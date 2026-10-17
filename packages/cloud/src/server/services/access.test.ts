@@ -128,6 +128,30 @@ const cleanupFixture = async (fixture: Fixture) => {
 };
 
 suite("listUsersWithAccess", () => {
+  test("prioritizes exact search matches before limiting by name order", async () => {
+    const fixture = await createFixture();
+    try {
+      const query = `access-exact-${fixture.userIds.direct}`;
+      await sql`UPDATE auth.users SET uid = ${query}, display_name = 'Zulu' WHERE id = ${fixture.userIds.direct}::uuid`;
+      await sql`UPDATE auth.users SET display_name = ${`Aardvark ${query}`} WHERE id = ${fixture.userIds.group}::uuid`;
+      await sql`UPDATE auth.users SET display_name = ${query} WHERE id = ${fixture.userIds.nested}::uuid`;
+
+      // Name-only ordering would hide the exact login-name match behind the earlier substring match at this limit.
+      const users = await listUsersWithAccess({ accessIds: fixture.accessIds, search: ` ${query.toUpperCase()} `, limit: 1 });
+      expect(users.map((user) => user.id)).toEqual([fixture.userIds.direct]);
+
+      const displayNameMatches = await listUsersWithAccess({
+        accessIds: fixture.accessIds,
+        search: query,
+        excludeUserIds: [fixture.userIds.direct],
+        limit: 1,
+      });
+      expect(displayNameMatches.map((user) => user.id)).toEqual([fixture.userIds.nested]);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  }, 30_000);
+
   test("expands direct and recursive group access without exposing mail", async () => {
     const fixture = await createFixture();
     try {

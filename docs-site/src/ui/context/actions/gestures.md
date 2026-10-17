@@ -75,6 +75,8 @@ the element. A tap outside or a scroll closes it. Inside a modal dialog the
 hold keeps the sheet at every width, because everything outside the dialog is
 inert.
 
+Hold, then drag hands over to a surrounding or nested [`DragSource`](../actions/drag-and-drop): the menu or sheet closes and the drag begins. Without that movement, the long press keeps its usual behavior.
+
 The touch that opened the sheet never presses anything in it either. An item
 chosen in the sheet runs once the sheet has closed and left the history, so
 it may navigate or open a dialog. The sheet closes when the element goes,

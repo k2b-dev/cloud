@@ -1,5 +1,5 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, MultiSelectInput, useLocale } from "@k2b/ui";
+import { Button, InlineGuidance, MultiSelectInput, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ContactTag } from "../../service";
@@ -76,12 +76,12 @@ export default function ContactTagsPicker(props: Props) {
         onValueChange={props.onChange}
       />
       <Show when={available.error()}>
-        <div class="flex items-center justify-between gap-2 text-xs text-red-600 dark:text-red-400">
-          <span>{t().couldNotLoadTags}</span>
-          <Button type="button" variant="ghost" size="xs" onClick={() => void available.refresh()}>
+        <InlineGuidance tone="danger" icon="ti ti-alert-circle">
+          {t().couldNotLoadTags}{" "}
+          <Button type="button" variant="text" size="xs" onClick={() => void available.refresh()}>
             {t().retry}
           </Button>
-        </div>
+        </InlineGuidance>
       </Show>
       <Show when={currentTags() && currentTags()!.length === 0 && props.onManage}>
         <Button type="button" variant="ghost" size="xs" class="w-fit" loading={managing()} onClick={() => void manageTags()}>

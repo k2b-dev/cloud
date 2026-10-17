@@ -257,7 +257,7 @@ describe("Spaces claim take-over", () => {
       () =>
         createComponent(ItemDetailPanel, {
           // The person working on a task is one of its assignees.
-          item: { ...item, assignees: [{ id: claim.actor.id, displayName: claim.displayName, avatarHash: null }] },
+          item: { ...item, assignees: [{ id: claim.actor.id, kind: "user", displayName: claim.displayName, avatarHash: null }] },
           columns: [],
           tags: [],
           wormholes: [],

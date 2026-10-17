@@ -1,10 +1,11 @@
 import { resolve } from "node:path";
+import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { NoteGraph } from "../../../../service/links";
 import type { BookTreeNode } from "../book/BookNavigator.island";
-import { bigGraph, FIXTURE_NOW, HANDBOOK_IDS, handbookGraph, unlinkedGraph } from "./graph.fixtures";
+import { bigGraph, crossAreaGraph, FIXTURE_NOW, HANDBOOK_IDS, handbookGraph, unlinkedGraph } from "./graph.fixtures";
 import { NotebookGraphFixture, type NotebookGraphFixtureProps } from "./notebook-graph.browser-harness";
 import { parseGraphViewState } from "./view-state";
 
@@ -14,6 +15,7 @@ export const GRAPH_NOTEBOOKS: Record<string, { name: string; graph: () => NoteGr
   big001: { name: "Wissensbasis Standort Nord", graph: bigGraph, current: null },
   free01: { name: "Projekt Hallenumbau", graph: unlinkedGraph, current: null },
   none01: { name: "Leer", graph: () => ({ nodes: [], edges: [] }), current: null },
+  pair01: { name: "Zwei Bereiche", graph: crossAreaGraph, current: "regal0" },
 };
 
 const tree = (graph: NoteGraph): BookTreeNode[] => {
@@ -91,12 +93,13 @@ export async function startGraphServer() {
           { headers: { "content-type": "text/html; charset=utf-8" } },
         );
       const note = /^\/app\/notebooks\/(\w{6})\/notes\/(\w{6})$/.exec(url.pathname);
-      if (note) return page(`<main><h1 id="note-page">${note[2]}</h1></main>`);
-      const notebookId = /^\/app\/notebooks\/(\w{6})$/.exec(url.pathname)?.[1];
+      if (note && url.searchParams.get("mode") !== "graph") return page(`<main><h1 id="note-page">${note[2]}</h1></main>`);
+      const notebookId = note?.[1] ?? /^\/app\/notebooks\/(\w{6})$/.exec(url.pathname)?.[1];
       const notebook = notebookId ? GRAPH_NOTEBOOKS[notebookId] : undefined;
       if (!notebookId || !notebook || url.searchParams.get("mode") !== "graph") return new Response("Not found", { status: 404 });
       const graph = notebook.graph();
-      const selected = url.searchParams.get("note") ?? notebook.current ?? graph.nodes[0]?.id ?? null;
+      // As on the page, a note in the path wins over the `note` parameter.
+      const selected = note?.[2] ?? url.searchParams.get("note") ?? notebook.current ?? graph.nodes[0]?.id ?? null;
       const props: NotebookGraphFixtureProps = {
         navigator: {
           notebookId,
@@ -115,9 +118,17 @@ export async function startGraphServer() {
         graph,
         view: parseGraphViewState(url.searchParams),
         now: FIXTURE_NOW,
+        timeZone: "Europe/Berlin",
         from: url.searchParams.get("from") === "book" ? "book" : undefined,
       };
-      const html = renderToString(() => createComponent(NotebookGraphFixture, props));
+      const html = renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale: lang,
+          get children() {
+            return createComponent(NotebookGraphFixture, props);
+          },
+        }),
+      );
       return page(
         html,
         `<script id="graph-props" type="application/json">${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script src="/harness.js"></script>`,

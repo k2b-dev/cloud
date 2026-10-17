@@ -158,6 +158,23 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
     onCleanup(() => clearTimeout(timer));
   });
 
+  // WebKit sends no pointerleave when the element under a resting pointer leaves the document, and rows change under
+  // it all the time. The next pointerover tells where the pointer went, so a lost leave neither stops the list from
+  // following nor keeps a finished panel open.
+  let panel: HTMLElement | undefined;
+  onMount(() => {
+    const pointerOver = (event: PointerEvent) => {
+      const target = event.target instanceof Node ? event.target : null;
+      if (pointerInside() && !scroll?.contains(target)) {
+        setPointerInside(false);
+        follow();
+      }
+      if (hot() && !panel?.contains(target)) setHot(!!panel?.contains(document.activeElement));
+    };
+    document.addEventListener("pointerover", pointerOver, true);
+    onCleanup(() => document.removeEventListener("pointerover", pointerOver, true));
+  });
+
   // A double-click on "Try again" must not land its second click on the "Cancel" the first one turned it into.
   let actionChanged = Number.NEGATIVE_INFINITY;
   createEffect(on(action, () => (actionChanged = performance.now()), { defer: true }));
@@ -175,6 +192,7 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
 
   return (
     <section
+      ref={panel}
       class="filesv2-upload"
       data-phase={batch.phase}
       data-expanded={String(expanded())}

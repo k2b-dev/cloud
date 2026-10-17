@@ -135,7 +135,7 @@ export default ssr<AuthContext>(async (c) => {
   ];
   const outcomeLabel = (outcome: AuditOutcome) => ({ allowed: t.allowed, denied: t.denied, failed: t.failed })[outcome];
   const targetTypeLabel = (type: string | null) =>
-    type === "user" ? t.userTarget : type === "group" ? t.groupTarget : (type ?? t.targetType);
+    type === "user" ? t.userTarget : type === "group" ? t.groupTarget : type === "ai_approval" ? t.approvalTarget : (type ?? t.targetType);
 
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.audit }]}>

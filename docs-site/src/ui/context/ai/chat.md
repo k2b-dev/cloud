@@ -22,7 +22,7 @@ the same `content` element when the content itself has not changed; a new
 element replaces the old one.
 
 Use `leading` when an activity needs a host-owned visual such as a favicon. Use
-the optional `accent` only for source or application identity; `success` and
+the optional `accent` only for source or application identity; `success`, `warning`, and
 `danger` tones continue to own semantic state colors. Keep the rich activity
 body in the host so `Chat` remains independent from tool protocols.
 Activity labels use the normal font weight, and their description has the same
@@ -83,6 +83,105 @@ Pass `timeLabel` for visible localized timestamps and `createdAt` for the
 machine-readable `dateTime` value. `createdAt` alone intentionally renders no
 runtime-locale text, which keeps the server HTML and the browser render identical.
 
+## Questions and outcomes
+
+Use `Chat.Decision` for one question in a conversation. The host owns the answer,
+execution, expiry, and any policy change. Use verb-and-target answers such as
+"Send to Lea" and "Keep draft"; never offer "Approve all". Answers are at
+least 44 px high; on phones they share the row, and a long label wraps
+inside its button.
+
+The sentence, preview title, header rows, and answers share one left edge, with
+no separate column or card surface. Reason, preview line, outcome, and activity
+text start 24 px from that edge, after their icon. The sentence uses
+`--k2b-chat-decision-size`: 18 px, or 17 px below 48 rem, at weight 400.
+
+Use [ReferenceChip](/en/ui/content/label-chip#referencechip) for objects, places,
+people, and times inside the sentence. Chips show at most 40 user-perceived
+characters, cut in the middle, while retaining the full title as their accessible
+name and tooltip. Person chips show a name and avatar, never an address. Put
+addresses in `Chat.Preview.Header`. A gone object or place is struck through and
+has no link.
+
+Set `state` synchronously in each answer's `onSelect`, before awaiting work, so
+the question collapses immediately. `open` shows the question;
+`sending`, `decided`, and `expired` show the `outcome` slot. An answer given here focuses `Chat.Outcome` and
+announces its current sentence. An outcome action that reopens the question
+returns focus to the sentence and briefly highlights it. A host that cannot
+take an answer returns the question from `sending` to `open`; focus then goes
+back to the sentence as well. Changes from elsewhere do not move focus. Handle
+rejected answer callbacks with `onAnswerError` and show a recoverable outcome.
+
+Pass `Chat.Outcome` only the lines this flow can reach. Every supplied line
+occupies the same grid cell, including hidden alternatives, so the longest line
+reserves the height. This keeps running-to-done transitions still without
+reserving space for unrelated outcomes. Only the current line is visible and
+accessible; inactive action links leave the tab order. `actions` under a line
+stay in the cell while the line is hidden, so a line with buttons reserves
+their row from the start. When a line's own action switches `current`, such
+as "Send again" to running, focus stays on the outcome instead of the hidden
+link. `running` sets `aria-busy` on the words only, never
+on an ancestor of the live region. Pass `onActionError` to receive an error a
+line's `action` throws or rejects with, and show a recoverable line. While an
+action's promise is pending, further presses are ignored. A polite
+live region starts empty in SSR and on initial history
+mount; it announces an answer given here and every subsequent `current` change,
+including detail, time, and action link text with spaces between them; buttons
+under the line are not announced.
+
+Use `unavailable` to disable confirm and remember while keeping decline enabled.
+Its reason replaces the original reason in the same described element. The
+optional quiet `remember` answer is host policy: the component neither stores
+consent nor widens permissions. On touch screens it is a full 44 px row, so a
+low tap on either answer never reaches it.
+
+Compose the actual content with `Chat.Preview`: header fields stand immediately
+before their values; `emphasis` identifies a Bcc label; `note` can say when a mail
+will be sent. `Excerpt` preserves line breaks and fades after about three lines.
+`ReadMore` should open the exact version being reviewed. `Lines` names a list of
+consequences, and `Line` can also stand alone for an attachment or warning.
+`People` shows overlapping decorative avatars followed by readable names.
+
+Use `Chat.Mark change="added"` for new words and `change="removed"` for removed
+words, or mark an entire preview line with its `mark` prop. Screen readers hear
+"new:" / "removed:" in English and "neu:" / "weg:" in German. Added marks use
+`--k2b-mark-accent`, which defaults to `--k2b-ai-accent`; a host may override it
+for the local context. Use `Chat.Activity tone="warning"` for a partial result
+or an answer whose outcome is not yet known. An activity `label` may be a
+sentence with `ReferenceChip`s, such as "Read [Week 42]". In an expandable
+activity the whole row is the disclosure `<summary>`, so give its chips no
+`href`: a link inside the summary would be a nested control.
+
+```tsx typecheck
+import { Chat, ReferenceChip, type ChatDecisionState } from "@k2b/ui";
+import { createSignal } from "solid-js";
+
+export function MailQuestion() {
+  const [state, setState] = createSignal<ChatDecisionState>("open");
+  const [current, setCurrent] = createSignal("running");
+  return <Chat.Decision
+    state={state()}
+    sentence={<>Send the draft to <ReferenceChip kind="person" name="Lea Berg" />?</>}
+    reason={{ text: "You asked to check mail before sending." }}
+    preview={<Chat.Preview><Chat.Preview.Title>Workshop delivery</Chat.Preview.Title></Chat.Preview>}
+    confirm={{ label: "Send to Lea", onSelect: () => {
+      setCurrent("running");
+      setState("sending");
+      // Complete the host-owned operation, then set current and state.
+    } }}
+    decline={{ label: "Keep draft", onSelect: () => {
+      setCurrent("declined");
+      setState("decided");
+    } }}
+    outcome={<Chat.Outcome current={current()} lines={{
+      running: { tone: "running", text: "Sending the mail to Lea." },
+      done: { tone: "done", text: "Sent the mail to Lea.", time: "09:41" },
+      declined: { tone: "off", text: "Kept the draft.", detail: "You declined." },
+    }} />}
+  />;
+}
+```
+
 ## API reference
 
 ```ts
@@ -90,7 +189,7 @@ type ChatRole = "user" | "assistant" | "system" | "tool";
 
 type ChatMessageStatus = "pending" | "streaming" | "complete" | "error";
 
-type ChatActivityTone = "neutral" | "ai" | "success" | "danger";
+type ChatActivityTone = "neutral" | "ai" | "success" | "warning" | "danger";
 
 type ChatActionBase = {
   id: string; label: string; icon?: string; variant?: "danger"; disabled?: boolean; pressed?: boolean;
@@ -122,6 +221,70 @@ type ChatSubmitInput = {
 type ChatMention = { start: number; end: number; attachment: ChatAttachment };
 
 ```
+
+### Decision, outcome, preview, and marks
+
+`Chat.Decision`, `Chat.Outcome`, `Chat.Preview`, and `Chat.Mark` are members of
+`Chat`; import their types directly from `@k2b/ui`.
+
+```ts
+type ChatDecisionState = "open" | "sending" | "decided" | "expired";
+type ChatDecisionAnswer = {
+  label: string; icon?: string; onSelect: () => void | Promise<void>;
+};
+type ChatDecisionReason = {
+  text: JSX.Element; icon?: string; tone?: "neutral" | "danger" | "warning";
+};
+type ChatDecisionProps = {
+  state: ChatDecisionState; sentence: JSX.Element; reason: ChatDecisionReason;
+  preview?: JSX.Element;
+  confirm: ChatDecisionAnswer & { variant?: "ai" | "primary" | "danger" };
+  decline: ChatDecisionAnswer; remember?: ChatDecisionAnswer;
+  unavailable?: ChatDecisionReason; outcome?: JSX.Element;
+  onAnswerError?: (error: unknown) => void; anchorId?: string | number; class?: string;
+};
+type ChatOutcomeTone = "running" | "done" | "off" | "waiting" | "warning" | "error";
+type ChatOutcomeLine = {
+  tone: ChatOutcomeTone; text: JSX.Element; detail?: JSX.Element; time?: string;
+  icon?: string; action?: { label: string; onSelect: () => void | Promise<void> };
+  actions?: JSX.Element;
+};
+type ChatOutcomeProps = {
+  lines: Readonly<Record<string, ChatOutcomeLine>>; current: string;
+  onActionError?: (error: unknown) => void; anchorId?: string | number; class?: string;
+};
+type ChatPreviewPerson = { name?: string; address?: string };
+type ChatPreviewHeaderRow = {
+  label: string; people?: readonly ChatPreviewPerson[]; value?: JSX.Element; emphasis?: boolean;
+};
+type ChatPreviewProps = { children: JSX.Element; class?: string };
+type ChatPreviewHeaderProps = { rows: readonly ChatPreviewHeaderRow[]; note?: JSX.Element };
+type ChatPreviewTitleProps = { children: JSX.Element; meta?: JSX.Element };
+type ChatPreviewReadMoreProps = { href: string; children: JSX.Element; title?: string };
+type ChatPreviewLineProps = {
+  icon: string; accent?: string; tone?: "default" | "muted" | "warning";
+  mark?: "added" | "removed"; meta?: JSX.Element; children: JSX.Element;
+};
+type ChatPreviewPeopleProps = {
+  people: readonly { name: string; src?: string | null }[]; children: JSX.Element;
+};
+type ChatMarkProps = { change: "added" | "removed"; children: JSX.Element };
+```
+
+| Member | Props / behavior |
+| --- | --- |
+| `Chat.Decision` | `ChatDecisionProps`; confirm defaults to `ai`, decline to `subtle`, remember to `text`. Reason defaults to `neutral` and an info icon. |
+| `Chat.Outcome` | `ChatOutcomeProps`; tone chooses the default icon, `icon` overrides it. The root accepts programmatic focus with `tabindex=-1`. |
+| `Chat.Preview` | `ChatPreviewProps`; groups preview parts without a surface. |
+| `Chat.Preview.Header` | `ChatPreviewHeaderProps`; semantic description list with optional note. |
+| `Chat.Preview.Title` | `ChatPreviewTitleProps`; title with quiet trailing metadata. |
+| `Chat.Preview.Sentence` | `{ children: JSX.Element }`; a rule or instruction. |
+| `Chat.Preview.Excerpt` | `{ children: JSX.Element }`; fading text excerpt. |
+| `Chat.Preview.ReadMore` | `ChatPreviewReadMoreProps`; ordinary link to the reviewed version. |
+| `Chat.Preview.Lines` | `{ label?: string; children: JSX.Element }`; `ul` with an optional accessible name. |
+| `Chat.Preview.Line` | `ChatPreviewLineProps`; `li` inside Lines, otherwise `p`; accent colors its decorative icon. |
+| `Chat.Preview.People` | `ChatPreviewPeopleProps`; decorative avatars and host-supplied names. |
+| `Chat.Mark` | `ChatMarkProps`; semantic `mark` or `del` with a localized spoken prefix. |
 
 ### Commands and file selection
 
@@ -307,7 +470,7 @@ type ChatMessageItem = {
 };
 
 type ChatActivityItem = {
-  kind: "activity"; id: string; label: string; description?: string; icon?: string; leading?: JSX.Element;
+  kind: "activity"; id: string; label: JSX.Element; description?: string; icon?: string; leading?: JSX.Element;
   accent?: string; tone?: ChatActivityTone; busy?: boolean; trailing?: JSX.Element; defaultOpen?: boolean;
   anchorId?: string | number; content?: JSX.Element; class?: string;
 };
@@ -373,7 +536,7 @@ type ChatMessageProps = {
 };
 
 type ChatActivityProps = {
-  label: string; ariaLabel?: string; description?: string; icon?: string; leading?: JSX.Element; accent?: string;
+  label: JSX.Element; ariaLabel?: string; description?: string; icon?: string; leading?: JSX.Element; accent?: string;
   tone?: ChatActivityTone; busy?: boolean; trailing?: JSX.Element; open?: boolean;
   onOpenChange?: (open: boolean) => void; defaultOpen?: boolean; bodyInset?: boolean;
   anchorId?: string | number; children?: JSX.Element; class?: string;

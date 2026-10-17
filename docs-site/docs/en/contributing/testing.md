@@ -175,6 +175,34 @@ reports after the timeout names what it waited for, not the cleanup in
 kept across tests closes with its browser.
 `packages/ui/test/browser.browser.test.ts` guards this recovery.
 
+Open each URL state that a test checks in its own page. Navigate a loaded page
+in place only when the test checks navigation itself: reload, Back, Forward,
+or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place
+`goto` on an idle Notebooks page stalled before load in two WebKit CI runs,
+and a Back to a graph page in a third; hundreds of local runs did not
+reproduce it, and first navigations of fresh pages never stalled.
+
+When `goto`, `reload`, `goBack`, or `goForward` on a launcher page fails or
+times out, the error appends a navigation diagnosis. It names the call and how long it
+waited, the URL before the call and at failure, and up to five recent responses
+with their status, method, and URL. It also reports whether a document
+committed, the navigation response status, DOMContentLoaded and load events,
+open and failed requests, and a main-thread probe. A navigation cut off when
+Bun's test timeout closes the browser carries the same evidence instead of a
+cleanup error; the probe reports that the page or browser is closed. Do not
+call Playwright between catching an error and reporting it: after the browser
+closed, Playwright rejects every call with one shared error object and
+rewrites its message, so the reported error names the later call.
+No commit with an open document request points to the server or network.
+A commit with an open subresource points to that request. A silent main
+thread after a commit points to a blocked page; see
+[When a WebKit page stops answering](#when-a-webkit-page-stops-answering).
+Before a commit, Chromium holds the probe until the navigation ends, so there
+silence alone proves nothing.
+`packages/ui/test/browser.browser.test.ts` guards the diagnosis for an
+uncommitted navigation, a committed navigation whose load never fires, and a
+navigation cut off by Bun's test timeout.
+
 A step that scrolls the page, such as `focus()` on an element below the fold,
 dispatches its `scroll` event on the next frame. Chart inspection, popovers,
 and menus that close on scroll can then undo the result of the next step.
@@ -186,6 +214,17 @@ WebKit then sends a `pointermove` without any mouse movement, up to about
 control by keyboard instead. See `showFirst` and the repeated enhancement case
 in `packages/notebooks/src/frontend/lib/notebook-charts.browser.test.ts`.
 
+WebKit sends no `pointerleave` when the element under the pointer leaves the
+document, as when a row drops a line while the pointer rests on it. A state
+that lasts from `pointerenter` to `pointerleave`, such as a paused timer or a
+list that holds still, then stays after the pointer went. Confirm such a state
+with the next `pointerover` on the document: when its target is outside the
+container, the pointer has left. To test it, rest the mouse on the element that
+the change removes, make the change, and move the mouse away in the next step,
+before WebKit updates the hover. See `pointAt` in
+`packages/filesv2/src/frontend/UploadPanel.browser.test.ts` and the held toasts
+in `packages/ui/src/feedback/toast.ts`.
+
 A fake server started by a test records a request when it arrives. The page
 may have changed already, as seen in WebKit on a loaded machine. Never read
 the newest recorded request after a click or key press. Note how many requests
@@ -193,6 +232,12 @@ have arrived before the step, wait for the request it causes, and compare that
 one. See `requests.next` in
 `packages/dashboard/src/frontend/dashboard-home.browser.test.ts`. An assertion
 that no request was sent can only cover what has already arrived.
+
+Use `keptThrough(locator, change)` from `packages/ui/test/browser.ts` to check
+that a mutation keeps an element and its height. Never read `boundingBox()`
+right after a change: it does not wait and returns `null` for an element that
+a refresh is replacing. See the claim test in
+`packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts`.
 
 ### Run WebKit locally
 
@@ -575,7 +620,18 @@ bun run --cwd packages/ui build
 bun --no-env-file scripts/heavy.ts bun scripts/check-cloud-packed-consumer.ts --release
 ```
 
-Every job of the CI and nightly workflows installs dependencies through
+The `release-body` job parses the live release PR body with the release-please
+parser pinned in `main.yml`, including in the merge queue. It fails if a bumped
+component is missing, has another version, or swallowed another section. It
+also tests historical fixtures when the guard, its fixtures, or the parser pin
+changes. The `check` job runs `bun scripts/check-release-pr-body.ts --message`
+on pull requests and again in the merge queue. It reads the live PR title and
+body to refuse HTML-like markup in the parts that release-please copies into
+release notes. After fixing the text, re-run the failed `check` job to check
+it again. See
+[Release process](/en/docs/contributing/release-process#let-release-please-cut-the-release).
+
+Jobs of the CI and nightly workflows install workspace dependencies through
 `.github/actions/install`. It restores the Bun install cache that `main.yml`
 writes for the current `bun.lock`. With that cache, `bun ci` needs no
 registry. `scripts/ci-install.ts` stops an install that takes over two

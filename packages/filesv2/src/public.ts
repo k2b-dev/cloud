@@ -14,7 +14,7 @@ import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import { errorMessage } from "./api/messages";
+import { publicErrorMessage } from "./api/messages";
 import { EntryQuerySchema, PublicBrowseQuerySchema, PublicUploadInputSchema, UploadIdSchema } from "./contracts";
 import { FilesError, filesService } from "./service";
 import { setShareAccessCookie, shareAccessCookie } from "./share-access-cookie";
@@ -39,7 +39,7 @@ export const publicApi = new Hono<AuthContext>()
           : "unavailable";
     return respond(c, {
       ok: false,
-      error: errorMessage(code, getLocale(c)),
+      error: publicErrorMessage(code, getLocale(c)),
       status: known ? error.status : code === "cursor_invalid" ? 409 : code === "not_found" ? 404 : 503,
       code,
     });

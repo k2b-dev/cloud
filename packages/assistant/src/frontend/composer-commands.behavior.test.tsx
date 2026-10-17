@@ -361,7 +361,7 @@ test("overview groups and rows have the requested order and independent task bou
     "Einfügen",
     "Skills",
     "Dieser Chat",
-    "Geplante Aufgaben",
+    "Routinen",
   ]);
   expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual([
     "Aus Cloud einfügen",
@@ -377,7 +377,7 @@ test("overview groups and rows have the requested order and independent task bou
     "Chat abzweigen",
     "In diesem Chat suchen",
     "Neuer Chat",
-    "Neue geplante Aufgabe",
+    "Neue Routine",
     "Bericht 6",
     "Bericht 5",
     "Bericht 4",
@@ -464,7 +464,7 @@ test("task running status appears only after the deferred server acceptance", as
   expect(new Headers(h.posts()[0]?.init?.headers).get("Idempotency-Key")).toMatch(/^[a-f0-9]{32}$/);
   accept(Response.json({}));
   await flush();
-  expect(h.status()).toBe("„Bericht 6“ läuft. Das Ergebnis kommt in den Chat der geplanten Aufgabe.");
+  expect(h.status()).toBe("„Bericht 6“ läuft. Das Ergebnis kommt in den Chat der Routine.");
   expect(h.value()).toBe("");
 });
 
@@ -587,8 +587,7 @@ test("after a lost answer, a rejected retry still says the start is unconfirmed"
 
 test.each(["paused", "needs_attention"] as const)("%s task explains its reason and sends no POST", async (state) => {
   const h = await mount({ value: "/routine ", tasks: [{ ...tasks[0]!, state }] });
-  const reason =
-    state === "paused" ? "Pausiert. Setze die geplante Aufgabe zuerst fort." : "Braucht deinen Eingriff, bevor sie laufen kann";
+  const reason = state === "paused" ? "Pausiert. Setze die Routine zuerst fort." : "Braucht deinen Eingriff, bevor sie laufen kann";
   expect(h.row("Bericht 0").querySelector("small")?.textContent).toBe(reason);
   h.mark("Bericht 0");
   h.key("Enter");
@@ -597,7 +596,7 @@ test.each(["paused", "needs_attention"] as const)("%s task explains its reason a
   expect(h.value()).toBe("/routine ");
 });
 
-test("new scheduled task inserts the Assistant Skill from the name lookup when absent from the full list", async () => {
+test("new routine inserts the Assistant Skill from the name lookup when absent from the full list", async () => {
   const h = await mount({
     skills: skills.slice(0, 5),
     scheduledTaskSkills: [skills[5]!],
@@ -605,7 +604,7 @@ test("new scheduled task inserts the Assistant Skill from the name lookup when a
   expect(h.row("Alle 5 Skills")).toBeDefined();
   h.type("/routine neu");
   await settled();
-  h.mark("Neue geplante Aufgabe");
+  h.mark("Neue Routine");
   h.key("Enter");
   await flush();
   expect(h.mentions()).toHaveLength(1);
@@ -618,7 +617,7 @@ test.each(["disabled", "missing"])("%s scheduled-tasks Skill explains why insert
     value: "/routine ",
     skills: kind === "missing" ? skills.slice(0, 5) : skills.map((skill) => ({ ...skill, enabled: skill.id !== "skill-5" })),
   });
-  expect(h.row("Neue geplante Aufgabe").querySelector("small")?.textContent).toBe(
+  expect(h.row("Neue Routine").querySelector("small")?.textContent).toBe(
     kind === "missing" ? "Der Skill dafür ist für dich nicht verfügbar" : "Du hast den Skill dafür ausgeschaltet",
   );
   h.key("Enter");
@@ -660,10 +659,10 @@ test.each([
     scheduledTaskSkillsFail: () => failure === "skill" && fail,
   });
   if (!value.startsWith("/routine")) expect(h.row("Skill 0")).toBeDefined();
-  expect(h.row("Geplante Aufgaben konnten nicht geladen werden").querySelector("small")?.textContent).toBe("Erneut versuchen");
-  expect(h.row("Neue geplante Aufgabe")).toBeUndefined();
+  expect(h.row("Routinen konnten nicht geladen werden").querySelector("small")?.textContent).toBe("Erneut versuchen");
+  expect(h.row("Neue Routine")).toBeUndefined();
   fail = false;
-  h.mark("Geplante Aufgaben konnten nicht geladen werden");
+  h.mark("Routinen konnten nicht geladen werden");
   h.key("Enter");
   await settled();
   expect(h.value()).toBe(value);
@@ -676,7 +675,7 @@ test("full Skill-list failure keeps other sections and retries Skills with Enter
   const h = await mount({ skillsFail: () => fail });
   const skillGets = () => h.requests.filter(({ url }) => url.pathname === "/api/ai/skills" && !url.search);
   expect(skillGets()).toHaveLength(1);
-  expect(h.row("Neue geplante Aufgabe")).toBeDefined();
+  expect(h.row("Neue Routine")).toBeDefined();
   expect(h.row("Bericht 6")).toBeDefined();
   expect(h.row("Bericht 2")).toBeDefined();
   expect(h.row("Modell wählen")).toBeDefined();
@@ -692,15 +691,15 @@ test("full Skill-list failure keeps other sections and retries Skills with Enter
   expect(h.row("Skills konnten nicht geladen werden")).toBeUndefined();
   expect(h.row("Skill 0")).toBeDefined();
   expect(h.row("Alle 6 Skills")).toBeDefined();
-  expect(h.row("Neue geplante Aufgabe")).toBeDefined();
+  expect(h.row("Neue Routine")).toBeDefined();
   expect(h.row("Bericht 6")).toBeDefined();
 });
 
 test("a failed full Skill list does not prevent task rows or the scheduled Skill reference", async () => {
   const h = await mount({ value: "/routine ", skillsFail: () => true });
   expect(h.row("Bericht 6")).toBeDefined();
-  expect(h.row("Geplante Aufgaben konnten nicht geladen werden")).toBeUndefined();
-  h.mark("Neue geplante Aufgabe");
+  expect(h.row("Routinen konnten nicht geladen werden")).toBeUndefined();
+  h.mark("Neue Routine");
   h.key("Enter");
   await flush();
   expect(h.mentions()[0]?.attachment.data).toMatchObject({ kind: "resource", ref: { type: "core.ai.skill", id: "Skill5" } });

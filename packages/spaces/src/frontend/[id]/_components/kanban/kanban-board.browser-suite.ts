@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
@@ -6,8 +6,8 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceWormhole } from "@/contracts";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceItemReaction, type SpaceWormhole } from "@/contracts";
+import { browserName, keptThrough, launchBrowser } from "../../../../../../ui/test/browser";
 import type { KanbanBucketInitial } from "./types";
 
 // Where the board starts, whether the toolbar stays one row, and how a folded column takes a drop are
@@ -62,8 +62,8 @@ const item = (id: string, columnId: string, title: string, extra: Partial<SpaceI
   tags: [],
   ...extra,
 });
-const me = { id: "11111111-1111-4111-8111-111111111111", displayName: "Robin Example", avatarHash: null };
-const kim = { id: "22222222-2222-4222-8222-222222222222", displayName: "Kim Example", avatarHash: null };
+const me = { id: "11111111-1111-4111-8111-111111111111", kind: "user" as const, displayName: "Robin Example", avatarHash: null };
+const kim = { id: "22222222-2222-4222-8222-222222222222", kind: "user" as const, displayName: "Kim Example", avatarHash: null };
 const items = [
   item("Item01", "Col001", "Order banners for the spring fair", { assignees: [me], priority: "high" }),
   item("Item02", "Col001", "Ask the bakery about a stand"),
@@ -151,7 +151,8 @@ const wormhole: SpaceWormhole = {
   createdAt: "2026-09-20T10:00:00.000Z",
   updatedAt: "2026-09-20T10:00:00.000Z",
 };
-const assignedToMe = () => bucketsFor((entry) => entry.assignees?.some((assignee) => assignee.id === me.id) ?? false);
+const assignedToMe = () =>
+  bucketsFor((entry) => entry.assignees?.some((assignee) => assignee.kind === "user" && assignee.id === me.id) ?? false);
 
 const workspaceColumns: SpaceColumn[] = Array.from({ length: 8 }, (_, index) => ({
   ...columns[index % columns.length]!,
@@ -171,33 +172,42 @@ const workspaceBuckets: KanbanBucketInitial[] = workspaceColumns.map((column) =>
 
 type Scenario = {
   workspace?: "kanban" | "table";
+  now?: string;
   locale: "en" | "de";
   query?: string;
   folded?: string[];
   buckets?: KanbanBucketInitial[];
   canWrite?: boolean;
   wormholes?: SpaceWormhole[];
+  /** Column reloads answer with these buckets and the reactions saved so far, as the real route reads them. */
+  served?: boolean;
 };
-const serverBody = (scenario: Scenario) =>
-  renderToString(() =>
-    createComponent(KanbanFixture, {
-      locale: scenario.locale,
-      spaceId: "Space1",
-      baseUrl: `/app/spaces/Space1${scenario.query ?? ""}`,
-      columns: scenario.workspace ? workspaceColumns : columns,
-      workspace: scenario.workspace,
-      itemsResult: scenario.workspace
-        ? { items: workspaceItems, total: workspaceItems.length, page: 1, pageSize: 80, totalPages: 1, groupCounts: {} }
-        : undefined,
-      tags: [{ id: "Tag001", spaceId: "Space1", name: "Logistics", color: "#0ea5e9" }],
-      wormholes: scenario.wormholes ?? [],
-      initialBuckets: scenario.workspace ? workspaceBuckets : (scenario.buckets ?? unfiltered()),
-      foldedColumns: scenario.folded ?? [],
-      selectedItemId: "",
-      canWrite: scenario.canWrite ?? true,
-      currentUserId: me.id,
-    }),
-  );
+const serverBody = (scenario: Scenario) => {
+  if (scenario.now) setSystemTime(new Date(scenario.now));
+  try {
+    return renderToString(() =>
+      createComponent(KanbanFixture, {
+        locale: scenario.locale,
+        spaceId: "Space1",
+        baseUrl: `/app/spaces/Space1${scenario.query ?? ""}`,
+        columns: scenario.workspace ? workspaceColumns : columns,
+        workspace: scenario.workspace,
+        itemsResult: scenario.workspace
+          ? { items: workspaceItems, total: workspaceItems.length, page: 1, pageSize: 80, totalPages: 1, groupCounts: {} }
+          : undefined,
+        tags: [{ id: "Tag001", spaceId: "Space1", name: "Logistics", color: "#0ea5e9" }],
+        wormholes: scenario.wormholes ?? [],
+        initialBuckets: scenario.workspace ? workspaceBuckets : (scenario.buckets ?? unfiltered()),
+        foldedColumns: scenario.folded ?? [],
+        selectedItemId: "",
+        canWrite: scenario.canWrite ?? true,
+        currentUserId: me.id,
+      }),
+    );
+  } finally {
+    if (scenario.now) setSystemTime();
+  }
+};
 
 let css = "";
 let server: ReturnType<typeof Bun.serve>;
@@ -205,6 +215,9 @@ const pages = new Map<string, string>();
 const moves: unknown[] = [];
 const filterRequests: unknown[] = [];
 const columnOrders: unknown[] = [];
+const reactionRequests: Array<{ method: string; item: string; emoji: string }> = [];
+const reactionSummaries = new Map<string, SpaceItemReaction[]>();
+let servedBuckets: KanbanBucketInitial[] | null = null;
 let browser: Browser;
 
 beforeAll(async () => {
@@ -235,14 +248,33 @@ beforeAll(async () => {
         };
         return Response.json(claimedItem);
       }
+      const reactionRoute = /^\/api\/spaces\/Space1\/items\/(\w+)\/reactions\/([^/]+)$/.exec(url.pathname);
+      if (reactionRoute && (request.method === "PUT" || request.method === "DELETE")) {
+        const itemId = reactionRoute[1]!;
+        const emoji = decodeURIComponent(reactionRoute[2]!);
+        reactionRequests.push({ method: request.method, item: itemId, emoji });
+        const current = reactionSummaries.get(itemId) ?? [];
+        const found = current.find((entry) => entry.emoji === emoji);
+        const own = request.method === "PUT";
+        const count = (found?.count ?? 0) + Number(own) - Number(found?.own ?? false);
+        const reactions = found
+          ? current.flatMap((entry) => (entry.emoji !== emoji ? [entry] : count > 0 ? [{ ...entry, own, count }] : []))
+          : own
+            ? [...current, { emoji, count: 1, own: true, people: [] }]
+            : current;
+        reactionSummaries.set(itemId, reactions);
+        return Response.json({ reactions });
+      }
       const move = /^\/api\/spaces\/Space1\/items\/(\w+)\/move$/.exec(url.pathname);
       if (move && request.method === "POST") {
         const body = (await request.json()) as { columnId: string; completed?: boolean };
         moves.push(body);
         // As the real route: completion changes only when the request asks for it.
-        const moved = allItems.find((entry) => entry.id === move[1])!;
+        const moved = [...allItems, ...reactionScenario().buckets!.flatMap((entry) => entry.items)].find((entry) => entry.id === move[1])!;
         const completedAt = body.completed === undefined ? moved.completedAt : body.completed ? new Date().toISOString() : null;
-        return Response.json({ ...moved, columnId: body.columnId, completedAt });
+        // As the real route: a write response carries no reactions.
+        const { reactions: _reactions, ...written } = moved;
+        return Response.json({ ...written, columnId: body.columnId, completedAt });
       }
       if (url.pathname === "/api/spaces/Space1/items/filter") {
         // As strict as the real route: the schema answers 400, a tag the Space does not have 404.
@@ -250,6 +282,16 @@ beforeAll(async () => {
         filterRequests.push(parsed.success ? parsed.data : null);
         if (!parsed.success) return Response.json({ message: "Invalid filter" }, { status: 400 });
         if (parsed.data.tagIds?.some((tagId) => tagId !== "Tag001")) return Response.json({ message: "Tag not found" }, { status: 404 });
+        if (servedBuckets) {
+          const key = parsed.data.overdue
+            ? "virtual:overdue"
+            : parsed.data.blocked
+              ? "virtual:blocked"
+              : `column:${parsed.data.columnIds?.[0]}`;
+          const served = servedBuckets.find((entry) => entry.key === key);
+          const found = served?.items.map((task) => ({ ...task, reactions: reactionSummaries.get(task.id) ?? [] })) ?? [];
+          return Response.json({ items: found, total: found.length, page: 1, pageSize: 30, totalPages: found.length > 0 ? 1 : 0 });
+        }
         // A board with automatic columns asks for them by flag; a status column then leaves their tasks out.
         const automatic = parsed.data.blocked !== undefined || parsed.data.overdue !== undefined;
         const found = automatic
@@ -323,6 +365,10 @@ const open = async (
   options: { javaScript?: boolean; theme?: "light" | "dark"; pointer?: PointerEnvironment } = {},
 ) => {
   const id = `case${++caseCounter}`;
+  for (const entry of scenario.buckets ?? []) {
+    for (const task of entry.items) reactionSummaries.set(task.id, task.reactions ?? []);
+  }
+  servedBuckets = scenario.served ? (scenario.buckets ?? null) : null;
   pages.set(id, pageHtml(scenario, options.theme ?? "light", options.pointer));
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
@@ -333,6 +379,7 @@ const open = async (
     reducedMotion: scenario.workspace ? "reduce" : "no-preference",
   });
   const page = await context.newPage();
+  if (scenario.now) await page.clock.setFixedTime(new Date(scenario.now));
   await page.goto(`${server.url}app/spaces/Space1?case=${id}${scenario.query ? `&${scenario.query.slice(1)}` : ""}`);
   await page.evaluate(() => window.document.fonts.ready);
   if (options.javaScript ?? true) {
@@ -828,7 +875,7 @@ describe("Spaces Kanban board in a browser", () => {
       expect(moves).toEqual([]);
       expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("");
 
-      // The swipe runs first: the drop refreshes every column, and the refresh replaces the rows a later step would read.
+      // The swipe runs first: the drop moves this card to another column.
       const title = page.locator('[data-item-id="Item02"] p').first();
       const from = await center(title);
       const to = await center(page.locator('[data-spaces-kanban-column="column:Col002"] article').first());
@@ -855,7 +902,7 @@ describe("Spaces Kanban board in a browser", () => {
       await saved;
       expect(moves).toContainEqual(expect.objectContaining({ columnId: "Col002" }));
       await page.waitForSelector('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]');
-      // The drop refreshes every column and replaces its rows; a single read can land between two renders.
+      // The moved card ends its held press when it leaves the source column.
       await waitForLiftedCards(page, []);
       expect(await liftedCards(page)).toEqual([]);
     } finally {
@@ -863,31 +910,54 @@ describe("Spaces Kanban board in a browser", () => {
     }
   }, 30_000);
 
-  test("iPad landscape: refreshing a held card ends its press and lets the replacement scroll", async () => {
+  test("iPad landscape: a refresh keeps a held card's press until it leaves its column, then its new card scrolls", async () => {
+    claimedItem = null;
     const page = await open(iPadLandscape, { locale: "en" });
     try {
       moves.splice(0);
-      const card = page.locator('[data-item-id="Item02"]');
-      const oldCard = await card.elementHandle();
+      const card = page.locator('article:has([data-item-id="Item02"])');
       const title = card.locator("p").first();
       const from = await center(title);
+      const refresh = () =>
+        page.evaluate(async () => {
+          const coverage: Promise<void>[] = [];
+          window.dispatchEvent(
+            new CustomEvent("spaces-data-invalidated", {
+              detail: { domains: ["view"], cursor: null, itemId: null, cover: (promise: Promise<void>) => coverage.push(promise) },
+            }),
+          );
+          await Promise.all(coverage);
+        });
+
       await touchPointer(title, "pointerdown", 9, from);
       await waitForLiftedCards(page, ["Item02"]);
-      const refreshed = page.waitForResponse((response) => response.url().endsWith("/items/filter"));
-      await page.evaluate(() =>
-        window.dispatchEvent(
-          new CustomEvent("spaces-data-invalidated", { detail: { domains: ["view"], cursor: null, itemId: null, cover: () => undefined } }),
-        ),
-      );
-      await refreshed;
-      await page.waitForFunction((oldCard) => oldCard !== null && !oldCard.isConnected, oldCard);
-      expect(await card.count()).toBe(1);
-      expect(await liftedCards(page)).toEqual([]);
-      expect(await touchMovePrevented(title)).toBe(false);
+      expect(await keptThrough(card, refresh)).toEqual({ replaced: false, heightChange: 0 });
+      expect(await liftedCards(page)).toEqual(["Item02"]);
+      expect(await touchMovePrevented(title)).toBe(true);
       await touchPointer(title, "pointerup", 9, from);
+      await waitForLiftedCards(page, []);
       expect(moves).toEqual([]);
       expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
+
+      await touchPointer(title, "pointerdown", 10, from);
+      await waitForLiftedCards(page, ["Item02"]);
+      const moved = await keptThrough(card, async () => {
+        // The fixture override also models a card that someone else moved to another column.
+        claimedItem = { ...items[1]!, columnId: "Col002" };
+        await refresh();
+        await page.locator('[data-spaces-kanban-column="column:Col001"] [data-item-id="Item02"]').waitFor({ state: "detached" });
+        await page.locator('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]').waitFor();
+      });
+      expect(moved.replaced).toBe(true);
+      expect(await card.count()).toBe(1);
+      await waitForLiftedCards(page, []);
+      expect(await liftedCards(page)).toEqual([]);
+      expect(await touchMovePrevented(title)).toBe(false);
+      await touchPointer(title, "pointerup", 10, from);
+      expect(moves).toEqual([]);
+      expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item03"]);
     } finally {
+      claimedItem = null;
       await page.context().close();
     }
   }, 30_000);
@@ -1591,6 +1661,23 @@ describe("Spaces Kanban board in a browser", () => {
       // Blocked wins; the overdue state stays visible as a badge there, and only there.
       expect(await page.locator('article:has([data-item-id="Item10"]) [data-spaces-kanban-card-overdue]').count()).toBe(1);
       expect(await page.locator('article:has([data-item-id="Item09"]) [data-spaces-kanban-card-overdue]').count()).toBe(0);
+      // The footer lies outside the card link, so it describes the link: a focused card still says its status and Overdue.
+      const described = await page.evaluate(() => {
+        const link = document.querySelector<HTMLElement>('a[data-spaces-kanban-card][data-item-id="Item10"]')!;
+        const meta = document.getElementById(link.getAttribute("aria-describedby") ?? "")!.cloneNode(true) as HTMLElement;
+        for (const hidden of meta.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+        return meta.textContent?.replace(/\s+/g, " ").trim();
+      });
+      expect(described).toContain("Status: Review");
+      expect(described).toContain("Overdue");
+      if (browserName === "chromium") {
+        const cdp = await page.context().newCDPSession(page);
+        const { nodes } = await cdp.send("Accessibility.getFullAXTree");
+        const card = nodes.find((node) => node.role?.value === "link" && node.name?.value === "Print the badges");
+        expect(String(card?.description?.value)).toContain("Status: Review");
+        expect(String(card?.description?.value)).toContain("Overdue");
+        await cdp.detach();
+      }
 
       // Hovering a column header or its menu moves nothing.
       const at = await layout(page);
@@ -1999,7 +2086,7 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
     const scenario: Scenario = { locale: "en" };
     /** The stack of "Book the stage" (Kim works on it, Robin is assigned too): avatar names, rings, overflow, and box. */
     const stackOf = async (page: Page) => {
-      const stack = page.locator('[data-spaces-kanban-card][data-item-id="Item04"] [class="flex shrink-0 -space-x-1"]');
+      const stack = page.locator('article:has([data-spaces-kanban-card][data-item-id="Item04"]) [class="flex shrink-0 -space-x-1"]');
       expect(await stack.count()).toBe(1);
       return {
         avatars: await stack
@@ -2029,20 +2116,22 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
     }
   }, 30_000);
 
-  test("claiming a card refreshes its assigned avatar with one ring and keeps its height", async () => {
+  test("claiming a card refreshes its assigned avatar with one ring in the same card element and keeps its height", async () => {
     claimedItem = null;
     const page = await open(desktop, { locale: "en" });
     try {
       const card = page.locator("article", { has: page.locator('[data-spaces-kanban-card][data-item-id="Item01"]') });
-      const height = (await card.boundingBox())!.height;
       expect(await card.locator('[data-ring="success"]').count()).toBe(0);
-      await card.hover();
-      await card.getByRole("button", { name: "I'm on it", exact: true }).click();
-      await card.locator('[data-ring="success"]').waitFor();
+      expect(
+        await keptThrough(card, async () => {
+          await card.hover();
+          await card.getByRole("button", { name: "I'm on it", exact: true }).click();
+          await card.locator('[data-ring="success"]').waitFor();
+        }),
+      ).toEqual({ replaced: false, heightChange: 0 });
       expect(await card.locator('[data-ring="success"]').count()).toBe(1);
       expect(await card.getByRole("img", { name: "You're on it", exact: true }).count()).toBe(1);
       expect(await card.getByRole("img", { name: "Robin Example avatar", exact: true }).count()).toBe(0);
-      expect((await card.boundingBox())!.height).toBe(height);
     } finally {
       claimedItem = null;
       await page.context().close();
@@ -2056,9 +2145,9 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
     ] as const) {
       const page = await open(view, { locale: "en" }, { theme });
       try {
-        const card = page.locator('[data-item-id="Item04"]');
+        const card = page.locator('article:has([data-item-id="Item04"])');
         await card.scrollIntoViewIfNeeded();
-        const area = (await page.locator("article", { has: card }).boundingBox())!;
+        const area = (await card.boundingBox())!;
         await page.screenshot({
           path: `/tmp/spaces-kanban-claim-card-${view.width}-${theme}.png`,
           clip: { x: area.x - 8, y: area.y - 8, width: area.width + 16, height: area.height + 16 },
@@ -2200,4 +2289,452 @@ describe("wide Spaces surfaces beside Detail", () => {
       }, 30_000);
     }
   }
+});
+
+// Reactions live only in these buckets; the default board keeps its original card geometry.
+const reactionNow = "2026-10-17T12:00:00.000Z";
+const cardReactions: SpaceItemReaction[] = ["👍", "❤️", "🎉", "👀", "🚀"].map((emoji, index) => ({
+  emoji,
+  count: index === 1 ? 2 : 1,
+  own: index === 1,
+  people: [{ kind: "user", id: kim.id, displayName: kim.displayName }],
+}));
+const reactionScenario = (canWrite = true): Scenario => ({
+  locale: "en",
+  served: true,
+  now: reactionNow,
+  canWrite,
+  buckets: [
+    bucket({ key: "column:Col001", label: "To do", color: columns[0]!.color, kind: "column", columnId: "Col001", isDone: false }, [
+      item("React01", "Col001", "Discuss the fair", { updatedAt: reactionNow, reactions: cardReactions }),
+      item("React02", "Col001", "Order the signs", { updatedAt: reactionNow, deadline: "2026-10-18T12:00:00.000Z", assignees: [me] }),
+      item("React03", "Col001", "Keep the queue steady", { updatedAt: reactionNow }),
+    ]),
+    bucket({ key: "virtual:overdue", label: "Overdue", color: null, kind: "overdue", columnId: null, isDone: false }, [
+      item("ReactFull", "Col001", "Confirm all the stands", {
+        updatedAt: reactionNow,
+        deadline: "2026-10-16T12:00:00.000Z",
+        assignees: [me, kim, { id: "33333333-3333-4333-8333-333333333333", kind: "user", displayName: "Alex Example", avatarHash: null }],
+      }),
+    ]),
+  ],
+});
+const reactionCard = (page: Page, id = "React01") => page.locator(`article:has(a[data-spaces-kanban-card][data-item-id="${id}"])`);
+const reactionChip = (page: Page, emoji = "👍", id = "React01") => reactionCard(page, id).locator(`[data-reaction-key="${emoji}"]`);
+const watchReactionNavigation = (page: Page) =>
+  page.evaluate(() => {
+    history.replaceState(null, "", window.location.pathname);
+    document.body.dataset.reactionNavigation = "[]";
+    window.addEventListener("spaces-detail-navigation", (event) => {
+      if (!(event instanceof CustomEvent)) return;
+      const detail: unknown = event.detail;
+      if (typeof detail !== "object" || detail === null || !("href" in detail) || typeof detail.href !== "string") return;
+      const opened = JSON.parse(document.body.dataset.reactionNavigation!) as string[];
+      opened.push(new URL(detail.href, location.href).searchParams.get("item")!);
+      document.body.dataset.reactionNavigation = JSON.stringify(opened);
+    });
+  });
+const pickedReaction = async (page: Page, id: string) => {
+  const card = reactionCard(page, id);
+  await card.hover();
+  await card.getByRole("button", { name: "Add reaction", exact: true }).click();
+  const emoji = page.locator(".k2b-emoji-picker__option").filter({ hasText: /^👍$/ }).first();
+  await emoji.click();
+};
+const waitForReactionAnswer = (page: Page, id: string) =>
+  page.waitForFunction((id) => {
+    const chip = document.querySelector(`article:has([data-item-id="${id}"]) [data-reaction-key="👍"]`);
+    return chip && !chip.hasAttribute("aria-busy");
+  }, id);
+type ReloadWindow = Window & { spacesReloads?: Promise<unknown>[] };
+/**
+ * How many data reloads the board has started. A saved reaction reloads the item's column, and the card stays the
+ * same element through it, so a test waits for the reloads themselves: it records the work each listener covers.
+ */
+const reloadsSoFar = (page: Page) =>
+  page.evaluate(() => {
+    const scope = window as ReloadWindow;
+    if (!scope.spacesReloads) {
+      const reloads: Promise<unknown>[] = [];
+      scope.spacesReloads = reloads;
+      // At the target, capture listeners run before the board's, so every listener's cover call is seen.
+      window.addEventListener(
+        "spaces-data-invalidated",
+        (event) => {
+          if (!(event instanceof CustomEvent)) return;
+          const detail = event.detail as { cover: (promise: Promise<void>) => void };
+          const covered: Promise<unknown>[] = [];
+          const cover = detail.cover;
+          detail.cover = (promise) => {
+            covered.push(promise.catch(() => undefined));
+            cover(promise);
+          };
+          // Listeners cover their work during the dispatch, so the list is complete one microtask later.
+          reloads.push(Promise.resolve().then(() => Promise.all(covered)));
+        },
+        { capture: true },
+      );
+    }
+    return scope.spacesReloads.length;
+  });
+/** Waits until a reload started after `from`, every reload so far has finished, and the board has drawn the result. */
+const waitForReloadsAfter = async (page: Page, from: number) => {
+  await page.waitForFunction((from) => ((window as ReloadWindow).spacesReloads?.length ?? 0) > from, from);
+  await page.evaluate(async () => {
+    await Promise.all((window as ReloadWindow).spacesReloads ?? []);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+};
+
+describe("Spaces Kanban reactions", () => {
+  test("chips are sibling controls, toggle without navigation, and +n and footer background open the item", async () => {
+    reactionRequests.splice(0);
+    const page = await open(desktop, reactionScenario());
+    try {
+      await watchReactionNavigation(page);
+      expect(await page.locator("a[data-spaces-kanban-card] button").count()).toBe(0);
+      expect(await reactionCard(page).locator(".k2b-reaction-bar__chip").count()).toBe(3);
+      const href = page.url();
+      for (const [emoji, method] of [
+        ["👍", "PUT"],
+        ["❤️", "DELETE"],
+      ] as const) {
+        const answer = page.waitForResponse((response) => response.url().includes("/reactions/") && response.request().method() === method);
+        const from = await reloadsSoFar(page);
+        await reactionChip(page, emoji).click();
+        expect((await answer).ok()).toBe(true);
+        // The saved reaction reloads the column; the next step reads the reloaded card.
+        await waitForReloadsAfter(page, from);
+        await page.waitForFunction(() => !document.querySelector('article:has([data-item-id="React01"]) [aria-busy="true"]'));
+      }
+      expect(reactionRequests).toEqual([
+        { method: "PUT", item: "React01", emoji: "👍" },
+        { method: "DELETE", item: "React01", emoji: "❤️" },
+      ]);
+      expect(page.url()).toBe(href);
+      expect(await page.locator("body").getAttribute("data-reaction-navigation")).toBe("[]");
+      // Pointer-transparent text must hit the stretched link under it; Locator.click would correctly see an overlay.
+      const more = reactionCard(page).locator(".k2b-reaction-bar__more");
+      expect(await more.textContent()).toContain("+2");
+      const at = await center(more);
+      await page.mouse.click(at.x, at.y);
+      await page.waitForFunction(() => document.body.dataset.reactionNavigation === '["React01"]');
+      await page.evaluate(() => {
+        history.replaceState(null, "", location.pathname);
+        document.body.dataset.reactionNavigation = "[]";
+      });
+      const footer = (await reactionCard(page).locator("[data-spaces-kanban-card-footer]").boundingBox())!;
+      // The reserved strip left of the claim control is footer background, clear of the chips and +n.
+      await page.mouse.click(footer.x + footer.width - 28, footer.y + footer.height - 2);
+      await page.waitForFunction(() => document.body.dataset.reactionNavigation === '["React01"]');
+      expect(reactionRequests).toHaveLength(2);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a first reaction fits beside a deadline and one assignee without moving any card", async () => {
+    const page = await open(desktop, reactionScenario());
+    let release = () => {};
+    const answered = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      await page.route("**/reactions/*", async (route) => {
+        const response = await route.fetch();
+        await answered;
+        await route.fulfill({ response });
+      });
+      const before = await layout(page);
+      await pickedReaction(page, "React02");
+      expect(await reactionChip(page, "👍", "React02").getAttribute("aria-busy")).toBe("true");
+      expect(await layout(page)).toEqual(before);
+      const from = await reloadsSoFar(page);
+      release();
+      await waitForReloadsAfter(page, from);
+      await waitForReactionAnswer(page, "React02");
+      expect(await layout(page)).toEqual(before);
+      const centers = await reactionCard(page, "React02")
+        .locator("[data-spaces-kanban-card-footer]")
+        .evaluate((footer) => {
+          // The metadata wrapper takes no box; its first item is the deadline.
+          const first = footer.querySelector('[id^="spaces-kanban-card-meta-"]')!.firstElementChild!.getBoundingClientRect();
+          const group = footer.querySelector(".spaces-card-reactions")!.getBoundingClientRect();
+          return [first.top + first.height / 2, group.top + group.height / 2];
+        });
+      expect(centers[1]).toBe(centers[0]);
+    } finally {
+      release();
+      await page.unrouteAll({ behavior: "wait" });
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a full footer wraps the reaction group once and grows by one row", async () => {
+    const page = await open(desktop, reactionScenario());
+    let release = () => {};
+    const answered = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      const card = reactionCard(page, "ReactFull");
+      const footer = card.locator("[data-spaces-kanban-card-footer]");
+      expect(await footer.locator("[data-spaces-kanban-card-status]").count()).toBe(1);
+      // Status, deadline, and three avatars leave room for "Add reaction" but not for a chip beside it.
+      await page.route("**/reactions/*", async (route) => {
+        const response = await route.fetch();
+        await answered;
+        await route.fulfill({ response });
+      });
+      const geometry = () =>
+        footer.evaluate((row) => {
+          const group = row.querySelector(".spaces-card-reactions")!;
+          const chip = group.querySelector(".k2b-reaction-bar__chip");
+          // The metadata wrapper takes no box; its items are the row's other flex items.
+          const meta = Array.from(row.querySelector('[id^="spaces-kanban-card-meta-"]')!.children);
+          const first = meta[0]!.getBoundingClientRect();
+          const bar = group.getBoundingClientRect();
+          return {
+            height: row.closest("article")!.getBoundingClientRect().height,
+            firstTop: first.top,
+            firstRowBottom: Math.max(...meta.map((child) => child.getBoundingClientRect().bottom)),
+            groupTop: bar.top,
+            groupHeight: bar.height,
+            gap: Number.parseFloat(getComputedStyle(row).rowGap),
+            chipHeight: chip?.getBoundingClientRect().height,
+          };
+        });
+      const before = await geometry();
+      expect(before.groupTop).toBeLessThan(before.firstRowBottom);
+      await pickedReaction(page, "ReactFull");
+      const pending = await geometry();
+      expect(pending.groupTop).toBeGreaterThan(pending.firstTop);
+      expect(pending.groupHeight).toBe(pending.chipHeight!);
+      expect(pending.groupTop).toBe(before.firstRowBottom + before.gap);
+      expect(pending.height - before.height).toBe(pending.groupHeight + pending.gap);
+      const from = await reloadsSoFar(page);
+      release();
+      await waitForReloadsAfter(page, from);
+      await waitForReactionAnswer(page, "ReactFull");
+      expect(await geometry()).toEqual(pending);
+    } finally {
+      release();
+      await page.unrouteAll({ behavior: "wait" });
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("desktop hover and keyboard focus reveal Add reaction without shifting boxes; touch hides it", async () => {
+    const page = await open(desktop, reactionScenario());
+    try {
+      const card = reactionCard(page);
+      const add = card.locator(".k2b-reaction-bar__add");
+      const boxes = async () => ({
+        card: await card.boundingBox(),
+        chips: await card.locator(".k2b-reaction-bar__chip").evaluateAll((chips) =>
+          chips.map((chip) => {
+            const { x, y, width, height } = chip.getBoundingClientRect();
+            return { x, y, width, height };
+          }),
+        ),
+        // getBoundingClientRect also measures its reserved place while visibility is hidden on touch.
+        add: await add.locator("button").evaluate((button) => {
+          const { x, y, width, height } = button.getBoundingClientRect();
+          return { x, y, width, height };
+        }),
+      });
+      await page.mouse.move(0, 0);
+      await settled(page);
+      expect(await add.evaluate((element) => getComputedStyle(element).opacity)).toBe("0");
+      const before = await boxes();
+      await card.hover();
+      await settled(page);
+      expect(await add.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
+      expect(await boxes()).toEqual(before);
+      await page.mouse.move(0, 0);
+      await reactionChip(page).focus();
+      await settled(page);
+      expect(await add.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
+      expect(await boxes()).toEqual(before);
+      await page.evaluate(() => (document.documentElement.dataset.k2bInput = "touch"));
+      expect(await add.evaluate((element) => getComputedStyle(element).visibility)).toBe("hidden");
+      expect(await boxes()).toEqual(before);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("iPad landscape: holding a chip shows names without lifting; holding the body still lifts", async () => {
+    const page = await open(iPadLandscape, reactionScenario());
+    try {
+      await page.evaluate(() => (document.documentElement.dataset.k2bInput = "touch"));
+      const chip = reactionChip(page);
+      const point = await center(chip);
+      await touchPointer(chip, "pointerdown", 71, point);
+      await page.waitForTimeout(600);
+      const hint = page.locator(".k2b-reaction-bar__hint:popover-open");
+      expect(await hint.count()).toBe(1);
+      expect(await hint.textContent()).toContain("Kim Example");
+      expect(await liftedCards(page)).toEqual([]);
+      await touchPointer(chip, "pointerup", 71, point);
+      const body = reactionCard(page).locator("a[data-spaces-kanban-card] p").first();
+      const from = await center(body);
+      await touchPointer(body, "pointerdown", 72, from);
+      try {
+        await waitForLiftedCards(page, ["React01"]);
+        expect(await liftedCards(page)).toEqual(["React01"]);
+      } finally {
+        await touchPointer(body, "pointerup", 72, from);
+      }
+      await waitForLiftedCards(page, []);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a moved card keeps its chips although the move response carries no reactions", async () => {
+    const page = await open(desktop, reactionScenario());
+    try {
+      // Hold the refresh after the drop, so the card shows what the move response left.
+      await page.route("**/items/filter", () => undefined);
+      const grip = reactionCard(page).locator("[data-dnd-card-handle]");
+      await grip.focus();
+      await page.keyboard.press("Space");
+      await page.keyboard.press("ArrowDown");
+      const moved = page.waitForResponse((response) => response.url().endsWith("/items/React01/move"));
+      await page.keyboard.press("Space");
+      await moved;
+      await waitForCards(page, "column:Col001", ["React02", "React01", "React03"]);
+      expect(await reactionCard(page).locator(".k2b-reaction-bar__chip").count()).toBe(3);
+      expect(await reactionCard(page).locator(".k2b-reaction-bar__more").textContent()).toContain("+2");
+    } finally {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("keyboard: a chip keeps the focus and its element when its saved reaction reloads the column, and Enter again removes it", async () => {
+    reactionRequests.splice(0);
+    const page = await open(desktop, reactionScenario());
+    try {
+      await reactionCard(page).locator("[data-dnd-card-handle]").focus();
+      for (let step = 0; step < 3; step++) await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("data-reaction-key"))).toBe("👍");
+      const chip = await page.evaluateHandle(() => document.activeElement);
+      const from = await reloadsSoFar(page);
+      const saved = page.waitForResponse((response) => response.url().includes("/reactions/") && response.request().method() === "PUT");
+      await page.keyboard.press("Enter");
+      await saved;
+      await waitForReloadsAfter(page, from);
+      // The reload keeps the card, so the focused chip stays the same element.
+      expect(await chip.evaluate((element) => element !== null && element === document.activeElement && element.isConnected)).toBe(true);
+      await chip.dispose();
+      await page.waitForFunction(
+        () =>
+          document.activeElement?.getAttribute("data-reaction-key") === "👍" &&
+          Boolean(document.activeElement.closest('article:has([data-item-id="React01"])')),
+      );
+      const removed = page.waitForResponse(
+        (response) => response.url().includes("/reactions/") && response.request().method() === "DELETE",
+      );
+      await page.keyboard.press("Enter");
+      await removed;
+      expect(reactionRequests.map(({ method, emoji }) => `${method} ${emoji}`)).toEqual(["PUT 👍", "DELETE 👍"]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("writer Tab order is grip, claim, card link, chips, Add reaction", async () => {
+    const page = await open(desktop, reactionScenario());
+    try {
+      const card = reactionCard(page);
+      const grip = card.locator("[data-dnd-card-handle]");
+      await grip.focus();
+      expect(await grip.evaluate((element) => element === document.activeElement)).toBe(true);
+      for (const selector of [
+        "[data-spaces-claim-action]",
+        "a[data-spaces-kanban-card]",
+        '[data-reaction-key="👍"]',
+        '[data-reaction-key="❤️"]',
+        '[data-reaction-key="🎉"]',
+        'button[aria-label="Add reaction"]',
+      ]) {
+        await page.keyboard.press("Tab");
+        expect(await card.locator(selector).evaluate((element) => element === document.activeElement)).toBe(true);
+      }
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("readers get labelled images, no add button or chip tab stops, and no reserved empty row", async () => {
+    const page = await open(desktop, reactionScenario(false));
+    try {
+      const chips = reactionCard(page).locator(".k2b-reaction-bar__chip");
+      expect(await chips.count()).toBe(3);
+      expect(
+        await chips.evaluateAll((elements) =>
+          elements.every(
+            (element) =>
+              element.getAttribute("role") === "img" &&
+              Boolean(element.getAttribute("aria-label")) &&
+              (element as HTMLElement).tabIndex < 0,
+          ),
+        ),
+      ).toBe(true);
+      expect(await page.locator(".k2b-reaction-bar__add").count()).toBe(0);
+      const plain = reactionCard(page, "React03");
+      const geometry = await plain.evaluate((card) => {
+        const footer = card.querySelector<HTMLElement>("[data-spaces-kanban-card-footer]")!;
+        const style = getComputedStyle(card);
+        const link = card.querySelector("a[data-spaces-kanban-card]")!;
+        return {
+          minHeight: getComputedStyle(footer).minHeight,
+          footerHeight: footer.getBoundingClientRect().height,
+          // The old reader card had the same text, padding, borders, and empty footer margin.
+          expectedHeight:
+            link.getBoundingClientRect().height +
+            Number.parseFloat(style.paddingTop) +
+            Number.parseFloat(style.paddingBottom) +
+            Number.parseFloat(style.borderTopWidth) +
+            Number.parseFloat(style.borderBottomWidth) +
+            Number.parseFloat(getComputedStyle(footer).marginTop),
+          height: card.getBoundingClientRect().height,
+        };
+      });
+      expect(geometry.minHeight).toBe("0px");
+      expect(geometry.footerHeight).toBe(0);
+      expect(geometry.height).toBe(geometry.expectedHeight);
+      const link = reactionCard(page).locator("a[data-spaces-kanban-card]");
+      await link.focus();
+      await page.keyboard.press("Tab");
+      expect(
+        await reactionCard(page, "React02")
+          .locator("a[data-spaces-kanban-card]")
+          .evaluate((element) => element === document.activeElement),
+      ).toBe(true);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("the server frame and hydrated board agree with reactions in light and dark", async () => {
+    for (const theme of ["light", "dark"] as const) {
+      const scenario = reactionScenario();
+      const serverPage = await open(desktop, scenario, { javaScript: false, theme });
+      let serverLayout: Awaited<ReturnType<typeof layout>>;
+      try {
+        serverLayout = await layout(serverPage);
+      } finally {
+        await serverPage.context().close();
+      }
+      const page = await open(desktop, scenario, { theme });
+      try {
+        expect(await layout(page)).toEqual(serverLayout);
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 30_000);
 });

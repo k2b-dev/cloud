@@ -8,6 +8,9 @@ import {
   EventCreateInputSchema,
   EventListItemDataSchema,
   EventUpdateInputSchema,
+  ReactionDataSchema,
+  ReactionInputSchema,
+  SpaceAssigneeDataSchema,
   SpaceBrowseDataSchema,
   TaskChecklistListDataSchema,
   TaskChecklistUpdateInputSchema,
@@ -178,3 +181,30 @@ for (const { name, schema, input, field, nullable, optional } of textInputs) {
     expect(z.fromJSONSchema(json).safeParse({ ...input, [field]: "Caption:\\nText" }).success).toBeTrue();
   });
 }
+
+test("reaction capability requires one emoji and an item, without recurrence scope", () => {
+  for (const emoji of ["👍🏽", "❤️", "👩‍💻", "🇩🇪", "1️⃣"])
+    expect(ReactionInputSchema.safeParse({ itemId: "Item01", emoji }).success).toBe(true);
+  for (const emoji of ["❤", "ab", "👍👍", "", " "]) expect(ReactionInputSchema.safeParse({ itemId: "Item01", emoji }).success).toBe(false);
+  expect(ReactionInputSchema.safeParse({ itemId: "Item01", emoji: "👍", recurrenceId: "2026-10-17T10:00:00Z" }).success).toBe(false);
+});
+
+test("reaction schemas keep accepting emoji after the JSON Schema round trip Core validates with", () => {
+  const input = z.fromJSONSchema(z.toJSONSchema(ReactionInputSchema));
+  const data = z.fromJSONSchema(z.toJSONSchema(ReactionDataSchema));
+  for (const emoji of ["👍", "👍🏽", "❤️", "👩‍💻", "🇩🇪"]) {
+    expect(input.safeParse({ itemId: "Item01", emoji }).success).toBe(true);
+    expect(data.safeParse({ reactions: [{ emoji, count: 1, own: true, people: [] }] }).success).toBe(true);
+  }
+});
+
+test("capability assignee directories and compact entries preserve principal kind", () => {
+  const id = "99999999-9999-4999-8999-999999999999";
+  for (const kind of ["user", "service_account"] as const) {
+    const assignee = { id, kind, displayName: "Task worker" };
+    expect(SpaceAssigneeDataSchema.parse({ ...assignee, description: "direct access" }).kind).toBe(kind);
+    for (const schema of [TaskListItemDataSchema, EventListItemDataSchema]) {
+      expect(schema.shape.assignees.parse([assignee])).toEqual([assignee]);
+    }
+  }
+});

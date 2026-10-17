@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { env } from "@k2b/cloud/config";
-import { isAccountCategoryAllowed } from "@k2b/cloud/services";
+import { type AppApprovalConfig, AppApprovalError, isAccountCategoryAllowed, readAppApprovalConfig } from "@k2b/cloud/services";
 import { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import * as settings from "@k2b/cloud/services/settings";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
@@ -16,7 +16,7 @@ const RefreshTokenGrantSchema = z.object({ kind: z.literal("refresh_token"), tok
 const DeviceCodeGrantSchema = z.object({ kind: z.literal("device_code"), deviceAuthorizationId: UUID, nonce: UUID }).strict();
 const ClientCredentialsGrantSchema = z.object({ kind: z.literal("client_credentials"), grantId: UUID, nonce: UUID }).strict();
 const UserGrantSchema = z.discriminatedUnion("kind", [AuthorizationCodeGrantSchema, RefreshTokenGrantSchema, DeviceCodeGrantSchema]);
-const common = { expiresIn: z.literal(3_600) };
+const common = { expiresIn: z.number().int().min(1).max(3600) };
 const OAuthTokenRequestSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("user_access"), grant: UserGrantSchema, ...common }).strict(),
   z.object({ kind: z.literal("user_id"), grant: UserGrantSchema, ...common }).strict(),
@@ -44,6 +44,7 @@ type AuthorityState = {
   grantedAudiences: string[];
   resource: string | null;
   nonce: string | null;
+  notAfter: Date | null;
   user: null | {
     id: string;
     uid: string;
@@ -95,6 +96,7 @@ type AuthorityRow = {
 };
 
 type GrantRow = {
+  family_expires_at: Date | null;
   client_id: string;
   user_id: string | null;
   scopes: string[];
@@ -114,7 +116,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
         AND nonce = ${params.request.grant.nonce}::uuid
         AND consumed_at IS NULL
         AND expires_at > now()
-      RETURNING client_id, NULL::uuid AS user_id, scopes, audiences, resource, NULL::text AS nonce
+      RETURNING client_id, NULL::uuid AS user_id, scopes, audiences, resource, NULL::text AS nonce, NULL::timestamptz AS family_expires_at
     `;
     grant = row ?? null;
   } else {
@@ -127,7 +129,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
           AND used = true
           AND authority_issued_at IS NULL
           AND expires_at >= now()
-        RETURNING client_id, user_id, scopes, audiences, resource, nonce
+        RETURNING client_id, user_id, scopes, audiences, resource, nonce, NULL::timestamptz AS family_expires_at
       `;
       grant = row ?? null;
     } else if (params.request.grant.kind === "device_code") {
@@ -144,9 +146,41 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
           AND client.client_id = device.client_id
           AND client.is_public
           AND client.allow_device_grant
-        RETURNING device.client_id, device.user_id, device.scopes, device.audiences, NULL::text AS resource, NULL::text AS nonce
+        RETURNING device.client_id, device.user_id, device.scopes, device.audiences, NULL::text AS resource, NULL::text AS nonce, NULL::timestamptz AS family_expires_at
       `;
       grant = row ?? null;
+      if (grant) {
+        // Keep the approval until this boundary, even after the sign-in UI expires.
+        const [login] = await db<
+          { id: string; issuer: string; user_id: string | null; approved_by: string | null; auth_epoch: string | null }[]
+        >`
+          SELECT id,issuer,user_id,approved_by,auth_epoch FROM auth.app_logins
+          WHERE device_authorization_id=${params.request.grant.deviceAuthorizationId}::uuid
+            AND kind='terminal' AND state='approved'`;
+        if (login) {
+          // Same rule as browser completion, read on this transaction: a second pool connection could starve the pool.
+          let cfg: AppApprovalConfig;
+          try {
+            cfg = await readAppApprovalConfig(db);
+          } catch (error) {
+            if (error instanceof AppApprovalError) return null;
+            throw error;
+          }
+          if (!cfg.enabled || !cfg.appOrigin || login.issuer !== cfg.issuer) return null;
+          // Lock user, device, then login, matching sign-out everywhere and signed decisions. FOR SHARE holds the
+          // epoch still without blocking the key-share lock a concurrent decision's grant update takes on the user.
+          const [user] = await db`SELECT id FROM auth.users WHERE id=${grant.user_id}::uuid
+            AND id=${login.user_id}::uuid AND auth_epoch=${login.auth_epoch}::bigint FOR SHARE`;
+          if (!user) return null;
+          const [device] = await db`SELECT id FROM auth.app_devices
+            WHERE id=${login.approved_by}::uuid AND issuer=${cfg.issuer} AND revoked_at IS NULL
+              AND user_id=${grant.user_id}::uuid FOR UPDATE`;
+          if (!device) return null;
+          const [consumed] = await db`UPDATE auth.app_logins SET state='consumed'
+            WHERE id=${login.id}::uuid AND state='approved' AND approved_by=${login.approved_by}::uuid RETURNING id`;
+          if (!consumed) return null;
+        }
+      }
     } else {
       const [row] = await db<GrantRow[]>`
         UPDATE oauth.refresh_tokens token
@@ -161,7 +195,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
           AND family.status = 'active'
           AND family.expires_at > now()
         RETURNING family.client_id, family.user_id, token.authority_scopes AS scopes,
-          token.authority_audiences AS audiences, token.authority_resource AS resource, NULL::text AS nonce
+          token.authority_audiences AS audiences, token.authority_resource AS resource, NULL::text AS nonce, family.expires_at AS family_expires_at
       `;
       grant = row ?? null;
     }
@@ -229,6 +263,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
     grantedAudiences: grant?.audiences ?? [],
     resource: grant?.resource ?? null,
     nonce: grant?.nonce ?? null,
+    notAfter: grant?.family_expires_at ?? null,
     user:
       resolvedUserId !== null && uid !== null && profile !== null
         ? {
@@ -266,13 +301,15 @@ type Dependencies = {
   now: () => number;
 };
 
+export const authenticateOAuthBroker = (token: string | null): boolean => {
+  const secret = env.CLOUD_OAUTH_BROKER_SECRET;
+  // OAuth is optional. Missing or malformed configuration disables its broker.
+  if (!secret || !/^[a-fA-F0-9]{64}$/.test(secret) || !token || !/^[a-fA-F0-9]{64}$/.test(token)) return false;
+  return timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(secret, "hex"));
+};
+
 const defaultDependencies: Dependencies = {
-  authenticate: (token) => {
-    const secret = env.CLOUD_OAUTH_BROKER_SECRET;
-    // OAuth is optional. Missing or malformed configuration disables its broker.
-    if (!secret || !/^[a-fA-F0-9]{64}$/.test(secret) || !token || !/^[a-fA-F0-9]{64}$/.test(token)) return false;
-    return timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(secret, "hex"));
-  },
+  authenticate: authenticateOAuthBroker,
   withActiveSigner: withActiveIdentitySigner,
   issuer: async () => publicCloudOrigin(await settings.get<string>("app.url")),
   resolve: resolveAuthorityState,
@@ -281,7 +318,7 @@ const defaultDependencies: Dependencies = {
 
 class InvalidOAuthGrantAuthorityError extends Error {}
 
-const bearer = (value: string | undefined): string | null => {
+export const oauthBrokerBearer = (value: string | undefined): string | null => {
   if (!value?.startsWith("Bearer ")) return null;
   const token = value.slice(7).trim();
   return token || null;
@@ -402,11 +439,13 @@ const sign = async (
   grantedScopes: string[],
   options: { issuer: string; kid: string; key: CryptoKey; now: number },
 ): Promise<string> => {
+  const exp = Math.min(options.now + request.expiresIn, state.notAfter ? Math.floor(state.notAfter.getTime() / 1000) : Infinity);
+  if (exp <= options.now) throw new InvalidOAuthGrantAuthorityError();
   let token = new SignJWT(claims(request, state, grantedScopes))
     .setProtectedHeader({ alg: "RS256", kid: options.kid })
     .setIssuer(options.issuer)
     .setIssuedAt(options.now)
-    .setExpirationTime(options.now + request.expiresIn);
+    .setExpirationTime(exp);
   if (request.kind === "service_access") {
     const audiences = resolveAudiences(state, options.issuer);
     if (!audiences) throw new Error("Validated OAuth audience is missing");
@@ -433,14 +472,14 @@ export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencie
   const routes = new Hono();
   routes.post("/oauth/ready", async (c) => {
     c.header("Cache-Control", "no-store");
-    if (!dependencies.authenticate(bearer(c.req.header("authorization")))) return c.json({ message: "Unauthorized" }, 401);
+    if (!dependencies.authenticate(oauthBrokerBearer(c.req.header("authorization")))) return c.json({ message: "Unauthorized" }, 401);
     await dependencies.withActiveSigner("oauth", async () => undefined, { timeoutMs: 5_000 });
     return c.body(null, 204);
   });
   routes.post("/oauth/token", async (c) => {
     c.header("Cache-Control", "no-store");
     c.header("Pragma", "no-cache");
-    if (!dependencies.authenticate(bearer(c.req.header("authorization")))) return c.json({ message: "Unauthorized" }, 401);
+    if (!dependencies.authenticate(oauthBrokerBearer(c.req.header("authorization")))) return c.json({ message: "Unauthorized" }, 401);
 
     const contentLength = Number(c.req.header("content-length") ?? 0);
     if (Number.isFinite(contentLength) && contentLength > 262_144) return c.json({ message: "Request too large" }, 413);

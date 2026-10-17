@@ -567,6 +567,8 @@ CREATE INDEX commands_mailbox_attention_idx ON mail.commands USING btree (mailbo
 
 CREATE INDEX commands_mailbox_idx ON mail.commands USING btree (mailbox_id, created_at DESC, id DESC);
 
+CREATE INDEX commands_message_target_idx ON mail.commands USING btree (mailbox_id, ((target ->> 'remoteMessageRefId'::text)), kind) WHERE (target ? 'remoteMessageRefId'::text);
+
 CREATE INDEX commands_stale_execution_idx ON mail.commands USING btree (COALESCE(worker_heartbeat_at, started_at), id) WHERE (state = 'executing'::text);
 
 CREATE TRIGGER commands_touch_updated_at BEFORE UPDATE ON mail.commands FOR EACH ROW EXECUTE FUNCTION mail.touch_updated_at();

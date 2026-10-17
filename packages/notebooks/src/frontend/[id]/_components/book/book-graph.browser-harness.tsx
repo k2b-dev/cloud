@@ -31,6 +31,7 @@ export function BookGraphFixture(props: BookGraphFixtureProps) {
                 backHref: props.navigator.graphBack,
                 view: props.view,
                 now: props.now,
+                timeZone: "Europe/Berlin",
                 navigationHidden: props.navigator.navigationHidden,
               })
             ) : (

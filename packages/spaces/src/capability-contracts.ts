@@ -7,12 +7,16 @@ import {
   EstimatedDurationMinutesSchema,
   ItemTemplateKindSchema,
   LocalDateSchema,
+  MAX_ITEM_REACTION_EMOJI,
   MAX_ITEM_TEMPLATES_PER_KIND,
   MAX_TASK_ATTACHMENTS,
   MAX_TASK_CHECKLIST_ENTRIES,
   PrioritySchema,
+  ReactionEmojiSchema,
   ResourceShortIdSchema,
   SpaceItemAttachmentSchema,
+  SpaceItemReactionSchema,
+  SpaceItemReactionsResponseSchema,
   SpaceItemResourceReferenceInputSchema,
   SpaceItemResourceReferenceSchema,
   SpaceTaskChecklistEntrySchema,
@@ -201,13 +205,22 @@ export const SpaceBrowseDataSchema = z
   .max(100);
 export const SpaceReadInputSchema = z.object({ id: SpaceIdSchema }).strict();
 
-const ItemAssigneeDataSchema = z.object({ id: UuidSchema, displayName: z.string().min(1).max(200) }).strict();
+const ItemAssigneeDataSchema = z
+  .object({
+    id: UuidSchema,
+    kind: z.enum(["user", "service_account"]).describe("Assignee principal kind"),
+    displayName: z.string().min(1).max(200),
+  })
+  .strict();
 const ItemTagDataSchema = z
   .object({ id: ResourceShortIdSchema, name: z.string().min(1).max(100), color: z.string().min(1).max(100) })
   .strict();
 const ItemAttachmentDataSchema = SpaceItemAttachmentSchema.extend({
   links: z.array(CapabilitySemanticLinkSchema).min(1).max(2),
 }).strict();
+
+export const ReactionInputSchema = z.object({ itemId: ItemIdSchema, emoji: ReactionEmojiSchema }).strict();
+export const ReactionDataSchema = SpaceItemReactionsResponseSchema;
 
 const ItemBaseDataShape = {
   id: ResourceShortIdSchema,
@@ -221,6 +234,7 @@ const ItemBaseDataShape = {
   assignees: z.array(ItemAssigneeDataSchema).max(100),
   tags: z.array(ItemTagDataSchema).max(100),
   relationsTruncated: z.boolean(),
+  reactions: SpaceItemReactionsResponseSchema.shape.reactions.optional(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
 };
@@ -282,10 +296,25 @@ const ItemListBaseDataShape = {
   descriptionPreview: z.string().max(1000).nullable(),
   descriptionTruncated: z.boolean(),
   completedAt: TimestampSchema.nullable(),
-  assignees: z.array(z.object({ id: UuidSchema, displayName: z.string().min(1).max(100) }).strict()).max(3),
+  assignees: z
+    .array(
+      z
+        .object({
+          id: UuidSchema,
+          kind: z.enum(["user", "service_account"]).describe("Assignee principal kind"),
+          displayName: z.string().min(1).max(100),
+        })
+        .strict(),
+    )
+    .max(3),
   assigneeCount: z.number().int().nonnegative().describe("Total number of assignees; assignees may contain fewer entries."),
   tags: z.array(z.object({ id: ResourceShortIdSchema, name: z.string().min(1).max(50), color: z.string().min(1).max(20) }).strict()).max(3),
   relationsTruncated: z.boolean(),
+  reactions: z
+    .array(SpaceItemReactionSchema.pick({ emoji: true, count: true, own: true }).strict())
+    .max(MAX_ITEM_REACTION_EMOJI)
+    .optional()
+    .describe("Reaction counts in first-reaction order; item.read names the people. relationsTruncated marks a shortened list."),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
   links: ResourceLinksSchema,
@@ -327,7 +356,7 @@ const ItemListBaseShape = {
   priority: z.array(PrioritySchema).max(4).optional().describe("Optional priority filter."),
   columnIds: ResourceIdListSchema.optional().describe("Optional column IDs returned by Read space."),
   tagIds: ResourceIdListSchema.optional().describe("Optional tag IDs returned by Read space."),
-  assigneeIds: UserIdListSchema.optional().describe("Optional user UUIDs returned by List assignable Space members."),
+  assigneeIds: UserIdListSchema.optional().describe("Optional person or service account UUIDs returned by List assignable Space members."),
   assignedTo: z
     .enum(["all", "assigned", "me", "unassigned"])
     .default("all")
@@ -360,13 +389,18 @@ export const SpaceAssigneeListInputSchema = z
   })
   .strict();
 export const SpaceAssigneeDataSchema = z
-  .object({ id: UuidSchema, displayName: z.string().min(1).max(200), description: z.string().max(300) })
+  .object({
+    id: UuidSchema,
+    kind: z.enum(["user", "service_account"]).describe("Assignee principal kind"),
+    displayName: z.string().min(1).max(200),
+    description: z.string().max(300),
+  })
   .strict();
 export const SpaceAssigneeListDataSchema = z.array(SpaceAssigneeDataSchema).max(100);
 
 const ItemRelationInputShape = {
   assigneeIds: UserIdListSchema.optional().describe(
-    "Complete replacement set of user UUIDs returned by List assignable Space members. Dropping the person holding an active claim is refused; release it first with task.release.",
+    "Complete replacement set of person or service account UUIDs returned by List assignable Space members. Dropping the account holding an active claim is refused; release it first with task.release.",
   ),
   tagIds: ResourceIdListSchema.optional().describe("Complete replacement set of tag IDs returned by Read space."),
 };
@@ -457,7 +491,7 @@ export const TaskCreateInputSchema = z
     deadline: TimestampSchema.optional().describe("Optional task deadline."),
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.optional().describe("Optional estimate in minutes."),
     priority: PrioritySchema.optional().describe("Optional task priority."),
-    assigneeIds: UserIdListSchema.optional().describe("Optional assignee user UUIDs from this Space."),
+    assigneeIds: UserIdListSchema.optional().describe("Optional assignee person or service account UUIDs from this Space."),
     tagIds: ResourceIdListSchema.optional().describe("Optional tag IDs from this Space."),
     references: z.array(ItemResourceReferenceInputSchema).max(10).optional().describe("Cloud resources linked to the new task."),
     ...TemplateUseInputShape,
@@ -507,7 +541,7 @@ export const EventCreateInputSchema = z
     endsAt: TimestampSchema.optional().describe("Event end timestamp after startsAt; give it together with startsAt."),
     allDay: z.boolean().optional().describe("Whether the event uses all-day presentation."),
     recurrence: RecurrenceDataSchema.optional().describe("Optional recurrence series."),
-    assigneeIds: UserIdListSchema.optional().describe("Optional assignee user UUIDs from this Space."),
+    assigneeIds: UserIdListSchema.optional().describe("Optional assignee person or service account UUIDs from this Space."),
     tagIds: ResourceIdListSchema.optional().describe("Optional tag IDs from this Space."),
     references: z.array(ItemResourceReferenceInputSchema).max(10).optional().describe("Cloud resources linked to the new event."),
     ...TemplateUseInputShape,

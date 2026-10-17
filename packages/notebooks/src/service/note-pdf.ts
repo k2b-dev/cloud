@@ -8,6 +8,7 @@ import {
 import katexCss from "katex/dist/katex.min.css" with { type: "text" };
 import { type BookReferences, renderNotebookBook } from "../lib/book-renderer";
 import { LIGATURE_CLASS, LIGATURES } from "../lib/ligatures";
+import type { NotePdfOmission } from "../lib/pdf-omissions";
 import { resolveBookQueries, resolveBookReferences } from "./book";
 import type { NoteQueryResult } from "./note-query";
 
@@ -98,9 +99,9 @@ export type NotePdfHtmlInput = {
 };
 
 /** The reader's Book rendering of a note inside the chosen print preset. */
-export const buildNotePdfHtml = (input: NotePdfHtmlInput): string => {
+export const buildNotePdfHtml = (input: NotePdfHtmlInput): { html: string; omissions: NotePdfOmission[] } => {
   if (!input.markdown.trim()) throw new MarkdownPdfError("bad_input", "Markdown must not be empty.", "markdown_empty");
-  const { html } = renderNotebookBook({
+  const { html, omissions } = renderNotebookBook({
     markdown: input.markdown,
     notebookId: input.notebookShortId,
     noteId: input.noteShortId,
@@ -110,7 +111,7 @@ export const buildNotePdfHtml = (input: NotePdfHtmlInput): string => {
     print: true,
   });
   const css = html.includes("notebook-book-math") ? `${NOTE_PRINT_CSS}\n${KATEX_PRINT_CSS}` : NOTE_PRINT_CSS;
-  return buildPresetPdfHtml({ html, templateId: input.templateId, customCss: input.customCss, css });
+  return { html: buildPresetPdfHtml({ html, templateId: input.templateId, customCss: input.customCss, css }), omissions };
 };
 
 /** Render the caller's note snapshot as PDF, with query blocks resolved for the caller's access subject. */
@@ -124,7 +125,8 @@ export const renderNotePdf = async (
     bypassAccess?: boolean;
     title: string;
   },
-): Promise<RenderHtmlToPdfResult> => {
+): Promise<RenderHtmlToPdfResult & { omissions: NotePdfOmission[] }> => {
   const [queryResults, references] = await Promise.all([resolveBookQueries(params), resolveBookReferences(params)]);
-  return renderHtmlToPdf({ html: buildNotePdfHtml({ ...params, queryResults, references }), title: params.title });
+  const { html, omissions } = buildNotePdfHtml({ ...params, queryResults, references });
+  return { ...(await renderHtmlToPdf({ html, title: params.title })), omissions };
 };

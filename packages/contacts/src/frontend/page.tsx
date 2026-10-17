@@ -44,10 +44,10 @@ export default ssr<AuthContext>(async (c) => {
   const activeTagInternalId = activeTagId ? await resolvePublicId("tags", activeTagId) : null;
   const [booksResult, contactsResult] = await Promise.all([
     contactsService.book.list({
-      subject: { type: "user", userId: user.id },
+      subject: c.get("accessSubject"),
     }),
     contactsService.contact.search({
-      subject: { type: "user", userId: user.id },
+      subject: c.get("accessSubject"),
       pagination: { page, perPage },
       filter: {
         query: search.trim() || undefined,
@@ -65,10 +65,11 @@ export default ssr<AuthContext>(async (c) => {
     contacts: internalContacts,
     contactId: selectedContactIdFromUrl,
     bookId: selectedBookIdFromUrl,
-    user,
+    actor: c.get("actor"),
+    accessSubject: c.get("accessSubject"),
   });
   const [permissions, internalNotesPage, internalFavoriteKeys, internalGlobalTags] = await Promise.all([
-    loadContactBookPermissions({ books: internalBooks, user }),
+    loadContactBookPermissions({ books: internalBooks, actor: c.get("actor"), accessSubject: c.get("accessSubject") }),
     selectedContact
       ? contactsService.contact.notes.listPage({
           bookId: selectedContact.bookId,
@@ -96,6 +97,7 @@ export default ssr<AuthContext>(async (c) => {
   const writableBooks = permissions.writableBooks
     .map((book) => ({ ...book, id: bookIds.get(book.id)! }))
     .filter((book) => Boolean(book.id));
+  const scope = books.length === 0 ? "noBooks" : queryOptions.favorites ? "favorites" : "all";
   const bookNames = Object.fromEntries(books.map((book) => [book.id, book.name]));
   const totalPages = Math.max(1, Math.ceil(contactsResult.total / perPage));
   const requestUrl = new URL(c.req.raw.url);
@@ -112,6 +114,7 @@ export default ssr<AuthContext>(async (c) => {
 
         <AppWorkspace.Content>
           <ContactsWorkspaceMain
+            scope={scope}
             title={queryOptions.favorites ? t.favoritesTitle : t.allContactsTitle}
             description={queryOptions.favorites ? t.favoritesDescription : t.allContactsDescription}
             total={contactsResult.total}

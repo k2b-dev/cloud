@@ -31,6 +31,24 @@ const SIZE_CLASS: Record<AvatarSize, string> = {
   xl: "h-20 w-20 text-xl",
 };
 
+/** One assignee: a person with their picture or initials, a service account with the same API icon its claim shows. */
+export function AssigneeAvatar(props: { assignee: SpaceItemAssignee; size?: AvatarSize; class?: string }) {
+  const person = () => props.assignee.kind === "user";
+  return (
+    <Avatar
+      name={props.assignee.displayName}
+      src={
+        person() && props.assignee.avatarHash
+          ? `/api/accounts/users/${encodeURIComponent(props.assignee.id)}/avatar?rev=${encodeURIComponent(props.assignee.avatarHash)}`
+          : undefined
+      }
+      icon={person() ? undefined : "ti ti-api"}
+      size={props.size ?? "xs"}
+      class={props.class}
+    />
+  );
+}
+
 export default function AssigneeAvatars(props: Props) {
   const max = () => props.max ?? 3;
   const size = () => props.size ?? "xs";
@@ -50,16 +68,7 @@ export default function AssigneeAvatars(props: Props) {
           </Show>
           <For each={visible()}>
             {(assignee) => (
-              <Avatar
-                name={assignee.displayName}
-                src={
-                  assignee.avatarHash
-                    ? `/api/accounts/users/${encodeURIComponent(assignee.id)}/avatar?rev=${encodeURIComponent(assignee.avatarHash)}`
-                    : undefined
-                }
-                size={size()}
-                class={`border-2 border-[var(--ui-surface)] ${props.avatarClass ?? ""}`}
-              />
+              <AssigneeAvatar assignee={assignee} size={size()} class={`border-2 border-[var(--ui-surface)] ${props.avatarClass ?? ""}`} />
             )}
           </For>
           <Show when={hiddenCount() > 0}>

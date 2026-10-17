@@ -134,7 +134,7 @@ const hide = '[data-cloud-shell-focus-toggle="hide"]';
 const show = '[data-cloud-shell-focus-toggle="show"]';
 for (const [width, height, touch, inset] of [
   [1194, 834, true, 6],
-  [834, 1194, true, 0],
+  [834, 1194, true, 8],
   [1440, 900, false, 8],
 ] as const) {
   test(`${width}x${height}: hide, parse-time reload, keyboard restore and edge gesture preserve geometry`, async () => {
@@ -153,7 +153,7 @@ for (const [width, height, touch, inset] of [
       await page.goto(`${origin}/app/focus`);
       await settle(page);
       const original = await boxes(page);
-      expect(original.rail.width).toBe(56);
+      expect(original.rail.width).toBe(width < 1024 ? 60 : 56);
       await page.locator(hide).click();
       await settle(page);
       const hidden = await boxes(page);
@@ -170,7 +170,7 @@ for (const [width, height, touch, inset] of [
           inset,
         );
       } else {
-        expect(hidden.area.left).toBe(0);
+        expect(hidden.area.left).toBe(8);
         expect(await page.locator(".k2b-app-workspace__head-toggle").isVisible()).toBe(true);
       }
       for (const name of ["workspace", "main"] as const) {

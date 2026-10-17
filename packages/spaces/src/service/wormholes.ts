@@ -16,7 +16,7 @@ import { buildSpacePrincipalCondition, getSpacePermission } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as columns from "./columns";
 import { publishDependentsChange } from "./item-dependencies";
-import { get as getItem } from "./items";
+import { get as getItem, listServiceAccountsWithAccess } from "./items";
 import { publishSpaceChange, spacesLive } from "./live";
 import { rank } from "./rank";
 import * as spaces from "./spaces";
@@ -395,15 +395,13 @@ export const transfer = async (params: {
     const [tagCount] = await tx<{ count: number }[]>`
       SELECT COUNT(*)::int AS count FROM spaces.item_tags WHERE item_id = ${params.itemId}::uuid
     `;
-    const assigneeRows = await tx<{ user_id: string }[]>`
-      SELECT user_id FROM spaces.item_assignees WHERE item_id = ${params.itemId}::uuid
+    const assigneeRows = await tx<{ user_id: string | null; service_account_id: string | null }[]>`
+      SELECT user_id, service_account_id FROM spaces.item_assignees WHERE item_id = ${params.itemId}::uuid
     `;
     const accessRows = await tx<{ access_id: string }[]>`
       SELECT access_id FROM spaces.space_access WHERE space_id = ${locked.target_space_id}::uuid
     `;
-    // Existing assignees are concrete authenticated users. A broad target
-    // grant therefore preserves all of them without expanding an unbounded
-    // public/authenticated principal into an assignable-user list.
+    // Broad access preserves existing people only. Accounts always need their own direct grant.
     const [broadAccess] = await tx<{ allowed: boolean }[]>`
       SELECT EXISTS (
         SELECT 1
@@ -422,12 +420,22 @@ export const transfer = async (params: {
           )
       ) AS allowed
     `;
-    const validAssigneeIds = broadAccess?.allowed
-      ? assigneeRows.map((row) => row.user_id)
+    const userIds = assigneeRows.flatMap((row) => (row.user_id ? [row.user_id] : []));
+    const accountIds = assigneeRows.flatMap((row) => (row.service_account_id ? [row.service_account_id] : []));
+    const validAccountIds = (
+      await listServiceAccountsWithAccess({
+        spaceId: locked.target_space_id,
+        ids: accountIds,
+        limit: accountIds.length,
+        db: tx,
+      })
+    ).map((account) => account.id);
+    const validUserIds = broadAccess?.allowed
+      ? userIds
       : (
           await listUsersWithAccess({
             accessIds: accessRows.map((row) => row.access_id),
-            userIds: assigneeRows.map((row) => row.user_id),
+            userIds,
             limit: Math.max(assigneeRows.length, 1),
             db: tx,
           })
@@ -437,7 +445,8 @@ export const transfer = async (params: {
     const removedAssignees = await tx`
       DELETE FROM spaces.item_assignees
       WHERE item_id = ${params.itemId}::uuid
-        AND user_id <> ALL(${toPgUuidArray(validAssigneeIds)}::uuid[])
+        AND ((user_id IS NOT NULL AND user_id <> ALL(${toPgUuidArray(validUserIds)}::uuid[]))
+          OR (service_account_id IS NOT NULL AND service_account_id <> ALL(${toPgUuidArray(validAccountIds)}::uuid[])))
     `;
     await publishDependentsChange(tx, { spaceId: params.sourceSpaceId, blockerItemId: params.itemId });
     const removedDependencies = await tx`

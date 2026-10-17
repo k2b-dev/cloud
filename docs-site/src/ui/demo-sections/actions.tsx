@@ -1,10 +1,13 @@
 import {
+  activeDrag,
   Button,
   ButtonLink,
   ContextMenu,
   CopyButton,
   Disclosure,
+  DragSource,
   Dropdown,
+  DropTarget,
   FilterChip,
   GestureMenu,
   type GestureMenuItem,
@@ -20,6 +23,7 @@ import {
   type SpotlightSearchResolver,
   Tabs,
   Toolbar,
+  useKeyboardDrag,
 } from "@k2b/ui";
 import { createSignal, For } from "solid-js";
 import { DemoCard } from "../DemoCard";
@@ -270,6 +274,113 @@ const MenusDemo = () => (
     </div>
   </DemoCard>
 );
+
+const dragAndDropExample = `import { DragSource, DropTarget, GestureMenu, useKeyboardDrag } from "@k2b/ui";
+import { createSignal } from "solid-js";
+
+function MailRow() {
+  const pickUp = useKeyboardDrag();
+  const [last, setLast] = createSignal("Nothing yet");
+  let row!: HTMLDivElement;
+  const payload = { type: "mail.message", value: "message-42", label: "Message from Nora", icon: "ti ti-mail" };
+  const move = (target: string) => setLast(\`\${payload.label} → \${target}\`);
+  return <>
+    <DragSource payload={payload}>
+      <GestureMenu label={payload.label} items={[
+        { sectionLabel: "Move to", items: [
+          { label: "Archive", action: () => move("Archive") },
+          { label: "Later", action: () => move("Later") },
+        ] },
+        { label: "Move…", icon: "ti ti-arrows-move", action: () => pickUp(payload, row) },
+      ]}>
+        <div ref={row}>Nora · The draft is ready for review.</div>
+      </GestureMenu>
+    </DragSource>
+    <DropTarget accept={["mail.message"]} label="Archive" onDrop={() => move("Archive")}>Archive</DropTarget>
+    <DropTarget accept={["mail.message"]} label="Later" onDrop={() => move("Later")}>Later</DropTarget>
+    <p aria-live="polite">Last: {last()}</p>
+  </>;
+}
+`;
+
+const DragAndDropDemo = () => {
+  const [last, setLast] = createSignal("Nothing yet");
+  const pickUp = useKeyboardDrag();
+  const messages = [
+    { id: "draft", author: "Nora Weber", text: "The draft is ready for review.", time: "10:42" },
+    { id: "meeting", author: "Tobias Brandt", text: "Notes from our meeting.", time: "10:44" },
+    { id: "photos", author: "Mira Frank", text: "Here are the photos you asked for.", time: "11:02" },
+    { id: "invite", author: "Jonas Beck", text: "See you on Friday.", time: "11:15" },
+  ];
+  const move = (label: string, target: string) => setLast(`${label} → ${target}`);
+  return (
+    <DemoCard
+      id="drag-and-drop"
+      chip={[
+        { kind: "component", name: "DragSource", from: "@k2b/ui" },
+        { kind: "component", name: "DropTarget", from: "@k2b/ui" },
+      ]}
+      description="Drag a message to Archive or Later. On touch, hold first, then drag. Calendar takes only tasks. The menu lists the same destinations and an optional keyboard pick-up sequence."
+      code={dragAndDropExample}
+    >
+      <div class="ui-dnd-demo">
+        <div class="ui-dnd-demo__targets">
+          <For each={["Archive", "Later", "Calendar"]}>
+            {(target) => (
+              <DropTarget
+                accept={target === "Calendar" ? ["demo.task"] : ["demo.message"]}
+                label={target}
+                onDrop={(payload) => move(payload.label, target)}
+                class="ui-dnd-demo__target"
+              >
+                <i
+                  class={target === "Calendar" ? "ti ti-calendar" : target === "Later" ? "ti ti-clock" : "ti ti-archive"}
+                  aria-hidden="true"
+                />
+                {target}
+              </DropTarget>
+            )}
+          </For>
+        </div>
+        <div>
+          <For each={messages}>
+            {(message) => {
+              let row!: HTMLDivElement;
+              const payload = { type: "demo.message", value: message.id, label: `Message from ${message.author}`, icon: "ti ti-mail" };
+              return (
+                <DragSource payload={payload}>
+                  <GestureMenu
+                    label={payload.label}
+                    items={[
+                      {
+                        sectionLabel: "Move to",
+                        items: [
+                          { label: "Archive", action: () => move(payload.label, "Archive") },
+                          { label: "Later", action: () => move(payload.label, "Later") },
+                        ],
+                      },
+                      { label: "Move…", icon: "ti ti-arrows-move", action: () => pickUp(payload, row) },
+                    ]}
+                  >
+                    <div ref={row}>
+                      <MessageRow author={{ name: message.author }} text={message.text} time={message.time} groupStart />
+                    </div>
+                  </GestureMenu>
+                </DragSource>
+              );
+            }}
+          </For>
+        </div>
+        <p class="ui-dnd-demo__status" aria-live="polite">
+          Last: {last()}
+        </p>
+        <p class="ui-dnd-demo__status">
+          {activeDrag() ? "Drop on Archive or Later, or press Escape to cancel." : "The row menu moves a message without dragging."}
+        </p>
+      </div>
+    </DemoCard>
+  );
+};
 
 const gestureMessages = [
   { id: "nora", author: "Nora Weber", text: "Can you check the draft before noon?", time: "10:42" },
@@ -795,6 +906,11 @@ const demos: DemoSection = {
   menus: () => (
     <DemoGrid columns="one">
       <MenusDemo />
+    </DemoGrid>
+  ),
+  "drag-and-drop": () => (
+    <DemoGrid columns="one">
+      <DragAndDropDemo />
     </DemoGrid>
   ),
   gestures: () => (

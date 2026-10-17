@@ -36,7 +36,7 @@ export type {
 } from "./AppWorkspace";
 export { default as AppWorkspace } from "./AppWorkspace";
 export type { AppWorkspaceControllerOptions } from "./app-workspace-controller";
-export { installAppWorkspaceController } from "./app-workspace-controller";
+export { installAppWorkspaceController, parkWorkspaceDetailDrawers } from "./app-workspace-controller";
 export type {
   AppWorkspaceLayoutState,
   AppWorkspaceResizeKind,
