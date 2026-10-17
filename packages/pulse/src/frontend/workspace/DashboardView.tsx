@@ -32,6 +32,7 @@ import {
   formatMetricValue,
   formatSignalValue,
   gaugeMax,
+  metricChartTooltip,
   pointsToBars,
   pointsToHeatmap,
   pointsToHistogram,
@@ -96,10 +97,20 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
   const summary = () => props.context.metricByName().get(props.widget.query.kind === "metric" ? props.widget.query.metric : "");
   const rawUnit = () => summary()?.unit ?? null;
   const valueFormat = (value: number) => formatMetricValue(value, rawUnit());
+  const tooltip = () =>
+    metricChartTooltip({
+      title: props.widget.title,
+      unit: rawUnit(),
+      points: data(),
+      bucket: props.widget.query.bucket ?? "1h",
+      dateContext: dateContext(),
+      countLabel: t().count,
+    });
 
   if (props.widget.visual === "stat") {
     return (
       <Chart
+        tooltip={tooltip()}
         kind="stat"
         class="h-36 text-primary"
         label={props.widget.title}
@@ -113,6 +124,7 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
     return (
       <Show when={last() !== null} fallback={<p class="text-dimmed">{t().noPoints}</p>}>
         <Chart
+          tooltip={tooltip()}
           kind="gauge"
           class="h-44 text-primary"
           value={value()}
@@ -129,6 +141,7 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
     return (
       <Show when={last() !== null} fallback={<p class="text-dimmed">{t().noPoints}</p>}>
         <Chart
+          tooltip={tooltip()}
           kind="barGauge"
           class="h-36 text-primary"
           data={[{ label: props.widget.title, value: value(), min: 0, max: gaugeMax(rawUnit(), value()) }]}
@@ -142,6 +155,7 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
   if (props.widget.visual === "bar") {
     return (
       <Chart
+        tooltip={tooltip()}
         kind="bar"
         class="h-48 text-dimmed"
         data={pointsToBars(data(), dateContext(), props.widget.query.bucket ?? "1h")}
@@ -150,11 +164,21 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
     );
   }
   if (props.widget.visual === "histogram") {
-    return <Chart kind="histogram" class="h-48 text-dimmed" data={pointsToHistogram(data())} bins={12} yAxis={{ label: "Count" }} />;
+    return (
+      <Chart
+        tooltip={tooltip()}
+        kind="histogram"
+        class="h-48 text-dimmed"
+        data={pointsToHistogram(data())}
+        bins={12}
+        yAxis={{ label: t().count }}
+      />
+    );
   }
   if (props.widget.visual === "heatmap") {
     return (
       <Chart
+        tooltip={tooltip()}
         kind="heatmap"
         class="h-48 text-dimmed"
         data={pointsToHeatmap(data(), dateContext(), props.widget.query.bucket ?? "1h")}
@@ -177,6 +201,7 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
   }
   return (
     <Chart
+      tooltip={tooltip()}
       kind="line"
       class="h-48 text-dimmed"
       series={pointsToLineSeries(data(), props.widget.title)}
