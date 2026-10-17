@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { Button, ButtonLink, IconButton, IconButtonLink, Placeholder, SelectChip, TextInput, Toolbar, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
+import { createMemo, createSignal, For, Match, Show, Switch, untrack } from "solid-js";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { NoteGraph } from "../../../../service/links";
 import { buildNoteUrl } from "../../../params";
@@ -10,7 +10,7 @@ import GraphList from "./GraphList";
 import { GraphDisplaySwitcher, graphDisplayLabel } from "./graph-displays";
 import { buildGraphModel, type GraphLinksFilter, matchesQuery, visibleEdges, visibleNotes } from "./model";
 import NetworkDisplay, { type GraphZoomControls } from "./NetworkDisplay";
-import { type GraphViewState, writeGraphViewState } from "./view-state";
+import { GRAPH_QUERY_MAX, type GraphViewState, normalizeGraphViewState, writeGraphViewState } from "./view-state";
 
 type Props = {
   notebookId: string;
@@ -41,19 +41,24 @@ export default function NotebookGraph(props: Props) {
   const [controls, setControls] = createSignal<GraphZoomControls | null>(null);
   let focusNote: ((id: string) => void) | undefined;
 
+  // The state is normalized with the URL's own limits first, so what renders is what a reload restores.
   const update = (patch: Partial<GraphViewState>) => {
-    const next = { ...state(), ...patch };
+    const next = normalizeGraphViewState({ ...state(), ...patch });
     setState(next);
     const url = writeGraphViewState(new URL(window.location.href), next);
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
   };
 
-  const notes = createMemo(() => visibleNotes(model, { links: state().links, hide: state().hide }));
+  // The search changes neither the visible notes nor the view; only the filters do.
+  const filterKey = createMemo(() => `${state().links}|${state().hide.join(",")}`);
+  const notes = createMemo(() => {
+    filterKey();
+    return untrack(() => visibleNotes(model, { links: state().links, hide: state().hide }));
+  });
   const visibleIds = createMemo(() => new Set(notes().map((note) => note.id)));
   const edges = createMemo(() => visibleEdges(model, visibleIds()));
   const query = () => state().q;
   const hits = createMemo(() => (query().trim() ? notes().filter((note) => matchesQuery(note, query())) : []));
-  const filterKey = () => `${state().links}|${state().hide.join(",")}`;
   const currentId = () => (props.selectedNoteId && model.byId.has(props.selectedNoteId) ? props.selectedNoteId : null);
   const current = () => (currentId() ? model.byId.get(currentId()!) : undefined);
   const hasLinks = model.edges.length > 0;
@@ -79,7 +84,7 @@ export default function NotebookGraph(props: Props) {
   const showsGraph = () => !state().list && hasLinks && notes().length > 0;
 
   return (
-    <div class="notebook-graph" data-display={state().view} data-list={state().list ? "" : undefined}>
+    <div class="notebook-graph" data-display={state().display} data-list={state().list ? "" : undefined}>
       <Toolbar label={t().graphTools} class="notebook-graph__head">
         {/* The navigation sidebar exists from md up; phones keep the header's menu. */}
         <div class={`hidden shrink-0 ${navigationHidden() ? "md:flex" : "lg:flex"}`}>
@@ -111,13 +116,14 @@ export default function NotebookGraph(props: Props) {
           </small>
           <strong>{t().graphTitle}</strong>
         </div>
-        <GraphDisplaySwitcher value={state().view} onChange={(view) => update({ view })} />
+        <GraphDisplaySwitcher value={state().display} onChange={(display) => update({ display })} />
         <Show when={model.notes.length > 0}>
           <TextInput
             type="search"
             class="notebook-graph__search"
             icon="ti ti-search"
             placeholder={t().graphFind}
+            maxLength={GRAPH_QUERY_MAX}
             aria-label={t().graphFindLabel}
             value={query()}
             onValueChange={(q) => update({ q })}
@@ -129,16 +135,12 @@ export default function NotebookGraph(props: Props) {
                 </Show>
               </span>
             }
-            onKeyDown={(event: KeyboardEvent) => {
-              if (event.key === "Escape" && query()) {
-                event.preventDefault();
-                update({ q: "" });
-              }
-              if (event.key !== "Enter") return;
-              event.preventDefault();
+            // Enter jumps to the first match. Esc clears a search field natively, which reports an empty value.
+            onSubmit={() => {
               const first = hits()[0];
               if (!first) return;
               if (state().list) document.querySelector<HTMLAnchorElement>(".notebook-graph__list-title")?.focus();
+              else if (!hasLinks) document.querySelector<HTMLAnchorElement>(".notebook-graph__unlinked a[data-match]")?.focus();
               else focusNote?.(first.id);
             }}
           />
@@ -223,12 +225,18 @@ export default function NotebookGraph(props: Props) {
                     {t().graphNoLinksDescription({ name: props.notebookName })} {t().graphNoLinksHintBefore} <code>/note</code>{" "}
                     {t().graphNoLinksHintAfter}
                   </p>
-                  <ul class="notebook-graph__unlinked" aria-label={t().graphUnlinkedNotes({ count: model.notes.length })}>
+                  <ul
+                    class="notebook-graph__unlinked"
+                    data-query={query().trim() ? "" : undefined}
+                    aria-label={t().graphUnlinkedNotes({ count: model.notes.length })}
+                  >
                     <For each={model.notes}>
                       {(note) => (
                         <li data-slot={note.area.slot}>
-                          <span class="notebook-graph__dot" aria-hidden="true" />
-                          {note.title || t().untitled}
+                          <a href={noteHref(note.id)} data-match={matchesQuery(note, query()) ? "" : undefined}>
+                            <span class="notebook-graph__dot" aria-hidden="true" />
+                            {note.title || t().untitled}
+                          </a>
                         </li>
                       )}
                     </For>
@@ -283,7 +291,7 @@ export default function NotebookGraph(props: Props) {
               currentId={currentId()}
               query={query()}
               notebookName={props.notebookName}
-              displayName={graphDisplayLabel(state().view, t())}
+              displayName={graphDisplayLabel(state().display, t())}
               now={props.now}
               filterKey={filterKey()}
               onOpen={open}

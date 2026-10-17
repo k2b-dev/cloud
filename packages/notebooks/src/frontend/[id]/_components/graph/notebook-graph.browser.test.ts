@@ -251,6 +251,9 @@ test(`${browserName}: filters, an area toggle and the search change the notes an
     expect(search(page).get("hide")).toBe(HANDBOOK_IDS.sich!);
     await page.getByRole("searchbox", { name: "Find a note in the graph" }).fill("Kühl");
     await page.waitForFunction(() => document.querySelectorAll("[data-node][data-match]").length === 1);
+    // Enter in the search moves focus to the first match.
+    await page.keyboard.press("Enter");
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-node"))).toBe(HANDBOOK_IDS.kuehl!);
     expect(search(page).get("q")).toBe("Kühl");
     expect(search(page).get("note")).toBeNull();
     expect(search(page).get("mode")).toBe("graph");
@@ -263,6 +266,23 @@ test(`${browserName}: filters, an area toggle and the search change the notes an
     expect(await page.getByRole("searchbox", { name: "Find a note in the graph" }).inputValue()).toBe("Kühl");
     expect(await page.getByRole("button", { name: "Which notes" }).textContent()).toContain("Only linked");
     expect(await page.locator("[data-node][data-match]").getAttribute("data-node")).toBe(HANDBOOK_IDS.kuehl!);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
+test(`${browserName}: searching keeps the zoom, and the sidebar's view filter stays in the address`, async () => {
+  const page = await open(graphPath("hand01", "&view=favorites"));
+  try {
+    await page.getByRole("toolbar", { name: "Graph filters" }).getByRole("button", { name: "Zoom in" }).click();
+    await page.waitForTimeout(100);
+    const zoomed = await positions(page);
+    await page.getByRole("searchbox", { name: "Find a note in the graph" }).fill("Lager");
+    await page.waitForFunction(() => document.querySelectorAll("[data-node][data-match]").length > 0);
+    expect(await positions(page)).toEqual(zoomed);
+    expect(search(page).get("view")).toBe("favorites");
+    expect(search(page).get("q")).toBe("Lager");
+    expect(search(page).has("display")).toBe(false);
   } finally {
     await close(page);
   }
@@ -325,6 +345,10 @@ test(`${browserName}: notebooks without links and filters that leave nothing sho
     expect(await page.getByRole("link", { name: "Back to note" }).isVisible()).toBe(true);
     expect(await page.getByRole("list", { name: "6 notes, not linked yet" }).locator("li").count()).toBe(6);
     expect(await page.getByRole("toolbar", { name: "Graph filters" }).count()).toBe(0);
+    // The search still finds a note there: Enter focuses the first matching note link.
+    await page.getByRole("searchbox", { name: "Find a note in the graph" }).fill("Kosten");
+    await page.keyboard.press("Enter");
+    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Kosten");
 
     const hideAll = ["top", ...["wein", "komm", "vers", "inv", "sich", "onb"].map((id) => HANDBOOK_IDS[id])].join(",");
     await page.goto(new URL(graphPath("hand01", `&hide=${hideAll}`), server.url).href);

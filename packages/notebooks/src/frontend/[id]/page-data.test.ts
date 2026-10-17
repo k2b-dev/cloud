@@ -399,7 +399,10 @@ test("return paths apply only to graph mode", async () => {
 
 test("graph view state uses the shared URL parser", async () => {
   const calls = fixtures("write");
-  const data = await load("graph&view=network&list=1&links=unlinked&hide=top,zzzzzz,!bad&q=K%C3%BChl", "/app/notebooks/book01");
-  expect(data.graphView).toEqual({ view: "network", list: true, links: "unlinked", hide: ["top", "zzzzzz"], q: "Kühl" });
+  const data = await load(
+    "graph&view=favorites&display=network&list=1&links=unlinked&hide=top,zzzzzz,!bad&q=K%C3%BChl",
+    "/app/notebooks/book01",
+  );
+  expect(data.graphView).toEqual({ display: "network", list: true, links: "unlinked", hide: ["top", "zzzzzz"], q: "Kühl" });
   expect(calls.graph).toHaveBeenCalledTimes(1);
 });
