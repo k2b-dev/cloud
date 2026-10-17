@@ -205,9 +205,12 @@ test("on a phone the table of contents is an On this page menu under the head th
     const head = await page.locator(".help-article-head h3").boundingBox();
     const menu = await trigger.boundingBox();
     expect(menu!.y).toBeGreaterThan(head!.y);
-    // Below md, Layout's main does not scroll; the document does.
-    expect(await page.locator(".layout-content-main").evaluate((element) => getComputedStyle(element).overflowY)).toBe("visible");
-    await page.evaluate(() => window.scrollTo(0, 2000));
+    // Signed-in phones scroll the soft content card while the window stays put.
+    expect(await page.locator(".layout-content-main").evaluate((element) => getComputedStyle(element).overflowY)).toBe("auto");
+    await page.locator(".layout-content-main").evaluate((element) => {
+      element.scrollTop = 2000;
+    });
+    expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
     await page.waitForFunction(() => document.querySelector('.help-article-aside a[aria-current="location"]')?.textContent !== "Section 0");
     // Open the menu where the reader is: a pointer click would first scroll the trigger back into view.
     await trigger.dispatchEvent("click");
@@ -217,7 +220,11 @@ test("on a phone the table of contents is an On this page menu under the head th
     await page.getByRole("menuitemradio", { name: "Section 6" }).click();
     await page.waitForFunction(() => {
       const heading = document.getElementById("section-6")?.getBoundingClientRect();
-      return heading !== undefined && heading.top >= -1 && heading.top < 80;
+      return (
+        heading !== undefined &&
+        heading.top >= document.querySelector(".layout-content-main")!.getBoundingClientRect().top - 1 &&
+        heading.top < document.querySelector(".layout-content-main")!.getBoundingClientRect().top + 80
+      );
     });
     expect(new URL(page.url()).hash).toBe("#section-6");
   } finally {
@@ -242,12 +249,17 @@ test("an open article keeps following the reading position when the window cross
       document.querySelector<HTMLElement>(".layout-content-main")!.scrollTop = 0;
     });
     await page.waitForFunction(`${active} === "Section 0"`);
-    // Narrow again: the document scrolls, and the contents measure against the window.
+    // Narrow again: the content card remains the scroller.
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.waitForFunction(() => getComputedStyle(document.querySelector(".layout-content-main")!).overflowY === "visible");
-    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForFunction(() => getComputedStyle(document.querySelector(".layout-content-main")!).overflowY === "auto");
+    await page.locator(".layout-content-main").evaluate((element) => {
+      element.scrollTop = 0;
+    });
     await page.waitForFunction(`${active} === "Section 0"`);
-    await page.evaluate(() => window.scrollTo(0, 2000));
+    await page.locator(".layout-content-main").evaluate((element) => {
+      element.scrollTop = 2000;
+    });
+    expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
     await page.waitForFunction(`${active} !== "Section 0"`);
   } finally {
     await page.close();

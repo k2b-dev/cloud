@@ -38,7 +38,7 @@ const canvasBackground = async (theme: "light" | "dark", width: number, authenti
   try {
     await page.setContent(
       `<html class="${theme === "dark" ? "dark" : ""}"><head><style>${css}</style></head><body>` +
-        `<div class="cloud-app-canvas" ${authenticated ? 'data-layout-authenticated="true"' : ""} style="${canvasStyle}"><span style="color: var(--ui-surface)"></span></div></body></html>`,
+        `<div class="cloud-app-canvas" ${authenticated ? 'data-layout-authenticated="true"' : ""} style="${canvasStyle}"><span style="color: var(--ui-surface)"></span><i style="background:var(--ui-canvas)"></i></div></body></html>`,
     );
     return await page.evaluate(() => {
       const canvas = document.querySelector(".cloud-app-canvas")!;
@@ -46,7 +46,9 @@ const canvasBackground = async (theme: "light" | "dark", width: number, authenti
       if (backgroundImage.startsWith("linear-gradient(")) return "gradient";
       return backgroundImage === "none" && backgroundColor === getComputedStyle(canvas.firstElementChild!).color
         ? "surface"
-        : backgroundColor;
+        : backgroundColor === getComputedStyle(canvas.lastElementChild!).backgroundColor
+          ? "canvas"
+          : backgroundColor;
     });
   } finally {
     await page.close();
@@ -54,7 +56,7 @@ const canvasBackground = async (theme: "light" | "dark", width: number, authenti
 };
 
 // Signed in, the gradient shows behind the app bar from md; anonymous pages show it around their cards.
-test("phones get the flat surface in both themes and the app gradient starts at md", async () => {
+test("signed-in phones keep the gradient, tablets use neutral canvas, and anonymous phones stay flat", async () => {
   const widths = [390, 767, 768, 1024, 1440, 1536];
   const actual = [];
   for (const authenticated of [false, true]) {
@@ -66,7 +68,12 @@ test("phones get the flat surface in both themes and the app gradient starts at 
   expect(actual).toEqual(
     [false, true].flatMap((authenticated) =>
       (["light", "dark"] as const).flatMap((theme) =>
-        widths.map((width) => ({ authenticated, theme, width, background: width < 768 ? "surface" : "gradient" })),
+        widths.map((width) => ({
+          authenticated,
+          theme,
+          width,
+          background: authenticated ? (width >= 768 && width < 1024 ? "canvas" : "gradient") : width < 768 ? "surface" : "gradient",
+        })),
       ),
     ),
   );
@@ -115,8 +122,8 @@ for (const [width, height] of [
 ] as const) {
   const card = width >= 1024;
   // The card keeps whole pixels: 6 px at 1194 px, 8 px from 1440 px.
-  const inset = card ? Math.round(Math.min(8, 4 + (width - 1024) / 104)) : 0;
-  test(`${width}×${height}: regular shell fills the safe areas and scrolls above the home indicator`, async () => {
+  const inset = card ? Math.round(Math.min(8, 4 + (width - 1024) / 104)) : 28;
+  test(`${width}×${height}: regular shell keeps clear of the safe areas and scrolls above the home indicator`, async () => {
     const page = await loadShell(width, height);
     try {
       const shape = await page.evaluate(async () => {
@@ -147,21 +154,21 @@ for (const [width, height] of [
         };
       });
       const padding = shape.padding.map(Number.parseFloat);
-      for (const [index, expected] of (card ? [24, 12, inset, 0] : [0, 0, 0, 0]).entries())
+      for (const [index, expected] of (card ? [24, 12, inset, 0] : [32, 20, 28, 24]).entries())
         expect(Math.abs(padding[index]! - expected)).toBeLessThanOrEqual(0.05);
-      expect(shape.rail.left).toBeCloseTo(0, 1);
-      expect(shape.rail.top).toBeCloseTo(card ? 24 : 0, 1);
+      expect(shape.rail.left).toBeCloseTo(card ? 0 : 24, 1);
+      expect(shape.rail.top).toBeCloseTo(card ? 24 : 32, 1);
       expect(Math.abs(shape.rail.bottom - (height - inset))).toBeLessThanOrEqual(0.05);
-      expect(shape.rail.width).toBeCloseTo(56 + 16, 1);
+      expect(shape.rail.width).toBeCloseTo(card ? 56 + 16 : 60, 1);
       expect(shape.logo.top).toBeGreaterThanOrEqual(24);
       expect(shape.logo.left).toBeGreaterThanOrEqual(16);
-      expect(shape.railBottom).toBeLessThanOrEqual(height - 20 - (card ? 0 : shape.shellSpacing) + 1);
-      expect(shape.shell.top).toBeCloseTo(card ? 24 : 0, 1);
-      expect(shape.shell.right).toBeCloseTo(width - (card ? 12 : 0), 1);
+      expect(shape.railBottom).toBeLessThanOrEqual(card ? height - 20 + 1 : height - 28 - 8 + 1);
+      expect(shape.shell.top).toBeCloseTo(card ? 24 : 32, 1);
+      expect(shape.shell.right).toBeCloseTo(width - (card ? 12 : 20), 1);
       expect(Math.abs(shape.shell.bottom - (height - inset))).toBeLessThanOrEqual(0.05);
       expect(Math.abs(shape.mainBottom - (height - inset))).toBeLessThanOrEqual(0.05);
       expect(shape.scrollTop).toBeGreaterThan(0);
-      expect(Math.abs(shape.lastBottom - (height - 20))).toBeLessThanOrEqual(1);
+      expect(Math.abs(shape.lastBottom - (height - (card ? 20 : 28)))).toBeLessThanOrEqual(1);
     } finally {
       await page.close();
     }
@@ -186,8 +193,8 @@ for (const [width, height] of [
       expect(shape.mainPadding).toBe("0px");
       for (const surface of [shape.main, shape.sidebar]) {
         expect(Math.abs(surface.bottom - (height - inset))).toBeLessThanOrEqual(1);
-        expect(Math.abs(surface.border - (20 - inset))).toBeLessThanOrEqual(0.05);
-        expect(Math.abs(surface.bottom - surface.border - (height - 20))).toBeLessThanOrEqual(1);
+        expect(Math.abs(surface.border - Math.max(0, 20 - inset))).toBeLessThanOrEqual(0.05);
+        expect(Math.abs(surface.bottom - surface.border - (height - Math.max(20, inset)))).toBeLessThanOrEqual(1);
       }
     } finally {
       await page.close();
@@ -209,7 +216,7 @@ for (const width of [390, 1440]) {
         spacing.remove();
         return { padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft], shellSpacing };
       });
-      expect(shape.padding).toEqual(width === 390 ? ["24px", "12px", "20px", "16px"] : Array(4).fill(shape.shellSpacing));
+      expect(shape.padding).toEqual(width === 390 ? ["24px", "12px", "0px", "16px"] : Array(4).fill(shape.shellSpacing));
     } finally {
       await page.close();
     }
