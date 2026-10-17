@@ -4,6 +4,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
   confirmDiscardIfDirty,
+  InlineGuidance,
   prompts,
   SettingsField,
   SettingsGroup,
@@ -315,6 +316,19 @@ export default function BookSettingsForm(props: Props) {
     }
   };
 
+  // SettingsModal renders only tab content, so every tab carries the notice. A failed reload blocks tab changes
+  // and closing, so the notice always shows on the tab where the change was made, next to its recovery.
+  const settingsReconcileNotice = () => (
+    <Show when={reconcileError()}>
+      <InlineGuidance tone="warning" icon="ti ti-alert-triangle" role="status">
+        {reconcileError()}{" "}
+        <Button type="button" variant="text" size="xs" onClick={() => void settingsCoverage.retry()} disabled={settingsReconciling()}>
+          {t().retryReload}
+        </Button>
+      </InlineGuidance>
+    </Show>
+  );
+
   return (
     <SettingsModal
       title={t().settingsTitle}
@@ -323,22 +337,9 @@ export default function BookSettingsForm(props: Props) {
       onClose={() => void requestClose()}
       closeLabel={t().closeSettings}
     >
-      <Show when={reconcileError()}>
-        <div class="mx-4 mt-3 flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300" role="status">
-          <span>{reconcileError()}</span>
-          <Button
-            type="button"
-            variant="secondary"
-            size="xs"
-            onClick={() => void settingsCoverage.retry()}
-            disabled={settingsReconciling()}
-          >
-            {t().retryReload}
-          </Button>
-        </div>
-      </Show>
       <SettingsModal.Group title={t().groupBook}>
         <SettingsModal.Tab id="general" title={t().tabGeneral} icon="ti ti-id" description={t().tabGeneralDescription}>
+          {settingsReconcileNotice()}
           <SettingsGroup title={t().identityTitle} description={t().identityDescription}>
             <SettingsField label={t().bookNameLabel} description={t().bookNameDescription} error={nameError} changed={nameChanged}>
               <TextInput
@@ -378,19 +379,18 @@ export default function BookSettingsForm(props: Props) {
         </SettingsModal.Tab>
 
         <SettingsModal.Tab id="tags" title={t().tabTags} icon="ti ti-tags" description={t().tabTagsDescription}>
+          {settingsReconcileNotice()}
           <SettingsGroup title={t().vocabularyTitle} description={t().vocabularyDescription}>
             <Show when={tagReconciling()}>
-              <p class="text-xs text-dimmed" role="status">
-                {t().reloadingTags}
-              </p>
+              <InlineGuidance loading>{t().reloadingTags}</InlineGuidance>
             </Show>
             <Show when={tagReconcileError()}>
-              <div class="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300" role="status">
-                <span>{tagReconcileError()}</span>
-                <Button type="button" variant="secondary" size="xs" onClick={() => void tagCoverage.retry()} disabled={tagReconciling()}>
+              <InlineGuidance tone="warning" icon="ti ti-alert-triangle" role="status">
+                {tagReconcileError()}{" "}
+                <Button type="button" variant="text" size="xs" onClick={() => void tagCoverage.retry()} disabled={tagReconciling()}>
                   {t().retryReload}
                 </Button>
-              </div>
+              </InlineGuidance>
             </Show>
             <TagEditor
               items={props.context().tags}
@@ -406,6 +406,7 @@ export default function BookSettingsForm(props: Props) {
 
       <SettingsModal.Group title={t().groupSharing}>
         <SettingsModal.Tab id="access" title={t().tabAccess} icon="ti ti-shield" description={t().tabAccessDescription}>
+          {settingsReconcileNotice()}
           <SettingsGroup title={t().peopleGroupsTitle} description={t().peopleGroupsDescription}>
             <Show when={props.context().accessEntries}>
               {(accessEntries) => (
@@ -429,6 +430,7 @@ export default function BookSettingsForm(props: Props) {
         </SettingsModal.Tab>
 
         <SettingsModal.Tab id="api-keys" title={t().tabApiKeys} icon="ti ti-key" description={t().tabApiKeysDescription}>
+          {settingsReconcileNotice()}
           <Show when={props.context().apiKeys} keyed>
             {(apiKeys) => (
               <fieldset disabled={coverageBlocked()}>
@@ -451,6 +453,7 @@ export default function BookSettingsForm(props: Props) {
 
       <SettingsModal.Group title={t().groupData}>
         <SettingsModal.Tab id="transfer" title={t().tabTransfer} icon="ti ti-arrows-exchange" description={t().tabTransferDescription}>
+          {settingsReconcileNotice()}
           <SettingsGroup title={t().contactDataTitle} description={t().contactDataDescription}>
             <BookActions bookId={bookId()} canWrite={!coverageBlocked()} onImported={props.onWorkspaceChange} />
           </SettingsGroup>
@@ -465,6 +468,7 @@ export default function BookSettingsForm(props: Props) {
           description={t().tabDangerDescription}
           tone="danger"
         >
+          {settingsReconcileNotice()}
           <SettingsGroup title={t().deleteBookTitle} description={t().deleteBookGroupDescription}>
             <SettingsGroup.Action>
               <DeleteBookButton

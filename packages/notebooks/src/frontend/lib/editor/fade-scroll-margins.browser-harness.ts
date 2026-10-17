@@ -4,7 +4,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { ScrollArea } from "@k2b/ui";
 import { createComponent, render } from "solid-js/web";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "./fade-scroll-margins";
-import { noteScrollerTheme } from "./theme";
+import { noteScroller } from "./note-scroller";
 
 // The note editor's arrangement: CodeMirror grows inside a fading ScrollArea.
 // The test overrides the fade size to a fake overlay height.
@@ -32,7 +32,7 @@ const view = new EditorView({
   parent: host,
   state: EditorState.create({
     doc,
-    extensions: [margins ? fadeScrollMarginsExtension(() => port) : [], keymap.of(defaultKeymap), noteScrollerTheme],
+    extensions: [margins ? fadeScrollMarginsExtension(() => port) : [], keymap.of(defaultKeymap), noteScroller],
   }),
 });
 

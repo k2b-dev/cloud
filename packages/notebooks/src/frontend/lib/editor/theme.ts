@@ -64,20 +64,6 @@ const baseEditorCSS = EditorView.theme({
 });
 
 /**
- * The note page's arrangement: CodeMirror grows inside the page's scroll area
- * and insets the text by 1rem, also on a phone. The reading column centers in
- * the rest.
- */
-export const noteScrollerTheme = EditorView.theme({
-  ".cm-editor": { minHeight: "100%" },
-  ".cm-scroller": { width: "100%", minHeight: "100%", padding: "1rem" },
-  // The page scrolls, not CodeMirror. Clipping sideways makes the scroller no
-  // scroll container, so CodeMirror cannot shift the text sideways to follow
-  // a caret behind spaces that hang past the column (see `richFontCSS`).
-  "&.cm-editor .cm-scroller": { overflowX: "clip", overflowY: "visible" },
-});
-
-/**
  * Rich-mode type: prose in Sans at the Book's size and line height, so a
  * paragraph breaks into the same lines while writing and reading; code in Mono.
  *

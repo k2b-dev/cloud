@@ -66,7 +66,75 @@ const workspaceLevelsCode = `const level = new URL(request.url).searchParams.get
 </AppWorkspace.Main>`;
 
 /**
- * Levels follow the viewport, so the card frames a full page of its own at a
+ * The window stays at 1440 px while a host column takes width from the app
+ * area, so the card frames a full page and scales it to the card.
+ */
+const WorkspaceHostDemo = () => {
+  const [host, setHost] = createSignal("860");
+  const [available, setAvailable] = createSignal<number>();
+  let frame: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!frame) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setAvailable(entry.contentRect.width);
+    });
+    observer.observe(frame);
+    onCleanup(() => observer.disconnect());
+  });
+  const scale = () => (available() === undefined ? 1 : Math.min(1, available()! / 1440));
+  return (
+    <DemoCard
+      id="workspace-host"
+      chip={[{ kind: "component", name: "AppWorkspace", from: "@k2b/ui" }]}
+      description="The window stays at 1440 px while a panel beside the app takes width. At 1024 px the app shows its 1024 px layout. At 860 px the contact does not fit beside the list and waits behind Details: open it, press Escape, or widen the area again."
+      code={`<div style={{ container: "k2b-app-area / inline-size", width: hostWidth }}>
+  <AppWorkspace>{/* Mail regions */}</AppWorkspace>
+</div>`}
+    >
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <SegmentedControl
+            ariaLabel="Host width"
+            size="sm"
+            value={host}
+            onValueChange={setHost}
+            options={[
+              { value: "1440", label: "1440 px" },
+              { value: "1024", label: "1024 px" },
+              { value: "860", label: "860 px" },
+            ]}
+          />
+          <ButtonLink href={`/en/ui/demo/workspace-host?host=${host()}`} target="_blank" rel="noopener" size="sm" variant="ghost">
+            <i class="ti ti-external-link" aria-hidden="true" />
+            Open full page
+          </ButtonLink>
+        </div>
+        <div
+          ref={frame}
+          style={{ height: "560px", overflow: "hidden", "border-radius": "var(--k2b-radius-surface)", background: "var(--k2b-surface)" }}
+        >
+          <iframe
+            title={`Workspace in a ${host()} px host`}
+            src={`/en/ui/demo/workspace-host?host=${host()}`}
+            style={{
+              display: "block",
+              border: "0",
+              width: "1440px",
+              height: `${560 / scale()}px`,
+              "max-width": "none",
+              transform: `scale(${scale()})`,
+              "transform-origin": "top left",
+              visibility: available() === undefined ? "hidden" : undefined,
+            }}
+          />
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
+
+/**
+ * Levels follow the app area, so the card frames a full page of its own at a
  * chosen width and scales it to the card. The frame keeps its height, so
  * switching widths moves nothing on this page.
  */
@@ -1836,6 +1904,7 @@ const items = [
       <NavigationDemo />
       <LiveWorkspaceDemo />
       <WorkspaceLevelsDemo />
+      <WorkspaceHostDemo />
       <WorkspaceDemo />
     </DemoGrid>
   ),

@@ -1,5 +1,5 @@
 import { query as queries, timed } from "@k2b/stdlib/solid";
-import { Button, ScrollArea, TextInput, useLocale } from "@k2b/ui";
+import { Button, InlineGuidance, ScrollArea, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact } from "../../service";
@@ -93,12 +93,13 @@ export default function ContactSearchPicker(props: Props) {
       />
       <ScrollArea class="-mx-1 flex max-h-72 flex-col px-1">
         <Show when={visibleError()}>
-          <div class="flex items-center justify-between gap-2 px-2 py-2 text-xs text-red-600 dark:text-red-400" role="alert">
-            <span>{t().searchContactsFailed}</span>
-            <Button type="button" variant="ghost" size="xs" onClick={() => void results.refresh()}>
+          {/* The failed search leaves nothing to pick, so it is announced as an alert. */}
+          <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert" class="p-2">
+            {t().searchContactsFailed}{" "}
+            <Button type="button" variant="text" size="xs" onClick={() => void results.refresh()}>
               {t().retry}
             </Button>
-          </div>
+          </InlineGuidance>
         </Show>
         <Show
           when={(currentResults() ?? []).length > 0}

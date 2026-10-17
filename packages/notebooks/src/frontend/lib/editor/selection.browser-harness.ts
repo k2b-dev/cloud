@@ -45,7 +45,7 @@ const makeClient = (parent: HTMLElement, name: string, color: string, seed?: Y.D
         editor.markdownExtension(),
         editor.searchTheme(),
         editor.customLightInit(),
-        editor.noteScrollerTheme,
+        editor.noteScroller,
         editor.tablesExtension("n1"),
         editor.imageExtension("n1"),
         editor.listsExtension(),

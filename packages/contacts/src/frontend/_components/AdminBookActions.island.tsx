@@ -2,7 +2,7 @@ import { type GrantableLevel, PermissionEditor } from "@k2b/cloud/access/ui";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
-import { Button, Dropdown, Placeholder, prompts, useLocale } from "@k2b/ui";
+import { Button, Dropdown, InlineGuidance, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { readErrorMessage } from "./api";
@@ -125,12 +125,12 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
         </Show>
       </Show>
       <Show when={reconcileError()}>
-        <div class="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300" role="status">
-          <span>{reconcileError()}</span>
-          <Button type="button" variant="secondary" size="sm" onClick={() => void coverage.retry()} disabled={reconciling()}>
+        <InlineGuidance tone="warning" icon="ti ti-alert-triangle" role="status">
+          {reconcileError()}{" "}
+          <Button type="button" variant="text" size="xs" onClick={() => void coverage.retry()} disabled={reconciling()}>
             {t().retryReload}
           </Button>
-        </div>
+        </InlineGuidance>
       </Show>
     </div>
   );

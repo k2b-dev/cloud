@@ -57,6 +57,22 @@ const incomingAutomationOfRun = async (db: SqlClient, runId: string): Promise<st
   return self?.id ?? null;
 };
 
+/** Exported so tests can inspect its plan. */
+export const pendingMoveClaimQuery = (db: SqlClient, params: { mailboxId: string; refId: string; firstSeenAt: string; runId: string }) =>
+  db<{ id: string }[]>`
+    SELECT id
+    FROM mail.commands
+    WHERE mailbox_id = ${params.mailboxId}::uuid
+      AND created_at >= ${params.firstSeenAt}::timestamptz
+      AND kind = 'move'
+      -- The predicate lets Postgres use commands_message_target_idx.
+      AND target ? 'remoteMessageRefId'
+      AND target ->> 'remoteMessageRefId' = ${params.refId}
+      AND state NOT IN ('failed', 'cancelled')
+      AND correlation_id IS DISTINCT FROM ${params.runId}
+    LIMIT 1
+  `;
+
 /** Incoming automation message checks: it still sits in the frozen folder, and no other run is moving it. */
 const resolveMessageTurn = async (params: IncomingAutomationMessageTurnParams): Promise<IncomingAutomationPlacementTurn> => {
   const placement = await loadIncomingAutomationMessagePlacement(params);
@@ -64,17 +80,12 @@ const resolveMessageTurn = async (params: IncomingAutomationMessageTurnParams): 
 
   // A move another run already ordered has not reached the provider yet, so
   // the placement above still looks untouched.
-  const [claimed] = await params.db<{ id: string }[]>`
-    SELECT id
-    FROM mail.commands
-    WHERE mailbox_id = ${params.mailboxId}::uuid
-      AND created_at >= ${placement.first_seen_at}::timestamptz
-      AND kind = 'move'
-      AND target ->> 'remoteMessageRefId' = ${placement.id}
-      AND state NOT IN ('failed', 'cancelled')
-      AND correlation_id IS DISTINCT FROM ${params.runId}
-    LIMIT 1
-  `;
+  const [claimed] = await pendingMoveClaimQuery(params.db, {
+    mailboxId: params.mailboxId,
+    refId: placement.id,
+    firstSeenAt: placement.first_seen_at,
+    runId: params.runId,
+  });
   return claimed ? { state: "skip", reason: "earlier_automation" } : { state: "ready" };
 };
 
