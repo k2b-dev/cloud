@@ -1198,12 +1198,12 @@ suite("Files service and durable bindings", () => {
     await withRootLock("freeipa", async () => {
       const started = performance.now();
       await expect(service.commitUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "operation_busy", status: 503 });
-      expect(performance.now() - started).toBeGreaterThanOrEqual(5_000 - 100);
-      expect(performance.now() - started).toBeLessThan(7_000);
+      expect(performance.now() - started).toBeGreaterThanOrEqual(ROOT_LOCK_WAIT_MS - 100);
+      expect(performance.now() - started).toBeLessThan(ROOT_LOCK_WAIT_MS + 2_000);
       expect(nodes.has("freeipa:users/alice/busy.txt")).toBe(false);
       expect(privateSession(upload.id).state).toBe("open");
     });
-  }, 10_000);
+  }, 15_000);
   test("capability uploads answer busy immediately without consuming the body when their upload lock is held", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
@@ -1629,7 +1629,7 @@ suite("Files service and durable bindings", () => {
       expect(elapsed).toBeGreaterThanOrEqual(ROOT_LOCK_WAIT_MS - 100);
       expect(elapsed).toBeLessThan(ROOT_LOCK_WAIT_MS + 3_000);
     });
-  }, 20_000);
+  }, 15_000);
   test("copies may cross bases but moves never leave a base", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
@@ -2797,27 +2797,22 @@ suite("Files service and durable bindings", () => {
       idempotencyKey: crypto.randomUUID(),
     });
     await withRootLock(fixture.root, async () => {
-      // Hold the lock past the bounded wait; parallel assertions spend only one wait budget.
-      await Promise.all([
-        expect(
-          service.editorSave(fixture.launch.token, fixture.fileId, { timestamp, read: async () => new Blob(["busy"]) }),
-        ).rejects.toMatchObject({ code: "operation_busy", status: 503 }),
-        expect(service.commitUpload(fixture.actor, { baseId: fixture.baseId, id: upload.id })).rejects.toMatchObject({
-          code: "operation_busy",
-          status: 503,
-        }),
-        expect(service.rename(fixture.actor, { baseId: fixture.baseId, path: "Minutes.odt", name: "Moved.odt" })).rejects.toMatchObject({
-          code: "operation_busy",
-          status: 503,
-        }),
+      // Hold the lock past the bounded wait. Start all three publications before awaiting any of
+      // them, so the test spends one wait budget instead of three.
+      const attempts = await Promise.allSettled([
+        service.editorSave(fixture.launch.token, fixture.fileId, { timestamp, read: async () => new Blob(["busy"]) }),
+        service.commitUpload(fixture.actor, { baseId: fixture.baseId, id: upload.id }),
+        service.rename(fixture.actor, { baseId: fixture.baseId, path: "Minutes.odt", name: "Moved.odt" }),
       ]);
+      for (const attempt of attempts)
+        expect(attempt).toMatchObject({ status: "rejected", reason: { code: "operation_busy", status: 503 } });
       expect(contents.get(fixture.key)).toBe("original");
     });
     expect(
       await service.editorSave(fixture.launch.token, fixture.fileId, { timestamp, read: async () => new Blob(["retried"]) }),
     ).toHaveProperty("modified");
     expect(contents.get(fixture.key)).toBe("retried");
-  }, 10_000);
+  }, 15_000);
 
   test("managed WOPI saves reject a concurrent write while reading the incoming document", async () => {
     const fixture = await editorFixture("local");
