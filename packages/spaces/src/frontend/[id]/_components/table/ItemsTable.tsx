@@ -5,6 +5,7 @@ import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } f
 import { shouldHandleDetailClick } from "../../../lib/detail";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
+import { isClaimHolder } from "../shared/claim/claim";
 import { isInactiveTask, itemLastActivityAt } from "../shared/item-activity";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 
@@ -13,6 +14,7 @@ type Props = {
   spaceId: string;
   columns: SpaceColumn[];
   tags: SpaceTag[];
+  currentUserId: string;
   selectedItemId?: string;
   baseUrl: string;
   scrollPreserveKey?: string;
@@ -54,6 +56,13 @@ const formatSchedule = (item: SpaceItem, dateConfig?: DateContext) => {
   if (item.deadline) return dates.formatDateTime(item.deadline, dateConfig);
   return "—";
 };
+
+/** The people a row names, as its avatar stack orders them: whoever works on the task first, then the other assignees. */
+const peopleNames = (item: SpaceItem) =>
+  [
+    ...(item.claim ? [item.claim.displayName] : []),
+    ...(item.assignees ?? []).filter((assignee) => !isClaimHolder(item.claim, assignee)).map((assignee) => assignee.displayName),
+  ].join(", ");
 
 export default function ItemsTable(props: Props) {
   const t = useSpaceMessages();
@@ -157,14 +166,11 @@ export default function ItemsTable(props: Props) {
           }
           if (col.id === "assignees") {
             return (
-              <CellLink
-                href={href}
-                class="flex min-w-0 items-center"
-                title={item.assignees?.map((assignee) => assignee.displayName).join(", ") || "—"}
-                tabIndex={-1}
-              >
+              <CellLink href={href} class="flex min-w-0 items-center" title={peopleNames(item) || "—"} tabIndex={-1}>
                 <AssigneeAvatars
                   assignees={item.assignees ?? []}
+                  claim={item.claim}
+                  currentUserId={props.currentUserId}
                   showNames
                   empty={<span class="text-dimmed">—</span>}
                   class="w-full text-xs"

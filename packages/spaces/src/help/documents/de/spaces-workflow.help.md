@@ -104,9 +104,11 @@ Wähle **Ich übernehme** auf einer Karte im Board oder in den Aufgabendetails, 
 
 Solange eine Aufgabe übernommen ist, sehen andere, wer daran arbeitet:
 
-- Die Karte zeigt in jeder Spalte den Avatar dieser Person mit grünem Ring vor den Zuständigen.
+- Board-Karten, Listenzeilen und Tabellenzellen zeigen die arbeitende Person zuerst im Avatar-Stapel mit einem grünen Ring. Sie erscheint einmal und nie im `+N`-Überlauf.
 - Der Filter **In Arbeit** listet übernommene Aufgaben.
-- In den Details steht diese Person mit demselben Ring, dem Hinweis **arbeitet daran** und der Startzeit zuerst unter **Zuständig**. Ein Dienstkonto ist als nicht zugewiesen gekennzeichnet.
+- In den Details ist **Zuständig** eine gemeinsame Liste. Die Zeile der arbeitenden Person steht zuerst und zeigt den grünen Ring, **arbeitet daran** und seit wann sie daran arbeitet.
+
+Gehört die Übernahme zu keinem der Zuständigen, etwa bei einem Dienstkonto oder einem gelöschten Konto, zeigt die Liste dieses Konto trotzdem zuerst mit seinem Arbeitsstatus. Diese Zeile kannst du nicht entfernen.
 
 Wenn du eine Aufgabe übernimmst, wirst du ihr auch zugewiesen. Die Übernahme zeigt, welche zuständige Person gerade daran arbeitet. Gibst du deine eigene Übernahme frei, bleibst du zugewiesen. Die Spalte ändert sich nicht. **Mir zugewiesen** enthält auch Aufgaben, die du übernommen hast. **Nicht zugewiesen** schließt Aufgaben aus, die eine Person übernommen hat. Dienstkonten können Aufgaben übernehmen, aber nicht zugewiesen werden.
 

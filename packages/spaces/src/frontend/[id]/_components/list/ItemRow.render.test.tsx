@@ -103,3 +103,40 @@ test.each([
     setSystemTime();
   }
 });
+
+test("shows the working assignee once, first, with one green ring", () => {
+  const mira = { id: "44444444-4444-4444-8444-444444444444", displayName: "Mira Beck", avatarHash: null };
+  const html = renderRow(
+    task({
+      assignees: [{ id: "33333333-3333-4333-8333-333333333333", displayName: "Valentin Kolb", avatarHash: null }, mira],
+      claim: {
+        id: "55555555-5555-4555-8555-555555555555",
+        actor: { kind: "user", id: mira.id },
+        displayName: mira.displayName,
+        avatarHash: null,
+        claimedAt: "2026-10-02T07:12:00.000Z",
+      },
+    }),
+  );
+  expect(html.match(/data-ring="success"/g)).toHaveLength(1);
+  expect(html.match(/aria-label="Mira Beck is on it"/g)).toHaveLength(1);
+  expect(html).not.toContain('aria-label="Mira Beck avatar"');
+  expect(html.indexOf('aria-label="Mira Beck is on it"')).toBeLessThan(html.indexOf('aria-label="Valentin Kolb avatar"'));
+});
+
+test("shows a claim holder even when the task has no assignees", () => {
+  const html = renderRow(
+    task({
+      assignees: [],
+      claim: {
+        id: "55555555-5555-4555-8555-555555555555",
+        actor: { kind: "service_account", id: "44444444-4444-4444-8444-444444444444" },
+        displayName: "Task worker",
+        avatarHash: null,
+        claimedAt: "2026-10-02T07:12:00.000Z",
+      },
+    }),
+  );
+  expect(html.match(/data-ring="success"/g)).toHaveLength(1);
+  expect(html).toContain('aria-label="Task worker is on it"');
+});

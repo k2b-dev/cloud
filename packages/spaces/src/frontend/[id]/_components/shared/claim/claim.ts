@@ -1,6 +1,6 @@
 import { prompts } from "@k2b/ui";
 import { apiClient } from "@/api/client";
-import type { SpaceItemClaim } from "@/contracts";
+import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";
 import { readResponseError } from "../../../../lib/response";
 import type { spaceMessages } from "../../../messages";
 
@@ -10,6 +10,13 @@ type Target = { spaceId: string; itemId: string };
 /** A claim held by the signed-in person; service accounts never use the browser UI. */
 export const isOwnClaim = (claim: SpaceItemClaim | null | undefined, currentUserId: string) =>
   claim?.actor.kind === "user" && claim.actor.id === currentUserId;
+
+/**
+ * Whether `assignee` is the account working on the task. Assignees are people, so only a person's claim matches, by
+ * account kind and ID: a service account never matches an assignee, whatever its ID.
+ */
+export const isClaimHolder = (claim: SpaceItemClaim | null | undefined, assignee: Pick<SpaceItemAssignee, "id">) =>
+  claim?.actor.kind === "user" && claim.actor.id === assignee.id;
 
 /** The claim ID to send whenever completion changes; the holder completes or reopens a claimed task with it. */
 export const ownClaimId = (claim: SpaceItemClaim | null | undefined, currentUserId: string) =>

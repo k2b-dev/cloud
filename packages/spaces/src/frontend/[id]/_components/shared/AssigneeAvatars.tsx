@@ -3,10 +3,14 @@ import type { JSX } from "solid-js";
 import { For, Show } from "solid-js";
 import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";
 import ClaimAvatar from "./claim/ClaimAvatar";
+import { isClaimHolder } from "./claim/claim";
 
 type Props = {
   assignees: SpaceItemAssignee[];
-  /** The claim holder leads the stack with its success ring, appears once, and never folds into the overflow. */
+  /**
+   * Who works on the task. That person leads the stack with the success ring, appears once, and never folds into the
+   * overflow: an assignee who holds the claim is drawn as the holder, and a holder outside the assignees still leads.
+   */
   claim?: SpaceItemClaim | null;
   currentUserId?: string;
   /** Visible avatars including the claim holder; the rest collapse into `+N`. */
@@ -30,11 +34,11 @@ const SIZE_CLASS: Record<AvatarSize, string> = {
 export default function AssigneeAvatars(props: Props) {
   const max = () => props.max ?? 3;
   const size = () => props.size ?? "xs";
-  const holderId = () => (props.claim?.actor.kind === "user" ? props.claim.actor.id : null);
-  const others = () => props.assignees.filter((assignee) => assignee.id !== holderId());
+  const others = () => props.assignees.filter((assignee) => !isClaimHolder(props.claim, assignee));
   const visible = () => others().slice(0, Math.max(max() - (props.claim ? 1 : 0), 0));
   const hiddenCount = () => others().length - visible().length;
-  const names = () => props.assignees.map((assignee) => assignee.displayName).join(", ");
+  /** Names in stack order: the working person first. */
+  const names = () => [...(props.claim ? [props.claim.displayName] : []), ...others().map((assignee) => assignee.displayName)].join(", ");
 
   return (
     <Show when={props.assignees.length > 0 || props.claim} fallback={props.empty ?? null}>
