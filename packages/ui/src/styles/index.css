@@ -11060,6 +11060,113 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 1;
 }
 
+.k2b-ui .k2b-toolbar-float {
+  position: sticky;
+  inset-block-end: 0;
+  margin-block-start: auto;
+  display: flex;
+  min-inline-size: 0;
+  justify-content: center;
+  padding: 0.5rem;
+  pointer-events: none;
+  z-index: 1;
+  flex-shrink: 0;
+}
+.k2b-ui .k2b-toolbar[data-variant="floating"] {
+  position: relative;
+  pointer-events: auto;
+  max-inline-size: 100%;
+  block-size: 3.25rem;
+  padding: 0.25rem;
+  gap: 0.125rem;
+  border-radius: 0.875rem;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+}
+.k2b-ui .k2b-toolbar[data-variant="floating"] > .k2b-button,
+.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__group .k2b-button,
+.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__more .k2b-dropdown__trigger {
+  min-inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: 0.625rem;
+  flex: none;
+}
+.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-button i {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__separator {
+  height: 1.5rem;
+}
+.k2b-ui .k2b-toolbar__label {
+  min-inline-size: 0;
+  max-inline-size: 10rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding-inline: 0.5rem 0.25rem;
+}
+.k2b-ui .k2b-toolbar__action {
+  position: relative;
+  min-inline-size: 2.75rem;
+  block-size: 2.75rem;
+}
+/* The hint fills the space below the centred 1.25rem icon, so neither the
+   icon nor the button moves when hints appear. Flex boxes keep the hint
+   exactly one line of its small font tall. */
+.k2b-ui .k2b-toolbar .k2b-toolbar__hint {
+  position: absolute;
+  inset-block-end: 0;
+  left: 50%;
+  display: flex;
+  transform: translateX(-50%);
+  font: 500 0.625rem/1 var(--k2b-font-sans);
+  color: var(--k2b-text-muted);
+  pointer-events: none;
+}
+.k2b-ui .k2b-toolbar .k2b-toolbar__hint .k2b-kbd__keys {
+  display: flex;
+  gap: 0.125rem;
+}
+.k2b-ui .k2b-toolbar .k2b-toolbar__hint .k2b-kbd__key {
+  display: block;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+}
+.k2b-ui .k2b-toolbar[data-variant="floating"] > :not(.k2b-toolbar__label) {
+  flex-shrink: 0;
+}
+.k2b-ui .k2b-toolbar [data-overflow="hidden"] {
+  display: none !important;
+}
+/* An idle More keeps its box out of the flow, so measuring never has to show
+   or hide it; toggling it could drop focus from its trigger or open menu. */
+.k2b-ui .k2b-toolbar > .k2b-toolbar__more[data-overflow="hidden"] {
+  display: block !important;
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.k2b-ui .k2b-toolbar[data-overflow-pending] {
+  visibility: hidden;
+  /* A visible Kbd hint must not paint through its pending ancestor. */
+  opacity: 0;
+}
+@media (scripting: none) {
+  .k2b-ui .k2b-toolbar[data-overflow-pending] {
+    visibility: visible;
+    opacity: 1;
+  }
+}
+
 /* A pressed toggle swaps only colour and background, so state changes never move or resize it. */
 .k2b-ui .k2b-toolbar .k2b-button[aria-pressed="true"],
 .k2b-ui .k2b-toolbar .k2b-button[aria-pressed="true"]:hover:not(:disabled) {
