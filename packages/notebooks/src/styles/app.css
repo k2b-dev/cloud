@@ -304,7 +304,7 @@
    one above, so a zoomed window with a fractional width never shows a switch
    that changes nothing. */
 @media not all and (min-width: 64rem) {
-  .k2b-ui :is(.k2b-detail-panel__section, .k2b-switch-field).notebooks-full-width-option {
+  .k2b-ui .k2b-switch-field.notebooks-full-width-option {
     display: none;
   }
 }
@@ -525,8 +525,9 @@
    the same room, and a legend scrolls inside the frame instead of growing it. The SVG stretches to the column's width
    through the shared `.k2b-chart` rules, which keep its text and marks at their pixel size. */
 .notebook-book-content .notebook-book-chart {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 0.5rem;
   min-width: 0;
   margin: 1.25rem 0;
@@ -535,6 +536,25 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+/* Copy data and the table switch: two small icon buttons, as on a chart in an Assistant chat. The server reserves
+   this box empty, so the controls appear in place when the browser enhancement mounts them. */
+.notebook-book-chart__actions {
+  display: flex;
+  gap: 0.25rem;
+  width: 3.75rem;
+  height: 1.75rem;
+}
+/* The table takes the drawing's place inside the same fixed frame and scrolls there. */
+.notebook-book-chart[data-view="table"] .notebook-book-chart__viewport > :not(.notebook-book-chart__table) {
+  display: none;
+}
+/* Like every note table, it bleeds past the text on both sides so its cell text lines up with the title. */
+.notebook-book-content .notebook-book-chart__table {
+  flex: 1 1 0;
+  min-height: 0;
+  margin-block: 0;
+  overflow: auto;
 }
 .notebook-book-chart__title {
   font-size: 1rem;
@@ -547,6 +567,7 @@
   line-height: 1.25rem;
 }
 .notebook-book-chart__viewport {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -613,6 +634,19 @@
   }
   .notebook-book-content .notebook-book-mermaid > details {
     display: none;
+  }
+  /* Chart controls stay on screen. A chart switched to its table prints every row: the frame grows with it. */
+  .notebook-book-chart__actions {
+    display: none;
+  }
+  .notebook-book-content .notebook-book-chart {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .notebook-book-chart[data-view="table"] .notebook-book-chart__viewport {
+    height: auto;
+  }
+  .notebook-book-content .notebook-book-chart__table {
+    flex: none;
   }
 }
 
@@ -846,13 +880,240 @@
   color: var(--color-zinc-300);
 }
 
-.k2b-ui .notebooks-note-activity-action > .k2b-button__label {
+/* ── Note side panel ──────────────────────────────────────────────────
+   Built from the shared DetailPanel rhythm; these rules only arrange the
+   panel's own pieces: the action row, the meta line states, the offline band,
+   the outline depth, and the activity rows. */
+.k2b-ui .notebook-detail-primary {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
   gap: 0.75rem;
 }
 
-.k2b-ui .notebooks-note-activity-action .k2b-detail-panel__action-leading {
-  width: auto;
-  flex-basis: auto;
+.k2b-ui .notebook-detail-actions {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.k2b-ui .notebook-detail-actions__ai {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.k2b-ui .notebook-detail-actions > .k2b-button.notebook-detail-actions__ai,
+.k2b-ui .notebook-detail-actions__ai > .k2b-button {
+  min-height: 2.25rem;
+}
+
+.k2b-ui .notebook-detail-actions__ai > .k2b-button {
+  width: 100%;
+}
+
+/* "View" keeps one width in every mode, so the AI button never changes its size. */
+.k2b-ui .notebook-view-menu {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+}
+
+.k2b-ui .notebook-view-menu__trigger.k2b-button {
+  min-height: 2.25rem;
+  padding-inline: 0.75rem 0.5rem;
+  border-color: transparent;
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text);
+}
+
+.k2b-ui .notebook-view-menu__trigger.k2b-button:not(:disabled):hover {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .notebook-view-menu__chevron {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .notebook-meta-name {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .notebook-meta-state {
+  color: var(--k2b-text-secondary);
+  font-weight: 600;
+}
+
+.k2b-ui .notebook-meta-state[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .notebook-meta-state i {
+  font-size: 0.75rem;
+  vertical-align: -0.0625rem;
+}
+
+.k2b-ui .notebook-time time[tabindex] {
+  border-radius: 0.125rem;
+}
+
+.k2b-ui .notebook-time time[tabindex]:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 1px;
+}
+
+/* Offline: one flat band in the header with what happens and how to retry. */
+.k2b-ui .notebook-offline-band {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text);
+  background: color-mix(in srgb, var(--k2b-warning-text) 10%, transparent);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+.k2b-ui .notebook-offline-band > i {
+  margin-top: 0.125rem;
+  color: var(--k2b-warning-text);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .notebook-offline-band__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+}
+
+.k2b-ui .notebook-offline-band__copy p {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .notebook-offline-band__action.k2b-button {
+  margin: 0.25rem 0 0 -0.375rem;
+  color: var(--k2b-warning-text);
+  font-weight: 600;
+}
+
+/* Task progress in the app's color, like the current outline row. */
+.k2b-ui .notebook-tasks .k2b-progress__value {
+  background: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
+}
+
+.k2b-ui .notebook-panel-rows {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+/* Deeper headings step in; the level itself needs no label. */
+.k2b-ui .notebook-outline-row[data-depth="1"] .k2b-detail-panel__action-copy {
+  padding-inline-start: 0.875rem;
+}
+
+.k2b-ui .notebook-outline-row[data-depth="2"] .k2b-detail-panel__action-copy {
+  padding-inline-start: 1.75rem;
+}
+
+.k2b-ui .notebook-reference-name {
+  font-family: var(--k2b-font-mono, ui-monospace, monospace);
+  font-size: 0.6875rem;
+}
+
+.k2b-ui .k2b-tooltip-wrapper.notebook-activity-row {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.k2b-ui .notebook-activity-name {
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+
+.k2b-ui .notebook-activity .k2b-detail-panel__action {
+  align-items: center;
+}
+
+/* Placeholders while the log loads: the rows' own geometry, so the real rows replace them in place. */
+.k2b-ui .notebook-activity-skeleton {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.625rem;
+  margin-inline-start: -1.875rem;
+}
+
+.k2b-ui .notebook-activity-skeleton > span {
+  display: block;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .notebook-activity-skeleton > span:first-child {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: 0 0 1.25rem;
+}
+
+.k2b-ui .notebook-activity-skeleton > span:nth-child(2) {
+  width: 52%;
+}
+
+.k2b-ui .notebook-activity-skeleton[data-index="1"] > span:nth-child(2) {
+  width: 40%;
+}
+
+.k2b-ui .notebook-activity-skeleton[data-index="2"] > span:nth-child(2) {
+  width: 58%;
+}
+
+.k2b-ui .notebook-activity-skeleton > span:last-child {
+  width: 2.75rem;
+  margin-inline-start: auto;
+}
+
+.k2b-ui .notebook-activity-error {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.625rem;
+  margin-inline-start: -1.875rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .notebook-activity-error > i {
+  width: 1.25rem;
+  flex: 0 0 1.25rem;
+  color: var(--k2b-danger-text);
+  text-align: center;
+}
+
+.k2b-ui .notebook-activity-error > .k2b-button {
+  margin-inline-start: auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .k2b-ui .notebook-activity-skeleton > span {
+    animation: notebook-skeleton 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes notebook-skeleton {
+  50% {
+    opacity: 0.55;
+  }
 }
 
 @media (max-width: 47.999rem) {
@@ -1392,4 +1653,535 @@
 }
 .k2b-ui .notebooks-editor-toolbar__style > span[data-current] {
   visibility: visible;
+}
+
+/* Links graph. Area hues are the validated categorical order (blue, orange, aqua, violet, magenta, green, red) after a
+   neutral top level; the app's yellow stays out, so the current note is the only note in the accent. Ink variants keep
+   area names at 4.6:1 on the surface. */
+.notebook-graph {
+  --notebook-graph-area-0: #71717a;
+  --notebook-graph-area-1: #2a78d6;
+  --notebook-graph-area-2: #eb6834;
+  --notebook-graph-area-3: #1baf7a;
+  --notebook-graph-area-4: #6250d6;
+  --notebook-graph-area-5: #e87ba4;
+  --notebook-graph-area-6: #008300;
+  --notebook-graph-area-7: #e34948;
+  --notebook-graph-ink-0: #71717a;
+  --notebook-graph-ink-1: #2974d0;
+  --notebook-graph-ink-2: #be542a;
+  --notebook-graph-ink-3: #15855d;
+  --notebook-graph-ink-4: #6250d6;
+  --notebook-graph-ink-5: #ac5b79;
+  --notebook-graph-ink-6: #008300;
+  --notebook-graph-ink-7: #cf4242;
+  --notebook-graph-edge: var(--color-zinc-400);
+  --notebook-graph-hull-opacity: 0.075;
+  --notebook-graph-current: var(--app-accent, var(--color-blue-500));
+  --notebook-graph-current-chip: color-mix(in srgb, var(--notebook-graph-current) 14%, var(--ui-surface));
+  --notebook-graph-current-ink: var(--ui-app-accent-text);
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+.dark .notebook-graph {
+  --notebook-graph-area-0: #8b8b94;
+  --notebook-graph-area-1: #3987e5;
+  --notebook-graph-area-2: #d95926;
+  --notebook-graph-area-3: #199e70;
+  --notebook-graph-area-4: #9085e9;
+  --notebook-graph-area-5: #d55181;
+  --notebook-graph-area-6: #008300;
+  --notebook-graph-area-7: #e66767;
+  --notebook-graph-ink-0: #8b8b94;
+  --notebook-graph-ink-1: #3987e5;
+  --notebook-graph-ink-2: #d95926;
+  --notebook-graph-ink-3: #199e70;
+  --notebook-graph-ink-4: #9085e9;
+  --notebook-graph-ink-5: #d55181;
+  --notebook-graph-ink-6: #249424;
+  --notebook-graph-ink-7: #e66767;
+  --notebook-graph-edge: var(--color-zinc-600);
+  --notebook-graph-hull-opacity: 0.11;
+  --notebook-graph-current-chip: color-mix(in srgb, var(--notebook-graph-current) 20%, var(--ui-surface));
+}
+.notebook-graph [data-slot="0"] { --area: var(--notebook-graph-area-0); --area-ink: var(--notebook-graph-ink-0); }
+.notebook-graph [data-slot="1"] { --area: var(--notebook-graph-area-1); --area-ink: var(--notebook-graph-ink-1); }
+.notebook-graph [data-slot="2"] { --area: var(--notebook-graph-area-2); --area-ink: var(--notebook-graph-ink-2); }
+.notebook-graph [data-slot="3"] { --area: var(--notebook-graph-area-3); --area-ink: var(--notebook-graph-ink-3); }
+.notebook-graph [data-slot="4"] { --area: var(--notebook-graph-area-4); --area-ink: var(--notebook-graph-ink-4); }
+.notebook-graph [data-slot="5"] { --area: var(--notebook-graph-area-5); --area-ink: var(--notebook-graph-ink-5); }
+.notebook-graph [data-slot="6"] { --area: var(--notebook-graph-area-6); --area-ink: var(--notebook-graph-ink-6); }
+.notebook-graph [data-slot="7"] { --area: var(--notebook-graph-area-7); --area-ink: var(--notebook-graph-ink-7); }
+
+/* Toolbar rows: fixed heights, so nothing below them moves when their content changes. */
+.notebook-graph__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  height: 3.25rem;
+  padding: 0 0.625rem 0 1rem;
+}
+.notebook-graph__title {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-direction: column;
+  margin-right: auto;
+  line-height: 1.25;
+}
+.notebook-graph__title small {
+  overflow: hidden;
+  color: var(--ui-text-dimmed);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notebook-graph__title strong {
+  overflow: hidden;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notebook-graph__search {
+  width: 13.75rem;
+  flex: none;
+}
+.notebook-graph__hits {
+  display: inline-block;
+  min-width: 2ch;
+  color: var(--ui-text-dimmed);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+}
+.notebook-graph__filters {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2.5rem;
+  padding: 0 0.625rem 0 0.75rem;
+}
+.notebook-graph__areas {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  align-items: center;
+  gap: 0.125rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-right: 1.5rem;
+  mask-image: linear-gradient(90deg, #000 calc(100% - 1.75rem), transparent);
+}
+.notebook-graph__areas::-webkit-scrollbar {
+  display: none;
+}
+/* A shown area is the normal state, so the legend keeps the plain look; a hidden area reads as struck through. */
+.k2b-ui .k2b-toolbar .k2b-button.notebook-graph__area {
+  flex: none;
+  color: var(--ui-text-dimmed);
+  background: transparent;
+}
+.k2b-ui .k2b-toolbar .k2b-button.notebook-graph__area[aria-pressed="true"] {
+  color: var(--k2b-text);
+  background: transparent;
+}
+.k2b-ui .k2b-toolbar .k2b-button.notebook-graph__area:hover:not(:disabled) {
+  background: var(--k2b-hover);
+}
+.notebook-graph__dot {
+  display: inline-block;
+  width: 0.5625rem;
+  height: 0.5625rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--area);
+}
+.notebook-graph__area[aria-pressed="false"] .notebook-graph__dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--area);
+}
+.notebook-graph__area[aria-pressed="false"] .notebook-graph__area-name {
+  text-decoration: line-through;
+  text-decoration-color: var(--ui-border-strong);
+}
+.notebook-graph__count {
+  color: var(--ui-text-dimmed);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
+.notebook-graph__body {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Canvas */
+.notebook-graph__svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.notebook-graph__svg[data-panning] {
+  cursor: grabbing;
+}
+.notebook-graph__svg:focus {
+  outline: none;
+}
+.notebook-graph__svg text {
+  font-family: inherit;
+}
+.notebook-graph__hull {
+  fill: var(--area);
+  stroke: var(--area);
+  stroke-linejoin: round;
+  opacity: var(--notebook-graph-hull-opacity);
+}
+.notebook-graph__area-label {
+  fill: var(--area-ink);
+  font-size: 12px;
+  font-weight: 600;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: var(--ui-surface);
+  stroke-linejoin: round;
+  stroke-width: 4px;
+}
+.notebook-graph__edge {
+  fill: none;
+  stroke: var(--notebook-graph-edge);
+  stroke-opacity: 0.55;
+  stroke-width: 1;
+}
+.notebook-graph__node {
+  cursor: pointer;
+}
+.notebook-graph__node:focus {
+  outline: none;
+}
+.notebook-graph__node .notebook-graph__hit {
+  fill: transparent;
+}
+.notebook-graph__node .notebook-graph__disc {
+  fill: var(--area);
+  stroke: var(--ui-surface);
+  stroke-width: 1.5;
+}
+.notebook-graph__node[data-orphan] .notebook-graph__disc {
+  fill: var(--ui-surface);
+  stroke: var(--area);
+  stroke-width: 1.75;
+}
+.notebook-graph__ring {
+  fill: none;
+  stroke: var(--notebook-graph-current);
+  stroke-width: 2.5;
+}
+.notebook-graph__match,
+.notebook-graph__focus {
+  fill: none;
+  stroke: none;
+}
+.notebook-graph__node[data-match] .notebook-graph__match {
+  stroke: var(--k2b-text);
+  stroke-width: 1.5;
+}
+.notebook-graph__node:focus-visible .notebook-graph__focus {
+  stroke: var(--k2b-focus-ring, var(--color-blue-500));
+  stroke-width: 2;
+}
+.notebook-graph__label {
+  fill: var(--ui-text-dimmed);
+  font-size: 12px;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: var(--ui-surface);
+  stroke-linejoin: round;
+  stroke-width: 3.5px;
+}
+.notebook-graph__label[data-kind="hover"],
+.notebook-graph__label[data-kind="neighbour"] {
+  fill: currentColor;
+  font-weight: 600;
+}
+.notebook-graph__label[data-kind="hit"] {
+  fill: currentColor;
+  font-weight: 700;
+}
+.notebook-graph__label[data-kind="current"] {
+  fill: var(--notebook-graph-current-ink);
+  font-size: 13px;
+  font-weight: 700;
+  stroke: var(--notebook-graph-current-chip);
+}
+.notebook-graph__chip {
+  fill: var(--notebook-graph-current-chip);
+}
+/* Pointing at or focusing a note: it and its neighbours stay, the rest steps back. Outgoing links are solid, incoming
+   ones dashed, both in the note's area colour. */
+.notebook-graph__svg[data-highlight] .notebook-graph__node:not([data-near]) .notebook-graph__disc {
+  opacity: 0.18;
+}
+.notebook-graph__svg[data-highlight] .notebook-graph__edge:not([data-near]) {
+  stroke-opacity: 0.07;
+}
+.notebook-graph__svg[data-highlight] .notebook-graph__label:not([data-near]) {
+  opacity: 0.3;
+}
+.notebook-graph__svg[data-highlight] .notebook-graph__hull {
+  opacity: calc(var(--notebook-graph-hull-opacity) * 0.5);
+}
+/* The canvas carries the highlighted note's area slot, so its links take that colour. */
+.notebook-graph__edge[data-near] {
+  stroke: var(--area);
+  stroke-opacity: 0.95;
+  stroke-width: 1.6;
+}
+.notebook-graph__edge[data-near="in"] {
+  stroke-dasharray: 4 3;
+}
+.notebook-graph__svg[data-query] .notebook-graph__node:not([data-match]) .notebook-graph__disc {
+  opacity: 0.2;
+}
+.notebook-graph__svg[data-query] .notebook-graph__label:not([data-kind="hit"]):not([data-kind="current"]) {
+  opacity: 0.3;
+}
+.notebook-graph__svg[data-query] .notebook-graph__edge {
+  stroke-opacity: 0.08;
+}
+
+/* The status line and the selection bar sit over the canvas, out of the flow. */
+.notebook-graph__status {
+  position: absolute;
+  right: 1.125rem;
+  bottom: 0.75rem;
+  left: 1.125rem;
+  display: flex;
+  min-width: 0;
+  height: 1.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  overflow: hidden;
+  color: var(--ui-text-dimmed);
+  font-size: 0.78125rem;
+  pointer-events: none;
+  text-shadow:
+    0 0 4px var(--ui-surface),
+    0 0 8px var(--ui-surface),
+    0 0 2px var(--ui-surface);
+  white-space: nowrap;
+}
+.notebook-graph__status strong {
+  overflow: hidden;
+  flex: 0 1 auto;
+  color: var(--k2b-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.notebook-graph__status-text {
+  overflow: hidden;
+  min-width: 0;
+  flex: 0 1 auto;
+  text-overflow: ellipsis;
+}
+.notebook-graph__hints {
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+  font-size: 0.71875rem;
+  text-shadow: none;
+}
+@media (min-width: 48rem) {
+  .notebook-graph__hints {
+    display: inline-flex;
+  }
+}
+.notebook-graph__hints[data-input="touch"] {
+  display: none;
+}
+@media (pointer: coarse) {
+  .notebook-graph__hints[data-input="pointer"] {
+    display: none;
+  }
+  .notebook-graph__hints[data-input="touch"] {
+    display: inline-flex;
+  }
+}
+.notebook-graph__selection {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.625rem 0.625rem 0.875rem;
+  border-radius: var(--ui-radius-surface, 0.875rem);
+  background: var(--ui-surface-raised);
+  box-shadow: var(--ui-shadow-float);
+}
+.notebook-graph__selection-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.notebook-graph__selection-text strong {
+  overflow: hidden;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notebook-graph__selection-text small {
+  overflow: hidden;
+  color: var(--ui-text-dimmed);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Empty states fill the canvas and scroll when their content is taller. */
+.notebook-graph__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.k2b-ui .notebook-graph__empty > .k2b-placeholder {
+  flex: 1 0 auto;
+}
+.notebook-graph__unlinked {
+  display: flex;
+  max-width: 24rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.375rem 0.875rem;
+  margin: 0.25rem auto 0.875rem;
+  padding: 0;
+  list-style: none;
+}
+.notebook-graph__unlinked a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: inherit;
+  text-decoration: none;
+}
+.notebook-graph__unlinked a:hover {
+  color: var(--k2b-text);
+}
+.notebook-graph__unlinked[data-query] a:not([data-match]) {
+  opacity: 0.45;
+}
+.notebook-graph__unlinked a[data-match] {
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+.notebook-graph__unlinked li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--ui-text-dimmed);
+  font-size: 0.75rem;
+}
+.notebook-graph__unlinked .notebook-graph__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--area);
+}
+.notebook-graph code {
+  padding: 0.125rem 0.3125rem;
+  border-radius: 0.3125rem;
+  background: var(--ui-surface-muted);
+  font-size: 0.78125rem;
+  font-weight: 600;
+}
+
+/* List */
+.notebook-graph__list {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 1rem;
+}
+.notebook-graph__list-caption {
+  flex: none;
+  height: 2rem;
+  padding: 0.375rem 0.5rem 0;
+  color: var(--ui-text-dimmed);
+  font-size: 0.78125rem;
+  white-space: nowrap;
+}
+.k2b-ui .notebook-graph__list .k2b-data-table__row[data-selected="true"] {
+  background: var(--notebook-graph-current-chip);
+}
+.notebook-graph__list-title {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+.notebook-graph__list-title:hover {
+  text-decoration: underline;
+}
+.notebook-graph__list-title[aria-current] {
+  color: var(--notebook-graph-current-ink);
+  font-weight: 700;
+}
+.notebook-graph__list-area {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+}
+.notebook-graph__related {
+  color: var(--ui-text-dimmed);
+  font-size: 0.78125rem;
+  white-space: normal;
+}
+.notebook-graph__related strong {
+  color: inherit;
+  font-weight: 600;
+}
+.notebook-graph__related a {
+  color: inherit;
+  text-decoration: none;
+}
+.notebook-graph__related a:hover {
+  text-decoration: underline;
+}
+@media (max-width: 47.99rem) {
+  .notebook-graph__head {
+    padding-left: 0.375rem;
+  }
+  .notebook-graph__search {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 9rem;
+    max-width: 13.75rem;
+  }
+  .notebook-graph__related-titles {
+    display: none;
+  }
 }

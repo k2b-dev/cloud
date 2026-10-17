@@ -4,6 +4,7 @@ title: Mail workflow YAML reference
 icon: ti ti-code
 description: Reference for Mail workflow inputs, triggers, actions, conditions, expressions, limits, and examples.
 order: 70
+kind: reference
 ---
 
 Mail workflow YAML has three top-level keys: `inputs`, `triggers`, and `steps`. Only `steps` is required. You edit the workflow name, description, priority, effect budget, saved versions, and activation state outside YAML.

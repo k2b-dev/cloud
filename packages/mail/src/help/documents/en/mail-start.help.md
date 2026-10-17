@@ -4,6 +4,7 @@ title: Start with Mail
 icon: ti ti-mail-plus
 description: Understand mailboxes, connect an account, and reach a safe first sync.
 order: 10
+kind: start
 ---
 
 Mail organizes email around **mailboxes**. A mailbox connects one email account and contains the folders of that provider. It also sets who can view, edit, or manage it.

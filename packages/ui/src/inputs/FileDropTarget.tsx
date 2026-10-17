@@ -16,9 +16,10 @@ export type FileDropTargetProps = FileDropOptions & {
 type Rect = { top: number; left: number; width: number; height: number; radius: string };
 
 /**
- * Turns an area into a drop target while files from outside the page are dragged over the window. A calm overlay
- * covers the area without moving anything and says what dropping does; a more specific target inside it, such as a
- * folder row or a `FileDropzone`, takes the drop and its sentence while the pointer is over it. Text, links, and
+ * Turns an area into a drop target while files from outside the page are dragged over the window. A calm tint covers
+ * the area without moving anything, and while the pointer is over it a chip at its bottom says what dropping does; a
+ * more specific target inside it, such as a folder row or a `FileDropzone`, takes the drop and its sentence while the
+ * pointer is over it. Text, links, and
  * elements dragged within the page never show it. Keep a visible upload button for keyboard and touch users.
  */
 export function FileDropTarget(props: FileDropTargetProps): JSX.Element {
@@ -55,6 +56,8 @@ export function FileDropTarget(props: FileDropTargetProps): JSX.Element {
     if (current?.invalid) return fileDropMessages().fileTypeNotAccepted;
     return current ? current.entry.options.label : props.label;
   };
+  // The sentence appears once: over the area, unless the target under the pointer already says it, as a FileDropzone does.
+  const message = () => (hover() && !hover()!.entry.labelled ? "shown" : "hidden");
 
   createEffect(() => {
     if (!shown()) return;
@@ -104,6 +107,7 @@ export function FileDropTarget(props: FileDropTargetProps): JSX.Element {
       popover="manual"
       class="k2b-file-drop"
       data-state={state()}
+      data-message={message()}
       aria-hidden="true"
       style={
         rect()
@@ -131,10 +135,19 @@ export function FileDropTarget(props: FileDropTargetProps): JSX.Element {
  * sentence. Calling the ref again with new options replaces them.
  */
 export function fileDropTarget(options: FileDropOptions): (element: Element) => void {
+  return targetRef(options, false);
+}
+
+/** @internal A specific target that shows its drop sentence itself, as `FileDropzone` does; the area's chip then stays hidden. */
+export function labelledFileDropTarget(options: FileDropOptions): (element: Element) => void {
+  return targetRef(options, true);
+}
+
+function targetRef(options: FileDropOptions, labelled: boolean): (element: Element) => void {
   const fileDropMessages = useFileDropMessages();
   const locale = useLocale();
   return (element) => {
-    const entry = { options, messages: fileDropMessages, locale };
+    const entry = { options, messages: fileDropMessages, locale, labelled };
     // A ref runs before its element is inserted; registering after insertion finds the document it ends up in.
     queueMicrotask(() => fileDropEngine(liveDocument(element)).setTarget(element, entry));
   };

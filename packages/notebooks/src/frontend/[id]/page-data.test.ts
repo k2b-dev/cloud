@@ -84,6 +84,7 @@ function fixtures(permission: PermissionLevel, defaultPresentationMode: Presenta
   track(spyOn(notebooksService.note, "getByShortId")).mockResolvedValue(currentNote);
   track(spyOn(noteStore, "getWithContentByShortId")).mockResolvedValue(currentNote);
   track(spyOn(notebooksService.note, "getWithContentByShortId")).mockResolvedValue(currentNote);
+  track(spyOn(notebooksService.activity, "noteAuthors")).mockResolvedValue({ createdBy: null, lastEditedBy: null });
   track(spyOn(notebooksService.attachment, "count")).mockResolvedValue(0);
   track(spyOn(notebooksService.tag, "listForNotebook")).mockResolvedValue([{ tag: "team", count: 1 }]);
   track(spyOn(notebooksService.note.favorites, "listIds")).mockResolvedValue([]);
@@ -395,4 +396,14 @@ test.each([
 test("return paths apply only to graph mode", async () => {
   fixtures("write");
   expect((await load(`readonly&back=${encodeURIComponent("/app/notebooks/book01/attachments")}`)).graphBack).toBeUndefined();
+});
+
+test("graph view state uses the shared URL parser", async () => {
+  const calls = fixtures("write");
+  const data = await load(
+    "graph&view=favorites&display=network&list=1&links=unlinked&hide=top,zzzzzz,!bad&q=K%C3%BChl",
+    "/app/notebooks/book01",
+  );
+  expect(data.graphView).toEqual({ display: "network", list: true, links: "unlinked", hide: ["top", "zzzzzz"], q: "Kühl" });
+  expect(calls.graph).toHaveBeenCalledTimes(1);
 });

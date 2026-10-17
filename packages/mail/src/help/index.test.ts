@@ -17,7 +17,7 @@ import { mailWorkspaceMessages } from "../frontend/mail-workspace-messages";
 import { bindMailWorkflow } from "../workflows/binder";
 import { buildMailWorkflowCatalog } from "../workflows/catalog";
 import { mailWorkflows } from "../workflows/module";
-import { mailHelp } from ".";
+import { mailHelp, mailPageHelp } from ".";
 
 const cliAutomationReference = await Bun.file(new URL("../cli-references/automation.md", import.meta.url)).text();
 const cliMailReferences = await Promise.all(
@@ -118,6 +118,23 @@ const expectedIds = [
 ];
 
 describe("mailHelp", () => {
+  test("every page Help id exists in English and German", () => {
+    for (const locale of ["en", "de"] as const) {
+      const documents = mailHelp.documentsByLocale?.[locale] ?? [];
+      for (const id of Object.values(mailPageHelp).flat()) {
+        expect(
+          documents.some((document) => document.id === id),
+          `${locale}: ${id}`,
+        ).toBe(true);
+      }
+      for (const document of documents) {
+        expect(document).toMatchObject({ kind: mailHelp.documents.find((base) => base.id === document.id)?.kind });
+      }
+    }
+    expect(mailHelp.documents.find((document) => document.id === "mail-start")?.kind).toBe("start");
+    expect(mailHelp.documents.find((document) => document.id === "mail-troubleshooting")?.kind).toBe("troubleshoot");
+  });
+
   test("documents the separate signature choice and CSS selectors in both languages", () => {
     const english = mailHelp.getMarkdown("mail-compose");
     const german = mailHelp.getMarkdown("mail-compose", "de");

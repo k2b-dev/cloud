@@ -45,9 +45,13 @@ const germanText: Record<string, string> = {
   "Background run": "Hintergrundlauf",
   "Manage task": "Aufgabe verwalten",
   "Run history": "Laufverlauf",
+  "No run history": "Kein Laufverlauf",
   "Run needs attention": "Lauf benötigt Aufmerksamkeit",
   "Loading background activity": "Hintergrundaktivität wird geladen",
   "Could not load background activity": "Hintergrundaktivität konnte nicht geladen werden",
+  "This run is no longer available": "Dieser Lauf ist nicht mehr verfügbar",
+  "Run details are kept for 90 days after a run finishes. Its result stays in the chat.":
+    "Details eines Laufs bleiben 90 Tage nach seinem Ende erhalten. Sein Ergebnis bleibt im Chat.",
   "Approve these capabilities and fixed inputs for this task? Empty fixed inputs allow any input within your existing access.":
     "Diese Capabilities und festen Eingaben für die Aufgabe genehmigen? Ohne feste Eingaben sind beliebige Eingaben innerhalb deiner bestehenden Zugriffsrechte erlaubt.",
   "A JSON list of appId, capabilityId, kind and fixedInput. Empty fixedInput allows any input within your access. Always-approval actions remain blocked.":
@@ -428,6 +432,7 @@ const germanText: Record<string, string> = {
   "Could not load occurrence history": "Der Ausführungsverlauf konnte nicht geladen werden",
   "Loading occurrence history": "Ausführungsverlauf wird geladen",
   "No occurrences yet": "Noch keine Ausführungen",
+  "No runs in the last 90 days": "Keine Ausführungen in den letzten 90 Tagen",
   Project: "Projekt",
   "Recent chats": "Aktuelle Chats",
   "No Project chats yet.": "Noch keine Chats in diesem Projekt.",

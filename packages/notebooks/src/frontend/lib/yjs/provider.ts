@@ -508,6 +508,16 @@ export function createYjsProvider(opts: YjsProviderOptions) {
 
   return {
     connect,
+    /** Retry a dropped connection immediately, without reviving terminal sessions. */
+    reconnectNow: (): void => {
+      if (isDisposed || isTerminated || (ws && ws.readyState <= WebSocket.OPEN)) return;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      failedConnects = 0;
+      connect();
+    },
     /** Local edits the server has not echoed yet. */
     hasUnsentChanges: (): boolean => needsFullResync || unconfirmed.size > 0,
     /** Reconnect after a terminal error, used after the person signs in again. */

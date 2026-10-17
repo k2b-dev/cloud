@@ -31,8 +31,9 @@ export default ssr<AuthContext>(async (c) => {
 
   if (data.kind === "redirect") return c.redirect(data.href);
 
-  if (data.isGraphMode && data.graph && data.graphShell === "book") {
+  if (data.isGraphMode && data.graph && data.graphView && data.graphShell === "book") {
     const graph = data.graph;
+    const graphView = data.graphView;
     c.get("page").title = data.selectedNote?.title ?? data.notebook.name;
     return () => (
       <Layout c={c} fullPage fullWidth title={data.notebook.name}>
@@ -54,6 +55,8 @@ export default ssr<AuthContext>(async (c) => {
           locked={!!data.selectedNote?.lockedAt}
           navigationHidden={data.ctx.navigationHidden}
           graph={graph}
+          graphView={graphView}
+          now={data.now}
           backHref={data.graphBack}
           graphBack={data.graphBack}
           appUrl={data.appUrl}
@@ -164,13 +167,17 @@ export default ssr<AuthContext>(async (c) => {
                 initialVersions={versionHistory?.versions}
                 initialTotal={versionHistory?.total}
               />
-            ) : isGraphMode && graph ? (
+            ) : isGraphMode && graph && data.graphView ? (
               <NotebookGraph
                 notebookId={notebook.id}
+                notebookName={notebook.name}
                 selectedNoteId={selectedNoteId}
                 graph={graph}
                 from={ctx.presentationMode}
                 backHref={data.graphBack}
+                view={data.graphView}
+                now={data.now}
+                navigationHidden={ctx.navigationHidden}
               />
             ) : selectedNote ? (
               <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" data-full-width={ctx.fullWidth ? "" : undefined}>
@@ -195,6 +202,7 @@ export default ssr<AuthContext>(async (c) => {
                   readOnly={readonlyMode}
                   initialHref={currentHref}
                   initialDetail={{
+                    noteAuthors: selectedRouteState?.noteAuthors ?? { createdBy: null, lastEditedBy: null },
                     noteId: selectedNote.id,
                     noteTitle: selectedNote.title,
                     contentMd: selectedNote.contentMd,
@@ -229,6 +237,7 @@ export default ssr<AuthContext>(async (c) => {
           {showDetailPanel && selectedNote && (
             <NotebookDetailPanel
               presentationMode={ctx.presentationMode}
+              noteAuthors={selectedRouteState?.noteAuthors}
               mode={readonlyMode ? "read" : "edit"}
               initiallyOpen={readonlyMode ? true : detailPanelOpen}
               fullWidth={ctx.fullWidth}

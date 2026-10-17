@@ -414,12 +414,16 @@ you assigned. **Assigned to me** includes tasks you claimed, and
 **Unassigned** excludes tasks a person claimed. Service accounts cannot be
 assignees. The Kanban column stays the only status. People claim from the
 board card or the task details with **I'm on it** and release with a second
-click, optionally leaving a handoff note that is saved as progress. In any
-column, the board card puts the holder first in its avatar stack with a green
-ring, shows them once, and never hides them in the `+N` overflow. In the task
-details, the holder leads the **Assigned** list in the same row style with the
-green ring and the time they started working. A person holding a claim appears
-once. A service account still leads and is marked as not assigned.
+click, optionally leaving a handoff note that is saved as progress. Board cards,
+list rows, and table cells put the working person first in the avatar stack,
+with a green ring. They appear once and never in the `+N` overflow.
+
+In the task details, **Assigned** is one list. The working person's row comes
+first with the green ring, **working on it**, and the time they started working.
+The row stays one line: in a narrow panel, the start time gives way to the name
+and the label. A holder outside the assignees, such as a service account or an
+account that was deleted, still appears first as a working row, without a remove
+action.
 
 Claims coordinate work; they do not lock it. A claim guards completion, not the
 column: anyone who can edit the Space can move a claimed task between open

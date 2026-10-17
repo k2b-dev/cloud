@@ -1,20 +1,13 @@
 import type { HelpDocumentManifest } from "@k2b/cloud/shared";
-import { type JSX, onCleanup, onMount } from "solid-js";
-
-type HelpTopicBase = {
-  id: string;
-  title: string;
-  icon?: string;
-  description?: string;
-  order?: number;
-};
+import { onCleanup, onMount } from "solid-js";
 
 export type LayoutHelpDocumentsProps = {
   documents: readonly HelpDocumentManifest[];
   /** Canonical standalone Help route owned by the current app. */
   pageBase: string;
 };
-export type HelpTopic = (HelpTopicBase & { kind: "content"; children: JSX.Element }) | (HelpDocumentManifest & { kind: "document" });
+/** One article of the current app's Help, as the page registered it. */
+export type HelpTopic = HelpDocumentManifest;
 
 export const HELP_TOPICS_EVENT = "cloud:layout-help-topics";
 
@@ -50,7 +43,7 @@ export function LayoutHelpDocuments(props: LayoutHelpDocumentsProps) {
     // Cleanup runs while this unmounts, when a parent `<Show>` may already have dropped the props' source.
     const pageBase = props.pageBase;
     window.__cloudLayoutHelpPageBase = pageBase;
-    const disposers = props.documents.map((document) => registerTopic({ ...document, kind: "document" }));
+    const disposers = props.documents.map((document) => registerTopic(document));
     onCleanup(() => {
       disposers.forEach((dispose) => dispose());
       if (window.__cloudLayoutHelpPageBase === pageBase) delete window.__cloudLayoutHelpPageBase;

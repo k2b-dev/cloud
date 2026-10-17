@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { cloudAiChartSchema } from "@k2b/cloud/ai/browser";
 import * as prettyTable from "../frontend/lib/pretty-table";
 import { evaluatePrettyTable, renderPrettyTableHtml } from "../frontend/lib/pretty-table";
 import {
@@ -342,4 +343,33 @@ test("one chart can be read alone, still within the note's block budget", () => 
     blocks: [],
     diagnostics: [{ code: "too-many-items", line: 101, path: "chart" }],
   });
+});
+
+test("drawn figures reserve controls and carry a validated, escaped chart payload", () => {
+  const title = 'Sales "quoted" <total> & profit';
+  const label = 'Jan "quoted" <label> & costs';
+  const parsed = input(
+    chart(`type: bar
+title: ${JSON.stringify(title)}
+columns: [Month, Revenue]
+rows:
+  - [${JSON.stringify(label)}, 12]
+x: Month
+y: Revenue`),
+  );
+  const html = renderNotebookChartFigure(parsed, "de")!;
+  expect(html).toContain('<div class="notebook-book-chart__actions"></div>');
+  const attribute = /<figure\b[^>]* data-chart="([^"]*)"/.exec(html)?.[1];
+  expect(attribute).toBeDefined();
+  expect(attribute).toContain("&quot;");
+  expect(attribute).toContain("&lt;");
+  expect(attribute).toContain("&amp;");
+  // Decode one HTML entity layer, like an HTML attribute parser. Do not decode recursively.
+  const entities: Record<string, string> = { quot: '"', amp: "&", lt: "<", gt: ">", "#39": "'", "#x27": "'" };
+  const json = attribute!.replace(/&(quot|amp|lt|gt|#39|#x27);/g, (_, entity: string) => entities[entity]!);
+  const payload = JSON.parse(json);
+  expect(cloudAiChartSchema().parse(payload)).toEqual(parsed);
+  expect(payload).toEqual(parsed);
+  expect(payload.title).toBe(title);
+  expect(payload.data[0].label).toBe(label);
 });

@@ -22,6 +22,11 @@ materials.
 - Grids uses `@stackforge-eu/factur-x`, which is EUPL-1.2, for its German
   E-Invoice renderer.
 
+- Tools ships `libheif-js` 1.23.5 under LGPL-3.0, including `libheif`
+  (LGPL-3.0) and `libde265` (LGPL-3.0). It reaches browsers only as a lazily
+  loaded Tools chunk for HEIC/HEIF conversion. LGPL-3.0 is compatible with
+  Cloud's AGPL-3.0 distribution; these libraries retain their LGPL terms.
+
 ## Dependency Licenses
 
 For a full dependency inventory, inspect the lockfile and installed dependency

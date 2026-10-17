@@ -4,6 +4,7 @@ title: Recognize and report suspicious mail
 icon: ti ti-shield-lock
 description: Understand Mail warnings, report phishing, and manage organization protection.
 order: 35
+kind: task
 ---
 
 Mail keeps uncertain signals quiet instead of turning every unusual message into an alarm. A warning appears only when Mail has meaningful evidence that it can explain. Ordinary external links, newsletters, and a single minor difference do not create a warning by themselves.

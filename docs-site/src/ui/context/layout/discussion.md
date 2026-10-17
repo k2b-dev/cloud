@@ -13,17 +13,25 @@ import { For } from "solid-js";
 
 Pass `label`, an optional `icon`, and a numeric `count` to `Discussion`. The label already names the domain, so the count renders as a number without repeating “comments” or “notes”. Pass the server-side total when pages are incomplete; omit the count while no accurate total is available.
 
-The header is a [detail panel section](/en/ui/layout/detail-panel) heading wherever the discussion appears: the same icon column with a muted icon, the same sentence-case title, the count at the trailing edge like a section's `meta`, and ghost `actions` in the section action color. Inside a `DetailPanel` the default surface becomes one of the panel's flat frames, the same surface and inset as a `DetailPanel.Group`, with no border. Place it directly in `DetailPanel.Body`; it needs no group or wrapper. Placed in a `DetailPanel.Group` it is one of the group's sections, and inside a section it adds no frame or inset of its own. Outside a detail panel the default surface stays a bordered card.
+The header is a [detail panel section](/en/ui/layout/detail-panel) heading wherever the discussion appears: the same icon column with a muted icon, the same sentence-case title, the `count` chip immediately after the title (“None yet” for zero), and ghost `actions` in the section action color. Inside a `DetailPanel` the default surface becomes one of the panel's flat frames, the same surface and inset as a `DetailPanel.Group`, with no border. Place it directly in `DetailPanel.Body`; it needs no group or wrapper. Placed in a `DetailPanel.Group` it is one of the group's sections, and inside a section it adds no frame or inset of its own. Outside a detail panel the default surface stays a bordered card.
 
 Use `as="h2"` when the discussion is a primary page section and `surface="bare"` when the host already supplies its surface, such as a paper card or a dialog. Header `actions` hold compact domain commands such as opening a conditional composer; use `size="xs"` buttons so the header keeps the section row height.
+
+Use `fold={3}` on `Discussion.List` to show the newest three loaded entries.
+A “Show n older” toggle sits above them and becomes “Show less” while expanded.
+Earlier pages load only when the fold is expanded. Omit `fold` to show every
+loaded entry. Use `expanded` and `onExpandedChange` to control the fold, for
+example when an activity link reveals an older comment. The callback requests
+a change; the supplied `expanded` value remains authoritative.
 
 The composer field is a recessed well like the other inputs in a panel, not a bordered box. `Discussion.Composer` owns its initial Markdown draft, empty-value validation, pending state, Ctrl/Cmd+Enter submission, and submit button. Every `onSubmit` result except `false` accepts the submission and clears the draft. Returning `false` keeps it silently; throwing keeps it and shows the error inline until the draft changes, also when the user clears it. Mutation helpers that capture errors instead of throwing must therefore return `false` explicitly. Use `initialValue` and `onCancel` for an edit composer. `onCancel` only invokes the callback, so unmount the composer there when cancellation should discard its draft. Remount the composer when its resource identity changes so a draft cannot move to another record.
 
 `Discussion.List` renders compact initial-loading and error rows. Render entries chronologically from oldest to newest and prepend each earlier page. With `hasMore` and `onLoadMore`, the list automatically loads earlier entries when its upper sentinel becomes visible. Return `false` when no page was applied; every other result tells the list to preserve the visible position after the prepend. It guards duplicate requests, and the small load action remains as an accessible fallback.
 
-Each `Discussion.Item` receives `author` and body content plus optional `avatar`, `timestamp`, `meta`, `replyContext`, and `actions`. Item actions are progressive with a mouse or trackpad, including a tablet with a mouse, by default; use `actionVisibility="always"` only when they must remain persistently visible.
+Each `Discussion.Item` receives `author` and body content plus optional `avatar`, `timestamp`, `meta`, `replyContext`, and `actions`. Timestamps end at the trailing text edge; item actions sit immediately before
+them, after optional metadata. Item actions are progressive with a mouse or trackpad, including a tablet with a mouse, by default; use `actionVisibility="always"` only when they must remain persistently visible.
 
-Do not add a second scroll container to the list. A surrounding `DetailPanel.Body` or page remains the single scroll owner. An empty list renders no placeholder; the numeric `0` in the discussion header and an available composer are sufficient.
+Do not add a second scroll container to the list. A surrounding `DetailPanel.Body` or page remains the single scroll owner. An empty list renders no placeholder; “None yet” in the discussion header and an available composer are sufficient.
 
 ## Example
 
@@ -82,7 +90,8 @@ type DiscussionComposerProps = Omit<JSX.FormHTMLAttributes<HTMLFormElement>, "ch
 type DiscussionListProps = {
   children?: JSX.Element; loading?: boolean; loadingLabel?: string; error?: string | null;
   onRetry?: () => void | Promise<void>; hasMore?: boolean; loadingMore?: boolean; loadMoreLabel?: string;
-  onLoadMore?: () => boolean | void | Promise<boolean | void>; class?: string;
+  onLoadMore?: () => boolean | void | Promise<boolean | void>; fold?: number;
+  expanded?: boolean; onExpandedChange?: (expanded: boolean) => void; class?: string;
 };
 
 type DiscussionItemProps = Omit<JSX.LiHTMLAttributes<HTMLLIElement>, "children" | "class"> & {

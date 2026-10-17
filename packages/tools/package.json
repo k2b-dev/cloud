@@ -19,6 +19,7 @@
     "@k2b/stdlib": "catalog:",
     "hono": "catalog:",
     "lean-qr": "catalog:",
+    "libheif-js": "catalog:",
     "solid-js": "catalog:",
     "zod": "catalog:"
   },

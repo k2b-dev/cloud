@@ -1,12 +1,14 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { type DateContext, dates, type Paginated } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Avatar, announce, Button, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { announce, Button, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicNoteComment } from "@/api/public-resources";
 import { notebookWorkspaceMessages } from "../../messages";
 import { readErrorMessage } from "../settings/utils";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
+import { REVEAL_COMMENT_EVENT, type RevealCommentEventDetail } from "./events";
 
 type Props = {
   notebookId: string;
@@ -15,9 +17,15 @@ type Props = {
   canWrite: boolean;
   initialCommentsPage?: Paginated<PublicNoteComment>;
   dateConfig: DateContext;
+  /** Without a connection a new comment cannot be sent; the action stays in place, disabled, with the reason. */
+  offline?: boolean;
 };
 
 const PER_PAGE = 30;
+/** Comments shown before "n older": the newest few, so the panel's other sections stay in reach. */
+const NEWEST = 3;
+/** Pages an activity link may load to find its comment: ten pages of 30 cover 300 comments. */
+const REVEAL_MAX_PAGES = 10;
 const sourceFor = (notebookId: string, noteId: string) => `${notebookId}:${noteId}`;
 const parseSource = (source: string) => {
   const [notebookId, noteId] = source.split(":");
@@ -34,6 +42,7 @@ export default function NoteCommentsSection(props: Props) {
   const [composerOpen, setComposerOpen] = createSignal(false);
   const [editingId, setEditingId] = createSignal<string | null>(null);
   const [deleteConfirming, setDeleteConfirming] = createSignal(false);
+  const [expanded, setExpanded] = createSignal(false);
 
   const commentsQuery = query.createInfinite<string, Paginated<PublicNoteComment>, number, { cursor: string | null }>({
     source,
@@ -88,7 +97,46 @@ export default function NoteCommentsSection(props: Props) {
     void source();
     setComposerOpen(false);
     setEditingId(null);
+    setExpanded(false);
   });
+
+  // The activity list links to a comment: page it in when it is older than the loaded pages, unfold the list when
+  // it is folded away, then bring it into view. Paging stops after a bounded number of pages.
+  onMount(() => {
+    let active = true;
+    onCleanup(() => {
+      active = false;
+    });
+    const reveal = async (event: Event) => {
+      const commentId = (event as CustomEvent<RevealCommentEventDetail>).detail?.commentId ?? null;
+      // A reveal belongs to the note it started on; switching notes or leaving cancels it after any await.
+      const startedOn = source();
+      const current = () => active && source() === startedOn;
+      const indexOf = () => (commentId ? commentsPage().items.findIndex((comment) => comment.id === commentId) : -1);
+      for (let page = 0; commentId && indexOf() < 0 && commentsPage().hasNext && page < REVEAL_MAX_PAGES; page++) {
+        const loaded = commentsPage().items.length;
+        await commentsQuery.loadMore();
+        if (!current()) return;
+        // A failed or empty page stops here; the list's own error row offers the retry.
+        if (commentsQuery.error() || commentsPage().items.length === loaded) break;
+      }
+      const index = indexOf();
+      if (index >= 0 && index < commentsPage().items.length - NEWEST) setExpanded(true);
+      queueMicrotask(() => {
+        if (!current()) return;
+        const target =
+          (index >= 0 && commentId ? document.querySelector<HTMLElement>(`[data-note-comment="${CSS.escape(commentId)}"]`) : null) ??
+          document.querySelector<HTMLElement>("[data-note-comments]");
+        target?.scrollIntoView({ block: "nearest" });
+        target?.focus({ preventScroll: true });
+      });
+    };
+    const listener = (event: Event) => void reveal(event);
+    window.addEventListener(REVEAL_COMMENT_EVENT, listener);
+    onCleanup(() => window.removeEventListener(REVEAL_COMMENT_EVENT, listener));
+  });
+
+  const exactTime = (value: string) => dates.formatDateTime(value, props.dateConfig);
 
   type CommentTarget = { notebookId: string; noteId: string };
   // The list shows a saved change only after the refresh, so a screen reader hears the outcome only then. When the
@@ -100,6 +148,9 @@ export default function NoteCommentsSection(props: Props) {
       () => toast.error(t().commentSavedReloadFailed),
     );
   };
+
+  let commentButton: HTMLButtonElement | undefined;
+  let composerForm: HTMLFormElement | undefined;
 
   const createMutation = mutations.create<{ target: CommentTarget; comment: PublicNoteComment }, CommentTarget & { content: string }>({
     mutation: async (target, { abortSignal }) => {
@@ -113,7 +164,12 @@ export default function NoteCommentsSection(props: Props) {
     // The new comment appears in the list and the composer closes, so a screen reader is told. A failure stays under
     // the composer, which keeps the draft.
     onSuccess: ({ target }) => {
-      if (source() === sourceFor(target.notebookId, target.noteId)) setComposerOpen(false);
+      if (source() === sourceFor(target.notebookId, target.noteId)) {
+        // Focus that was in the composer goes back to the button that opened it, not to the page.
+        const hadFocus = composerForm?.contains(document.activeElement) ?? false;
+        setComposerOpen(false);
+        if (hadFocus) commentButton?.focus();
+      }
       reconcile(target, t().commentAdded);
     },
   });
@@ -179,36 +235,70 @@ export default function NoteCommentsSection(props: Props) {
     }
   };
 
+  /**
+   * The composer opens below the newest comment, possibly outside the panel's view, and the button that opened it
+   * turns disabled: focus moves into the composer and the panel shows it. Cancel hands focus back to the button.
+   */
+  const revealComposer = (form: HTMLFormElement) => {
+    composerForm = form;
+    requestAnimationFrame(() => {
+      if (!form.isConnected) return;
+      form.scrollIntoView({ block: "nearest" });
+      form.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
+    });
+  };
+  const cancelComposer = () => {
+    setComposerOpen(false);
+    commentButton?.focus();
+  };
+  const composer = () => (
+    <Show when={props.canWrite && composerOpen()}>
+      <Discussion.Composer
+        ref={revealComposer}
+        label={t().addComment}
+        placeholder={t().commentPlaceholder}
+        submitLabel={t().postComment}
+        cancelLabel={t().cancel}
+        onCancel={cancelComposer}
+        lines={5}
+        onSubmit={async (content) => {
+          await createMutation.mutate({ notebookId: props.notebookId, noteId: props.noteId, content });
+          const error = createMutation.error();
+          if (error) throw error;
+        }}
+      />
+    </Show>
+  );
+
   return (
     <Show when={props.canWrite || commentsPage().total > 0}>
       <Discussion
         label={t().comments}
         icon="ti ti-message"
         count={commentsPage().total}
+        data-note-comments=""
+        tabIndex={-1}
         actions={
-          props.canWrite && !composerOpen() ? (
-            <Button variant="ghost" size="xs" onClick={() => setComposerOpen(true)}>
-              <i class="ti ti-plus" aria-hidden="true" /> {t().addComment}
-            </Button>
+          props.canWrite ? (
+            // Stays in the header while the composer is open, so the header never changes its shape. Offline it stays in
+            // place, disabled, and says why.
+            <Show
+              when={props.offline}
+              fallback={
+                <Button ref={commentButton} variant="ghost" size="xs" disabled={composerOpen()} onClick={() => setComposerOpen(true)}>
+                  <i class="ti ti-plus" aria-hidden="true" /> {t().comment}
+                </Button>
+              }
+            >
+              <Tooltip.Anchor content={t().needsConnection}>
+                <Button variant="ghost" size="xs" disabled aria-label={`${t().comment}: ${t().needsConnection}`}>
+                  <i class="ti ti-plus" aria-hidden="true" /> {t().comment}
+                </Button>
+              </Tooltip.Anchor>
+            </Show>
           ) : undefined
         }
       >
-        <Show when={props.canWrite && composerOpen()}>
-          <Discussion.Composer
-            label={t().addComment}
-            placeholder={t().commentPlaceholder}
-            submitLabel={t().postComment}
-            cancelLabel={t().cancel}
-            onCancel={() => setComposerOpen(false)}
-            lines={5}
-            onSubmit={async (content) => {
-              await createMutation.mutate({ notebookId: props.notebookId, noteId: props.noteId, content });
-              const error = createMutation.error();
-              if (error) throw error;
-            }}
-          />
-        </Show>
-
         <Discussion.List
           loading={(commentsQuery.loading() || commentsQuery.refreshing()) && commentsPage().items.length === 0}
           loadingLabel={t().loadingComments}
@@ -218,6 +308,9 @@ export default function NoteCommentsSection(props: Props) {
           loadingMore={commentsQuery.loadingMore()}
           loadMoreLabel={t().loadEarlierComments}
           onLoadMore={() => commentsQuery.loadMore()}
+          fold={NEWEST}
+          expanded={expanded()}
+          onExpandedChange={setExpanded}
         >
           <For each={commentsPage().items}>
             {(comment) => {
@@ -225,25 +318,26 @@ export default function NoteCommentsSection(props: Props) {
               const isEditing = () => editingId() === comment.id;
               return (
                 <Discussion.Item
+                  data-note-comment={comment.id}
+                  tabIndex={-1}
                   avatar={
-                    <Avatar
-                      name={comment.authorDisplayName}
-                      fallback={(comment.authorDisplayName.trim() || "?").slice(0, 2).toUpperCase()}
-                      src={
-                        comment.authorUserId && comment.authorAvatarHash
-                          ? `/api/accounts/users/${encodeURIComponent(comment.authorUserId)}/avatar?rev=${encodeURIComponent(comment.authorAvatarHash)}`
-                          : undefined
-                      }
+                    <CloudAvatar
+                      username={comment.authorDisplayName}
+                      userId={comment.authorUserId}
+                      avatarHash={comment.authorAvatarHash}
                       size="xs"
                     />
                   }
-                  author={comment.authorDisplayName}
+                  author={isOwn() ? t().you : comment.authorDisplayName}
                   timestamp={
-                    <time dateTime={comment.createdAt} title={dates.formatDateTime(comment.createdAt, props.dateConfig)}>
-                      {dates.formatDateTimeRelative(comment.createdAt, props.dateConfig)}
-                    </time>
+                    <Tooltip.Anchor content={exactTime(comment.createdAt)}>
+                      {/* Focusable, so the exact date also shows from the keyboard. */}
+                      <time dateTime={comment.createdAt} tabIndex={0}>
+                        {dates.formatDateTimeRelative(comment.createdAt, props.dateConfig)}
+                      </time>
+                    </Tooltip.Anchor>
                   }
-                  meta={comment.updatedAt !== comment.createdAt ? <span>{t().edited}</span> : undefined}
+                  meta={comment.updatedAt !== comment.createdAt ? <span>{t().editedLower}</span> : undefined}
                   actions={
                     props.canWrite && isOwn() && !isEditing() && (comment.canEdit || comment.canDelete) ? (
                       <>
@@ -303,6 +397,8 @@ export default function NoteCommentsSection(props: Props) {
             }}
           </For>
         </Discussion.List>
+        {/* The composer opens below the newest comment, where the conversation continues. */}
+        {composer()}
       </Discussion>
     </Show>
   );

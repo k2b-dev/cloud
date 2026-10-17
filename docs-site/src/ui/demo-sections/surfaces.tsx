@@ -1,5 +1,6 @@
 import {
   Avatar,
+  AvatarStack,
   Button,
   Calendar,
   type CalendarEvent,
@@ -975,6 +976,28 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <CardsDemo />
       <ResourceCardDemo />
+    </DemoGrid>
+  ),
+  "avatar-stack": () => (
+    <DemoGrid columns="one">
+      <DemoCard
+        id="avatar-stack"
+        chip={[{ kind: "component", name: "AvatarStack", from: "@k2b/ui" }]}
+        description="Open the stack for all people; the viewer appears last."
+        code={`<AvatarStack title="Here now" label="Here now: Jana, Paul, Mira and Tom" people={people} />`}
+      >
+        <AvatarStack
+          title="Here now"
+          label="Here now: Jana, Paul, Mira and Tom"
+          people={[
+            { id: "jana", name: "Jana Berger", detail: "Writing · Intake", detailIcon: "ti ti-pencil" },
+            { id: "paul", name: "Paul Wagner", trailing: "2 tabs" },
+            { id: "mira", name: "Mira Schulz" },
+            { id: "tom", name: "Tom Krüger" },
+            { id: "me", name: "You", self: true },
+          ]}
+        />
+      </DemoCard>
     </DemoGrid>
   ),
   details: () => (

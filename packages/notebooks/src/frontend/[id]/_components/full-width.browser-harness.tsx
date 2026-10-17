@@ -11,7 +11,7 @@ import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../lib/editor/
 import { listCommandsExtension } from "../../lib/editor/list-commands";
 import { notebookWorkspaceMessages } from "../messages";
 import { keepBookReadingPosition } from "./book/book-reading-position";
-import { FullWidthSection } from "./detail/FullWidthSection";
+import { ViewMenu } from "./detail/ViewMenu";
 import { keepReadingPosition } from "./editor/reading-position";
 import { followFullWidth } from "./full-width";
 import { parseFullWidth, readFullWidth } from "./settings/NotebookSettingsStore";
@@ -93,7 +93,7 @@ function Harness() {
           <DetailPanel>
             <DetailPanel.Body>
               <nav>Ansichten</nav>
-              <FullWidthSection initial={initial} />
+              <ViewMenu mode="edit" notebookId="book01" noteId="note01" canEdit isRich onToggleRich={() => {}} fullWidth={initial} />
               <DetailPanel.Section title="Inhalt" icon="ti ti-list">
                 Einleitung und Planung
               </DetailPanel.Section>
@@ -164,11 +164,11 @@ const harness = {
   },
   anchor: () =>
     (book ? anchorBlock!.getBoundingClientRect().top : view!.coordsAtPos(anchorFrom, 1)!.top) - port!.getBoundingClientRect().top,
-  /** Capture the first frame that can paint after the native switch change. */
+  /** Capture the first frame that can paint after the menu choice click. */
   firstPaint: () =>
     new Promise<number>((resolve) => {
-      document.querySelector('input[role="switch"]')!.addEventListener(
-        "change",
+      document.querySelector('[role="menuitemcheckbox"]')!.addEventListener(
+        "click",
         () => {
           requestAnimationFrame(() => resolve(harness.anchor()));
         },
@@ -178,7 +178,7 @@ const harness = {
   panelRects: () => {
     const panel = document.querySelector(".k2b-detail-panel")!;
     const body = panel.querySelector(".k2b-detail-panel__body")!;
-    return [panel, ...body.children, panel.querySelector(".k2b-switch__track")!].map(rect);
+    return [panel, ...body.children, panel.querySelector(".notebook-view-menu__trigger")!].map(rect);
   },
   command: () => {
     const command = collectContextAwareCommands().find((command) => command.id === "notebooks.view.fullWidth");

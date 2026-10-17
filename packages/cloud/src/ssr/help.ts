@@ -7,8 +7,10 @@ import { resolveCurrentApp } from "./app-appearance";
 import { getRuntimeContext } from "./runtime";
 
 const manifests = new WeakMap<object, HelpManifestResult | null>();
+const failedContexts = new WeakSet<object>();
 const log = logger("help:ssr");
 export const getLayoutHelp = (c: object): HelpManifestResult | null => manifests.get(c) ?? null;
+export const layoutHelpFailed = (c: object): boolean => failedContexts.has(c);
 
 /** Help metadata for the current or an explicit app; `null` without a user or when the user may not see the app. */
 export const preloadLayoutHelp = async (c: Context, appId?: string): Promise<HelpManifestResult | null> => {
@@ -22,6 +24,7 @@ export const preloadLayoutHelp = async (c: Context, appId?: string): Promise<Hel
     return manifest;
   } catch (error) {
     // An unavailable Help store must not prevent an unrelated application page from rendering.
+    failedContexts.add(c);
     log.warn("Help metadata unavailable", { appId: id, error: error instanceof Error ? error.message : String(error) });
     manifests.set(c, null);
     return null;

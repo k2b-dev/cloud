@@ -482,7 +482,7 @@ function VersionsSection(props: {
         title={t().versions}
         icon="ti ti-history"
         tone="neutral"
-        meta={props.base.versioningEnabled ? items().length : undefined}
+        count={props.base.versioningEnabled ? items().length : undefined}
       >
         <Show when={props.base.versioningEnabled} fallback={<p class="text-xs text-dimmed">{t().versionsUnavailable}</p>}>
           <Show

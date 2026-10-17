@@ -39,6 +39,10 @@ const user = {
   manages: [],
   managesGroupIds: [],
 } satisfies User;
+const noteAuthors = {
+  createdBy: { kind: "user" as const, id: user.id, displayName: "Jana Berger", avatarHash: "avatar" },
+  lastEditedBy: { kind: "user" as const, id: user.id, displayName: "Jana Berger", avatarHash: "avatar" },
+};
 const timestamp = "2026-09-27T08:00:00.000Z";
 const notebook = {
   id: "22222222-2222-4222-8222-222222222222",
@@ -340,6 +344,7 @@ const renderNotebookWithNotes = async (preferences: Record<string, unknown>, mod
     spies.push(
       spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue({
         note: { ...note("note01", "Private folder"), id: "note01", yjsSnapshot: null },
+        noteAuthors,
         readonlyMode: mode === "readonly",
         tocItems: [],
         namedBlocks: [],
@@ -380,7 +385,7 @@ test("a hidden navigation is server-rendered without the note tree", async () =>
   expect(await select(html, "aside.k2b-app-workspace__sidebar *")).toEqual([]);
   expect(await select(html, '[data-app-workspace-resize="sidebar"]')).toEqual([]);
   expect(await select(html, "[data-workspace-main-region=notebook-notes]")).toEqual([]);
-  // The graph has no editor toolbar, so the sidebar offers its own show control.
+  // The graph's own toolbar offers the show control, so the sidebar adds none in a corner.
   expect((await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => button.attributes["aria-label"])).toEqual([
     "Navigation einblenden",
   ]);
@@ -447,6 +452,7 @@ const renderEditorPage = async (
   spies.push(
     spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue({
       note: { ...note, id: note.shortId },
+      noteAuthors,
       readonlyMode: !!options.locked,
       tocItems: [],
       taskProgress: { done: 0, total: 0 },
@@ -571,15 +577,16 @@ test("null saved text keeps the editor's single empty line", async () => {
 });
 
 for (const mode of ["write", "readonly"] as const) {
-  test(`${mode}: the first HTML renders full width and its checked panel switch from the cookie`, async () => {
+  test(`${mode}: the first HTML renders full width and seeds Ansicht from the cookie`, async () => {
     for (const fullWidth of [false, true]) {
       const html = await renderNotebookWithNotes(fullWidth ? { fullWidth: true } : {}, mode);
       const surfaces = await select(html, ".notebook-document-surface");
       expect(surfaces).toHaveLength(1);
       expect(surfaces[0]?.attributes["data-full-width"]).toBe(fullWidth ? "" : undefined);
-      const switches = await select(html, '.notebooks-full-width-option input[role="switch"]');
-      expect(switches).toHaveLength(1);
-      expect(switches[0]?.attributes.checked !== undefined).toBe(fullWidth);
+      const [panel] = await select(html, 'solid-island[data-file="NotebookDetailPanel.island.tsx"]');
+      expect(islandProps(panel?.attributes["data-props"]).fullWidth).toBe(fullWidth);
+      expect(await select(html, ".notebook-view-menu__trigger")).toHaveLength(1);
+      expect(await select(html, '.notebooks-full-width-option input[role="switch"]')).toHaveLength(0);
     }
   });
 }
@@ -726,15 +733,16 @@ test.each(["write", "readonly"] as const)("writer graph preserves %s origin over
 
 test("an empty notebook's graph still offers Close back to the notebook", async () => {
   const html = await renderEmptyNotebook("graph");
-  expect(html).toContain("Noch kein Graph");
+  expect(html).toContain("Dieses Notizbuch hat noch keine Notizen.");
+  // The graph toolbar renders Close twice: a back chevron on phones and a close button from md up.
   const close = await select(html, 'a[aria-label="Graph schließen"]');
-  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01"]);
+  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01", "/app/notebooks/book01"]);
 });
 
 test("an empty graph preserves the Read-only origin when closing to the notebook", async () => {
   const html = await renderEmptyNotebook("graph&from=readonly");
   const close = await select(html, 'a[aria-label="Graph schließen"]');
-  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01?mode=readonly"]);
+  expect(close.map((item) => item.attributes.href)).toEqual(["/app/notebooks/book01?mode=readonly", "/app/notebooks/book01?mode=readonly"]);
 });
 
 for (const permission of ["write", "read"] as const) {
@@ -751,3 +759,13 @@ for (const permission of ["write", "read"] as const) {
     expect(navigation.items.find((item) => item.id === "graph")?.href).toBe(href);
   });
 }
+
+test.each(["write", "readonly"] as const)("%s: SSR supplies author identities to the panel", async (mode) => {
+  const html = await renderEditorPage({ mode });
+  const [panel] = await select(html, '[data-file="NotebookDetailPanel.island.tsx"]');
+  expect(panel).toBeDefined();
+  const props = islandProps(panel?.attributes["data-props"]);
+  expect(props.noteAuthors).toEqual(noteAuthors);
+  const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
+  expect(islandProps(editor?.attributes["data-props"]).initialDetail).toHaveProperty("noteAuthors", noteAuthors);
+});

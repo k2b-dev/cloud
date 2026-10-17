@@ -182,16 +182,7 @@ packages/ipa-hosts/src/help/documents/en/ipa-hosts-start.help.md | term | admin
 packages/ipa-hosts/src/help/documents/en/ipa-hosts-start.help.md | term | admins
 packages/ipa-hosts/src/help/documents/en/ipa-hosts-troubleshooting.help.md | frontmatter | kind
 packages/mail/src/help/documents/de/mail-troubleshooting.help.md | steps | Leere die aktuelle Suche. Prüfe, ob die Unterhaltung
-packages/mail/src/help/documents/en/mail-admin.help.md | frontmatter | kind
-packages/mail/src/help/documents/en/mail-automation.help.md | frontmatter | kind
-packages/mail/src/help/documents/en/mail-collaboration.help.md | frontmatter | kind
-packages/mail/src/help/documents/en/mail-compose.help.md | frontmatter | kind
-packages/mail/src/help/documents/en/mail-security.help.md | frontmatter | kind
-packages/mail/src/help/documents/en/mail-start.help.md | frontmatter | kind
-packages/mail/src/help/documents/en/mail-troubleshooting.help.md | frontmatter | kind
 packages/mail/src/help/documents/en/mail-troubleshooting.help.md | steps | Clear the current search. Check that the conversation
-packages/mail/src/help/documents/en/mail-work.help.md | frontmatter | kind
-packages/mail/src/help/documents/en/mail-workflows.help.md | frontmatter | kind
 packages/notebooks/src/help/documents/en/notebooks-core-model.help.md | frontmatter | kind
 packages/notebooks/src/help/documents/en/notebooks-settings-access.help.md | frontmatter | kind
 packages/notebooks/src/help/documents/en/notebooks-start.help.md | frontmatter | kind
@@ -216,11 +207,6 @@ packages/pulse/src/help/documents/en/pulse-operate.help.md | frontmatter | kind
 packages/pulse/src/help/documents/en/pulse-query-dsl.help.md | frontmatter | kind
 packages/pulse/src/help/documents/en/pulse-reference.help.md | frontmatter | kind
 packages/pulse/src/help/documents/en/pulse-start.help.md | frontmatter | kind
-packages/spaces/src/help/documents/en/spaces-sharing.help.md | frontmatter | kind
-packages/spaces/src/help/documents/en/spaces-start.help.md | frontmatter | kind
-packages/spaces/src/help/documents/en/spaces-troubleshooting.help.md | frontmatter | kind
-packages/spaces/src/help/documents/en/spaces-views.help.md | frontmatter | kind
-packages/spaces/src/help/documents/en/spaces-workflow.help.md | frontmatter | kind
 packages/tools/src/help/documents/en/tools-choose.help.md | frontmatter | kind
 packages/tools/src/help/documents/en/tools-document-markdown.help.md | frontmatter | kind
 packages/tools/src/help/documents/en/tools-image-converter.help.md | frontmatter | kind

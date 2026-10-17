@@ -1,8 +1,25 @@
 import { describe, expect, test } from "bun:test";
 import { spaceMessages } from "../frontend/[id]/messages";
-import { spacesHelp } from ".";
+import { spacesHelp, spacesPageHelp } from ".";
 
 describe("spacesHelp", () => {
+  test("every page Help id exists in English and German", () => {
+    for (const locale of ["en", "de"] as const) {
+      const documents = spacesHelp.documentsByLocale?.[locale] ?? [];
+      for (const id of Object.values(spacesPageHelp).flat()) {
+        expect(
+          documents.some((document) => document.id === id),
+          `${locale}: ${id}`,
+        ).toBe(true);
+      }
+      for (const document of documents) {
+        expect(document).toMatchObject({ kind: spacesHelp.documents.find((base) => base.id === document.id)?.kind });
+      }
+    }
+    expect(spacesHelp.documents.find((document) => document.id === "spaces-start")?.kind).toBe("start");
+    expect(spacesHelp.documents.find((document) => document.id === "spaces-troubleshooting")?.kind).toBe("troubleshoot");
+  });
+
   test("owns the existing Spaces help topics as English Markdown", () => {
     expect(spacesHelp.documents.map((document) => document.id)).toEqual([
       "spaces-start",

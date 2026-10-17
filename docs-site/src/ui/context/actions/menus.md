@@ -58,6 +58,17 @@ and 12rem minimum width. Trigger styling is configured separately.
 </Dropdown.Root>
 ```
 
+Set `phone="sheet"` on `Dropdown.Root` to open the same items in a bottom sheet
+below 48rem. The default `phone="menu"` keeps the menu beside its trigger.
+A controlled dropdown (`open` supplied) always stays a menu. Choices with
+`closeOnSelect: false` keep the sheet open, with reactive checked state, just
+as they do in the desktop menu. The inherited UI locale follows into the sheet.
+Like the menu, the sheet closes when the dropdown becomes disabled or unmounts.
+Other actions run after the sheet has left the history, so they may navigate
+or open a dialog. Set `immediate: true` on an action that needs the tap itself,
+such as a clipboard write or a download; it runs during the tap and must not
+navigate or open a dialog.
+
 ## Items and sections
 
 Both components accept `DropdownItem[]`. An item is one of:
@@ -69,6 +80,8 @@ Both components accept `DropdownItem[]`. An item is one of:
   for example for an in-app panel that also has its own address;
 - a radio or checkbox choice with `choice`, `checked`, and `action`;
 - a section with optional `sectionLabel` and nested actions or choices.
+
+A choice can also take `href`: a plain click, Enter, or Space runs its action, while modified clicks and middle-click can open the link in a new tab.
 
 A section with `layout: "row"` sets a few short radio choices side by side as
 one segmented row, such as a sort direction or a color mode. Give it a
@@ -86,7 +99,7 @@ for a form or richer workflow. Use `Select`, `MultiSelectInput`, `SelectChip`,
 or `FilterChip` when the interaction edits a value or filter.
 
 `Dropdown.Root` accepts `items`, `open`, `onOpenChange`, `position`, `align`,
-`width`, `class`, `menuClass`, `label`, `disabled`, and `onClose`.
+`width`, `class`, `menuClass`, `label`, `disabled`, `phone`, and `onClose`.
 `Dropdown.Trigger` owns the native button and its SSR-visible menu semantics.
 Use its normal button appearance by default. Set `appearance="plain"` only
 when a specialized component class owns the complete visual treatment.
@@ -137,6 +150,7 @@ type DropdownAction =
   | (DropdownActionBase & {
       action: () => void;
       closeOnSelect?: boolean;
+      immediate?: boolean;
       href?: never;
       external?: never;
     })
@@ -154,7 +168,7 @@ type DropdownAction =
 
 type DropdownChoice = DropdownActionBase & {
   action: () => void; checked: boolean | (() => boolean); choice: "checkbox" | "radio";
-  closeOnSelect?: boolean; color?: string;
+  href?: string; closeOnSelect?: boolean; color?: string;
 };
 
 type DropdownSection = {
@@ -169,7 +183,7 @@ type DropdownProps = {
   items: readonly DropdownItem[]; children: JSX.Element;
   position?: DropdownPosition | (() => DropdownPosition); variant?: "default" | "touch"; width?: string;
   class?: string; menuClass?: string; onClose?: () => void; open?: boolean;
-  onOpenChange?: (open: boolean) => void; disabled?: boolean; label?: string; align?: "start" | "end";
+  onOpenChange?: (open: boolean) => void; disabled?: boolean; label?: string; align?: "start" | "end"; phone?: "menu" | "sheet";
 };
 
 type ContextMenuProps = {

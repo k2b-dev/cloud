@@ -5,7 +5,7 @@ section: Platform services
 order: 580
 description: Declare app-owned Markdown once for the shared Help UI, full-page Help, Assistant, and MCP.
 tags: [help, markdown, product, agents]
-updated: 2026-10-14
+updated: 2026-10-17
 ---
 
 # In-product Help
@@ -385,6 +385,46 @@ not repeat that path in their Help declaration. Core owns search and article
 transport and the shared reader; the derived application routes forward to
 that reader while the application remains the content owner.
 
+The Help start opens with the app tile and **Help for &lt;App&gt;**. Search stays in
+place when an article opens. The **⋯** menu offers **Copy as Markdown** and
+**Open as page**.
+
+The start lists guidance in this order:
+
+1. **For this view:** up to three articles named by the current page.
+2. **What do you want to do?:** `task` articles as tiles, sorted by `order`
+   (default `100`), then title. At most eight become tiles; the remaining tasks
+   follow as a list below them.
+3. **Get started**, **Look up**, and **Solve problems:** articles with
+   `kind: start`, `kind: reference`, and `kind: troubleshoot`, respectively. Each group uses the
+   same sorting; empty groups are absent. Missing `kind` means `task`.
+4. **Keyboard shortcuts:** **Everywhere**, **In &lt;App&gt;**, and **With a
+   selection**. Commands without a shortcut and empty groups are absent.
+
+The shell's Search and Help shortcuts appear on the server under
+**Everywhere**, in that order. Commands scoped to a selection go under **With
+a selection**; other `cloud.*` commands go under **Everywhere**, and other
+commands go under **In &lt;App&gt;**. Key caps follow the reader's keyboard platform.
+
+Name two or three relevant articles on each main page with Layout's `help`
+prop:
+
+```tsx
+<Layout c={c} title="Inventory" help={["inventory-start", "inventory-access"]}>
+  <InventoryOverview />
+</Layout>
+```
+
+These are IDs from the current app's Help declaration. Cloud keeps their
+declared order, removes duplicates, ignores IDs outside the reader's authorized
+manifest, and keeps at most three. Without a manifest, no page articles are
+shown. These articles also keep their place in the task tiles or kind groups,
+so the app's start stays consistent across pages.
+
+An app without Help articles shows a short note above the shortcuts. When
+Cloud could not read the app's Help metadata for the page, Help says so and
+offers **Reload**.
+
 Full-page Help renders in the owning application's frame. The rail marks that
 app, its canvas and accent apply, and the title row leads back to the app.
 Third-party applications use the same frame.
@@ -392,9 +432,9 @@ Third-party applications use the same frame.
 Links to another article or section of the same app's Help open inside the
 reader without reloading: `/app/<id>/help/<documentId>`,
 `/help/apps/<id>/<documentId>`, or `#section`. On the full page, the address
-updates and the browser's Back button returns to the previous article. Back to
-the topic list keeps the typed search, and an address with an unknown article
-shows the topic list. The phone menu or a dialog that closes does not move the
+updates and the browser's Back button returns to the previous article.
+Returning to the Help start keeps the typed search, and an address with an
+unknown article shows the Help start. The phone menu or a dialog that closes does not move the
 open article. Other links navigate normally.
 
 An article starts with its app path, title, and first paragraph as a short
@@ -402,7 +442,7 @@ answer. One chip row shows “You need <level>” and the step count. A text tab
 of contents stays at the side in a wide reader and becomes an “On this page”
 menu in a narrow reader. The article ends with one large “Next” tile and
 related articles in their app colour. Authors choose `next`; article order
-only sorts the topic list.
+sorts the task tiles, remaining tasks, and kind groups on the Help start.
 
 SSR loads the current application's localized article metadata from Postgres.
 The browser receives this manifest and loads article bodies on demand. An
@@ -540,6 +580,9 @@ manifest.
 Use the automatic Layout and full-page surfaces for ordinary application Help.
 Add a specialized consumer only when its surrounding workflow needs a distinct
 presentation.
+
+`Layout.HelpPage` with `embedded` renders no Help head: the host's own window
+names the reader and chooses its article. Its start keeps only the search.
 
 For server-rendered embedded readers, `preloadLayoutHelp(c, appId)` from
 `@k2b/cloud/ssr/help` loads the published, request-localized metadata. Reuse its

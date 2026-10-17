@@ -44,6 +44,7 @@ const catalogs = {
   Icon: (await import("../inputs/icon-messages")).checkIconMessages,
   Template: (await import("../inputs/template-messages")).checkTemplateMessages,
   Avatar: (await import("../surfaces/avatar-messages")).checkAvatarMessages,
+  DetailPanel: (await import("../layout/detail-panel-messages")).checkDetailPanelMessages,
   Resource: (await import("../surfaces/resource-messages")).checkResourceMessages,
   Pagination: (await import("../content/pagination-messages")).checkPaginationMessages,
   StructuredData: (await import("../content/structured-data-messages")).checkStructuredDataMessages,

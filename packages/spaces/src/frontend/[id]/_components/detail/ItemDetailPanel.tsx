@@ -133,7 +133,7 @@ function IconActionButton(props: { icon: string; title: string; onClick: () => v
   );
 }
 
-/** One people list: the claim holder leads, then the assignees, with add/remove functionality. */
+/** One people list: the assignees, with the person working on the task first and marked as working. */
 function AssigneesSection(props: {
   spaceId: string;
   assignees: SpaceItemAssignee[];

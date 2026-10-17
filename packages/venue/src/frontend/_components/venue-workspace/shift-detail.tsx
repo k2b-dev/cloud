@@ -171,7 +171,7 @@ function useShiftDetail(props: ShiftDetailProps) {
           </DetailPanel.Summary>
         )}
       </Show>
-      <DetailPanel.Section title={t().people} icon="ti ti-users" meta={String(shiftPeople(props.selection).length)}>
+      <DetailPanel.Section title={t().people} icon="ti ti-users" count={shiftPeople(props.selection).length}>
         <Show when={shiftPeople(props.selection).length > 0} fallback={<p class="text-sm text-dimmed">{t().noOneYet}</p>}>
           <ul class="grid gap-1" aria-label={t().people}>
             <For each={shiftPeople(props.selection)}>

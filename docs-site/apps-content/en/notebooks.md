@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-12
+updated: 2026-10-16
 ---
 
 # Notebooks
@@ -155,6 +155,23 @@ behavior**. The initial default for editors and admins is Write. An explicit
 view in the page URL overrides this default; read permission still forces
 Book. Locked notes open in Read-only instead of Write.
 
+## Use the note side panel
+
+In Write and Read-only, the panel header shows the last editor and edit time
+on one line, with locked, read-only, or offline state when applicable. The
+avatar stack opens **Here now** with the people present and their current
+sections; select a person to scroll to their cursor.
+
+The action row contains **Edit with AI** and **View**. View offers **Open as**
+(Edit, Read, Book), **Text** (Formatted, Markdown), and **Full width**. The
+**⋯** menu contains Copy content, Download as Markdown, Export as PDF,
+Version history, Show in graph, and Duplicate, subject to the note's permissions.
+
+Sections appear in this order: Comments, Tasks, Contents (from two headings),
+References, Attachments, Linked from, and Activity. Activity uses translated
+sentences and ends with who created the note. Hover or focus a timestamp for
+its exact date; use the versions link to open saved history.
+
 ## Reserve deleting and locking notes for admins
 
 By default, everyone with write access can delete notes and lock them
@@ -186,7 +203,7 @@ fail with the same messages.
 | Link and tag | Connections and searchable labels parsed from note content |
 | Attachment | Notebook-owned file referenced from Markdown |
 | Named data and query | User-defined Markdown properties and filtered lists of notes in this notebook |
-| Chart | A chart from this note's tables, lists, or named data; PDF includes its data table |
+| Chart | A chart from this note's data, with values, a table view, and spreadsheet copy; PDF includes its data table |
 | Activity | Durable, permission-aware semantic changes across a notebook or note |
 | Saved version | Recoverable note snapshot with the set of contributors represented by that version |
 
@@ -206,7 +223,15 @@ minutes after posting.
 
 ## Show data as a chart
 
-A chart reads only this note's data, including evaluated table formulas. Hover to see values. PDF export includes the chart and a data table.
+A chart reads only this note's data, including evaluated table formulas.
+Point at or tap a chart value to see its series, x label, and formatted value.
+You can also focus the chart and use the arrow keys to read each value.
+Press Escape to close the tooltip.
+
+**Show as table** shows the values as a table in the same place.
+**Copy data** copies the values as tab-separated text for a spreadsheet.
+These controls work in Book, Read-only, the editor's Rich-mode preview,
+and version history. PDF export keeps the chart and its data table.
 
 ```text
 @sales

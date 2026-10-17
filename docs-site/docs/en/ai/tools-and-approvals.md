@@ -184,6 +184,11 @@ hover, keyboard focus and tap, using the same text as chat charts and their data
 tables. Function formats also apply to tooltip values when `tooltip.format` is
 absent.
 
+Printed pages and PDFs (`cloud.pdf.render`, presentation PDF download and
+browser print) list the chart's values in a table below it, hidden on screen.
+The table is complete with no extra row limit; PDF size grows with the number
+of points.
+
 | Kind | Data and options |
 | --- | --- |
 | `bar` | `data: [{label, value}]`; `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |

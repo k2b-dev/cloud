@@ -4,7 +4,7 @@ import { Tooltip } from "../feedback/Tooltip";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useUiMessages } from "../intl/messages";
-import { fileDropTarget } from "./FileDropTarget";
+import { labelledFileDropTarget } from "./FileDropTarget";
 import type { FieldProps, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
 import { fileDropEngine, liveDocument } from "./file-drop";
@@ -67,7 +67,7 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
   // Drops take the same path as every other file drop target: files only, the most specific target wins, and files
   // that do not fit `accept` are left out with a message.
   const dropLabel = () => props.dropLabel ?? fileInputMessages().dropToUpload;
-  const dropRef = fileDropTarget({
+  const dropRef = labelledFileDropTarget({
     get label() {
       return dropLabel();
     },

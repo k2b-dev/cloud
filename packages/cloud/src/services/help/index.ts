@@ -83,6 +83,7 @@ export const createHelpReader = (
             icon: row.icon ?? undefined,
             description: row.description ?? undefined,
             order: row.sort_order,
+            kind: row.kind,
             locale: row.locale,
             searchUrl: `/api/help/v1/${encodeURIComponent(appId)}/search`,
             url: `/api/help/v1/${encodeURIComponent(appId)}/documents/${encodeURIComponent(row.document_id)}`,

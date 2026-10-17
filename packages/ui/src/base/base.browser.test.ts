@@ -381,6 +381,47 @@ describe("@k2b/ui base stylesheet in a browser", () => {
   const withoutStdlibStyle = (svg: string) => svg.replace(/<style>[\s\S]*?<\/style>/, "");
   const chartMarkup = (kind: string, svg: string, width: number, height: number) =>
     `<div class="k2b-chart" data-chart-kind="${kind}"><div class="k2b-chart__svg" data-stretch style="--k2b-chart-width:${width}px;--k2b-chart-height:${height}px">${responsiveChartSvg(svg)}</div></div>`;
+  test("keeps chart value tables out of screen layout and prints complete rows with light colors", async () => {
+    const svg = withoutStdlibStyle(charts.bar({ data: [{ label: "Jan", value: 1200 }], width: 480, height: 280 }));
+    const drawing = chartMarkup("bar", svg, 480, 280);
+    const table =
+      '<table class="k2b-chart__table" hidden><caption>Revenue</caption><thead><tr><th scope="col">Category</th><th scope="col" class="num">Revenue</th></tr></thead><tbody><tr><td>Jan</td><td class="num">1,200</td></tr><tr><td>Feb</td><td class="num">900</td></tr><tr><td>Mar</td><td class="num">800</td></tr></tbody></table>';
+    const content = (values = "") => `<main>${drawing}${values}<p id="after">After the chart</p></main>`;
+    const light = await open("desktop", "light", { body: content(table) });
+    const dark = await open("desktop", "dark", { body: content(table) });
+    const baseline = await open("desktop", "light", { body: content() });
+    try {
+      const top = (tab: Page) => tab.$eval("#after", (element) => element.getBoundingClientRect().top);
+      const textColor = await style(light, "body", "color");
+      const captionColor = await style(light, "caption", "color");
+      for (const [theme, tab] of [
+        ["light", light],
+        ["dark", dark],
+      ] as const) {
+        await baseline.evaluate((theme) => document.documentElement.setAttribute("data-theme", theme), theme);
+        expect(await style(tab, ".k2b-chart__table", "display")).toBe("none");
+        expect(await tab.locator(".k2b-chart__table").boundingBox()).toBeNull();
+        expect(await top(tab)).toBe(await top(baseline));
+      }
+      await dark.emulateMedia({ media: "print" });
+      expect(await style(dark, ".k2b-chart__table", "display")).toBe("table");
+      expect(await style(dark, "html", "background-color")).toBe("rgb(255, 255, 255)");
+      expect(await style(dark, "td", "color")).toBe(textColor);
+      expect(await style(dark, "caption", "color")).toBe(captionColor);
+      for (const selector of ["th.num", "td.num"]) {
+        expect(["end", "right"]).toContain(await style(dark, selector, "text-align"));
+      }
+      expect(await style(dark, ".k2b-chart__table", "break-inside")).toBe("auto");
+      expect(
+        await dark.locator(".k2b-chart__table tr").evaluateAll((rows) => rows.map((row) => getComputedStyle(row).breakInside)),
+      ).toEqual(["avoid", "avoid", "avoid", "avoid"]);
+      expect(await style(dark, "thead", "display")).toBe("table-header-group");
+    } finally {
+      await dark.emulateMedia({ media: null });
+      await Promise.all([light.context().close(), dark.context().close(), baseline.context().close()]);
+    }
+  });
+
   const cities = ["Revenue Berlin", "Revenue Hamburg", "Revenue Munich", "Revenue Cologne"].map((label, index) => ({
     label,
     data: [

@@ -158,14 +158,8 @@ export default function RecordVersions(props: { tableId: string; recordId: strin
           title={t().durableHistory}
           icon="ti ti-history"
           tone="accent"
-          meta={
-            enabledStatus() ? (
-              <span class="flex items-center gap-2">
-                <StatusBadge tone="ok" variant="text" label={t().on} />
-                <Show when={revisions().length > 0}>{revisions().length}</Show>
-              </span>
-            ) : undefined
-          }
+          // No count: revisions load page by page, so a count would only be the pages loaded so far.
+          meta={enabledStatus() ? <StatusBadge tone="ok" variant="text" label={t().on} /> : undefined}
           description={
             enabledStatus() ? t().historyProvable({ date: new Date(enabledStatus()!.activatedAt).toLocaleString(locale()) }) : undefined
           }

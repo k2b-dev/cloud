@@ -168,10 +168,23 @@ targets, such as the OAuth consent test, run with `--integration` instead.
 
 When a test times out, `bun test` stops every process the test file started,
 including the shared browser. `launchBrowser()` starts a new browser for the
-next `newPage()` or `newContext()`, so one hung test fails alone. Open pages
-and contexts in each test, not in `beforeAll`: a page kept across tests closes
-with its browser. `packages/ui/test/browser.browser.test.ts` guards this
-recovery.
+next `newPage()` or `newContext()`, so one hung test fails alone. Closing a page
+or context of the killed browser succeeds, so the error that the hung step
+reports after the timeout names what it waited for, not the cleanup in
+`finally`. Open pages and contexts in each test, not in `beforeAll`: a page
+kept across tests closes with its browser.
+`packages/ui/test/browser.browser.test.ts` guards this recovery.
+
+A step that scrolls the page, such as `focus()` on an element below the fold,
+dispatches its `scroll` event on the next frame. Chart inspection, popovers,
+and menus that close on scroll can then undo the result of the next step.
+Let one frame pass after such a step (`requestAnimationFrame` in
+`page.evaluate`) before a step whose result a scroll can undo. The scroll also
+moves content under a mouse pointer that an earlier click left in place, and
+WebKit then sends a `pointermove` without any mouse movement, up to about
+100 ms later. Do not mix clicks into a keyboard flow that scrolls: press the
+control by keyboard instead. See `showFirst` and the repeated enhancement case
+in `packages/notebooks/src/frontend/lib/notebook-charts.browser.test.ts`.
 
 A fake server started by a test records a request when it arrives. The page
 may have changed already, as seen in WebKit on a loaded machine. Never read
