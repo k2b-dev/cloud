@@ -1270,6 +1270,10 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(execute).toHaveBeenCalledTimes(1);
       expect(await approvalFor(approved.id)).toMatchObject({ status: "consumed", decidedVia: "web_session" });
       expect(execute.mock.calls[0]![0]).toMatchObject({ idempotencyKey: `code-${approved.id}`, input: { value: "one" } });
+      // The remembered approval's audit event joins the execution trail through the call ID.
+      expect(
+        await sql`SELECT action, request_id FROM audit.events WHERE action = 'ai.approval.remember' AND request_id = ${approved.id}`,
+      ).toHaveLength(1);
       expect(await runtimeCapabilities.resolve(approved.id, { approved: true }, owner, caller)).toEqual({
         status: "completed",
         result: { ok: true, data: { data: { written: true } } },
