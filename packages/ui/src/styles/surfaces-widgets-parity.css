@@ -1119,6 +1119,20 @@
   cursor: pointer;
 }
 
+/* On touch screens the stack is tapped through a 44 px tall area that stays
+   within the meta line's gap above and below; the faces keep their size. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-avatar-stack__trigger {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-avatar-stack__trigger::after {
+    position: absolute;
+    inset: -0.75rem -0.5rem;
+    content: "";
+  }
+}
+
 .k2b-ui .k2b-avatar-stack__trigger:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: var(--k2b-focus-offset);

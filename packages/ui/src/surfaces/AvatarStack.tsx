@@ -1,4 +1,4 @@
-import { createSignal, createUniqueId, For, Index, type JSX, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
 import { dropdownPosition } from "../actions/Dropdown";
 import { prefersMenuSheet } from "../actions/menu-sheet";
 import { dialogCore } from "../feedback/dialog-core";
@@ -46,7 +46,7 @@ export type AvatarStackProps = {
 const PersonRows = (props: { people: readonly AvatarStackPerson[]; choose: (person: AvatarStackPerson) => void }): JSX.Element => {
   const others = () => props.people.filter((person) => !person.self);
   const selves = () => props.people.filter((person) => person.self);
-  // Rows update in place as people move between sections, so a focused row keeps its focus while the list is open.
+  // A row reads its person through an accessor, so a live update changes the row in place and a focused row keeps focus.
   const row = (person: () => AvatarStackPerson) => {
     const content = (
       <>
@@ -80,10 +80,14 @@ const PersonRows = (props: { people: readonly AvatarStackPerson[]; choose: (pers
       </li>
     );
   };
+  // Rows follow each person by id: a row stays with its person when others leave or the order changes, and still
+  // shows that person's latest details.
+  const byId = createMemo(() => new Map(props.people.map((person) => [person.id, person])));
+  const keyed = (id: string) => row(() => byId().get(id) ?? { id, name: "" });
   return (
     <ul class="k2b-avatar-stack__rows">
-      <Index each={others()}>{row}</Index>
-      <Index each={selves()}>{row}</Index>
+      <For each={others().map((person) => person.id)}>{keyed}</For>
+      <For each={selves().map((person) => person.id)}>{keyed}</For>
     </ul>
   );
 };
@@ -230,7 +234,7 @@ export function AvatarStack(props: AvatarStackProps): JSX.Element {
           titleId={titleId}
           hint={props.hint}
           choose={(person) => {
-            popover.hidePopover();
+            if (open()) popover.hidePopover();
             person.onSelect?.();
           }}
         />

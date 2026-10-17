@@ -103,18 +103,27 @@ export default function NoteCommentsSection(props: Props) {
   // The activity list links to a comment: page it in when it is older than the loaded pages, unfold the list when
   // it is folded away, then bring it into view. Paging stops after a bounded number of pages.
   onMount(() => {
+    let active = true;
+    onCleanup(() => {
+      active = false;
+    });
     const reveal = async (event: Event) => {
       const commentId = (event as CustomEvent<RevealCommentEventDetail>).detail?.commentId ?? null;
+      // A reveal belongs to the note it started on; switching notes or leaving cancels it after any await.
+      const startedOn = source();
+      const current = () => active && source() === startedOn;
       const indexOf = () => (commentId ? commentsPage().items.findIndex((comment) => comment.id === commentId) : -1);
       for (let page = 0; commentId && indexOf() < 0 && commentsPage().hasNext && page < REVEAL_MAX_PAGES; page++) {
         const loaded = commentsPage().items.length;
         await commentsQuery.loadMore();
+        if (!current()) return;
         // A failed or empty page stops here; the list's own error row offers the retry.
         if (commentsQuery.error() || commentsPage().items.length === loaded) break;
       }
       const index = indexOf();
       if (index >= 0 && index < commentsPage().items.length - NEWEST) setExpanded(true);
       queueMicrotask(() => {
+        if (!current()) return;
         const target =
           (index >= 0 && commentId ? document.querySelector<HTMLElement>(`[data-note-comment="${CSS.escape(commentId)}"]`) : null) ??
           document.querySelector<HTMLElement>("[data-note-comments]");

@@ -777,10 +777,10 @@ function EditorInstance(
     const view = editorView();
     if (!view) return;
 
-    const target = headingLines.find((heading) => heading.id === detail.id);
-    if (!target) return;
-    const lineNumber = target.line;
-    const lineFrom = view.state.doc.line(lineNumber).from;
+    // Against the document as it is now: the cached index may lag an edit by the debounce.
+    const target = extractHeadingLines(view.state.doc.toString()).find((heading) => heading.id === detail.id);
+    if (!target || target.line > view.state.doc.lines) return;
+    const lineFrom = view.state.doc.line(target.line).from;
     view.dispatch({ selection: { anchor: lineFrom }, scrollIntoView: true });
   };
 

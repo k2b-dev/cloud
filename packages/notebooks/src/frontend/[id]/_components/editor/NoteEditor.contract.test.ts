@@ -27,4 +27,12 @@ describe("Note editor surface", () => {
       /const emitDerivedDocState = \(\) => \{\s*const md = ytext\.toString\(\);\s*headingLines = extractHeadingLines\(md\);/,
     );
   });
+  test("jumps to a heading found in the current document, not the debounced index", async () => {
+    // The cached index lags an edit by the debounce; a stale line could land elsewhere or throw for a shorter note.
+    const source = await Bun.file(resolve(import.meta.dir, "NoteEditor.client.tsx")).text();
+    const handler = source.match(/const onScrollToHeading = \(event: Event\) => \{([\s\S]*?)\n {2}\};/)?.[1] ?? "";
+    expect(handler).toContain("extractHeadingLines(view.state.doc.toString())");
+    expect(handler).toContain("target.line > view.state.doc.lines");
+    expect(handler).not.toContain("headingLines.find");
+  });
 });

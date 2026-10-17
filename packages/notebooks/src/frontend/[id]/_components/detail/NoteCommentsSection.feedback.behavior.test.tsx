@@ -382,4 +382,76 @@ describe("Note comment feedback", () => {
       else Reflect.deleteProperty(globalThis, "CSS");
     }
   });
+
+  test("a reveal that is still paging stops when the person switches notes", async () => {
+    const { createSignal } = await import("solid-js");
+    const { REVEAL_COMMENT_EVENT } = await import("./events");
+    let release: (() => void) | undefined;
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: RequestInfo | URL) => {
+          const url = new URL(String(input), "http://localhost");
+          if (url.pathname.includes("/Note01/")) await new Promise<void>((resolve) => (release = resolve));
+          return Response.json(emptyPage);
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    const previousCSS = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { default: NoteCommentsSection } = await import("./NoteCommentsSection");
+    const [noteId, setNoteId] = createSignal("Note01");
+    const comment: PublicNoteComment = {
+      id: "newest",
+      notebookId: "Book01",
+      noteId: "Note01",
+      authorUserId: "jana",
+      authorDisplayName: "Jana Berger",
+      authorAvatarHash: null,
+      content: "Newest",
+      createdAt: "2026-10-03T10:00:00.000Z",
+      updatedAt: "2026-10-03T10:00:00.000Z",
+      canEdit: false,
+      canDelete: false,
+    };
+    const dispose = render(
+      () =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(NoteCommentsSection, {
+              notebookId: "Book01",
+              get noteId() {
+                return noteId();
+              },
+              currentUserId,
+              canWrite: true,
+              initialCommentsPage: { ...emptyPage, total: 60, hasNext: true, items: [comment] },
+              dateConfig: { locale: "de", timeZone: "UTC", base: "2026-10-16T19:30:00.000Z" },
+            });
+          },
+        }),
+      dom.root,
+    );
+    try {
+      const outside = dom.document.createElement("button");
+      dom.document.body.append(outside);
+      outside.focus();
+      window.dispatchEvent(new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: "older" } }));
+      await until(() => release !== undefined);
+      setNoteId("Note02");
+      release?.();
+      await flush();
+      await flush();
+      // The other note's discussion is not scrolled to or focused by a reveal that began on the first note.
+      expect(dom.document.activeElement).toBe(outside);
+      outside.remove();
+    } finally {
+      dispose();
+      fetch.mockRestore();
+      if (previousCSS) Object.defineProperty(globalThis, "CSS", previousCSS);
+      else Reflect.deleteProperty(globalThis, "CSS");
+    }
+  });
 });
