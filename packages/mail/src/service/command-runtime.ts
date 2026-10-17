@@ -9,7 +9,7 @@ import { z } from "zod";
 import type { CommandState, MailCommand, RemoteMessagePrecondition } from "../contracts";
 import { remoteMessagePreconditionSchema } from "../contracts";
 import { rediscoverProviderBinding } from "./bindings";
-import { commandsStillAuthorized, commandStillAuthorized } from "./command-authorization";
+import { commandStillAuthorized, commandsStillAuthorized } from "./command-authorization";
 import { resolveUndoRequests } from "./command-undo";
 import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
