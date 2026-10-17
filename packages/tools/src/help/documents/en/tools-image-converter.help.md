@@ -15,7 +15,7 @@ The HEIC decoder loads only when your browser cannot read the photo itself.
 2. If needed, select, remove, or rotate a preview clockwise before export.
 :::
 
-The export settings open automatically as soon as you add a file. They close again when the batch is empty.
+The export settings open automatically as soon as you add a file. They stay closed while every file in the list failed.
 
 ## Choose the output {icon="photo"}
 

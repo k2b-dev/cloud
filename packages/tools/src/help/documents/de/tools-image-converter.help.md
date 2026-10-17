@@ -15,7 +15,7 @@ Der HEIC-Decoder wird nur geladen, wenn dein Browser das Foto nicht selbst lesen
 2. Wähle bei Bedarf eine Vorschau vor dem Export aus, entferne sie oder drehe sie im Uhrzeigersinn.
 :::
 
-Die Exporteinstellungen öffnen sich automatisch, sobald du eine Datei hinzufügst. Sie schließen sich wieder, wenn der Stapel leer ist.
+Die Exporteinstellungen öffnen sich automatisch, sobald du eine Datei hinzufügst. Sie bleiben geschlossen, solange jede Datei in der Liste fehlgeschlagen ist.
 
 ## Ausgabeformat wählen {icon="photo"}
 

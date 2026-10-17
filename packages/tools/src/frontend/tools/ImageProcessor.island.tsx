@@ -1195,11 +1195,11 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                 <ul class="flex flex-col gap-2" aria-live="polite">
                   <For each={loadFailures()}>
                     {(failure) => (
-                      <li class="min-w-0 text-sm">
-                        <p class="truncate">
+                      <li class="min-w-0">
+                        <p class="truncate text-primary">
                           <span class="font-medium">{failure.file.name}</span> · {intakeT()[`${failure.reason}Title`]}
                         </p>
-                        <p class="text-xs opacity-80">{intakeT()[`${failure.reason}Hint`]}</p>
+                        <p class="text-dimmed">{intakeT()[`${failure.reason}Hint`]}</p>
                       </li>
                     )}
                   </For>

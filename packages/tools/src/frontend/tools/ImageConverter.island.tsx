@@ -96,6 +96,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
   const images = createMemo(() => items().filter((item): item is ImageConverterEntry & { status: "ready" } => item.status === "ready"));
   const loading = createMemo(() => items().some((item) => item.status === "loading"));
   const failedCount = createMemo(() => items().filter((item) => item.status === "failed").length);
+  const loadingCount = createMemo(() => items().filter((item) => item.status === "loading").length);
   const intakeController = new AbortController();
   let processing = false;
   const [format, setFormat] = createSignal<ImageConverterFormat>("webp");
@@ -352,9 +353,11 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
               <p class="text-xs text-dimmed">
                 {items().length === 0
                   ? t().emptySubtitle
-                  : failedCount() > 0
-                    ? `${t().imageCount({ count: images().length })} · ${t().notAdded({ count: failedCount() })}`
-                    : t().imageCount({ count: images().length })}
+                  : [
+                      t().imageCount({ count: images().length }),
+                      ...(loadingCount() > 0 ? [t().preparing({ count: loadingCount() })] : []),
+                      ...(failedCount() > 0 ? [t().notAdded({ count: failedCount() })] : []),
+                    ].join(" · ")}
               </p>
             </div>
             <div class="flex items-center gap-2">
@@ -548,7 +551,9 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
 
       <AppWorkspace.Detail
         id="image-converter-settings"
-        open={items().length > 0}
+        // Open from the drop on, so the cards do not move when the first image is ready; a batch of only failed files
+        // keeps them closed, because on a phone the settings would cover the cards that say what went wrong.
+        open={items().some((item) => item.status !== "failed")}
         width="md"
         minWidth={288}
         viewTransitionName="tools-image-converter-settings"
@@ -557,7 +562,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
           <DetailPanel.Header
             icon="ti ti-arrows-exchange"
             title={t().panelTitle}
-            subtitle={images().length > 0 ? t().imagesReady({ count: images().length }) : t().panelEmpty}
+            subtitle={images().length > 0 ? t().imagesReady({ count: images().length }) : loading() ? t().panelPreparing : t().panelEmpty}
           />
 
           <DetailPanel.Body scrollPreserveKey="image-converter-settings">

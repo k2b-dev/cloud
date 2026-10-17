@@ -84,7 +84,7 @@ describe("image intake states in the main workspace", () => {
     expect(html).not.toContain('aria-label="Remove IMG_0001.HEIC"');
     expect(html).not.toContain('aria-label="Select IMG_0001.HEIC"');
   });
-  test("a failed card keeps the reason, recovery and remove action outside the detail panel", () => {
+  test("a failed card keeps the reason, recovery and remove action in the main area, with the settings still closed", () => {
     const html = renderItems([{ status: "failed", id: "failed", file, reason: "decode-failed" }]);
     const main = html.slice(0, html.indexOf('id="k2b-workspace-detail-image-converter-settings"'));
     expect(main).toContain('data-status="failed"');
@@ -92,7 +92,7 @@ describe("image intake states in the main workspace", () => {
     expect(main).toContain("This image could not be read.");
     expect(main).toContain("Export it again from the source app, or choose another file.");
     expect(main).toContain('aria-label="Remove IMG_0001.HEIC"');
-    expect(html).not.toMatch(/id="k2b-workspace-detail-image-converter-settings"[^>]* hidden/);
+    expect(html).toMatch(/id="k2b-workspace-detail-image-converter-settings"[^>]* hidden/);
     expect(html).not.toContain("1 image ready");
     expect(html).not.toContain("Export all (");
   });
