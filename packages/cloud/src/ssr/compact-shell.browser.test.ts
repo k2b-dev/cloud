@@ -1167,9 +1167,12 @@ describe("soft tablet and phone shell", () => {
         rail: getComputedStyle(document.querySelector(".layout-rail")!).display,
         header: getComputedStyle(document.querySelector(".layout-header")!).display,
         home: !!document.querySelector<HTMLElement>('.cloud-tab-bar a[href="/"]')?.checkVisibility(),
-        mainPadding: Number.parseFloat(getComputedStyle(document.querySelector(".layout-content-main")!).paddingBottom),
+        // The card keeps at least the room from the bar's top edge to the window's end.
+        roomForBar:
+          Number.parseFloat(getComputedStyle(document.querySelector(".layout-content-main")!).paddingBottom) >=
+          innerHeight - document.querySelector(".cloud-tab-bar .k2b-tab-bar")!.getBoundingClientRect().top,
       }));
-      expect(shell).toEqual({ rail: "none", header: "flex", home: true, mainPadding: 8 + 62 + 12 });
+      expect(shell).toEqual({ rail: "none", header: "flex", home: true, roomForBar: true });
     } finally {
       await context.close();
     }
