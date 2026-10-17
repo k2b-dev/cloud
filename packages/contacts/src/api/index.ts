@@ -71,6 +71,8 @@ const localizeApiError = async (c: Context, next: () => Promise<void>) => {
     .json()
     .catch(() => null);
   if (!body || typeof body !== "object" || !("message" in body) || typeof body.message !== "string") return;
+  // The platform already localized the manager guard message.
+  if ("code" in body && body.code === "LAST_MANAGER") return;
   const headers = new Headers(c.res.headers);
   headers.delete("content-length");
   c.res = new Response(JSON.stringify({ ...body, message: contactsApiErrorMessage(c.res.status, getLocale(c), body.message) }), {
@@ -631,7 +633,18 @@ const adminApi = new Hono<AuthContext>()
     const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
     if (error) return error;
 
-    return respondMessage(c, contactsService.book.access.update({ bookId: internalBookId!, accessId, permission }), "Access updated");
+    return respondMessage(
+      c,
+      contactsService.book.access.update({
+        bookId: internalBookId!,
+        accessId,
+        permission,
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
+        locale: getLocale(c),
+      }),
+      "Access updated",
+    );
   })
   .delete("/books/:bookId/access/:accessId", async (c) => {
     const bookId = c.req.param("bookId") ?? "";
@@ -639,7 +652,17 @@ const adminApi = new Hono<AuthContext>()
     const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
     if (error) return error;
 
-    return respondMessage(c, contactsService.book.access.remove({ bookId: internalBookId!, accessId }), "Access revoked");
+    return respondMessage(
+      c,
+      contactsService.book.access.remove({
+        bookId: internalBookId!,
+        accessId,
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
+        locale: getLocale(c),
+      }),
+      "Access revoked",
+    );
   });
 
 const RESOURCE_SHORT_ID = /^[0-9A-Za-z]{6}$/;
@@ -1121,7 +1144,7 @@ const app = new Hono<AuthContext>()
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Access updated"),
-        400: jsonResponse(ErrorResponseSchema, "Cannot remove the last admin from this book"),
+        409: jsonResponse(ErrorResponseSchema, "The change would leave the book without a manager (LAST_MANAGER)"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Access entry not found"),
       },
@@ -1137,7 +1160,18 @@ const app = new Hono<AuthContext>()
       const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
       if (error) return error;
 
-      return respondMessage(c, contactsService.book.access.update({ bookId: internalBookId!, accessId, permission }), "Access updated");
+      return respondMessage(
+        c,
+        contactsService.book.access.update({
+          bookId: internalBookId!,
+          accessId,
+          permission,
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
+          locale: getLocale(c),
+        }),
+        "Access updated",
+      );
     },
   )
 
@@ -1150,7 +1184,8 @@ const app = new Hono<AuthContext>()
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Access revoked"),
-        400: jsonResponse(ErrorResponseSchema, "Cannot remove the last access entry/admin from this book"),
+        400: jsonResponse(ErrorResponseSchema, "Cannot remove the last access entry"),
+        409: jsonResponse(ErrorResponseSchema, "The change would leave the book without a manager (LAST_MANAGER)"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Access entry not found"),
       },
@@ -1164,7 +1199,17 @@ const app = new Hono<AuthContext>()
       const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
       if (error) return error;
 
-      return respondMessage(c, contactsService.book.access.remove({ bookId: internalBookId!, accessId }), "Access revoked");
+      return respondMessage(
+        c,
+        contactsService.book.access.remove({
+          bookId: internalBookId!,
+          accessId,
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
+          locale: getLocale(c),
+        }),
+        "Access revoked",
+      );
     },
   )
 

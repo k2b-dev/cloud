@@ -50,6 +50,7 @@ import {
   ownClaimId,
   promptReleaseNote,
   releaseTask,
+  resolveAssigneeClaim,
   resolveCompletionClaim,
   resolveTransferClaim,
   takeOverTask,
@@ -419,6 +420,16 @@ export default function ItemDetailPanel(props: Props) {
     (tagIds) => ({ tagIds }),
   );
 
+  /**
+   * Removing the person who works on the task ends their claim: your own at once, someone else's after one
+   * confirmation. Declining changes nothing, and the answer belongs to the item the question named.
+   */
+  const updateAssignees = async (assigneeIds: string[]) => {
+    const itemId = props.item.id;
+    const claim = await resolveAssigneeClaim(props.item.claim, props.currentUserId, assigneeIds, t);
+    if (claim && props.item.id === itemId) await updateMutation.mutate({ assigneeIds, ...claim });
+  };
+
   type CompleteIntent = { itemId: string; completed: boolean } & ClaimFields;
   /**
    * Someone else's claim is taken over after one confirmation; declining changes nothing. The answer belongs to the
@@ -596,6 +607,7 @@ export default function ItemDetailPanel(props: Props) {
         columns: props.columns,
         tags: props.tags,
         dateConfig: props.dateConfig,
+        currentUserId: props.currentUserId,
       });
       if (saved) reconcileAfterWrite();
     } finally {
@@ -1227,7 +1239,7 @@ export default function ItemDetailPanel(props: Props) {
                     claim={props.item.claim}
                     currentUserId={props.currentUserId}
                     dateConfig={props.dateConfig}
-                    onUpdate={(ids) => updateMutation.mutate({ assigneeIds: ids })}
+                    onUpdate={(ids) => void updateAssignees(ids)}
                     loading={isLoading()}
                     disabled={!canEditItem()}
                   />
