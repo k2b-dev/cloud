@@ -64,28 +64,33 @@ export default function TimelineDisplay(props: Props) {
     });
   };
   let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The address of the history entry the position belongs to, and the position last written there. */
+  let entryHref = "";
+  let savedTop: number | undefined;
   const saveScroll = () => {
     clearTimeout(scrollTimer);
     scrollTimer = undefined;
     try {
       history.replaceState({ ...historyState(), [SCROLL_KEY]: scroller.scrollTop }, "");
+      savedTop = scroller.scrollTop;
+      entryHref = location.href;
     } catch {
       // Browsers limit history writes; the next scroll pause saves the position again.
     }
   };
   // Saved after each scroll pause, which stays well inside the browsers' history write limits.
-  let scrolledAt = "";
   const onScroll = () => {
     clearTimeout(scrollTimer);
-    scrolledAt = location.href;
+    entryHref = location.href;
     scrollTimer = setTimeout(saveScroll, SCROLL_SAVE_DELAY_MS);
   };
-  // A pending save is written before the display goes away, but never into a newer history entry. A reload within
-  // the delay keeps the previous pause: Chromium drops history writes made while the page unloads.
+  // An unsaved position is written before the display goes away, even when the scroll event has not fired yet
+  // (WebKit), but never into a newer history entry. A reload within the delay keeps the previous pause: Chromium
+  // drops history writes made while the page unloads.
   const flushScroll = () => {
-    if (scrollTimer !== undefined && location.href === scrolledAt) saveScroll();
     clearTimeout(scrollTimer);
     scrollTimer = undefined;
+    if (location.href === entryHref && scroller.scrollTop !== savedTop) saveScroll();
   };
   let mounted = false;
   onMount(() => {
@@ -93,6 +98,8 @@ export default function TimelineDisplay(props: Props) {
     props.controls(null);
     measure();
     const saved = historyState()[SCROLL_KEY];
+    entryHref = location.href;
+    savedTop = typeof saved === "number" ? saved : undefined;
     const current = props.currentId ? row(props.currentId) : null;
     if (typeof saved === "number") scroller.scrollTop = saved;
     else if (current) scroller.scrollTop = Math.max(0, current.offsetTop + current.offsetHeight / 2 - scroller.clientHeight / 3);
