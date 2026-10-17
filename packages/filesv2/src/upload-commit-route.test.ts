@@ -22,7 +22,13 @@ const commit = async () => {
 mock.module("./service", () => ({
   FilesError,
   EDITOR_DOCUMENT_LIMIT: 256 * 1024 * 1024,
-  filesService: { commitUpload: commit, publicInboxCommit: commit },
+  filesService: {
+    commitUpload: commit,
+    publicInboxCommit: commit,
+    upload: async () => {
+      throw new DOMException("The operation timed out.", "TimeoutError");
+    },
+  },
 }));
 
 const { default: api } = await import("./api");
@@ -51,3 +57,13 @@ for (const [app, path] of [
     expect(seconds).toEqual([240, 10]);
   });
 }
+
+test("opening an upload answers unavailable when the Filegate deadline expires", async () => {
+  const response = await api.request("/bases/home/uploads", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: "file.txt", size: 3, idempotencyKey: "11111111-1111-4111-8111-111111111111" }),
+  });
+  expect(response.status).toBe(503);
+  expect(await response.json()).toMatchObject({ code: "unavailable" });
+});

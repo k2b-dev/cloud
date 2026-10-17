@@ -6,6 +6,7 @@ import type { CloudCliContext } from "@k2b/cloud/cli";
 import { sha256 } from "@k2b/filegate/utils";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
+import { apiError } from "./api/api-error";
 import filesCli from "./cli";
 import { uploadFile as runUploadFile } from "./cli-upload";
 import type { EntryResult, UploadSession } from "./contracts";
@@ -711,7 +712,7 @@ test("CLI exhaustion rejects after five retries, keeps its key, and a rerun resu
   expect(defaults.size).toBe(0);
 });
 
-test.each(["timeout", "504"])("CLI recovers a %s commit with the long deadline, same key and no abort", async (failure) => {
+test.each(["timeout", "504"])("CLI recovers a %s commit through two unavailable reopens", async (failure) => {
   const local = await file("abc");
   const keys: string[] = [];
   const ids: string[] = [];
@@ -742,6 +743,10 @@ test.each(["timeout", "504"])("CLI recovers a %s commit with the long deadline, 
           open: async (_size, _signal, key) => {
             keys.push(key);
             expect([...defaults.values()]).toEqual([key]);
+            if (keys.length === 2 || keys.length === 3) {
+              const { code, status } = apiError(new DOMException("The operation timed out.", "TimeoutError"));
+              throw await uploadResponseFailure(Response.json({ code }, { status }), "failed");
+            }
             return { ...session("https://files.test/lease", 3), state: published ? "committed" : "open" };
           },
           renew: async () => {
@@ -761,11 +766,11 @@ test.each(["timeout", "504"])("CLI recovers a %s commit with the long deadline, 
             aborts++;
           },
         },
-        { retryDelays: [0] },
+        { retryDelays: [0, 0, 0] },
       ),
     ).resolves.toEqual(result);
-    expect(keys).toHaveLength(2);
-    expect(keys[1]).toBe(keys[0]!);
+    expect(keys).toHaveLength(4);
+    expect(new Set(keys).size).toBe(1);
     expect(ids).toEqual(["session", "session"]);
     expect(deadlines.filter((ms) => ms === UPLOAD_COMMIT_DEADLINE_MS)).toHaveLength(2);
     expect(puts).toBe(1);

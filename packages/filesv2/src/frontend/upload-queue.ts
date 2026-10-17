@@ -34,7 +34,7 @@ export type UploadAdapter<G> = {
     options: {
       signal: AbortSignal;
       onProgress: (bytes: number) => void;
-      onPhase: (phase: "finishing") => void;
+      onPhase: (phase: "finishing" | null) => void;
       /** Cloud answered this attempt, so the network is back; a new try after a busy or silent server waits for progress. */
       alive: () => void;
     },
@@ -188,6 +188,10 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
                     apply((draft) => reportProgress(draft, id!, latest), turn);
                   }
                   clearFinishing();
+                  if (phase === null) {
+                    apply((draft) => phaseRow(draft, id!, null), turn);
+                    return;
+                  }
                   finishingTimer = setTimeout(() => {
                     finishingTimer = undefined;
                     if (active()) apply((draft) => phaseRow(draft, id!, phase), turn);

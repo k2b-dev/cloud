@@ -105,6 +105,7 @@ mock.module("../src/frontend/public-client", () => ({ publicClient: { inbox: { "
 
 // UI modules need a document while their browser exports are evaluated.
 const loadDom = createDomTestHarness();
+const { apiError } = await import("../src/api/api-error");
 const { createFilesUploads } = await import("../src/frontend/files-uploads");
 const { UploadSurface } = await import("../src/frontend/UploadPanel");
 const { default: PublicInbox } = await import("../src/frontend/PublicInbox.island");
@@ -639,7 +640,7 @@ test("folder preparation fetch failures pause while online until Cloud can be re
 
 for (const inbox of [false, true]) {
   test.each(["timeout", "502", "504"] as const)(
-    `a ${inbox ? "public" : "private"} commit %s recovers the published entry on the same upload without another transfer`,
+    `a ${inbox ? "public" : "private"} commit %s recovers through two unavailable reopens on the same upload without another transfer`,
     async (failure) => {
       const deadlines: number[] = [];
       const deadline = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
@@ -656,6 +657,12 @@ for (const inbox of [false, true]) {
         if (++calls === 1) {
           // Publication succeeded, but the server's answer is still pending.
           published.add(path);
+          let reopens = 0;
+          startOverride = async () => {
+            const { code, status } = apiError(new DOMException("The operation timed out.", "TimeoutError"));
+            if (++reopens === 2) startOverride = undefined;
+            return Response.json({ code }, { status });
+          };
           return new Promise<Response>((resolve, reject) => {
             signal?.throwIfAborted();
             signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
@@ -684,18 +691,52 @@ for (const inbox of [false, true]) {
       );
       if (!inbox) expect(ui.queue().batch.rows[0]!.phase).toBeNull();
       expect(aborts).toBe(0);
-      await advance(2000);
+      for (const [i, delay] of [2000, 5000, 15000].entries()) {
+        await advance(delay);
+        if (i < 2) {
+          await until(() => starts.length === i + 2);
+          expect(ui.reason()).toBe("File server busy, trying again soon");
+          if (!inbox) expect(ui.queue().batch.rows[0]!.phase).toBeNull();
+        }
+      }
       await until(() => (inbox ? ui.title() === "Uploaded to “Inbox”" : ui.queue().batch.phase === "done"));
-      expect(starts).toHaveLength(2);
-      expect(starts[1]).toEqual(starts[0]!);
+      expect(starts).toHaveLength(4);
+      expect(starts).toEqual(Array(4).fill(starts[0]!));
       expect(published.size).toBe(1);
       expect(puts).toBe(1);
       expect(calls).toBe(2);
       expect(aborts).toBe(0);
-      if (!inbox) expect(ui.queue().batch.rows[0]).toMatchObject({ status: "success", phase: null });
+      if (!inbox) expect(ui.queue().batch.rows[0]).toMatchObject({ path: "large.txt", status: "success", phase: null });
     },
   );
 }
+
+test.each([0, 1000])("a commit conflict clears the finishing notice before asking to replace (after %s ms)", async (delay) => {
+  let conflict!: () => void;
+  commitOverride = async () =>
+    new Promise<Response>((resolve) => {
+      conflict = () => resolve(Response.json({ code: "path_conflict", message: "File exists" }, { status: 409 }));
+    });
+  const ui = mount();
+  ui.queue().add({ baseId: "home", root: "", folders: [], policy: "ask", total: 1 }, { key: "home", label: "Home" }, [
+    { file: file("existing.txt"), path: "existing.txt" },
+  ]);
+  await until(() => !!conflict);
+  await advance(delay);
+  expect(ui.queue().batch.rows[0]!.phase).toBe(delay ? "finishing" : null);
+  conflict();
+  await until(() => !!ui.dom.document.querySelector("dialog"));
+  expect(ui.dom.document.querySelector("dialog")!.textContent).toContain("existing.txt");
+  expect(ui.queue().batch.rows[0]).toMatchObject({ status: "working", phase: null });
+  expect(ui.reason()).not.toBe("Finishing…");
+  await advance(1000);
+  expect(ui.queue().batch.rows[0]!.phase).toBeNull();
+  [...ui.dom.document.querySelectorAll<HTMLButtonElement>("dialog button")]
+    .find((button) => button.textContent?.trim() === "Skip")!
+    .click();
+  await until(() => ui.queue().batch.phase === "done");
+  expect(ui.queue().batch.rows[0]!.status).toBe("skipped");
+});
 
 test("a quick commit never sets the finishing phase", async () => {
   const ui = mount();
@@ -763,9 +804,11 @@ test.each(["progress", "cancel", "dispose"] as const)("%s clears a pending finis
   expect(jest.getTimerCount()).toBe(0);
 });
 
-test("a callback from the previous attempt cannot start a finishing notice during a retry", async () => {
+test("phase callbacks from the previous attempt cannot start or clear a finishing notice during a retry", async () => {
   let calls = 0;
   let oldPhase!: () => void;
+  let oldClearPhase!: () => void;
+  let currentPhase!: () => void;
   let oldProgress!: () => void;
   let resolve!: (outcome: { status: "uploaded"; path: string }) => void;
   const ui = mount(false, {
@@ -773,10 +816,12 @@ test("a callback from the previous attempt cannot start a finishing notice durin
     upload: async (_group, _item, options) => {
       if (++calls === 1) {
         oldPhase = () => options.onPhase("finishing");
+        oldClearPhase = () => options.onPhase(null);
         oldProgress = () => options.onProgress(1);
         options.onPhase("finishing");
         throw new UploadTransferError("deadline", "stalled", undefined);
       }
+      currentPhase = () => options.onPhase("finishing");
       return new Promise((done) => {
         resolve = done;
       });
@@ -790,6 +835,12 @@ test("a callback from the previous attempt cannot start a finishing notice durin
   oldProgress();
   await advance(1000);
   expect(ui.queue().batch.rows[0]).toMatchObject({ phase: null, sent: 0, wait: "retrying" });
+  currentPhase();
+  oldClearPhase();
+  await advance(1000);
+  expect(ui.queue().batch.rows[0]!.phase).toBe("finishing");
+  oldClearPhase();
+  expect(ui.queue().batch.rows[0]!.phase).toBe("finishing");
   resolve({ status: "uploaded", path: "retry.txt" });
   await until(() => ui.queue().batch.phase === "done");
 });

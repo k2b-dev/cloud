@@ -107,10 +107,16 @@ suite("actual Filegate 7.0.0 transfer contract (isolated local prefix)", () => {
   test("the production Filegate wrapper keeps a delayed upload commit connected", async () => {
     const nativeFetch = globalThis.fetch;
     let forwardedCommits = 0;
+    let delayBeforeForward = true;
     const transport: typeof fetch = Object.assign(
       async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
         const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
         if (init?.method === "POST" && /\/uploads\/sessions\/[^/]+\/commit$/.test(url.pathname)) {
+          const forward = () => {
+            forwardedCommits++;
+            return nativeFetch(input, init);
+          };
+          const response = delayBeforeForward ? undefined : await forward();
           await new Promise<void>((resolve, reject) => {
             const signal = init.signal;
             signal?.throwIfAborted();
@@ -124,7 +130,7 @@ suite("actual Filegate 7.0.0 transfer contract (isolated local prefix)", () => {
             }, 1000);
             signal?.addEventListener("abort", abort, { once: true });
           });
-          forwardedCommits++;
+          return response ?? forward();
         }
         return nativeFetch(input, init);
       },
@@ -140,7 +146,7 @@ suite("actual Filegate 7.0.0 transfer contract (isolated local prefix)", () => {
     pending.add(opened.session.id);
     await new DirectSession(opened.lease!.url, transfer).upload(new Blob(["abc"]));
     const nativeTimeout = AbortSignal.timeout;
-    // Control: the old short budget disconnects before Filegate ever receives the commit.
+    // Control: a pre-forward delay demonstrates the mechanism of the old short budget.
     const short = spyOn(AbortSignal, "timeout").mockImplementation((ms) => nativeTimeout(ms === 600_000 || ms === 10_000 ? 200 : ms));
     try {
       await expect(delayed.commitSession(opened.session.id)).rejects.toMatchObject({ name: "TimeoutError" });
@@ -149,6 +155,7 @@ suite("actual Filegate 7.0.0 transfer contract (isolated local prefix)", () => {
     }
     expect(forwardedCommits).toBe(0);
     expect(await root.session(opened.session.id)).toMatchObject({ state: "open", received: 3 });
+    delayBeforeForward = false;
     const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => nativeTimeout(ms === 10_000 ? 200 : ms));
     try {
       await delayed.commitSession(opened.session.id);

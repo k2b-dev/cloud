@@ -73,6 +73,7 @@ export function createFilesUploads(): FilesUploads {
         } catch (error) {
           if (!(error instanceof UploadConflict) || onConflict !== "error") throw error;
           if (group.policy === "ask") {
+            onPhase(null);
             // A cancel or the workspace leaving closes the question with the upload.
             const decided = await askReplace(b(), error.fileName, 1, group.total, signal);
             signal.throwIfAborted();

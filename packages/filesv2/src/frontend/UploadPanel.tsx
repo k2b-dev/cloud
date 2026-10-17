@@ -1,4 +1,5 @@
-import { Button, IconButton, ProgressRing, Tooltip, toast } from "@k2b/ui";
+import { text } from "@k2b/stdlib";
+import { Button, IconButton, ProgressRing, Tooltip, toast, useLocale } from "@k2b/ui";
 import {
   createEffect,
   createMemo,
@@ -299,6 +300,8 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
 
 function UploadRowView(props: { row: UploadRow; folder: boolean; total: number; onRetry: (event: MouseEvent) => void }) {
   const u = useUploadMessages();
+  const locale = useLocale();
+  const bytes = (value: number) => text.pprintBytes(value, { locale: locale() });
   // A wait for the network or a busy server says more than the publication in progress; a new try does not.
   const finishing = () =>
     props.row.status === "working" && props.row.phase === "finishing" && (!props.row.wait || props.row.wait === "retrying");
@@ -361,8 +364,18 @@ function UploadRowView(props: { row: UploadRow; folder: boolean; total: number; 
           <span class="filesv2-upload-row__base">{props.row.name}</span>
           <span class="k2b-sr-only">, {finishing() ? u().finishingStatus : u().status(props.row.status)}</span>
         </span>
-        <Show when={props.row.status === "failed" || (props.row.status === "working" && (props.row.wait || props.row.phase))}>
-          <span class="filesv2-upload-row__reason">{note()}</span>
+        {/* A working row always has its second line, so a wait or Finishing… replaces the bytes without moving the name. */}
+        <Show when={props.row.status === "failed" || props.row.status === "working"}>
+          <Show
+            when={note()}
+            fallback={
+              <span class="filesv2-upload-row__progress" aria-hidden="true">
+                {u().transferred({ sent: bytes(props.row.sent), size: bytes(props.row.size) })}
+              </span>
+            }
+          >
+            <span class="filesv2-upload-row__reason">{note()}</span>
+          </Show>
         </Show>
       </span>
       <Show when={props.row.status === "failed"}>

@@ -318,7 +318,7 @@ describe("upload panel in a browser", () => {
               // The reason fits its row: no ellipsis on a 390 px phone either.
               fits: reason ? reason.scrollWidth <= reason.clientWidth : true,
               box: (({ left, top, width, height }) => [left, top, width, height].map(Math.round))(row.getBoundingClientRect()),
-              // Once a wait line is there, it stays until the file settles, so the name never jumps between tries.
+              // A working row always has its second line (bytes, a wait or Finishing…), so the name never moves.
               name: Math.round(row.querySelector(".filesv2-upload-row__base")!.getBoundingClientRect().top),
             };
           });
@@ -335,7 +335,7 @@ describe("upload panel in a browser", () => {
           await run(tab, "window.uploads.interrupt('network')");
           expect(await tab.textContent(".filesv2-upload__title")).toBe(text.title);
           const waiting = await rowState();
-          expect(waiting).toEqual({ ...row, wait: "network", reason: text.network, fits: true, name: waiting.name });
+          expect(waiting).toEqual({ ...row, wait: "network", reason: text.network, fits: true });
           expect(await boxes(tab)).toEqual(first);
           expect(await tab.$$eval('.filesv2-upload-row[data-status="pending"]', (rows) => rows.length)).toBeGreaterThan(0);
           expect(await contrast(tab, `${active} .filesv2-upload-row__reason`)).toBeGreaterThanOrEqual(4.5);
@@ -390,6 +390,7 @@ describe("upload panel in a browser", () => {
             return {
               phase: (row as HTMLElement).dataset.phase ?? null,
               reason: reason?.textContent ?? null,
+              progress: row.querySelector(".filesv2-upload-row__progress")?.textContent ?? null,
               fits: reason ? reason.scrollWidth <= reason.clientWidth : true,
               spoken: row.querySelector(".filesv2-upload-row__name .k2b-sr-only:last-child")?.textContent ?? null,
               box: round(row.getBoundingClientRect()),
@@ -404,6 +405,9 @@ describe("upload panel in a browser", () => {
           const first = await boxes(tab);
           const sending = await rowState();
           expect(sending.reason).toBeNull();
+          // While bytes travel, the second line counts them; it is already there, so later lines move nothing.
+          expect(sending.progress).toMatch(lang === "de" ? / von / : / of /);
+          await shot("sending");
 
           // A commit that answers within a second says nothing, so small files do not flicker.
           await run(tab, "window.uploads.finishing()");
@@ -419,9 +423,9 @@ describe("upload panel in a browser", () => {
             ...sending,
             phase: "finishing",
             reason: text.finishing,
+            progress: null,
             fits: true,
             spoken: `, ${text.status}`,
-            name: finishing.name,
           });
           expect(await boxes(tab)).toEqual(first);
           expect(await contrast(tab, `${active} .filesv2-upload-row__reason`)).toBeGreaterThanOrEqual(4.5);
@@ -432,9 +436,10 @@ describe("upload panel in a browser", () => {
           expect(await rowState()).toMatchObject({
             phase: null,
             reason: text.busy,
+            progress: null,
             box: sending.box,
             ring: sending.ring,
-            name: finishing.name,
+            name: sending.name,
           });
           expect(await boxes(tab)).toEqual(first);
           await tab.clock.fastForward(2_000);
