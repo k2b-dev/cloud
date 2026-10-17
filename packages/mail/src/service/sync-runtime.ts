@@ -928,7 +928,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       updated_at = now()
   `;
 
-  await retireKeptCopyPlacements(params.db, messageContentId, remoteRef.id);
+  await retireKeptCopyPlacements(params.db, [{ messageId: messageContentId, remoteRefId: remoteRef.id }]);
 
   const emitMessageReceived = async (): Promise<void> => {
     const deliveryKey = `message:${remoteRef.id}`;
