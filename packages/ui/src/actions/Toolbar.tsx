@@ -338,12 +338,15 @@ export const Toolbar = Object.assign(
       root.removeAttribute("data-overflow-pending");
       navigation?.sync();
       // Focus on an action that moved, on a menu row whose action came back, or on a More that disappeared goes to
-      // More, or to the toolbar's tab stop when nothing is left in More.
-      const lost =
-        next.some((action) => action.element === focused) ||
-        (focused instanceof HTMLElement && !focused.isConnected) ||
-        (focused === trigger && !next.length);
-      if (lost) (next.length ? trigger : root.querySelector<HTMLElement>('[tabindex="0"]'))?.focus();
+      // More, or to the toolbar's tab stop when nothing is left in More. Inside an effect the menu rows update after
+      // this function returns, so the check waits for that flush; a microtask still runs before the next paint.
+      queueMicrotask(() => {
+        const lost =
+          next.some((action) => action.element === focused) ||
+          (focused instanceof HTMLElement && !focused.isConnected) ||
+          (focused === trigger && !next.length);
+        if (lost) (next.length ? trigger : root.querySelector<HTMLElement>('[tabindex="0"]'))?.focus();
+      });
     };
     const register = (action: RegisteredAction) => {
       actions.add(action);
@@ -378,7 +381,14 @@ export const Toolbar = Object.assign(
       observer.observe(strip);
       observer.observe(root);
       const mutations = new MutationObserver(measure);
-      mutations.observe(root, { childList: true, subtree: true, characterData: true });
+      // Visibility an application sets also counts. Measurement writes only data attributes, which stay unobserved.
+      mutations.observe(root, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ["hidden", "class", "style"],
+      });
       onCleanup(() => {
         observer.disconnect();
         mutations.disconnect();

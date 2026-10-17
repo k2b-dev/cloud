@@ -486,6 +486,48 @@ test("widening until every action fits closes an open More and keeps focus in th
   }
 });
 
+test("reprioritising the focused More row hands focus to More instead of the page", async () => {
+  const page = await openFloating(340);
+  try {
+    const more = selectionToolbar(page).getByRole("button", { name: "More actions", exact: true });
+    await more.focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("menuitem", { name: "Forward", exact: true }).focus();
+    await page.evaluate(() => window.toolbarFixture.override("Forward", { priority: 1 }));
+    await page.waitForFunction(() => !document.querySelector('[aria-label="Forward"]')?.hasAttribute("data-overflow"));
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(await more.evaluate((button) => button === document.activeElement)).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
+test("actions an application hides leave More", async () => {
+  const page = await openFloating(340);
+  try {
+    await page.evaluate(() => {
+      window.toolbarFixture.override("Reply", { priority: 99 });
+      window.toolbarFixture.override("Forward", { priority: 99 });
+    });
+    expect(await movedLabels(page)).toEqual(expect.arrayContaining(["Reply", "Forward"]));
+    await selectionToolbar(page)
+      .getByRole("group", { name: "Respond", includeHidden: true })
+      .evaluate((group) => {
+        (group as HTMLElement).style.display = "none";
+      });
+    await page.waitForFunction(() => !document.querySelector('[aria-label="Reply"]')?.hasAttribute("data-overflow"));
+    const moved = await movedLabels(page);
+    expect(moved).not.toContain("Reply");
+    expect(moved).not.toContain("Forward");
+    await selectionToolbar(page).getByRole("button", { name: "More actions", exact: true }).click();
+    const rows = await page.getByRole("menuitem").allTextContents();
+    expect(rows).not.toContain("Reply");
+    expect(rows).not.toContain("Forward");
+  } finally {
+    await page.close();
+  }
+});
+
 test("Toolbar.Action keeps the plain accessible label and ARIA shortcut while its tooltip names the shortcut", async () => {
   const page = await openFloating();
   try {
