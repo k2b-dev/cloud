@@ -20,6 +20,7 @@ export function CloudAvatar(props: CloudAvatarProps): JSX.Element {
       alt={props.alt}
       fallback={props.fallback}
       size={props.size}
+      ring={props.ring}
       loading={props.loading}
       class={props.class}
       style={props.style}

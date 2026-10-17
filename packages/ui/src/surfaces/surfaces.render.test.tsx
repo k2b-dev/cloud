@@ -175,6 +175,25 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(link).not.toContain("k2b-link-card__meta");
   });
 
+  test("renders Avatar rings on images and initials while preserving caller styles", () => {
+    for (const src of [undefined, "/ada.webp"]) {
+      const render = (props: Partial<Parameters<typeof Avatar>[0]> = {}) =>
+        renderToString(() => createComponent(Avatar, { name: "Ada Lovelace", src, ...props }));
+      const success = render({ ring: "success" });
+      expect(success).toContain(src ? "<img " : "<span ");
+      expect(success).toContain('data-ring="success"');
+      expect(render()).not.toContain("data-ring");
+
+      for (const style of [undefined, "opacity:0.5", { opacity: 0.5 }]) {
+        const color = render({ ring: { color: "#123456" }, style });
+        expect(color).toContain(src ? "<img " : "<span ");
+        expect(color).toContain('data-ring="color"');
+        expect(color).toContain("--k2b-avatar-ring:#123456");
+        if (style !== undefined) expect(color).toContain("opacity:0.5");
+      }
+    }
+  });
+
   test("enhanced LinkCard navigation preserves the document anchor markup", () => {
     const props = {
       href: "/storage",
