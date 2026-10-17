@@ -91,7 +91,6 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
         const result = await committed.json();
         start.finish();
         setUploaded((current) => [...current, result.name]);
-        if (props.share.showUploadNames) await loadNames();
         return { status: "uploaded", path: result.name };
       } catch (caught) {
         const error = signal.aborted ? caught : uploadRequestFailure(caught, u().failed, signal);
@@ -109,6 +108,8 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
       }
     },
   });
+  // One name refresh per drained batch: a refresh per file would spend the link's page budget and hold up the queue.
+  onCleanup(uploads.onSettled(() => void loadNames()));
   const upload = (files: File[]) => {
     if (!files.length) return;
     // A file over the limit can never be uploaded, so it is named once instead of becoming a row to retry.

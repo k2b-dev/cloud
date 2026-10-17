@@ -6,7 +6,8 @@ import type { PublicShare } from "../src/contracts";
 
 let creates = 0,
   commits = 0,
-  aborts = 0;
+  aborts = 0,
+  nameLoads = 0;
 let commitFails = false;
 let commitStatus = 200;
 let startCode = "";
@@ -21,6 +22,12 @@ mock.module("../src/frontend/public-client", () => ({
     inbox: {
       ":token": {
         api: {
+          // The page budget is 10 per minute; a refresh per file would run into it.
+          $get: async () => {
+            nameLoads++;
+            if (nameLoads > 10) return rateLimitResponse();
+            return Response.json({ ...share, uploadedNames: ["file.txt"] });
+          },
           uploads: {
             $post: async (input: { json: { idempotencyKey: string } }) => {
               creates++;
@@ -98,6 +105,7 @@ afterEach(() => {
   creates = 0;
   commits = 0;
   aborts = 0;
+  nameLoads = 0;
   startKey = "";
   commitFails = false;
   rateLimitPhase = "start";
@@ -276,4 +284,28 @@ test("public inbox shows its own rate-limit reason when Retry-After exceeds five
   expect(dom.document.querySelector('[data-wait="rate_limited"]')).toBeNull();
   expect(creates).toBe(1);
   expect(commits).toBe(0);
+});
+
+test("public inbox refreshes the received names once per batch instead of once per file", async () => {
+  const dom = createDomTestHarness();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+  const { default: PublicInbox } = await import("../src/frontend/PublicInbox.island");
+  const dispose = render(() => <PublicInbox token="public-secret" share={{ ...share, showUploadNames: true }} />, dom.root);
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]')!;
+  Object.defineProperty(input, "files", {
+    configurable: true,
+    value: Array.from({ length: 15 }, (_, i) => new File([], `file-${i}.txt`, { lastModified: 123 })),
+  });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(() => !!dom.document.querySelector('.filesv2-upload[data-phase="done"]') && nameLoads > 0);
+  await flush();
+  expect(dom.document.querySelector(".filesv2-upload__count")?.textContent).toBe("15 of 15 files");
+  expect(commits).toBe(15);
+  expect(nameLoads).toBe(1);
+  expect(dom.document.querySelectorAll("[data-k2b-toast]:not([data-custom])")).toHaveLength(0);
+  expect(dom.root.querySelector('[aria-label="Received file names"] li')?.textContent).toBe("file.txt");
 });
