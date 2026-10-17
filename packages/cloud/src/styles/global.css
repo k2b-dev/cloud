@@ -435,7 +435,43 @@ solid-island {
   --cloud-tab-bar-space: calc(var(--cloud-tab-bar-end) + var(--cloud-tab-bar-height) + 0.75rem);
 }
 
+/* A page whose app has its own navigation (a mailbox, a Space, a book) makes
+   its title the menu "Name ⌄" on phones. It opens the same app menu as the
+   menu button beside it. The navigation's server-rendered snapshot decides,
+   so the first frame already shows the right title. */
+.layout-header-title-menu {
+  display: none;
+  min-width: 0;
+  min-height: 2.25rem;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-start: -0.5rem;
+  padding: 0 0.5rem;
+  border-radius: var(--k2b-radius-control);
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.layout-header-title-menu:hover {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+.layout-header-title-menu:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 1px;
+}
+.layout-header-title-menu > i {
+  flex: none;
+  font-size: 1rem;
+  opacity: 0.7;
+}
+
 @media not all and (min-width: 48rem) {
+  :root:has(script[data-cloud-workspace-navigation]) .layout-header-title {
+    display: none;
+  }
+  :root:has(script[data-cloud-workspace-navigation]) .layout-header-title-menu {
+    display: inline-flex;
+  }
   .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
     padding-bottom: var(--cloud-tab-bar-space);
     scroll-padding-bottom: var(--cloud-tab-bar-space);

@@ -62,6 +62,9 @@
   --k2b-action: var(--k2b-accent-700);
   --k2b-action-hover: var(--k2b-accent-800);
   --k2b-app-workspace-active: var(--k2b-action);
+  /* The fill of a selected object chip on the workspace surface; an optional
+     host hook like the active color. */
+  --k2b-app-workspace-selected: var(--k2b-selected);
   /* Neutral and translucent, so sidebar hover shows on any sidebar surface and
      never sits in the platform blue beside an app's accent. */
   --k2b-app-workspace-hover: color-mix(in srgb, var(--k2b-text) 5%, transparent);

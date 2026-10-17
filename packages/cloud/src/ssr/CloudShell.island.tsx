@@ -116,7 +116,20 @@ function HeaderControls(props: { authenticated: boolean; title?: string; launchp
           </div>
         )}
         <div class="flex min-w-0 items-center lg:hidden">
-          <span class="truncate font-semibold">{props.title}</span>
+          <span class="layout-header-title truncate font-semibold">{props.title}</span>
+          {props.launchpad && (
+            <AppLaunchpadButton
+              profile={
+                data.profile
+                  ? { name: data.profile.name, theme: data.theme, ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}) }
+                  : undefined
+              }
+              apps={data.apps}
+              legalLinks={data.legalLinks}
+              variant="title"
+              label={props.title}
+            />
+          )}
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">

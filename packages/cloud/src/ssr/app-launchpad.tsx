@@ -66,7 +66,7 @@ export function AppLaunchpadProvider(props: AppLaunchpadContext) {
   return <span class="hidden" data-cloud-app-launchpad-provider />;
 }
 
-export function AppLaunchpadButton(props: AppLaunchpadContext & { variant: "rail" | "header" | "menu"; label?: string }) {
+export function AppLaunchpadButton(props: AppLaunchpadContext & { variant: "rail" | "header" | "title" | "menu"; label?: string }) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   const action = createBusyAction();
@@ -95,6 +95,23 @@ export function AppLaunchpadButton(props: AppLaunchpadContext & { variant: "rail
       >
         <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-grid-dots"} text-xl`} aria-hidden="true" />
       </Tooltip.Trigger>
+    );
+  }
+
+  // The page title as the app menu's trigger on phones; global.css shows it only when the page has app navigation.
+  if (props.variant === "title") {
+    return (
+      <button
+        type="button"
+        class="layout-header-title-menu"
+        aria-haspopup="dialog"
+        onClick={open}
+        aria-busy={action.busy() ? "true" : undefined}
+      >
+        <span class="truncate font-semibold">{props.label}</span>
+        <span class="sr-only">{`, ${t().appMenu}`}</span>
+        <i class={action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-down"} aria-hidden="true" />
+      </button>
     );
   }
 

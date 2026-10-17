@@ -4,9 +4,11 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createRoot,
   createSignal,
   createUniqueId,
   For,
+  getOwner,
   type JSX,
   mergeProps,
   on,
@@ -15,8 +17,9 @@ import {
   Show,
   useContext,
 } from "solid-js";
-import { isServer } from "solid-js/web";
+import { Dynamic, isServer } from "solid-js/web";
 import { Button, IconButton, IconButtonLink } from "../actions/Button";
+import { dialogCore } from "../feedback/dialog-core";
 import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
   APP_WORKSPACE_DETAIL_STEP_EVENT,
@@ -42,6 +45,7 @@ import {
   appWorkspaceLayoutStyle,
   appWorkspacePanelVariable,
 } from "./app-workspace-state";
+import BottomSheet, { bottomSheetAdaptiveOptions } from "./BottomSheet";
 import { PageTitle, usePageTrail } from "./PageTitle";
 import type { ScrollAreaProps } from "./ScrollArea";
 import { SidebarItemPreview } from "./SidebarItemPreview";
@@ -287,9 +291,11 @@ export type AppWorkspaceSidebarProps = {
   /**
    * Below 48rem (768 px) the sidebar is hidden and the host's mobile
    * navigation takes over; from 48 to 64rem it is an overlay that a button in
-   * the workspace's head opens. `"stacked"` keeps it as a block above the
-   * content below 64rem instead, for overviews whose sidebar is the primary
-   * object list.
+   * the workspace's head opens. `"stacked"` is for overviews whose sidebar is
+   * the primary object list: below 64rem its items become one row of chips
+   * above the content, and "All" at the end of the row opens the complete
+   * sidebar in a sheet (a centered dialog from 48rem). From 64rem it is the
+   * regular sidebar column; the element is a `nav` landmark either way.
    */
   mobile?: "hidden" | "stacked";
   resizable?: boolean;
@@ -938,29 +944,116 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
   const resolved = children(() => (props.hidden ? undefined : props.children));
   const slots = createMemo(() => flatten(resolved()).filter(sidebarChildSlot));
   const desktop = createMemo(() => slots().find((slot) => slot.kind === SIDEBAR_DESKTOP));
+  const stacked = () => props.mobile === "stacked";
+  const workspaceMessages = useWorkspaceMessages();
+  const owner = getOwner();
+  const [sheetOpen, setSheetOpen] = createSignal(false);
   let aside: HTMLElement | undefined;
+  let row: HTMLDivElement | undefined;
+  // Fades mark the row's cut edges; the sidebar column never scrolls sideways, so it never shows one.
+  createScrollFade(
+    () => row,
+    () => stacked(),
+  );
   onMount(() => {
     const requestHide = () => props.onHiddenChange?.(true);
     aside?.addEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide);
     onCleanup(() => aside?.removeEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide));
+    // A client-rendered row settles here; server markup settled in its inline script.
+    if (stacked() && row) settleChipRow(row, scrollFadeEdges);
   });
+  /**
+   * The complete sidebar for a chip row: a second rendering of the same
+   * children in a sheet. It shares the application's state through its
+   * signals, inherits this sidebar's context and accent, and is disposed with
+   * the sheet. Choosing a link closes it.
+   */
+  const openAll = (button: HTMLButtonElement) => {
+    if (sheetOpen() || !aside) return;
+    setSheetOpen(true);
+    const computed = getComputedStyle(aside);
+    const accent = Object.fromEntries(
+      ["--k2b-app-workspace-active", "--k2b-app-workspace-selected"]
+        .map((name) => [name, computed.getPropertyValue(name).trim()])
+        .filter(([, value]) => value),
+    );
+    void dialogCore
+      .open<void>(
+        (close, context) => {
+          let dispose: (() => void) | undefined;
+          const view = createRoot((disposeRoot) => {
+            dispose = disposeRoot;
+            return (
+              <BottomSheet onDismiss={context.requestDismiss}>
+                <BottomSheet.Header title={props.label} close={() => void context.requestDismiss()} />
+                <BottomSheet.Body>
+                  <nav
+                    class="k2b-app-workspace__sidebar-sheet"
+                    aria-label={props.label}
+                    style={accent}
+                    onClick={(event) => {
+                      const link = (event.target as Element | null)?.closest?.("a[href]");
+                      if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+                        return;
+                      // After the link's own handlers: an enhanced navigation has started, a document one is leaving.
+                      queueMicrotask(() => close());
+                    }}
+                  >
+                    {flatten(props.hidden ? undefined : props.children).filter(sidebarChildSlot).find((slot) => slot.kind === SIDEBAR_DESKTOP)?.children}
+                  </nav>
+                </BottomSheet.Body>
+              </BottomSheet>
+            );
+          }, owner);
+          onCleanup(() => dispose?.());
+          return view;
+        },
+        { ...bottomSheetAdaptiveOptions, ariaLabel: props.label },
+      )
+      .finally(() => {
+        setSheetOpen(false);
+        if (button.isConnected && !aside?.contains(document.activeElement)) button.focus({ preventScroll: true });
+      });
+  };
   return (
     <>
-      <aside
+      <Dynamic
+        component={stacked() ? "nav" : "aside"}
         ref={aside}
         id={domId()}
         class={`k2b-app-workspace__sidebar ${props.class ?? ""}`}
         aria-label={props.label}
         hidden={props.hidden || undefined}
-        data-mobile={props.mobile === "stacked" ? "stacked" : undefined}
+        data-mobile={stacked() ? "stacked" : undefined}
         data-workspace-resizable={resizable() ? "true" : "false"}
         data-workspace-collapsible={props.collapsible ? "true" : "false"}
         data-workspace-hideable={props.onHiddenChange ? "true" : undefined}
       >
         <Show when={!props.hidden}>
-          <div class="k2b-app-workspace__sidebar-desktop">{desktop()?.children}</div>
+          <div
+            ref={row}
+            class="k2b-app-workspace__sidebar-desktop"
+            data-scroll-fade-mode={stacked() ? "both" : undefined}
+            data-scroll-fade-axis={stacked() ? "horizontal" : undefined}
+          >
+            {desktop()?.children}
+          </div>
+          <Show when={stacked()}>
+            <script innerHTML={CHIP_ROW_SCRIPT} />
+            <button
+                type="button"
+                class="k2b-app-workspace__sidebar-all"
+                aria-haspopup="dialog"
+                aria-expanded={sheetOpen()}
+                aria-label={props.label ? workspaceMessages().sidebarAllLabel({ label: props.label }) : undefined}
+                onClick={(event) => openAll(event.currentTarget)}
+              >
+                <span>{workspaceMessages().sidebarAll}</span>
+                <i class="ti ti-chevron-down" aria-hidden="true" />
+              </button>
+          </Show>
         </Show>
-      </aside>
+      </Dynamic>
       <Show when={resizable() && !props.hidden}>
         <ResizeHandle
           kind="sidebar"
@@ -975,6 +1068,26 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
     </>
   );
 }
+
+/**
+ * A chip row that overflows shows the current object, centered, and fades its
+ * cut edges. Self-contained, because the inline script after server markup
+ * embeds its source and runs it before the first paint; at 64 rem the column
+ * does not overflow sideways and nothing changes.
+ */
+function settleChipRow(row: Element | null, edges: (element: HTMLElement) => string | undefined) {
+  if (!(row instanceof HTMLElement) || row.scrollWidth - row.clientWidth <= 1) return;
+  const current = row.querySelector(".k2b-app-workspace__sidebar-item.is-active, [aria-current]");
+  const chip = current && (current.closest(".k2b-app-workspace__sidebar-item") || current);
+  if (chip) {
+    const bounds = row.getBoundingClientRect();
+    const item = chip.getBoundingClientRect();
+    if (item.left < bounds.left || item.right > bounds.right) row.scrollLeft += item.left - bounds.left - (bounds.width - item.width) / 2;
+  }
+  const fade = edges(row);
+  if (fade) row.setAttribute("data-scroll-fade", fade);
+}
+const CHIP_ROW_SCRIPT = `(${settleChipRow})(document.currentScript&&document.currentScript.previousElementSibling,${scrollFadeEdges})`;
 
 const AppWorkspaceSidebarDesktop = (props: { children: JSX.Element }): JSX.Element =>
   ({ kind: SIDEBAR_DESKTOP, children: props.children }) as unknown as JSX.Element;
