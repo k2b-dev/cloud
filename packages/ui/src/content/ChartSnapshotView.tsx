@@ -1,7 +1,8 @@
 import { createEffect, createUniqueId, type JSX, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
 import type { ChartCursor } from "./chart-cursor";
-import { createChartInspection, sameChartDatum } from "./chart-inspection";
+import { createChartInspection } from "./chart-inspection";
+import { closeChartInspectionOnOutside, sameChartDatum } from "./chart-inspection-core";
 import { useChartMessages } from "./chart-messages";
 import type { ChartSnapshot } from "./chart-snapshot";
 import { selectedChartSvg } from "./chart-svg";
@@ -38,15 +39,13 @@ export function ChartSnapshotView(props: {
   });
   createEffect(() => inspection.selectData(props.snapshot.marks.filter((m) => m.rowKey === props.selectedKey).map((m) => m.datum)));
   onMount(() => {
-    const outside = (event: Event) => {
-      if (event.target instanceof Node && !container?.contains(event.target)) inspection.close();
-    };
-    window.addEventListener("pointerdown", outside);
-    window.addEventListener("scroll", inspection.close, true);
-    onCleanup(() => {
-      window.removeEventListener("pointerdown", outside);
-      window.removeEventListener("scroll", inspection.close, true);
-    });
+    onCleanup(
+      closeChartInspectionOnOutside({
+        container: () => container,
+        tooltip: () => tooltip,
+        close: inspection.close,
+      }),
+    );
   });
   onCleanup(inspection.close);
   return (

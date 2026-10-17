@@ -1,5 +1,5 @@
 import { type ChartDatum, linePathD, smoothPathD, stepPathD } from "@k2b/stdlib";
-import { isChartDatum } from "./chart-inspection";
+import { isChartDatum } from "./chart-inspection-core";
 
 /** Adapt trusted stdlib line geometry without changing series, indices or inspection. */
 export function lineGapsSvg(svg: string, maxGap: number, options: { smooth?: boolean; step?: "before" | "after" | "middle" }): string {
