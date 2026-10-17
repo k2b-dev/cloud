@@ -68,8 +68,17 @@ export async function preparePdfImage(input: PreparePdfImageInput, options: Prep
       typeof __CLOUD_PDF_IMAGE_WORKER__ === "string"
         ? new URL(__CLOUD_PDF_IMAGE_WORKER__, import.meta.url)
         : new URL("./image-worker.ts", import.meta.url);
-    // Bun's file-backed Blobs must be materialized before composing a multipart Blob.
-    const data = inputData instanceof Blob ? new Uint8Array(await inputData.arrayBuffer()) : inputData;
+    // Bun's file-backed Blobs must be materialized before composing a multipart Blob. A slow read must not keep the
+    // slot past the deadline, so the abort settles the wait while the read finishes on its own.
+    const data =
+      inputData instanceof Blob
+        ? new Uint8Array(
+            await new Promise<ArrayBuffer>((resolve, reject) => {
+              signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+              inputData.arrayBuffer().then(resolve, reject);
+            }),
+          )
+        : inputData;
     if (signal.aborted || Date.now() >= deadline) return { ok: false, code: "timed_out" };
     if (data.byteLength > PDF_IMAGE_MAX_INPUT_BYTES) return { ok: false, code: "too_large" };
     const header = `${JSON.stringify({ ...request, timeoutMs: Math.max(1, deadline - Date.now()) })}\n`;

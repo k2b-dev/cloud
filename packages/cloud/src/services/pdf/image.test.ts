@@ -229,6 +229,21 @@ runtime("preparePdfImage", () => {
     expect(spawn).toHaveBeenCalledTimes(0);
   }, 30_000);
 
+  test("a Blob that never finishes reading times out at the deadline and frees its slot", async () => {
+    class StalledBlob extends Blob {
+      override arrayBuffer() {
+        return new Promise<ArrayBuffer>(() => {});
+      }
+    }
+    const runs = [0, 1].map(() => preparePdfImage({ data: new StalledBlob([new Uint8Array(webp)]), boxes: [box], maxBytes: cap }, { timeoutMs: 100 }));
+    expect(await Promise.all(runs)).toEqual([
+      { ok: false, code: "timed_out" },
+      { ok: false, code: "timed_out" },
+    ]);
+    expect(spawn).toHaveBeenCalledTimes(0);
+    variant(await preparePdfImage({ data: webp, boxes: [{ width: 8, height: 8 }], maxBytes: cap }));
+  }, 30_000);
+
   test("bounds active workers at two, keeps FIFO order, and aborts queued work", async () => {
     const original = originalSpawn;
     const order: number[] = [];
