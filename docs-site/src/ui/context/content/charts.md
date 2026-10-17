@@ -195,6 +195,7 @@ supported renderer formatters: `xAxis.format` / `yAxis.format` on Cartesian
 charts and `format` on gauge, bar-gauge, stat and heatmap charts. For gauge,
 bar-gauge and stat, the kind's `unit` option is appended after `format`.
 Sparklines, pies, donuts and maps can supply units through `tooltip`.
+A `StatCell` trend takes the same formatter through `trendTooltip`.
 
 The default tooltip uses the inherited UI locale. Custom tooltip output is
 rendered as text. Each live chart example includes a formatter with domain
