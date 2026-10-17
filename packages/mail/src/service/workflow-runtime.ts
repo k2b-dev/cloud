@@ -20,7 +20,7 @@ import { sql } from "bun";
 import { authorizeMailWorkflowExecution, MAIL_WORKFLOW_ACTIONS } from "../workflows/actions";
 import { MAIL_WORKFLOW_APP_ID } from "../workflows/events";
 import { mailWorkflows } from "../workflows/module";
-import { mailWorkflowTemplateData, renderMailLiquidTemplate } from "./template-rendering";
+import { renderMailWorkflowTemplate } from "./template-rendering";
 import { publishMailWorkflowCollaborationEventFromOutput } from "./workflow-collaboration-events";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
 import {
@@ -61,15 +61,8 @@ const builtins = createWorkflowBuiltinActionPorts({
     `;
     return active?.active ? undefined : { code: "FORBIDDEN", message: "Workflow is no longer active.", retryable: false };
   },
-  renderText: ({ context, value }) => {
-    const rendered = renderMailLiquidTemplate(
-      value,
-      mailWorkflowTemplateData({ invocation: context.invocation, variableSnapshot: () => context.variables.snapshot?.() ?? {} }),
-      "text",
-    );
-    if (!rendered.ok) throw rendered.error;
-    return rendered.data;
-  },
+  renderText: ({ context, value }) =>
+    renderMailWorkflowTemplate({ invocation: context.invocation, variableSnapshot: () => context.variables.snapshot?.() ?? {} }, value),
 });
 // Resolve before entering an action transaction: freezing locks workflows.run in its own transaction.
 const actions: WorkflowExecuteActionPort = {

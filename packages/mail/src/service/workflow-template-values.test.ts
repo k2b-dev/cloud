@@ -3,6 +3,7 @@ import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import { MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS, mailWorkflowTemplateOutput } from "../workflows/template-validation";
 import { renderMailWorkflowTemplate } from "./template-rendering";
+import { markMailWorkflowBodyFieldsLoaded } from "./workflow-body-fields";
 import { projectMailWorkflowFrozenBody } from "./workflow-runtime-values";
 import { resolveMailWorkflowTemplateBodies } from "./workflow-template-values";
 
@@ -20,8 +21,10 @@ const fixture = () => {
     const field = reference.split(".")[2];
     const value = field ? bodies[field] : undefined;
     if (field && value !== undefined) {
+      // Like the resolver: project the loaded value in place and mark it loaded.
       Object.assign(message, { [field]: value });
       if (field === "body" || field === "bodyText") message.body = message.bodyText = String(value);
+      markMailWorkflowBodyFieldsLoaded(message, field === "bodyHtml" ? ["bodyHtml"] : ["body", "bodyText"]);
     }
     return value;
   });
@@ -194,6 +197,7 @@ describe("Mail workflow template body access", () => {
     resolveReference.mockImplementation(async (reference) => {
       if (reference !== "inputs.message.bodyText") return undefined;
       message.body = message.bodyText = "x frozen plain";
+      markMailWorkflowBodyFieldsLoaded(message, ["body", "bodyText"]);
       return message.bodyText;
     });
     const source = '{% if inputs.message.bodyText contains "x" %}OK{% else %}{{ inputs.message.bodyHtml }}{% endif %}';
@@ -310,5 +314,30 @@ describe("Mail workflow template output modes", () => {
         expect(mailWorkflowTemplateOutput(action, field, format)).toBe("text");
       }
     }
+  });
+});
+
+describe("Mail workflow template rendering guard", () => {
+  test("fails visibly when the real render reads a body the probe did not load", () => {
+    const message = { id: "msg001", body: "", bodyText: "", bodyHtml: "", bodyAvailable: false };
+    const context = {
+      invocation: {
+        workflowId: "workflow",
+        mode: "execute" as const,
+        channel: "event" as const,
+        actor: {},
+        inputs: { message },
+        idempotencyKey: "guard",
+        occurredAt: "2026-10-01T08:00:00.000Z",
+      },
+      variableSnapshot: () => ({}),
+    };
+    expect(() => renderMailWorkflowTemplate(context, "Body: {{ inputs.message.bodyText }}")).toThrow(
+      "Mail workflow value was not loaded: inputs.message.bodyText",
+    );
+    expect(renderMailWorkflowTemplate(context, "Subject only")).toBe("Subject only");
+    expect(Object.getOwnPropertyDescriptor(message, "bodyText")).toMatchObject({ value: "", writable: true });
+    markMailWorkflowBodyFieldsLoaded(message, ["body", "bodyText"]);
+    expect(renderMailWorkflowTemplate(context, "Body: {{ inputs.message.bodyText }}")).toBe("Body: ");
   });
 });
