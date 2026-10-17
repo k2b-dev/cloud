@@ -16,7 +16,8 @@ const FILES = [
   {
     path: "app.js",
     content: `const total = document.querySelector("#total");
-document.querySelector("#quantity").addEventListener("input", (event) => (total.textContent = String(Number(event.target.value) * 10)));`,
+document.querySelector("#quantity").addEventListener("input", (event) => (total.textContent = String(Number(event.target.value) * 10)));
+document.querySelector("main").insertAdjacentHTML("beforeend", cloud.chart({ kind: "bar", title: "Umsatz", data: [{ label: "Jan", value: 1200 }], tooltip: { label: "Umsatz", format: { style: "currency", currency: "EUR" } } }));`,
   },
 ];
 const BROKEN = [
@@ -139,6 +140,13 @@ test("a chat app keeps its height, starts on a click, exports a static copy and 
     expect((await pdf).suggestedFilename()).toBe("Inventory.pdf");
     expect(pdfHtml).toContain(">30<");
     expect(pdfHtml).not.toMatch(/<script/i);
+    const valueTable = /<table class="k2b-chart__table" hidden="">[\s\S]*?<\/table>/g;
+    for (const snapshot of [exported, pdfHtml]) {
+      const tables = [...snapshot.matchAll(valueTable)];
+      expect(tables).toHaveLength(1);
+      expect(tables[0]![0]).toContain("<caption>Umsatz</caption>");
+      expect(tables[0]![0]).toContain('<td class="num">1.200,00&nbsp;€</td>');
+    }
 
     await card.getByRole("button", { name: "Stoppen", exact: true }).click();
     await page.locator("iframe").waitFor({ state: "detached" });

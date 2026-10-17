@@ -6,8 +6,11 @@ no DOM, so it works the same in apps, scripts and PDFs. In an app, cartesian
 charts redraw at their real width, so axes and labels fit phones. App charts show
 tooltips by default on hover, keyboard focus and tap. Tab to a chart, use arrow
 keys or Home/End to inspect values, and press Escape to close the tooltip;
-tapping outside the chart also closes it. The markup carries every value for
-its tooltip, so a dense chart is large: 8 series × 480 points is about 3 MB.
+tapping outside the chart also closes it. Printed pages and PDFs show every
+`cloud.chart()` with a table of its values below it, hidden on screen, in the
+same text as the tooltips. The markup carries every value for the tooltips
+and for that table, so a dense chart is large: 8 series × 480 points is about
+3.1 MB. Aggregate dense data before charting it.
 Draw dense charts in the app that shows them instead of returning their markup
 from an action or storing it in KV.
 
@@ -80,7 +83,7 @@ dashed unless style is set. Scatter reference points are hollow in chat;
 160 × 40. Stretched charts redraw at their measured width in apps when `width`
 is omitted; pie, donut and gauge keep their aspect ratio. Long category names
 remain complete; every n-th label shows when they do not fit. Add a table in
-`<details>` below the chart when readers need exact values.
+`<details>` below the chart when readers need exact values on screen.
 
 An app redraws with whatever its filters leave, so the data never makes
 `cloud.chart()` throw by its size: empty data draws an empty chart, a one-point
