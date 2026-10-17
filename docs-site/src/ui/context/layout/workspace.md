@@ -319,7 +319,10 @@ control. A second button activation also parks it. Dialogs, popovers, and
 consumed keys keep their own behavior. Escape does nothing to a detail that
 only waits, and F6 skips it. Widening the workspace restores the column
 automatically and clears the drawer state. Narrowing again starts waiting.
-Closing the app's Detail also clears the drawer state.
+Closing the app's Detail also clears the drawer state. When a column starts waiting
+while focus is inside it, focus moves to **Details**; when the column returns
+while focus is on **Details**, focus moves to the panel title. Parking hides
+the drawer at once, also with motion.
 
 A host can park drawers before opening its own column:
 
