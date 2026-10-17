@@ -214,7 +214,7 @@ export default function BookSettingsForm(props: Props) {
       return response.json();
     });
     props.onWorkspaceChange();
-    reconcile(t().accessGrantedReloadFailed);
+    await reconcile(t().accessGrantedReloadFailed);
     return created;
   };
   const updateAccess = async (input: { bookId: string; accessId: string; permission: GrantableLevel }): Promise<void> => {
@@ -226,7 +226,7 @@ export default function BookSettingsForm(props: Props) {
       if (!response.ok) throw new Error(await readErrorMessage(response, t().updateAccessFailed));
     });
     props.onWorkspaceChange();
-    reconcile(t().accessUpdatedReloadFailed);
+    await reconcile(t().accessUpdatedReloadFailed);
   };
   const revokeAccess = async (input: { bookId: string; accessId: string }): Promise<void> => {
     await runRequest(async (abortSignal) => {
@@ -237,7 +237,7 @@ export default function BookSettingsForm(props: Props) {
       if (!response.ok) throw new Error(await readErrorMessage(response, t().revokeAccessFailed));
     });
     props.onWorkspaceChange();
-    reconcile(t().accessRevokedReloadFailed);
+    await reconcile(t().accessRevokedReloadFailed);
   };
 
   type CreateApiKeyInput = { name: string; expiresAt: string | null; permission: GrantableLevel };
@@ -407,12 +407,12 @@ export default function BookSettingsForm(props: Props) {
       <SettingsModal.Group title={t().groupSharing}>
         <SettingsModal.Tab id="access" title={t().tabAccess} icon="ti ti-shield" description={t().tabAccessDescription}>
           <SettingsGroup title={t().peopleGroupsTitle} description={t().peopleGroupsDescription}>
-            <Show when={props.context().accessEntries} keyed>
+            <Show when={props.context().accessEntries}>
               {(accessEntries) => (
                 <PermissionEditor
                   // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
-                  initialEntries={accessEntries.filter((entry) => entry.serviceAccountKind !== "resource_bound")}
-                  canEdit={!coverageBlocked()}
+                  initialEntries={accessEntries().filter((entry) => entry.serviceAccountKind !== "resource_bound")}
+                  canEdit={reconcileError() === null}
                   grantAccess={async (principal, permission) => {
                     return grantAccess({ bookId: bookId(), principal, permission });
                   }}

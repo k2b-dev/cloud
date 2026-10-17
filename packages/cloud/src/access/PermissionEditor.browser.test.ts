@@ -246,23 +246,29 @@ describe("PermissionEditor group coverage in a browser", () => {
   });
 });
 
+const openHarness = async (width: number) => {
+  const tab = await browser.newPage({ viewport: { width, height: 800 }, reducedMotion: "reduce" });
+  await tab.clock.setFixedTime(new Date("2026-10-17T12:00:00.000Z"));
+  const origin = "https://permission-editor.test";
+  await tab.route(`${origin}/**`, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/tabler.woff2") return route.fulfill({ path: icons.font });
+    if (path === "/tabler.css") return route.fulfill({ contentType: "text/css; charset=utf-8", body: icons.css });
+    return route.fulfill({
+      contentType: "text/html; charset=utf-8",
+      body: `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head><body class="k2b-ui"><div id="root" style="padding:16px;max-width:48rem"></div></body></html>`,
+    });
+  });
+  await tab.goto(origin);
+  await tab.addScriptTag({ content: harness });
+  return tab;
+};
+
 describe("PermissionEditor pending layout and focus", () => {
   for (const width of [390, 1280]) {
     test(`${width} px: a pending update keeps every control, box, and keyboard return target`, async () => {
-      const tab = await browser.newPage({ viewport: { width, height: 800 }, reducedMotion: "reduce" });
-      const origin = "https://permission-editor.test";
-      await tab.route(`${origin}/**`, (route) => {
-        const path = new URL(route.request().url()).pathname;
-        if (path === "/tabler.woff2") return route.fulfill({ path: icons.font });
-        if (path === "/tabler.css") return route.fulfill({ contentType: "text/css; charset=utf-8", body: icons.css });
-        return route.fulfill({
-          contentType: "text/html; charset=utf-8",
-          body: `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head><body class="k2b-ui"><div id="root" style="padding:16px;max-width:48rem"></div></body></html>`,
-        });
-      });
+      const tab = await openHarness(width);
       try {
-        await tab.goto(origin);
-        await tab.addScriptTag({ content: harness });
         const controls = tab.locator("button.k2b-select-chip");
         await controls.first().waitFor();
         await tab.evaluate(() => document.fonts.ready);
@@ -303,6 +309,35 @@ describe("PermissionEditor pending layout and focus", () => {
             await originals[index]!.evaluate((element, i) => element === document.querySelectorAll("button.k2b-select-chip")[i], index),
           ).toBe(true);
         }
+      } finally {
+        await tab.close();
+      }
+    }, 20_000);
+  }
+});
+
+describe("PermissionEditor consumer refetch focus", () => {
+  for (const width of [390, 1280]) {
+    test(`${width} px: keyboard focus survives a consumer refetch with an external change`, async () => {
+      const tab = await openHarness(width);
+      try {
+        const chips = tab.locator("button.k2b-select-chip");
+        await chips.nth(1).focus();
+        await chips.nth(1).evaluate((chip) => {
+          chip.setAttribute("data-original-chip", "true");
+        });
+        await tab.keyboard.press("Enter");
+        await tab.keyboard.press("End");
+        await tab.keyboard.press("Enter");
+        await tab.waitForFunction(() => document.documentElement.dataset.saving === "true");
+        await tab.evaluate(() => document.dispatchEvent(new Event("settle-access")));
+        await tab.waitForFunction(() => document.querySelector(".group\\/access-row[aria-busy]") === null);
+        await tab.waitForFunction(() => document.activeElement?.hasAttribute("data-original-chip") === true);
+        await tab.evaluate(() => document.dispatchEvent(new Event("refetch-access")));
+        await tab.waitForFunction(() => document.querySelectorAll("button.k2b-select-chip")[2]?.textContent === "Level 2");
+        expect(await chips.nth(1).textContent()).toBe("Level 2");
+        expect(await tab.evaluate(() => document.activeElement === document.querySelector("[data-original-chip]"))).toBe(true);
+        expect(await chips.nth(1).getAttribute("data-original-chip")).toBe("true");
       } finally {
         await tab.close();
       }
