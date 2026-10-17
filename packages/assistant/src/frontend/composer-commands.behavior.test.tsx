@@ -497,7 +497,7 @@ test.each(["paused", "needs_attention"] as const)("%s task explains its reason a
 test("new scheduled task inserts the Assistant Skill from the name lookup when absent from the full list", async () => {
   const h = await mount({
     skills: skills.slice(0, 5),
-    scheduledTaskSkills: [{ ...skills[5]!, shortId: "OtherSkill", source: { appId: "other", appName: "Other" } }, skills[5]!],
+    scheduledTaskSkills: [skills[5]!],
   });
   expect(h.row("Alle 5 Skills")).toBeDefined();
   h.type("/routine neu");

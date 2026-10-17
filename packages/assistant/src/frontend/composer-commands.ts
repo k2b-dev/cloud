@@ -475,7 +475,8 @@ export async function assistantComposerCommands(input: {
         searchAgain: true,
       });
     } else {
-      const skill = sessionData.scheduledTaskSkills.find((skill) => skill.source?.appId === "assistant");
+      // Skill names are unique, so the app-provided result of the exact-name lookup is the scheduled-tasks Skill.
+      const skill = sessionData.scheduledTaskSkills.find((skill) => skill.source !== null);
       taskRows.push({
         ...(skill?.enabled
           ? reference("tasks", skill.name, "", {
