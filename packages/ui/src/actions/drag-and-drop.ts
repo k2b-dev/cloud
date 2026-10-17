@@ -401,7 +401,10 @@ export const bindDragSource = (
       win.addEventListener("contextmenu", preventContext, true);
       releaseSelection = suppressTextSelection(id);
       preview = doc.createElement("div");
-      preview.className = "k2b-ui k2b-drag-preview";
+      // Inside the source's own .k2b-ui scope the preview inherits its theme, also a scoped dark one; a second
+      // .k2b-ui would reset the tokens to light.
+      const scope = source.parentElement?.closest<HTMLElement>(".k2b-ui");
+      preview.className = scope ? "k2b-drag-preview" : "k2b-ui k2b-drag-preview";
       preview.setAttribute("aria-hidden", "true");
       const icon = doc.createElement("i");
       icon.className = payload.icon ?? "ti ti-file";
@@ -417,7 +420,7 @@ export const bindDragSource = (
       }
       // In the top layer the preview is placed against the viewport, also inside a transformed dialog, and stays above it.
       preview.setAttribute("popover", "manual");
-      containerFor(source).append(preview);
+      (scope ?? doc.body).append(preview);
       preview.showPopover?.();
       preview.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;
       for (const target of engine.targets) mark(target, payload);

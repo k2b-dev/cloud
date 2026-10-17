@@ -151,6 +151,23 @@ describe(`drag and drop in ${browserName}`, () => {
     }
   });
 
+  test("the preview keeps a scoped dark theme", async () => {
+    const { page, context } = await open();
+    try {
+      await page.evaluate(() => {
+        document.body.dataset.theme = "dark";
+      });
+      await startMouse(page);
+      // --k2b-surface-elevated of the dark theme, #181d24.
+      expect(await page.locator(".k2b-drag-preview").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(24, 29, 36)");
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+      await clean(page);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("an incompatible target refuses and does not drop", async () => {
     const { page, context } = await open();
     try {

@@ -11250,7 +11250,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* The preview rides above the pointer, so neither a finger nor the preview
    hides the target and its "over" state. */
-.k2b-ui.k2b-drag-preview {
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) {
   position: fixed;
   z-index: 2147483000;
   inset: 0 auto auto 0;
@@ -11272,20 +11272,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   translate: -20px calc(-100% - 0.75rem);
 }
 
-.k2b-ui.k2b-drag-preview > i {
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) > i {
   flex: none;
   color: var(--k2b-action);
   font-size: 1.1rem;
 }
 
-.k2b-ui.k2b-drag-preview > .k2b-drag-preview__label {
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) > .k2b-drag-preview__label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.k2b-ui.k2b-drag-preview > .k2b-drag-preview__count {
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) > .k2b-drag-preview__count {
   position: absolute;
   top: -0.5rem;
   right: -0.5rem;
