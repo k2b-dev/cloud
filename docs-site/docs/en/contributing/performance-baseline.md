@@ -411,3 +411,8 @@ no lock.
   Real sync wakes the dispatcher right after commit.
 - Cold means the first request of a scenario; caches are not flushed. Compare
   runs on the same quiet host rather than reading absolute numbers.
+- The browser part opens a short conversation, not the 180-message thread,
+  so the client cost of a large thread is not measured.
+- The run's Caddy does not compress dynamic responses, and neither does
+  Cloud's gateway. An ingress that compresses HTML and JSON changes the
+  document and API transfer times.
