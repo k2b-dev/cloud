@@ -149,25 +149,38 @@ suite("GeoIP Postgres replacement, audit and multi-instance reload", () => {
     expect(other.status().city?.source).toBe("bundled");
   });
 
-  test("a reset that deleted nothing keeps the reader of an upload that committed meanwhile", async () => {
-    const begin = sql.begin.bind(sql);
-    let uploaded: Awaited<ReturnType<typeof service.upload>> | undefined;
-    const race = spyOn(sql, "begin").mockImplementationOnce(async (run) => {
-      if (typeof run !== "function") throw new Error("Expected transaction callback");
-      // The reset's DELETE has committed without a row; an upload lands before the reset touches the reader.
-      const result: unknown = await begin(run);
-      uploaded = await service.upload(admin, body(bytes()), {});
-      return result;
-    });
-    try {
-      const reset = await service.reset(admin, "city");
-      expect(reset.changed).toBe(false);
-      expect(reset.databases[0].source).toBe("uploaded");
-    } finally {
-      race.mockRestore();
-    }
-    expect(reader.status().city).toMatchObject({ source: "uploaded", sha256: uploaded!.databases[0].upload!.sha256 });
-  });
+  test.each([false, true])(
+    "an upload that commits right after a reset ends with its reader active (reset found a row: %p)",
+    async (stored) => {
+      if (stored) await service.upload(admin, body(bytes("Custom-City")), {});
+      const begin = sql.begin.bind(sql);
+      const install = reader.install.bind(reader);
+      const { promise: installed, resolve } = Promise.withResolvers<void>();
+      const watch = spyOn(reader, "install").mockImplementation((kind, database) => {
+        install(kind, database);
+        if (database) resolve();
+      });
+      let upload: ReturnType<typeof service.upload> | undefined;
+      const race = spyOn(sql, "begin").mockImplementationOnce(async (run) => {
+        if (typeof run !== "function") throw new Error("Expected transaction callback");
+        const result: unknown = await begin(run);
+        // The reset's DELETE has committed. Unserialized, the upload would install its reader before the reset
+        // clears it; the short wait bounds the test when the upload correctly waits for the reset.
+        upload = service.upload(admin, body(bytes()), {});
+        await Promise.race([installed, Bun.sleep(200)]);
+        return result;
+      });
+      try {
+        expect((await service.reset(admin, "city")).changed).toBe(stored);
+      } finally {
+        race.mockRestore();
+      }
+      const uploaded = await upload!;
+      watch.mockRestore();
+      expect(uploaded.databases[0].source).toBe("uploaded");
+      expect(reader.status().city).toMatchObject({ source: "uploaded", sha256: uploaded.databases[0].upload!.sha256 });
+    },
+  );
 
   test("an audit failure rolls back an upload and a reset before installing a reader", async () => {
     const uploaded = await service.upload(admin, body(bytes()), {});

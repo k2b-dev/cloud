@@ -70,6 +70,14 @@ export const geoIpAdminStatus = (
 };
 
 let uploading = false;
+// Each write and its reader install run one after another in this process, so the local reader follows the
+// commit order; other instances follow through their refresh.
+let writes: Promise<unknown> = Promise.resolve();
+const serialized = <T>(write: () => Promise<T>): Promise<T> => {
+  const run = writes.then(write, write);
+  writes = run.catch(() => {});
+  return run;
+};
 export const createGeoIpService = (options: { db?: typeof sql; reader?: GeoIp; bundled?: () => ReturnType<GeoIp["status"]> } = {}) => {
   const db = options.db ?? sql;
   const reader = () => options.reader ?? getGeoIp();
@@ -94,26 +102,28 @@ export const createGeoIpService = (options: { db?: typeof sql; reader?: GeoIp; b
         const sha256 = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
         database.info.sha256 = sha256;
         config.signal?.throwIfAborted();
-        await db.begin(async (tx) => {
-          await tx`
-            INSERT INTO geoip.databases (kind, data, sha256, database_type, build_epoch, metadata, uploaded_by)
-            VALUES (${kind}, ${bytes}, ${sha256}, ${metadata.databaseType}, ${metadata.buildEpoch}::timestamptz,
-              ${JSON.stringify(metadata)}::jsonb, ${actor.id}::uuid)
-            ON CONFLICT (kind) DO UPDATE SET data = EXCLUDED.data, sha256 = EXCLUDED.sha256,
-              database_type = EXCLUDED.database_type, build_epoch = EXCLUDED.build_epoch, metadata = EXCLUDED.metadata,
-              uploaded_by = EXCLUDED.uploaded_by, uploaded_at = now()`;
-          await audit.record(
-            {
-              action: "core.geoip.upload",
-              outcome: "allowed",
-              actor: { ...actor, userId: actor.id },
-              metadata: { kind, databaseType: metadata.databaseType, buildDate: metadata.buildEpoch, sha256, size: bytes.length },
-            },
-            tx,
-          );
-          config.signal?.throwIfAborted();
+        await serialized(async () => {
+          await db.begin(async (tx) => {
+            await tx`
+              INSERT INTO geoip.databases (kind, data, sha256, database_type, build_epoch, metadata, uploaded_by)
+              VALUES (${kind}, ${bytes}, ${sha256}, ${metadata.databaseType}, ${metadata.buildEpoch}::timestamptz,
+                ${JSON.stringify(metadata)}::jsonb, ${actor.id}::uuid)
+              ON CONFLICT (kind) DO UPDATE SET data = EXCLUDED.data, sha256 = EXCLUDED.sha256,
+                database_type = EXCLUDED.database_type, build_epoch = EXCLUDED.build_epoch, metadata = EXCLUDED.metadata,
+                uploaded_by = EXCLUDED.uploaded_by, uploaded_at = now()`;
+            await audit.record(
+              {
+                action: "core.geoip.upload",
+                outcome: "allowed",
+                actor: { ...actor, userId: actor.id },
+                metadata: { kind, databaseType: metadata.databaseType, buildDate: metadata.buildEpoch, sha256, size: bytes.length },
+              },
+              tx,
+            );
+            config.signal?.throwIfAborted();
+          });
+          reader().install(kind, database);
         });
-        reader().install(kind, database);
         return { ...(await status(actor)), kind };
       } finally {
         uploading = false;
@@ -121,32 +131,32 @@ export const createGeoIpService = (options: { db?: typeof sql; reader?: GeoIp; b
     },
     async reset(actor: Actor, kind: GeoIpKind) {
       requireAdmin(actor);
-      const changed = await db.begin(async (tx) => {
-        const [row] = await tx<{ sha256: string; database_type: string; build_epoch: Date; size: number }[]>`
+      const changed = await serialized(async () => {
+        const deleted = await db.begin(async (tx) => {
+          const [row] = await tx<{ sha256: string; database_type: string; build_epoch: Date; size: number }[]>`
           DELETE FROM geoip.databases WHERE kind = ${kind}
           RETURNING sha256, database_type, build_epoch, octet_length(data) AS size`;
-        if (!row) return false;
-        await audit.record(
-          {
-            action: "core.geoip.reset",
-            outcome: "allowed",
-            actor: { ...actor, userId: actor.id },
-            metadata: {
-              kind,
-              databaseType: row.database_type,
-              buildDate: row.build_epoch.toISOString(),
-              sha256: row.sha256,
-              size: row.size,
+          if (!row) return false;
+          await audit.record(
+            {
+              action: "core.geoip.reset",
+              outcome: "allowed",
+              actor: { ...actor, userId: actor.id },
+              metadata: {
+                kind,
+                databaseType: row.database_type,
+                buildDate: row.build_epoch.toISOString(),
+                sha256: row.sha256,
+                size: row.size,
+              },
             },
-          },
-          tx,
-        );
-        return true;
+            tx,
+          );
+          return true;
+        });
+        reader().install(kind, null);
+        return deleted;
       });
-      // A reset that deleted nothing must not clear a reader that a concurrent upload installed meanwhile;
-      // a refresh brings this instance in line with Postgres instead.
-      if (changed) reader().install(kind, null);
-      else await reader().refresh();
       return { ...(await status(actor)), changed };
     },
   };
