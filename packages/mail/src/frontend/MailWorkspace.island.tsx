@@ -13,7 +13,7 @@ import {
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
 import { AppWorkspace, announce, openSpotlightSearch, Placeholder, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, Show, untrack } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
@@ -23,7 +23,7 @@ import { parseMailLiveEvent } from "../live-event";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
 import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
-import type { MailboxListView, MailboxPageData, MailListItem } from "../service/workspace";
+import type { MailboxListView, MailboxPageData, MailConversationDetailData, MailListItem } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
 import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
 import MailConversationList from "./_components/MailConversationList";
@@ -85,6 +85,7 @@ import {
   resolveMailWorkspaceUrl,
 } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
+import { emptyMailSelection, pickMailSelection } from "./_components/mail-selection-detail";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
 import {
   decideMailAutoReadIntent,
@@ -359,10 +360,32 @@ function MailWorkspaceView(props: {
   };
   const encodeRouteSource = (href: string, listMode: MailboxPageData["listMode"]) => JSON.stringify({ href, listMode });
   const decodeRouteSource = (source: string): { href: string; listMode: MailboxPageData["listMode"] } => JSON.parse(source);
+  /**
+   * Sources with the same list scope and list mode show the same list and differ only in the open conversation, so
+   * the list query keeps its loaded pages between them. A message selection keeps a source of its own: the snapshot
+   * loads a message's detail.
+   */
+  const routeListKey = (source: string): string => {
+    const { href, listMode } = decodeRouteSource(source);
+    const url = mailRouteUrl(href);
+    if (url.searchParams.has("message")) return source;
+    // The mailing list parameter only opens the subscription dialog; the list is the same with and without it.
+    url.searchParams.delete("mailingList");
+    return JSON.stringify({ scope: mailListScope(`${url.pathname}${url.search}`), listMode });
+  };
+  const sameRouteList = (left: string, right: string) => left === right || routeListKey(left) === routeListKey(right);
   const initialRouteSource = encodeRouteSource(props.requestPath, props.data.listMode);
   const [routeSource, setRouteSource] = createSignal(initialRouteSource);
+  const routeKey = createMemo(() => routeListKey(routeSource()));
   let committedRouteSource = initialRouteSource;
   let workspaceTransition: WorkspaceTransition | null = null;
+  /** Counts selection changes, so a reload for an earlier selection in the same list reports itself as stale. */
+  let routeGeneration = 0;
+  let conversationDetailRequest: AbortController | null = null;
+  const cancelConversationDetail = () => {
+    conversationDetailRequest?.abort();
+    conversationDetailRequest = null;
+  };
 
   type ConversationActivityResult = { conversationId: string; items: MailActivityEvent[] };
   const activityQuery = query.create<string | null, ConversationActivityResult>({
@@ -395,6 +418,8 @@ function MailWorkspaceView(props: {
 
   const workspaceQuery = query.createInfinite<string, WorkspaceRouteResult, string>({
     source: routeSource,
+    // Later reloads and page loads still use the newest source, so page 1 carries the open conversation.
+    isSameSource: sameRouteList,
     initial: { source: initialRouteSource, pages: [{ source: initialRouteSource, snapshot: props.data }] },
     loadPage: async (source, { cursor, abortSignal }) => {
       const target = decodeRouteSource(source);
@@ -429,7 +454,8 @@ function MailWorkspaceView(props: {
     const target = resolveMailWorkspaceUrl(href, mailboxId, window.location.origin);
     if (!target) return Promise.resolve("failed");
     const source = encodeRouteSource(`${target.pathname}${target.search}`, listMode);
-    if (workspaceTransition) workspaceTransition.resolve("stale");
+    const pending = workspaceTransition;
+    if (pending) pending.resolve("stale");
     workspaceTransition = null;
     if (source === routeSource()) {
       return workspaceQuery
@@ -437,74 +463,101 @@ function MailWorkspaceView(props: {
         .then(() => "applied" as const)
         .catch(() => "failed" as const);
     }
+    cancelConversationDetail();
+    const generation = ++routeGeneration;
+    const previous = routeSource();
+    if (!pending && sameRouteList(source, previous)) {
+      // Another selection in the same list: the list keeps its pages, and reloading them asks for the new selection.
+      setRouteSource(source);
+      return workspaceQuery.invalidate().then(
+        () => (generation === routeGeneration ? "applied" : "stale"),
+        () => {
+          if (generation !== routeGeneration) return "stale";
+          setRouteSource(committedRouteSource);
+          return "failed";
+        },
+      );
+    }
     return new Promise((resolve) => {
       workspaceTransition = { source, resolve };
       setRouteSource(source);
+      // The query keeps its pages for a source of the same list, so the transition asks for its own load.
+      if (sameRouteList(source, previous)) void workspaceQuery.invalidate().catch(() => undefined);
     });
   };
 
-  createEffect(() => {
-    const pages = workspaceQuery.pages();
-    const first = pages[0];
-    if (!first || !("snapshot" in first) || first.source !== routeSource()) return;
-    const target = decodeRouteSource(first.source);
-    const scopeChanged = mailListScope(requestPath()) !== mailListScope(target.href);
-    let next = applyPendingListState(preserveCurrentDetail(first.snapshot));
-    for (const page of pages.slice(1)) {
-      const reconciled = applyPendingListState(pageList(page));
-      if (next.scheduledMode && next.scheduledPage && reconciled.scheduledPage) {
-        const items = new Map(next.scheduledPage.items.map((item) => [item.id, item]));
-        for (const item of reconciled.scheduledPage.items) items.set(item.id, item);
-        next = {
-          ...next,
-          scheduledPage: { ...reconciled.scheduledPage, items: [...items.values()] },
-          scheduledError: reconciled.scheduledError,
-        };
-        continue;
-      }
-      if (next.draftsMode && next.draftsPage && reconciled.draftsPage) {
-        const items = new Map(next.draftsPage.items.map((item) => [item.id, item]));
-        for (const item of reconciled.draftsPage.items) items.set(item.id, item);
-        next = {
-          ...next,
-          draftsPage: { ...reconciled.draftsPage, items: [...items.values()] },
-          draftsError: reconciled.draftsError,
-        };
-        continue;
-      }
-      const merged = mergeMailCursorPage({
-        currentItems: next.listItems,
-        currentNextCursor: next.nextListCursor,
-        pageItems: reconciled.listItems,
-        pageNextCursor: reconciled.nextListCursor,
-      });
-      if (!merged.ok) continue;
-      next = { ...next, listItems: merged.items, nextListCursor: merged.nextCursor, listError: reconciled.listError };
-    }
-    batch(() => {
-      committedRouteSource = first.source;
-      setRequestPath(target.href);
-      const rawItems = new Map(pages.flatMap((page) => pageList(page).listItems.map((item) => [mailListRowKey(item), item] as const)));
-      setSnapshotItems([...rawItems.values()]);
-      setData(reconcile(next));
-      const releases = [...releasesOnNextSnapshot];
-      releasesOnNextSnapshot.clear();
-      for (const release of releases) release();
-      setConversationSelection((current) =>
-        scopeChanged
-          ? emptyMailConversationSelection()
-          : pruneMailConversationSelection(
-              current,
-              new Set(untrack(selectableRows).flatMap((item) => (item.conversationId ? [item.conversationId] : []))),
-            ),
+  // Applies a loaded page set when the pages or the shown list change; another selection of the same list does not
+  // reapply the pages, because page 1 may still carry the selection it was loaded with.
+  createEffect(
+    on([workspaceQuery.pages, routeKey], ([pages, key]) => {
+      const first = pages[0];
+      if (!first || !("snapshot" in first) || routeListKey(first.source) !== key) return;
+      const source = routeSource();
+      const target = decodeRouteSource(source);
+      // Page 1 was loaded for another conversation of this list: its list, folders and counts are current, its
+      // selection is not. Keep the open one, unless the shown list itself is still on its way.
+      const otherSelection = first.source !== source;
+      if (otherSelection && routeListKey(committedRouteSource) !== key) return;
+      const scopeChanged = mailListScope(requestPath()) !== mailListScope(target.href);
+      let next = applyPendingListState(
+        otherSelection ? { ...first.snapshot, ...pickMailSelection(unwrap(data)) } : preserveCurrentDetail(first.snapshot),
       );
-      if (scopeChanged) setSelectionMode(false);
-    });
-    if (workspaceTransition?.source === first.source) {
-      workspaceTransition.resolve("applied");
-      workspaceTransition = null;
-    }
-  });
+      for (const page of pages.slice(1)) {
+        const reconciled = applyPendingListState(pageList(page));
+        if (next.scheduledMode && next.scheduledPage && reconciled.scheduledPage) {
+          const items = new Map(next.scheduledPage.items.map((item) => [item.id, item]));
+          for (const item of reconciled.scheduledPage.items) items.set(item.id, item);
+          next = {
+            ...next,
+            scheduledPage: { ...reconciled.scheduledPage, items: [...items.values()] },
+            scheduledError: reconciled.scheduledError,
+          };
+          continue;
+        }
+        if (next.draftsMode && next.draftsPage && reconciled.draftsPage) {
+          const items = new Map(next.draftsPage.items.map((item) => [item.id, item]));
+          for (const item of reconciled.draftsPage.items) items.set(item.id, item);
+          next = {
+            ...next,
+            draftsPage: { ...reconciled.draftsPage, items: [...items.values()] },
+            draftsError: reconciled.draftsError,
+          };
+          continue;
+        }
+        const merged = mergeMailCursorPage({
+          currentItems: next.listItems,
+          currentNextCursor: next.nextListCursor,
+          pageItems: reconciled.listItems,
+          pageNextCursor: reconciled.nextListCursor,
+        });
+        if (!merged.ok) continue;
+        next = { ...next, listItems: merged.items, nextListCursor: merged.nextCursor, listError: reconciled.listError };
+      }
+      batch(() => {
+        committedRouteSource = source;
+        setRequestPath(target.href);
+        const rawItems = new Map(pages.flatMap((page) => pageList(page).listItems.map((item) => [mailListRowKey(item), item] as const)));
+        setSnapshotItems([...rawItems.values()]);
+        setData(reconcile(next));
+        const releases = [...releasesOnNextSnapshot];
+        releasesOnNextSnapshot.clear();
+        for (const release of releases) release();
+        setConversationSelection((current) =>
+          scopeChanged
+            ? emptyMailConversationSelection()
+            : pruneMailConversationSelection(
+                current,
+                new Set(untrack(selectableRows).flatMap((item) => (item.conversationId ? [item.conversationId] : []))),
+              ),
+        );
+        if (scopeChanged) setSelectionMode(false);
+      });
+      if (workspaceTransition?.source === first.source) {
+        workspaceTransition.resolve("applied");
+        workspaceTransition = null;
+      }
+    }),
+  );
 
   createEffect(() => {
     const error = workspaceQuery.error();
@@ -528,7 +581,7 @@ function MailWorkspaceView(props: {
 
   const closeConversation = async (nav: LinkNavigateEvent) => {
     const previousConversationId = data.selectedConversationId;
-    const result = await replaceWorkspaceRoute(nav.href);
+    const result = inCurrentList(nav.href) ? closeConversationInList(nav.href) : await replaceWorkspaceRoute(nav.href);
     if (result === "applied") {
       nav.push(undefined, { scroll: "preserve" });
       if (previousConversationId) focusConversation(previousConversationId, "row");
@@ -785,7 +838,14 @@ function MailWorkspaceView(props: {
       if (currentListKey !== initialListKey) return;
       current.searchParams.delete("mailingList");
       window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`);
-      setRequestPath(`${current.pathname}${current.search}`);
+      const path = `${current.pathname}${current.search}`;
+      // Later reloads of this list must not bring the closed dialog's parameter back.
+      const source = encodeRouteSource(path, data.listMode);
+      if (!workspaceTransition && sameRouteList(source, committedRouteSource)) {
+        committedRouteSource = source;
+        setRouteSource(source);
+      }
+      setRequestPath(path);
     }
   };
 
@@ -826,6 +886,19 @@ function MailWorkspaceView(props: {
       }
       void (async () => {
         const href = `${url.pathname}${url.search}`;
+        if (inCurrentList(href)) {
+          // Back and Forward between selections of the shown list open and close them like the list and the reader do.
+          const conversationId = url.searchParams.get("conversation");
+          const row = data.listItems.find((item) => item.selectionKind === "conversation" && item.conversationId === conversationId);
+          const result = conversationId
+            ? await openConversationInList(href, conversationId, row?.sourceFolderId ?? data.folderId, row?.subject ?? "")
+            : closeConversationInList(href);
+          if (!disposed && result === "failed") {
+            navigate(requestPath(), { replace: true, scroll: "preserve", viewTransition: false });
+            toast.error(t().restoreViewFailed);
+          }
+          return;
+        }
         captureSearchStart(href);
         const result = await replaceWorkspaceRoute(href);
         if (!disposed && result === "applied") {
@@ -952,13 +1025,106 @@ function MailWorkspaceView(props: {
     if (target === "row") element?.scrollIntoView({ block: "nearest" });
   };
 
+  /**
+   * Whether `href` keeps the list that is shown and changes only the open conversation: conversation list mode, no
+   * Scheduled or Drafts list, no message selection on either side, and no other view on its way.
+   */
+  const inCurrentList = (href: string): boolean => {
+    if (workspaceTransition || data.listMode !== "conversations" || data.scheduledMode || data.draftsMode) return false;
+    const target = resolveMailWorkspaceUrl(href, mailboxId, window.location.origin);
+    if (!target || target.searchParams.has("message") || mailRouteUrl(requestPath()).searchParams.has("message")) return false;
+    const source = encodeRouteSource(`${target.pathname}${target.search}`, data.listMode);
+    return sameRouteList(source, committedRouteSource) && sameRouteList(source, routeSource());
+  };
+
+  /** Shows `href`'s selection without touching the list: its pages, rows, folders and counts stay as they are. */
+  const commitSelectionInList = (href: string, selection: Partial<MailboxPageData>) => {
+    const target = resolveMailWorkspaceUrl(href, mailboxId, window.location.origin);
+    if (!target) return;
+    const path = `${target.pathname}${target.search}`;
+    const source = encodeRouteSource(path, data.listMode);
+    routeGeneration++;
+    batch(() => {
+      setData(selection);
+      committedRouteSource = source;
+      setRouteSource(source);
+      setRequestPath(path);
+    });
+  };
+
+  /**
+   * Opens a conversation of the shown list by loading only its detail. `folderId` attributes each message to a
+   * folder the way the snapshot does: the row's own folder, else the list's. The latest request wins; a list change
+   * cancels it. "missing" means the conversation is gone or no longer visible.
+   */
+  const loadConversationInList = async (
+    href: string,
+    conversationId: string,
+    folderId: string | null,
+    subject: string,
+  ): Promise<"applied" | "failed" | "stale" | "missing"> => {
+    cancelConversationDetail();
+    const request = new AbortController();
+    conversationDetailRequest = request;
+    let detail: MailConversationDetailData;
+    try {
+      const response = await apiClient.mailboxes[":mailboxId"]["workspace-detail"][":conversationId"].$get(
+        { param: { mailboxId, conversationId }, query: folderId ? { folder: folderId } : {} },
+        { init: { signal: request.signal } },
+      );
+      if (conversationDetailRequest !== request || disposed) return "stale";
+      if (!response.ok) {
+        conversationDetailRequest = null;
+        return response.status === 404 ? "missing" : "failed";
+      }
+      detail = await response.json();
+    } catch {
+      if (conversationDetailRequest !== request || disposed) return "stale";
+      conversationDetailRequest = null;
+      return "failed";
+    }
+    if (conversationDetailRequest !== request || disposed) return "stale";
+    conversationDetailRequest = null;
+    if (!inCurrentList(href)) return "stale";
+    const { conversationId: _, localTags, selectedSubject, ...incoming } = detail;
+    const selection = data.selectedConversationId === conversationId ? preserveUnavailableMailDetail(data, incoming) : incoming;
+    commitSelectionInList(href, {
+      ...selection,
+      selectedConversationId: conversationId,
+      selectedMessageId: null,
+      localTags,
+      // The snapshot's rule: the latest message's subject, else the list row's.
+      selectedSubject: selectedSubject || subject,
+    });
+    return "applied";
+  };
+
+  const openConversationInList = async (
+    href: string,
+    conversationId: string,
+    folderId: string | null,
+    subject: string,
+  ): Promise<"applied" | "failed" | "stale"> => {
+    const result = await loadConversationInList(href, conversationId, folderId, subject);
+    // A fresh load of this URL shows the list without the conversation; reloading the view does the same.
+    return result === "missing" ? await replaceWorkspaceRoute(href) : result;
+  };
+
+  const closeConversationInList = (href: string): "applied" => {
+    cancelConversationDetail();
+    commitSelectionInList(href, emptyMailSelection());
+    return "applied";
+  };
+
   const applyConversationRoute = async (
     href: string,
     item: MailListItem,
     activation: "keyboard" | "pointer",
   ): Promise<"applied" | "failed" | "stale"> => {
     if (!item.conversationId) return "failed";
-    const result = await replaceWorkspaceRoute(href);
+    const result = inCurrentList(href)
+      ? await openConversationInList(href, item.conversationId, item.sourceFolderId ?? data.folderId, item.subject)
+      : await replaceWorkspaceRoute(href);
     if (result === "applied" && activation === "keyboard") focusConversation(item.conversationId, "reader");
     return result;
   };

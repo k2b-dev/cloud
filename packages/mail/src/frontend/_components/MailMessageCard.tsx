@@ -4,7 +4,7 @@ import { Button, type DropdownAction, type DropdownItem, Placeholder, StatusBadg
 import { createMemo, createSignal, Show } from "solid-js";
 import type { DraftDerivationKind, DraftIntent, SenderIdentity } from "../../contracts";
 import type { MailSecurityFinding } from "../../security-contracts";
-import type { MessageDetail } from "../../service/messages";
+import type { MailWorkspaceMessage } from "../../service/workspace";
 import MailCalendarInvitation from "./MailCalendarInvitation";
 import MailMessageAttachments from "./MailMessageAttachments";
 import MailMessageBody from "./MailMessageBody";
@@ -48,9 +48,9 @@ type MailMessageCardContext = {
 type MailMessageCardActions = {
   toggle: (messageId: string) => void;
   selectionChange: (messageId: string, value: string) => void;
-  compose: (intent: DraftIntent, message: MessageDetail, quotedBody?: string) => void;
-  quoteReply: (message: MessageDetail, body: HTMLElement) => void;
-  derive: (kind: DraftDerivationKind, message: MessageDetail) => void | Promise<void>;
+  compose: (intent: DraftIntent, message: MailWorkspaceMessage, quotedBody?: string) => void;
+  quoteReply: (message: MailWorkspaceMessage, body: HTMLElement) => void;
+  derive: (kind: DraftDerivationKind, message: MailWorkspaceMessage) => void | Promise<void>;
   reconcile: () => Promise<void>;
   refresh: () => Promise<void>;
   reassign: (messageId: string) => void | Promise<void>;
@@ -58,7 +58,7 @@ type MailMessageCardActions = {
 };
 
 export default function MailMessageCard(props: {
-  message: MessageDetail;
+  message: MailWorkspaceMessage;
   expanded: boolean;
   isLatest: boolean;
   selectionAvailable: boolean;

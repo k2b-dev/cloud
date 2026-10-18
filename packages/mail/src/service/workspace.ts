@@ -20,7 +20,7 @@ import {
   replaceMailSearchReferences,
   resolveMailSearchRoute,
 } from "../search-state";
-import { getMailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
+import { type MailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
 import type { MailRequestContext } from "./auth";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./collaboration";
 import * as collaboration from "./collaboration";
@@ -137,6 +137,14 @@ const optionalUuidSearchParam = (url: URL, name: string): string | null => {
   return parsed.success ? parsed.data : null;
 };
 
+export type MailWorkspaceMessage = Omit<MessageDetail, "forwardText"> & { forwardText?: string };
+
+const workspaceMessage = (message: MessageDetail): MailWorkspaceMessage => {
+  if (!message.plainText?.trim()) return message;
+  const { forwardText: _forwardText, ...detail } = message;
+  return detail;
+};
+
 export type MailboxPageData = {
   receivingAddress: string | null;
   mailbox: Mailbox;
@@ -169,7 +177,7 @@ export type MailboxPageData = {
   nextListCursor: string | null;
   listError: MailListError | null;
   listTitle: string;
-  detailMessages: MessageDetail[];
+  detailMessages: MailWorkspaceMessage[];
   conversationSummary: ConversationContentSummary | null;
   conversationDrafts: ConversationDraftSummary[];
   detailError: string | null;
@@ -337,16 +345,19 @@ const attachLocalTags = async (
   };
 };
 
-const loadConversationDetails = async (params: {
-  context: MailRequestContext;
-  mailboxId: string;
-  conversationId: string;
-  preferredFolderId?: string | null;
-  locale?: string | null;
-}) => {
+const loadConversationDetails = async (
+  params: {
+    context: MailRequestContext;
+    mailboxId: string;
+    conversationId: string;
+    preferredFolderId?: string | null;
+    locale?: string | null;
+  },
+  access: MailboxAccess,
+) => {
   const errorMessage = (error: ServiceError) => localizeMailError(error, params.locale).message;
   // Only mailbox-wide writers assign; people who see assigned conversations only get no list to choose from.
-  const assignedOnly = (await getMailboxAccess(params.context, params.mailboxId))?.scope === "assigned";
+  const assignedOnly = access.scope === "assigned";
   const [
     detailResult,
     stateResult,
@@ -380,7 +391,7 @@ const loadConversationDetails = async (params: {
   ]);
 
   return {
-    detailMessages: detailResult.ok ? detailResult.data : [],
+    detailMessages: detailResult.ok ? detailResult.data.map(workspaceMessage) : [],
     conversationSummary: summaryResult.ok ? summaryResult.data : null,
     conversationDrafts: draftsResult.ok ? draftsResult.data : [],
     detailError: detailResult.ok ? null : errorMessage(detailResult.error),
@@ -427,10 +438,12 @@ export const loadMailboxConversationDetail = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   conversationId: string;
+  preferredFolderId?: string | null;
   locale?: string | null;
 }): Promise<MailConversationDetailData | null> => {
   const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!permission.ok) return null;
+  // Mailbox-wide visibility alone does not check conversation existence or mailbox ownership.
   const conversation = await messages.listConversationMessages({
     context: params.context,
     mailboxId: params.mailboxId,
@@ -439,7 +452,7 @@ export const loadMailboxConversationDetail = async (params: {
   });
   if (!conversation.ok) return null;
   const [detail, availableTags] = await Promise.all([
-    loadConversationDetails(params),
+    loadConversationDetails(params, permission.data),
     localTags.listLocalTags(params.context, params.mailboxId),
   ]);
   const availableTagsError = availableTags.ok ? null : localizeMailError(availableTags.error, params.locale).message;
@@ -455,6 +468,7 @@ export const loadMailboxConversationDetail = async (params: {
 
 const loadSelectionDetail = async (params: {
   context: MailRequestContext;
+  access: MailboxAccess;
   mailboxId: string;
   conversationId: string | null;
   messageId: string | null;
@@ -462,13 +476,16 @@ const loadSelectionDetail = async (params: {
   locale?: string | null;
 }): Promise<MailSelectionDetail> => {
   if (params.conversationId) {
-    return await loadConversationDetails({
-      context: params.context,
-      mailboxId: params.mailboxId,
-      conversationId: params.conversationId,
-      preferredFolderId: params.preferredFolderId,
-      locale: params.locale,
-    });
+    return await loadConversationDetails(
+      {
+        context: params.context,
+        mailboxId: params.mailboxId,
+        conversationId: params.conversationId,
+        preferredFolderId: params.preferredFolderId,
+        locale: params.locale,
+      },
+      params.access,
+    );
   }
   if (!params.messageId) return EMPTY_SELECTION_DETAIL;
 
@@ -478,7 +495,7 @@ const loadSelectionDetail = async (params: {
     messageId: params.messageId,
   });
   return detail.ok
-    ? { ...EMPTY_SELECTION_DETAIL, detailMessages: [detail.data] }
+    ? { ...EMPTY_SELECTION_DETAIL, detailMessages: [workspaceMessage(detail.data)] }
     : { ...EMPTY_SELECTION_DETAIL, detailError: localizeMailError(detail.error, params.locale).message };
 };
 
@@ -834,6 +851,7 @@ export const loadMailboxPageData = async (params: {
       ? EMPTY_SELECTION_DETAIL
       : await loadSelectionDetail({
           context: params.context,
+          access: permission.data,
           mailboxId: params.mailboxId,
           conversationId: selectedConversationId,
           messageId: selectedMessageId,
