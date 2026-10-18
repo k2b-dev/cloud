@@ -56,8 +56,10 @@ import {
 
 An error state uses `role="alert"`. A loading state uses `role="status"`,
 `aria-live="polite"`, and `aria-busy="true"`. The loading icon stops spinning
-when reduced motion is requested. Placeholder icons use color to communicate
-state and never render a decorative background or border.
+when reduced motion is requested. An empty state's icon sits in a soft chip of
+the app color; loading and error keep their status colors without a chip,
+and inline placeholders keep a plain glyph. The icon box keeps the same size
+in every state: 2rem for compact, 2.5rem for panel, and 1rem for inline.
 
 ### NotFoundState
 

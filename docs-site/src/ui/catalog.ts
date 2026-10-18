@@ -479,6 +479,7 @@ export const documentedOnlyUiCatalogExports = {
   createPanesLayout: "Documented Panes initial-layout helper.",
   createTemplateEditorPanesLayout: "Documented TemplateEditor layout helper.",
   fitFloatingWindowRect: "Documented FloatingWindow geometry helper.",
+  fileTypeOf: "Documented FileTypeIcon color-family resolver in the file browser guide.",
   formatFileViewSize: "Documented FileView metadata formatter.",
   getFileViewPreviewKind: "Documented FileView preview classifier.",
   isStructuredDataValue: "Documented StructuredDataPreview boundary validator.",

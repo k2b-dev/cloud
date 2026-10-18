@@ -69,6 +69,7 @@ export type { DocCodeHighlighter, DocCodeProps, DocConcept, DocNoteVariant, DocR
 export { DocCode, DocConceptGrid, DocInlineCode, DocLead, DocNote, DocPage, DocRows, DocSection } from "./Docs";
 export { FileBrowserPanel, type FileBrowserPanelProps, type FileSource, openFileBrowser } from "./FileBrowser";
 export { FileGrid, type FileGridProps } from "./FileGrid";
+export { type FileType, FileTypeIcon, type FileTypeIconProps, fileTypeOf } from "./FileTypeIcon";
 export { default as FileTree, type FileTreeActions, type FileTreeEntry, type FileTreeProps } from "./FileTree";
 export {
   canPreviewFile,

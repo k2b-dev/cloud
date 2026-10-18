@@ -1354,7 +1354,9 @@ trackpad, including a tablet with a mouse, instead of pushing it toward the
 title. It appears when the row is hovered, keyboard-focused, current, or has
 its menu open. Touch-only screens always show the actions. The counts stay in
 the accessibility tree while hidden. Omit the leading icon when every object would show the same
-one. Object rows keep their title on one line with an ellipsis.
+one. A plain object-row icon sits in a soft chip of the app color; custom
+icon content, such as an avatar, keeps its own treatment in the same 2rem box.
+Object rows keep their title on one line with an ellipsis.
 
 ```tsx
 <AppWorkspace.SidebarItem variant="object" href="/app/mail/support" description="support@example.test">

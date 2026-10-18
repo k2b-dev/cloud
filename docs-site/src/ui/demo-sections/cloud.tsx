@@ -1,3 +1,4 @@
+import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance.ts";
 import type { AiPublicModelProfile } from "@k2b/cloud/ai";
 import { AiChatActionsProvider, aiChatModelOptions, createAiChatTimeline } from "@k2b/cloud/ai/ui";
 import { Chat, type ChatCommand, Widget, WidgetHero, WidgetList, WidgetPills, WidgetStat, WidgetStatus } from "@k2b/ui";
@@ -235,14 +236,18 @@ const DashboardWidgetsDemo = () => (
       { kind: "component", name: "WidgetStatus", from: "@k2b/ui" },
       { kind: "component", name: "WidgetHero", from: "@k2b/ui" },
     ]}
-    description="Public Cloud widget primitives rendered from bounded fixture data; endpoint discovery remains a server concern."
-    code={`<Widget title="Account requests" icon="ti ti-users" size="compact">
+    description="The Notebooks widget uses its source app's yellow accent for its header chip. Status icons keep their own colors; endpoint discovery remains a server concern."
+    code={`import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance.ts";
+
+<Widget title="Account requests" icon="ti ti-users" size="compact">
   <WidgetStat value={7} label="Open" sub="Needs review" accent={{ tone: "amber", icon: "ti ti-clock" }} />
   <WidgetPills pills={[{ label: "New", value: 3, tone: "blue" }, { label: "Waiting", value: 4, tone: "amber" }]} />
 </Widget>
-<Widget title="Recent notes" icon="ti ti-notebook" size="compact">
-  <WidgetList grow items={recentNotes} />
-</Widget>
+<div class="app-accent-scope" style={appAccentStyle("#eab308")}>
+  <Widget title="Recent notes" icon="ti ti-notebook" size="compact">
+    <WidgetList grow items={recentNotes} />
+  </Widget>
+</div>
 <Widget title="Service health" icon="ti ti-heartbeat" size="compact">
   <WidgetStatus tone="success" title="All systems operational" message="8 services report healthy." />
   <WidgetHero title="No active incidents" icon="ti ti-circle-check" tone="emerald" />
@@ -258,15 +263,17 @@ const DashboardWidgetsDemo = () => (
           ]}
         />
       </Widget>
-      <Widget title="Recent notes" icon="ti ti-notebook" size="compact">
-        <WidgetList
-          grow
-          items={[
-            { icon: "ti ti-file-text", label: "Release plan", sub: "Platform", meta: "2m" },
-            { icon: "ti ti-file-text", label: "Incident review", sub: "Operations", meta: "1h" },
-          ]}
-        />
-      </Widget>
+      <div class="app-accent-scope" style={appAccentStyle("#eab308")}>
+        <Widget title="Recent notes" icon="ti ti-notebook" size="compact">
+          <WidgetList
+            grow
+            items={[
+              { icon: "ti ti-file-text", label: "Release plan", sub: "Platform", meta: "2m" },
+              { icon: "ti ti-file-text", label: "Incident review", sub: "Operations", meta: "1h" },
+            ]}
+          />
+        </Widget>
+      </div>
       <Widget title="Service health" icon="ti ti-heartbeat" size="compact">
         <WidgetStatus tone="success" title="All systems operational" message="8 services report healthy." />
         <WidgetHero title="No active incidents" icon="ti ti-circle-check" tone="emerald" />

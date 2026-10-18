@@ -1448,7 +1448,16 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
   const mainContent = (
     <>
       <Show when={iconContent() || icon()}>
-        <span class="k2b-app-workspace__sidebar-item-icon" aria-hidden="true">
+        <span
+          class={
+            // An object row's own glyph sits in a soft chip of the app colour; custom content such as an avatar keeps
+            // its own look.
+            props.variant === "object" && !iconContent()
+              ? "k2b-app-workspace__sidebar-item-icon k2b-icon-tile"
+              : "k2b-app-workspace__sidebar-item-icon"
+          }
+          aria-hidden="true"
+        >
           {iconContent() ?? <i class={iconClass(icon())} />}
         </span>
       </Show>

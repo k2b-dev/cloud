@@ -197,6 +197,10 @@
   grid-row: span 2;
 }
 
+/* Only carries the source app's accent hooks; the widget lays out as if it were not there. */
+.dashboard-widget-accent {
+  display: contents;
+}
 .dashboard-widget-state {
   display: flex;
   flex: 1;
