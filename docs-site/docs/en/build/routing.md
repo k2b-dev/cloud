@@ -86,13 +86,15 @@ it stays uncompressed. A compressed response loses `Content-Length` and
 weakly: `W/"x"` matches `"x"`, a list matches when one tag matches, and `*`
 matches any current representation.
 
-Compression can reveal a secret through the response length (BREACH) when the
-same response also contains text that an attacker chose. Session cookies are
-`SameSite=Lax`, so an attacker can only send such requests as cross-site
-navigations, and those stay uncompressed. If your application copies text from
-its URL into a same-origin request whose response also contains a credential,
-such as a token or a feed URL, set `Cache-Control: no-transform` on that
-response.
+Compression can reveal a secret through the response length (BREACH) when one
+response holds the secret together with text that another party can
+influence. That text can come from the URL or from stored content, such as an
+incoming mail, a chat message, a comment, or imported data. The gateway sends
+answers to cross-site and same-site browser requests uncompressed. This covers
+only requests that an attacker starts from another site. It does not cover
+requests that your own pages send, such as a refresh after a live event. If a
+response holds a credential or private content next to text from another
+party, set `Cache-Control: no-transform` on that response.
 
 ## Internal service address
 
