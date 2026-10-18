@@ -352,7 +352,8 @@ function MailWorkspaceView(props: {
    * Page 1 is the whole workspace snapshot: folders, counts and the open conversation. Every later page is only its
    * list page, so scrolling on and a live refresh of many pages do not rebuild the mailbox once per page.
    */
-  type WorkspaceRouteResult = { source: string; snapshot: MailboxPageData } | { source: string; list: MailboxListView };
+  /** `generation` is the selection generation when page 1 was requested; a later selection commit makes its selection old. */
+  type WorkspaceRouteResult = { source: string; snapshot: MailboxPageData; generation: number } | { source: string; list: MailboxListView };
   const pageList = (page: WorkspaceRouteResult): MailboxListView => ("snapshot" in page ? page.snapshot : page.list);
   type WorkspaceTransition = {
     source: string;
@@ -379,7 +380,10 @@ function MailWorkspaceView(props: {
   const routeKey = createMemo(() => routeListKey(routeSource()));
   let committedRouteSource = initialRouteSource;
   let workspaceTransition: WorkspaceTransition | null = null;
-  /** Counts selection changes, so a reload for an earlier selection in the same list reports itself as stale. */
+  /**
+   * Counts selection changes and navigations: a reload or a page 1 requested for an earlier generation reports itself as
+   * stale and keeps the selection shown now.
+   */
   let routeGeneration = 0;
   let conversationDetailRequest: AbortController | null = null;
   /** A conversation opening in the shown list shows the same pending state as a view that loads. */
@@ -392,8 +396,6 @@ function MailWorkspaceView(props: {
     conversationDetailRequest = null;
     setConversationOpening(false);
   };
-  /** The page 1 whose selection a detail open replaced; reapplying it with later pages must keep the newer detail. */
-  let supersededSelectionPage: WorkspaceRouteResult | undefined;
 
   type ConversationActivityResult = { conversationId: string; items: MailActivityEvent[] };
   const activityQuery = query.create<string | null, ConversationActivityResult>({
@@ -428,14 +430,15 @@ function MailWorkspaceView(props: {
     source: routeSource,
     // Later reloads and page loads still use the newest source, so page 1 carries the open conversation.
     isSameSource: sameRouteList,
-    initial: { source: initialRouteSource, pages: [{ source: initialRouteSource, snapshot: props.data }] },
+    initial: { source: initialRouteSource, pages: [{ source: initialRouteSource, snapshot: props.data, generation: 0 }] },
     loadPage: async (source, { cursor, abortSignal }) => {
       const target = decodeRouteSource(source);
       const url = new URL(target.href, window.location.origin);
       if (cursor === undefined) {
+        const generation = routeGeneration;
         const snapshot = await fetchWorkspaceRoute(url.toString(), abortSignal, target.listMode);
         if (!snapshot) throw new Error(t().loadViewFailed);
-        return { source, snapshot };
+        return { source, snapshot, generation };
       }
       url.searchParams.set("cursor", cursor);
       const list = await fetchWorkspaceList(url.toString(), abortSignal, target.listMode);
@@ -466,10 +469,11 @@ function MailWorkspaceView(props: {
     if (pending) pending.resolve("stale");
     workspaceTransition = null;
     if (source === routeSource()) {
-      return workspaceQuery
-        .invalidate()
-        .then(() => "applied" as const)
-        .catch(() => "failed" as const);
+      const generation = routeGeneration;
+      return workspaceQuery.invalidate().then(
+        () => (generation === routeGeneration ? "applied" : "stale"),
+        () => "failed" as const,
+      );
     }
     cancelConversationDetail();
     const generation = ++routeGeneration;
@@ -504,7 +508,7 @@ function MailWorkspaceView(props: {
       const target = decodeRouteSource(source);
       // Page 1 was loaded for another conversation of this list: its list, folders and counts are current, its
       // selection is not. Keep the open one, unless the shown list itself is still on its way.
-      const otherSelection = first.source !== source || first === supersededSelectionPage;
+      const otherSelection = first.source !== source || first.generation !== routeGeneration;
       if (otherSelection && routeListKey(committedRouteSource) !== key) return;
       const scopeChanged = mailListScope(requestPath()) !== mailListScope(target.href);
       let next = applyPendingListState(
@@ -1055,7 +1059,6 @@ function MailWorkspaceView(props: {
     const path = `${target.pathname}${target.search}`;
     const source = encodeRouteSource(path, data.listMode);
     routeGeneration++;
-    supersededSelectionPage = untrack(workspaceQuery.pages)[0];
     batch(() => {
       setData(selection);
       committedRouteSource = source;

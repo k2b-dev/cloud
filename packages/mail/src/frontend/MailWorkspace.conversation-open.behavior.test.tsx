@@ -147,6 +147,8 @@ describe("Mail workspace conversation open", () => {
   /** Holds a detail response until the test releases it. */
   let detailGate: Map<string, Promise<void>>;
   let detailStatus: (id: string) => number;
+  /** Holds every workspace-route response until the test releases it. */
+  let routeGate: Promise<void> | undefined;
 
   const row = (id: string): MailListItem =>
     mailTestRow(id, {
@@ -278,13 +280,17 @@ describe("Mail workspace conversation open", () => {
     replies = new Map();
     detailGate = new Map();
     detailStatus = () => 200;
+    routeGate = undefined;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
         const href = url.searchParams.get("href") ?? "";
         if (url.pathname.endsWith("/workspace-route")) {
           routeRequests.push(href);
-          return Response.json(snapshotFor(href));
+          // The server reads the snapshot when the request arrives; a held response arrives later with that data.
+          const snapshot = snapshotFor(href);
+          await routeGate;
+          return Response.json(snapshot);
         }
         if (url.pathname.endsWith("/workspace-list")) {
           listRequests.push(href);
@@ -439,6 +445,45 @@ describe("Mail workspace conversation open", () => {
     expect(shows(A)).toBe(true);
     expect(dom.document.body.textContent).toContain("A newer reply");
     expect(routeRequests).toHaveLength(1);
+  });
+
+  test("a refresh requested before a newer detail open keeps that detail", async () => {
+    mount(`${folderPath}&conversation=${A}`);
+    const socket = FakeWebSocket.instances.at(-1)!;
+    socket.open();
+    socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+    let release = () => {};
+    routeGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: rowId(1) } });
+    await until(() => routeRequests.length === 1, "the held refresh");
+    replies.set(A, "A newer reply");
+    open(rowId(10));
+    await until(() => shows(rowId(10)), "the other conversation");
+    open(A);
+    await until(() => dom.document.body.textContent?.includes("A newer reply") === true, "the newer detail");
+    release();
+    await settle();
+    expect(shows(A)).toBe(true);
+    expect(dom.document.body.textContent).toContain("A newer reply");
+    expect(selected()).toBe(A);
+  });
+
+  test("a reload of the shown view that ends after a conversation opened keeps that conversation and its URL", async () => {
+    mount();
+    let release = () => {};
+    routeGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    dom.root.querySelector<HTMLAnchorElement>(`a[href="${folderPath}"]`)!.click();
+    await until(() => routeRequests.length === 1, "the held reload");
+    open(rowId(10));
+    await until(() => shows(rowId(10)), "the opened conversation");
+    release();
+    await settle();
+    expect(shows(rowId(10))).toBe(true);
+    expect(selected()).toBe(rowId(10));
   });
 
   test("an opening conversation shows the pending state, and a later navigation to the shown view wins", async () => {
