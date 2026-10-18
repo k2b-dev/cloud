@@ -49,7 +49,7 @@ else {
         <div class="cloud-panel__resize" aria-orientation="vertical" tabindex="0"></div>
         <button data-cloud-panel-close>Close</button><button data-cloud-panel-grow>Grow</button>
         <button data-cloud-panel-provider="fixture">Fixture</button><button data-cloud-panel-provider="second">Second</button>
-        <div class="cloud-panel__body"><div data-cloud-panel-consent><h3 data-cloud-panel-consent-title></h3><p data-cloud-panel-consent-body></p><button data-cloud-panel-consent-answer="allow">Allow</button><button data-cloud-panel-consent-answer="deny">Deny</button><p data-cloud-panel-consent-error></p></div>${initialOpen ? '<iframe src="/app/fixture/panel?base=1" data-cloud-panel-frame="fixture"></iframe>' : ""}<button data-cloud-panel-retry>Try again</button><div class="k2b-placeholder__description"></div></div>
+        <div class="cloud-panel__body"><div data-cloud-panel-consent tabindex="-1"><h3 data-cloud-panel-consent-title></h3><p data-cloud-panel-consent-body></p><button data-cloud-panel-consent-answer="allow">Allow</button><button data-cloud-panel-consent-answer="deny">Deny</button><p data-cloud-panel-consent-error></p></div>${initialOpen ? '<iframe src="/app/fixture/panel?base=1" data-cloud-panel-frame="fixture"></iframe>' : ""}<button data-cloud-panel-retry>Try again</button><div class="k2b-placeholder__description"></div></div>
         <div data-cloud-panel-status></div>
       </aside>
     </div>`;
@@ -415,9 +415,17 @@ else {
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
   const setupContext = (context: PanelPageContext | null = pageContext, consent = true, answer?: boolean | null) =>
     setup(1440, false, true, undefined, false, undefined, { context, consent, ...(answer !== undefined ? { answer } : {}) });
+  // A loaded provider document: its own location and the ready mark its PanelRuntime writes.
+  const showDocument = (frame: HTMLIFrameElement, window: object, provider = frame.dataset.cloudPanelFrame) => {
+    Object.defineProperty(frame, "contentWindow", { configurable: true, value: window });
+    Object.defineProperty(frame, "contentDocument", {
+      configurable: true,
+      value: { documentElement: { dataset: { cloudPanelReady: provider } } },
+    });
+  };
   const spyFrame = (h: ReturnType<typeof setup>) => {
     const post = mock((_data: unknown, _origin: string) => {});
-    Object.defineProperty(h.frame(), "contentWindow", { configurable: true, value: { postMessage: post } });
+    showDocument(h.frame(), { postMessage: post, location: new URL(h.frame().src, location.origin) });
     return post;
   };
   const ready = (h: ReturnType<typeof setup>, provider = "fixture") => h.message({ type: "cloud.panel.ready", v: 1, provider });
@@ -515,6 +523,84 @@ else {
     h.click("[data-cloud-panel-retry]");
     expect(h.frame().src).not.toContain("cloud_panel_context");
     dispose();
+  });
+
+  test("withdrawal also drops the URL snapshot, so a provider reload stays without context", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const shown = new URL(h.frame().src);
+    const post = mock((_data: unknown, _origin: string) => {});
+    const replaceState = mock((_state: unknown, _title: string, path: string) => {
+      const next = new URL(path, location.origin);
+      shown.search = next.search;
+    });
+    showDocument(h.frame(), { postMessage: post, location: shown, history: { state: null, replaceState } });
+    ready(h);
+    consent("fixture", false);
+    await tick();
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    expect(shown.searchParams.get("base")).toBe("1");
+    // The provider reloads its own document and reports ready again: it is told there is no context.
+    post.mockClear();
+    ready(h);
+    expect(post.mock.calls).toEqual([[{ type: "cloud.panel.context", v: 1, context: null }, location.origin]]);
+  });
+
+  test("a frame that navigated to another provider's page gets no context", async () => {
+    const { publishPageContext } = await import("./panel");
+    const h = setupContext(pageContext, false);
+    h.open();
+    const post = spyFrame(h);
+    ready(h);
+    post.mockClear();
+    showDocument(h.frame(), { postMessage: post, location: new URL("/app/second/panel", location.origin) }, "second");
+    const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    expect(post).not.toHaveBeenCalled();
+    dispose();
+  });
+
+  test("a page restored from the back/forward cache stops sharing until it has read the answers again", async () => {
+    const fetch = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: false } })));
+    fetchSpy = fetch;
+    const { publishPageContext } = await import("./panel");
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const post = spyFrame(h);
+    ready(h);
+    post.mockClear();
+    const restored = new Event("pageshow");
+    Object.defineProperty(restored, "persisted", { value: true });
+    window.dispatchEvent(restored);
+    expect(post.mock.calls).toEqual([[{ type: "cloud.panel.context", v: 1, context: null }, location.origin]]);
+    const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(1);
+    dispose();
+  });
+
+  test("context that arrived live does not make the same provider reload on the next open", async () => {
+    const { publishPageContext } = await import("./panel");
+    const h = setupContext(pageContext, false);
+    h.open();
+    const frame = h.frame();
+    spyFrame(h);
+    ready(h);
+    const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    h.open();
+    expect(h.frame()).toBe(frame);
+    dispose();
+  });
+
+  test("the first client-side open of a foreign provider moves focus once its answer is known", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ answers: {} })));
+    const h = setupContext();
+    h.open();
+    expect(document.activeElement).toBe(h.opener);
+    await tick();
+    expect(h.slot.dataset.consent).toBe("ask");
+    expect(document.activeElement).toBe(h.slot.querySelector("[data-cloud-panel-consent]"));
   });
 
   test("publisher collection works before lazy loading; last source wins, effective changes advance seq and disposal restores only its part", async () => {

@@ -17,7 +17,8 @@ export default function PanelMenu(props: { initial: PanelState }) {
           appName: slot.dataset.appName ?? props.initial.appName,
           consent: slot.dataset.providerConsent === "true",
           allowed: slot.dataset.contextAllowed === "true",
-          saving: slot.dataset.consentSaving === "true",
+          // Until the lazy controller has installed (it writes this attribute), a change would have no listener.
+          saving: slot.dataset.consentSaving !== "false",
         }
       : props.initial;
   };

@@ -38,4 +38,21 @@ else {
     expect(menu.hasAttribute("inert")).toBe(true);
     expect(menu.querySelector<HTMLButtonElement>("button")!.disabled).toBe(true);
   });
+
+  test("the checkbox waits for the lazy controller, so an early change cannot get lost", async () => {
+    const dom = createDomTestHarness();
+    const initial: PanelState = { provider: "fixture", appName: "Inventory", consent: true, allowed: true, saving: true };
+    const dispose = render(() => createComponent(PanelMenu, { initial }), dom.root);
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    dom.root.querySelector<HTMLButtonElement>('[aria-label="Panel menu"]')!.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const choice = () => document.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!;
+    expect(choice().getAttribute("aria-disabled") === "true" || choice().disabled).toBe(true);
+    window.dispatchEvent(new CustomEvent("cloud.panel.state", { detail: { ...initial, saving: false } }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(choice().getAttribute("aria-disabled") === "true" || choice().disabled).toBe(false);
+  });
 }

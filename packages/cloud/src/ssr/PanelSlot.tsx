@@ -69,7 +69,7 @@ export default function PanelSlot(props: { panel: NonNullable<ShellData["panel"]
             </h2>
           )}
           {hasConsent && (
-            <PanelMenu initial={{ provider: provider.id, appName: provider.appName, consent: provider.consent, allowed, saving: false }} />
+            <PanelMenu initial={{ provider: provider.id, appName: provider.appName, consent: provider.consent, allowed, saving: true }} />
           )}
           <IconButton
             label={t.closePanel}
