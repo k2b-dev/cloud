@@ -281,7 +281,7 @@ export const followPageTrail = (root: ParentNode = document): (() => void) => {
     // The row's `data-trail` decides whether it shows; it follows the depth. A
     // workspace head holds its title in its lead.
     for (const row of root.querySelectorAll<HTMLElement>(
-      "[data-trail]:has(> .k2b-page-title[data-fallback], > .k2b-app-workspace__head-lead > .k2b-page-title[data-fallback])",
+      "[data-trail]:has(> .k2b-page-title[data-fallback]), [data-trail]:has(> .k2b-app-workspace__head-lead > .k2b-page-title[data-fallback])",
     ))
       if (!row.closest("solid-island, solid-client")) row.dataset.trail = trail?.ancestors.length ? "up" : "title";
   };
