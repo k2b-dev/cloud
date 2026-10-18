@@ -330,7 +330,7 @@ and the visible hours.
   `data-calendar-drag-source`: it lifts while it is held, and the stylesheet
   turns off text selection and the system's long-press callout on it, so a
   link preview cannot take the hold over. A hold that ends without a drop
-  leaves the page scrolling as before.
+  leaves the page scrolling as before. `dragIn` stays the calendar's own drop into free time; [`DragSource` and `DropTarget`](../actions/drag-and-drop) handle drops elsewhere.
 - **Now** is a line across the day with the time beside it; the header of the
   day says what starts within the hour, such as "Planning in 12 min".
 

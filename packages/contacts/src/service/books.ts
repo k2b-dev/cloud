@@ -7,13 +7,10 @@ import {
   addBookAccess,
   CONTACT_BOOK_RESOURCE_TYPE,
   CONTACTS_APP_ID,
-  canAccessBook,
   countBookAccess,
-  getBookPermission,
   grantBookAccess,
   listBookAccessPaginated,
   listContactBookApiKeys,
-  mayReadAcrossBooks,
   removeBookAccess,
   updateBookAccessPermission,
 } from "./access";
@@ -61,11 +58,9 @@ const mapAdminBook = (row: DbAdminBook): ContactBookAdminListItem => ({
 
 /**
  * Lists manual books readable by one authoritative access subject.
- * Resource-bound service accounts fail closed unless their exact book binding is supplied.
+ * The facade supplies the credential binding; permissions stay in this query.
  */
-export const list = async (config: { subject: AccessSubject; boundBookId?: string | null }): Promise<ContactBook[]> => {
-  if (!(await mayReadAcrossBooks(config.subject, config.boundBookId))) return [];
-
+export const list = async (config: { subject: AccessSubject; boundBookId: string | null }): Promise<ContactBook[]> => {
   const principalMatch = buildAccessPrincipalCondition({
     subject: config.subject,
     columns: {
@@ -75,8 +70,7 @@ export const list = async (config: { subject: AccessSubject; boundBookId?: strin
       authenticatedOnly: sql`a.authenticated_only`,
     },
   });
-  const bindingMatch =
-    config.subject.type === "service_account" && config.boundBookId ? sql`b.id = ${config.boundBookId}::uuid` : sql`true`;
+  const bindingMatch = config.boundBookId ? sql`b.id = ${config.boundBookId}::uuid` : sql`true`;
 
   const rows = await sql<DbBook[]>`
     SELECT DISTINCT b.id, b.name, b.description, b.created_at, b.updated_at
@@ -87,7 +81,7 @@ export const list = async (config: { subject: AccessSubject; boundBookId?: strin
       a.permission IN ('read'::auth.permission_level, 'write'::auth.permission_level, 'admin'::auth.permission_level)
       AND ${principalMatch}
       AND ${bindingMatch}
-    ORDER BY b.name ASC
+    ORDER BY b.name ASC, b.id ASC
   `;
 
   return rows.map(mapBook);
@@ -99,12 +93,10 @@ export const list = async (config: { subject: AccessSubject; boundBookId?: strin
  */
 export const findReadableByName = async (config: {
   subject: AccessSubject;
-  boundBookId?: string | null;
+  boundBookId: string | null;
   name: string;
   limit: number;
 }): Promise<ContactBook[]> => {
-  if (!(await mayReadAcrossBooks(config.subject, config.boundBookId))) return [];
-
   const principalMatch = buildAccessPrincipalCondition({
     subject: config.subject,
     columns: {
@@ -114,8 +106,7 @@ export const findReadableByName = async (config: {
       authenticatedOnly: sql`a.authenticated_only`,
     },
   });
-  const bindingMatch =
-    config.subject.type === "service_account" && config.boundBookId ? sql`b.id = ${config.boundBookId}::uuid` : sql`true`;
+  const bindingMatch = config.boundBookId ? sql`b.id = ${config.boundBookId}::uuid` : sql`true`;
 
   const rows = await sql<DbBook[]>`
     SELECT DISTINCT b.id, b.name, b.description, b.created_at, b.updated_at
@@ -141,14 +132,11 @@ export const findReadableByName = async (config: {
  */
 export const listPage = async (config: {
   subject: AccessSubject;
-  boundBookId?: string | null;
+  boundBookId: string | null;
   pagination?: PageParams;
   filter?: { query?: string; minimumPermission?: PermissionLevel };
 }): Promise<Paginated<ReadableContactBook>> => {
   const { page, perPage, offset } = paginate(config.pagination);
-  if (!(await mayReadAcrossBooks(config.subject, config.boundBookId))) {
-    return { items: [], page, perPage, total: 0, hasNext: false };
-  }
 
   const principalMatch = buildAccessPrincipalCondition({
     subject: config.subject,
@@ -159,8 +147,7 @@ export const listPage = async (config: {
       authenticatedOnly: sql`a.authenticated_only`,
     },
   });
-  const bindingMatch =
-    config.subject.type === "service_account" && config.boundBookId ? sql`b.id = ${config.boundBookId}::uuid` : sql`true`;
+  const bindingMatch = config.boundBookId ? sql`b.id = ${config.boundBookId}::uuid` : sql`true`;
   const query = config.filter?.query?.trim().toLowerCase() ?? "";
   const queryMatch =
     query.length > 0
@@ -254,7 +241,7 @@ export const listAdmin = async (params: {
       OR LOWER(COALESCE(b.description, '')) LIKE ${pattern}
     )
     GROUP BY b.id, b.name, b.description, b.created_at, b.updated_at
-    ORDER BY LOWER(b.name) ASC, b.created_at ASC
+    ORDER BY LOWER(b.name) ASC, b.created_at ASC, b.id ASC
     LIMIT ${params.pagination.limit}
     OFFSET ${params.pagination.offset}
   `;
@@ -428,25 +415,6 @@ export const remove = async (config: { id: string }): Promise<Result<void>> => {
   });
   return ok();
 };
-
-/**
- * Returns effective permission for one manual book.
- */
-export const getPermission = async (config: { bookId: string; subject: AccessSubject }): Promise<PermissionLevel> =>
-  getBookPermission({
-    bookId: config.bookId,
-    subject: config.subject,
-  });
-
-/**
- * Checks whether user/groups can access one manual book for the requested level.
- */
-export const canAccess = async (config: { bookId: string; subject: AccessSubject; requiredLevel?: PermissionLevel }): Promise<boolean> =>
-  canAccessBook({
-    bookId: config.bookId,
-    subject: config.subject,
-    requiredLevel: config.requiredLevel,
-  });
 
 /**
  * Access helpers scoped to manual contact books.

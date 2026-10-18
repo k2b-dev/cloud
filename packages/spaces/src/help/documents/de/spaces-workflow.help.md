@@ -34,7 +34,7 @@ Mit Zugriff **Verwalten** richtest du Vorlagen in den Space-Einstellungen unter 
 
 :::reference
 - **Titel:** Nutze eine klare Handlung oder eine kurze Nominalphrase. Formuliere den Titel so, dass er in der Liste ohne Öffnen verständlich ist.
-- **Zuständige:** Weise Personen zu, wenn der Eintrag weiterverfolgt werden muss. Lass den Eintrag ohne Zuständigkeit, wenn er in einen gemeinsamen Arbeitsvorrat gehört.
+- **Zuständige:** Weise Personen oder Dienstkonten mit eigenem Zugriff auf den Space zu, wenn der Eintrag weiterverfolgt werden muss. Lass den Eintrag ohne Zuständigkeit, wenn er in einen gemeinsamen Arbeitsvorrat gehört.
 - **Status:** Zeige den Stand der Arbeit mit einem Status. Kanban-Ansichten brauchen einen einheitlich genutzten Status.
 - **Fälligkeitsdatum oder Terminzeit:** Nutze für Aufgaben ein Fälligkeitsdatum und für Termine eine feste Zeit, wenn der Zeitpunkt den nächsten Schritt beeinflusst.
 - **Geschätzte Dauer:** Trage eine positive Dauer in ganzen Minuten ein, wenn sie beim Einschätzen oder Einplanen einer Aufgabe hilft. Bei Terminen ergibt sich die Dauer stattdessen aus Start- und Endzeit.
@@ -85,6 +85,20 @@ Unter **Blockiert durch** steht jede blockierende Aufgabe mit Titel und Stand: e
 
 Du kannst einen eigenen Kommentar bis zu zehn Minuten nach dem Veröffentlichen bearbeiten oder löschen. Kommentare anderer Personen bleiben unverändert, auch für Personen mit Zugriff **Verwalten**.
 
+## Mit einem Emoji reagieren {icon="mood-plus"}
+
+Du brauchst Zugriff **Bearbeiten**, um zu reagieren. Reaktionen senden keine Benachrichtigungen.
+
+:::steps
+1. Wähle auf einer Kanban-Karte einen Emoji-Chip, um deine Reaktion hinzuzufügen oder zu entfernen.
+2. Zeige mit der Maus auf die Karte. Wähle **Reaktion hinzufügen**, um ein anderes Emoji auszuwählen.
+3. Öffne auf einem Smartphone oder Tablet den Eintrag. Wähle über den Kommentaren einen Chip oder **Reaktion hinzufügen**.
+4. Zeige auf einen Chip, um zu sehen, wer reagiert hat. Halte auf einem Touchscreen den Chip gedrückt.
+5. Wenn das Speichern fehlschlägt, wähle in der Fehlermeldung **Erneut versuchen**.
+:::
+
+Ein Eintrag kann bis zu 20 verschiedene Emojis haben. Wenn er 20 hat, reagiere mit einem davon.
+
 ## Schnell mit der Tastatur arbeiten {icon="keyboard"}
 
 - Wenn ein Eintrag geöffnet ist, drücke **J** für den nächsten und **K** für den vorherigen Eintrag in Liste, Tabelle und Kanban.
@@ -104,17 +118,19 @@ Wähle **Ich übernehme** auf einer Karte im Board oder in den Aufgabendetails, 
 
 Solange eine Aufgabe übernommen ist, sehen andere, wer daran arbeitet:
 
-- Die Karte zeigt in jeder Spalte den Avatar dieser Person mit grünem Ring vor den Zuständigen.
+- Board-Karten, Listenzeilen und Tabellenzellen zeigen die arbeitende Person zuerst im Avatar-Stapel mit einem grünen Ring. Sie erscheint einmal und nie im `+N`-Überlauf.
 - Der Filter **In Arbeit** listet übernommene Aufgaben.
-- In den Details steht diese Person mit demselben Ring, dem Hinweis **arbeitet daran** und der Startzeit zuerst unter **Zuständig**. Ein Dienstkonto ist als nicht zugewiesen gekennzeichnet.
+- In den Details ist **Zuständig** eine gemeinsame Liste. Die Zeile der arbeitenden Person steht zuerst und zeigt den grünen Ring, **arbeitet daran** und seit wann sie daran arbeitet.
 
-Wenn du eine Aufgabe übernimmst, wirst du ihr auch zugewiesen. Die Übernahme zeigt, welche zuständige Person gerade daran arbeitet. Gibst du deine eigene Übernahme frei, bleibst du zugewiesen. Die Spalte ändert sich nicht. **Mir zugewiesen** enthält auch Aufgaben, die du übernommen hast. **Nicht zugewiesen** schließt Aufgaben aus, die eine Person übernommen hat. Dienstkonten können Aufgaben übernehmen, aber nicht zugewiesen werden.
+Gehört die Übernahme zu keinem der Zuständigen, etwa bei einem persönlichen Automatisierungsschlüssel oder einem gelöschten Konto, zeigt die Liste dieses Konto trotzdem zuerst mit seinem Arbeitsstatus. Diese Zeile kannst du nicht entfernen.
 
-**Übernehmen** verschiebt die Übernahme und die Zuständigkeit zu dir. Im CLI entfernt `release --force` auch die Zuweisung der bisherigen Person. War sie allein zuständig, ist die Aufgabe danach nicht zugewiesen.
+Wenn du eine Aufgabe übernimmst, wirst du ihr auch zugewiesen. Die Übernahme zeigt, wer von den Zuständigen gerade daran arbeitet. Gibst du deine eigene Übernahme frei, bleibst du zugewiesen. Die Spalte ändert sich nicht. **Mir zugewiesen** enthält auch Aufgaben, die du übernommen hast. **Nicht zugewiesen** schließt Aufgaben aus, die eine Person oder ein Agent übernommen hat. Aktive Dienstkonten mit eigenem Zugriff auf den Space können zugewiesen werden; Space-API-Schlüssel nur in ihrem eigenen Space. Persönliche Automatisierungsschlüssel können nicht zugewiesen werden. Ein Konto, das eine Aufgabe übernimmt, wird auch ohne eigenen Zugriff zugewiesen, zum Beispiel mit Zugriff für alle angemeldeten Konten. **Mir zugewiesen** bleibt auf deine persönlichen Zuweisungen begrenzt.
 
-Entfernst du eine arbeitende Person aus **Zuständig**, endet ihre Übernahme. Bei einer anderen Person bestätigst du das einmal. Hat jemand die Aufgabe inzwischen übernommen, lehnt Spaces eine Liste ohne diese Person ab. Lies die Aufgabe erneut. Gib im CLI die Übernahme frei, bevor du die Person mit `assign` oder `set` entfernst.
+**Übernehmen** verschiebt die Übernahme und die Zuständigkeit zu dir. Im CLI entfernt `release --force` auch die Zuweisung des bisherigen Kontos. War es allein zuständig, ist die Aufgabe danach nicht zugewiesen.
 
-Übernahmen laufen nicht ab. Sie koordinieren die Arbeit, sperren sie aber nicht: Mit Zugriff **Bearbeiten** kannst du eine übernommene Aufgabe zwischen offenen Spalten verschieben, und gewöhnliche gemeinsame Bearbeitungen bleiben möglich. Erledigst du deine eigene übernommene Aufgabe, auch per Ziehen in eine Erledigt-Spalte, wird die Übernahme freigegeben. Mit Zugriff **Bearbeiten** siehst du bei der Übernahme eines anderen Kontos **Übernehmen**. Du bestätigst das in einem Dialog, der die bisherige Person nennt. Erledigst du eine Aufgabe, die jemand anderes übernommen hat, etwa per Ziehen in eine Erledigt-Spalte, fragt Spaces einmal nach, zum Beispiel „Von Jana Berger übernommen – übernehmen und abschließen?“. Danach übernimmt und erledigt Spaces die Aufgabe in einem Schritt. Die Zuweisungen ändern sich nicht. **Abbrechen** lässt die Karte an ihrem Platz. Schickst du eine Aufgabe durch ein Wormhole in einen anderen Space, endet ihre Übernahme auf dieselbe Weise: Deine eigene Übernahme endet ohne Nachfrage, eine fremde übernimmst du nach einer Bestätigung. Die Aktivität zeigt, wer eine Aufgabe von wem übernommen hat.
+Entfernst du eine arbeitende Person oder ein Dienstkonto aus **Zuständig**, endet die Übernahme. Bei einem anderen Konto bestätigst du das einmal. Hat jemand die Aufgabe inzwischen übernommen, lehnt Spaces eine Liste ohne dieses Konto ab. Lies die Aufgabe erneut. Gib im CLI die Übernahme frei, bevor du das Konto mit `assign` oder `set` entfernst.
+
+Übernahmen laufen nicht ab. Sie koordinieren die Arbeit, sperren sie aber nicht: Mit Zugriff **Bearbeiten** kannst du eine übernommene Aufgabe zwischen offenen Spalten verschieben, und gewöhnliche gemeinsame Bearbeitungen bleiben möglich. Erledigst du deine eigene übernommene Aufgabe, auch per Ziehen in eine Erledigt-Spalte, wird die Übernahme freigegeben. Mit Zugriff **Bearbeiten** siehst du bei der Übernahme eines anderen Kontos **Übernehmen**. Du bestätigst das in einem Dialog, der das bisherige Konto nennt. Erledigst du eine Aufgabe, die jemand anderes übernommen hat, etwa per Ziehen in eine Erledigt-Spalte, fragt Spaces einmal nach, zum Beispiel „Von Jana Berger übernommen – übernehmen und abschließen?“. Danach übernimmt und erledigt Spaces die Aufgabe in einem Schritt. Die Zuweisungen ändern sich nicht. **Abbrechen** lässt die Karte an ihrem Platz. Schickst du eine Aufgabe durch ein Wormhole in einen anderen Space, endet die Übernahme auf dieselbe Weise: Deine eigene Übernahme endet ohne Nachfrage, eine fremde übernimmst du nach einer Bestätigung. Die Aktivität zeigt, wer eine Aufgabe von wem übernommen hat.
 
 ## Einladungen über die Cloud-Suche vorbereiten {icon="calendar-event"}
 

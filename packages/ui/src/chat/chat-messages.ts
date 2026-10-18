@@ -6,6 +6,9 @@ export const chatMessages = i18n.define({
   messages: {
     en: {
       commandFailed: "That did not work.",
+      commandDraftChanged: "The text changed in the meantime, so nothing was inserted.",
+      markAdded: "new:",
+      markRemoved: "removed:",
       commandSelected: "selected",
       attachments: "Attachments",
       assistant: "Assistant",
@@ -106,6 +109,9 @@ export const chatMessages = i18n.define({
     },
     de: {
       commandFailed: "Das hat nicht geklappt.",
+      commandDraftChanged: "Der Text hat sich inzwischen geändert, darum wurde nichts eingefügt.",
+      markAdded: "neu:",
+      markRemoved: "weg:",
       commandSelected: "gewählt",
       attachments: "Anhänge",
       assistant: "Assistent",

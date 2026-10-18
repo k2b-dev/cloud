@@ -7,6 +7,7 @@ import {
 } from "@k2b/cloud/shared";
 import type { WorkflowActionContext, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { withMailWorkflowBodyGuard } from "./workflow-body-fields";
 
 const MAX_MAIL_TEMPLATE_BYTES = 200_000;
 const MAX_MAIL_TEMPLATE_OUTPUT_BYTES = 3 * 1024 * 1024;
@@ -15,7 +16,7 @@ const MAX_MAIL_TEMPLATE_OUTPUT_BYTES = 3 * 1024 * 1024;
  * `markdown` is rendered straight to email HTML, so values never form Markdown, HTML, or links.
  * `editable_markdown` lands in a draft body that a person reads and edits, so values stay as typed.
  */
-type MailTemplateOutput = "identifier" | "editable_markdown" | "markdown" | "text";
+export type MailTemplateOutput = "identifier" | "editable_markdown" | "markdown" | "text";
 type MailTemplateData = Record<string, unknown>;
 
 const bytes = (value: string): number => new TextEncoder().encode(value).byteLength;
@@ -158,7 +159,7 @@ export const renderMailLiquidTemplate = (
   }
 };
 
-const mailWorkflowTemplateData = (
+export const mailWorkflowTemplateData = (
   context: Pick<WorkflowActionContext, "invocation" | "variableSnapshot">,
 ): Record<string, WorkflowJsonValue> => ({
   inputs: context.invocation.inputs,
@@ -175,9 +176,13 @@ export const renderMailWorkflowTemplate = (
   source: string,
   output: MailTemplateOutput = "text",
 ): string => {
-  const rendered = renderMailLiquidTemplate(source, mailWorkflowTemplateData(context), output);
-  if (!rendered.ok) throw rendered.error;
-  return rendered.data;
+  const guarded = withMailWorkflowBodyGuard(context.invocation.inputs, () =>
+    renderMailLiquidTemplate(source, mailWorkflowTemplateData(context), output),
+  );
+  // The step loads every body its template reads before it runs; a body still missing here fails visibly.
+  if (guarded.unloaded !== undefined) throw new Error(`Mail workflow value was not loaded: ${guarded.unloaded}`);
+  if (!guarded.result.ok) throw guarded.result.error;
+  return guarded.result.data;
 };
 
 export const migrateWorkflowTextTemplateToLiquid = (source: string): string =>

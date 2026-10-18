@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import type { ServiceAccount } from "@k2b/cloud/services";
+import { decodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, type NotePdfOmission } from "../lib/pdf-omissions";
 import type { Notebook } from "../service/notebooks";
 
 // Isolate import-time middleware spies while exercising the actual auth,
@@ -18,8 +19,9 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
 } else {
   await import("../frontend/[id]/_components/detail/ssr-test-plugin");
   const server = await import("@k2b/cloud/server");
-  const { oauthTokens } = await import("@k2b/cloud/services");
-  const { GotenbergRenderError } = await import("@k2b/cloud/services/pdf");
+  const { oauthTokens, settings } = await import("@k2b/cloud/services");
+  const pdfService = await import("@k2b/cloud/services/pdf");
+  const { GotenbergRenderError } = pdfService;
   const rateLimit = spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
   const { notebooksService } = await import("../service");
   const book = await import("../service/book");
@@ -93,6 +95,9 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
   const loadPreview = spyOn(book, "loadBookBlockPreview");
   const getNote = spyOn(notebooksService.note, "getByShortId");
   const renderPdf = spyOn(notePdf, "renderNotePdf");
+  const gotenbergConfig = { url: "http://gotenberg.invalid", timeoutMs: 10_000, maxHtmlBytes: 1_048_576, maxPdfBytes: 10_485_760 };
+  const getGotenbergConfig = spyOn(pdfService, "getGotenbergConfig");
+  const getSetting = spyOn(settings, "get");
   const headers = { authorization: "Bearer book-api-test", "content-type": "application/json", "x-cloud-locale": "de" };
   const refresh = (href = snapshot.href) => app.request(`/book01/book?${new URLSearchParams({ href })}`, { headers });
   const preview = (body: unknown = {}) =>
@@ -124,10 +129,26 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
       updatedAt: "2026-09-03T10:00:00Z",
       lockedAt: null,
     });
-    renderPdf.mockReset().mockResolvedValue({ pdf: new TextEncoder().encode("%PDF-test"), contentType: "application/pdf" });
+    renderPdf.mockReset().mockResolvedValue({ pdf: new TextEncoder().encode("%PDF-test"), contentType: "application/pdf", omissions: [] });
+    getGotenbergConfig.mockReset().mockResolvedValue(gotenbergConfig);
+    getSetting
+      .mockReset()
+      .mockImplementation((async (key: string) => (key === "notebooks.max_attachment_size_mb" ? 10 : undefined)) as never);
   });
   afterAll(() => {
-    for (const spy of [token, getNotebook, permission, loadRoute, loadPreview, getNote, renderPdf, rateLimit]) spy.mockRestore();
+    for (const spy of [
+      token,
+      getNotebook,
+      permission,
+      loadRoute,
+      loadPreview,
+      getNote,
+      renderPdf,
+      getGotenbergConfig,
+      getSetting,
+      rateLimit,
+    ])
+      spy.mockRestore();
   });
 
   describe("Book HTTP boundary", () => {
@@ -215,25 +236,44 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
       expect(response.status).toBe(200);
       expect(response.headers.get("Content-Type")).toBe("application/pdf");
       expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-      expect(renderPdf).toHaveBeenCalledWith({
-        markdown,
-        title: "Trip plan",
-        templateId: "report",
-        customCss: undefined,
-        notebookId: notebook.id,
-        notebookShortId: "book01",
-        noteId: "33333333-3333-4333-8333-333333333333",
-        noteShortId: "note01",
-        userId: user.id,
-        serviceAccountId: null,
-        boundNotebookId: null,
-        bypassAccess: false,
-        locale: "de",
-      });
+      expect(renderPdf).toHaveBeenCalledWith(
+        {
+          markdown,
+          title: "Trip plan",
+          templateId: "report",
+          customCss: undefined,
+          notebookId: notebook.id,
+          notebookShortId: "book01",
+          noteId: "33333333-3333-4333-8333-333333333333",
+          noteShortId: "note01",
+          userId: user.id,
+          serviceAccountId: null,
+          boundNotebookId: null,
+          bypassAccess: false,
+          locale: "de",
+        },
+        // The route passes the live budget, the attachment limit, and the caller's abort signal.
+        { config: gotenbergConfig, maxAttachmentBytes: 10 * 1024 * 1024, signal: expect.any(AbortSignal) },
+      );
 
       permission.mockResolvedValue("none");
       expect((await pdf({ markdown })).status).toBe(403);
       expect(renderPdf).toHaveBeenCalledTimes(1);
+    });
+
+    test("PDF export carries typed omissions only when content is omitted", async () => {
+      const omissions: NotePdfOmission[] = [
+        { code: "not_rendered", kind: "image", label: "Karte 😀" },
+        { code: "invalid_block", kind: "query", label: "Zeile 3" },
+      ];
+      renderPdf.mockResolvedValueOnce({ pdf: new TextEncoder().encode("%PDF-test"), contentType: "application/pdf", omissions });
+      const response = await pdf({ markdown: "# Trip plan" });
+      expect(response.status).toBe(200);
+      expect(decodeNotePdfOmissions(response.headers.get(NOTE_PDF_OMISSIONS_HEADER))).toEqual({ items: omissions, more: 0 });
+      expect(await response.text()).toBe("%PDF-test");
+      const clean = await pdf({ markdown: "# Clean" });
+      expect(clean.status).toBe(200);
+      expect(clean.headers.has(NOTE_PDF_OMISSIONS_HEADER)).toBe(false);
     });
 
     test("PDF export resolves queries for a notebook-bound API token as that service account", async () => {
@@ -242,6 +282,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
       expect((await pdf({ markdown })).status).toBe(200);
       expect(renderPdf).toHaveBeenCalledWith(
         expect.objectContaining({ userId: null, serviceAccountId: printBot.id, boundNotebookId: notebook.id, bypassAccess: false }),
+        expect.anything(),
       );
     });
 

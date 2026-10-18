@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { type Server, sql } from "bun";
 import { Hono } from "hono";
+import { SignJWT } from "jose";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { withActiveIdentitySigner } from "./identity";
 import "../../../../scripts/fixtures/authorization-preload";
 import { migrateCloudAi } from "../ai/migrate";
 import { aiConversations } from "../ai/store";
@@ -32,6 +34,7 @@ import {
   type AppApprovalConfig,
   type AppLoginDecisionHints,
   type AppLoginPushSender,
+  type AppTerminalLogins,
   createAppApprovalService,
   readAppApprovalConfig,
 } from "./app-approval";
@@ -70,9 +73,11 @@ suite("isolated app approval protocol", () => {
   // Stand-in for Cloud Login's POST /push/notify; records what would leave the Cloud.
   const pushes: { appOrigin: string; body: Parameters<AppLoginPushSender>[1]; committed: boolean }[] = [];
   let pushStatus = 202;
+  const pushEvents = new EventTarget();
   const pushSender: AppLoginPushSender = async (appOrigin, body) => {
     const [row] = await sql`SELECT 1 FROM auth.app_logins WHERE id=${body.requestRef}::uuid`;
     pushes.push({ appOrigin, body, committed: Boolean(row) });
+    pushEvents.dispatchEvent(new Event("push"));
     return pushStatus;
   };
   const service = createAppApprovalService(sql, async () => cfg, hints, pushSender);
@@ -335,6 +340,7 @@ suite("isolated app approval protocol", () => {
     expect(pushes).toEqual([]);
 
     pushStatus = 410;
+    await sql`UPDATE auth.app_devices SET login_wake_at=now()-interval '31 seconds' WHERE user_id=${owner.id}::uuid`;
     await service.startLogin(owner.uid, "login");
     const tokens = () =>
       sql<
@@ -849,6 +855,337 @@ suite("isolated app approval protocol", () => {
     await sql`UPDATE auth.users SET admin=false WHERE id=${owner.id}::uuid`;
     expect((await post("/manage/pairings/status", { pairingId: pairing.pairingId }, owner.token)).status).toBe(403);
   });
+
+  const noActions = { inbox: async () => ({ actions: [], moreActions: 0 }), view: async () => null, decide: async () => false };
+  const terminalClients = new Map<string, { id: string; name: string }>();
+  const terminalDecisions: Parameters<AppTerminalLogins["decide"]>[1][] = [];
+  const terminal: AppTerminalLogins = {
+    describe: async (_tx, ids) =>
+      new Map(
+        ids.flatMap((id) => {
+          const client = terminalClients.get(id);
+          return client ? [[id, client] as const] : [];
+        }),
+      ),
+    decide: async (tx, input) => {
+      // Visible here only through the decision transaction; a false hook must roll this back too.
+      await tx`UPDATE auth.users SET display_name='Decision hook' WHERE id=${input.user.id}::uuid`;
+      terminalDecisions.push(input);
+      return terminalClients.has(input.deviceAuthorizationId);
+    },
+  };
+  const terminalStart = async (identifier: string, access = true) => {
+    const deviceAuthorizationId = crypto.randomUUID();
+    terminalClients.set(deviceAuthorizationId, { id: "test-cli", name: "Test\nCLI\u202e" });
+    const input = { deviceAuthorizationId, identifier, clientId: "test-cli", scopes: ["openid", "profile"], lifetimeSeconds: 3600 };
+    const response = await service.startTerminalLogin(input, async () => access);
+    const [row] = await sql<{ id: string; user_id: string | null; challenge: string; comparison: string; state: string }[]>`
+      SELECT id,user_id,challenge,comparison,state FROM auth.app_logins WHERE device_authorization_id=${deviceAuthorizationId}::uuid`;
+    if (!row) throw new Error("Missing terminal request");
+    return { ...row, response, input };
+  };
+  const terminalDecision = (
+    login: Awaited<ReturnType<typeof terminalStart>>,
+    decision: "approve" | "deny" = "approve",
+  ): AppDeviceProof["command"] => ({
+    operation: "decide",
+    requestId: login.id,
+    challenge: login.challenge,
+    comparison: login.comparison,
+    decision,
+  });
+
+  test("terminal decoys cover unknown, ambiguous, unpaired, expired, policy, client and budget failures", async () => {
+    const real = await account(),
+      unpaired = await account(),
+      expired = await account(),
+      blocked = await account();
+    const device = await enroll(real);
+    await service.deviceCommand(await proof(device, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
+    await service.deviceCommand(await proof(device, { operation: "push", token: "D".repeat(43) }), noActions);
+    await enroll(expired);
+    await enroll(blocked);
+    await sql`UPDATE auth.users SET account_expires=now()-interval '1 second' WHERE id=${expired.id}::uuid`;
+    const ambiguous = await account();
+    await sql`UPDATE auth.users SET mail=${real.uid} WHERE id=${ambiguous.id}::uuid`;
+    const start = pushes.length;
+    const results = [];
+    for (const identifier of [`missing-${crypto.randomUUID()}`, real.uid, unpaired.mail, expired.mail])
+      results.push(await terminalStart(identifier));
+    await settings.set("user.category.login.enabled", false);
+    results.push(await terminalStart(blocked.uid));
+    await settings.remove("user.category.login.enabled");
+    results.push(await terminalStart(blocked.uid, false));
+    await sql`UPDATE auth.users SET mail=NULL WHERE id=${ambiguous.id}::uuid`;
+    const budgetOwner = await account();
+    await enroll(budgetOwner);
+    for (let i = 0; i < 3; i++) await service.startLogin(budgetOwner.uid, "login");
+    for (let i = 0; i < 2; i++) expect((await terminalStart(budgetOwner.mail)).user_id).toBe(budgetOwner.id);
+    results.push(await terminalStart(budgetOwner.uid));
+    for (const result of results) {
+      expect(result.user_id).toBeNull();
+      expect(Object.keys(result.response)).toEqual(["comparison", "expiresAt"]);
+      expect(result.response.comparison).toMatch(/^\d{6}$/);
+      expect(new Date(result.response.expiresAt).toISOString()).toBe(result.response.expiresAt);
+    }
+    let checked = false;
+    await service.startTerminalLogin({ ...results[0]!.input, deviceAuthorizationId: crypto.randomUUID() }, async (_tx, subject) => {
+      checked = true;
+      expect(subject.id).not.toBe(real.id);
+      expect(subject.profile).toBe("user");
+      return true;
+    });
+    expect(checked).toBe(true);
+    expect(pushes).toHaveLength(start);
+    await expect(service.startTerminalLogin(results[0]!.input, async () => true)).rejects.toMatchObject({ status: 409 });
+    expect(await service.deviceCommand(await proof(device, { operation: "pending" }), noActions)).toMatchObject({
+      requests: expect.any(Array),
+    });
+  });
+
+  test("legacy pending/inbox bytes omit terminal logins; opted-in inbox describes only live authorizations", async () => {
+    const owner = await account(),
+      device = await enroll(owner);
+    await service.startLogin(owner.uid, "login");
+    const read = async (command: AppDeviceProof["command"]) => {
+      const api = createAppApprovalRoutes(service, () => noActions, terminal);
+      return (
+        await api.request("/device", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: cfg.appOrigin },
+          body: JSON.stringify(await proof(device, command)),
+        })
+      ).text();
+    };
+    const pending = await read({ operation: "pending" }),
+      inbox = await read({ operation: "inbox" });
+    const login = await terminalStart(owner.uid);
+    expect(await read({ operation: "pending" })).toBe(pending);
+    expect(await read({ operation: "inbox" })).toBe(inbox);
+    const opted = AppDeviceInboxSchema.parse(JSON.parse(await read({ operation: "inbox", accept: ["terminal-logins"] })));
+    expect(opted.logins.find((row) => row.requestId === login.id)?.terminal).toEqual({
+      client: { id: "test-cli", name: "Test CLI" },
+      scopes: ["openid", "profile"],
+      lifetimeSeconds: 3600,
+    });
+    const [stored] = await sql`SELECT accepts FROM auth.app_devices WHERE id=${device.id}::uuid`;
+    expect(stored.accepts).toEqual(["terminal-logins"]);
+    terminalClients.delete(login.input.deviceAuthorizationId);
+    expect(AppDeviceInboxSchema.parse(JSON.parse(await read({ operation: "inbox", accept: ["terminal-logins"] }))).logins).toHaveLength(1);
+    await read({ operation: "inbox" });
+    const [cleared] = await sql`SELECT accepts FROM auth.app_devices WHERE id=${device.id}::uuid`;
+    expect(cleared.accepts).toEqual([]);
+    expect(await service.deviceCommand(await proof(device, { operation: "inbox", accept: ["terminal-logins"] }), noActions)).toMatchObject({
+      logins: expect.any(Array),
+    });
+  });
+
+  test("terminal decisions require the deciding device to opt in", async () => {
+    const owner = await account(),
+      device = await enroll(owner),
+      second = await enroll(owner);
+    await service.deviceCommand(await proof(device, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
+    const login = await terminalStart(owner.uid);
+    const command = terminalDecision(login);
+    const api = createAppApprovalRoutes(service, () => noActions, terminal);
+    const decide = async () =>
+      api.request("/device", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: cfg.appOrigin },
+        body: JSON.stringify(await proof(second, command)),
+      });
+    const rejected = await decide();
+    expect(rejected.status).toBe(409);
+    expect(await rejected.json()).toMatchObject({ code: "CONFLICT" });
+    const [pending] = await sql`SELECT state FROM auth.app_logins WHERE id=${login.id}::uuid`;
+    expect(pending.state).toBe("pending");
+    await service.deviceCommand(await proof(second, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
+    const approved = await decide();
+    expect(approved.status).toBe(200);
+    expect(await approved.json()).toEqual({ state: "approved" });
+  });
+
+  test("terminal decide commits the hook and audit together, rejects stale, foreign, decoy and replayed requests", async () => {
+    const owner = await account(),
+      device = await enroll(owner),
+      stranger = await account(),
+      foreignDevice = await enroll(stranger);
+    for (const phone of [device, foreignDevice])
+      await service.deviceCommand(await proof(phone, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
+    const waiting = await terminalStart(owner.uid);
+    const command = terminalDecision(waiting);
+    await expect(service.deviceCommand(await proof(device, command), noActions)).rejects.toMatchObject({ status: 409 });
+    terminalClients.delete(waiting.input.deviceAuthorizationId);
+    await expect(service.deviceCommand(await proof(device, command), noActions, terminal)).rejects.toMatchObject({ status: 409 });
+    const [unchanged] = await sql`SELECT state FROM auth.app_logins WHERE id=${waiting.id}::uuid`;
+    const [accountRow] = await sql`SELECT display_name FROM auth.users WHERE id=${owner.id}::uuid`;
+    expect(unchanged.state).toBe("pending");
+    expect(accountRow.display_name).toBe("");
+    terminalClients.set(waiting.input.deviceAuthorizationId, { id: "test-cli", name: "CLI" });
+    await expect(service.deviceCommand(await proof(foreignDevice, command), noActions, terminal)).rejects.toMatchObject({ status: 409 });
+    const decoy = await terminalStart("unknown@example.test");
+    await expect(service.deviceCommand(await proof(device, terminalDecision(decoy)), noActions, terminal)).rejects.toMatchObject({
+      status: 409,
+    });
+    const signed = await proof(device, command);
+    expect(await service.deviceCommand(signed, noActions, terminal)).toEqual({ state: "approved" });
+    expect(terminalDecisions.at(-1)).toMatchObject({
+      deviceAuthorizationId: waiting.input.deviceAuthorizationId,
+      clientId: waiting.input.clientId,
+      user: { id: owner.id },
+    });
+    await expect(service.deviceCommand(signed, noActions, terminal)).rejects.toMatchObject({ status: 409 });
+    await expect(service.deviceCommand(await proof(device, command), noActions, terminal)).rejects.toMatchObject({ status: 409 });
+    const [event] =
+      await sql`SELECT metadata FROM audit.events WHERE action='auth.app.login.approve' AND metadata->>'requestId'=${waiting.id}`;
+    expect(event.metadata).toMatchObject({
+      kind: "terminal",
+      clientId: waiting.input.clientId,
+      deviceGrantId: waiting.input.deviceAuthorizationId,
+    });
+    const denied = await terminalStart(owner.uid);
+    expect(await service.deviceCommand(await proof(device, terminalDecision(denied, "deny")), noActions, terminal)).toEqual({
+      state: "denied",
+    });
+    const expired = await terminalStart(owner.uid);
+    await sql`UPDATE auth.app_logins SET expires_at=now()-interval '1 second' WHERE id=${expired.id}::uuid`;
+    await expect(service.deviceCommand(await proof(device, terminalDecision(expired)), noActions, terminal)).rejects.toMatchObject({
+      status: 409,
+    });
+    // Even knowing a matching browser secret cannot turn a terminal row into a browser session.
+    const token = "A".repeat(43);
+    await sql`UPDATE auth.app_logins SET browser_hash=${new Bun.CryptoHasher("sha256").update(token).digest("hex")} WHERE id=${waiting.id}::uuid`;
+    await expect(service.browserStatus(waiting.id, token)).rejects.toMatchObject({ status: 404 });
+    await expect(service.consumeLogin(waiting.id, token)).rejects.toMatchObject({ status: 409 });
+  });
+
+  test("expiry during the terminal hook rolls back the entire decision", async () => {
+    const owner = await account(),
+      device = await enroll(owner);
+    await service.deviceCommand(await proof(device, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
+    const login = await terminalStart(owner.uid);
+    const expiresDuringDecision: AppTerminalLogins = {
+      ...terminal,
+      decide: async (tx, input) => {
+        expect(await terminal.decide(tx, input)).toBe(true);
+        await tx`UPDATE auth.app_logins SET expires_at=now()-interval '1 second'
+        WHERE device_authorization_id=${input.deviceAuthorizationId}::uuid`;
+        return true;
+      },
+    };
+    await expect(
+      service.deviceCommand(await proof(device, terminalDecision(login)), noActions, expiresDuringDecision),
+    ).rejects.toMatchObject({ status: 409 });
+    const [row] = await sql`SELECT state FROM auth.app_logins WHERE id=${login.id}::uuid`;
+    expect(row.state).toBe("pending");
+    expect(await sql`SELECT 1 FROM audit.events WHERE metadata->>'requestId'=${login.id}`).toHaveLength(0);
+  });
+
+  test("concurrent terminal decisions and expiry have one winner", async () => {
+    const owner = await account(),
+      device = await enroll(owner),
+      second = await enroll(owner);
+    for (const phone of [device, second])
+      await service.deviceCommand(await proof(phone, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
+    const login = await terminalStart(owner.uid);
+    const outcomes = await Promise.allSettled([
+      service.deviceCommand(await proof(device, terminalDecision(login)), noActions, terminal),
+      service.deviceCommand(await proof(second, terminalDecision(login, "deny")), noActions, terminal),
+    ]);
+    expect(outcomes.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const expiring = await terminalStart(owner.uid);
+    const [decision, expiry] = await Promise.all([
+      service.deviceCommand(await proof(device, terminalDecision(expiring)), noActions, terminal).then(
+        () => true,
+        () => false,
+      ),
+      sql`UPDATE auth.app_logins SET expires_at=now()-interval '1 second' WHERE id=${expiring.id}::uuid AND state='pending' RETURNING id`,
+    ]);
+    expect(Number(decision) + expiry.length).toBe(1);
+  });
+
+  test("terminal wake-ups require opt-in, and concurrent browser/terminal starts share the 30-second claim", async () => {
+    const owner = await account(),
+      device = await enroll(owner),
+      old = await enroll(owner);
+    await service.deviceCommand(await proof(device, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
+    for (const [phone, token] of [
+      [device, "T".repeat(43)],
+      [old, "O".repeat(43)],
+    ] as const)
+      await service.deviceCommand(await proof(phone, { operation: "push", token }), noActions);
+    const waitPush = (count: number) => {
+      if (pushes.length >= count) return Promise.resolve();
+      return new Promise<void>((resolve, reject) => {
+        const timeout = AbortSignal.timeout(5000);
+        const done = () => {
+          if (pushes.length < count) return;
+          pushEvents.removeEventListener("push", done);
+          timeout.removeEventListener("abort", fail);
+          resolve();
+        };
+        const fail = () => {
+          pushEvents.removeEventListener("push", done);
+          reject(new Error("Wake-up did not finish"));
+        };
+        timeout.addEventListener("abort", fail, { once: true });
+        pushEvents.addEventListener("push", done);
+        done();
+      });
+    };
+    const start = pushes.length;
+    const first = await terminalStart(owner.uid);
+    await waitPush(start + 1);
+    expect(pushes.slice(start).map((entry) => entry.body)).toEqual([
+      { token: "T".repeat(43), cloudOrigin: cfg.issuer, requestRef: first.id },
+    ]);
+    await terminalStart(owner.uid);
+    await service.deviceCommand(await proof(device, terminalDecision(first, "deny")), noActions, terminal);
+    const third = await terminalStart(owner.uid);
+    await waitPush(start + 2);
+    expect(pushes.at(-1)?.body.requestRef).toBe(third.id);
+    await sql`UPDATE auth.app_logins SET expires_at=now()-interval '1 second' WHERE id=${third.id}::uuid`;
+    const fourth = await terminalStart(owner.uid);
+    await waitPush(start + 3);
+    expect(pushes.at(-1)?.body.requestRef).toBe(fourth.id);
+    await sql`UPDATE auth.app_devices SET login_wake_at=now()-interval '31 seconds' WHERE id=${device.id}::uuid`;
+    await Promise.all([terminalStart(owner.uid), terminalStart(owner.uid)]);
+    await waitPush(start + 4);
+    expect(pushes).toHaveLength(start + 4);
+    const [legacy] = await sql`SELECT login_wake_at FROM auth.app_devices WHERE id=${old.id}::uuid`;
+    expect(legacy.login_wake_at).toBeNull();
+    await service.deviceCommand(await proof(device, { operation: "inbox" }), noActions, terminal);
+    await sql`UPDATE auth.app_logins SET state='denied' WHERE user_id=${owner.id}::uuid AND state='pending'`;
+    await Promise.all([service.startLogin(owner.uid, "login"), service.startLogin(owner.uid, "login")]);
+    await waitPush(start + 6); // one for each device, despite concurrent starts
+    expect(pushes).toHaveLength(start + 6);
+  });
+
+  test("an OAuth access bearer cannot enroll a sign-in device", async () => {
+    const owner = await account();
+    const token = await withActiveIdentitySigner("oauth", (signer) =>
+      new SignJWT({
+        token_use: "access",
+        principal_type: "user",
+        uid: owner.uid,
+        id: owner.id,
+        client_id: "cloud-cli",
+        azp: "cloud-cli",
+        scope: "read",
+      })
+        .setProtectedHeader({ alg: "RS256", kid: signer.kid })
+        .setIssuer(cfg.issuer)
+        .setSubject(owner.id)
+        .setAudience(["cloud", "cloud-cli"])
+        .setIssuedAt()
+        .setExpirationTime("1h")
+        .setJti(crypto.randomUUID())
+        .sign(signer.key),
+    );
+    expect([401, 403]).toContain((await post("/manage/pairings/start", {}, token)).status);
+    expect(await sql`SELECT id FROM auth.app_pairings WHERE user_id=${owner.id}::uuid`).toHaveLength(0);
+  });
+
   suiteFor(
     "database",
     "nats",
@@ -912,7 +1249,7 @@ suite("isolated app approval protocol", () => {
       const login = await service.startLogin(owner.uid, "login");
       const discovery = await routes.request("/info");
       expect(discovery.status).toBe(200);
-      expect(await discovery.json()).toMatchObject({ features: ["actions"], limits: APP_APPROVAL_LIMITS });
+      expect(await discovery.json()).toMatchObject({ features: ["actions", "terminal-logins"], limits: APP_APPROVAL_LIMITS });
       const inboxResponse = await devicePost(device, { operation: "inbox" });
       expect(inboxResponse.status).toBe(200);
       const inbox = AppDeviceInboxSchema.parse(await inboxResponse.json());

@@ -415,10 +415,14 @@ export const updateConfig = async (params: {
   return ok(await getConfig({ notebookId: params.notebookId }));
 };
 
-export const updateCron = async (cron: string): Promise<Result<{ cron: string }>> => {
+export const updateCron = async (cron: string, options?: { replaceUnreadable?: boolean }): Promise<Result<{ cron: string }>> => {
   const normalized = cron.trim();
   if (!normalized) return fail(err.badInput("Snapshot cron must not be empty."));
-  const saved = await settingsService.entry.update({ key: SNAPSHOT_CRON_KEY, value: normalized });
+  const saved = await settingsService.entry.update({
+    key: SNAPSHOT_CRON_KEY,
+    value: normalized,
+    replaceUnreadable: options?.replaceUnreadable,
+  });
   if (!saved.ok) return fail(saved.error);
   await snapshotRuntime.reschedule(normalized);
   log.info("Snapshot cron updated", { cron: normalized });

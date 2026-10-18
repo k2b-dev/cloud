@@ -124,7 +124,7 @@ describe("renderAiPlatformPrompt", () => {
 
     expect(prompt).toContain("Most replies need no offer.");
     expect(prompt).toContain("Make at most one offer");
-    expect(prompt).toContain("offer to save it as a scheduled task");
+    expect(prompt).toContain("offer to save it as a routine");
     expect(prompt).toContain("Do not search mail, chats, or other data only to justify an offer");
     expect(prompt).toContain("Do not start the offered work until the user agrees");
     expect(prompt).toContain("while you ask a question or wait for approval");
@@ -267,11 +267,11 @@ describe("composeAiSystemPrompt", () => {
     expect(suggestions).toContain(
       "Offer a new Skill only when no listed Skill already covers the approach; a single preference belongs in memory, not a Skill.",
     );
-    expect(suggestions.indexOf("offer to save it as a Skill or scheduled task.")).toBeLessThan(
+    expect(suggestions.indexOf("offer to save it as a Skill or routine.")).toBeLessThan(
       suggestions.indexOf("Offer a new Skill only when no listed Skill"),
     );
     expect(suggestions).toContain("The user corrected a result that their own Skill shaped: offer to add the correction to that Skill.");
-    expect(suggestions).toContain("offer to save it as a Skill or scheduled task.");
+    expect(suggestions).toContain("offer to save it as a Skill or routine.");
     expect(suggestions).toContain("do not claim how often something happened unless the user said it or this chat shows it");
     expect(suggestions).toContain("Built-in and shared Skills change for everyone, so change one only when the user asks for that.");
     expect(suggestions).toContain("load skill-creator and draft from this conversation; its create or update review is the confirmation");
@@ -283,7 +283,7 @@ describe("composeAiSystemPrompt", () => {
     const withoutCreator = composeAiSystemPrompt({ ...base, skillCreatorAvailable: false });
     expect(withoutCreator).toContain("# Suggestions");
     expect(withoutCreator).not.toContain("save the approach as a personal Skill");
-    expect(withoutCreator).toContain("offer to save it as a scheduled task.");
+    expect(withoutCreator).toContain("offer to save it as a routine.");
     expect(composeAiSystemPrompt({ ...base, interactive: false })).not.toContain("save the approach as a personal Skill");
     const withoutLoadSkill = composeAiSystemPrompt({ globalInstructions: "", user, omittedSkillCount: 3, skillCreatorAvailable: true });
     expect(withoutLoadSkill).toContain("# Skills");
@@ -465,7 +465,7 @@ test("web prompt stays byte-identical with organization and selected Cloud Skill
     loadedSkills: [{ name: "invoice", revision: 2, instructions: "Read rules.", files: ["/skills/invoice/SKILL.md"] }],
   });
   expect(new Bun.CryptoHasher("sha256").update(prompt).digest("hex")).toBe(
-    "0d4f6c8d60cd6dc853c24f87085275fa83e3dbd2db7fd4fec3af83905b64016e",
+    "363fb23454d35ae86ac6eb5014467d2c6569fb94b293dfb63d7f9c987e3eeef4",
   );
 });
 

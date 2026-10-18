@@ -81,6 +81,7 @@ suite("Files service and durable bindings", () => {
     url: "http://filegate:4000",
     token: "backend-test-secret",
     tokenConfigured: true,
+    unreadable: false,
     cloud: {
       autoCreate: false,
       autoArchive: true,
@@ -657,7 +658,10 @@ suite("Files service and durable bindings", () => {
       return config;
     },
     writeConfiguration: async (input) => {
-      config = { ...input, token: input.token || config.token, tokenConfigured: true };
+      config = { ...input, token: input.token || config.token, tokenConfigured: true, unreadable: false };
+    },
+    resetConfiguration: async () => {
+      throw new Error("Unexpected configuration reset");
     },
     publicOrigin: async () => "https://cloud.test",
     userById: async (id: string) => users.get(id) ?? null,
@@ -2328,6 +2332,9 @@ suite("Files service and durable bindings", () => {
       readConfiguration: async () => config,
       writeConfiguration: async () => {
         throw new Error("Unexpected configuration write");
+      },
+      resetConfiguration: async () => {
+        throw new Error("Unexpected configuration reset");
       },
       publicOrigin: async () => "https://cloud.test",
       userById: async (id: string) => users.get(id) ?? null,

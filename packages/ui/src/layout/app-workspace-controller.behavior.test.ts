@@ -5,6 +5,7 @@ import {
   APP_WORKSPACE_DETAIL_STEP_EVENT,
   APP_WORKSPACE_SIDEBAR_HIDE_EVENT,
   installAppWorkspaceController,
+  parkWorkspaceDetailDrawers,
 } from "./app-workspace-controller";
 import { APP_WORKSPACE_DETAIL_DEFAULT, APP_WORKSPACE_SIDEBAR_COLLAPSED, fitAppWorkspacePaneSizes } from "./app-workspace-state";
 
@@ -85,6 +86,9 @@ const workspace = (
 ) => {
   const root = document.createElement("div");
   root.dataset.k2bAppWorkspace = "";
+  // Happy DOM does not evaluate the stylesheet's container queries.
+  root.style.setProperty("--k2b-workspace-level-class", (options.width ?? 1000) >= 1280 ? "3" : "2");
+  root.style.setProperty("--k2b-workspace-sidebar-form", "column");
   root.dataset.workspaceResizable = options.resizable === false ? "false" : "true";
   setRect(root, { height: options.height ?? 700, width: options.width ?? 1000 });
 
@@ -713,6 +717,57 @@ describe("phone page workspace isolation", () => {
     };
   };
 
+  test("Tab leaves visible host surfaces above a phone page operable and redirects only covered focus or body", () => {
+    viewport();
+    const { root, aside, close } = detailWorkspace();
+    aside.dataset.workspaceDetailPhone = "page";
+    const hostControl = document.createElement("button");
+    const icon = document.createElement("span");
+    hostControl.append(icon);
+    document.body.append(hostControl);
+    setRect(hostControl, { width: 80, height: 40 });
+    let hit: Element | null = hostControl;
+    const points: number[][] = [];
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: (x: number, y: number) => {
+        points.push([x, y]);
+        return hit;
+      },
+    });
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      for (const visibleHit of [hostControl, icon]) {
+        hit = visibleHit;
+        hostControl.focus();
+        for (const shiftKey of [false, true]) {
+          const event = new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true });
+          hostControl.dispatchEvent(event);
+          expect(event.defaultPrevented).toBe(false);
+          expect(document.activeElement === hostControl).toBe(true);
+        }
+      }
+      expect(points).toEqual([
+        [40, 20],
+        [40, 20],
+        [40, 20],
+        [40, 20],
+      ]);
+      // The same control underneath the page must enter the page instead.
+      hit = aside;
+      expect(detailKey(hostControl, "Tab").defaultPrevented).toBe(true);
+      expect(document.activeElement === close).toBe(true);
+      // Body focus after a load still enters the page, regardless of hit-testing.
+      hit = document.body;
+      close.blur();
+      expect(document.activeElement === document.body).toBe(true);
+      expect(detailKey(document.body, "Tab").defaultPrevented).toBe(true);
+      expect(document.activeElement === close).toBe(true);
+    } finally {
+      dispose();
+    }
+  });
+
   test("isolates only the workspace path, preserves application inert, and restores focus on close", async () => {
     viewport();
     const { root, content, main, aside, sidebar, item, close, handle } = detailWorkspace({ open: false });
@@ -926,6 +981,7 @@ describe("floating detail controller", () => {
   test("the overlay sidebar handles Escape before the detail", () => {
     Object.defineProperty(window, "matchMedia", { value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) });
     const { root, sidebar, closed } = detailWorkspace();
+    root.style.setProperty("--k2b-workspace-sidebar-form", "overlay");
     const toggle = document.createElement("button");
     toggle.dataset.appWorkspaceSidebarToggle = "";
     root.prepend(toggle);
@@ -2013,4 +2069,109 @@ test("a nested workspace's Main chooses its own open detail instead of the surro
   expect(inner.closed).toHaveLength(1);
   expect(outer.closed).toHaveLength(0);
   dispose();
+});
+
+describe("waiting detail drawers", () => {
+  const waitingWorkspace = () => {
+    const fixture = detailWorkspace();
+    const toggle = document.createElement("button");
+    toggle.dataset.appWorkspaceDetailToggle = "";
+    toggle.setAttribute("aria-controls", fixture.aside.id);
+    toggle.setAttribute("aria-expanded", "false");
+    fixture.content.insertBefore(toggle, fixture.handle);
+    fixture.aside.style.setProperty("--k2b-workspace-detail-waiting", "1");
+    return { ...fixture, toggle };
+  };
+
+  test("parking affects only drawers under the requested root, and rescues only focus inside a drawer", () => {
+    const first = waitingWorkspace();
+    const second = waitingWorkspace();
+    for (const fixture of [first, second]) {
+      fixture.aside.dataset.workspaceDetailDrawer = "open";
+      fixture.toggle.setAttribute("aria-expanded", "true");
+    }
+    first.close.focus();
+    parkWorkspaceDetailDrawers(first.root);
+    expect(first.aside.dataset.workspaceDetailDrawer).toBeUndefined();
+    expect(first.toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement === first.toggle).toBe(true);
+    expect(second.aside.dataset.workspaceDetailDrawer).toBe("open");
+    first.item.focus();
+    parkWorkspaceDetailDrawers();
+    expect(document.activeElement === first.item).toBe(true);
+    expect(second.toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(first.closed).toHaveLength(0);
+    expect(second.closed).toHaveLength(0);
+  });
+
+  test("Escape parks from the drawer, toggle, Main, and body without asking the app to close", () => {
+    const { root, aside, close, toggle, item, closed } = waitingWorkspace();
+    const input = document.createElement("input");
+    aside.append(input);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      // Text entry keeps Escape for itself, as it does for every panel shortcut.
+      aside.dataset.workspaceDetailDrawer = "open";
+      input.focus();
+      expect(detailKey(input, "Escape").defaultPrevented).toBe(false);
+      expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+      for (const target of [close, toggle, item, document.body]) {
+        aside.dataset.workspaceDetailDrawer = "open";
+        toggle.setAttribute("aria-expanded", "true");
+        target.focus();
+        expect(detailKey(target, "Escape").defaultPrevented).toBe(true);
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        expect(toggle.getAttribute("aria-expanded")).toBe("false");
+        expect(document.activeElement === toggle).toBe(true);
+      }
+      aside.style.display = "none";
+      expect(detailKey(item, "Escape").defaultPrevented).toBe(false);
+      expect(detailKey(item, "F6").defaultPrevented).toBe(false);
+      expect(closed).toHaveLength(0);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("the generic toggle keeps pointer focus, sends keyboard focus to the title, and supplies trail space", () => {
+    const { root, aside, title, toggle, content, closed } = waitingWorkspace();
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      toggle.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+      expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+      expect(document.activeElement === toggle).toBe(true);
+      expect(content.style.getPropertyValue("--k2b-detail-space")).toBe("416px");
+      toggle.click();
+      expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+      expect(content.style.getPropertyValue("--k2b-detail-space")).toBe("");
+      toggle.click();
+      expect(document.activeElement === title).toBe(true);
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(closed).toHaveLength(0);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("hidden details and a wider host clear drawer state", async () => {
+    const { root, aside, toggle } = waitingWorkspace();
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      aside.dataset.workspaceDetailDrawer = "open";
+      toggle.setAttribute("aria-expanded", "true");
+      aside.hidden = true;
+      await window.happyDOM.whenAsyncComplete();
+      expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      aside.hidden = false;
+      aside.dataset.workspaceDetailDrawer = "open";
+      toggle.setAttribute("aria-expanded", "true");
+      aside.style.removeProperty("--k2b-workspace-detail-waiting");
+      resizeObservers.forEach((observer) => observer.trigger());
+      expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    } finally {
+      dispose();
+    }
+  });
 });

@@ -43,7 +43,11 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
  * `title` names what was pressed above the entries, since the finger covers it.
  */
 export function ContextMenuBase(
-  props: ContextMenuProps & { openAt?: (open: (x: number, y: number) => void) => void; title?: string },
+  props: ContextMenuProps & {
+    openAt?: (open: (x: number, y: number) => void) => void;
+    title?: string;
+    closeWith?: (close: () => void) => void;
+  },
 ): JSX.Element {
   const messages = useUiMessages();
   const generatedId = `k2b-context-${createUniqueId()}`;
@@ -167,6 +171,11 @@ export function ContextMenuBase(
   };
 
   props.openAt?.(open);
+  // A close from outside, such as a drag taking over the press, returns focus that sits in the menu to where it came from.
+  props.closeWith?.(() => {
+    if (isOpen() && menu?.contains(document.activeElement)) returnFocus(opener?.isConnected ? opener : host, hostRing);
+    close();
+  });
 
   onMount(() => {
     onCleanup(() => {

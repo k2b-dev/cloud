@@ -8,6 +8,8 @@ import type { OAuthClient, OAuthScope } from "@/contracts";
 
 /** RFC 8628 §6.1: short enough to type, long enough that brute force stays bounded by the failure limit. */
 export const DEVICE_CODE_LIFETIME_SECONDS = 600;
+/** Core app-approval sign-ins expire after five minutes. */
+export const APP_APPROVAL_DEVICE_LIFETIME_SECONDS = 300;
 /** Minimum polling interval the token endpoint enforces with `slow_down`. */
 export const DEVICE_POLL_INTERVAL_SECONDS = 5;
 
@@ -29,6 +31,7 @@ type DbDeviceAuthorization = {
   status: DeviceStatus;
   user_id: string | null;
   expires_at: Date;
+  login_lifetime_seconds: number | null;
 };
 
 export type PendingDeviceAuthorization = {
@@ -36,6 +39,7 @@ export type PendingDeviceAuthorization = {
   clientId: string;
   scopes: OAuthScope[];
   expiresAt: Date;
+  loginLifetimeSeconds: number | null;
 };
 
 const sha256 = (value: string): string => new Bun.CryptoHasher("sha256").update(value).digest("hex");
@@ -59,18 +63,22 @@ const mapPending = (row: DbDeviceAuthorization): PendingDeviceAuthorization => (
   clientId: row.client_id,
   scopes: row.scopes as OAuthScope[],
   expiresAt: row.expires_at,
+  loginLifetimeSeconds: row.login_lifetime_seconds,
 });
 
 /** Start one device authorization. The plaintext codes are returned once and never stored. */
 export const create = async (params: {
   client: OAuthClient;
   scopes: OAuthScope[];
-}): Promise<{ deviceCode: string; userCode: string; expiresIn: number; interval: number }> => {
+  loginLifetimeSeconds?: number | null;
+  appApproval?: boolean;
+}): Promise<{ id: string; deviceCode: string; userCode: string; expiresIn: number; interval: number }> => {
+  const expiresIn = params.appApproval ? APP_APPROVAL_DEVICE_LIFETIME_SECONDS : DEVICE_CODE_LIFETIME_SECONDS;
   const deviceCode = randomDeviceCode();
   for (let attempt = 0; attempt < INSERT_ATTEMPTS; attempt += 1) {
     const userCode = randomUserCode();
     const [row] = await sql<{ id: string }[]>`
-      INSERT INTO oauth.device_authorizations (device_code_hash, user_code_hash, client_id, scopes, audiences, expires_at)
+      INSERT INTO oauth.device_authorizations (device_code_hash, user_code_hash, client_id, scopes, audiences, expires_at, login_lifetime_seconds, app_approval)
       SELECT
         ${sha256(deviceCode)},
         ${sha256(userCode)},
@@ -82,24 +90,32 @@ export const create = async (params: {
           GROUP BY audience
           ORDER BY min(position)
         ),
-        now() + make_interval(secs => ${DEVICE_CODE_LIFETIME_SECONDS})
+        now() + make_interval(secs => ${expiresIn}),
+        ${params.loginLifetimeSeconds ?? null},
+        ${params.appApproval ?? false}
       FROM oauth.clients client
       WHERE client.client_id = ${params.client.clientId}
       ON CONFLICT (user_code_hash) DO NOTHING
       RETURNING id
     `;
-    if (row) return { deviceCode, userCode, expiresIn: DEVICE_CODE_LIFETIME_SECONDS, interval: DEVICE_POLL_INTERVAL_SECONDS };
+    if (row) return { id: row.id, deviceCode, userCode, expiresIn, interval: DEVICE_POLL_INTERVAL_SECONDS };
   }
   throw new Error("Could not allocate a unique device user code");
+};
+
+/** Retract only the pending grant whose Core handoff failed. */
+export const deletePending = async (id: string): Promise<void> => {
+  await sql`DELETE FROM oauth.device_authorizations WHERE id = ${id}::uuid AND status = 'pending'`;
 };
 
 /** Find a still-pending authorization by the code the person typed. */
 export const findPendingByUserCode = async (userCode: string): Promise<PendingDeviceAuthorization | null> => {
   const [row] = await sql<DbDeviceAuthorization[]>`
-    SELECT id, client_id, scopes, status, user_id, expires_at
+    SELECT id, client_id, scopes, status, user_id, expires_at, login_lifetime_seconds
     FROM oauth.device_authorizations
     WHERE user_code_hash = ${sha256(userCode)}
       AND status = 'pending'
+      AND NOT app_approval
       AND expires_at > now()
   `;
   return row ? mapPending(row) : null;
@@ -107,10 +123,11 @@ export const findPendingByUserCode = async (userCode: string): Promise<PendingDe
 
 export const getPending = async (id: string): Promise<PendingDeviceAuthorization | null> => {
   const [row] = await sql<DbDeviceAuthorization[]>`
-    SELECT id, client_id, scopes, status, user_id, expires_at
+    SELECT id, client_id, scopes, status, user_id, expires_at, login_lifetime_seconds
     FROM oauth.device_authorizations
     WHERE id = ${id}::uuid
       AND status = 'pending'
+      AND NOT app_approval
       AND expires_at > now()
   `;
   return row ? mapPending(row) : null;
@@ -133,6 +150,7 @@ export const decide = async (params: {
       WHERE id = ${params.id}::uuid
         AND client_id = ${params.client.clientId}
         AND status = 'pending'
+        AND NOT app_approval
         AND expires_at > now()
       RETURNING id, scopes
     `;
@@ -158,6 +176,7 @@ export type DevicePollResult =
       userId: string;
       scopes: OAuthScope[];
       audiences: string[];
+      loginLifetimeSeconds: number;
       authorityGrant: { kind: "device_code"; deviceAuthorizationId: string; nonce: string };
     };
 
@@ -165,9 +184,13 @@ export type DevicePollResult =
  * Answer one token-endpoint poll. An approved authorization is consumed atomically,
  * so a device code can mint tokens at most once.
  */
-export const poll = async (params: { deviceCode: string; clientId: string }): Promise<DevicePollResult> => {
+export const poll = async (params: {
+  deviceCode: string;
+  clientId: string;
+  resolveLoginLifetime: (stored: number | null) => Promise<number>;
+}): Promise<DevicePollResult> => {
   const [row] = await sql<(DbDeviceAuthorization & { expired: boolean })[]>`
-    SELECT id, client_id, scopes, status, user_id, expires_at, expires_at <= now() AS expired
+    SELECT id, client_id, scopes, status, user_id, expires_at, login_lifetime_seconds, expires_at <= now() AS expired
     FROM oauth.device_authorizations
     WHERE device_code_hash = ${sha256(params.deviceCode)}
   `;
@@ -182,6 +205,7 @@ export const poll = async (params: { deviceCode: string; clientId: string }): Pr
   if (row.status === "pending") return { ok: false, error: "authorization_pending" };
   if (row.status === "denied") return { ok: false, error: "access_denied" };
 
+  const loginLifetimeSeconds = await params.resolveLoginLifetime(row.login_lifetime_seconds);
   const nonce = crypto.randomUUID();
   const [consumed] = await sql<{ user_id: string; scopes: string[]; audiences: string[] }[]>`
     UPDATE oauth.device_authorizations
@@ -197,6 +221,7 @@ export const poll = async (params: { deviceCode: string; clientId: string }): Pr
     userId: consumed.user_id,
     scopes: consumed.scopes as OAuthScope[],
     audiences: consumed.audiences,
+    loginLifetimeSeconds,
     authorityGrant: { kind: "device_code", deviceAuthorizationId: row.id, nonce },
   };
 };

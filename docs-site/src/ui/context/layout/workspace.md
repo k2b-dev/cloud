@@ -69,6 +69,48 @@ inset, and the inset keeps the end of that fade. A floating `Detail` keeps its 0
 sets the property on the outermost workspace of its tablet and laptop shell, so
 applications need nothing.
 
+## Host width
+
+The nearest `k2b-app-area` inline-size container supplies the app's width.
+The component stylesheet declares `html { container: k2b-app-area / inline-size; }`
+by default. Standalone pages therefore follow the window. A classic document
+scrollbar reduces the root's content width; overlay scrollbars do not.
+
+Cloud provides this host from 1024 px when its panel column is open: the app
+area beside the panel becomes the nearest `k2b-app-area` container from the
+first server frame. Drawer and phone sheet modes keep the app's width.
+
+A host that puts another column beside the app declares the same container
+around the app area:
+
+```tsx
+<div style={{ container: "k2b-app-area / inline-size", width: appWidth }}>
+  <AppWorkspace>{/* regions */}</AppWorkspace>
+</div>
+```
+
+The nearest named container wins. Its width decides the sidebar's column or
+overlay form at 64 rem and the two or three level classes at 80 rem. The
+48 rem phone split, phone sheet, and coarse-pointer tablet rules still follow
+the viewport. Use inline-size containment; no browser measurement is needed
+to choose the first layout.
+
+Because the document root is a container, an unnamed `@container` query in
+application CSS without a nearer container now follows the window. Name the
+container a query belongs to, as in `@container my-form (min-width: 54rem)`.
+
+The root's containment also stops `body` from handing its background and
+`overflow` to the canvas and the viewport. Paint the page color on `html` as
+well as on `body`, and lock page scrolling on `html`, as the @k2b/ui dialogs
+do. A `body` that alone sets `overflow: hidden` clips its own box and leaves
+the document scrollable.
+
+Declare a host's container name in its stylesheet or markup from the first
+paint. Keep it stable while the workspace's width stays the same. The name
+may change together with the workspace's own width, as Cloud's panel does:
+the controller follows both the initial host and the workspace's own resizes.
+Changing only the name without a resize does not trigger that update.
+
 ## Levels
 
 Use `Main level` for a hierarchy of columns, such as settings areas, a list,
@@ -76,13 +118,13 @@ and a reader. Every child must be a `MainPane`. Their DOM order runs from
 shallowest to deepest. Only open panes count as levels. Give every level except
 the last an `href` that selects it.
 
-The viewport decides how many levels fit:
+The viewport keeps one level on phones. Above that, the host decides:
 
-| Class | Viewport width | Levels shown |
+| Class | Width | Levels shown |
 | --- | --- | --- |
-| 1 | Below 48 rem (768 px) | 1 |
-| 2 | 48 to below 80 rem (768–1279 px) | Up to 2 |
-| 3 | From 80 rem (1280 px) | Up to 3 |
+| 1 | Viewport below 48 rem (768 px) | 1 |
+| 2 | Viewport from 48 rem; host below 80 rem (1280 px) | Up to 2 |
+| 3 | Host from 80 rem (1280 px) | Up to 3 |
 
 The window rule is: **the deepest levels that fit, the selection decides**.
 The selected level ends the window unless the first levels already fit.
@@ -91,14 +133,13 @@ For three levels, selecting level 3 shows level 3 on a phone, levels 2–3 at
 or 1–3 at those widths. An unknown id selects the first level.
 Hidden levels stay mounted; CSS hides them without losing local state.
 
-The width classes count the viewport, not the room beside the sidebar: from
-64 rem the sidebar column takes its width from all of them, and between 48 and
-64 rem it is an overlay. The server render and the first client frame therefore
-show the same levels, and nothing is measured to decide. Give `Main level` the
-workspace's full width: the deepest level takes the place of a `Detail`, so do
-not open one beside it, and do not use levels in a workspace narrower than the
-viewport. If Main still has less room than the shown levels need, it scrolls
-sideways, so the selected level stays reachable.
+The width classes count the host, not the room beside the sidebar: from a
+64 rem host the sidebar column takes its width from all of them, and below
+that it is an overlay outside phones. The server render and first client frame show the same levels.
+Give `Main level` the workspace's full width: the deepest level takes the
+place of a `Detail`, so do not open one beside it. If Main still has less
+room than the shown levels need, it scrolls sideways so the selected level
+stays reachable.
 
 Keep the selection in the URL and pass its level id to `level`. Reload and
 back/forward then restore the same selection. When a shallower level is hidden,
@@ -175,7 +216,8 @@ as a chat’s info. Below 48 rem it covers the window with the page surface and
 safe-area padding, without a grabber, detents, drag gestures, or extra space in
 Main; Escape and focus handling stay the same. From 48 rem it remains the
 normal floating Detail. While the page is open on a phone, the rest of the
-workspace is inert.
+workspace is inert. Tab from the body or chrome covered by the page enters the
+page, while controls visible above it keep their own Tab order.
 
 Pass `onClose` when the application can close or deselect the detail. Escape,
 a downward phone drag, and a rightward touch-tablet swipe call the same action
@@ -209,7 +251,7 @@ so keep `open` false while the panel should not show.
 From 48 rem, Detail occupies a column at the workspace's end, beside the
 head and all panes, with a 0.5 rem inset on the top, right, and bottom. Main
 keeps at least 20 rem. Give Main 0.5 rem padding so its surfaces end one gap
-(`--k2b-workspace-detail-inset`) before the panel. From 64 rem the workspace
+(`--k2b-workspace-detail-inset`) before the panel. From a 64 rem host the workspace
 allows the panel's shadow beyond its edges; sidebar, content, and bottom
 drawer round their own outer corners. On touch tablets from 48 to 64 rem, a
 closable panel overlays Main as a drawer instead.
@@ -259,16 +301,74 @@ the panel in. Closing slides the panel out over 140 ms while the column stays
 reserved, then gives the room back in one step. Reduced motion makes opening,
 closing, and item reveal immediate. Dragging tracks the pointer without easing.
 
+## Waiting detail
+
+On a viewport from 64 rem with a host below 64 rem, an open Detail waits
+when its column would leave Main less than 20 rem. It stays mounted and
+`open` stays true. These thresholds use the workspace's own content width:
+
+| Detail width | Column fits from |
+| --- | --- |
+| `sm` (320 px) | 40.5 rem (648 px) |
+| `md` (416 px) | 46.5 rem (744 px) |
+| `lg` (480 px) | 50.5 rem (808 px) |
+| `xl` (544 px) | 54.5 rem (872 px) |
+
+Each threshold is Main's 20 rem plus the width token and the 0.5 rem inset.
+For example, an `md` Detail still fits in a workspace that fills an 860 px
+host. Surrounding space inside that host can make the workspace narrower.
+
+A waiting Detail shows its own **Details** button in the workspace head.
+The button names and controls the panel with `aria-controls` and
+`aria-expanded`. Apps need no extra wiring. The head keeps its row whenever
+a Detail is present, including when closed, so Main never moves as it waits,
+opens, or closes.
+
+The button opens a drawer above Main, below the head, flush with the
+workspace's end and bottom edges. Main keeps its width. A keyboard activation
+moves focus to the panel title; a pointer activation keeps it on the button.
+Tab reaches the button before the drawer. The drawer is not modal.
+A `k2b-detail-trail` scroller gets space at its end to reveal items beside it.
+
+Escape from the drawer, its button, Main, or body parks the drawer and
+returns focus to **Details**. It does not call `onClose` or the panel's close
+control. A second button activation also parks it. Dialogs, popovers, and
+consumed keys keep their own behavior. Escape does nothing to a detail that
+only waits, and F6 skips it. Widening the workspace restores the column
+automatically and clears the drawer state. Narrowing again starts waiting.
+Closing the app's Detail also clears the drawer state. When a column starts waiting
+while focus is inside it, focus moves to **Details**; when the column returns
+while focus is on **Details**, focus moves to the panel title. Parking hides
+the drawer at once, also with motion.
+
+A host can park drawers before opening its own column:
+
+```tsx
+import { parkWorkspaceDetailDrawers } from "@k2b/ui";
+
+function openHostPanel() {
+  parkWorkspaceDetailDrawers(appArea);
+  setPanelOpen(true);
+}
+```
+
+The helper defaults to `document`. It updates each open drawer's button and
+moves focus to it only when focus was inside that drawer. These waiting
+rules do not change default hosts, phones, or coarse-pointer tablet drawers.
+From a 64 rem host a Detail never waits: it keeps the column rules of a
+window that wide, so a wide Detail beside a wide sidebar narrows below its
+width token, as it does in a window of that width.
+
 ## Navigation
 
 `Sidebar` with `SidebarDesktop` supplies the workspace navigation. Its form
-follows the viewport width:
+follows the host width above the viewport’s 48 rem phone split:
 
 | Width | Navigation | Work area |
 | --- | --- | --- |
-| Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; Detail is a sheet over the lower 55% of the window, and Main scrolls its rows above it; full height covers Main |
-| 48 to 64 rem (768 to 1023 px) | An overlay that a button in the head opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side; Detail floats with reflow, or overlays Main as a closable drawer on coarse pointers |
-| From 64 rem (1024 px) | A column beside the work area | Panes side by side; Detail spans the workspace height with an 8 px inset and Main makes room; the host’s app card surrounds this geometry |
+| Viewport below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; Detail is a sheet over the lower 55% of the window, and Main scrolls its rows above it; full height covers Main |
+| Viewport from 48 rem; host below 64 rem | An overlay that a button in the head opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side; Detail uses a column, waits in a narrowed desktop host, or overlays Main as a closable drawer on touch tablets |
+| Host from 64 rem (1024 px) | A column beside the work area | Panes side by side; Detail spans the workspace height with an 8 px inset and Main makes room; the host’s app card surrounds this geometry |
 
 Below 48 rem the host renders its mobile navigation using
 [createNavigation and Navigation](/en/ui/layout/navigation), usually inside a
@@ -276,7 +376,7 @@ Below 48 rem the host renders its mobile navigation using
 launcher or second application title there. Sidebar items with an `href`
 remain real links.
 
-Between 48 and 64 rem the workspace shows its head above the content: a
+With a viewport from 48 rem and a host below 64 rem, the workspace shows its head above the content: a
 button labeled **Show navigation** and, if the host provides a page trail, the
 page title. The button opens the sidebar over the work area, and over the head, as a
 raised surface with a scrim beside it; the work area keeps its geometry and the
@@ -285,7 +385,7 @@ workspace is inert, regions the application made inert stay inert after it
 closes, and Tab moves only between the sidebar's tab stops. Focus starts on the
 current item, or on the tree item around it in a `NavTree`. Escape, a click on
 the scrim, choosing a link or an item, hiding the sidebar, or widening the
-window past 64 rem closes it; Escape and the scrim return focus to the button.
+host to 64 rem or crossing the viewport’s 48 rem phone boundary closes it; Escape and the scrim return focus to the button.
 A tree folder that only expands, a row that opens its preview, a section
 toggle, and an item's own actions keep it open. The head, the overlay, and the
 scrim draw no border lines. A sidebar collapsed to its rail on a wide screen
@@ -299,12 +399,13 @@ its own overlay.
 The head is one 46 px row above the work area, beside the sidebar column. It
 draws no line; only its place separates it from the content. It shows:
 
-- from 48 to 64 rem, whenever the workspace has an overlay sidebar, with the
+- with a viewport from 48 rem and a host below 64 rem, whenever the workspace has an overlay sidebar, with the
   navigation button;
+- in a narrowed desktop host whenever a Detail is present, with room for its Details toggle;
 - at every width, when the host's page trail has a page above the current one.
   It then holds a [PageTitle](/en/ui/layout/page-title) with the way up: from
   48 rem `‹ Parent` or a path above the title, below 48 rem a back arrow left
-  of it. The title is the page's `h1`. From 64 rem, a visible, non-collapsed
+  of it. The title is the page's `h1`. From a 64 rem host, a visible, non-collapsed
   sidebar with `[aria-current="page"]` hides the title row and its back link;
   the `h1` remains visually hidden for assistive technology. Mark the exact
   current page with `SidebarItem active`; on a page deeper than the sidebar
@@ -349,8 +450,9 @@ focused work or when others can see the screen. A hidden sidebar renders none
 of its children and no resize handle, so its labels are neither visible nor
 reachable, and main panes with `surface="navigation"` hide with it. The work
 area takes the full width. Below 48 rem the host's mobile navigation menu
-stays available; a `mobile="stacked"` sidebar hides there as well. Between 48
-and 64 rem the head of a hidden sidebar has no button, so the application's control
+stays available; a `mobile="stacked"` sidebar hides there as well. With a viewport
+from 48 rem and a host below 64 rem, the head of a hidden sidebar has no button,
+so the application's control
 that shows it again is the only way back. Pass
 `onHiddenChange` as well to make a drag of the resize handle below half the
 minimum width hide the sidebar; the shared controller dims the sidebar at its
@@ -494,7 +596,7 @@ resize chooses again. Above the trigger, its bottom edge stays beside the
 trigger and it does not shrink while open, so the search field stays where the
 person types. It never covers its trigger: it takes at most the room on its side
 and scrolls its option list.
-In a collapsed rail from 64 rem, the trigger shows only its icon and the panel
+In a collapsed rail from a 64 rem host, the trigger shows only its icon and the panel
 opens to the side. On phones, pass the same props through
 `createNavigation({ items, switcher: () => switcher })` so the host menu shows
 the same head. `Navigation` hands its `beforeSelect` to the switcher: a plain
@@ -732,6 +834,11 @@ const [expanded, setExpanded] = createSignal<readonly string[]>(["mail"]);
 ```
 
 ## API reference
+
+```ts
+/** Park open waiting-detail drawers; rescue focus only from inside a drawer. */
+function parkWorkspaceDetailDrawers(root?: ParentNode): void;
+```
 
 ```ts
 type AppWorkspaceProps = {
@@ -1247,7 +1354,9 @@ trackpad, including a tablet with a mouse, instead of pushing it toward the
 title. It appears when the row is hovered, keyboard-focused, current, or has
 its menu open. Touch-only screens always show the actions. The counts stay in
 the accessibility tree while hidden. Omit the leading icon when every object would show the same
-one. Object rows keep their title on one line with an ellipsis.
+one. A plain object-row icon sits in a soft chip of the app color; custom
+icon content, such as an avatar, keeps its own treatment in the same 2rem box.
+Object rows keep their title on one line with an ellipsis.
 
 ```tsx
 <AppWorkspace.SidebarItem variant="object" href="/app/mail/support" description="support@example.test">
@@ -1264,7 +1373,64 @@ one. Object rows keep their title on one line with an ellipsis.
 
 Set `mobile="stacked"` on `Sidebar` when the sidebar is the primary object
 list of an overview and the host's mobile navigation does not carry it. Below
-64 rem the sidebar then stays visible as a block above the content, capped at
-half the viewport height with its own scrolling body, and the footer wraps
-its items into a row; the head shows no button for it. Leave the default `"hidden"` for workspaces whose
-sidebar is view navigation inside one resource.
+64 rem, its items become one row of chips above the content. The row scrolls
+sideways with fades at cut edges and keeps the current chip in view when the
+page loads. From 64 rem, it is the regular sidebar column. The sidebar is a
+`nav` landmark at every width; give it a `label` that names the objects.
+
+A chip shows the icon, a label on one line with an ellipsis, and metadata
+such as a count or dot. Selection changes only its fill and color; its box
+and font weight stay the same. Section titles, descriptions, row actions,
+collapsible sections, the footer, and other content stay out of the row.
+
+**All** at the end of the row opens the complete sidebar, including everything
+the chips leave out. Below 48 rem it opens a bottom sheet; from 48 rem it
+opens a centered dialog. Links close it. Escape and Close return focus to
+All. Write the sidebar's children as JSX inside `AppWorkspace.Sidebar`:
+
+```tsx
+<AppWorkspace.Sidebar label="Notebooks" mobile="stacked">
+  <AppWorkspace.SidebarDesktop>
+    <AppWorkspace.SidebarBody>
+      <AppWorkspace.SidebarItem variant="object" href="/app/notebooks/team" active>
+        <AppWorkspace.SidebarItemLabel>Team</AppWorkspace.SidebarItemLabel>
+        <AppWorkspace.SidebarItemMeta>4</AppWorkspace.SidebarItemMeta>
+      </AppWorkspace.SidebarItem>
+    </AppWorkspace.SidebarBody>
+  </AppWorkspace.SidebarDesktop>
+</AppWorkspace.Sidebar>
+```
+
+The children render a second time in the sheet and share the application's
+signals. Markup built ahead of time and passed as a value cannot render a
+second time: the sheet leaves it in the row, stays without it, and logs an
+error. While the sheet is open, the row and the sheet both hold each row, so
+code that looks a row up, for example to restore focus, searches the copy
+that has focus (`.k2b-app-workspace__sidebar-sheet`) before the document.
+For the same reason, sidebar children must not use fixed `id` values; use
+`createUniqueId()` so labels and ARIA references resolve inside each copy.
+A chosen link runs its own handlers in the sheet, then the sheet closes; a
+tree branch's disclosure only expands the branch. When the workspace widens
+into the sidebar column, the sheet closes and focus moves to the current
+item in the column.
+
+The sheet adds no history entry, so Back leaves the page while it is open.
+Other phone sheets close on Back, but a sidebar may replace the URL while
+the sheet is open, such as a search, and the sheet's entry would then stay
+behind as a stale step in the history.
+
+Hosts can set `--k2b-workspace-chip-inset` for the row's content inset
+(default `clamp(1rem, 3vw, 2.5rem)`, `1rem` below a 40 rem viewport),
+`--k2b-workspace-chip-background` for chip fill (default
+`--k2b-surface-muted`), and `--k2b-app-workspace-selected` for selected fill
+(default `--k2b-selected`). Cloud maps selected fill to `--ui-app-selected-nav`.
+
+Leave the default `mobile="hidden"` for workspaces whose sidebar is view
+navigation inside one resource.
+
+### Cloud phone title menu
+
+On Cloud pages with `WorkspaceNavigation`, the phone header shows **Name ⌄**
+in place of the plain title. It opens the same app menu sheet as the app-menu
+button, so a hidden sidebar's navigation stays reachable. Pages without
+workspace navigation keep the plain title. Nothing changes from 48 rem.

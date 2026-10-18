@@ -13,7 +13,7 @@ kind: troubleshoot
 - **A Space is missing from the overview:** Check that you still have access to the Space. A Space that is shared through a group can disappear when your group membership changes.
 - **An item is missing:** Clear the search and the filter chips. Then check the current view. A calendar-only view can hide a task without a date.
 - **Kanban shows the wrong column:** Kanban groups by the selected grouping field, usually the status. Open the item and correct that field. Do not change unrelated filters.
-- **An assignee cannot update work:** **View** access is not enough to edit items. The person or one of their groups needs **Edit** or **Manage** access.
+- **An assignee cannot update work:** **View** access is not enough to edit items. The person or one of their groups needs **Edit** or **Manage** access. A service account needs its own **Edit** or **Manage** access and a key that can write. Assigning a task does not give access.
 - **A completed item still appears:** Check the active filters and the grouping. Some views include completed work on purpose.
 - **A task cannot be completed:** Check **Blocked by** in the **Planning** block of the task. Open blockers show a lock. Complete or remove every open blocker first. Completed blockers stay listed for context until you remove them.
 - **A calendar subscription is stale:** Calendar clients refresh subscriptions on their own schedule. Check that the client uses the current export URL. If needed, regenerate the URL in Spaces and replace the old subscription.

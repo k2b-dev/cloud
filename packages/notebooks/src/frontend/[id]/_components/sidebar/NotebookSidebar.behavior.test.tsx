@@ -3,6 +3,7 @@ import type { NavigationItem } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
+import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
 import type { NotebookContext, NoteTreeNode } from "./types";
 
 describe("notebook sidebar", () => {
@@ -75,8 +76,10 @@ describe("notebook sidebar", () => {
     ...overrides,
   });
 
-  const mount = async (value: NotebookContext, href = "/app/notebooks/Book01", current?: "attachments") => {
+  const mount = async (value: NotebookContext, href = "/app/notebooks/Book01", current?: "attachments" | "graph") => {
     const dom = createDomTestHarness();
+    const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+    Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: dom.window.sessionStorage });
     delegateEvents(["click"], dom.document);
     window.history.replaceState({}, "", href);
     const { default: NotebookSidebar } = await import("./NotebookSidebar.island");
@@ -113,6 +116,8 @@ describe("notebook sidebar", () => {
       button,
       cleanup: () => {
         dispose();
+        if (originalStorage) Object.defineProperty(globalThis, "sessionStorage", originalStorage);
+        else Reflect.deleteProperty(globalThis, "sessionStorage");
         dom.cleanup();
       },
     };
@@ -151,6 +156,22 @@ describe("notebook sidebar", () => {
       expect(dialog?.querySelector<HTMLInputElement>('input[aria-label="Name"]')?.value).toBe("Journal");
     } finally {
       while (dialogCore.isOpen()) dialogCore.close();
+      view.cleanup();
+    }
+  });
+
+  test("the Links footer follows the note selected by a graph recentre", async () => {
+    const view = await mount(ctx(null, { selectedNoteId: "Alpha1" }), "/app/notebooks/Book01?mode=graph&note=Alpha1", "graph");
+    const linksHref = () => view.dom.root.querySelector<HTMLAnchorElement>('.notebook-sidebar-foot a[aria-current="page"]')?.href;
+    try {
+      expect(new URL(linksHref()!).searchParams.get("note")).toBe("Alpha1");
+      window.dispatchEvent(
+        new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, {
+          detail: { noteId: "Zeta01", href: "/app/notebooks/Book01?mode=graph&note=Zeta01" },
+        }),
+      );
+      expect(new URL(linksHref()!).searchParams.get("note")).toBe("Zeta01");
+    } finally {
       view.cleanup();
     }
   });

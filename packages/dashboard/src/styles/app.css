@@ -197,6 +197,10 @@
   grid-row: span 2;
 }
 
+/* Only carries the source app's accent hooks; the widget lays out as if it were not there. */
+.dashboard-widget-accent {
+  display: contents;
+}
 .dashboard-widget-state {
   display: flex;
   flex: 1;
@@ -233,9 +237,19 @@
   padding: 0.5rem 0.75rem 0.75rem;
 }
 
-/* A small widget on a narrow phone keeps its message and Try again inside its frame. */
+/* A small widget on a narrow phone keeps its message and Try again inside its frame, below the header's icon chip:
+   its message gets a smaller icon box and tighter padding in every state, and a message with Try again drops the
+   icon, so a three-line failure still fits at 320px. */
 .dashboard-page .dashboard-tile[data-size="small"] .dashboard-widget-placeholder {
-  padding-inline: 0.25rem;
+  padding: 0.25rem 0.25rem 0.5rem;
+}
+.dashboard-page .dashboard-tile[data-size="small"] .dashboard-widget-placeholder .k2b-placeholder__icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  font-size: 0.875rem;
+}
+.dashboard-page .dashboard-tile[data-size="small"] .dashboard-widget-placeholder:has(.k2b-placeholder__action) .k2b-placeholder__icon {
+  display: none;
 }
 
 /* The slow notice has its line from the start and only fades in. */

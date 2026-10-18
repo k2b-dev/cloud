@@ -621,14 +621,16 @@ describe("Venue feedback evaluation", () => {
         feedback: { count: 1, averageRating: 5, commentCount: 0, buckets: [{ date: "2026-09-28", count: 1, averageRating: 5 }] },
       },
     });
+    // Each mark carries a native <title> with its day for inspection; only the axis text counts here.
+    const axisText = (svg: string) => text(svg.replace(/<title>[\s\S]*?<\/title>/g, ""));
     const average = html.match(/data-chart-kind="(?:line|scatter)"[\s\S]*?<\/svg>/)?.[0] ?? "";
     expect(average).toMatch(/class="stdlib-chart-point/);
-    expect(text(average).match(/Sep 28/g)).toHaveLength(1);
+    expect(axisText(average).match(/Sep 28/g)).toHaveLength(1);
 
     const twoDays = render("admin", [], { view: "feedback", dashboard: { feedback } });
     const line = twoDays.match(/data-chart-kind="line"[\s\S]*?<\/svg>/)?.[0] ?? "";
-    expect(text(line).match(/Sep 26/g)).toHaveLength(1);
-    expect(text(line).match(/Sep 27/g)).toHaveLength(1);
+    expect(axisText(line).match(/Sep 26/g)).toHaveLength(1);
+    expect(axisText(line).match(/Sep 27/g)).toHaveLength(1);
   });
 
   test("shows each rating as stars and as a value, with glyphs the icon font has", () => {

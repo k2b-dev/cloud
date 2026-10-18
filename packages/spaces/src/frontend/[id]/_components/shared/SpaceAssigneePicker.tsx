@@ -4,7 +4,9 @@ import { For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
+import { AssigneeAvatar } from "./AssigneeAvatars";
 import ClaimAvatar from "./claim/ClaimAvatar";
+import { isClaimHolder } from "./claim/claim";
 
 type SpaceAssigneePickerProps = {
   spaceId: string;
@@ -13,7 +15,10 @@ type SpaceAssigneePickerProps = {
   disabled?: boolean;
   placeholder?: string;
   variant?: "chips" | "rows";
-  /** Rows only: the claim holder leads the list with its success ring and claim time, and appears once. */
+  /**
+   * Rows only: who works on the task. Working is a state of one assignee in the list: their row comes first and carries
+   * the ring, the "working on it" badge, and the claim time.
+   */
   claim?: SpaceItemClaim | null;
   currentUserId?: string;
   dateConfig?: DateContext;
@@ -23,27 +28,27 @@ const selectedIds = (assignees: SpaceItemAssignee[]) => assignees.map((assignee)
 
 const removeAssignee = (assignees: SpaceItemAssignee[], id: string) => assignees.filter((assignee) => assignee.id !== id);
 
-type AssigneeOption = ComboboxOption & { avatarHash: string | null };
-
-const avatarSrc = (assignee: SpaceItemAssignee) =>
-  assignee.avatarHash
-    ? `/api/accounts/users/${encodeURIComponent(assignee.id)}/avatar?rev=${encodeURIComponent(assignee.avatarHash)}`
-    : undefined;
-
 export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
   const t = useSpaceMessages();
   const variant = () => props.variant ?? "chips";
   const current = () => props.value();
   const claim = () => (variant() === "rows" ? (props.claim ?? null) : null);
-  const holderId = () => {
-    const actor = claim()?.actor;
-    return actor?.kind === "user" ? actor.id : null;
+  const holder = () => current().find((assignee) => isClaimHolder(claim(), assignee));
+  /** The working assignee first, so the account on the task stays in view; everyone else keeps their order. */
+  const ordered = () => {
+    const first = holder();
+    return first ? [first, ...current().filter((assignee) => assignee !== first)] : current();
   };
-  /** The holder's own assignee entry, when the holder is also assigned. */
-  const assignedHolder = () => current().find((assignee) => assignee.id === holderId());
-  const others = () => current().filter((assignee) => assignee.id !== holderId());
+  /** A claim whose holder is not among the assignees, which then still leads as a working row. */
+  const unassignedHolder = () => (holder() ? null : claim());
 
-  const fetchAssignableUsers = async (query: string, signal: AbortSignal): Promise<AssigneeOption[]> => {
+  /**
+   * The assignees behind the options on show. The combobox hands back only an option's ID and label, so the kind and
+   * picture of the chosen person or service account come from here.
+   */
+  let shown = new Map<string, SpaceItemAssignee>();
+
+  const fetchAssignableUsers = async (query: string, signal: AbortSignal): Promise<ComboboxOption[]> => {
     const res = await apiClient[":id"]["assignable-users"].$get(
       {
         param: { id: props.spaceId },
@@ -56,34 +61,75 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
     );
     if (!res.ok) throw new Error(t.loadAssigneesFailed);
     const users = await res.json();
+    shown = new Map(
+      users.map((user) => [user.id, { id: user.id, kind: user.kind, displayName: user.displayName, avatarHash: user.avatarHash }]),
+    );
     return users.map((user) => ({
       id: user.id,
       label: user.displayName,
-      avatarHash: user.avatarHash,
       description: user.description,
-      icon: "ti ti-user",
+      icon: user.kind === "user" ? "ti ti-user" : "ti ti-api",
     }));
   };
 
   const addAssignee = (option: ComboboxOption) => {
-    if (current().some((assignee) => assignee.id === option.id)) return;
-    props.onChange([...current(), { id: option.id, displayName: option.label, avatarHash: (option as AssigneeOption).avatarHash ?? null }]);
+    const assignee = shown.get(option.id);
+    if (!assignee || current().some((entry) => entry.id === option.id)) return;
+    props.onChange([...current(), assignee]);
   };
 
   const remove = (id: string) => props.onChange(removeAssignee(current(), id));
 
-  const rowRemoveButton = (assignee: SpaceItemAssignee) => (
-    <Show when={!props.disabled}>
-      <IconButton
-        label={t.removeAssignee({ name: assignee.displayName })}
-        size="xs"
-        onClick={() => remove(assignee.id)}
-        class="k2b-progressive-action text-zinc-400 hover:text-red-500"
-        title={t.removeAssignee({ name: assignee.displayName })}
-      >
-        <i class="ti ti-x text-sm" />
-      </IconButton>
-    </Show>
+  /**
+   * One person in the rows list. The working state stays inside the row's single line: the badge does not wrap and the
+   * claim time gives way first, so a claim that starts or ends changes no row height. Only assignees can be removed.
+   */
+  const PersonRow = (row: { name: string; assignee?: SpaceItemAssignee; claim: SpaceItemClaim | null }) => (
+    <div class="k2b-progressive-row flex items-center gap-2" data-spaces-assignee-row data-spaces-claim-holder={row.claim ? "" : undefined}>
+      <Show when={row.claim} fallback={row.assignee ? <AssigneeAvatar assignee={row.assignee} /> : <Avatar name={row.name} size="xs" />}>
+        {(working) => <ClaimAvatar claim={working()} currentUserId={props.currentUserId ?? ""} />}
+      </Show>
+      <span class="flex min-w-0 flex-1 items-center gap-1.5">
+        <span class="min-w-0 truncate text-sm" title={row.name}>
+          {row.name}
+        </span>
+        <Show when={row.claim}>
+          {(working) => (
+            <>
+              {/* The label says in words what the ring shows, so it does not depend on seeing color. */}
+              <StatusBadge tone="ok" icon={null} label={t.workingOnIt} class="shrink-0" />
+              {/*
+               * The claim time shows whole or not at all: the empty inline block before it is a line break opportunity,
+               * so a time that does not fit moves to a second line that the one-line box clips, instead of a cut-off
+               * date. Screen readers still read it.
+               */}
+              <span class="h-4 min-w-0 flex-1 overflow-hidden text-xs leading-4 text-dimmed">
+                <span class="inline-block" />
+                <span class="inline-block whitespace-nowrap">
+                  {t.claimedSince}{" "}
+                  <time datetime={working().claimedAt} title={dates.formatDateTime(working().claimedAt, props.dateConfig)}>
+                    {dates.formatDateRelative(working().claimedAt, props.dateConfig)}
+                  </time>
+                </span>
+              </span>
+            </>
+          )}
+        </Show>
+      </span>
+      <Show when={!props.disabled && row.assignee}>
+        {(assignee) => (
+          <IconButton
+            label={t.removeAssignee({ name: assignee().displayName })}
+            size="xs"
+            onClick={() => remove(assignee().id)}
+            class="k2b-progressive-action text-zinc-400 hover:text-red-500"
+            title={t.removeAssignee({ name: assignee().displayName })}
+          >
+            <i class="ti ti-x text-sm" />
+          </IconButton>
+        )}
+      </Show>
+    </div>
   );
 
   return (
@@ -96,7 +142,7 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
               <For each={current()}>
                 {(assignee) => (
                   <span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--ui-surface-muted)] px-2 py-1 text-xs">
-                    <Avatar name={assignee.displayName} src={avatarSrc(assignee)} size="xs" />
+                    <AssigneeAvatar assignee={assignee} />
                     <span>{assignee.displayName}</span>
                     <Show when={!props.disabled}>
                       <IconButton
@@ -115,41 +161,11 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
           }
         >
           <div class="flex flex-col gap-1">
-            <Show when={claim()}>
-              {(holder) => (
-                <div class="k2b-progressive-row flex items-center gap-2" data-spaces-claim-holder>
-                  <ClaimAvatar claim={holder()} currentUserId={props.currentUserId ?? ""} />
-                  <div class="min-w-0 flex-1">
-                    {/* The label says in words what the ring shows, so it does not depend on seeing color. */}
-                    <span class="flex min-w-0 items-center gap-1.5">
-                      <span class="truncate text-sm">{holder().displayName}</span>
-                      <StatusBadge tone="ok" icon={null} label={t.workingOnIt} class="shrink-0" />
-                    </span>
-                    {/* Wraps instead of truncating so the "not assigned" marker stays readable in a narrow panel. */}
-                    <span class="block text-xs text-dimmed">
-                      {t.claimedSince}{" "}
-                      <time class="whitespace-nowrap" datetime={holder().claimedAt}>
-                        {dates.formatDateTime(holder().claimedAt, props.dateConfig)}
-                      </time>
-                      <Show when={!assignedHolder()}>
-                        {" "}
-                        <span class="whitespace-nowrap">· {t.claimNotAssigned}</span>
-                      </Show>
-                    </span>
-                  </div>
-                  <Show when={assignedHolder()}>{(assignee) => rowRemoveButton(assignee())}</Show>
-                </div>
-              )}
-            </Show>
-            <For each={others()}>
+            {/* A claim holder outside the assignees (a personal automation key, or a deleted account's claim) still leads. */}
+            <Show when={unassignedHolder()}>{(holder) => <PersonRow name={holder().displayName} claim={holder()} />}</Show>
+            <For each={ordered()}>
               {(assignee) => (
-                <div class="k2b-progressive-row flex items-center gap-2">
-                  <Avatar name={assignee.displayName} src={avatarSrc(assignee)} size="xs" />
-                  <div class="min-w-0 flex-1">
-                    <span class="block truncate text-sm">{assignee.displayName}</span>
-                  </div>
-                  {rowRemoveButton(assignee)}
-                </div>
+                <PersonRow name={assignee.displayName} assignee={assignee} claim={isClaimHolder(claim(), assignee) ? claim() : null} />
               )}
             </For>
           </div>

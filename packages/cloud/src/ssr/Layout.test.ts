@@ -32,7 +32,7 @@ describe("app appearance layout helpers", () => {
   it("uses a neutral middle stop and emits safe gradient variables", () => {
     expect(appAppearanceStyle(undefined)).toBeUndefined();
     expect(appAppearanceStyle(apps[1]!.appearance)).toBe(
-      "--app-accent:#14b8a6;--app-canvas-from:#14b8a6;--app-canvas-via:#ffffff;--app-canvas-to:#3b82f6;--app-canvas-angle:135deg;--app-canvas-strength:20%;--app-canvas-dark-strength:10%",
+      "--app-accent:#14b8a6;--app-ink-light:#0d7469;--app-ink-dark:#14b8a6;--app-selected-light:#effaf9;--app-selected-dark:#112c2e;--app-selected-nav-light:#deeeed;--app-selected-nav-dark:#1e3d3f;--app-canvas-from:#14b8a6;--app-canvas-via:#ffffff;--app-canvas-to:#3b82f6;--app-canvas-angle:135deg;--app-canvas-strength:20%;--app-canvas-dark-strength:10%",
     );
     expect(appAppearanceStyle({ accent: "not-css" as "#invalid" })).toBeUndefined();
   });

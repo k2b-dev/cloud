@@ -108,7 +108,7 @@ const de: Record<string, SettingCopy> = {
     description:
       "BCP-47-Sprache für Anfragen ohne eigene Präferenz. Sie steuert Dokumentensprache, Formatierung und Übersetzungskataloge der Apps.",
   },
-  "app.timezone": { label: "Zeitzone", description: "IANA-Zeitzone für geplante Aufgaben und zeitabhängige Abläufe." },
+  "app.timezone": { label: "Zeitzone", description: "IANA-Zeitzone für Routinen und zeitabhängige Abläufe." },
   "app.cleanup_schedule": {
     label: "Bereinigungszeitplan",
     description: "Cron-Ausdruck mit fünf Feldern für automatische Bereinigungen in der eingestellten Zeitzone.",
@@ -116,10 +116,14 @@ const de: Record<string, SettingCopy> = {
   "gotenberg.url": { label: "Gotenberg-URL", description: "Interne Basis-URL des Gotenberg-Dienstes für HTML-zu-PDF." },
   "gotenberg.username": { label: "Basic-Auth-Benutzername", description: "Optionaler Benutzername für Gotenberg Basic Auth." },
   "gotenberg.password": { label: "Basic-Auth-Passwort", description: "Optionales Passwort für Gotenberg Basic Auth." },
-  "gotenberg.timeout_ms": { label: "Zeitlimit", description: "Maximale Dauer einer Gotenberg-Anfrage in Millisekunden." },
+  "gotenberg.timeout_ms": {
+    label: "Zeitlimit",
+    description:
+      "Maximale Dauer einer Gotenberg-Anfrage in Millisekunden. Das eigene --api-timeout von Gotenberg (Standard 30 s) begrenzt sie zusätzlich.",
+  },
   "gotenberg.max_html_bytes": {
-    label: "Maximale HTML-Größe",
-    description: "Maximale Größe der HTML-Eingabe vor dem Versand an Gotenberg.",
+    label: "Maximale Eingabegröße",
+    description: "Maximale Größe einer Render-Anfrage: HTML, Kopf- und Fußzeile, Bilder und Schriften zusammen.",
   },
   "gotenberg.max_pdf_bytes": { label: "Maximale PDF-Größe", description: "Maximale Größe einer von Gotenberg angenommenen PDF-Ausgabe." },
   "freeipa.enable": {

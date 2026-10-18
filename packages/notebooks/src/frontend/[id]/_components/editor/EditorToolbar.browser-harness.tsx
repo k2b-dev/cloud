@@ -11,7 +11,7 @@ import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/edit
 import { listCommandsExtension } from "../../../lib/editor/list-commands";
 import { listsExtension } from "../../../lib/editor/lists";
 import { markdownExtension } from "../../../lib/editor/markdown";
-import { noteScrollerTheme } from "../../../lib/editor/theme";
+import { noteScroller } from "../../../lib/editor/note-scroller";
 import { notebookWorkspaceMessages } from "../../messages";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { caretFormat, sameCaretFormat } from "./editor-actions";
@@ -47,7 +47,7 @@ function Harness() {
             if (update.docChanged || update.selectionSet) setFormat(caretFormat(update.state));
           }),
           listsExtension(),
-          noteScrollerTheme,
+          noteScroller,
           fadeScrollMarginsExtension(() => scrollPort),
         ],
       }),

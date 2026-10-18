@@ -1386,3 +1386,37 @@
   border-radius: var(--k2b-radius-surface);
   background: var(--k2b-surface);
 }
+
+/* Drag and drop demo: flat target chips above the rows; status lines keep
+   one line each, so nothing moves while a drag runs. */
+.ui-dnd-demo {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.ui-dnd-demo__targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ui-dnd-demo__target {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.9rem;
+  background: var(--k2b-surface-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.ui-dnd-demo__status {
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

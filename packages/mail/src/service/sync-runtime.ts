@@ -34,6 +34,7 @@ import { isAllMailFolder, isInboxFolder, isSentFolder, isTrashOrJunkFolder } fro
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { enqueueMailInvalidation, mailLive } from "./live";
 import { mailScheduler } from "./mail-scheduler";
+import { deleteUnusedMailboxLogoVersions } from "./mailbox-logos";
 import { assertMailboxTransportFence, loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { deleteAbandonedBlobUploads, deleteOrphanedBlobs } from "./message-blobs";
 import { hydrateMessageFromSource, recordMissingMessageSources, releaseExpiredHydrationClaims } from "./message-hydration";
@@ -56,12 +57,7 @@ import {
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
 import { reconcileMailStorageUsage } from "./storage-observability";
-import {
-  getWorkflowSnapshot,
-  type MailWorkflowTargetSnapshot,
-  mailWorkflowEventContext,
-  mailWorkflowSnapshotWithoutBody,
-} from "./workflow-data";
+import { getWorkflowSnapshot, mailWorkflowEventContext } from "./workflow-data";
 
 const log = logger("mail:sync");
 const ENVELOPE_BATCH_SIZE = 200;
@@ -981,48 +977,30 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
         config.with !== null && typeof config.with === "object" && !Array.isArray(config.with)
           ? (config.with as Record<string, WorkflowJsonValue>)
           : {};
-      const emitSnapshot = (eventSnapshot: MailWorkflowTargetSnapshot) => {
-        const triggerValues = {
-          message: eventSnapshot.source.message,
-          conversation: eventSnapshot.source.conversation,
-          occurredAt,
-        };
-        return emitWorkflowEvent(
+      const triggerValues = { message: snapshot.source.message, conversation: snapshot.source.conversation, occurredAt };
+      try {
+        await emitWorkflowEvent(
           {
             appId: MAIL_WORKFLOW_APP_ID,
             scopeId: params.mailboxId,
             type: MAIL_WORKFLOW_EVENT.messageReceived,
             targetWorkflowId: activation.workflow_id,
             data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
-            context: mailWorkflowEventContext(eventSnapshot),
+            context: mailWorkflowEventContext(snapshot),
             dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
             occurredAt: new Date(occurredAt),
           },
           { db: params.db },
         );
-      };
-      try {
-        await emitSnapshot(snapshot);
       } catch (error) {
         if (!(error instanceof WorkflowEventTooLargeError)) throw error;
-        log.info("Retrying oversized message workflow event without its body", {
+        // A pathological message must never stall mailbox sync.
+        log.warn("Skipped oversized message workflow event", {
           mailboxId: params.mailboxId,
           workflowId: activation.workflow_id,
           field: error.field,
           bytes: error.bytes,
         });
-        try {
-          await emitSnapshot(mailWorkflowSnapshotWithoutBody(snapshot));
-        } catch (retryError) {
-          if (!(retryError instanceof WorkflowEventTooLargeError)) throw retryError;
-          // A pathological body-less message must never stall mailbox sync.
-          log.warn("Skipped oversized message workflow event", {
-            mailboxId: params.mailboxId,
-            workflowId: activation.workflow_id,
-            field: retryError.field,
-            bytes: retryError.bytes,
-          });
-        }
       }
     }
   };
@@ -3300,6 +3278,7 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
         await deleteAbandonedDraftAttachmentUploads();
         await deleteAbandonedBlobUploads();
         await deleteOrphanedBlobs();
+        await deleteUnusedMailboxLogoVersions({ limit: 1000 });
       },
     });
     await mailScheduler().create({

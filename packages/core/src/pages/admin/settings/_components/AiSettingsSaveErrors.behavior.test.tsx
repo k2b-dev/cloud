@@ -27,6 +27,7 @@ const entry = (key: string, value: unknown): SettingFieldDef => ({
   valueSource: "custom",
   resetValueSource: "default",
   isCustom: true,
+  unreadable: false,
   group: "ai",
 });
 // The body the settings route returns when the Vision model still uses a removed profile.

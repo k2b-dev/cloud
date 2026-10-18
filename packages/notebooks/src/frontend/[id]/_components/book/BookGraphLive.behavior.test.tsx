@@ -3,6 +3,7 @@ import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import type { PublicNotebookWorkspaceEvent } from "../../../../lib/workspace-events";
+import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
 import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
 import { BOOK_SNAPSHOT_EVENT, type BookMetadata, type BookSnapshot } from "./book-state";
 
@@ -89,6 +90,97 @@ describe("Book graph live updates", () => {
     try {
       await dispatchWorkspaceEvent({ v: 1, type: "note.comments.changed", notebookId: "book01", noteId: "note01" }, "2-0");
       expect(app.requests).toHaveLength(0);
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("recentering refreshes the new note's Book snapshot and keeps its address for workspace events", async () => {
+    const app = await mount();
+    const href = "/app/notebooks/book01/notes/note03?mode=book";
+    const next = { ...snapshot, href, selectedNoteId: "note03", locked: true };
+    let metadata: BookMetadata | undefined;
+    const onSnapshot = (event: Event) => {
+      metadata = (event as CustomEvent<BookMetadata>).detail;
+    };
+    window.addEventListener(BOOK_SNAPSHOT_EVENT, onSnapshot);
+    try {
+      window.dispatchEvent(
+        new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, {
+          detail: { noteId: "note03", href: "/app/notebooks/book01?mode=graph&note=note03&from=book" },
+        }),
+      );
+      await flush();
+      expect(app.requests.map(({ path, href }) => ({ path, href }))).toEqual([{ path: "/api/notebooks/book01/book", href }]);
+      app.requests[0]!.resolve(Response.json(next));
+      await flush();
+      const { html: _html, ...expected } = next;
+      expect(metadata).toEqual(expected);
+
+      const coverage = dispatchWorkspaceEvent(changed, "3-0");
+      await flush();
+      expect(app.requests[1]?.href).toBe(href);
+      app.requests[1]!.resolve(Response.json({ ...next, cursor: "3-0" }));
+      await coverage;
+      expect(metadata).toEqual({ ...expected, cursor: "3-0" });
+    } finally {
+      window.removeEventListener(BOOK_SNAPSHOT_EVENT, onSnapshot);
+      app.cleanup();
+    }
+  });
+
+  test("an older recentre response cannot replace the latest note's snapshot", async () => {
+    const app = await mount();
+    const snapshots: BookMetadata[] = [];
+    const onSnapshot = (event: Event) => {
+      snapshots.push((event as CustomEvent<BookMetadata>).detail);
+    };
+    window.addEventListener(BOOK_SNAPSHOT_EVENT, onSnapshot);
+    try {
+      for (const noteId of ["note03", "note05"]) {
+        window.dispatchEvent(
+          new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, {
+            detail: { noteId, href: `/app/notebooks/book01?mode=graph&note=${noteId}&from=book` },
+          }),
+        );
+      }
+      await flush();
+      expect(app.requests.map(({ href }) => href)).toEqual([
+        "/app/notebooks/book01/notes/note03?mode=book",
+        "/app/notebooks/book01/notes/note05?mode=book",
+      ]);
+      app.requests[1]!.resolve(Response.json({ ...snapshot, href: app.requests[1]!.href, selectedNoteId: "note05" }));
+      await flush();
+      expect(snapshots.at(-1)?.selectedNoteId).toBe("note05");
+      app.requests[0]!.resolve(Response.json({ ...snapshot, href: app.requests[0]!.href, selectedNoteId: "note03" }));
+      await flush();
+      expect(snapshots.map(({ selectedNoteId }) => selectedNoteId)).toEqual(["note05"]);
+    } finally {
+      window.removeEventListener(BOOK_SNAPSHOT_EVENT, onSnapshot);
+      app.cleanup();
+    }
+  });
+
+  test("a failed recentre refresh shows Retry and retries the new note's Book address", async () => {
+    const app = await mount();
+    const href = "/app/notebooks/book01/notes/note03?mode=book";
+    try {
+      window.dispatchEvent(
+        new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, {
+          detail: { noteId: "note03", href: "/app/notebooks/book01?mode=graph&note=note03&from=book" },
+        }),
+      );
+      await flush();
+      expect(app.requests).toHaveLength(1);
+      app.requests[0]!.resolve(Response.json({ message: "Busy" }, { status: 503 }));
+      await flush();
+      expect(app.root.querySelector('[role="alert"]')?.textContent).toContain("Notebook updates could not be loaded.");
+      app.root.querySelector<HTMLButtonElement>('[role="alert"] button')!.click();
+      await flush();
+      expect(app.requests[1]?.href).toBe(href);
+      app.requests[1]!.resolve(Response.json({ ...snapshot, href, selectedNoteId: "note03" }));
+      await flush();
+      expect(app.root.querySelector('[role="alert"]')).toBeNull();
     } finally {
       app.cleanup();
     }

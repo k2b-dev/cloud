@@ -52,9 +52,9 @@ import { useViewportMessages } from "./viewport-messages";
  * **Why so thin.** The props are a discriminated union over each
  * stdlib chart function — `kind: "line"` brings in exactly the params
  * `charts.line` expects, `kind: "bar"` brings in `charts.bar`'s, etc.
- * Options stay aligned with stdlib without renaming. Shared interactive
- * layers add bounded pan / zoom controls to maps and state timelines, plus
- * renderer-owned inspection, tooltips and optional selection for all chart kinds.
+ * Options stay aligned with stdlib without renaming. Every chart provides
+ * renderer-owned inspection, tooltips and optional selection by default.
+ * `interactive` adds bounded pan / zoom and reset controls to maps and state timelines.
  * If stdlib gains a new option, it's automatically available at every
  * callsite.
  *
@@ -105,10 +105,16 @@ export type ChartProps = {
     class?: string;
     style?: JSX.CSSProperties | string;
     labels?: ChartLabels;
+    /**
+     * Navigation for maps and state timelines: pan, zoom and reset controls.
+     * Arrows pan; Alt+arrows inspect. Every chart shows tooltips and keyboard
+     * inspection without this prop.
+     */
     interactive?: boolean;
     onSelect?: (selection: ChartSelection) => void;
     /** Controlled highlight; indices belong to this exact input snapshot. */
     selected?: ChartDatumRef | null;
+    /** Customize the always-on tooltip with a title and labeled text rows. */
     tooltip?: ChartTooltipFormatter;
     /** Optional shared X cursor for line charts. */
     cursor?: ChartCursor;
@@ -171,7 +177,7 @@ export const renderChartSvg = (
         width,
         height,
         viewport: timelineViewport,
-        interactive: props.interactive,
+        interactive: true,
       }),
     );
   }
@@ -181,7 +187,7 @@ export const renderChartSvg = (
     ...(kind === "map" ? { viewport: DEFAULT_MAP_VIEWPORT } : {}),
     width,
     height,
-    inspect: props.interactive === true || (props.kind === "line" && props.maxGap !== undefined),
+    inspect: true,
   });
   if (props.kind === "line" && props.maxGap !== undefined) {
     if (props.area || props.errorBand) throw new Error("Chart maxGap does not support area or errorBand fills");
@@ -263,10 +269,29 @@ const Chart = (props: ChartProps): JSX.Element => {
 
   const interactiveMap = () => props.kind === "map" && props.interactive === true;
   const interactiveTimeline = () => props.kind === "stateTimeline" && props.interactive === true;
-  const interactiveLine = () => props.kind === "line" && props.interactive === true;
-  const interactive = () => props.interactive === true;
   const draggable = () => interactiveMap() || interactiveTimeline();
   const labels = () => props.labels ?? {};
+  const accessibleName = () => {
+    const override =
+      props.kind === "map"
+        ? labels().interactiveMap
+        : props.kind === "stateTimeline"
+          ? labels().interactiveTimeline
+          : props.kind === "line"
+            ? labels().interactiveLine
+            : labels().interactiveChart;
+    const title = "title" in props && typeof props.title === "string" && props.title.trim() ? props.title : undefined;
+    const valueLabel = (props.kind === "stat" || props.kind === "gauge") && props.label?.trim() ? props.label : undefined;
+    const fallback =
+      props.kind === "map"
+        ? chartMessages().interactiveMap
+        : props.kind === "stateTimeline"
+          ? chartMessages().interactiveTimeline
+          : props.kind === "line"
+            ? chartMessages().interactiveLineChart
+            : chartMessages().interactiveChart;
+    return override ?? title ?? valueLabel ?? fallback;
+  };
   const timelineFullDomain = (): StateTimelineDomain =>
     props.kind === "stateTimeline" ? stateTimelineDomain(props.rows, props.domain) : [0, 1];
 
@@ -473,7 +498,7 @@ const Chart = (props: ChartProps): JSX.Element => {
     tooltip: () => chartTooltipRef,
     anchor: () => lineAnchorRef,
     kind: () => props.kind,
-    enabled: interactive,
+    enabled: () => !isEmpty(props),
     select: (selection) => props.onSelect?.(selection),
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
@@ -569,23 +594,13 @@ const Chart = (props: ChartProps): JSX.Element => {
         class={`k2b-chart ${props.class ?? ""}`}
         data-chart-kind={props.kind}
         data-drag={draggable() ? (dragging() ? "active" : "idle") : undefined}
-        data-crosshair={!draggable() && interactiveLine() ? "true" : undefined}
-        data-interactive={interactive() ? "true" : undefined}
+        data-crosshair={!draggable() && props.kind === "line" ? "true" : undefined}
+        data-interactive="true"
         style={chartStyle()}
         role="group"
-        aria-label={
-          interactiveMap()
-            ? (labels().interactiveMap ?? chartMessages().interactiveMap)
-            : interactiveTimeline()
-              ? (labels().interactiveTimeline ?? chartMessages().interactiveTimeline)
-              : interactiveLine()
-                ? (labels().interactiveLine ?? chartMessages().interactiveLineChart)
-                : interactive()
-                  ? (labels().interactiveChart ?? chartMessages().interactiveChart)
-                  : undefined
-        }
-        aria-description={interactive() ? chartMessages().interactiveChart : undefined}
-        tabIndex={interactive() ? 0 : undefined}
+        aria-label={accessibleName()}
+        aria-description={accessibleName() !== chartMessages().interactiveChart ? chartMessages().interactiveChart : undefined}
+        tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={stopDragging}
@@ -607,17 +622,15 @@ const Chart = (props: ChartProps): JSX.Element => {
           }}
           innerHTML={isServer ? selectedChartSvg(svgMarkup(), props.selected) : svgMarkup()}
         />
-        <Show when={interactive()}>
-          <span ref={lineAnchorRef} class="k2b-chart__anchor" aria-hidden="true" />
-          <span
-            id={chartTooltipId}
-            ref={chartTooltipRef}
-            role="tooltip"
-            popover="manual"
-            data-instant="true"
-            class="k2b-tooltip k2b-chart__tooltip"
-          />
-        </Show>
+        <span ref={lineAnchorRef} class="k2b-chart__anchor" aria-hidden="true" />
+        <span
+          id={chartTooltipId}
+          ref={chartTooltipRef}
+          role="tooltip"
+          popover="manual"
+          data-instant="true"
+          class="k2b-tooltip k2b-chart__tooltip"
+        />
         <Show when={draggable()}>
           <div class="k2b-chart__controls">
             {control(labels().zoomIn ?? viewportMessages().zoomIn, "+", "ti-plus", () => zoom(1))}

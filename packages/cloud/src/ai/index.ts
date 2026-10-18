@@ -2,6 +2,7 @@ export { type AiAppSkillIssue, aiAppSkills, appSkillsRegistryState, reconcileApp
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
   AI_WEBSITE_APPROVAL_TOOL,
+  type AiToolApprovalChangeContext,
   type AiToolApprovalContext,
   type AiToolApprovalPreference,
   type AiToolApprovalRemember,
@@ -33,11 +34,22 @@ export {
   ChatTaskOccurrenceIdSchema,
   ChatTaskScheduleInputSchema,
   chatTaskCreateFingerprint,
+  chatTaskName,
   getChatTaskTimezone,
   normalizeChatTaskSchedule,
   toAiChatTaskOccurrenceView,
   toAiChatTaskView,
 } from "./chat-task-contracts";
+export {
+  CHAT_TASK_REASON_CODES,
+  type ChatTaskReason,
+  type ChatTaskReasonCode,
+  chatTaskLocale,
+  chatTaskNeedsNewTime,
+  chatTaskReasonSentence,
+  chatTaskReasonState,
+  chatTaskStopSentence,
+} from "./chat-task-reasons";
 export {
   type AiChatTask,
   AiChatTaskIdempotencyConflictError,

@@ -359,7 +359,7 @@ export const assistantApi = {
     if (input.chatId) query.set("chatId", input.chatId);
     if (input.state) query.set("state", input.state);
     const response = await coreTasksRequest(`?${query}`, { signal: input.signal });
-    if (!response.ok) throw new Error(await readError(response, "Failed to load scheduled tasks"));
+    if (!response.ok) throw new Error(await readError(response, "Failed to load routines"));
     return response.json();
   },
 
@@ -372,11 +372,11 @@ export const assistantApi = {
       signal: input.signal,
       headers: { "Idempotency-Key": input.idempotencyKey },
     });
-    if (!response.ok) throw new AssistantTaskRunError(await readError(response, "Scheduled task request failed"), response.status);
+    if (!response.ok) throw new AssistantTaskRunError(await readError(response, "Routine request failed"), response.status);
     const body: unknown = await response.json().catch(() => null);
     if (body && typeof body === "object" && "state" in body) {
       const { state } = body;
-      if (state === "queued" || state === "running" || state === "completed" || state === "failed") return state;
+      if (state === "queued" || state === "running" || state === "completed" || state === "failed" || state === "stopped") return state;
     }
     return "queued";
   },

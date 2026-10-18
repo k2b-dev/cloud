@@ -1,4 +1,4 @@
-import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPresentationCatalog, AppSearchLink } from "./app";
+import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPanel, AppPresentationCatalog, AppSearchLink } from "./app";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "./capabilities";
 import type { PlatformPermission } from "./outgoing-mail";
 import type { Role } from "./shared";
@@ -103,6 +103,8 @@ export type AppRegistryEntry = {
   searchLinks?: readonly AppSearchLink[];
   /** The app's part of the mobile app (preview); `href` is `/pwa/<id>`. Older readers ignore it. */
   pwa?: AppRegistryPwaPart;
+  /** Optional panel declaration; older readers ignore it. */
+  panel?: AppPanel;
   widgets?: AppRegistryWidget[];
   /** Setting keys declared by this app. Used by admin tooling to avoid treating live app-owned settings as legacy. */
   settingKeys?: readonly string[];

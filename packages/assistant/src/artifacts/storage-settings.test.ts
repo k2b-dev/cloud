@@ -30,8 +30,8 @@ test("only instance administrators configure validated storage settings", async 
     }
     expect(write).not.toHaveBeenCalled();
     await storageSettings.write({ fileMiB: 64, totalMiB: 500 }, identity);
-    expect(write).toHaveBeenCalledWith("assistant.storage_file_mib", 64);
-    expect(write).toHaveBeenCalledWith("assistant.storage_total_mib", 500);
+    expect(write).toHaveBeenCalledWith("assistant.storage_file_mib", 64, { replaceUnreadable: true });
+    expect(write).toHaveBeenCalledWith("assistant.storage_total_mib", 500, { replaceUnreadable: true });
   } finally {
     read.mockRestore();
     write.mockRestore();

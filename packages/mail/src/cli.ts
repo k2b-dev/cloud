@@ -69,6 +69,7 @@ import {
   MAIL_CONVERSATION_ASSIGNEE_LIMIT,
   MAIL_CONVERSATION_BATCH_LIMIT,
   type Mailbox,
+  type MailboxComposeLogo,
   type MailboxComposeStyle,
   type MailboxHealth,
   type MailboxOperationalHealth,
@@ -2783,6 +2784,85 @@ const everydayCommands = (t: Translate) => {
   ];
 };
 
+const composeLogoCommands = (t: Translate) => [
+  command("compose logo get", {
+    summary: t({ en: "Show the mailbox signature logo", de: "Das Postfachlogo für Signaturen anzeigen" }),
+    flags: mailboxFlag,
+    run: async ({ ctx, flags }) => {
+      const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+      const result = await readApi<MailboxComposeLogo>(ctx, `/mailboxes/${mailbox.id}/compose-logo`);
+      if (printStructured(ctx, result)) return;
+      const logo = result.logo;
+      ctx.print(
+        logo
+          ? `${logo.contentType}, ${logo.pixelWidth}x${logo.pixelHeight} px, ${logo.displayWidth} px, ${logo.altText}, ${logo.byteLength} ${t({ en: "bytes", de: "Bytes" })}, SHA-256 ${logo.sha256.slice(0, 12)}`
+          : t({ en: "No mailbox logo.", de: "Kein Postfachlogo." }),
+      );
+    },
+  }),
+  command("compose logo set", {
+    summary: t({
+      en: "Upload a PNG or JPEG signature logo (mailbox admin)",
+      de: "Ein PNG- oder JPEG-Signaturlogo hochladen (Postfachadmin)",
+    }),
+    flags: {
+      ...mailboxFlag,
+      file: flag.string({
+        required: true,
+        description: t({ en: "PNG or JPEG file, at most 100 KiB", de: "PNG- oder JPEG-Datei, höchstens 100 KiB" }),
+      }),
+      width: flag.int({
+        min: 1,
+        max: 600,
+        description: t({ en: "Display width in pixels (default 200)", de: "Anzeigebreite in Pixeln (Standard 200)" }),
+      }),
+      alt: flag.string({
+        description: t({ en: "Alternative text (default mailbox name)", de: "Alternativtext (Standard: Postfachname)" }),
+      }),
+    },
+    run: async ({ ctx, flags }) => {
+      if (!flags.file)
+        throw new Error(t({ en: "Pass --file with a PNG or JPEG file.", de: "Gib mit --file eine PNG- oder JPEG-Datei an." }));
+      const file = Bun.file(flags.file);
+      if (!(await file.exists())) throw new Error(t({ en: "Logo file does not exist.", de: "Die Logodatei existiert nicht." }));
+      if (file.size > 102400)
+        throw new Error(
+          t({
+            en: "The logo may contain at most 100 KiB (102400 bytes).",
+            de: "Das Logo darf höchstens 100 KiB (102400 Bytes) enthalten.",
+          }),
+        );
+      // Bound the read too, in case the file grows after stat.
+      const content = Buffer.from(await file.slice(0, 102401).arrayBuffer());
+      if (content.byteLength > 102400)
+        throw new Error(
+          t({
+            en: "The logo may contain at most 100 KiB (102400 bytes).",
+            de: "Das Logo darf höchstens 100 KiB (102400 Bytes) enthalten.",
+          }),
+        );
+      const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+      const result = await readApi<MailboxComposeLogo>(
+        ctx,
+        `/mailboxes/${mailbox.id}/compose-logo`,
+        jsonRequest("PUT", { content: content.toString("base64"), displayWidth: flags.width, altText: flags.alt }),
+      );
+      if (!printStructured(ctx, result)) ctx.print(t({ en: "Mailbox logo uploaded.", de: "Postfachlogo hochgeladen." }));
+    },
+  }),
+  command("compose logo remove", {
+    summary: t({ en: "Remove the mailbox signature logo (mailbox admin)", de: "Das Postfachlogo entfernen (Postfachadmin)" }),
+    flags: { ...mailboxFlag, yes: confirmFlag(t({ en: "Confirm logo removal", de: "Entfernen des Logos bestätigen" })) },
+    run: async ({ ctx, flags }) => {
+      if (!flags.yes)
+        throw new Error(t({ en: "Pass --yes to remove the mailbox logo.", de: "Bestätige das Entfernen des Postfachlogos mit --yes." }));
+      const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+      const result = await readApi<MailboxComposeLogo>(ctx, `/mailboxes/${mailbox.id}/compose-logo`, { method: "DELETE" });
+      if (!printStructured(ctx, result)) ctx.print(t({ en: "Mailbox logo removed.", de: "Postfachlogo entfernt." }));
+    },
+  }),
+];
+
 /** Commands whose help stays in English; `mailCommands` adds the localized everyday commands. */
 const specialistCommands = {
   groupSummaries: {
@@ -2819,6 +2899,7 @@ const specialistCommands = {
     "compose signature": "Inspect and select default signatures",
     "compose snippet": "Render reusable composition snippets",
     "compose style": "Inspect and replace mailbox email styles",
+    "compose logo": "Inspect and replace the mailbox signature logo",
     "compose template": "Create and manage signatures and snippets",
     "conversation keyword": "Add or remove provider keywords on conversations",
     "conversation tag": "Inspect and update conversation tags",
@@ -7863,11 +7944,15 @@ const mailCommands = (locale?: string) => {
     }),
     groupSummaries: {
       ...specialistCommands.groupSummaries,
+      "compose logo": t({
+        en: "Inspect and replace the mailbox signature logo",
+        de: "Das Signaturlogo des Postfachs anzeigen und ersetzen",
+      }),
       comments: t({ en: "Discuss a conversation internally", de: "Eine Unterhaltung intern besprechen" }),
       tag: t({ en: "Tag conversations and manage mailbox tags", de: "Unterhaltungen taggen und Postfach-Tags verwalten" }),
       conversation: t({ en: "Inspect, merge, and split conversations", de: "Unterhaltungen prüfen, zusammenführen und teilen" }),
     },
-    commands: [...everydayCommands(t), ...specialistCommands.commands],
+    commands: [...everydayCommands(t), ...specialistCommands.commands, ...composeLogoCommands(t)],
   });
 };
 

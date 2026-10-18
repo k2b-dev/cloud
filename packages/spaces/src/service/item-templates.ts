@@ -16,7 +16,7 @@ import {
 } from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import { defaultTemplateDate, draftFromTemplate, proposeTemplateDates, type TemplateItemDraft } from "../presentation/item-templates";
-import { filterAssigneeIdsWithAccess, validateAssigneeIdsInSpace, validateTagIdsInSpace } from "./items";
+import { listAssigneePrincipalsWithAccess, resolveAssigneePrincipals, validateAssigneeIdsInSpace, validateTagIdsInSpace } from "./items";
 
 // ==========================
 // Item templates: per-Space defaults for new tasks and events. IDs here are internal UUIDs;
@@ -94,21 +94,24 @@ const loadRelations = async (rows: DbTemplate[]): Promise<SpaceItemTemplate[]> =
       WHERE tt.template_id = ANY(${ids}::uuid[])
       ORDER BY t.name
     `,
-    sql<{ template_id: string; id: string; display_name: string; avatar_hash: string | null }[]>`
-      SELECT ta.template_id, u.id, u.display_name, u.avatar_hash
+    sql<{ template_id: string; kind: SpaceItemAssignee["kind"]; id: string; display_name: string; avatar_hash: string | null }[]>`
+      SELECT ta.template_id, COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, sa.name) AS display_name, u.avatar_hash,
+        CASE WHEN ta.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind
       FROM spaces.item_template_assignees ta
-      JOIN auth.users u ON u.id = ta.user_id
+      LEFT JOIN auth.users u ON u.id = ta.user_id
+      LEFT JOIN auth.service_accounts sa ON sa.id = ta.service_account_id
       WHERE ta.template_id = ANY(${ids}::uuid[])
-      ORDER BY u.display_name
+      ORDER BY display_name, id
     `,
   ]);
   // A default assignee counts only while they can access the Space, so the form, the API, capabilities, and new
-  // items all see the same people; the stored choice returns with the access.
+  // items all see the same principals; the stored choice returns with the access.
   const withAccess = new Map<string, Set<string>>();
   for (const spaceId of new Set(rows.map((row) => row.space_id))) {
     const templateIds = new Set(rows.filter((row) => row.space_id === spaceId).map((row) => row.id));
     const userIds = assigneeRows.filter((row) => templateIds.has(row.template_id)).map((row) => row.id);
-    withAccess.set(spaceId, new Set(await filterAssigneeIdsWithAccess(spaceId, userIds)));
+    const eligible = await listAssigneePrincipalsWithAccess(spaceId, userIds);
+    withAccess.set(spaceId, new Set(eligible.map((principal) => `${principal.kind}:${principal.id}`)));
   }
   const tags = Map.groupBy(tagRows, (row) => row.template_id);
   const assignees = Map.groupBy(assigneeRows, (row) => row.template_id);
@@ -117,8 +120,8 @@ const loadRelations = async (rows: DbTemplate[]): Promise<SpaceItemTemplate[]> =
       row,
       (tags.get(row.id) ?? []).map((tag) => ({ id: tag.id, spaceId: tag.space_id, name: tag.name, color: tag.color })),
       (assignees.get(row.id) ?? [])
-        .filter((user) => withAccess.get(row.space_id)?.has(user.id))
-        .map((user) => ({ id: user.id, displayName: user.display_name, avatarHash: user.avatar_hash })),
+        .filter((user) => withAccess.get(row.space_id)?.has(`${user.kind}:${user.id}`))
+        .map((user) => ({ kind: user.kind, id: user.id, displayName: user.display_name, avatarHash: user.avatar_hash })),
     ),
   );
 };
@@ -171,7 +174,12 @@ const dateRuleColumns = (rule: TemplateDateRule) => ({
   date_offset_days: rule.type === "offset" ? rule.days : null,
 });
 
-const replaceRelations = async (db: SqlExecutor, templateId: string, data: { tagIds?: string[]; assigneeIds?: string[] }) => {
+const replaceRelations = async (
+  db: SqlExecutor,
+  spaceId: string,
+  templateId: string,
+  data: { tagIds?: string[]; assigneeIds?: string[] },
+) => {
   if (data.tagIds !== undefined) {
     await db`DELETE FROM spaces.item_template_tags WHERE template_id = ${templateId}::uuid`;
     const tagIds = [...new Set(data.tagIds)];
@@ -184,11 +192,15 @@ const replaceRelations = async (db: SqlExecutor, templateId: string, data: { tag
   }
   if (data.assigneeIds !== undefined) {
     await db`DELETE FROM spaces.item_template_assignees WHERE template_id = ${templateId}::uuid`;
-    const userIds = [...new Set(data.assigneeIds)];
-    if (userIds.length > 0) {
+    const principals = await resolveAssigneePrincipals(spaceId, data.assigneeIds, db);
+    if (principals.length > 0) {
       await db`
-        INSERT INTO spaces.item_template_assignees (template_id, user_id)
-        SELECT ${templateId}::uuid, user_id FROM unnest(${toPgUuidArray(userIds)}::uuid[]) AS user_id
+        INSERT INTO spaces.item_template_assignees (template_id, user_id, service_account_id)
+        SELECT ${templateId}::uuid, id, NULL::uuid
+        FROM unnest(${toPgUuidArray(principals.filter((principal) => principal.kind === "user").map((principal) => principal.id))}::uuid[]) AS id
+        UNION ALL
+        SELECT ${templateId}::uuid, NULL::uuid, id
+        FROM unnest(${toPgUuidArray(principals.filter((principal) => principal.kind === "service_account").map((principal) => principal.id))}::uuid[]) AS id
       `;
     }
   }
@@ -233,7 +245,7 @@ export const create = async (params: {
           RETURNING id
         `;
         if (!row) return { ok: false, error: "Failed to create template", status: 500 };
-        await replaceRelations(tx, row.id, data);
+        await replaceRelations(tx, spaceId, row.id, data);
         return { ok: true, data: row.id };
       }),
     );
@@ -294,7 +306,7 @@ export const update = async (params: { id: string; data: UpdateItemTemplate }): 
         WHERE id = ${params.id}::uuid
         RETURNING id
       `;
-      if (row) await replaceRelations(tx, row.id, data);
+      if (row) await replaceRelations(tx, existing.spaceId, row.id, data);
       return Boolean(row);
     });
     if (!updated) return { ok: false, error: "Template not found", status: 404 };

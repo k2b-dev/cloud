@@ -96,7 +96,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-// Phones get the stacked sidebar; 1000 px gets the compact overlay.
+// Phones get the stacked sidebar, whose rows live in the sheet All opens; 1000 px gets the compact overlay.
 const load = async (width: number, mode: Mode) => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
   await page.setContent(
@@ -112,6 +112,10 @@ const load = async (width: number, mode: Mode) => {
   await page.addScriptTag({ content: script });
   await page.locator(".k2b-app-workspace__sidebar-item").first().waitFor({ state: "attached" });
   if (width === 1000) await page.locator(".k2b-app-workspace__head-toggle").click();
+  if (width < 768) {
+    await page.locator(".k2b-app-workspace__sidebar-all").click();
+    await page.locator(".k2b-app-workspace__sidebar-sheet").waitFor();
+  }
   await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
   await page.mouse.move(width - 12, 780);
   return page;
@@ -119,8 +123,10 @@ const load = async (width: number, mode: Mode) => {
 
 const read = (page: Page) =>
   page.evaluate(() => {
-    const sidebar = document.querySelector(".k2b-app-workspace__sidebar")!.getBoundingClientRect();
-    const body = document.querySelector(".k2b-app-workspace__sidebar-body[data-sidebar-mode='expanded']")!;
+    // A stacked sidebar's rows are in its sheet; their insets are measured against the sheet's list.
+    const sheet = document.querySelector(".k2b-app-workspace__sidebar-sheet");
+    const sidebar = (sheet ?? document.querySelector(".k2b-app-workspace__sidebar")!).getBoundingClientRect();
+    const body = (sheet ?? document).querySelector(".k2b-app-workspace__sidebar-body[data-sidebar-mode='expanded']")!;
     const round = (value: number) => Math.round(value * 2) / 2;
     const rows = Array.from(body.querySelectorAll(".k2b-app-workspace__sidebar-item, .k2b-app-workspace__nav-tree-row"))
       .filter((element) => element.getBoundingClientRect().width > 0 && getComputedStyle(element).visibility === "visible")
@@ -148,11 +154,14 @@ describe(`@k2b/ui sidebar inset (${browserName})`, () => {
     const page = await load(width, mode);
     try {
       const rest = await read(page);
-      expect(rest.overflowing).toBe(true);
+      // The sheet's list grows with its rows and the sheet scrolls instead.
+      if (width >= 768) expect(rest.overflowing).toBe(true);
       expect(rest.rows).toHaveLength(33);
-      expect(rest.rows.filter(({ left, right }) => left !== 8 || right !== 8)).toEqual([]);
+      const inset = width >= 768 ? 8 : 0;
+      expect(rest.rows.filter(({ left, right }) => left !== inset || right !== inset)).toEqual([]);
 
-      const row = page.locator(".k2b-app-workspace__sidebar-item", { has: page.getByText("Hover action and preview", { exact: true }) });
+      const scope = width < 768 ? page.locator(".k2b-app-workspace__sidebar-sheet") : page;
+      const row = scope.locator(".k2b-app-workspace__sidebar-item", { has: page.getByText("Hover action and preview", { exact: true }) });
       const box = (await row.boundingBox())!;
       await page.mouse.move(box.x + 12, box.y + box.height / 2);
       const action = await row.getByRole("button", { name: "Chat actions", exact: true }).evaluate((element) => {

@@ -1,14 +1,19 @@
 import {
   buildPresetPdfHtml,
+  type GotenbergConfig,
+  GotenbergRenderError,
   MarkdownPdfError,
   type MarkdownPdfTemplateId,
   type RenderHtmlToPdfResult,
-  renderHtmlToPdf,
+  renderHtmlToPdfWithConfig,
 } from "@k2b/cloud/services/pdf";
 import katexCss from "katex/dist/katex.min.css" with { type: "text" };
-import { type BookReferences, renderNotebookBook } from "../lib/book-renderer";
+import { type BookImagePlacement, type BookReferences, renderNotebookBook } from "../lib/book-renderer";
 import { LIGATURE_CLASS, LIGATURES } from "../lib/ligatures";
+import type { NotePdfOmission } from "../lib/pdf-omissions";
+import * as attachments from "./attachments";
 import { resolveBookQueries, resolveBookReferences } from "./book";
+import { NOTE_PDF_PAGE_BOX_MM, type NotePdfImageDependencies, prepareNotePdfImages } from "./note-pdf-images";
 import type { NoteQueryResult } from "./note-query";
 
 /**
@@ -52,8 +57,7 @@ ol ol ol ol ol ol { list-style-type: lower-roman; }
 a.notebook-book-tag { color: #047857; text-decoration: none; }
 i.ti { display: none; }
 .notebook-book-diagnostic { padding: .5em .8em; border-left: 3px solid #cbd5e1; color: #475569; }
-.notebook-book-empty, .notebook-book-image-label, .notebook-book-mermaid figcaption { color: #64748b; }
-.notebook-book-image-label { font-style: italic; }
+.notebook-book-empty, .notebook-book-mermaid figcaption { color: #64748b; }
 .notebook-book-mermaid { margin: 0 0 1em; }
 .notebook-book-mermaid figcaption { margin-bottom: .3em; font-size: .85em; }
 .notebook-book-chart { margin: 0 0 1em; color: #0f172a; break-inside: avoid; }
@@ -98,9 +102,13 @@ export type NotePdfHtmlInput = {
 };
 
 /** The reader's Book rendering of a note inside the chosen print preset. */
-export const buildNotePdfHtml = (input: NotePdfHtmlInput): string => {
+export const buildNotePdfHtml = (
+  input: NotePdfHtmlInput,
+): { html: string; omissions: NotePdfOmission[]; images: BookImagePlacement[]; preset: MarkdownPdfTemplateId } => {
   if (!input.markdown.trim()) throw new MarkdownPdfError("bad_input", "Markdown must not be empty.", "markdown_empty");
-  const { html } = renderNotebookBook({
+  // Custom CSS without a preset prints on the document page box, like buildPresetPdfHtml.
+  const preset = input.templateId ?? "document";
+  const { html, omissions, images } = renderNotebookBook({
     markdown: input.markdown,
     notebookId: input.notebookShortId,
     noteId: input.noteShortId,
@@ -110,8 +118,18 @@ export const buildNotePdfHtml = (input: NotePdfHtmlInput): string => {
     print: true,
   });
   const css = html.includes("notebook-book-math") ? `${NOTE_PRINT_CSS}\n${KATEX_PRINT_CSS}` : NOTE_PRINT_CSS;
-  return buildPresetPdfHtml({ html, templateId: input.templateId, customCss: input.customCss, css });
+  const imageCss = `.notebook-book-image { max-width: 100%; height: auto; max-height: ${NOTE_PDF_PAGE_BOX_MM[preset].height}mm; object-fit: contain; }
+.notebook-book-image-missing { display: inline-block; box-sizing: border-box; max-width: 100%; padding: .5em .75em; border: 1px dashed #94a3b8; border-radius: 4px; color: #475569; font-style: italic; font-size: .9em; line-height: 1.4; vertical-align: middle; }`;
+  return {
+    html: buildPresetPdfHtml({ html, templateId: input.templateId, customCss: input.customCss, css: `${css}\n${imageCss}` }),
+    omissions,
+    images,
+    preset,
+  };
 };
+
+/** Each preparation/render phase fits under the request's 240 s idle ceiling, with 10 s headroom. */
+export const notePdfPhaseMs = (config: GotenbergConfig) => Math.min(config.timeoutMs, 115_000);
 
 /** Render the caller's note snapshot as PDF, with query blocks resolved for the caller's access subject. */
 export const renderNotePdf = async (
@@ -124,7 +142,71 @@ export const renderNotePdf = async (
     bypassAccess?: boolean;
     title: string;
   },
-): Promise<RenderHtmlToPdfResult> => {
-  const [queryResults, references] = await Promise.all([resolveBookQueries(params), resolveBookReferences(params)]);
-  return renderHtmlToPdf({ html: buildNotePdfHtml({ ...params, queryResults, references }), title: params.title });
+  options: {
+    signal?: AbortSignal;
+    config: GotenbergConfig;
+    /** `notebooks.max_attachment_size_mb` in bytes: larger attachments are not loaded. */
+    maxAttachmentBytes: number;
+    imageDependencies?: Partial<NotePdfImageDependencies>;
+  },
+): Promise<RenderHtmlToPdfResult & { omissions: NotePdfOmission[] }> => {
+  const { config, maxAttachmentBytes } = options;
+  // Without a renderer, loading attachments and running image workers would only hold their slots.
+  if (!config.url.trim()) throw new GotenbergRenderError("not_configured", "Gotenberg URL is not configured.");
+  const phaseMs = notePdfPhaseMs(config);
+  const deadline = Date.now() + phaseMs;
+  const preparation = new AbortController();
+  const timer = setTimeout(() => preparation.abort(), phaseMs);
+  const signal = options.signal ? AbortSignal.any([options.signal, preparation.signal]) : preparation.signal;
+  const list = options.imageDependencies?.list ?? attachments.listByShortIds;
+  // Started work finishes before the route releases its conversion slot; the signal only stops the next step.
+  const closed = () => {
+    if (options.signal?.aborted) throw new GotenbergRenderError("timeout", "Note PDF preparation aborted.");
+  };
+  try {
+    closed();
+    const requestedAttachmentIds = new Set(attachments.extractIds(params.markdown));
+    const [queryResults, attachmentMetadata] = await Promise.all([
+      resolveBookQueries({ ...params, signal }),
+      list({
+        shortIds: [...requestedAttachmentIds],
+        notebookId: params.notebookId,
+      }),
+    ]);
+    closed();
+    const references = await resolveBookReferences(params, attachmentMetadata);
+    closed();
+    const built = buildNotePdfHtml({ ...params, queryResults, references });
+    const prepared = await prepareNotePdfImages(
+      {
+        ...built,
+        notebookId: params.notebookId,
+        maxHtmlBytes: config.maxHtmlBytes,
+        maxAttachmentBytes,
+        deadline,
+        signal,
+        locale: params.locale,
+      },
+      {
+        ...options.imageDependencies,
+        // The raw-text scan misses escaped forms such as `attach\://…` that Markdown still parses; load only those.
+        list: async ({ shortIds, notebookId }) => {
+          const unrequested = shortIds.filter((id) => !requestedAttachmentIds.has(id));
+          return unrequested.length ? [...attachmentMetadata, ...(await list({ shortIds: unrequested, notebookId }))] : attachmentMetadata;
+        },
+      },
+    );
+    closed();
+    clearTimeout(timer);
+    return {
+      ...(await renderHtmlToPdfWithConfig(
+        { html: prepared.html, title: params.title, assets: prepared.assets },
+        { ...config, timeoutMs: phaseMs },
+        { signal: options.signal },
+      )),
+      omissions: prepared.omissions,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 };

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, mock, test } from "bun:test";
 import { appApproval } from "@k2b/cloud/browser/app-approval";
 import { createRoot } from "solid-js";
 import { createDomTestHarness, type DomTestHarness } from "../../../packages/ui/test/dom";
+import type { Login } from "./authenticator";
 import type { Vault } from "./vault";
 
 // Records are sealed with a real vault session and parsed with the real schemas. Only IndexedDB is replaced:
@@ -58,7 +59,9 @@ const issuer = "https://cloud.example.org";
 const account = { uid: "vkolb", displayName: "Valentin Kolb", mail: "valentin@example.org" };
 const pairedAt = "2026-09-01T10:00:00.000Z";
 const operations: string[] = [];
-let supportsActions = false;
+let features: string[] = [];
+const inboxCommands: Array<{ operation: string; accept?: string[] }> = [];
+let inboxLogins: Login[] = [];
 let actStatus = 200;
 let dropAct = false;
 const vault: Vault = {
@@ -80,7 +83,9 @@ beforeEach(() => {
   tables.clear();
   operations.length = 0;
   otherTab = undefined;
-  supportsActions = false;
+  features = [];
+  inboxCommands.length = 0;
+  inboxLogins = [];
   actStatus = 200;
   dropAct = false;
   // The Cloud: discovery, then signed device commands. Signatures are the SDK's concern and are not checked here.
@@ -95,13 +100,15 @@ beforeEach(() => {
           appOrigin: location.origin,
           algorithm: "ES256",
           limits: appApproval.limits,
-          ...(supportsActions ? { features: ["actions"] } : {}),
+          ...(features.length ? { features } : {}),
         });
-      const command: { operation: string; decision?: string } = JSON.parse(String(init?.body)).proof.command;
+      const command: { operation: string; decision?: string; accept?: string[] } = JSON.parse(String(init?.body)).proof.command;
       operations.push(command.operation);
       if (command.operation === "account") return Response.json({ account, device: { name: "iPhone", createdAt: pairedAt } });
-      if (command.operation === "inbox")
-        return Response.json({ logins: [], actions: [actionSummary()], moreActions: 2, pollAfterSeconds: 5 });
+      if (command.operation === "inbox") {
+        inboxCommands.push(command);
+        return Response.json({ logins: inboxLogins, actions: [actionSummary()], moreActions: 2, pollAfterSeconds: 5 });
+      }
       if (command.operation === "action") return Response.json(actionView());
       if (command.operation === "act") {
         if (dropAct) throw new Error("lost response");
@@ -201,7 +208,7 @@ const actionSummary = () => {
 
 for (const actions of [false, true]) {
   test(`polling uses ${actions ? "inbox" : "pending"} according to discovery`, async () => {
-    supportsActions = actions;
+    features = actions ? ["actions"] : [];
     const { auth, binding } = await paired();
     for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
     expect(operations).toContain(actions ? "inbox" : "pending");
@@ -211,9 +218,32 @@ for (const actions of [false, true]) {
   });
 }
 
+for (const terminal of [false, true]) {
+  test(`inbox ${terminal ? "opts in and preserves terminal consent" : "omits accept for an older Cloud and preserves browser sign-ins"}`, async () => {
+    features = terminal ? ["actions", "terminal-logins"] : ["actions"];
+    const request: Login = {
+      ...login(),
+      ...(terminal
+        ? {
+            terminal: {
+              client: { id: "cloud-cli", name: "Cloud CLI" },
+              scopes: ["openid", "profile", "email", "offline_access", "read", "write"],
+              lifetimeSeconds: 28800,
+            },
+          }
+        : {}),
+    };
+    inboxLogins = [request];
+    const { auth, binding } = await paired();
+    for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+    expect(inboxCommands).toEqual([terminal ? { operation: "inbox", accept: ["terminal-logins"] } : { operation: "inbox" }]);
+    expect(auth.states()[binding.id]?.requests).toEqual([request]);
+  });
+}
+
 for (const status of [200, 409, 403, 500]) {
   test(`act handles HTTP ${status} and reserves the Action across models before sending`, async () => {
-    supportsActions = true;
+    features = ["actions"];
     actStatus = status;
     const { auth, binding } = await paired();
     for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
@@ -239,7 +269,7 @@ for (const status of [200, 409, 403, 500]) {
 }
 
 test("a lost Action response stays uncertain and never sends twice", async () => {
-  supportsActions = true;
+  features = ["actions"];
   dropAct = true;
   const { auth, binding } = await paired();
   const view = actionView();

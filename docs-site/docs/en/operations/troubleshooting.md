@@ -74,13 +74,38 @@ See [Routing](/en/docs/build/routing).
 
 ## Application cannot read settings
 
-Check that every container uses the same `APP_SECRET`.
+In **Administration → Settings**, an **Unreadable** badge and a notice mean a saved row exists
+but this application cannot decrypt or validate it. The displayed value is the
+environment fallback or default currently in use. Files administration shows a
+notice when its saved configuration cannot be read. Ordinary saves fail with
+HTTP 409 `setting_unreadable`; they preserve the saved row.
 
-Then check the setting definition, stored value, environment fallback, and
-validation error. A changed secret can make existing encrypted values
-unreadable.
+Check that every container uses the same stable `APP_SECRET`, then check the
+setting definition and validation rules. Restoring the correct key lets the
+application read the original value again. If the saved value is no longer
+needed, explicitly replace it with a complete new value or reset it to the
+default. Reset deletes the saved row.
 
-See [Runtime configuration](/en/docs/operations/runtime-configuration).
+For Files, enter a nonempty Filegate token with the complete configuration to
+replace the unreadable configuration. Without a token, the API returns HTTP
+409 `configuration_unreadable`. Alternatively, choose **Reset configuration**
+in the Files notice or run `cld filesv2 admin configuration reset --yes`; both
+storage areas return to disabled defaults. This removes configuration, not
+files in Filegate.
+
+Core still starts when it cannot read its stored Web Push keys, but browser
+notifications stay off and Core logs
+`cannot read setting "notifications.web_push_…"`. Core does not create new
+keys over the stored ones. Restore the correct `APP_SECRET` to keep the
+existing browser subscriptions. To start over with new keys, an administrator
+deletes both settings with
+`DELETE /api/admin/core/settings/notifications.web_push_public_key` and
+`DELETE /api/admin/core/settings/notifications.web_push_private_key`. Core
+creates a new key pair the next time it needs one, and every person turns
+browser notifications on again.
+
+See [Runtime configuration](/en/docs/operations/runtime-configuration) and
+[Settings](/en/docs/platform/settings#access-settings-outside-a-request).
 
 ## Postgres or Valkey is unavailable
 
@@ -150,15 +175,15 @@ profile still uses an `assistant` CLI plugin from an earlier release. Run
 `cld plugins update assistant` for that profile; see
 [Conversation streams announce provider retries](/en/docs/reference/deprecations-and-migrations#conversation-streams-announce-provider-retries).
 
-## Scheduled AI tasks need attention
+## Assistant routines need attention
 
-Scheduled runs discover and load app capabilities only within their mandate
-policy and task grants. A call rejected by a grant or fixed input returns a tool
-error and lets the model continue. Check a task marked `needs_attention` for
+Routine runs discover and load app capabilities only within their mandate
+policy and routine grants. A call rejected by a grant or fixed input returns a tool
+error and lets the model continue. Check a routine (scheduled task) marked `needs_attention` for
 unavailable or changed mandate authority, a target app denying the sponsor,
 an unknown action outcome, or an operation requiring approval or a browser.
-Review the task's grants in the normal chat before changing its scope. See
-[Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-task).
+Review the routine's grants in the normal chat before changing its scope. See
+[Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-routine).
 
 ## AI turns stop using tools before they finish
 

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { sql } from "bun";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { newShortId } from "./lib/short-id";
-import { buildOptionalSearchIndex, migrate } from "./migrate";
+import { buildCommandTargetIndex, buildOptionalSearchIndex, migrate } from "./migrate";
 
 const suite = suiteFor("database", "nats");
 
@@ -114,6 +114,26 @@ suite("mail baseline schema", () => {
       signature_template_fk: true,
       versions: 1,
     });
+  });
+
+  test("installs immutable mailbox logos on an older baseline and preserves the FK/index contract on rerun", async () => {
+    await migrate();
+    await sql`ALTER TABLE mail.mailboxes DROP COLUMN logo_version_id`;
+    await sql`ALTER TABLE mail.outbox_submissions DROP COLUMN inline_logo_version_id`;
+    await sql`DROP TABLE mail.mailbox_logo_versions`;
+    await migrate();
+    await migrate();
+    const [shape] = await sql<
+      { table_exists: boolean; mailbox_fk: boolean; outbox_fk: boolean; mailbox_index: boolean; outbox_index: boolean; checks: number }[]
+    >`
+      SELECT to_regclass('mail.mailbox_logo_versions') IS NOT NULL AS table_exists,
+        EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.mailboxes'::regclass AND confrelid = 'mail.mailbox_logo_versions'::regclass AND confdeltype = 'a') AS mailbox_fk,
+        EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.outbox_submissions'::regclass AND confrelid = 'mail.mailbox_logo_versions'::regclass AND confdeltype = 'n') AS outbox_fk,
+        to_regclass('mail.mailbox_logo_versions_mailbox_idx') IS NOT NULL AS mailbox_index,
+        EXISTS (SELECT 1 FROM pg_index WHERE indexrelid = 'mail.outbox_inline_logo_version_idx'::regclass AND indpred IS NOT NULL) AS outbox_index,
+        (SELECT count(*)::int FROM pg_constraint WHERE conrelid = 'mail.mailbox_logo_versions'::regclass AND contype = 'c') AS checks
+    `;
+    expect(shape).toEqual({ table_exists: true, mailbox_fk: true, outbox_fk: true, mailbox_index: true, outbox_index: true, checks: 8 });
   });
 
   test("backfills assignees once when upgrading an older database and preserves later changes", async () => {
@@ -261,6 +281,108 @@ suite("mail baseline schema", () => {
       await writer`ROLLBACK`.simple();
       writer.release();
       other.release();
+    }
+  });
+
+  test("builds the command target index once without session locks, and replaces an interrupted build", async () => {
+    await migrate();
+    const index = async () => {
+      const [row] = await sql<{ oid: string; valid: boolean; definition: string }[]>`
+        SELECT indexrelid::text AS oid, indisvalid AND indisready AND indislive AS valid,
+          pg_get_indexdef(indexrelid) AS definition
+        FROM pg_index WHERE indexrelid = to_regclass('mail.commands_message_target_idx')
+      `;
+      return row;
+    };
+    const expectValidIndex = async () => {
+      const row = await index();
+      expect(row?.valid).toBe(true);
+      expect(row?.definition).toContain("USING btree (mailbox_id, ((target ->> 'remoteMessageRefId'::text)), kind)");
+      expect(row?.definition).toContain("WHERE (target ? 'remoteMessageRefId'::text)");
+      return row!;
+    };
+    const buildRuns = async () => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const [row] = await sql<{ pid: number }[]>`
+          SELECT pid FROM pg_stat_progress_create_index
+          WHERE datname = current_database() AND relid = to_regclass('mail.commands')
+        `;
+        if (row) return row.pid;
+        await Bun.sleep(25);
+      }
+      throw new Error("The command target index build did not start");
+    };
+    const expectNoAdvisoryLocks = async () => {
+      const [row] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM pg_locks
+        WHERE locktype = 'advisory' AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+      `;
+      expect(row?.count).toBe(0);
+    };
+
+    expect(["built", "ready"]).toContain(await buildCommandTargetIndex());
+    const first = await expectValidIndex();
+    expect(await buildCommandTargetIndex()).toBe("ready");
+    expect((await index())?.oid).toBe(first.oid);
+    await expectNoAdvisoryLocks();
+
+    const writer = await sql.reserve();
+    const other = await sql.reserve();
+    let build: ReturnType<typeof buildCommandTargetIndex> | undefined;
+    let running: Promise<string> | undefined;
+    let otherPid: number | undefined;
+    try {
+      const [backend] = await other<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      if (!backend) throw new Error("Missing reserved index build backend");
+      otherPid = backend.pid;
+      // A second Mail start cannot enter while the first holds the shared index-build lease.
+      await sql`DROP INDEX CONCURRENTLY mail.commands_message_target_idx`.simple();
+      await writer`BEGIN`.simple();
+      await writer`LOCK TABLE mail.commands IN ROW EXCLUSIVE MODE`.simple();
+      build = buildCommandTargetIndex();
+      await buildRuns();
+      expect(await buildCommandTargetIndex()).toBe("busy");
+      await expectNoAdvisoryLocks();
+      await writer`COMMIT`.simple();
+      expect(await build).toBe("built");
+      await expectValidIndex();
+
+      // An operator's build runs without Mail's lease and must also be left alone.
+      await sql`DROP INDEX CONCURRENTLY mail.commands_message_target_idx`.simple();
+      await writer`BEGIN`.simple();
+      await writer`LOCK TABLE mail.commands IN ROW EXCLUSIVE MODE`.simple();
+      running = other`CREATE INDEX CONCURRENTLY commands_message_target_idx ON mail.commands (id)`.simple().then(
+        () => "built",
+        () => "interrupted",
+      );
+      const pid = await buildRuns();
+      expect(await buildCommandTargetIndex()).toBe("busy");
+      await expectNoAdvisoryLocks();
+      await sql`SELECT pg_cancel_backend(${pid}::int)`;
+      expect(await running).toBe("interrupted");
+      running = undefined;
+      await writer`COMMIT`.simple();
+      const invalid = await index();
+      expect(invalid?.valid).toBe(false);
+      expect(await buildCommandTargetIndex()).toBe("built");
+      const rebuilt = await expectValidIndex();
+      expect(rebuilt.oid).not.toBe(invalid?.oid);
+      expect(await buildCommandTargetIndex()).toBe("ready");
+      expect((await index())?.oid).toBe(rebuilt.oid);
+      await expectNoAdvisoryLocks();
+    } finally {
+      // Cancel the external build before releasing the writer, so it cannot finish with the wrong definition.
+      if (running && otherPid !== undefined) {
+        await sql`SELECT pg_cancel_backend(${otherPid}::int)`;
+        await running;
+      }
+      await writer`ROLLBACK`.simple();
+      await build;
+      writer.release();
+      other.release();
+      // Later tests inherit a valid index even if an assertion above failed.
+      expect(["built", "ready"]).toContain(await buildCommandTargetIndex());
+      await expectValidIndex();
     }
   });
 

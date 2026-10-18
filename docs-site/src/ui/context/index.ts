@@ -1,6 +1,7 @@
 import actionButtons from "./actions/buttons.md" with { type: "text" };
 import actionCopyRemove from "./actions/copy-remove.md" with { type: "text" };
 import actionDisclosure from "./actions/disclosure.md" with { type: "text" };
+import actionDragAndDrop from "./actions/drag-and-drop.md" with { type: "text" };
 import actionGestures from "./actions/gestures.md" with { type: "text" };
 import actionMenus from "./actions/menus.md" with { type: "text" };
 import actionSegmentedControl from "./actions/segmented-control.md" with { type: "text" };
@@ -76,6 +77,7 @@ import layoutPanes from "./layout/panes.md" with { type: "text" };
 import layoutPermissions from "./layout/permissions.md" with { type: "text" };
 import layoutPrint from "./layout/print.md" with { type: "text" };
 import layoutPullToRefresh from "./layout/pull-to-refresh.md" with { type: "text" };
+import layoutResizeSeparator from "./layout/resize-separator.md" with { type: "text" };
 import layoutScrollArea from "./layout/scroll-area.md" with { type: "text" };
 import layoutSettingsModal from "./layout/settings-modal.md" with { type: "text" };
 import layoutTabBar from "./layout/tab-bar.md" with { type: "text" };
@@ -124,6 +126,7 @@ const catalogContextSources = {
   "actions/buttons": { file: "actions/buttons.md", content: actionButtons },
   "actions/copy-remove": { file: "actions/copy-remove.md", content: actionCopyRemove },
   "actions/menus": { file: "actions/menus.md", content: actionMenus },
+  "actions/drag-and-drop": { file: "actions/drag-and-drop.md", content: actionDragAndDrop },
   "actions/gestures": { file: "actions/gestures.md", content: actionGestures },
   "actions/filters": { file: "filter-chip.md", content: actionFilters },
   "actions/segmented-control": { file: "actions/segmented-control.md", content: actionSegmentedControl },
@@ -141,6 +144,7 @@ const catalogContextSources = {
   "layout/discussion": { file: "layout/discussion.md", content: layoutDiscussion },
   "layout/page-title": { file: "layout/page-title.md", content: layoutPageTitle },
   "layout/panes": { file: "layout/panes.md", content: layoutPanes },
+  "layout/resize-separator": { file: "layout/resize-separator.md", content: layoutResizeSeparator },
   "layout/scroll-area": { file: "layout/scroll-area.md", content: layoutScrollArea },
   "layout/pull-to-refresh": { file: "layout/pull-to-refresh.md", content: layoutPullToRefresh },
   "layout/overview": { file: "layout/overview.md", content: layoutOverview },

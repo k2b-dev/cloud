@@ -64,6 +64,7 @@ import {
   mailWorkflowExecutionAuthorityActive,
   resolveMailWorkflowExecutionAuthority,
 } from "../service/workflow-runtime-context";
+import { mailWorkflowTemplateOutput } from "./template-validation";
 
 type JsonObject = Record<string, WorkflowJsonValue>;
 type ActionResult = WorkflowActionResult<WorkflowJsonValue>;
@@ -387,10 +388,8 @@ const messageAction = (
           const turn = PLACEMENT_ACTIONS.has(kind)
             ? await resolveIncomingAutomationPlacementTurn(turnParams)
             : await resolveIncomingAutomationMessageStateTurn(turnParams);
-          // An older automation already moved this message, or is the one that
-          // decides where it goes. Ordering a move out of a folder the message
-          // has left is not this automation's failure to report. An incoming
-          // automation's flag or keyword step yields the same way.
+          // Only incoming automations yield when the message has left, another
+          // run is moving it, or an older automation decides its placement.
           if (turn.state === "skip") return skipped(turn.reason);
         }
         const [target] = await tx<{ remote_message_ref_id: string }[]>`
@@ -992,7 +991,11 @@ export const MAIL_WORKFLOW_ACTIONS = {
           cc: addresses(values.cc, "cc"),
           bcc: addresses(values.bcc, "bcc"),
           subject: renderMailWorkflowTemplate(ctx, asText(values.subject, "subject"), "text"),
-          body: renderMailWorkflowTemplate(ctx, asText(values.body, "body"), values.format === "plain" ? "text" : "editable_markdown"),
+          body: renderMailWorkflowTemplate(
+            ctx,
+            asText(values.body, "body"),
+            mailWorkflowTemplateOutput("createDraft", "body", values.format),
+          ),
           format: values.format === "plain" ? "plain" : "markdown",
         });
         if (!draft.ok) return resultFailure(draft.error);
@@ -1052,7 +1055,11 @@ export const MAIL_WORKFLOW_ACTIONS = {
           conversationId,
           sourceMessageId,
           senderIdentityId,
-          body: renderMailWorkflowTemplate(ctx, asText(values.body, "body"), values.format === "plain" ? "text" : "editable_markdown"),
+          body: renderMailWorkflowTemplate(
+            ctx,
+            asText(values.body, "body"),
+            mailWorkflowTemplateOutput("createReplyDraft", "body", values.format),
+          ),
           format: values.format === "plain" ? "plain" : "markdown",
         });
         if (!draft.ok) return resultFailure(draft.error);
@@ -1225,7 +1232,11 @@ export const MAIL_WORKFLOW_ACTIONS = {
             conversationId,
             senderIdentityId,
             subject: renderMailWorkflowTemplate(ctx, asText(values.subject, "subject"), "text"),
-            body: renderMailWorkflowTemplate(ctx, asText(values.body, "body"), values.format === "markdown" ? "markdown" : "text"),
+            body: renderMailWorkflowTemplate(
+              ctx,
+              asText(values.body, "body"),
+              mailWorkflowTemplateOutput("automaticReply", "body", values.format),
+            ),
             format: values.format === "markdown" ? "markdown" : "plain",
             protocolFacts: parseMessageProtocolFacts(message.protocolFacts),
             occurredAt: ctx.invocation.occurredAt,

@@ -73,7 +73,7 @@ export const assistantTaskCommands = [
     },
   }),
   command("tasks list", {
-    summary: "List scheduled Assistant tasks",
+    summary: "List tasks",
     flags: {
       chat: flag.string({ description: "Limit tasks to this chat ID" }),
       state: flag.enum(["active", "paused", "completed", "needs_attention"] as const),
@@ -101,7 +101,7 @@ export const assistantTaskCommands = [
     },
   }),
   command("tasks get", {
-    summary: "Show one scheduled task and its recent runs",
+    summary: "Show one task and its recent runs",
     args: { task: arg.required({ valueLabel: "task-id" }) },
     async run({ ctx, args }) {
       const detail = await readApi<TaskDetail>(ctx, path(args.task));
@@ -151,7 +151,7 @@ export const assistantTaskCommands = [
     },
   }),
   command("tasks update", {
-    summary: "Update a scheduled task",
+    summary: "Update a task",
     args: { task: arg.required({ valueLabel: "task-id" }) },
     flags: {
       prompt: flag.input({ description: "Replacement prompt text or --prompt-file" }),
@@ -182,7 +182,7 @@ export const assistantTaskCommands = [
   }),
   ...(["pause", "resume"] as const).map((operation) =>
     command(`tasks ${operation}`, {
-      summary: `${operation === "pause" ? "Pause" : "Resume"} a scheduled task`,
+      summary: `${operation === "pause" ? "Pause" : "Resume"} a task`,
       args: { task: arg.required({ valueLabel: "task-id" }) },
       async run({ ctx, args }) {
         const task = await readApi<AssistantChatTask>(ctx, path(args.task, `/${operation}`), jsonRequest("POST"));
@@ -203,7 +203,7 @@ export const assistantTaskCommands = [
     args: { task: arg.required({ valueLabel: "task-id" }) },
     flags: { yes: confirmFlag("Confirm deleting this task and all run history") },
     async run({ ctx, args, flags }) {
-      requireConfirmation(flags.yes, "Deleting a scheduled task");
+      requireConfirmation(flags.yes, "Deleting a task");
       const result = await readApi<{ deleted: true }>(ctx, path(args.task), { method: "DELETE" });
       printValue(ctx, result, `Deleted ${args.task}.`);
     },

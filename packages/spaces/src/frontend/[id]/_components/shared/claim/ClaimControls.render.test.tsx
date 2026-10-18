@@ -62,6 +62,7 @@ const avatar = (props: Partial<Parameters<typeof ClaimAvatar>[0]>, locale = "en"
 const stack = (props: Partial<Parameters<typeof AssigneeAvatars>[0]>) =>
   withLocale("en", () => createComponent(AssigneeAvatars, { assignees: [], currentUserId: me, max: 3, ...props }));
 const person = (index: number) => ({
+  kind: "user" as const,
   id: `66666666-6666-4666-8666-${String(index).padStart(12, "0")}`,
   displayName: `Person ${index}`,
   avatarHash: null,
@@ -182,6 +183,8 @@ describe("Spaces claim controls", () => {
     });
     expect(avatarNames(deduplicated)).toEqual(["Mira Beck is on it", "Person 1 avatar", "Person 2 avatar"]);
     expect(deduplicated).toContain(">+9</span>");
+    expect(deduplicated.match(/data-ring="success"/g)).toHaveLength(1);
+    expect(deduplicated).toMatch(/data-ring="success"[^>]*aria-label="Mira Beck is on it"/);
 
     // Holder and assignees share one avatar size; only the holder has a success ring inside it.
     expect(claimed.match(/data-size="xs"/g)).toHaveLength(3);
@@ -198,5 +201,35 @@ describe("Spaces claim controls", () => {
     const tight = stack({ assignees: crowd.slice(0, 2), claim: otherClaim, max: 1 });
     expect(avatarNames(tight)).toEqual(["Mira Beck is on it"]);
     expect(tight).toContain(">+2</span>");
+  });
+
+  test("keeps a service account and an assignee with the same id as distinct avatars", () => {
+    const html = stack({ claim: botClaim, assignees: [{ id: other, kind: "user" as const, displayName: "Mira Beck", avatarHash: null }] });
+    expect(avatarNames(html)).toEqual(["Task worker is on it", "Mira Beck avatar"]);
+    expect(html.match(/data-ring="success"/g)).toHaveLength(1);
+    expect(html).toMatch(/data-ring="success"[^>]*aria-label="Task worker is on it"/);
+    expect(html).not.toMatch(/data-ring="success"[^>]*aria-label="Mira Beck avatar"/);
+    expect(html).not.toContain(">+");
+  });
+
+  test("renders an assigned service-account holder once in the working position", () => {
+    const html = stack({
+      claim: botClaim,
+      assignees: [person(1), { id: botClaim.actor.id, kind: "service_account", displayName: "Task worker", avatarHash: null }],
+    });
+    expect(avatarNames(html)).toEqual(["Task worker is on it", "Person 1 avatar"]);
+    expect(html.match(/data-ring="success"/g)).toHaveLength(1);
+    expect(html).not.toContain(">+");
+  });
+
+  test("names people in stack order and includes holders outside the assignees", () => {
+    const assignees = [person(1), person(2), { id: other, kind: "user" as const, displayName: "Mira Beck", avatarHash: null }];
+    const assigned = stack({ assignees, claim: otherClaim, showNames: true });
+    expect(assigned).toContain('title="Mira Beck, Person 1, Person 2"');
+    expect(assigned).toContain(">Mira Beck, Person 1, Person 2</span>");
+    const fallback = stack({ assignees: [person(1)], claim: botClaim, showNames: true });
+    expect(fallback).toContain('title="Task worker, Person 1"');
+    expect(fallback).toContain(">Task worker, Person 1</span>");
+    expect(stack({ claim: botClaim, showNames: true })).toContain(">Task worker</span>");
   });
 });

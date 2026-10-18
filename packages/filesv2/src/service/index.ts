@@ -60,7 +60,7 @@ import { parseStableEntryRefId } from "../resource-ref";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
-import { readConfiguration, writeConfiguration } from "./configuration";
+import { readConfiguration, resetConfiguration, writeConfiguration } from "./configuration";
 import { documentTemplate } from "./document-template";
 import { FilesError } from "./errors";
 import { fileEntry } from "./file-entry";
@@ -141,15 +141,17 @@ const sameBinding = (binding: Binding, candidate: Candidate) =>
   binding.uid_number === candidate.uid_number &&
   binding.gid_number === candidate.gid_number;
 const issueFor = (config: Config, area: Area, availability: Availability) =>
-  !config[area].enabled
-    ? "area_disabled"
-    : area === "cloud" && !availability.localLinuxEnabled
-      ? "local_linux_disabled"
-      : area === "freeipa" && !availability.freeipaEnabled
-        ? "freeipa_disabled"
-        : !config.url || !config.token
-          ? "not_configured"
-          : null;
+  config.unreadable
+    ? "configuration_unreadable"
+    : !config[area].enabled
+      ? "area_disabled"
+      : area === "cloud" && !availability.localLinuxEnabled
+        ? "local_linux_disabled"
+        : area === "freeipa" && !availability.freeipaEnabled
+          ? "freeipa_disabled"
+          : !config.url || !config.token
+            ? "not_configured"
+            : null;
 
 /** One service for API and SSR. Every operation resolves the acting identity again. */
 export function createFilesService(
@@ -159,6 +161,7 @@ export function createFilesService(
     bindings,
     readConfiguration,
     writeConfiguration,
+    resetConfiguration,
     publicOrigin: async () => publicCloudOrigin(await coreSettings.get<string>("app.url")),
     userById: (id: string) => accounts.users.get({ id }),
     /** Byte transfers between Filegate leases and Collabora; separate from the short-timeout API client. */
@@ -874,8 +877,8 @@ export function createFilesService(
         editor: state.config.collabora.url ? { documentFormat: state.config.collabora.documentFormat } : null,
       };
       for (const area of ["cloud", "freeipa"] as const) {
-        // An area the operator switched off is not a failure; only enabled areas report issues to users.
-        if (!state.config[area].enabled) continue;
+        // Disabled areas stay silent unless unreadable configuration is hiding their stored state.
+        if (!state.config[area].enabled && !state.config.unreadable) continue;
         // Candidates follow the account provider; an area without any is not this user's storage and stays silent.
         const items = state.candidates.filter(
           (item) => item.area === area && !(item.kind === "groups" && state.personalGroupIds.has(item.identity_id)),
@@ -1674,7 +1677,13 @@ export function createFilesService(
       if (input.cloud.enabled && !self.availability.localLinuxEnabled) throw new FilesError("local_linux_disabled");
       if (input.freeipa.enabled && !self.availability.freeipaEnabled) throw new FilesError("freeipa_disabled");
       const current = await deps.readConfiguration();
-      const next = { ...input, token: input.token || current.token, tokenConfigured: Boolean(input.token || current.token) };
+      if (current.unreadable && !input.token) throw new FilesError("configuration_unreadable", 409);
+      const next = {
+        ...input,
+        token: input.token || current.token,
+        tokenConfigured: Boolean(input.token || current.token),
+        unreadable: false,
+      };
       if (input.cloud.enabled || input.freeipa.enabled) {
         if (!next.url || !next.token) throw new FilesError("not_configured");
         const client = deps.connect(next);
@@ -1688,6 +1697,10 @@ export function createFilesService(
           }
       }
       await deps.writeConfiguration(input);
+    },
+    async resetConfiguration(actor: RequestActor): Promise<void> {
+      await requireAdmin(actor);
+      await deps.resetConfiguration();
     },
     async admin(
       actor: RequestActor,

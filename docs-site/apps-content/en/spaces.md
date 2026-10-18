@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-10
+updated: 2026-10-17
 ---
 
 # Spaces
@@ -97,6 +97,7 @@ Rows do not open the item. Read and edit details in Spaces on the web.
 | Space | Permission-scoped work area with columns, tags, items, and settings |
 | Item | Task or event with shared content and workflow fields |
 | Column and tag | Ordered workflow stage and cross-cutting label |
+| Reaction | One emoji reaction per person on an item |
 | Comment, checklist entry, and assignee | Collaboration context attached to one item |
 | Link | A Cloud resource reference or an external URL on one item; GitHub issue and pull request links show a cached preview |
 | Calendar surface | Time-based view, invitation integration, and optional iCal export |
@@ -104,13 +105,40 @@ Rows do not open the item. Read and edit details in Spaces on the web.
 Tasks use deadlines; events use a schedule and may recur. Views, filters, and
 grouping change how items are presented, not which resource owns them.
 
+Each person can react once per emoji. Reacting needs write access; seeing reactions
+needs read access. Standalone and agent accounts react under their own name.
+Reactions send no notifications and record no activity, so they do not reset the
+inactive marker. An item holds at most 20 different emoji, ordered by the first
+remaining reaction. Counts do not change this order. A reaction on a series belongs
+to the series item. Generated occurrences have none; saved overrides have their own.
+
+Kanban card footers show up to three reaction chips and "+n" for further emoji.
+Select a chip to add or remove your reaction. With a mouse, the card's add button
+shows on hover or focus; on touch screens the card has none, so open the item.
+The item shows all reactions above the comments, with an add button that is
+always visible for people who can edit the item.
+Readers see read-only chips. Generated occurrences show no reactions. Recent
+emoji are stored per browser under `spaces:recent-emoji`. If saving fails, a
+toast offers **Try again** to repeat the failed action. When the item already has
+20 different emoji, a new one is not sent; the toast says to react with one that is
+already there and offers no **Try again**.
+
+Item reads include `reactions`: each summary has an `emoji`, `count`, `own`, and
+up to three other `people` in reaction order. Responses to other item changes
+leave `reactions` out, so keep the summary you already have. Add your reaction with
+`PUT /api/spaces/:id/items/:itemId/reactions/:emoji`; remove it with `DELETE`
+of the same path. Percent-encode the emoji, for example `👍🏽` or `❤️`.
+Both return `{ reactions }`. Repeating either intent succeeds without a change.
+An invalid emoji returns 400; a 21st different emoji returns 409 with
+`REACTION_LIMIT_REACHED`. These routes do not accept `recurrence_id`.
+
 The item details read top to bottom. A task starts with **Planning**: due date,
 estimate, priority, and tags, plus a hint that jumps to the first active blocker
 while any remain. The description, checklist, and attachments follow; then
 **Assigned**, **Latest status**, and **Last result**; then **Blocked by**,
-**Blocks**, **Related tasks**, and **Links & resources**; then comments and the
+**Blocks**, **Related tasks**, and **Links & resources**; then reactions, comments, and the
 collapsed **Details**. An event shows its schedule under **Planning**, then its
-location, link, and invitations, its content, the assigned people, links,
+location, link, and invitations, its content, the assignees, links,
 comments, and details. Parts without content stay hidden unless you can edit
 them.
 
@@ -298,6 +326,8 @@ cld spaces ls "Product" --mine --due-before 2026-10-01 --json
 cld spaces show "Product":"Fix mobile dialog" --json
 cld spaces add "Product":"Write release notes" --deadline 2026-10-20 --assignee me
 cld spaces done "Product":"Fix mobile dialog"
+cld spaces reactions add "Product":"Fix mobile dialog" "👍🏽"
+cld spaces reactions remove "Product":"Fix mobile dialog" "👍🏽"
 ```
 
 `cld spaces templates ls <space>` and `templates show <space>:<template>`
@@ -310,11 +340,13 @@ needs `--ends-at`.
 Titles are matched exactly. When a space name or title matches several
 resources, the command fails with every candidate as `path (id)` and changes
 nothing; retry with an ID. There is no default space, so every address names
-its space.
+its space. `--assignee` and `assign` accept `me`, a person or service account
+UUID, a username, or a service account name with access to the Space. Repeat
+`--assignee` to replace the assignment with several people or accounts.
 
 The commands follow the shared `cld` verbs: `ls`, `show`, `add`, `set`, `mv`,
 and `rm`, the quick actions `done`, `reopen`, `assign`, and `due`, `deps` for
-blockers, and the groups `comments`, `attachments`, `checklist`, `references`, `links`,
+blockers, and the groups `reactions`, `comments`, `attachments`, `checklist`, `references`, `links`,
 `invitation`, and `access`. `calendar` and `overlap` query a time range across
 spaces. Every command supports `--json`; destructive commands need `--yes`,
 and long text comes from `--from <file|->`. Run `cld spaces help` for the
@@ -408,18 +440,28 @@ latest progress note as **Latest status** and the latest result as **Last
 result**, below the **Assigned** list; reopening preserves the result. Earlier
 notes are recorded in task activity.
 
-Assignees are responsible for a task. Claiming as a person also assigns you;
-the claim is the working state of one assignee. Releasing your own claim keeps
-you assigned. **Assigned to me** includes tasks you claimed, and
-**Unassigned** excludes tasks a person claimed. Service accounts cannot be
-assignees. The Kanban column stays the only status. People claim from the
-board card or the task details with **I'm on it** and release with a second
-click, optionally leaving a handoff note that is saved as progress. In any
-column, the board card puts the holder first in its avatar stack with a green
-ring, shows them once, and never hides them in the `+N` overflow. In the task
-details, the holder leads the **Assigned** list in the same row style with the
-green ring and the time they started working. A person holding a claim appears
-once. A service account still leads and is marked as not assigned.
+Assignees can be people or active service accounts, including agents. People
+need direct or group access to the Space; service accounts need their own
+direct access. A Space API key can be assigned only within its own Space, and
+personal automation keys cannot be assignees. Assignment never grants access.
+
+Claiming as a person or an agent also assigns you; the claim is the working
+state of one assignee. This applies to every account that may claim, also
+when it has write access only through access for all signed-in accounts. Releasing your own claim keeps you assigned.
+**Assigned to me** and **For me** select your personal assignments, including
+tasks you claimed. **Assigned** and **Unassigned** count both people and
+service accounts; filtering by an assignee ID can select either kind. The
+Kanban column stays the only status. People claim from the board card or the task details with **I'm on it** and release with a second
+click, optionally leaving a handoff note that is saved as progress. Board cards,
+list rows, and table cells put the working person first in the avatar stack,
+with a green ring. They appear once and never in the `+N` overflow.
+
+In the task details, **Assigned** is one list. The working person's row comes
+first with the green ring, **working on it**, and the time they started working.
+The row stays one line: in a narrow panel, the start time gives way to the name
+and the label. A holder outside the assignees, such as a personal automation
+key or an account that was deleted, still appears first as a working row,
+without a remove action.
 
 Claims coordinate work; they do not lock it. A claim guards completion, not the
 column: anyone who can edit the Space can move a claimed task between open
@@ -429,15 +471,15 @@ and completing ends the claim; the web UI sends it for your own claim. A
 wormhole transfer ends the claim too, because the task leaves the Space, so it
 needs the holder's claim ID in the same way. Anyone with write access may take
 over someone else's claim. In the task details, **Take over** ends the exact
-observed claim and claims the task for you. For people, this moves the claim
-and assignment together: the previous holder is removed from the assignees,
+observed claim and claims the task for you. This moves the claim and
+assignment together: the previous holder is removed from the assignees,
 and you are assigned. Releasing someone else's claim with force also removes
-that person's assignment, even without a new claim. Completing, reopening,
+that account's assignment, even without a new claim. Completing, reopening,
 moving, or transferring a task with someone else's claim ends that claim but
 keeps the assignees as they are.
 
-Removing the working person from **Assigned** ends their claim. Removing
-someone else asks once, for example "Jana Berger is working on this – remove
+Removing the working person or service account from **Assigned** ends their
+claim. Removing someone else asks once, for example "Jana Berger is working on this – remove
 them and end their claim?". A stale assignee list from a client that has not
 seen the new claim is refused with `409`; no fields change. API updates need
 the holder's `claimId`, plus `force` for someone else's claim. CLI `assign` and
@@ -473,6 +515,8 @@ in those pages using `comments list` and `deps`; use `activity --cursor` to read
 older work notes. Pages are fresh reads and may change during collaboration.
 The `comments list` output and the `blocks` field of `deps` are paginated objects.
 
+Agents use `reaction.add` and `reaction.remove` with `{ itemId, emoji }` for the same reaction intents. `item.read` includes the full reaction summary; list capabilities include each emoji with its `count` and `own` state.
+
 For capabilities, use `task.work.read`, `task.claim`, `task.release` and
 `task.progress`; `task.release` and `task.set-completed` accept `force` to take
 over the exact claim named by `claimId`, `task.set-completed` also accepts
@@ -487,6 +531,9 @@ See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
 
+On upgrade, Spaces preserves existing person assignments and extends item
+and template assignments to service accounts. Startup also adds existing
+non-personal service-account claim holders to their task’s assignees.
 
 ## Commands in global search
 

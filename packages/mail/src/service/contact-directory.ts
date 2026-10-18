@@ -52,7 +52,8 @@ const platform: ContactDirectoryDependencies = {
   listCatalog: listCapabilityCatalog,
   getCatalogApp: getCapabilityCatalogApp,
   isAdmin: (context) => isCurrentPlatformAdmin(context),
-  writeSetting: (key, value) => app.settings.set(key, value),
+  // complete value from explicit admin input; nothing is merged over a read (#1303)
+  writeSetting: (key, value) => app.settings.set(key, value, { replaceUnreadable: true }),
 };
 
 const requireAdmin = async (context: MailRequestContext, deps: ContactDirectoryDependencies): Promise<Result<void>> =>

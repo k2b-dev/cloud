@@ -13,7 +13,7 @@ import { CodeActionInput, CodeCheckInput, CodeResourceId } from "@k2b/cloud/ai/b
 import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { APPROVAL_CLIENT_HEADER } from "@k2b/cloud/contracts/approvals";
 import { type AuthContext, auth, getLocale, respond, v } from "@k2b/cloud/server";
-import { GotenbergRenderError } from "@k2b/cloud/services";
+import { GotenbergRenderError, SettingUnreadableError } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
 import { ok } from "@k2b/stdlib";
@@ -116,6 +116,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     })
     .onError((error, c) => {
       if (error instanceof AiViewInvalidError) return respond(c, { ok: false, code: "INVALID_INPUT", status: 400, error: error.message });
+      if (error instanceof SettingUnreadableError) return respond(c, { ok: false, code: error.code, status: 409, error: error.message });
       if (error instanceof ImageMetadataError) return respond(c, { ok: false, code: error.code, status: 422, error: error.message });
       if (error instanceof AiQuotaError) return respond(c, { ok: false, code: error.code, status: 429, error: error.message });
       if (isAiSettingsError(error)) return respond(c, { ok: false, code: error.aiError.code, status: 403, error: error.aiError.message });

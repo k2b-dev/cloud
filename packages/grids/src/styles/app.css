@@ -560,7 +560,7 @@
 
 /* One form draft owns inputs, calculations and saved-state actions. */
 .grids-form-shell {
-  container-type: inline-size;
+  container: grids-form / inline-size;
 }
 .grids-form-workspace {
   display: grid;
@@ -612,7 +612,9 @@
   margin-top: 1rem;
   padding-top: 1rem;
 }
-@container (min-width: 54rem) {
+/* Named: without the shell, as in the builder preview, the form stays one
+   column instead of following the page's root container. */
+@container grids-form (min-width: 54rem) {
   .grids-form-workspace {
     grid-template-columns: minmax(0, 1fr) minmax(16rem, 17.5rem);
   }

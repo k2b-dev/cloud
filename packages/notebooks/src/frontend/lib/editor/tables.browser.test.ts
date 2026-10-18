@@ -16,7 +16,8 @@ import { EditorState } from "@codemirror/state";
 import { drawSelection, EditorView, lineNumbers } from "@codemirror/view";
 import { markdownExtension } from "./markdown";
 import { tablesExtension } from "./tables";
-import { customLightInit, rawLightInit, noteScrollerTheme } from "./theme";
+import { noteScroller } from "./note-scroller";
+import { customLightInit, rawLightInit } from "./theme";
 
 const doc = [
   "Für die nächsten Wochen planen wir drei feste Formate.",
@@ -33,7 +34,7 @@ const doc = [
 const editor = (id, extensions) =>
   new EditorView({
     parent: document.getElementById(id),
-    state: EditorState.create({ doc, selection: { anchor: doc.length }, extensions: [markdownExtension(), drawSelection(), EditorView.lineWrapping, noteScrollerTheme, ...extensions] }),
+    state: EditorState.create({ doc, selection: { anchor: doc.length }, extensions: [markdownExtension(), drawSelection(), EditorView.lineWrapping, noteScroller, ...extensions] }),
   });
 window.rich = editor("rich", [tablesExtension("ABC123"), customLightInit()]);
 editor("raw", [rawLightInit(), lineNumbers()]);

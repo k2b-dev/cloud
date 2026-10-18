@@ -241,6 +241,8 @@ configuration through `grids bases navigation get` and `grids bases navigation s
 
 Custom App charts display date-typed categories as localized calendar dates.
 Text categories keep their original labels, even when they resemble dates.
+Hover over, focus, or tap a bar, point, or slice to see its category and formatted value,
+plus its share in donut charts.
 
 ### Manage files and retention
 
@@ -789,6 +791,8 @@ In **Grids administration** (`/admin/grids`), open **Settings** and set
 **Concurrent workflow runs** (`grids.workflow_concurrency`, default **10**).
 The value must be a positive whole number. Save it, then restart every Grids
 instance to apply it.
+
+`PUT /api/grids/admin/settings/:key` accepts `replaceUnreadable: true` alongside `value` to explicitly replace an unreadable saved setting.
 
 Executions and dry runs share this limit per process. Additional runs wait in
 the durable queue; steps within a run keep their declared order. More slots

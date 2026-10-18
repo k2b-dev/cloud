@@ -2,7 +2,7 @@ import { type GrantableLevel, PermissionEditor } from "@k2b/cloud/access/ui";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
-import { Button, Dropdown, Placeholder, prompts, useLocale } from "@k2b/ui";
+import { Button, Dropdown, InlineGuidance, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { readErrorMessage } from "./api";
@@ -57,7 +57,7 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
       if (!response.ok) throw new Error(await readErrorMessage(response, t().adminGrantAccessFailed));
       return response.json();
     });
-    reconcile();
+    await reconcile();
     return created;
   };
   const update = async (input: { bookId: string; accessId: string; permission: GrantableLevel }): Promise<void> => {
@@ -68,7 +68,7 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
       );
       if (!response.ok) throw new Error(await readErrorMessage(response, t().adminUpdateAccessFailed));
     });
-    reconcile();
+    await reconcile();
   };
   const revoke = async (input: { bookId: string; accessId: string }): Promise<void> => {
     await runRequest(async (abortSignal) => {
@@ -78,7 +78,7 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
       );
       if (!response.ok) throw new Error(await readErrorMessage(response, t().adminRevokeAccessFailed));
     });
-    reconcile();
+    await reconcile();
   };
   onCleanup(() => {
     disposed = true;
@@ -93,7 +93,6 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
       <Show when={!entries.loading()} fallback={<Placeholder state="loading" variant="compact" title={t().loadingAccess} />}>
         <Show
           when={entries.data()}
-          keyed
           fallback={
             <Placeholder
               state="error"
@@ -110,8 +109,8 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
         >
           {(currentEntries) => (
             <PermissionEditor
-              initialEntries={currentEntries}
-              canEdit={!coverageBlocked()}
+              initialEntries={currentEntries()}
+              canEdit={reconcileError() === null}
               grantAccess={async (principal, permission) => {
                 return grant({ bookId: props.bookId, principal, permission });
               }}
@@ -126,12 +125,12 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
         </Show>
       </Show>
       <Show when={reconcileError()}>
-        <div class="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300" role="status">
-          <span>{reconcileError()}</span>
-          <Button type="button" variant="secondary" size="sm" onClick={() => void coverage.retry()} disabled={reconciling()}>
+        <InlineGuidance tone="warning" icon="ti ti-alert-triangle" role="status">
+          {reconcileError()}{" "}
+          <Button type="button" variant="text" size="xs" onClick={() => void coverage.retry()} disabled={reconciling()}>
             {t().retryReload}
           </Button>
-        </div>
+        </InlineGuidance>
       </Show>
     </div>
   );

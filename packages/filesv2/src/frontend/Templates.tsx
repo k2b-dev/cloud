@@ -344,14 +344,13 @@ function TemplateAccess(props: { id: string; name: string; close: () => void }) 
         <Show when={!entries.loading()} fallback={<Placeholder state="loading" title={t().loading} />}>
           <Show
             when={entries.data()}
-            keyed
             fallback={
               <Placeholder state="error" title={t().failed} action={<Button onClick={() => void entries.refresh()}>{t().retry}</Button>} />
             }
           >
             {(items) => (
               <PermissionEditor
-                initialEntries={items}
+                initialEntries={items()}
                 canEdit
                 allowPublic={false}
                 allowServiceAccounts={false}

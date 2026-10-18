@@ -439,6 +439,8 @@ names are presentation, never identity or authorization.
 pickers. It supports search, included and excluded user IDs, a minimum
 permission, and a limit from `1` to `500`. It does not expand `public` or
 `authenticated` into every account.
+Search results list exact login-name matches first, then exact display-name
+matches, so a limit never hides them.
 
 Keep grant editing and credential creation separate. The permission editor
 must not display raw keys or own secret lifecycle.
@@ -454,6 +456,19 @@ out, so people are granted directly. All signed-in users are
 available by default; `allowAuthenticated={false}` removes that option.
 Public and service-account selection require `allowPublic` and
 `allowServiceAccounts` respectively. This picker grants no access itself.
+
+### Keep the editor mounted across refetches
+
+`PermissionEditor` mounts from `initialEntries` and keeps its own copy after
+successful changes. It keeps rows by entry id and merges a later changed
+`initialEntries` list once no change is saving. Rows the caller changed since
+its previous list replace the editor's rows; unchanged rows keep the editor's
+confirmed result, so a refetch that started before a save does not undo it.
+
+Keep the editor mounted during a refresh. Do not wrap it in a keyed `Show` or
+`Match`, or hide it while a query is refreshing: remounting drops keyboard
+focus and closes open group member lists. The `access-editor-mounts`
+repository check enforces these mounting rules.
 
 ### Restrict editor levels by principal
 

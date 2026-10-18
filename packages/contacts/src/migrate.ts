@@ -1,21 +1,114 @@
 import { sql } from "bun";
-import { backfillShortIds, finalizeShortIds, type ShortIdTable, shortIdsFinalized } from "./lib/short-id";
+
+/** A release that still assigns missing short IDs at startup; every release from v0.7.0 did. */
+const SHORT_ID_BRIDGE_RELEASE = "v0.45.0";
+
+/**
+ * Creates the four short-ID tables of a fresh installation in one transaction, so a
+ * replica starting at the same time never sees half of them. An existing schema must
+ * already have required short IDs: startup does no per-row work and refuses an
+ * unfinished database before any other DDL touches it.
+ */
+const ensureShortIdSchema = async (): Promise<void> => {
+  await sql.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended('cloud.contacts.short-id-schema', 0))`;
+    const [state] = await tx<{ fresh: boolean }[]>`
+      SELECT to_regclass('contacts.books') IS NULL
+        AND to_regclass('contacts.contacts') IS NULL
+        AND to_regclass('contacts.contact_notes') IS NULL
+        AND to_regclass('contacts.tags') IS NULL AS fresh
+    `;
+    if (state?.fresh) {
+      await tx`
+        CREATE TABLE IF NOT EXISTS contacts.books (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name TEXT NOT NULL,
+          description TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          short_id TEXT NOT NULL CONSTRAINT contacts_books_short_id_format CHECK (short_id ~ '^[0-9A-Za-z]{6}$')
+        )
+      `.simple();
+      await tx`CREATE UNIQUE INDEX idx_contacts_books_short_id ON contacts.books(short_id)`.simple();
+      await tx`
+        CREATE TABLE IF NOT EXISTS contacts.contacts (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          book_id UUID NOT NULL REFERENCES contacts.books(id) ON DELETE CASCADE,
+          label TEXT,
+          first_name TEXT,
+          last_name TEXT,
+          company_name TEXT,
+          department TEXT,
+          job_title TEXT,
+          vat_id TEXT,
+          website TEXT,
+          birthday DATE,
+          note TEXT,
+          source TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          short_id TEXT NOT NULL CONSTRAINT contacts_contacts_short_id_format CHECK (short_id ~ '^[0-9A-Za-z]{6}$')
+        )
+      `.simple();
+      await tx`CREATE UNIQUE INDEX idx_contacts_contacts_short_id ON contacts.contacts(short_id)`.simple();
+      await tx`
+        CREATE TABLE IF NOT EXISTS contacts.contact_notes (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          contact_id UUID NOT NULL REFERENCES contacts.contacts(id) ON DELETE CASCADE,
+          author_user_id UUID NULL REFERENCES auth.users(id) ON DELETE SET NULL,
+          author_display_name TEXT NOT NULL,
+          content TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          short_id TEXT NOT NULL CONSTRAINT contacts_notes_short_id_format CHECK (short_id ~ '^[0-9A-Za-z]{6}$')
+        )
+      `.simple();
+      await tx`CREATE UNIQUE INDEX idx_contacts_notes_short_id ON contacts.contact_notes(short_id)`.simple();
+      await tx`
+        CREATE TABLE IF NOT EXISTS contacts.tags (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          book_id UUID NOT NULL REFERENCES contacts.books(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          color TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          short_id TEXT NOT NULL CONSTRAINT contacts_tags_short_id_format CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
+          UNIQUE (book_id, name)
+        )
+      `.simple();
+      await tx`CREATE UNIQUE INDEX idx_contacts_tags_short_id ON contacts.tags(short_id)`.simple();
+      return;
+    }
+
+    const [finalized] = await tx<{ ready: boolean }[]>`
+      SELECT
+        COUNT(*) FILTER (WHERE is_nullable = 'NO') = 4
+        AND to_regclass('contacts.idx_contacts_books_short_id') IS NOT NULL
+        AND to_regclass('contacts.idx_contacts_contacts_short_id') IS NOT NULL
+        AND to_regclass('contacts.idx_contacts_tags_short_id') IS NOT NULL
+        AND to_regclass('contacts.idx_contacts_notes_short_id') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'contacts_books_short_id_format')
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'contacts_contacts_short_id_format')
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'contacts_tags_short_id_format')
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'contacts_notes_short_id_format') AS ready
+      FROM information_schema.columns
+      WHERE table_schema = 'contacts'
+        AND table_name IN ('books', 'contacts', 'tags', 'contact_notes')
+        AND column_name = 'short_id'
+    `;
+    if (!finalized?.ready) {
+      throw new Error(
+        `Contacts cannot start: this database never finished assigning short IDs to books, contacts, tags, and notes. This release no longer does that at startup. Start Contacts once on Cloud ${SHORT_ID_BRIDGE_RELEASE}, which still finishes them, wait until it reports ready, then upgrade to this release. See /en/docs/reference/deprecations-and-migrations#contacts-requires-finished-short-ids`,
+      );
+    }
+  });
+};
 
 export const migrate = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS contacts`.simple();
+  await ensureShortIdSchema();
   console.log("  ✓ contacts schema");
 
-  await sql`
-    CREATE TABLE IF NOT EXISTS contacts.books (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      name TEXT NOT NULL,
-      description TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-  await sql`ALTER TABLE contacts.books ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_books_short_id ON contacts.books(short_id)`.simple();
   console.log("  ✓ contacts.books table");
 
   await sql`
@@ -31,27 +124,6 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   console.log("  ✓ contacts.book_access table");
 
-  await sql`
-    CREATE TABLE IF NOT EXISTS contacts.contacts (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      book_id UUID NOT NULL REFERENCES contacts.books(id) ON DELETE CASCADE,
-      label TEXT,
-      first_name TEXT,
-      last_name TEXT,
-      company_name TEXT,
-      department TEXT,
-      job_title TEXT,
-      vat_id TEXT,
-      website TEXT,
-      birthday DATE,
-      note TEXT,
-      source TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-  await sql`ALTER TABLE contacts.contacts ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_contacts_short_id ON contacts.contacts(short_id)`.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_contacts_contacts_book
     ON contacts.contacts(book_id)
@@ -158,19 +230,6 @@ export const migrate = async (): Promise<void> => {
   // dropped here — no data migration since the feature was unused in production.
   await sql`ALTER TABLE contacts.contacts DROP COLUMN IF EXISTS note`.simple();
   await sql`
-    CREATE TABLE IF NOT EXISTS contacts.contact_notes (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      contact_id UUID NOT NULL REFERENCES contacts.contacts(id) ON DELETE CASCADE,
-      author_user_id UUID NULL REFERENCES auth.users(id) ON DELETE SET NULL,
-      author_display_name TEXT NOT NULL,
-      content TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-  await sql`ALTER TABLE contacts.contact_notes ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_notes_short_id ON contacts.contact_notes(short_id)`.simple();
-  await sql`
     CREATE INDEX IF NOT EXISTS idx_contacts_contact_notes_contact_created
     ON contacts.contact_notes(contact_id, created_at DESC)
   `.simple();
@@ -178,19 +237,6 @@ export const migrate = async (): Promise<void> => {
 
   // Tags scoped per book — vocabulary stays separated between e.g. customers
   // and suppliers. Junction is composite PK (one row per tag per contact).
-  await sql`
-    CREATE TABLE IF NOT EXISTS contacts.tags (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      book_id UUID NOT NULL REFERENCES contacts.books(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      color TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      UNIQUE (book_id, name)
-    )
-  `.simple();
-  await sql`ALTER TABLE contacts.tags ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_tags_short_id ON contacts.tags(short_id)`.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_contacts_tags_book
     ON contacts.tags(book_id)
@@ -299,12 +345,4 @@ export const migrate = async (): Promise<void> => {
   // The former virtual IPA book was never durable Contacts data. Remove only
   // its stale personal UI references; auth-owned users remain untouched.
   await sql`DELETE FROM contacts.contact_favorites WHERE book_id = 'system'`.simple();
-
-  const shortIdTables: ShortIdTable[] = ["book", "contact", "tag", "note"];
-  for (const table of shortIdTables) {
-    const filled = await backfillShortIds(table);
-    if (filled > 0) console.log(`  ✓ contacts short_id backfill: ${filled} ${table}(s)`);
-  }
-
-  if (!(await shortIdsFinalized())) await finalizeShortIds();
 };

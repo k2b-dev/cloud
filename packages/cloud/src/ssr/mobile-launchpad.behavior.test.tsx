@@ -77,6 +77,54 @@ test("the public mobile launcher keeps profile actions and filters apps without 
   }
 });
 
+test("phone title and app-menu buttons open the same MobileNavigation sheet with the app menu", async () => {
+  const dom = createDomTestHarness();
+  dom.window.innerWidth = 390;
+  const { AppLaunchpadButton } = await import("./app-launchpad");
+  const snapshot = document.createElement("script");
+  snapshot.type = "application/json";
+  snapshot.setAttribute("data-cloud-workspace-navigation", "");
+  snapshot.textContent = JSON.stringify({ label: "Team mailbox", items: [{ id: "inbox", label: "Inbox", href: "/app/mail/inbox" }] });
+  dom.root.append(snapshot);
+  const surface = await import("./launchpad-surface");
+  const open = spyOn(surface, "openLaunchpadSurface");
+  const dispose = render(
+    () =>
+      (["header", "title"] as const).map((variant) =>
+        createComponent(AppLaunchpadButton, {
+          variant,
+          label: variant === "title" ? "Team mailbox" : "Open apps",
+          apps: [{ id: "mail", label: "Mail", href: "/app/mail", iconClass: "ti ti-mail" }],
+          legalLinks: [],
+        }),
+      ),
+    dom.root,
+  );
+  try {
+    const buttons = dom.root.querySelectorAll<HTMLButtonElement>("button");
+    expect(buttons[1]!.textContent).toContain("Team mailbox");
+    expect(buttons[1]!.getAttribute("aria-haspopup")).toBe("dialog");
+    for (const button of buttons) {
+      button.click();
+      for (let attempt = 0; !document.querySelector('dialog a[href="/app/mail/inbox"]') && attempt < 100; attempt++) await Bun.sleep(10);
+      expect(document.querySelector('dialog a[href="/app/mail/inbox"]')?.textContent).toContain("Inbox");
+      expect(document.querySelector("dialog")?.textContent).toContain("All apps");
+      window.dispatchEvent(new Event("pagehide"));
+      for (let attempt = 0; document.querySelector("dialog") && attempt < 100; attempt++) await Bun.sleep(10);
+      expect(document.querySelector("dialog")).toBeNull();
+      await Bun.sleep(20);
+    }
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(open.mock.calls[0]).toEqual(open.mock.calls[1]);
+  } finally {
+    window.dispatchEvent(new Event("pagehide"));
+    await Bun.sleep(20);
+    open.mockRestore();
+    dispose();
+    dom.cleanup();
+  }
+});
+
 test("opening without arguments reads the shared shell payload and validates the mobile App action", async () => {
   const dom = createDomTestHarness();
   dom.window.innerWidth = 390;

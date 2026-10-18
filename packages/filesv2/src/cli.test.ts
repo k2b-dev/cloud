@@ -135,3 +135,23 @@ test("resource URLs use locally known IDs and leave unknown entries unchanged wi
   expect(withEntryPermalinks(text.ctx, baseId, [known])).toEqual([known]);
   expect(text.requests).toHaveLength(0);
 });
+
+test("configuration reset requires --yes and calls the admin DELETE endpoint", async () => {
+  const { ctx, requests } = inventory("json");
+  ctx.args = ["admin", "configuration", "reset"];
+  await expect(filesCli.run(ctx)).rejects.toThrow("--yes");
+  expect(requests).toHaveLength(0);
+  const methods: string[] = [];
+  ctx.flags = { yes: true };
+  ctx.createApiClient = ((basePath: string) =>
+    hc(`http://cloud.test${basePath}`, {
+      fetch: async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        requests.push(String(input));
+        methods.push(init?.method ?? "GET");
+        return Response.json({ reset: true });
+      },
+    })) as CloudCliContext["createApiClient"];
+  await filesCli.run(ctx);
+  expect(methods).toEqual(["DELETE"]);
+  expect(requests).toEqual(["http://cloud.test/api/filesv2/admin/configuration"]);
+});

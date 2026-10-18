@@ -82,6 +82,7 @@ import DocumentationLink from "./DocumentationLink";
 import { LegacySettingsSection } from "./LegacySettingsSection";
 import { settingsMessages } from "./messages";
 import { localizeSettingField } from "./setting-copy";
+import { UnreadableSettingBadge, UnreadableSettingsNotice, unreadableReplacements } from "./UnreadableSettings";
 
 type SettingValueSource = "custom" | "env" | "default";
 
@@ -110,6 +111,8 @@ export type SettingFieldDef = {
   valueSource: SettingValueSource;
   resetValueSource: Exclude<SettingValueSource, "custom">;
   isCustom: boolean;
+  /** A stored row exists that this application cannot read; `value` is the fallback in use. */
+  unreadable: boolean;
   group: string;
   options?: ReadonlyArray<{ value: string; label: string }>;
   min?: number;
@@ -477,8 +480,9 @@ export default function CoreSettingsForm(props: Props) {
         }
       }
 
+      const replaceUnreadable = unreadableReplacements(updates, entryMap());
       const response = await coreClient.admin.core.settings.$put({
-        json: resets.length > 0 ? { updates, resets } : updates,
+        json: resets.length > 0 || replaceUnreadable.length > 0 ? { updates, resets, replaceUnreadable } : updates,
       });
 
       if (!response.ok) {
@@ -670,6 +674,18 @@ export default function CoreSettingsForm(props: Props) {
           </ul>
         </NoticeCard>
       </Show>
+
+      <UnreadableSettingsNotice
+        entries={localizedEntries()}
+        canUseDefault={(key) => {
+          const entry = entryMap()[key];
+          return entry ? canStageDefault(entry) : false;
+        }}
+        onUseDefault={(key) => {
+          const entry = entryMap()[key];
+          if (entry) stageDefault(entry);
+        }}
+      />
 
       <Show when={props.showTestPdfAction || props.showTestFreeIpaAction}>
         <NoticeCard tone="info" title={t().testsUseSaved} detail={t().testsUseSavedDescription} />
@@ -2623,15 +2639,17 @@ function FieldRow(props: {
             <Show when={props.changed()}>
               <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title={t().unsavedChange} />
             </Show>
-            <span
-              class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                e().valueSource === "custom"
-                  ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                  : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-              }`}
-            >
-              {sourceLabel(e().valueSource, t())}
-            </span>
+            <Show when={!e().unreadable} fallback={<UnreadableSettingBadge />}>
+              <span
+                class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                  e().valueSource === "custom"
+                    ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                    : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                }`}
+              >
+                {sourceLabel(e().valueSource, t())}
+              </span>
+            </Show>
             <Show when={props.resetPending()}>
               <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
                 {t().defaultStaged}
