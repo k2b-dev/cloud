@@ -32,6 +32,12 @@ describe("compression boundaries", () => {
     "/dashboards/dashboard/snapshot/__new_route__",
     "/public-dashboard/token",
     "/public-dashboard/token/__new_route__",
+    "/bases/base/metrics",
+    "/bases/base/series",
+    "/bases/base/resources",
+    "/bases/base/resource-metrics",
+    "/bases/base/sources",
+    "/__new_route__",
   ]) {
     test(`api ${path} opts out`, async () => {
       const response = await api.request(path);
@@ -39,18 +45,11 @@ describe("compression boundaries", () => {
       expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }
-  for (const path of [
-    "/bases/base/metrics",
-    "/bases/base/series",
-    "/bases/base/sources",
-    "/bases/base/sources/source/api-keys",
-    "/query/metric",
-    "/query/compile-text",
-  ]) {
-    test(`api ${path} stays eligible for compression`, async () => {
-      const response = await api.request(path);
+  for (const path of ["/query/metric", "/query/event-map", "/query/compile-text"]) {
+    test(`api POST ${path} opts out`, async () => {
+      const response = await api.request(path, { method: "POST" });
       expect(response.status).toBeLessThan(500);
-      expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");
+      expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }
   for (const path of [
