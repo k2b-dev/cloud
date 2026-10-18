@@ -9,12 +9,15 @@ import {
   combineDatabase,
   emptySample,
   finalizeSample,
+  firstAtOrAfter,
   monotonicMs,
   parseServerTiming,
   postgresArgs,
   postgresLog,
+  postgresProblems,
   propsBytes,
   request,
+  requestStatements,
   slowestPlan,
 } from "./measure";
 import { type DatabaseMeasurement, scenarioSchema } from "./model";
@@ -137,6 +140,57 @@ test("database attribution sums action windows and weights statement means acros
     statements: [{ query: "SELECT 1", queryid: "1", calls: 4, totalMs: 70, meanMs: 17.5, rows: 4, hits: 4, reads: 0 }],
   });
   expect(windows).toEqual(before);
+});
+
+test.each([
+  { name: "keeps statements absent from idle", queryid: "request", calls: 1, withIdle: true, kept: true },
+  { name: "drops statements at the background rate", queryid: "background", calls: 2, withIdle: true, kept: false },
+  { name: "keeps one extra call per run beyond the background rate", queryid: "background", calls: 5, withIdle: true, kept: true },
+  { name: "keeps all statements without idle measurements", queryid: "background", calls: 2, withIdle: false, kept: true },
+])("request plan attribution $name", ({ queryid, calls, withIdle, kept }) => {
+  const database = (queryid: string, calls: number, windowMs: number, runs: number): DatabaseMeasurement => ({
+    windowMs,
+    calls,
+    totalMs: calls,
+    callsPerRun: calls / runs,
+    msPerRun: calls / runs,
+    statements: [{ query: "SELECT $1", queryid, calls, totalMs: calls, meanMs: 1, rows: calls, hits: calls, reads: 0 }],
+  });
+  const scenario = database(queryid, calls, 1000, 3);
+  const idle = withIdle ? database("background", 10, 5000, 1) : null;
+  const before = structuredClone({ scenario, idle });
+  expect(requestStatements(scenario, idle, 3)).toEqual(kept ? scenario.statements : []);
+  expect({ scenario, idle }).toEqual(before);
+});
+
+test("live event selection ignores timestamps before the commit and includes its exact timestamp", () => {
+  expect(firstAtOrAfter([90, 99, 105, 110], 100)).toBe(105);
+  expect(firstAtOrAfter([90, 100, 105], 100)).toBe(100);
+  expect(firstAtOrAfter([90, 99], 100)).toBeUndefined();
+  expect(firstAtOrAfter([], 100)).toBeUndefined();
+});
+
+test("Postgres problems keep recent warnings and errors, skip malformed entries, and bound message and detail", () => {
+  const log = [
+    "partial jsonlog entry",
+    JSON.stringify({ error_severity: "LOG", message: "ready" }),
+    JSON.stringify({ error_severity: "ERROR", message: 42 }),
+    JSON.stringify({ error_severity: "WARNING", message: "warning" }),
+    JSON.stringify({ error_severity: "ERROR", message: "failed", detail: "more information" }),
+    "{broken",
+    JSON.stringify({ error_severity: "FATAL", message: "fatal" }),
+    JSON.stringify({ error_severity: "PANIC", message: "panic" }),
+    "",
+  ].join("\n");
+  expect(postgresProblems(log)).toEqual(["WARNING: warning", "ERROR: failed\nmore information", "FATAL: fatal", "PANIC: panic"]);
+  expect(postgresProblems(log, 2)).toEqual(["FATAL: fatal", "PANIC: panic"]);
+  expect(postgresProblems(log, 0)).toEqual([]);
+  const many = Array.from({ length: 25 }, (_, i) => JSON.stringify({ error_severity: "ERROR", message: String(i) })).join("\n");
+  expect(postgresProblems(many)).toEqual(Array.from({ length: 20 }, (_, i) => `ERROR: ${i + 5}`));
+  expect(postgresProblems(JSON.stringify({ error_severity: "ERROR", message: "x".repeat(3000) }))).toEqual([`ERROR: ${"x".repeat(2000)}`]);
+  expect(postgresProblems(JSON.stringify({ error_severity: "ERROR", message: "failed", detail: "x".repeat(3000) }))).toEqual([
+    `ERROR: failed\n${"x".repeat(1993)}`,
+  ]);
 });
 
 test("host clients refuse other ports, hosts and databases", () => {

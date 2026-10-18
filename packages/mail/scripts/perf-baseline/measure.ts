@@ -33,6 +33,9 @@ export const emptySample = (): Sample => ({ totalMs: 0, ttfbMs: 0, rawBytes: 0, 
 const retainedBodies = new WeakMap<RequestMeasurement, { body: Buffer; ssr: boolean }>();
 // Epoch-based performance time is comparable across host processes, unlike Bun's process-relative hrtime.
 export const monotonicMs = () => performance.timeOrigin + performance.now();
+export function firstAtOrAfter(times: number[], start: number): number | undefined {
+  return times.find((time) => time >= start);
+}
 export function assertRunUrl(url: string, port: number | undefined, protocol: string, database?: string) {
   const parsed = new URL(url);
   if (
@@ -166,6 +169,19 @@ export function combineDatabase(windows: DatabaseMeasurement[], runs: number): D
     statements: [...statements.values()].sort((a, b) => b.totalMs - a.totalMs),
   };
 }
+export function requestStatements(scenario: DatabaseMeasurement, idle: DatabaseMeasurement | null, runs: number) {
+  if (!idle) return scenario.statements;
+  const idleCalls = new Map<string, number>();
+  for (const statement of idle.statements) {
+    if (statement.queryid !== undefined) idleCalls.set(statement.queryid, (idleCalls.get(statement.queryid) ?? 0) + statement.calls);
+  }
+  return scenario.statements.filter((statement) => {
+    const calls = statement.queryid === undefined ? undefined : idleCalls.get(statement.queryid);
+    if (calls === undefined) return true;
+    const expected = (calls / idle.windowMs) * scenario.windowMs;
+    return (statement.calls - expected) / runs >= 1;
+  });
+}
 export async function reset(db: SQL) {
   await db`SELECT pg_stat_statements_reset()`;
 }
@@ -201,6 +217,28 @@ export async function readDatabase(db: SQL, started: number, runs: number): Prom
   const calls = statements.reduce((n, r) => n + r.calls, 0),
     totalMs = statements.reduce((n, r) => n + r.totalMs, 0);
   return { windowMs, calls, totalMs, callsPerRun: calls / runs, msPerRun: totalMs / runs, statements };
+}
+
+export function postgresProblems(log: string, limit = 20): string[] {
+  if (limit <= 0) return [];
+  const problems: string[] = [];
+  for (const line of log.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const entry = z
+        .object({
+          error_severity: z.enum(["WARNING", "ERROR", "FATAL", "PANIC"]),
+          message: z.string(),
+          detail: z.string().optional(),
+        })
+        .parse(JSON.parse(line));
+      const message = `${entry.message}${entry.detail ? `\n${entry.detail}` : ""}`.slice(0, 2000);
+      problems.push(`${entry.error_severity}: ${message}`);
+    } catch {
+      // The tail can start mid-entry; ignore malformed and unrelated records.
+    }
+  }
+  return problems.slice(-limit);
 }
 
 /** The collector serializes one jsonlog object per line, including multiline plan messages. */

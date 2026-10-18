@@ -22,10 +22,14 @@ import {
   emptySample,
   explain,
   finalizeSample,
+  firstAtOrAfter,
   monotonicMs,
   postgresArgs,
+  postgresLog,
+  postgresProblems,
   readDatabase,
   request,
+  requestStatements,
   reset,
   setExplainDuration,
 } from "./measure";
@@ -74,7 +78,7 @@ async function liveArrival(
   });
   let ready = false,
     failure: string | null = null;
-  let deliveredAt: number | undefined;
+  const deliveryTimes: number[] = [];
   socket.onopen = () => socket.send(JSON.stringify({ t: "sub", id: "m", channel: "mailbox", scope: { mailbox: mailboxShortId } }));
   socket.onerror = () => {
     failure = "Mail live socket failed";
@@ -100,7 +104,7 @@ async function liveArrival(
     if (frame.data.t === "ready") ready = true;
     if (frame.data.t === "revoked" || frame.data.t === "error" || frame.data.t === "resync")
       failure = `Live subscription ${frame.data.t}: ${frame.data.code ?? ""}`;
-    if (frame.data.t === "event" && frame.data.data?.conversationId === null) deliveredAt ??= monotonicMs();
+    if (frame.data.t === "event" && frame.data.data?.conversationId === null) deliveryTimes.push(monotonicMs());
   };
   const wait = async (condition: () => boolean, label: string, timeout = 30_000) => {
     const deadline = performance.now() + timeout;
@@ -183,9 +187,12 @@ async function liveArrival(
       }
       throw new Error("Arrival not visible in workspace after 30000 ms");
     };
-    const outcomes = await Promise.allSettled([visibility(), wait(() => deliveredAt !== undefined, "Live event")]);
+    const outcomes = await Promise.allSettled([
+      visibility(),
+      wait(() => firstAtOrAfter(deliveryTimes, commit.committedAt) !== undefined, "Live event"),
+    ]);
     for (const outcome of outcomes) if (outcome.status === "rejected") throw outcome.reason;
-    sample.liveMs = Math.max(0, deliveredAt! - commit.committedAt);
+    sample.liveMs = firstAtOrAfter(deliveryTimes, commit.committedAt)! - commit.committedAt;
     sample.visibleMs = Math.max(0, visibleAt! - commit.committedAt);
     const code = await child.exited;
     if (code !== 0) throw new Error(`Ingest worker exited ${code}: ${(await stderr).slice(-1000)}`);
@@ -447,7 +454,7 @@ export async function run(options: Options) {
         scenario.status = "ok";
         scenario.metrics = summarizeSamples(scenario.samples);
         const control = explainControl,
-          statements = scenario.database.statements;
+          statements = requestStatements(scenario.database, result.idle, scenario.samples.length || 1);
         const explainSample = emptySample();
         await capturePlan(scenario, async () => {
           try {
@@ -466,6 +473,15 @@ export async function run(options: Options) {
     }
   } catch (error) {
     result.errors.push(String(error));
+    if (runtime?.containers.includes(runtime.name("postgres"))) {
+      try {
+        const log = await command(["docker", "exec", runtime.name("postgres"), "tail", "-c", "1000000", postgresLog]);
+        const problems = postgresProblems(log);
+        if (problems.length) console.error(`PostgreSQL log problems:\n${problems.join("\n")}`);
+      } catch (logError) {
+        result.errors.push(`Postgres log: ${String(logError)}`);
+      }
+    }
     try {
       await runtime?.logs();
     } catch (logError) {

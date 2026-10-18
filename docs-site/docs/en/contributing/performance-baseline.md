@@ -249,8 +249,9 @@ bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 5
 The script needs Docker and takes the machine-wide heavy lock. It creates and
 removes only its own labelled containers, publishes them on free loopback
 ports, and never uses port 3000 or the development database. Builds and
-startup take 5–15 minutes; seeding and measuring take another 5–10 minutes on
-a busy host. `--help` lists every flag without starting Docker.
+startup take 5–15 minutes, seeding 20,000 messages takes about 2 minutes, and
+measuring takes 2–5 minutes; a busy host takes longer. `--help` lists every
+flag without starting Docker.
 
 ### Fixture
 
@@ -295,6 +296,9 @@ The result is `.local/mail-perf/<UTC timestamp>/result.json` and
 
 - No provider connection: IMAP fetch and hydration time are not measured.
   The Mail connector accepts only public hosts with verified TLS.
+- HTML-only bodies are seeded words in one paragraph. They reproduce the
+  byte volume of HTML mail, not the tables, inline styles, and nesting of
+  real newsletters, so render cost for complex HTML can be higher.
 - Plain PostgreSQL has no BM25 index, so search uses the fallback path. The
   summary records whether the index exists.
 - Core and Mail background work keeps running. The summary shows its

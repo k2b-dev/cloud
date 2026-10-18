@@ -7,8 +7,8 @@ export const help = `Usage: bun --no-env-file packages/mail/scripts/perf-baselin
 
 Measure Mail server/API performance with isolated production core/mail/gateway
 and Caddy HTTPS. No browsers. Requires dependencies and Docker access.
-Allow roughly 5–15 minutes for builds/startup plus 2–5 minutes to measure;
-slow hosts/downloads can take longer. Takes the machine-wide heavy lock.
+Allow roughly 5–15 minutes for builds/startup, about 2 minutes to seed
+20,000 messages and 2–5 minutes to measure; busy hosts take longer. Takes the machine-wide heavy lock.
 Only starts/removes run-owned labelled containers, networks and volumes.
 Uses free 127.0.0.1 ports, never port 3000 or the dev/CI database.
 No provider connection: example.test persistence fixture, sync disabled.
