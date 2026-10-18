@@ -744,6 +744,9 @@ const resolveApi = new Hono<AuthContext>().use(auth.requireRole("authenticated")
 /** Contacts API routes for authenticated users and scoped resource credentials. */
 const app = new Hono<AuthContext>()
   .use("/books", middleware.noTransform())
+  // Access entries keep the live display names of people denied the book next to its private description.
+  .use("/books/:bookId/settings-context", middleware.noTransform())
+  .use("/books/:bookId/settings-context/*", middleware.noTransform())
   .use("/search", middleware.noTransform())
   .use("/search/*", middleware.noTransform())
   .route("/live", contactsLive.routes(contactsLiveChannels))

@@ -8,21 +8,20 @@ const { default: pages } = await import("./frontend/index");
 const { adminPages } = await import("./frontend/index");
 
 describe("compression boundaries", () => {
-  for (const path of ["/books", "/search", "/search/__new_route__"]) {
+  for (const path of [
+    "/books",
+    "/search",
+    "/search/__new_route__",
+    "/books/book/settings-context",
+    "/books/book/settings-context/__new_route__",
+  ]) {
     test(`api ${path} opts out`, async () => {
       const response = await api.request(path);
       expect(response.status).toBeLessThan(500);
       expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }
-  for (const path of [
-    "/favorites",
-    "/resolve",
-    "/books/book/settings-context",
-    "/books/book/contacts",
-    "/books/book/contacts/contact/notes/page",
-    "/books/book/tags",
-  ]) {
+  for (const path of ["/favorites", "/resolve", "/books/book/contacts", "/books/book/contacts/contact/notes/page", "/books/book/tags"]) {
     test(`api ${path} stays eligible for compression`, async () => {
       const response = await api.request(path);
       expect(response.status).toBeLessThan(500);

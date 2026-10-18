@@ -356,6 +356,9 @@ const publicRoutes = new Hono<AuthContext>()
 const venueRoutes = new Hono<AuthContext>()
   .use("/", middleware.noTransform())
   .use("/:id/dashboard", middleware.noTransform())
+  // Access entries keep the live display names of people denied the venue next to its private notes.
+  .use("/:id/settings-context", middleware.noTransform())
+  .use("/:id/settings-context/*", middleware.noTransform())
   .use("/:id/dashboard/*", middleware.noTransform())
   .use("*", auth.requireRole("authenticated"))
   .get(
