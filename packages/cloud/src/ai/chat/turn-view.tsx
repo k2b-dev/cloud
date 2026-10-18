@@ -16,8 +16,8 @@ import {
   untrack,
 } from "solid-js";
 import { markdown } from "../../shared";
-import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import { type ChatTaskReason, chatTaskReasonSentence, chatTaskReasonState, chatTaskStopSentence } from "../chat-task-reasons";
+import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
 import {

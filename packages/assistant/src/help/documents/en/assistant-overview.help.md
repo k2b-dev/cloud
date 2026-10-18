@@ -55,7 +55,7 @@ Open **Context** in the sidebar **In this chat** and select a routine to adjust,
 
 **Needs you** says “The last run failed.” or “What it may do changed. Please confirm again.” If an action needs approval, the reason is “That needs your approval every time, and routines never ask.” Technical details hold the original error.
 
-Archiving a chat pauses its routines. Restoring it resumes those routines. If their permissions cannot resume, they need your confirmation again.
+Archiving a chat pauses its routines. Restoring it resumes those routines. If what a routine may do changed meanwhile, it asks you to confirm again. A one-time routine whose time has passed needs a new time before it can resume.
 
 Pause and delete stop a running routine at once. The chat says “Stopped while the routine was running” and lists successful changes already made. Nothing is undone. **Background run** shows the whole run.
 

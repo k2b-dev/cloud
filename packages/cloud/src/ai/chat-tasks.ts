@@ -24,6 +24,7 @@ import {
   type ChatTaskReason,
   type ChatTaskReasonCode,
   chatTaskLocale,
+  chatTaskNeedsNewTime,
   chatTaskReasonSentence,
   chatTaskReasonState,
   chatTaskStopSentence,
@@ -977,7 +978,7 @@ export const aiChatTasks = {
       const allowed =
         current.state === input.state ||
         (current.state === "active" && input.state === "paused") ||
-        (current.state === "paused" && input.state === "active") ||
+        (current.state === "paused" && input.state === "active" && !chatTaskNeedsNewTime(toTask(current))) ||
         (current.state === "needs_attention" && current.schedule_kind === "cron" && input.state === "active");
       if (!allowed) return null;
       const mandate = await loadTaskMandate(current, tx);

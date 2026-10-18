@@ -49,6 +49,21 @@ const messages = i18n.define({
   },
 });
 
+/**
+ * A one-time routine resumes only before its time: a run at that time already happened or was stopped, and what was
+ * missed in a pause is not caught up. It needs a new time first.
+ */
+export const chatTaskNeedsNewTime = (
+  task: {
+    state: "active" | "paused" | "completed" | "needs_attention";
+    schedule: { kind: "once"; runAt: string } | { kind: "cron"; cron: string };
+  },
+  now: Date = new Date(),
+): boolean =>
+  task.state !== "active" &&
+  task.schedule.kind === "once" &&
+  (task.state === "needs_attention" || Date.parse(task.schedule.runAt) <= now.getTime());
+
 export const chatTaskLocale = (taskLocale: string | null | undefined, appLocale?: string | null): string =>
   canonicalLocale(taskLocale) ?? canonicalLocale(appLocale) ?? "en";
 

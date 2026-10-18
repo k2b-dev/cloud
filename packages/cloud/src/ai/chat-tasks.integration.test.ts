@@ -1311,6 +1311,33 @@ suite("AI chat tasks", () => {
     }
   });
 
+  test("a one-time routine stopped at its time asks for a new time instead of resuming into nothing", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`routine-once-stop-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id });
+    try {
+      const task = (await aiChatTasks.create({
+        userId: user!.id,
+        chatId: conversation.shortId,
+        prompt: "Send the summary",
+        schedule: { kind: "once", runAt: "2099-04-07T09:00:00.000Z" },
+        timezone: "UTC",
+      }))!;
+      // Its time comes and its run starts; then the person pauses it.
+      await sql`UPDATE ai.chat_tasks SET run_at = '2001-04-07T09:00:00Z'::timestamptz WHERE id = ${task.id}::uuid`;
+      await aiChatTasks.materializeDueOnce();
+      expect(await sql`SELECT id FROM ai.chat_task_occurrences WHERE task_id = ${task.id}::uuid`).toHaveLength(1);
+      const paused = await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "paused" });
+      expect(paused).toMatchObject({ state: "paused", reasonCode: "paused" });
+      expect(await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "active" })).toBeNull();
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({ state: "paused" });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
   test("a paused run whose routine is deleted before its line went out still gets its line once", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)

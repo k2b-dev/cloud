@@ -1,5 +1,5 @@
 import type { AiChatTaskView as AssistantChatTask, AiChatTaskOccurrenceView as AssistantChatTaskOccurrence } from "@k2b/cloud/ai";
-import { chatTaskReasonSentence } from "@k2b/cloud/ai/browser";
+import { chatTaskNeedsNewTime, chatTaskReasonSentence } from "@k2b/cloud/ai/browser";
 import { navigateTo } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
 import { query, timed } from "@k2b/stdlib/solid";
@@ -382,9 +382,9 @@ export function AssistantTaskDetail(props: {
                 </Button>
                 <Show
                   when={
+                    // A one-time routine past its time gets a new time in the chat instead of a Resume that cannot run.
                     task().state === "active" ||
-                    task().state === "paused" ||
-                    (task().state === "needs_attention" && task().schedule.kind === "cron")
+                    ((task().state === "paused" || task().state === "needs_attention") && !chatTaskNeedsNewTime(task(), now()))
                   }
                 >
                   <Button

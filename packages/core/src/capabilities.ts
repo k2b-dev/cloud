@@ -25,6 +25,7 @@ import {
   ChatTaskOccurrenceIdSchema,
   ChatTaskScheduleInputSchema,
   chatTaskCreateFingerprint,
+  chatTaskNeedsNewTime,
   chatTaskReasonSentence,
   isConversationResourceCursor,
   normalizeChatTaskSchedule,
@@ -287,7 +288,7 @@ const invalidTaskState = (task: AiChatTask, action: "pause" | "resume" | "run"):
   if (action === "pause")
     return task.state === "active" || task.state === "paused" ? null : `Task “${task.name}” cannot be paused while ${task.state}`;
   if (action === "resume")
-    return task.state === "needs_attention" && task.schedule.kind === "once"
+    return chatTaskNeedsNewTime(task)
       ? `Task “${task.name}” needs a new future schedule before it can resume`
       : task.state === "paused" || task.state === "needs_attention" || task.state === "active"
         ? null

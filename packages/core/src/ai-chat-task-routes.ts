@@ -6,6 +6,7 @@ import {
   ChatTaskIdSchema,
   ChatTaskOccurrenceIdSchema,
   chatTaskCreateFingerprint,
+  chatTaskNeedsNewTime,
   getChatTaskTimezone,
   normalizeChatTaskSchedule,
   ChatTaskScheduleInputSchema as ScheduleInputSchema,
@@ -253,7 +254,7 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
     if (!parsed.success) return respond(c, fail(err.badInput("Invalid task ID")));
     const current = await aiChatTasks.get({ userId: owner, taskId: parsed.data });
     if (!current) return respond(c, fail(err.notFound("Task")));
-    if (current.state === "needs_attention" && current.schedule.kind === "once")
+    if (chatTaskNeedsNewTime(current))
       return respond(c, fail(err.conflict(`Task “${current.name}” needs a new future schedule before it can resume`)));
     if (current.state === "completed")
       return respond(c, fail(err.conflict(`Task “${current.name}” cannot be resumed while ${current.state}`)));

@@ -2039,16 +2039,6 @@ export const aiConversations: AiConversationService = {
       )
       SELECT id FROM archived
     `;
-    if (rows[0]) {
-      // The chat is archived either way; admission pauses a routine this step missed before its next run.
-      const { aiChatTasks } = await import("./chat-tasks");
-      await aiChatTasks.pauseForArchivedChat({ conversationId: input.conversationId, userId: input.ownerUserId }).catch((error) =>
-        log.warn("Could not pause the routines of an archived chat", {
-          conversationId: input.conversationId,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    }
     return Boolean(rows[0]);
   },
 
@@ -2079,16 +2069,7 @@ export const aiConversations: AiConversationService = {
       )
       SELECT id FROM restored
     `;
-    if (!rows[0]) return null;
-    // The chat is restored either way; a routine this step could not resume stays paused and can be resumed by hand.
-    const { aiChatTasks } = await import("./chat-tasks");
-    await aiChatTasks.resumeForRestoredChat({ conversationId: input.conversationId, userId: input.ownerUserId }).catch((error) =>
-      log.warn("Could not resume the routines of a restored chat", {
-        conversationId: input.conversationId,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
-    return loadConversationSummary(input);
+    return rows[0] ? loadConversationSummary(input) : null;
   },
 
   markConversationViewed: async (input) => {

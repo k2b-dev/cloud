@@ -45,6 +45,7 @@ export {
   type ChatTaskReason,
   type ChatTaskReasonCode,
   chatTaskLocale,
+  chatTaskNeedsNewTime,
   chatTaskReasonSentence,
   chatTaskReasonState,
   chatTaskStopSentence,

@@ -4,6 +4,7 @@ import {
   CHAT_TASK_REASON_CODES,
   type ChatTaskReasonCode,
   chatTaskLocale,
+  chatTaskNeedsNewTime,
   chatTaskReasonSentence,
   chatTaskReasonState,
   chatTaskStopSentence,
@@ -59,5 +60,15 @@ describe("routine reason sentences", () => {
     expect(chatTaskLocale(null, "DE")).toBe("de");
     expect(chatTaskLocale(null, null)).toBe("en");
     expect(chatTaskLocale("invalid_locale", "de")).toBe("de");
+  });
+
+  test("a one-time routine needs a new time once its time has passed", () => {
+    const now = new Date("2026-10-17T09:00:00.000Z");
+    const once = (runAt: string) => ({ kind: "once" as const, runAt });
+    expect(chatTaskNeedsNewTime({ state: "paused", schedule: once("2026-10-18T09:00:00.000Z") }, now)).toBe(false);
+    expect(chatTaskNeedsNewTime({ state: "paused", schedule: once("2026-10-16T09:00:00.000Z") }, now)).toBe(true);
+    expect(chatTaskNeedsNewTime({ state: "needs_attention", schedule: once("2026-10-18T09:00:00.000Z") }, now)).toBe(true);
+    expect(chatTaskNeedsNewTime({ state: "active", schedule: once("2026-10-16T09:00:00.000Z") }, now)).toBe(false);
+    expect(chatTaskNeedsNewTime({ state: "paused", schedule: { kind: "cron", cron: "0 9 * * *" } }, now)).toBe(false);
   });
 });
