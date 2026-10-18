@@ -47,7 +47,12 @@ const hydratedMessageValue = async (
     WHERE id = ${messageId}::uuid
       AND mailbox_id = ${mailboxId}::uuid
   `;
-  if (!message || (message.hydration_status === "failed" && message.hydration_attempt >= 5)) return { state: "unavailable" };
+  if (!message) return { state: "unavailable" };
+  // Attachment hydration can change the status after the body is stored.
+  if (field !== "attachments" && (message.plain_text !== null || message.sanitized_html !== null)) {
+    return { state: "resolved", value: (field === "bodyHtml" ? message.sanitized_html : message.plain_text) ?? "" };
+  }
+  if (message.hydration_status === "failed" && message.hydration_attempt >= 5) return { state: "unavailable" };
   if (field === "body" || field === "bodyText") {
     return message.hydration_status === "body" || message.hydration_status === "complete"
       ? { state: "resolved", value: message.plain_text ?? "" }

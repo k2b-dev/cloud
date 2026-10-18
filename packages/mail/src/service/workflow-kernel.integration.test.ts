@@ -986,7 +986,16 @@ steps:
   }, 15_000);
 
   for (const [index, scenario] of (
-    ["paths", "whole message", "pending template", "pending whole", "deleted path", "deleted template", "failed hydration"] as const
+    [
+      "paths",
+      "whole message",
+      "pending template",
+      "pending whole",
+      "deleted path",
+      "deleted template",
+      "failed hydration",
+      "failed after body",
+    ] as const
   ).entries()) {
     test(`resolves body-less workflow inputs: ${scenario}`, async () => {
       const incoming = envelope({ uid: 7200 + index, providerMessageId: `workflow-body-${index}-${suffix}` });
@@ -1013,7 +1022,7 @@ steps:
       const snapshot = await getWorkflowSnapshot({ mailboxId, remoteMessageRefId: ref!.id });
       if (!snapshot) throw new Error("Missing body-less workflow snapshot");
       let steps = `  - succeed: { message: "{{ inputs.message.body }}|{{ inputs.message.bodyText }}|{{ inputs.message.bodyHtml }}" }`;
-      if (scenario === "paths" || scenario === "deleted path" || scenario === "failed hydration") {
+      if (scenario === "paths" || scenario === "deleted path" || scenario === "failed hydration" || scenario === "failed after body") {
         steps = `  - setVariable: { name: plain, value: "\${{ inputs.message.bodyText }}" }
   - setVariable: { name: alias, value: "\${{ inputs.message.body }}" }
   - setVariable: { name: html, value: "\${{ inputs.message.bodyHtml }}" }
@@ -1067,6 +1076,12 @@ ${steps}
         await sql`
           UPDATE mail.message_contents
           SET hydration_status = 'failed', hydration_attempt = 5, plain_text = NULL, sanitized_html = NULL
+          WHERE id = ${messageId}::uuid
+        `;
+      } else if (scenario === "failed after body") {
+        await sql`
+          UPDATE mail.message_contents
+          SET hydration_status = 'failed', hydration_attempt = 5
           WHERE id = ${messageId}::uuid
         `;
       }
