@@ -145,6 +145,8 @@ describe("Mail workspace conversation open", () => {
   let unread: Set<string>;
   /** Extra messages that arrived in a conversation after the page loaded. */
   let replies: Map<string, string>;
+  /** Conversation revisions on the server; rows and details carry them. */
+  let revisions: Map<string, number>;
   /** Holds a detail response until the test releases it. */
   let detailGate: Map<string, Promise<void>>;
   let detailStatus: (id: string) => number;
@@ -161,6 +163,7 @@ describe("Mail workspace conversation open", () => {
       activeFolderIds: [id === B ? "Archive1" : FOLDER],
       sourceFolderId: id === B ? "Archive1" : id === A ? null : FOLDER,
       workStatus: null,
+      revision: revisions.get(id) ?? 1,
     });
   const listFor = (href: string): MailboxListView => {
     const url = new URL(href, "http://localhost");
@@ -203,7 +206,7 @@ describe("Mail workspace conversation open", () => {
       conversationDrafts: [],
       detailError: null,
       collaborationState: null,
-      conversationLocalTags: null,
+      conversationLocalTags: { conversationId, conversationRevision: revisions.get(conversationId) ?? 1, tags: [] },
       comments: [],
       commentsCursor: null,
       assignableUsers: [],
@@ -282,6 +285,7 @@ describe("Mail workspace conversation open", () => {
     actionRequests = [];
     unread = new Set();
     replies = new Map();
+    revisions = new Map();
     detailGate = new Map();
     detailStatus = () => 200;
     routeGate = undefined;
@@ -667,6 +671,21 @@ describe("Mail workspace conversation open", () => {
     await until(() => actionRequests.length === 1, "the mark read request");
     expect(actionRequests[0]!.conversationId).toBe(rowId(12));
     expect(actionRequests[0]!.body).toMatchObject({ kind: "change_state", change: { addFlags: ["seen"] }, sourceFolderId: FOLDER });
+  });
+
+  test("a row older than its detail is refreshed with the list instead of taking the newer revision alone", async () => {
+    mount();
+    revisions.set(rowId(14), 2);
+    open(rowId(14));
+    await until(() => shows(rowId(14)), "the opened conversation");
+    await until(() => routeRequests.length === 1, "the list refresh");
+    expect(routeRequests).toEqual([`${folderPath}&conversation=${rowId(14)}`]);
+    expect(shows(rowId(14))).toBe(true);
+    // A row as new as its detail needs no refresh.
+    open(rowId(15));
+    await until(() => shows(rowId(15)), "the next conversation");
+    await settle();
+    expect(routeRequests).toHaveLength(1);
   });
 
   test("Enter on a row focuses the reader heading", async () => {

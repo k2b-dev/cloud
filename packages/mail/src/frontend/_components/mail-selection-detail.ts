@@ -59,29 +59,30 @@ export const emptyMailSelection = (): MailSelection => ({
 });
 
 /**
- * A row loaded earlier than its conversation's detail, brought up to what actions read from it: the newer revision,
- * the message count, and every folder with an unread message in the detail. Returns the same row when nothing is newer.
+ * A row loaded earlier than its conversation's detail, brought up to what opening it reads: the message count and every
+ * folder with an unread message in the detail, so auto mark-read sees what a snapshot would. The revision stays: it
+ * guards the row's tags, assignees and status, which only a snapshot refreshes together. Returns the same row when
+ * nothing is newer.
  */
 export const syncMailRowWithDetail = (
   item: MailListItem,
-  detail: {
-    detailMessages: ReadonlyArray<{ flags: readonly string[]; folderId: string | null }>;
-    collaborationState: { revision: number } | null;
-    conversationLocalTags: { conversationRevision: number } | null;
-  },
+  detail: { detailMessages: ReadonlyArray<{ flags: readonly string[]; folderId: string | null }> },
 ): MailListItem => {
   const unseenFolderIds = detail.detailMessages.flatMap((message) =>
     !message.flags.includes("\\Seen") && message.folderId ? [message.folderId] : [],
   );
   const unreadFolderIds = [...new Set([...item.unreadFolderIds, ...unseenFolderIds])];
-  const revision = Math.max(
-    item.revision,
-    detail.collaborationState?.revision ?? 0,
-    detail.conversationLocalTags?.conversationRevision ?? 0,
-  );
   // The detail holds at most the newest 100 messages, so it can only raise the count.
   const messageCount = Math.max(item.messageCount, detail.detailMessages.length);
-  return revision === item.revision && messageCount === item.messageCount && unreadFolderIds.length === item.unreadFolderIds.length
+  return messageCount === item.messageCount && unreadFolderIds.length === item.unreadFolderIds.length
     ? item
-    : { ...item, revision, messageCount, unread: item.unread || unseenFolderIds.length > 0, unreadFolderIds };
+    : { ...item, messageCount, unread: item.unread || unseenFolderIds.length > 0, unreadFolderIds };
 };
+
+/** Whether the detail saw a newer revision than the row, so the row's collaboration state is older than the reader's. */
+export const mailRowOlderThanDetail = (
+  item: Pick<MailListItem, "revision"> | undefined,
+  detail: { collaborationState: { revision: number } | null; conversationLocalTags: { conversationRevision: number } | null },
+): boolean =>
+  item !== undefined &&
+  Math.max(detail.collaborationState?.revision ?? 0, detail.conversationLocalTags?.conversationRevision ?? 0) > item.revision;

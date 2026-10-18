@@ -85,7 +85,7 @@ import {
   resolveMailWorkspaceUrl,
 } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
-import { emptyMailSelection, pickMailSelection, syncMailRowWithDetail } from "./_components/mail-selection-detail";
+import { emptyMailSelection, mailRowOlderThanDetail, pickMailSelection, syncMailRowWithDetail } from "./_components/mail-selection-detail";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
 import {
   decideMailAutoReadIntent,
@@ -1081,13 +1081,9 @@ function MailWorkspaceView(props: {
     const path = `${target.pathname}${target.search}`;
     const source = encodeRouteSource(path, data.listMode);
     routeGeneration++;
-    // The row was loaded earlier than the detail; a snapshot carrying both would show the detail's state on it.
+    // The row was loaded earlier than the detail; a snapshot carrying both would show the detail's read state on it.
     const conversationId = selection.selectedConversationId;
-    const detail = {
-      detailMessages: selection.detailMessages ?? [],
-      collaborationState: selection.collaborationState ?? null,
-      conversationLocalTags: selection.conversationLocalTags ?? null,
-    };
+    const detail = { detailMessages: selection.detailMessages ?? [] };
     batch(() => {
       if (conversationId)
         setData("listItems", (items) =>
@@ -1141,6 +1137,10 @@ function MailWorkspaceView(props: {
     if (!inCurrentList(href)) return "stale";
     const { conversationId: _, localTags, selectedSubject, ...incoming } = detail;
     const selection = data.selectedConversationId === conversationId ? preserveUnavailableMailDetail(data, incoming) : incoming;
+    const row = data.listItems.find((item) => item.selectionKind === "conversation" && item.conversationId === conversationId);
+    // A row older than the detail carries older tags, assignees and status under its revision; only a snapshot
+    // refreshes them together, so the list reloads instead of taking the newer revision alone.
+    const rowOlder = mailRowOlderThanDetail(row, selection);
     commitSelectionInList(href, {
       ...selection,
       selectedConversationId: conversationId,
@@ -1150,7 +1150,7 @@ function MailWorkspaceView(props: {
       selectedSubject: selectedSubject || subject,
     });
     // Page 1 now asks for this conversation, so reloading it brings the change the detail may have missed.
-    if (opening.changed)
+    if (opening.changed || rowOlder)
       void workspaceQuery
         .invalidate()
         .catch((error: unknown) =>
