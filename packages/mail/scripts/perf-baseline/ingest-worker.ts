@@ -17,6 +17,7 @@ const input = z
 assertRunUrl(process.env.DATABASE_URL ?? "", input.postgresPort, "postgresql:", "cloud_perf_test");
 assertRunUrl(process.env.REDIS_URL ?? "", input.valkeyPort, "redis:");
 const { ingestEnvelope } = await import("../../src/service/sync-runtime");
+let enqueuedAt = 0;
 try {
   // Increasing UIDs must sort ahead of earlier arrivals, including at --runs 50.
   const date = new Date(Date.parse(input.anchor) - 86_400_000 + input.uid);
@@ -53,6 +54,9 @@ try {
     // ingestEnvelope is a primitive: the enclosing real sync batch enqueues this
     // mailbox-wide invalidation in the same transaction, then wakes its dispatcher.
     await tx`SELECT mail.enqueue_live_invalidation(${input.mailboxId}::uuid, NULL)`;
+    // No event for this arrival can be published before it is enqueued; the commit
+    // acknowledgement below may come after the dispatcher already delivered it.
+    enqueuedAt = monotonicMs();
     return id;
   });
   const committedAt = monotonicMs();
@@ -60,7 +64,7 @@ try {
     { id: string }[]
   >`SELECT c.short_id AS id FROM mail.conversations c JOIN mail.conversation_messages cm ON cm.conversation_id = c.id WHERE cm.message_id = ${messageId}::uuid`;
   if (!row) throw new Error("Ingest produced no conversation");
-  process.send?.({ committedAt, conversationId: row.id });
+  process.send?.({ enqueuedAt, committedAt, conversationId: row.id });
 } finally {
   try {
     await sql.close();

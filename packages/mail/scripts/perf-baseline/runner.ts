@@ -127,7 +127,7 @@ async function liveArrival(
       "cloud_perf_test",
     );
     const redisUrl = assertRunUrl(`redis://127.0.0.1:${valkeyPort}`, valkeyPort, "redis:");
-    let committed: { committedAt: number; conversationId: string } | undefined;
+    let committed: { enqueuedAt: number; committedAt: number; conversationId: string } | undefined;
     child = Bun.spawn([process.execPath, "--no-env-file", join(import.meta.dir, "ingest-worker.ts")], {
       env: {
         PATH: process.env.PATH,
@@ -143,7 +143,7 @@ async function liveArrival(
       signal: api.signal,
       timeout: 30_000,
       ipc(message) {
-        const parsed = z.object({ committedAt: z.number(), conversationId: z.string() }).safeParse(message);
+        const parsed = z.object({ enqueuedAt: z.number(), committedAt: z.number(), conversationId: z.string() }).safeParse(message);
         if (parsed.success) committed = parsed.data;
         else failure = "Malformed ingest worker response";
       },
@@ -189,10 +189,12 @@ async function liveArrival(
     };
     const outcomes = await Promise.allSettled([
       visibility(),
-      wait(() => firstAtOrAfter(deliveryTimes, commit.committedAt) !== undefined, "Live event"),
+      wait(() => firstAtOrAfter(deliveryTimes, commit.enqueuedAt) !== undefined, "Live event"),
     ]);
     for (const outcome of outcomes) if (outcome.status === "rejected") throw outcome.reason;
-    sample.liveMs = firstAtOrAfter(deliveryTimes, commit.committedAt)! - commit.committedAt;
+    // Events before the enqueue belong to earlier work. One between enqueue and the
+    // commit acknowledgement was delivered for this commit before the ack; count it as 0.
+    sample.liveMs = Math.max(0, firstAtOrAfter(deliveryTimes, commit.enqueuedAt)! - commit.committedAt);
     sample.visibleMs = Math.max(0, visibleAt! - commit.committedAt);
     const code = await child.exited;
     if (code !== 0) throw new Error(`Ingest worker exited ${code}: ${(await stderr).slice(-1000)}`);
