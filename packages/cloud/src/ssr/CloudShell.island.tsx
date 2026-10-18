@@ -1,5 +1,6 @@
-import { useLocale } from "@k2b/ui";
-import { createEffect } from "solid-js";
+import { TabBar, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { isServer, Portal } from "solid-js/web";
 import { AppLaunchpadButton, setAppLaunchpadContext } from "./app-launchpad";
 import GlobalSearchTrigger from "./GlobalSearchTrigger";
 import LayoutBreadcrumbs from "./LayoutBreadcrumbs";
@@ -9,6 +10,8 @@ import type { LayoutBreadcrumb } from "./layout-runtime";
 import ProfilePreferences from "./ProfilePreferences";
 import { platformMessages } from "./platform-messages";
 import RailApps from "./RailApps";
+import { RAIL_PREFERENCES_EVENT, readRailContext } from "./rail-context";
+import { phoneBarItems, projectRailNavigation } from "./rail-navigation";
 import ShellFocusToggle from "./ShellFocusToggle";
 import { useShellData } from "./shell-data";
 
@@ -24,6 +27,53 @@ export default function CloudShell(props: CloudShellProps) {
   return props.slot === "rail" ? <RailNavigation currentPath={props.currentPath} /> : <HeaderControls {...props} />;
 }
 
+/**
+ * The phone bar's live copy, mounted with the rail's island so the shell adds no island instance. It renders nothing
+ * while the server's bar is current, so mounting moves and refocuses nothing. When the saved rail preferences or the
+ * URL (a fragment, Back and Forward, an in-page navigation) change what the bar shows, it renders the new bar into the
+ * bar's row, and CSS hides the server's.
+ */
+function BarNavigation(props: { currentPath: string }) {
+  if (isServer) return null;
+  const data = useShellData();
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
+  const initial = data?.rail;
+  if (!data || !initial) return null;
+  const [settings, setSettings] = createSignal(initial);
+  const [currentPath, setCurrentPath] = createSignal(props.currentPath);
+  const itemsFor = (rail: typeof initial, path: string) =>
+    phoneBarItems(projectRailNavigation(data.apps, rail, locale()), path, { label: t().home, path: data.home ?? "/" });
+  const served = JSON.stringify(itemsFor(initial, props.currentPath));
+  const items = createMemo(() => itemsFor(settings(), currentPath()));
+  onMount(() => {
+    const sync = () => setSettings(readRailContext()?.settings ?? initial);
+    const syncLocation = () => setCurrentPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+    syncLocation();
+    window.addEventListener(RAIL_PREFERENCES_EVENT, sync);
+    window.addEventListener("popstate", syncLocation);
+    window.addEventListener("hashchange", syncLocation);
+    // In-page navigation (`@k2b/ssr/nav`) commits with pushState or replaceState, which only the Navigation API
+    // reports; where a browser lacks it, the bar follows at the next page load.
+    window.navigation?.addEventListener("currententrychange", syncLocation);
+    onCleanup(() => {
+      window.removeEventListener(RAIL_PREFERENCES_EVENT, sync);
+      window.removeEventListener("popstate", syncLocation);
+      window.removeEventListener("hashchange", syncLocation);
+      window.navigation?.removeEventListener("currententrychange", syncLocation);
+    });
+  });
+  const row = document.querySelector<HTMLElement>(".cloud-tab-bar__row");
+  if (!row) return null;
+  return (
+    <Show when={JSON.stringify(items()) !== served}>
+      <Portal mount={row}>
+        <TabBar variant="floating" class="cloud-tab-bar__live" label={t().apps} items={items()} />
+      </Portal>
+    </Show>
+  );
+}
+
 function RailNavigation(props: { currentPath: string }) {
   const data = useShellData();
   const locale = useLocale();
@@ -36,6 +86,7 @@ function RailNavigation(props: { currentPath: string }) {
       <ShellFocusToggle variant="rail" />
       <RailApps apps={data.apps} settings={data.rail} currentPath={props.currentPath} />
       <AppLaunchpadButton profile={profile} apps={data.apps} legalLinks={data.legalLinks} variant="rail" label={t().openApps} />
+      <BarNavigation currentPath={props.currentPath} />
       <div class="mt-auto shrink-0 flex flex-col items-center gap-1">
         <GlobalSearchTrigger variant="rail" />
         <LayoutHelpTrigger variant="rail" />
@@ -70,8 +121,8 @@ function HeaderControls(props: { authenticated: boolean; title?: string; launchp
       </div>
       <div class="flex shrink-0 items-center gap-1">
         <div class="flex items-center gap-1 lg:hidden">
-          <LayoutHelpTrigger variant="header" />
           {props.authenticated && <GlobalSearchTrigger variant="header" />}
+          <LayoutHelpTrigger variant="header" />
           {props.launchpad && (
             <AppLaunchpadButton
               profile={

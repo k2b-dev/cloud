@@ -51,11 +51,9 @@ export class SafeRefreshIssuanceRejectionError extends Error {}
 
 const TOKEN_PREFIX = "cld_rt";
 const TOKEN_PATTERN = /^cld_rt_([0-9a-f]{24})_([0-9a-f]{64})$/i;
-const REFRESH_TOKEN_LIFETIME_DAYS = 90;
+export const DEFAULT_LOGIN_LIFETIME_SECONDS = 90 * 24 * 60 * 60;
 
 export const shouldIssueRefreshToken = (scopes: OAuthScope[]): boolean => scopes.includes("offline_access");
-
-const nowPlusDays = (days: number): Date => new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 
 const randomHex = (bytes: number): string => {
   const values = crypto.getRandomValues(new Uint8Array(bytes));
@@ -116,8 +114,9 @@ export const create = async (params: {
   audiences?: string[];
   resource?: string | null;
   label?: string | null;
+  expiresAt: Date;
 }): Promise<{ refreshToken: string; refreshTokenExpiresAt: string; familyId: string }> => {
-  const expiresAt = nowPlusDays(REFRESH_TOKEN_LIFETIME_DAYS);
+  const { expiresAt } = params;
 
   return sql.begin(async (tx) => {
     const [family] = await tx<{ id: string }[]>`
@@ -186,6 +185,7 @@ export const rotate = async (
     scopes: OAuthScope[];
     audiences: string[];
     resource: string | null;
+    familyExpiresAt: Date;
     authorityGrant: { kind: "refresh_token"; tokenId: string; nonce: string };
   }) => Promise<void>,
 ): Promise<RefreshTokenRotationResult> => {
@@ -299,6 +299,7 @@ export const rotate = async (
       scopes: reserved.scopes,
       audiences: reserved.audiences,
       resource: reserved.resource,
+      familyExpiresAt: reserved.familyExpiresAt,
       authorityGrant: reserved.authorityGrant,
     });
   } catch (error) {

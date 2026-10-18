@@ -108,7 +108,7 @@ const de: Record<string, SettingCopy> = {
     description:
       "BCP-47-Sprache für Anfragen ohne eigene Präferenz. Sie steuert Dokumentensprache, Formatierung und Übersetzungskataloge der Apps.",
   },
-  "app.timezone": { label: "Zeitzone", description: "IANA-Zeitzone für geplante Aufgaben und zeitabhängige Abläufe." },
+  "app.timezone": { label: "Zeitzone", description: "IANA-Zeitzone für Routinen und zeitabhängige Abläufe." },
   "app.cleanup_schedule": {
     label: "Bereinigungszeitplan",
     description: "Cron-Ausdruck mit fünf Feldern für automatische Bereinigungen in der eingestellten Zeitzone.",

@@ -539,6 +539,36 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     }
   });
 
+  test("keep both answers' edges above a wrapped remember link, and an outcome link's edge above its buttons", async () => {
+    const question = html(() =>
+      createComponent(Chat.Decision, {
+        state: "open",
+        sentence: "Send the draft to Lea?",
+        reason: { text: "You asked to check it first." },
+        confirm: { label: "Send to Lea", onSelect: () => {} },
+        decline: { label: "Don't send", onSelect: () => {} },
+        remember: { label: "Yes, and don't ask again in this chat", onSelect: () => {} },
+      }),
+    );
+    const outcome = html(() =>
+      createComponent(Chat.Outcome, {
+        current: "check",
+        lines: {
+          check: {
+            tone: "warning",
+            text: "Still checking.",
+            action: { label: "Withdraw", onSelect: () => {} },
+            get actions() {
+              return [text("Open the draft in Mail"), text("Check again")];
+            },
+          },
+        },
+      }),
+    );
+    expect(await takenPixels(question)).toEqual({});
+    expect(await takenPixels(outcome, "14rem")).toEqual({});
+  });
+
   test("give a toast's action and close button 44 px hit areas that keep each other's and the next toast's edges", async () => {
     // A phone shows two toasts at once. "Neu laden" after a notebook session expiry, a one-line "OK" right before the
     // close button, and a toast with a progress bar, where only the close button dismisses.

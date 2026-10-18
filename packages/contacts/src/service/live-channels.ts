@@ -11,7 +11,7 @@ const bookReaders = async (bookId: string, viewers: readonly LiveViewer[]): Prom
   if (!(await books.get({ id: bookId }))) return new Set();
   const permissions = await getActorsBookPermissions(
     bookId,
-    viewers.map((viewer) => ({ actor: viewer.actor, subject: viewer.accessSubject })),
+    viewers.map((viewer) => ({ actor: viewer.actor, accessSubject: viewer.accessSubject })),
   );
   return new Set(viewers.filter((_, position) => hasPermission(permissions[position] ?? "none", "read")).map((viewer) => viewer.id));
 };

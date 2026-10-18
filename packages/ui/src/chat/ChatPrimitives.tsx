@@ -26,7 +26,8 @@ export type ChatMessageProps = {
 };
 
 export type ChatActivityProps = {
-  label: string;
+  /** The step as text, or as a sentence with `ReferenceChip`s. */
+  label: JSX.Element;
   /** Spelled-out name for an expandable row whose visible text abbreviates, such as durations. */
   ariaLabel?: string;
   description?: string;

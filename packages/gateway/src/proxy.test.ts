@@ -732,3 +732,31 @@ describe("upstream origin", () => {
     }
   });
 });
+
+test("a full application omission header reaches the client unchanged", async () => {
+  const name = "X-Notebooks-Pdf-Omissions";
+  const value = "Ab09_-".repeat(341) + "XY";
+  const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+  const upstream = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(async () => new Response("%PDF-test", { headers: { [name]: value, "Content-Type": "application/pdf" } }), {
+      preconnect: fetch.preconnect,
+    }),
+  );
+  try {
+    const response = await proxyRequest(
+      new Request("http://cloud.test/api/notebooks/book01/notes/note01/pdf", { method: "POST" }),
+      buildRouteTable([{ prefix: "/api/notebooks", appId: "notebooks", baseUrl: "http://upstream" }]),
+      createProxyStats(),
+      () => {},
+      null,
+      () => {},
+    );
+    expect(value).toHaveLength(2048);
+    expect(response.status).toBe(200);
+    expect(response.headers.get(name)).toBe(value);
+    expect(await response.text()).toBe("%PDF-test");
+  } finally {
+    upstream.mockRestore();
+    telemetry.mockRestore();
+  }
+});

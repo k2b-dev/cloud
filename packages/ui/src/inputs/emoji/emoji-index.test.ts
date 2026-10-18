@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { nextEmojiIndex } from "./EmojiPicker";
 import {
   completedEmojiShortcode,
+  EMOJI_SKIN_TONES,
   emojiInTone,
   emojiName,
   emojiShortcodeQuery,
@@ -23,6 +24,11 @@ const top = (query: string, count = 3) =>
     .join(" ");
 
 describe("emoji data", () => {
+  test("every picker emoji in every skin tone is one fully-qualified RGI emoji", () => {
+    const variants = parseEmojiData(source).entries.flatMap((entry) => EMOJI_SKIN_TONES.map((tone) => emojiInTone(entry, tone)));
+    expect(variants.length).toBeGreaterThan(3000);
+    expect(variants.filter((emoji) => !/^\p{RGI_Emoji}$/v.test(emoji))).toEqual([]);
+  });
   // A second process reads emojibase-data; it takes a tenth of a second, but more on a busy machine.
   test("matches what the generator writes from emojibase-data", async () => {
     const generator = Bun.spawn([process.execPath, resolve(import.meta.dir, "../../../scripts/generate-emoji-data.ts"), "--check"], {

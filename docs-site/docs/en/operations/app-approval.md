@@ -5,7 +5,7 @@ section: Reference
 order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
-updated: 2026-10-11
+updated: 2026-10-17
 ---
 
 # Integrate an authenticator website
@@ -297,9 +297,92 @@ after the previous one started. Once approved, call
 HttpOnly Cloud session cookie, never a token in JSON. Completion is atomic and
 one-use. A lost response or failed session issuance requires a new login.
 
+## Approve a terminal sign-in
+
+A terminal sign-in links an OAuth device authorization (RFC 8628) to the
+paired app. The app approves authentication and consent in one step.
+Only the OAuth app can create it, through Core's broker-authenticated internal
+endpoint. Browser sign-in endpoints cannot create or complete it.
+OAuth sends these requests when a first-party client supplies
+[`login_hint`](/en/docs/identity/oauth#approve-in-cloud-login).
+
+Check for `"terminal-logins"` in `/info.features`. Opt in only when your app can
+show the client, every scope code, and the login lifetime before a decision:
+
+```ts
+const inbox = await client.inbox(device, signal, { accept: ["terminal-logins"] });
+```
+
+The SDK filters `accept` against the Cloud's announced features. It omits the
+key when none match. Updating the SDK alone does not opt in. Each signed
+`inbox` stores the device's latest capability list; omitting `accept` clears
+it. `pending` always returns browser sign-ins only.
+Only a device whose latest inbox opted in to `terminal-logins` can decide a
+terminal request.
+
+Each terminal login has the usual request ID, challenge, comparison code,
+creation time and expiry, plus:
+
+```json
+{"terminal":{"client":{"id":"cloud-cli","name":"Cloud CLI"},"scopes":["openid","profile"],"lifetimeSeconds":3600}}
+```
+
+The client name comes from the registry. It is plain text, shortened to
+60 code points. Render it as text. The scope list contains 1–16 codes.
+Show the lifetime as a duration. Compare the six-digit code with the terminal
+and require an explicit choice. Never approve on arrival.
+The shown lifetime is already capped by `user.session.expiry_hours` and the
+90-day maximum; issued tokens never outlive it.
+
+Use the existing signed `decide` command. **Approve** authenticates the account
+and consents to exactly the shown client, scopes and login lifetime.
+**Approve** rechecks the client's access and scopes. **Deny** reaches the linked
+OAuth grant while the request is pending, even if the client's access or scopes
+changed, and denies both requests. Both state changes and their audits commit
+together. The device authorization and client IDs come from the stored request.
+The `admin` scope is never offered through this channel; use browser consent.
+A decided, expired or stale authorization returns `409`, as does an approval
+that is no longer allowed.
+Reload the inbox after a conflict. Do not retry an uncertain decision.
+
+Browser and terminal sign-ins share five outstanding requests per account.
+Each request expires after 300 seconds. Unknown, ambiguous, unpaired, expired,
+category-disabled, client-disallowed and over-budget accounts receive the same
+response shape and no wake-up. So do accounts that have not yet accepted the
+legal documents.
+
+Before token issuance, Core checks that the approving device still exists,
+is active and belongs to the account, and that the account's authentication
+epoch still matches. As with browser completion, app approval must still be
+enabled, and the request and device must belong to the current issuer.
+Revocation, signing out everywhere, disabling app approval or changing the
+issuer between approval and issuance prevents tokens. Approved terminal evidence
+stays until issuance consumes it or the linked OAuth authorization row is deleted,
+even when that row has expired. Existing browser approvals of OAuth device grants
+keep their current behavior.
+
+### Upgrade the three components
+
+Update **Core, then OAuth, then Cloud Login**. Use versions with these
+capabilities; a package or image version alone does not opt a device in.
+This Core bridge must be present before enabling OAuth's app-approval handoff.
+The handoff and Cloud Login's consent UI are separate changes.
+
+| App and Cloud combination | Behavior |
+| --- | --- |
+| Old app, new Cloud | No opt-in. Browser sign-ins and existing commands keep their current response shape. |
+| New app, old Cloud | The SDK omits `accept`. Terminal sign-ins are unavailable. |
+| New app, new Cloud | Explicit opt-in enables terminal consent when OAuth supports the handoff. |
+
+| Component version capability | Required behavior |
+| --- | --- |
+| Core with `terminal-logins` | Internal broker endpoint, signed inbox extension, atomic decisions and issuance recheck. |
+| OAuth with app-approval handoff | Creates the linked request for `login_hint`; clients can start without the hint to use browser approval. |
+| Cloud Login with terminal consent | Shows client, scope codes and lifetime, then opts in explicitly. |
+
 ## Approve an Action
 
-Check `/info` for `features: ["actions"]` before using these commands.
+Check `/info` for `"actions"` in `features` before using these commands.
 The feature extends `cloud-app-approval-v1`; it does not change `limits`.
 Older Clouds omit the feature and answer the new commands with `400`.
 Existing authenticators can keep using `pending` and `decide` for sign-ins.
@@ -308,11 +391,12 @@ Send the following signed commands to `POST /device`:
 
 | Command | Result |
 | --- | --- |
-| `{operation:"inbox"}` | `{logins, actions, moreActions, pollAfterSeconds}`. `logins` has the same fields as the `pending` list. `actions` contains up to five newest open Action summaries of the device's account. `moreActions` counts other open requests. |
+| `{operation:"inbox", accept?: ["terminal-logins"]}` | `{logins, actions, moreActions, pollAfterSeconds}`. Without `accept`, `logins` has the same fields as the `pending` list. Opt-in adds terminal consent fields; see below. `actions` contains up to five newest open Action summaries of the device's account. `moreActions` counts other open requests. |
 | `{operation:"action", actionId}` | The full device view of one open request. |
 | `{operation:"act", actionId, digest, decision:"approve"}` | `{state:"approved"}`. With `decision:"deny"`, returns `{state:"denied"}`. |
 
-`inbox` has no signature appendix. For `action`, append `[actionId]` to the
+`inbox` without `accept` has no signature appendix. With `accept`, append
+the capability list as one nested array. For `action`, append `[actionId]` to the
 device proof array. For `act`, append `[actionId, digest, decision]`.
 Use a fresh `jti` for every command.
 
@@ -386,9 +470,15 @@ against a new view.
 
 ### Wake the paired phone
 
-A device that sent a push token gets a wake-up for each sign-in request of its
-account. After the login request commits, Core calls the configured
-authenticator origin once per distinct token:
+A device with a push token gets at most one sign-in wake-up in 30 seconds
+while its previously woken request is pending and unexpired. A new sign-in
+can wake it sooner after that request is decided or expires. Browser and
+terminal requests share this rule. Terminal requests wake only devices whose
+latest inbox opted in to `terminal-logins`. Cloud Login allows 30 sign-in
+wake-ups per token per five minutes.
+
+After the login request commits, Core claims eligible devices atomically and
+calls the configured authenticator origin once per distinct token:
 
 ```http
 POST <authenticator origin>/push/notify
@@ -419,7 +509,8 @@ other while delivery waits.
 
 Push is only a hint. For Actions, load the signed `inbox` and `action` before
 offering a decision. The authenticator still loads sign-in requests with a signed
-`pending` command and needs the usual comparison and approval. Each Cloud
+`pending` command, or an opted-in `inbox` for terminal sign-ins, and needs
+the usual comparison and approval. Each Cloud
 needs outbound HTTPS to the authenticator origin. See
 [Send push notifications](./cloud-login.md#send-push-notifications) for the
 authenticator side.
@@ -448,11 +539,19 @@ every call, including polls. Times are Unix seconds. Sign:
 For `decide`, append `requestId, challenge, comparison, decision` to the array.
 For `push`, append `token`.
 For `action`, append `actionId`; for `act`, append `actionId, digest, decision`.
-`inbox` has no appendix.
+For `inbox` with `accept`, append the whole list as **one nested array**:
+
+```text
+["cloud-app-approval-v1","device",issuer,deviceId,jti,issuedAt,expiresAt,"inbox",["terminal-logins"]]
+```
+
+Without `accept`, the signing bytes stay unchanged and there is no appendix.
+`accept` must be non-empty and unique, with at most eight entries from
+`APP_APPROVAL_ACCEPT`. Unknown entries are rejected.
 All operation parameters are covered. Public `@k2b/cloud/contracts`
 exports include `appDeviceProofMessage`, `appPairingProofMessage`, request/response schemas
 and `APP_APPROVAL_PROTOCOL`, `APP_APPROVAL_PATH`, `APP_APPROVAL_LIMITS`,
-`APP_APPROVAL_FEATURES`, `APP_ACTION_LIMITS`, and the Action schemas and
+`APP_APPROVAL_FEATURES`, `APP_APPROVAL_ACCEPT`, `AppTerminalLogin`, `APP_ACTION_LIMITS`, and the Action schemas and
 digest helpers. These helpers hold no credentials and make no network calls.
 
 The compile-checked signing example is

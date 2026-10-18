@@ -3,11 +3,10 @@ import { Chart, Placeholder } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import type { CustomAppValueFormat } from "../../custom-apps/contracts";
 import type { CustomAppChartData } from "../../service/custom-app-insights";
-import { buildChartRenderData } from "./chart-data";
+import { type ChartRenderData, type ChartType, customAppChartRenderData } from "./chart-data";
+import { customAppChartTooltip } from "./chart-tooltip";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
 import { formatCustomAppValue } from "./value-format";
-
-type ChartType = "bar" | "line" | "donut";
 
 // @k2b/ui draws every chart in a 480-unit wide space and stretches it to the box.
 const CHART_WIDTH = 480;
@@ -144,14 +143,34 @@ export default function CustomAppChart(props: {
     return <Placeholder variant="compact" description={messages().chartDataUnavailable} />;
   }
 
-  const renderData = buildChartRenderData({
-    widget: { chartType: props.chartType },
-    groupBy: props.data.viewQuery.groupBy,
-    aggregations: props.data.viewQuery.aggregations,
-    buckets: props.data.buckets,
-    fieldsById: new Map(props.data.fields.map((field) => [field.id, field])),
-    relationLabels: props.data.relationLabels,
-    categoryFormat: { locale: props.dateConfig.locale, unknownRecordLabel: messages().unknownRecord },
+  return (
+    <CustomAppChartView
+      chart={customAppChartRenderData(props.chartType, props.data, {
+        locale: props.dateConfig.locale,
+        unknownRecordLabel: messages().unknownRecord,
+      })}
+      valueFormat={props.valueFormat}
+      dateConfig={props.dateConfig}
+      xAxisLabel={props.xAxisLabel}
+      yAxisLabel={props.yAxisLabel}
+    />
+  );
+}
+
+export function CustomAppChartView(props: {
+  chart: ChartRenderData;
+  valueFormat?: CustomAppValueFormat;
+  dateConfig: DateContext;
+  xAxisLabel?: string;
+  yAxisLabel?: string;
+}) {
+  const messages = useCustomAppRuntimeMessages();
+  const renderData = props.chart;
+  const tooltip = customAppChartTooltip({
+    chart: renderData,
+    valueFormat: props.valueFormat,
+    dateConfig: props.dateConfig,
+    shareLabel: messages().chartShare,
   });
   const format = (value: number) => formatCustomAppValue(value, props.valueFormat, props.dateConfig);
   const padding = { left: PADDING_LEFT, right: PADDING_RIGHT, bottom: PADDING_BOTTOM };
@@ -163,7 +182,7 @@ export default function CustomAppChart(props: {
     // and outgrows its block on wide pages.
     return (
       <div class="flex h-72 flex-col">
-        <Chart kind="donut" class="min-h-0 flex-1" data={renderData.data} legend />
+        <Chart kind="donut" class="min-h-0 flex-1" data={renderData.data} legend tooltip={tooltip} />
       </div>
     );
   }
@@ -178,6 +197,7 @@ export default function CustomAppChart(props: {
         yAxisLabel={props.yAxisLabel}
       >
         <Chart
+          tooltip={tooltip}
           kind="bar"
           class={chartClass}
           style={plotStyle}
@@ -202,6 +222,7 @@ export default function CustomAppChart(props: {
         yAxisLabel={props.yAxisLabel}
       >
         <Chart
+          tooltip={tooltip}
           kind="line"
           class={chartClass}
           style={plotStyle}

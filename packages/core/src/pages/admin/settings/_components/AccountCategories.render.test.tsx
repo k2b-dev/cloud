@@ -93,6 +93,7 @@ const render = (
       resetValue: def.default,
       value: key.endsWith(".enabled") ? enabled : def.default,
       isCustom: false,
+      unreadable: false,
       valueSource: "default",
       resetValueSource: "default",
       group,

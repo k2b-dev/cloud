@@ -710,7 +710,7 @@ function AssistantChatContextView(
                         <AssistantContextViewAll
                           onClick={() =>
                             props.onOpenView
-                              ? overview("tasks", text("Scheduled tasks"))
+                              ? overview("tasks", text("Routines"))
                               : void prompts.dialog<void>(
                                   () => (
                                     <AssistantLiveProvider value={live}>
@@ -722,7 +722,7 @@ function AssistantChatContextView(
                                     </AssistantLiveProvider>
                                   ),
                                   {
-                                    title: text("Scheduled tasks"),
+                                    title: text("Routines"),
                                     icon: "ti ti-calendar-time",
                                     size: "large",
                                   },

@@ -20,6 +20,9 @@ setDefaultTimeout(60_000);
 
 const USER_ID = "33333333-3333-4333-8333-333333333333";
 const OTHER_ID = "44444444-4444-4444-8444-444444444444";
+const AGENT_ID = "66666666-6666-4666-8666-666666666666";
+const KEY_ID = "77777777-7777-4777-8777-777777777777";
+const SYNC_AGENT_ID = "88888888-8888-4888-8888-888888888888";
 const CLAIM_ID = "11111111-1111-4111-8111-111111111111";
 
 const space = {
@@ -193,7 +196,16 @@ beforeAll(async () => {
       if (path === "/api/spaces/items/Block1") return json(blocker);
       if (path.startsWith("/api/spaces/items/")) return Response.json({ message: "Item not found" }, { status: 404 });
       if (path === "/api/spaces/Space1") return json(spaceDetail);
-      if (path === "/api/spaces/Space1/assignable-users") return json([{ id: OTHER_ID, uid: "ada", displayName: "Ada", avatarHash: null }]);
+      if (path === "/api/spaces/Space1/assignable-users")
+        return json(
+          [
+            { id: OTHER_ID, kind: "user", uid: "ada", displayName: "Ada", avatarHash: null },
+            { id: AGENT_ID, kind: "service_account", uid: "Release Agent", displayName: "Release Agent", avatarHash: null },
+            // Only standalone and agent names are unique; a Space API key may share one with an agent.
+            { id: KEY_ID, kind: "service_account", uid: "Roadmap sync", displayName: "Roadmap sync", avatarHash: null },
+            { id: SYNC_AGENT_ID, kind: "service_account", uid: "roadmap sync", displayName: "roadmap sync", avatarHash: null },
+          ].filter((entry) => entry.kind === (url.searchParams.get("kind") ?? entry.kind)),
+        );
       if (path === "/api/spaces/Space1/items/filter") return json({ items: [task], total: 1, page: 1, pageSize: 50, totalPages: 1 });
       if (path === "/api/spaces/Space1/items") return json({ ...task, ...(body as object), id: "New002" });
       if (path === "/api/spaces/Space1/templates") return json(spaceDetail.templates);
@@ -247,6 +259,13 @@ beforeAll(async () => {
           return json(request.method === "DELETE" ? { message: "ok" } : { id: "Cmt001", ...(body as object) });
         if (suffix === "/attachments" && request.method === "GET") return json([attachment]);
         if (suffix === "/attachments") return json({ ...attachment, id: "File02", filename: "bug.png" });
+        if (suffix.startsWith("/reactions/"))
+          return json({
+            reactions:
+              request.method === "DELETE"
+                ? []
+                : [{ emoji: decodeURIComponent(suffix.slice("/reactions/".length)), count: 1, own: true, people: [] }],
+          });
         if (suffix === "/attachments/File01/content") return new Response("image-bytes");
         if (suffix === "/attachments/File01") return json({ message: "Attachment deleted" });
         if (["/work", "/claim", "/release", "/progress"].includes(suffix)) return json(work);
@@ -538,6 +557,20 @@ describe("changes", () => {
     expect(writes((await run(["due", "Item01", "none"])).requests)[0]?.body).toEqual({ deadline: null });
   });
 
+  test("assign resolves a service account name case-insensitively and keeps usernames exact", async () => {
+    const result = await run(["assign", "Item01", "release AGENT"]);
+    expect(writes(result.requests)[0]?.body).toEqual({ assigneeIds: [AGENT_ID] });
+    expect((await failing(["assign", "Item01", "ADA"])).stderr).toContain(
+      "Use me, an ID, a username, or a service account name with access",
+    );
+    // A name that several service accounts share never picks one of them; it asks for the ID and changes nothing.
+    const ambiguous = await failing(["assign", "Item01", "Roadmap Sync"]);
+    expect(ambiguous.stderr).toContain(
+      `Several service accounts are named "Roadmap Sync" in this space. Use the ID of the one you mean: ${KEY_ID}, ${SYNC_AGENT_ID}.`,
+    );
+    expect(writes(ambiguous.requests)).toEqual([]);
+  });
+
   test("deps lists both directions and adds or removes blockers by address", async () => {
     const listed = await run(["deps", "Item01"]);
     expect(listed.json).toEqual({
@@ -591,6 +624,23 @@ describe("changes", () => {
 });
 
 describe("secondary resources", () => {
+  test("reaction intents encode emoji and print the fresh summary", async () => {
+    for (const emoji of ["👍🏽", "❤️"]) {
+      const added = await run(["reactions", "add", "Item01", emoji]);
+      expect(writes(added.requests)[0]).toMatchObject({
+        method: "PUT",
+        path: `/api/spaces/Space1/items/Item01/reactions/${encodeURIComponent(emoji)}`,
+      });
+      expect(added.json).toEqual({ reactions: [{ emoji, count: 1, own: true, people: [] }] });
+      const removed = await run(["reactions", "remove", "Item01", emoji]);
+      expect(writes(removed.requests)[0]).toMatchObject({
+        method: "DELETE",
+        path: `/api/spaces/Space1/items/Item01/reactions/${encodeURIComponent(emoji)}`,
+      });
+      expect(removed.json).toEqual({ reactions: [] });
+    }
+  });
+
   test("comments list, add, update and delete", async () => {
     expect((await run(["comments", "list", "Item01", "--page", "2", "--per-page", "10"])).json).toEqual({
       ...commentsPage,

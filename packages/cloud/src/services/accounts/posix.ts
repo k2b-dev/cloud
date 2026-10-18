@@ -329,7 +329,8 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
         // Same order as provisioning; settings write upgrades this lock in the same transaction.
         await lock(tx);
         if (parsed.data.enabled) await checkRange(tx, parsed.data, ranges);
-        await settings.set(CONFIG_KEY, JSON.stringify(parsed.data), tx);
+        // complete value from explicit admin input; nothing is merged over a read (#1303)
+        await settings.set(CONFIG_KEY, JSON.stringify(parsed.data), tx, { replaceUnreadable: true });
         await audit.record(
           {
             action: "accounts.linux.configure",

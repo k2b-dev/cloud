@@ -1,5 +1,6 @@
 export * from "../http";
 export * from "./chart-data";
+export * from "./chart-tooltips";
 export * from "./dashboard-actions";
 export * from "./dashboard-dsl-helpers";
 export * from "./dashboard-layout";

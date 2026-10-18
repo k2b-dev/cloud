@@ -1034,17 +1034,14 @@ export function SettingsDialog(props: {
         <SettingsModal.Group title={t().sharing}>
           <SettingsModal.Tab id="access" title={t().access} icon="ti ti-shield" description={t().accessDescription}>
             <SettingsReadError />
-            <Show
-              when={!settingsQuery.refreshing() && !settingsQuery.error()}
-              fallback={<Placeholder align="left" description={<>{t().refreshBeforeAccess}</>} />}
-            >
+            <Show when={!settingsQuery.error()} fallback={<Placeholder align="left" description={<>{t().refreshBeforeAccess}</>} />}>
               <div class="grid gap-6">
                 <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
-                  <Show keyed when={settings().accessEntries}>
+                  <Show when={settings().accessEntries}>
                     {(entries) => (
                       <PermissionEditor
                         // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
-                        initialEntries={entries.filter((entry) => entry.serviceAccountKind !== "resource_bound")}
+                        initialEntries={entries().filter((entry) => entry.serviceAccountKind !== "resource_bound")}
                         canEdit
                         allowedLevels={[
                           { level: "read", label: t().read },

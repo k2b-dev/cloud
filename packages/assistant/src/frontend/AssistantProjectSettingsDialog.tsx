@@ -159,7 +159,6 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
                 description={text("Changes apply immediately. At least one administrator must remain.")}
               >
                 <Show
-                  keyed
                   when={access.data()}
                   fallback={
                     <Placeholder
@@ -178,7 +177,7 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
                 >
                   {(entries) => (
                     <PermissionEditor
-                      initialEntries={entries}
+                      initialEntries={entries()}
                       canEdit
                       allowPublic={false}
                       allowServiceAccounts

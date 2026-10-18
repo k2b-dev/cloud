@@ -1,6 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import * as settings from "@k2b/cloud/services/settings";
 import { sql } from "bun";
 import { generateKeyPair, jwtVerify } from "jose";
+import { z } from "zod";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { createIdentityOAuthIssuanceRoutes } from "./identity-oauth-issuance";
 
@@ -24,6 +26,7 @@ const authorityState = (overrides: Record<string, unknown> = {}) => ({
   grantedAudiences: ["cloud", "test-client"],
   resource: null,
   nonce: null,
+  notAfter: null,
   user: {
     id: USER_ID,
     uid: "alice",
@@ -142,6 +145,7 @@ describe("Core OAuth issuance authority", () => {
       principal_type: "user",
       client_id: "test-client",
       scope: "openid profile",
+      exp: 1_788_224_400,
     });
   });
 
@@ -301,7 +305,19 @@ describe("Core OAuth issuance authority", () => {
     for (const token of [
       { ...userAccess, admin: true },
       { ...userAccess, userId: "forged" },
-      { ...userAccess, expiresIn: 7_200 },
+      ...[3601, 0, 1.5].flatMap((expiresIn) => [
+        { ...userAccess, expiresIn },
+        { ...userAccess, kind: "user_id", expiresIn },
+        {
+          kind: "service_access",
+          grant: {
+            kind: "client_credentials",
+            grantId: "dd8cc597-4268-43f2-abdf-ec008245ef10",
+            nonce: "a771d825-b5d4-44d7-a0c2-17f97f37bd02",
+          },
+          expiresIn,
+        },
+      ]),
       { ...userAccess, kind: "arbitrary" },
       {
         kind: "service_access",
@@ -320,6 +336,54 @@ describe("Core OAuth issuance authority", () => {
         body: JSON.stringify({ tokens: [token] }),
       });
       expect(response.status).toBe(400);
+    }
+  });
+
+  test("signs access and ID tokens for a shorter requested lifetime", async () => {
+    const { routes, publicKey } = await setup();
+    const response = await routes.request("/oauth/token", {
+      method: "POST",
+      headers: { authorization: "Bearer broker", "content-type": "application/json" },
+      body: JSON.stringify({
+        tokens: [
+          { ...userAccess, expiresIn: 600 },
+          { ...userAccess, kind: "user_id", expiresIn: 600 },
+        ],
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = z.object({ tokens: z.array(z.string()) }).parse(await response.json());
+    for (const token of body.tokens) {
+      const verified = await jwtVerify(token, publicKey, { currentDate: new Date(1_788_220_800_000) });
+      expect(verified.payload.exp).toBe(1_788_221_400);
+    }
+  });
+
+  test("independently clamps refreshed access and ID tokens to the family's absolute expiry", async () => {
+    const now = 1_788_220_800;
+    const grant = { kind: "refresh_token", tokenId: USER_ID, nonce: userAccess.grant.nonce };
+    for (const remaining of [120, 0, -1]) {
+      const { routes, publicKey } = await setup(true, authorityState({ notAfter: new Date((now + remaining) * 1000) }));
+      const response = await routes.request("/oauth/token", {
+        method: "POST",
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
+        body: JSON.stringify({
+          tokens: [
+            { kind: "user_access", grant, expiresIn: 3600 },
+            { kind: "user_id", grant, expiresIn: 3600 },
+          ],
+        }),
+      });
+      expect(response.status).toBe(remaining > 0 ? 200 : 403);
+      if (remaining > 0) {
+        const body = z.object({ tokens: z.array(z.string()) }).parse(await response.json());
+        for (const token of body.tokens) {
+          const verified = await jwtVerify(token, publicKey, { currentDate: new Date(now * 1000) });
+          expect(verified.payload.exp).toBe(now + remaining);
+        }
+      } else {
+        expect(await response.json()).toEqual({ message: "Forbidden" });
+      }
     }
   });
 
@@ -556,6 +620,7 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
     const familyId = crypto.randomUUID();
     const tokenId = crypto.randomUUID();
     const authorityNonce = crypto.randomUUID();
+    const familyExpiresAt = new Date(Date.now() + 120_000);
     const { privateKey, publicKey } = await generateKeyPair("RS256");
     try {
       await sql`
@@ -569,7 +634,7 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
       `;
       await sql`
         INSERT INTO oauth.refresh_token_families (id, client_id, user_id, scopes, audiences, status, expires_at)
-        VALUES (${familyId}::uuid, ${clientId}, ${userId}::uuid, ARRAY['openid'], ARRAY['cloud', ${clientId}], 'active', now() + INTERVAL '1 day')
+        VALUES (${familyId}::uuid, ${clientId}, ${userId}::uuid, ARRAY['openid'], ARRAY['cloud', ${clientId}], 'active', ${familyExpiresAt})
       `;
       await sql`
         INSERT INTO oauth.refresh_tokens (
@@ -577,7 +642,7 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
           authority_scopes, authority_audiences
         ) VALUES (
           ${tokenId}::uuid, ${familyId}::uuid, ${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}, 'not-used', 'issuing', 1,
-          now() + INTERVAL '1 day', ${authorityNonce}::uuid, now(), ARRAY['openid'], ARRAY['cloud', ${clientId}]
+          ${familyExpiresAt}, ${authorityNonce}::uuid, now(), ARRAY['openid'], ARRAY['cloud', ${clientId}]
         )
       `;
       const routes = createIdentityOAuthIssuanceRoutes({
@@ -597,7 +662,10 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
           method: "POST",
           headers: { authorization: "Bearer broker", "content-type": "application/json" },
           body: JSON.stringify({
-            tokens: [{ kind: "user_access", grant: { kind: "refresh_token", tokenId, nonce: authorityNonce }, expiresIn: 3_600 }],
+            tokens: [
+              { kind: "user_access", grant: { kind: "refresh_token", tokenId, nonce: authorityNonce }, expiresIn: 3_600 },
+              { kind: "user_id", grant: { kind: "refresh_token", tokenId, nonce: authorityNonce }, expiresIn: 3_600 },
+            ],
           }),
         });
       const issued = await request();
@@ -605,6 +673,9 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
       const issuedBody = (await issued.json()) as { tokens: string[] };
       const verified = await jwtVerify(issuedBody.tokens[0]!, publicKey, { issuer: "https://cloud.example.test" });
       expect(verified.payload.aud).toEqual(["cloud", clientId]);
+      expect(verified.payload.exp).toBe(Math.floor(familyExpiresAt.getTime() / 1000));
+      const idToken = await jwtVerify(issuedBody.tokens[1]!, publicKey, { issuer: "https://cloud.example.test" });
+      expect(idToken.payload.exp).toBe(verified.payload.exp);
       const [token] = await sql<{ authority_issued_at: Date | null }[]>`
         SELECT authority_issued_at FROM oauth.refresh_tokens WHERE id = ${tokenId}::uuid
       `;
@@ -614,6 +685,220 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
       await sql`DELETE FROM oauth.refresh_token_families WHERE id = ${familyId}::uuid`;
       await sql`DELETE FROM oauth.clients WHERE client_id = ${clientId}`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+});
+
+withDatabase("Core terminal approval issuance boundary", () => {
+  const saved = new Map<string, unknown>();
+  const configKeys = ["app.url", "user.app_approval.enabled", "user.app_approval.origin"];
+  beforeAll(async () => {
+    const { migrate } = await import("../migrate/core/app-approval");
+    await migrate();
+    for (const key of configKeys) saved.set(key, await settings.get(key));
+    await settings.set("app.url", "https://cloud.example.test");
+    await settings.set("user.app_approval.enabled", true);
+    await settings.set("user.app_approval.origin", "https://terminal-login.example.test");
+  });
+  afterAll(async () => {
+    for (const key of configKeys) await settings.set(key, saved.get(key));
+  });
+
+  test("issuance waits for the device before locking the login, avoiding a concurrent decide deadlock", async () => {
+    const { privateKey } = await generateKeyPair("RS256");
+    const userId = crypto.randomUUID(),
+      deviceId = crypto.randomUUID(),
+      authorizationId = crypto.randomUUID(),
+      otherAuthorizationId = crypto.randomUUID(),
+      loginId = crypto.randomUUID(),
+      nonce = crypto.randomUUID(),
+      clientId = `issuance-lock-order-${crypto.randomUUID()}`;
+    let issuancePid: number | undefined;
+    let issuance: Promise<Response> | undefined;
+    const routes = createIdentityOAuthIssuanceRoutes({
+      authenticate: () => true,
+      withActiveSigner: async (_purpose, callback) =>
+        sql.begin(async (db) => {
+          await db`SET LOCAL statement_timeout='5s'`;
+          const [backend] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          issuancePid = backend!.pid;
+          return callback(
+            {
+              kid: crypto.randomUUID(),
+              key: privateKey,
+              signUntil: new Date(Date.now() + 60_000),
+              issuer: "https://cloud.example.test",
+            },
+            db,
+          );
+        }),
+      issuer: async () => "https://cloud.example.test",
+    });
+    try {
+      await sql`INSERT INTO auth.users(id,uid,provider,profile)
+        VALUES (${userId}::uuid,${`terminal-lock-order-${userId}`},'local','user')`;
+      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes,audiences,allowed_profiles,access_mode,registration_kind,is_public,allow_device_grant)
+        VALUES ('Issuance lock order',${clientId},'{}',ARRAY['openid','profile'],ARRAY['cloud'],ARRAY['user'],'profiles','managed',true,true)`;
+      await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,expires_at,authority_nonce)
+        VALUES (${authorizationId}::uuid,${authorizationId},${authorizationId},${clientId},ARRAY['openid','profile'],ARRAY['cloud'],
+          'consumed',${userId}::uuid,now()+interval '10 minutes',${nonce}::uuid)`;
+      await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,expires_at)
+        VALUES (${otherAuthorizationId}::uuid,${otherAuthorizationId},${otherAuthorizationId},${clientId},ARRAY['openid'],ARRAY['cloud'],
+          now()+interval '10 minutes')`;
+      await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted)
+        VALUES (${deviceId}::uuid,'https://cloud.example.test',${userId}::uuid,'Phone','{}',false)`;
+      await sql`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,state,approved_by,expires_at,
+        kind,device_authorization_id,client_id,scopes,lifetime_seconds)
+        SELECT ${loginId}::uuid,'https://cloud.example.test',u.id,u.auth_epoch,'login','unusable','unusable','000123','approved',${deviceId}::uuid,
+          now()+interval '5 minutes','terminal',${authorizationId}::uuid,${clientId},ARRAY['openid','profile'],3600
+        FROM auth.users u WHERE u.id=${userId}::uuid`;
+
+      // Transaction A models a signed decide: device first, then login.
+      await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout='3s'`;
+        const [locker] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        await tx`SELECT id FROM auth.app_devices WHERE id=${deviceId}::uuid FOR UPDATE`;
+        issuance = Promise.resolve(
+          routes.request("/oauth/token", {
+            method: "POST",
+            headers: { authorization: "Bearer broker", "content-type": "application/json" },
+            body: JSON.stringify({
+              tokens: [
+                { kind: "user_access", grant: { kind: "device_code", deviceAuthorizationId: authorizationId, nonce }, expiresIn: 3600 },
+              ],
+            }),
+          }),
+        );
+        let blocked = false;
+        const deadline = performance.now() + 3000;
+        while (performance.now() < deadline) {
+          if (issuancePid !== undefined) {
+            const [waiting] = await tx<{ blocked: boolean }[]>`
+              SELECT ${locker!.pid}=ANY(pg_blocking_pids(${issuancePid})) AS blocked`;
+            if (waiting?.blocked) {
+              blocked = true;
+              break;
+            }
+          }
+          await Bun.sleep(10);
+        }
+        expect(blocked).toBe(true);
+        // The decision hook approves another grant of this user; its foreign key takes a key-share lock on the user.
+        await tx`UPDATE oauth.device_authorizations SET status='approved',user_id=${userId}::uuid,decided_at=now()
+          WHERE id=${otherAuthorizationId}::uuid`;
+        // With the inverted order, issuance already holds this row and A deadlocks.
+        const locked = await tx`SELECT id FROM auth.app_logins WHERE id=${loginId}::uuid FOR UPDATE`;
+        expect(locked).toHaveLength(1);
+      });
+      const response = await issuance;
+      expect(response?.status).toBe(200);
+      expect(z.object({ tokens: z.array(z.string()).length(1) }).parse(await response!.json()).tokens).toHaveLength(1);
+      const [login] = await sql`SELECT state FROM auth.app_logins WHERE id=${loginId}::uuid`;
+      expect(login.state).toBe("consumed");
+      const [grant] = await sql`SELECT authority_issued_at FROM oauth.device_authorizations WHERE id=${authorizationId}::uuid`;
+      expect(grant.authority_issued_at).not.toBeNull();
+    } finally {
+      await issuance;
+      await sql`DELETE FROM auth.app_logins WHERE id=${loginId}::uuid`;
+      await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 15_000);
+
+  test.each([
+    "happy",
+    "browser",
+    "revoked",
+    "epoch",
+    "device-owner",
+    "login-owner",
+    "missing-device",
+    "expired-ui",
+    "disabled",
+    "disabled-in-transaction",
+    "issuer",
+    "device-issuer",
+  ] as const)("rechecks terminal approval authority before issuance: %s", async (scenario) => {
+    const { privateKey } = await generateKeyPair("RS256");
+    const routes = createIdentityOAuthIssuanceRoutes({
+      authenticate: () => true,
+      withActiveSigner: async (_purpose, callback) =>
+        sql.begin(async (db) => {
+          // Visible only to this transaction: the recheck must read settings on it, not on a second pool connection.
+          if (scenario === "disabled-in-transaction") await db`DELETE FROM settings.entries WHERE key='user.app_approval.enabled'`;
+          return callback(
+            {
+              kid: crypto.randomUUID(),
+              key: privateKey,
+              signUntil: new Date(Date.now() + 60_000),
+              issuer: "https://cloud.example.test",
+            },
+            db,
+          );
+        }),
+      issuer: async () => "https://cloud.example.test",
+    });
+    const userId = crypto.randomUUID(),
+      otherUser = crypto.randomUUID(),
+      clientId = `issuance-terminal-${crypto.randomUUID()}`;
+    const deviceId = crypto.randomUUID(),
+      authorizationId = crypto.randomUUID(),
+      loginId = crypto.randomUUID(),
+      nonce = crypto.randomUUID();
+    try {
+      for (const id of [userId, otherUser])
+        await sql`INSERT INTO auth.users(id,uid,provider,profile)
+          VALUES (${id}::uuid,${`terminal-issuance-${id}`},'local','user')`;
+      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes,audiences,allowed_profiles,access_mode,registration_kind,is_public,allow_device_grant)
+          VALUES ('Issuance test',${clientId},'{}',ARRAY['openid','profile'],ARRAY['cloud'],ARRAY['user'],'profiles','managed',true,true)`;
+      await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,expires_at,authority_nonce)
+          VALUES (${authorizationId}::uuid,${authorizationId},${authorizationId},${clientId},ARRAY['openid','profile'],ARRAY['cloud'],
+            'consumed',${userId}::uuid,now()+interval '10 minutes',${nonce}::uuid)`;
+      if (scenario !== "browser") {
+        await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted)
+            VALUES (${deviceId}::uuid,'https://cloud.example.test',${scenario === "device-owner" ? otherUser : userId}::uuid,'Phone','{}',false)`;
+        await sql`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,state,approved_by,expires_at,
+            kind,device_authorization_id,client_id,scopes,lifetime_seconds)
+            SELECT ${loginId}::uuid,'https://cloud.example.test',u.id,u.auth_epoch,'login','unusable','unusable','000123','approved',${deviceId}::uuid,
+              now()+interval '5 minutes','terminal',${authorizationId}::uuid,${clientId},ARRAY['openid','profile'],3600
+            FROM auth.users u WHERE u.id=${scenario === "login-owner" ? otherUser : userId}::uuid`;
+        if (scenario === "revoked") await sql`UPDATE auth.app_devices SET revoked_at=now() WHERE id=${deviceId}::uuid`;
+        if (scenario === "epoch") await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${userId}::uuid`;
+        if (scenario === "missing-device") await sql`DELETE FROM auth.app_devices WHERE id=${deviceId}::uuid`;
+        if (scenario === "disabled") await settings.set("user.app_approval.enabled", false);
+        if (scenario === "issuer") await settings.set("app.url", "https://other-cloud.example.test");
+        if (scenario === "device-issuer")
+          await sql`UPDATE auth.app_devices SET issuer='https://other-cloud.example.test' WHERE id=${deviceId}::uuid`;
+        if (scenario === "expired-ui") {
+          await sql`UPDATE auth.app_logins SET expires_at=now()-interval '1 second' WHERE id=${loginId}::uuid`;
+          // Cleanup must retain the evidence needed by issuance after the sign-in UI closes.
+          const { appApproval } = await import("@k2b/cloud/services");
+          await appApproval.cleanup();
+        }
+      }
+      const response = await routes.request("/oauth/token", {
+        method: "POST",
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
+        body: JSON.stringify({
+          tokens: [{ kind: "user_access", grant: { kind: "device_code", deviceAuthorizationId: authorizationId, nonce }, expiresIn: 3600 }],
+        }),
+      });
+      const allowed = ["happy", "browser", "expired-ui"].includes(scenario);
+      expect(response.status).toBe(allowed ? 200 : 403);
+      const result = await response.json();
+      if (allowed) expect(z.object({ tokens: z.array(z.string()).length(1) }).parse(result).tokens).toHaveLength(1);
+      else expect(result).toEqual({ message: "Forbidden" });
+      const [grant] = await sql`SELECT authority_issued_at FROM oauth.device_authorizations WHERE id=${authorizationId}::uuid`;
+      expect(grant.authority_issued_at !== null).toBe(allowed);
+      if (scenario !== "browser") {
+        const [login] = await sql`SELECT state FROM auth.app_logins WHERE id=${loginId}::uuid`;
+        expect(login.state).toBe(allowed ? "consumed" : "approved");
+      }
+    } finally {
+      await settings.set("user.app_approval.enabled", true);
+      await settings.set("app.url", "https://cloud.example.test");
+      await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+      for (const id of [userId, otherUser]) await sql`DELETE FROM auth.users WHERE id=${id}::uuid`;
     }
   });
 });

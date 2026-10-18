@@ -164,6 +164,11 @@ Inside a Cloud application, use `app-accent-text` and `app-accent-border`
 sparingly for app identity. They are Cloud integration utilities, not
 standalone `@k2b/ui` APIs and not general action or status colors.
 
+`app-accent-text` uses `--ui-app-accent-text`, the app ink that meets WCAG AA
+contrast on Cloud's theme and selection surfaces. `--ui-app-selected` and
+`--ui-app-selected-nav` provide the app's selection fills on the main surface
+and the sidebar.
+
 When app-owned CSS is necessary, use the semantic theme variables already
 provided by the host. The host's `--ui-focus` is a complete `box-shadow`: use
 `var(--ui-focus)` only as a `box-shadow` value, because the browser drops a

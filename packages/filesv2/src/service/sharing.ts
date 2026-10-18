@@ -472,6 +472,7 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       let upload = await uploads.getForShare(id, row.id);
       if (!upload) throw new FilesError("not_found", 404);
       const config = await deps.readConfiguration();
+      if (config.unreadable) throw new FilesError("configuration_unreadable", 409);
       const root = deps.connect(config).root(row.root);
       upload = await reconcile(root, upload, config);
       if (upload.state === "committed" && upload.result) return published(upload, row, upload.result);
@@ -500,6 +501,7 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       const upload = await uploads.getForShare(id, row.id);
       if (!upload || upload.state !== "open") return;
       const config = await deps.readConfiguration();
+      if (config.unreadable) throw new FilesError("configuration_unreadable", 409);
       const root = deps.connect(config).root(row.root);
       const reconciled = await reconcile(root, upload, config);
       if (reconciled.state !== "open" || reconciled.error_code) return;
@@ -519,6 +521,7 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       options: { signal?: AbortSignal; heartbeat?: () => Promise<unknown> } = {},
     ): Promise<{ processed: number; unresolved: number }> {
       const config = await deps.readConfiguration();
+      if (config.unreadable) throw new FilesError("configuration_unreadable", 409);
       let processed = 0;
       let unresolved = 0;
       const deadline = Date.now() + 20_000;

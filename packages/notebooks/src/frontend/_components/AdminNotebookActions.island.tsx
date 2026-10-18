@@ -47,7 +47,6 @@ const PermissionDialogBody = (props: AdminNotebookActionsProps) => {
       <Show when={!entries.loading()} fallback={<Placeholder state="loading" title={t().loadingAccess} />}>
         <Show
           when={entries.data()}
-          keyed
           fallback={
             <Placeholder
               state="error"
@@ -63,7 +62,7 @@ const PermissionDialogBody = (props: AdminNotebookActionsProps) => {
         >
           {(currentEntries) => (
             <PermissionEditor
-              initialEntries={currentEntries}
+              initialEntries={currentEntries()}
               canEdit
               grantAccess={async (principal, permission) => {
                 const response = await apiClient[":id"].access.$post({

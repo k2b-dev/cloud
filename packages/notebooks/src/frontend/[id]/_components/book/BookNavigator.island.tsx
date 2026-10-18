@@ -215,8 +215,8 @@ export default function BookNavigator(props: BookNavigatorProps) {
           </AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
-      {/* Book view has no editor toolbar, so it always offers the visible way back. */}
-      <NavigationVisibilityControls hidden={navigationHidden()} showControl />
+      {/* Book view has no editor toolbar, so it offers the visible way back; the graph's own toolbar holds the toggle. */}
+      <NavigationVisibilityControls hidden={navigationHidden()} showControl={props.current !== "graph"} />
     </>
   );
 }

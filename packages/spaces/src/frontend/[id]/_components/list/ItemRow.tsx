@@ -274,9 +274,9 @@ export default function ItemRow(props: ItemRowProps) {
               </Show>
             </div>
 
-            <Show when={props.item.assignees?.length}>
+            <Show when={props.item.assignees?.length || props.item.claim}>
               <div class="shrink-0">
-                <AssigneeAvatars assignees={props.item.assignees!} />
+                <AssigneeAvatars assignees={props.item.assignees ?? []} claim={props.item.claim} currentUserId={props.currentUserId} />
               </div>
             </Show>
           </a>

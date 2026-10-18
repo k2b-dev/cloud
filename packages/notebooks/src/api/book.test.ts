@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import type { ServiceAccount } from "@k2b/cloud/services";
+import { decodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, type NotePdfOmission } from "../lib/pdf-omissions";
 import type { Notebook } from "../service/notebooks";
 
 // Isolate import-time middleware spies while exercising the actual auth,
@@ -124,7 +125,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
       updatedAt: "2026-09-03T10:00:00Z",
       lockedAt: null,
     });
-    renderPdf.mockReset().mockResolvedValue({ pdf: new TextEncoder().encode("%PDF-test"), contentType: "application/pdf" });
+    renderPdf.mockReset().mockResolvedValue({ pdf: new TextEncoder().encode("%PDF-test"), contentType: "application/pdf", omissions: [] });
   });
   afterAll(() => {
     for (const spy of [token, getNotebook, permission, loadRoute, loadPreview, getNote, renderPdf, rateLimit]) spy.mockRestore();
@@ -234,6 +235,21 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
       permission.mockResolvedValue("none");
       expect((await pdf({ markdown })).status).toBe(403);
       expect(renderPdf).toHaveBeenCalledTimes(1);
+    });
+
+    test("PDF export carries typed omissions only when content is omitted", async () => {
+      const omissions: NotePdfOmission[] = [
+        { code: "not_rendered", kind: "image", label: "Karte 😀" },
+        { code: "invalid_block", kind: "query", label: "Zeile 3" },
+      ];
+      renderPdf.mockResolvedValueOnce({ pdf: new TextEncoder().encode("%PDF-test"), contentType: "application/pdf", omissions });
+      const response = await pdf({ markdown: "# Trip plan" });
+      expect(response.status).toBe(200);
+      expect(decodeNotePdfOmissions(response.headers.get(NOTE_PDF_OMISSIONS_HEADER))).toEqual({ items: omissions, more: 0 });
+      expect(await response.text()).toBe("%PDF-test");
+      const clean = await pdf({ markdown: "# Clean" });
+      expect(clean.status).toBe(200);
+      expect(clean.headers.has(NOTE_PDF_OMISSIONS_HEADER)).toBe(false);
     });
 
     test("PDF export resolves queries for a notebook-bound API token as that service account", async () => {

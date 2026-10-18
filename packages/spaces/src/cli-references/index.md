@@ -60,7 +60,7 @@ cld spaces show Item01 --context --json
 | --- | --- |
 | `--status active\|completed\|all` | Completion state |
 | `--type all\|task\|event` | Item type |
-| `--mine`, `--unassigned`, `--assignee <user-id>` | Assignment; `--mine` needs a user-backed actor |
+| `--mine`, `--unassigned`, `--assignee <id>` | Assignment; `--mine` needs a user-backed actor |
 | `--ready`, `--blocked` | Open tasks without, or with, active blockers |
 | `--due overdue\|today\|week\|none` | Deadline window in your system timezone (`TZ` overrides it) |
 | `--due-before <iso\|YYYY-MM-DD>` | Deadline strictly before this instant; a date means the start of that local day |
@@ -93,7 +93,7 @@ cld spaces create "Hiring" --description "Open roles"
 
 - `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` it lands in the space's first column. `add` takes the field flags of `set` except `--title` and `--clear-*`, including the description from `--description <text>` or `--from <file|->` (5,000 characters at most). It adds `--template`, `--kind`, `--date`, and `--no-date`; see [Templates](#templates).
 - `set` changes only the fields you pass. `--description` or `--from` replaces the description. Repeat `--tag` and `--assignee` to set several; they replace the current selection. `--clear-*` cannot be combined with new values.
-- Users are `me`, a user ID, or a username with access to the space. `assign` replaces all assignees with one person, or none.
+- Assignees are `me`, a user or service account UUID, a username, or a service account name with access to the space. Service account names match without regard to case. `assign` replaces all assignees with one person or account, or none.
 - Dates accept ISO datetimes, used as given, or `YYYY-MM-DD`. A date is a day in your system timezone (`TZ` overrides it), stored as the web interface stores it: a deadline at 17:00, like the form's *Today* and *Tomorrow* presets, a start at the beginning of the day, and an end that includes the whole day. Dates for both `--starts-at` and `--ends-at` make an all-day event. Other values keep the item's all-day setting; to give an all-day event times, turn off *All-day event* in the web interface.
 - `mv` moves an item to another column of its own space and puts it at the top of that column; it does not reorder items within a column. Moving between spaces is done with wormholes in the web interface.
 - `done` fails while the task has an active blocker. `rm` needs `--yes`.
@@ -143,11 +143,11 @@ cld spaces activity Item01 --json
 
 Generate a fresh UUID for each worker's claim and keep it for progress, completion, and release. Retrying the same claim with the same identity and ID returns that claim; a different claim gets a conflict, even under the same user. Claims do not expire and do not prevent ordinary collaborative edits or moves between open columns. Claims coordinate work and do not lock it: anyone with write access may take one over, and your next `progress`, `release`, or `done` with an ended claim ID gets `409` "Task claim is no longer active", even when someone has claimed the task again since. Only open, unblocked tasks can be claimed. Completion with the correct claim clears it, and so does a wormhole transfer. A person who completes or transfers your task in the web interface takes your claim over after confirming; release the claim first if you want to hand the task off yourself.
 
-Claiming as a person also assigns you. The claim is the working state of one assignee. `ls --ready --unassigned` skips tasks a person claimed, and `--mine` includes tasks you claimed. Service accounts cannot be assignees.
+Claiming as a person or an agent also assigns you. The claim is the working state of one assignee. `ls --ready --unassigned` skips tasks claimed by people or agents; `--mine` includes only your personal assignments. Active standalone and agent accounts need their own direct access to be assignees. A Space API key can be assigned only within its own Space; personal automation keys cannot be assignees. Assignment grants no access.
 
-Use `release <item> --claim-id <id>` when stopping work. Releasing your own claim keeps you assigned. `release --force` also removes the previous holder from the assignees when they are a person. Use it to clear a stale claim; if they were the only assignee, the task returns to the unassigned pool. Anyone with write access can take over another worker's claim with `release --force` or `done --claim-id <id> --force`, using the exact ID returned by `work`; a changed claim is rejected, and task activity records who took it over. Only `release --force` removes the previous holder's assignment; `done --force`, and a reopen, move, or wormhole transfer that ends someone else's claim, keep the assignees as they are. Claims coordinate work; they are not credentials.
+Use `release <item> --claim-id <id>` when stopping work. Releasing your own claim keeps you assigned. `release --force` also removes the previous holder from the assignees, whether a person or service account. Use it to clear a stale claim; if they were the only assignee, the task returns to the unassigned pool. Anyone with write access can take over another worker's claim with `release --force` or `done --claim-id <id> --force`, using the exact ID returned by `work`; a changed claim is rejected, and task activity records who took it over. Only `release --force` removes the previous holder's assignment; `done --force`, and a reopen, move, or wormhole transfer that ends someone else's claim, keep the assignees as they are. Claims coordinate work; they are not credentials.
 
-`assign` and `set --assignee` or `--clear-assignees` return `409` if the replacement removes the person holding an active claim. Release the claim first. A refused replacement changes nothing, including other fields sent with `set`.
+`assign` and `set --assignee` or `--clear-assignees` return `409` if the replacement removes the person or service account holding an active claim. Release the claim first. A refused replacement changes nothing, including other fields sent with `set`.
 
 `progress` saves the latest full handoff note (`--content` or `--from`). `done --result` or `--from` saves a completion result atomically with completion; `--commit` records a 7–64 digit hexadecimal SHA and needs a result. Include what changed, decisions, remaining work, and verification evidence. Notes are limited to 5,000 characters. A failed result write cannot leave the task done, and reopening keeps the last result. Earlier notes stay in `activity`; follow `nextCursor` with `--cursor`. Standalone and agent accounts can record progress, results, claims, and comments under their own identity; editing or deleting comments needs a person.
 
@@ -247,6 +247,7 @@ Run `cld spaces <command> --help` for every flag.
 | Quick actions | `done`, `reopen`, `assign <item> <user\|me\|none>`, `due <item> <date\|none>` |
 | Dependencies | `deps <item> [--add <item>] [--rm <item>]` |
 | Agent work | `work`, `claim`, `release`, `progress`, `activity`, `show --context` |
+| Reactions | `reactions add <item> <emoji>`, `reactions remove <item> <emoji>` |
 | Comments | `comments list`, `add`, `update`, `delete` |
 | Attachments | `attachments list`, `add`, `download`, `delete` |
 | Checklists | `checklist list`, `add`, `update`, `delete` |
@@ -258,6 +259,8 @@ Run `cld spaces <command> --help` for every flag.
 Inline text containing the two characters `\n` and no real line break is rejected; pass multi-line text with `--from <file|->`.
 
 Every command takes `--json` (and `--jsonl` for lists), destructive commands need `--yes`, and long text comes from `--from <file|->`. A command exits `0` only when it did everything it was asked to do.
+
+React with exactly one fully-qualified emoji (for example `👍🏽` or `❤️`). Each person or standalone/agent account has one reaction per emoji. Adding and removing are idempotent intents affecting only your own reaction and need write access. Viewing needs read access. In text output, `*` marks your own reaction. Reads include `reactions` with `emoji`, `count`, `own`, and up to three other `people`. At most 20 different emoji fit on an item. Reactions send no notifications and record no activity. Series reactions belong to the series item; generated occurrences have none.
 
 ## JSON contracts
 
@@ -277,6 +280,7 @@ Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link 
 | `add`, `set`, `mv`, `done`, `reopen`, `assign`, `due` | The resulting item |
 | `rm` | `{ deleted: { id, spaceId, title } }` |
 | `deps` | `{ item: { id, title }, blockers, blocks }`; `blocks` is a page `{ items, page, perPage, total, hasNext }` |
+| `reactions add`, `reactions remove` | `{ reactions: [{ emoji, count, own, people }] }` in first-reaction order |
 | `comments list` | Page `{ items, page, perPage, total, hasNext }` |
 | `comments add`, `comments update` | The comment |
 | `comments delete` | `{ deleted: { id, itemId } }` |
@@ -291,5 +295,7 @@ Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link 
 | `attachments delete` | `{ deleted: attachment }` |
 | `work`, `claim`, `release`, `progress` | Work state `{ claim, progress, result }` |
 | `calendar`, `overlap` | Arrays of calendar or overlap entries |
+
+Each assignee has `kind` (`user` or `service_account`), its principal UUID as `id`, and a `displayName`; service accounts have no avatar hash.
 
 An item has `id`, `spaceId`, `columnId`, `title`, `description`, `startsAt`, `endsAt`, `deadline`, `estimatedDurationMinutes`, `priority`, `completedAt`, `activeBlockerCount`, `assignees`, `tags`, and timestamps. Errors print `{"error":{"message","status","exitCode"}}` with `--json`; an ambiguous address is status `409`.

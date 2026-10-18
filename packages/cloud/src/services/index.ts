@@ -114,8 +114,8 @@ export type { AccountLifecycleNotificationSender } from "./account-lifecycle/not
 export { lifecycleJobs } from "./account-lifecycle/scheduler";
 
 export { settings } from "./settings/namespace";
-export { loadCache, get, set, remove, getAll } from "./settings";
-export type { SettingEntry } from "./settings";
+export { loadCache, get, read, readStates, set, remove, getAll, SettingUnreadableError } from "./settings";
+export type { SettingEntry, SettingRead, StoredSettingState } from "./settings";
 export { SETTINGS, SETTINGS_MAP, registerSettings } from "./settings/defaults";
 export { validateSettingValue, normalizeSettingValue, getSettingLabel } from "./settings/defaults";
 export type { SettingDef, SettingKind, SettingOption } from "./settings/defaults";
@@ -198,7 +198,16 @@ export type {
 
 export { latestTopicCursor } from "./topic-cursor";
 export { readAccountCategoryPolicy, isAccountCategoryAllowed } from "./account-category-policy";
-export { AppApprovalError, appApproval, type AppDeviceAdministrator, type AppDeviceEnrollmentNotice } from "./app-approval";
+export {
+  AppApprovalError,
+  appApproval,
+  type AppDeviceAdministrator,
+  type AppDeviceEnrollmentNotice,
+  type AppApprovalConfig,
+  type AppTerminalLogins,
+  type AppTerminalLoginInput,
+  readAppApprovalConfig,
+} from "./app-approval";
 export { PwaError, pwaDevices, type PwaDeviceAdministrator, type PwaDevicePairedNotice } from "./pwa-devices";
 export { legalConsent } from "./legal-consent";
 

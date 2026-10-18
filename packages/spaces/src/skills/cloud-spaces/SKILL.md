@@ -1,6 +1,6 @@
 ---
 name: cloud-spaces
-description: "Use for work involving Cloud Spaces: finding, reading, creating, or updating tasks and events, templates, assignees, blockers, comments, tags, linked Cloud resources, and calendar invitations. Load it whenever a request involves a Space, task, work item, deadline, event, calendar entry, or shared work queue."
+description: "Use for work involving Cloud Spaces: finding, reading, creating, or updating tasks and events, templates, assignees, blockers, comments, reactions, tags, linked Cloud resources, and calendar invitations. Load it whenever a request involves a Space, task, work item, deadline, event, calendar entry, or shared work queue."
 ---
 
 # Work with Cloud Spaces
@@ -14,7 +14,7 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 - Select a writable Space through `spaces.space.browse`. A known Space can be listed directly with `spaces.task.list` or `spaces.event.list`. Read `spaces.space.read` only when column/tag IDs or configuration are needed.
 - List entries show at most three assignees and tags: when `assigneeCount` is larger than the number of `assignees`, state the total (for example "3 of 11") or read the item before naming everyone. `relationsTruncated` signals that a relation preview is partial.
 - Use each entry's `overdue` to call a task overdue; a completed task is never overdue, so never infer it from `deadline` alone.
-- Read a selected `spaces.item.read` before changing its content or deleting it. Use a task for work and an event only with explicit valid start and end. Select assignees from `spaces.space.assignee.list`, never inferred names or invented IDs.
+- Read a selected `spaces.item.read` before changing its content or deleting it. Use a task for work and an event only with explicit valid start and end. Select assignees from `spaces.space.assignee.list`, never inferred names or invented IDs. It lists people and service accounts (`kind`); an agent's claim assigns that agent.
 
 ## Make focused changes
 
@@ -22,6 +22,7 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 - Change task or event fields with `spaces.task.update` or `spaces.event.update`; use `spaces.task.set-completed` for completion or reopening.
 - Respect active blockers before completing a task. Use `spaces.task.blocker.list` when details matter and `spaces.task.blocks.list` for the opposite direction. Dependencies must be real prerequisites between tasks in the same Space.
 - Simple subtasks use `spaces.task.checklist.list`, `spaces.task.checklist.create`, `spaces.task.checklist.update` and `spaces.task.checklist.delete`. Keep each entry to a label and completion state; do not turn checklist entries into independent assigned tasks.
+- Use `spaces.reaction.add` and `spaces.reaction.remove` with `{ itemId, emoji }` (one emoji) to set your own reaction. They are idempotent intents, not toggles, need write access, and notify nobody. An item holds at most 20 different emoji.
 - Use comments for discussion; read before replacing or deleting them. For tag replacement, preserve tags not included in the requested change.
 - Use `spaces.item.reference.find` to find existing items for a source resource. Link on creation through references rather than a redundant second mutation. For an existing item use `spaces.item.reference.add`; use `spaces.item.link-candidate.search` when a writable target is unknown.
 - Use `spaces.event.create` for interactive creation. Never blindly retry an uncertain mutation.

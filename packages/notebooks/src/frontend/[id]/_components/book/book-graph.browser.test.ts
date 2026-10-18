@@ -5,6 +5,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { parseGraphViewState } from "../graph/view-state";
 import { BookGraphFixture, type BookGraphFixtureProps } from "./book-graph.browser-harness";
 
 const noteHref = "/app/notebooks/book01/notes/note03?mode=book";
@@ -91,6 +92,8 @@ beforeAll(async () => {
           graphBack: isGraph ? (url.searchParams.get("back") ?? undefined) : undefined,
         },
         graph: isGraph ? graph : null,
+        view: parseGraphViewState(url.searchParams),
+        now: "2026-10-16T17:30:00.000Z",
       };
       const html = renderToString(() => createComponent(BookGraphFixture, props));
       return new Response(

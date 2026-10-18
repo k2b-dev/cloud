@@ -1917,7 +1917,6 @@ export const mergeDuplicate = async (config: {
 export const search = async (config: {
   subject: AccessSubject;
   boundBookId?: string | null;
-  bypassAccess?: boolean;
   pagination?: PageParams;
   filter?: ContactListFilter;
 }): Promise<Paginated<Contact>> => {
@@ -1952,7 +1951,7 @@ export const search = async (config: {
     LEFT JOIN contacts.contact_phones cp ON cp.contact_id = c.id
     LEFT JOIN contacts.contact_addresses ca ON ca.contact_id = c.id
     LEFT JOIN contacts.contact_bank_accounts cba ON cba.contact_id = c.id
-    WHERE (${config.bypassAccess ?? false}::boolean OR ${mapManualReadableAccessCondition(config.subject)})
+    WHERE ${mapManualReadableAccessCondition(config.subject)}
       AND ${bindingMatch}
       AND ${mapManualSearchCondition(searchPattern)}
       AND (${tagIdsArray}::uuid[] IS NULL OR EXISTS (
@@ -1993,7 +1992,7 @@ export const search = async (config: {
       LEFT JOIN contacts.contact_phones cp ON cp.contact_id = c.id
       LEFT JOIN contacts.contact_addresses ca ON ca.contact_id = c.id
       LEFT JOIN contacts.contact_bank_accounts cba ON cba.contact_id = c.id
-      WHERE (${config.bypassAccess ?? false}::boolean OR ${mapManualReadableAccessCondition(config.subject)})
+      WHERE ${mapManualReadableAccessCondition(config.subject)}
         AND ${bindingMatch}
         AND ${mapManualSearchCondition(searchPattern)}
         AND (${tagIdsArray}::uuid[] IS NULL OR EXISTS (

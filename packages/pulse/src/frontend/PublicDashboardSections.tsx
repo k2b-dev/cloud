@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Chart, DataTable, type DataTableColumn, MarkdownView } from "@k2b/ui";
+import { Chart, type ChartTooltipFormatter, DataTable, type DataTableColumn, MarkdownView } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import type {
   MetricQueryPoint,
@@ -26,6 +26,7 @@ import {
   formatSignalValue,
   formatValue,
   gaugeMax,
+  metricChartTooltip,
   metricPointGroupLabel,
   pointsToBars,
   pointsToHeatmap,
@@ -70,8 +71,14 @@ const metricWidgetValueFormat = (widget: PulsePublicDashboardMetricWidget) => (v
 
 const metricWidgetLastValue = (data: MetricQueryPoint[]): number | null => data.at(-1)?.value ?? null;
 
-const renderStatMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: MetricQueryPoint[], last: number | null) => (
+const renderStatMetricVisual = (
+  widget: PulsePublicDashboardMetricWidget,
+  data: MetricQueryPoint[],
+  last: number | null,
+  tooltip: ChartTooltipFormatter,
+) => (
   <Chart
+    tooltip={tooltip}
     kind="stat"
     class="h-40 text-primary"
     label={widget.title}
@@ -80,10 +87,11 @@ const renderStatMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: 
   />
 );
 
-const renderGaugeMetricVisual = (widget: PulsePublicDashboardMetricWidget, last: number | null) => {
+const renderGaugeMetricVisual = (widget: PulsePublicDashboardMetricWidget, last: number | null, tooltip: ChartTooltipFormatter) => {
   const value = last ?? 0;
   return (
     <Chart
+      tooltip={tooltip}
       kind="gauge"
       class="h-48 text-primary"
       value={value}
@@ -95,11 +103,12 @@ const renderGaugeMetricVisual = (widget: PulsePublicDashboardMetricWidget, last:
   );
 };
 
-const renderBarGaugeMetricVisual = (widget: PulsePublicDashboardMetricWidget, last: number | null) => {
+const renderBarGaugeMetricVisual = (widget: PulsePublicDashboardMetricWidget, last: number | null, tooltip: ChartTooltipFormatter) => {
   const value = last ?? 0;
   const max = gaugeMax(widget.unit ?? null, value);
   return (
     <Chart
+      tooltip={tooltip}
       kind="barGauge"
       class="h-40 text-primary"
       data={[{ label: widget.title, value, min: 0, max }]}
@@ -110,18 +119,20 @@ const renderBarGaugeMetricVisual = (widget: PulsePublicDashboardMetricWidget, la
   );
 };
 
-const renderLineMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: MetricQueryPoint[], dateContext: DateContext) => (
+const renderLineMetricVisual = (
+  widget: PulsePublicDashboardMetricWidget,
+  data: MetricQueryPoint[],
+  dateContext: DateContext,
+  tooltip: ChartTooltipFormatter,
+) => (
   <Chart
+    tooltip={tooltip}
     kind="line"
     class="h-56 text-dimmed"
     series={pointsToLineSeries(data, widget.title)}
-    maxGap={queryBucketMaxGap(data, widget.bucket, { ...dateContext, timeZone: widget.timeZone ?? dateContext.timeZone })}
+    maxGap={queryBucketMaxGap(data, widget.bucket, dateContext)}
     xAxis={{
-      format: (value) =>
-        formatQueryBucket(new Date(value).toISOString(), widget.bucket, {
-          ...dateContext,
-          timeZone: widget.timeZone ?? dateContext.timeZone,
-        }),
+      format: (value) => formatQueryBucket(new Date(value).toISOString(), widget.bucket, dateContext),
     }}
     yAxis={{ format: metricWidgetValueFormat(widget) }}
     smooth
@@ -135,30 +146,50 @@ const renderMetricVisual = (
   t: Messages,
 ): JSX.Element => {
   const last = metricWidgetLastValue(data);
+  const zonedContext = { ...dateContext, timeZone: widget.timeZone ?? dateContext.timeZone };
+  const tooltip = metricChartTooltip({
+    title: widget.title,
+    unit: widget.unit,
+    points: data,
+    bucket: widget.bucket,
+    dateContext: zonedContext,
+    countLabel: t.count,
+  });
   switch (widget.visual) {
     case "stat":
-      return renderStatMetricVisual(widget, data, last);
+      return renderStatMetricVisual(widget, data, last, tooltip);
     case "gauge":
-      return last === null ? <p class="text-dimmed">{t.noPoints}</p> : renderGaugeMetricVisual(widget, last);
+      return last === null ? <p class="text-dimmed">{t.noPoints}</p> : renderGaugeMetricVisual(widget, last, tooltip);
     case "barGauge":
-      return last === null ? <p class="text-dimmed">{t.noPoints}</p> : renderBarGaugeMetricVisual(widget, last);
+      return last === null ? <p class="text-dimmed">{t.noPoints}</p> : renderBarGaugeMetricVisual(widget, last, tooltip);
     case "bar":
       return (
         <Chart
+          tooltip={tooltip}
           kind="bar"
           class="h-56 text-dimmed"
-          data={pointsToBars(data, { ...dateContext, timeZone: widget.timeZone ?? dateContext.timeZone }, widget.bucket)}
+          data={pointsToBars(data, zonedContext, widget.bucket)}
           showValues={data.length <= 16}
         />
       );
     case "histogram":
-      return <Chart kind="histogram" class="h-56 text-dimmed" data={pointsToHistogram(data)} bins={12} yAxis={{ label: t.count }} />;
+      return (
+        <Chart
+          tooltip={tooltip}
+          kind="histogram"
+          class="h-56 text-dimmed"
+          data={pointsToHistogram(data)}
+          bins={12}
+          yAxis={{ label: t.count }}
+        />
+      );
     case "heatmap":
       return (
         <Chart
+          tooltip={tooltip}
           kind="heatmap"
           class="h-56 text-dimmed"
-          data={pointsToHeatmap(data, { ...dateContext, timeZone: widget.timeZone ?? dateContext.timeZone }, widget.bucket)}
+          data={pointsToHeatmap(data, zonedContext, widget.bucket)}
           format={metricWidgetValueFormat(widget)}
           showValues={data.length <= 48}
         />
@@ -167,7 +198,7 @@ const renderMetricVisual = (
       return (
         <DataTable
           rows={data}
-          columns={queryPointColumns({ ...dateContext, timeZone: widget.timeZone ?? dateContext.timeZone }, t, widget.bucket)}
+          columns={queryPointColumns(zonedContext, t, widget.bucket)}
           getRowId={(point) => JSON.stringify([point.bucket, point.group])}
           density="compact"
           class="max-h-72 overflow-auto"
@@ -175,7 +206,7 @@ const renderMetricVisual = (
         />
       );
     default:
-      return renderLineMetricVisual(widget, data, dateContext);
+      return renderLineMetricVisual(widget, data, zonedContext, tooltip);
   }
 };
 

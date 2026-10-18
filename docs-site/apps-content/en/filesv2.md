@@ -691,8 +691,19 @@ failed.
 Administrator commands use the same permissions as the UI. Configuration
 updates accept a complete JSON configuration through `--input-file` or
 `--stdin`. Omitted or empty `token` keeps the existing secret; a nonempty value
-replaces it. The read response contains only `tokenConfigured`. Inspect the
-inventory entry before assigning its existing directory with `admin adopt`.
+replaces it. The read response contains `tokenConfigured` and `unreadable`, never
+the token. If `unreadable` is `true`, the Files settings show a notice and both
+areas use disabled defaults. Restore the correct `APP_SECRET` to recover the
+saved configuration, or submit the complete configuration with a nonempty
+Filegate token to replace it. A save without a token fails with HTTP 409
+`configuration_unreadable` and preserves the saved row.
+
+**Reset configuration** in that notice, or
+`cld filesv2 admin configuration reset --yes`, removes the saved configuration
+and returns both areas to disabled defaults. The admin-only API is
+`DELETE /api/filesv2/admin/configuration`; it does not delete Filegate files.
+Inspect the inventory entry before assigning its existing directory with
+`admin adopt`.
 Use `cld filesv2 <command> --help` for the command's arguments.
 
 `admin directories retire` stops Files access and automatic recreation while

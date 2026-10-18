@@ -7,8 +7,9 @@ Use `cld assistant` for interactive access to the user's personal Cloud agent an
 Before you configure the Assistant for someone, read
 [How the Assistant works](how-it-works.md) (`cld assistant reference how-it-works.md`).
 It explains whose permissions the Assistant uses, what Projects share and
-whether it is live, which Actions need approval, how scheduled tasks are
+whether it is live, which Actions need approval, how routines are
 authorized, and when to use instructions, Skills, memories, or knowledge.
+The CLI and API call routines tasks: `cld assistant tasks`, `core.ai.task.*`.
 
 ## Move Skills between Cloud and folders
 
@@ -457,14 +458,14 @@ the reviewed `core.ai.chat.message` Action. The approval names the target and te
 delivery is durable, attributable to the source chat, same-user only, and
 asynchronous when the target is busy.
 
-## Scheduled chat tasks
+## Routines
 
-Tasks belong to a chat, but each run uses an independent execution history.
+Routines belong to a chat, but each run uses an independent execution history.
 It starts from completed chat context and reads current files, memories, and
 Project knowledge and files. App reads, including Project references, need grants. Interactive chatting can continue while it runs. Results and
 failures are delivered to the original chat, reopening it and updating its
 activity time. One-time `--at` values are local wall-clock times in `app.timezone`,
-with the exact format `YYYY-MM-DDTHH:mm`. Recurring tasks use a five-field cron
+with the exact format `YYYY-MM-DDTHH:mm`. Recurring routines use a five-field cron
 expression in the same timezone.
 
 ```bash
@@ -486,7 +487,7 @@ cld assistant tasks delete <task-id> --yes
 Capability grants are a JSON list. Each entry contains `appId`, `capabilityId`,
 `kind` (`query` or `action`), and `fixedInput`. Fixed fields must match exactly;
 `{}` allows any input within the caller's current access. Omitting grants when
-creating a task gives it no capability grants. Updating grants replaces the list.
+creating a routine gives it no capability grants. Updating grants replaces the list.
 Only Actions whose `approval` is `none` or `rememberable` can be granted; an Action
 without an `approval` field in the catalog asks every time and cannot be granted.
 `--yes` is required only for a non-empty grants list.
@@ -508,14 +509,14 @@ cld assistant tasks update <task-id> --grants-file ./grants.json --yes
 
 Read capabilities and resolve resource IDs before proposing grants. Ask the user
 to approve the actual scope, including unrestricted fields, before using `--yes`.
-An existing remembered chat approval does not authorize a background task.
+An existing remembered chat approval does not authorize a background routine.
 
 Use `tasks status` before creating a schedule when you need to confirm the
 effective application timezone. `tasks get` includes recent occurrence history. A terminal delivery or turn
-failure moves the task to `needs_attention`. Resume a recurring task after
-fixing the cause; a failed one-time task needs a new future schedule via
-`tasks update`. Deleting a task deletes its history, and deleting its chat cascades
-to the task and all occurrences.
+failure moves the routine to `needs_attention`. Resume a recurring routine after
+fixing the cause; a failed one-time routine needs a new future schedule via
+`tasks update`. Deleting a routine deletes its history, and deleting its chat cascades
+to the routine and all occurrences.
 
 ## Conversation files
 

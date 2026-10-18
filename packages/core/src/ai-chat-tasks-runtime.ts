@@ -80,7 +80,7 @@ const processOccurrence = async (ctx: JobContext<{ occurrenceId: string }>) => {
     const status = await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Current Project access is unavailable" });
     return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
   }
-  const text = `Scheduled task ${task.shortId} (${occurrence.scheduledFor}):\n\n${task.prompt}`;
+  const text = `Routine ${task.shortId} (${occurrence.scheduledFor}):\n\n${task.prompt}`;
   const files = await listAiConversationFiles(conversation.id);
   const prepared = await prepareAiChatTurn({
     assistantChat: true,
@@ -207,6 +207,7 @@ type RecoveryDependencies = {
   reconcile: () => Promise<void>;
   listTerminal: typeof aiChatTasks.listTerminalRunningTurns;
   finalize: (terminal: Awaited<ReturnType<typeof aiChatTasks.listTerminalRunningTurns>>[number]) => Promise<unknown>;
+  pruneExpiredRuns: () => Promise<unknown>;
   materialize: () => Promise<unknown>;
   listQueued: () => Promise<Array<{ occurrence: { id: string } }>>;
   submit: (occurrenceId: string) => Promise<unknown>;
@@ -218,6 +219,7 @@ export const recoverAiChatTasks = async (dependencies: RecoveryDependencies): Pr
   for (const occurrence of terminal ?? []) {
     await recoveryStep(`finalize:${occurrence.turnId}`, () => dependencies.finalize(occurrence));
   }
+  await recoveryStep("prune-expired-runs", dependencies.pruneExpiredRuns);
   await recoveryStep("materialize", dependencies.materialize);
   const queued = await recoveryStep("list-queued", dependencies.listQueued);
   let submitted = 0;
@@ -236,6 +238,7 @@ const recover = (): Promise<{ queued: number }> =>
     reconcile: reconcileAiChatTasks,
     listTerminal: () => aiChatTasks.listTerminalRunningTurns(),
     finalize: (terminal) => aiChatTasks.finalizeTurn(terminal),
+    pruneExpiredRuns: () => aiChatTasks.pruneExpiredRuns(),
     materialize: () => aiChatTasks.materializeDueOnce(),
     listQueued: () => aiChatTasks.listQueuedOccurrences(),
     submit: submitOccurrence,
@@ -254,7 +257,7 @@ export const aiChatTaskRuntime = {
         cron: "* * * * *",
         timezone,
         misfire: "latest",
-        meta: { appId: APP_ID, family: "ai:chat-task", label: "Scheduled chat task recovery" },
+        meta: { appId: APP_ID, family: "ai:chat-task", label: "Assistant routine recovery" },
         process: async () => {
           await recover();
         },

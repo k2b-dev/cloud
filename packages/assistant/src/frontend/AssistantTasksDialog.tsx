@@ -14,7 +14,7 @@ import { assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-c
 const request = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(`/api/ai${path}`, init);
   const body = await response.json().catch(() => null);
-  if (!response.ok || !body) throw new Error(body?.message || assistantBrowserText("Scheduled task request failed"));
+  if (!response.ok || !body) throw new Error(body?.message || assistantBrowserText("Routine request failed"));
   return body;
 };
 export const openAssistantTask = (task: AssistantChatTask) =>
@@ -25,6 +25,9 @@ export const occurrencePresentation = (state: AssistantChatTaskOccurrence["state
   if (state === "running") return { label: text("Running"), tone: "running" as const };
   return { label: text("Queued"), tone: "neutral" as const };
 };
+
+/** Core deletes finished runs 90 days after they end (`AI_CHAT_TASK_RUN_RETENTION_DAYS`). */
+const RUN_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 const useTaskClock = () => {
   const [now, setNow] = createSignal(new Date());
@@ -79,7 +82,7 @@ export function AssistantTasksView(props: {
       fallback={
         <Placeholder
           state={tasks.error() ? "error" : "loading"}
-          title={text(tasks.error() ? "Could not load tasks" : "Loading tasks")}
+          title={text(tasks.error() ? "Could not load routines" : "Loading routines")}
           description={tasks.error()?.message}
         />
       }
@@ -88,9 +91,7 @@ export function AssistantTasksView(props: {
         <div class="flex flex-col gap-2">
           <Show
             when={items().length}
-            fallback={
-              <Placeholder title={text("No scheduled tasks")} description={text("Ask in the chat for a reminder or a recurring task.")} />
-            }
+            fallback={<Placeholder title={text("No routines")} description={text("Ask in the chat for a reminder or a routine.")} />}
           >
             <For each={items()}>
               {(task) => (
@@ -128,7 +129,7 @@ export function AssistantTasksView(props: {
               )}
             </For>
           </Show>
-          <p class="mt-3 text-xs text-secondary">{text("Plan new tasks and make changes in the chat.")}</p>
+          <p class="mt-3 text-xs text-secondary">{text("Set up new routines and make changes in the chat.")}</p>
         </div>
       )}
     </Show>
@@ -181,33 +182,38 @@ export function AssistantTaskDetail(props: {
       });
       if (name === "run") {
         setTab("result");
-        toast.success(text("Task queued. The result will appear here and in the chat when it is ready."), {
-          title: text("Scheduled task"),
+        toast.success(text("Run queued. The result will appear here and in the chat when it is ready."), {
+          title: text("Routine"),
         });
       }
       if (name === "delete") setDeleted(true);
       else await detail.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : text("Could not update task"));
+      setError(e instanceof Error ? e.message : text("Could not update routine"));
     } finally {
       setBusy(null);
     }
   };
   return (
-    <Show when={!deleted()} fallback={<Placeholder title={text("Task deleted")} />}>
+    <Show when={!deleted()} fallback={<Placeholder title={text("Routine deleted")} />}>
       <Show
         when={detail.data()}
         fallback={
           <Placeholder
             state={detail.error() ? "error" : "loading"}
-            title={text(detail.error() ? "Task unavailable" : "Loading tasks")}
+            title={text(detail.error() ? "Routine unavailable" : "Loading routines")}
             description={detail.error()?.message}
           />
         }
       >
         {(value) => {
           const task = () => value().task,
-            latest = () => value().occurrences[0];
+            latest = () => value().occurrences[0],
+            // An older task may have run before the retention window; "yet" would be wrong then.
+            noRuns = () =>
+              text(
+                Date.parse(task().createdAt) <= now().getTime() - RUN_RETENTION_MS ? "No runs in the last 90 days" : "No occurrences yet",
+              );
           return (
             <div class="assistant-task-detail">
               <div class="assistant-task-detail__body">
@@ -239,7 +245,7 @@ export function AssistantTaskDetail(props: {
                   <NoticeCard
                     tone="warning"
                     title={text("Run needs attention")}
-                    detail={text("Review the result before retrying. The task may have completed some steps.")}
+                    detail={text("Review the result before retrying. The routine may have completed some steps.")}
                   />
                   <Button variant="secondary" size="sm" onClick={() => props.onEdit(task(), true)}>
                     {text("Resolve in chat")}
@@ -248,7 +254,7 @@ export function AssistantTaskDetail(props: {
 
                 <Tabs
                   variant="pill"
-                  ariaLabel={text("Scheduled task")}
+                  ariaLabel={text("Routine")}
                   value={tab}
                   onValueChange={setTab}
                   options={[
@@ -258,7 +264,7 @@ export function AssistantTaskDetail(props: {
                   ]}
                 />
                 <Show when={tab() === "result"}>
-                  <Show when={latest()} fallback={<Placeholder title={text("No occurrences yet")} />}>
+                  <Show when={latest()} fallback={<Placeholder title={noRuns()} />}>
                     {(run) => (
                       <>
                         <div class="flex items-center justify-between gap-2 text-xs text-secondary">
@@ -276,7 +282,7 @@ export function AssistantTaskDetail(props: {
                   </Show>
                 </Show>
                 <Show when={tab() === "history"}>
-                  <Show when={value().occurrences.length} fallback={<Placeholder title={text("No occurrences yet")} />}>
+                  <Show when={value().occurrences.length} fallback={<Placeholder title={noRuns()} />}>
                     <For each={value().occurrences}>
                       {(run) => (
                         <Button
@@ -319,7 +325,7 @@ export function AssistantTaskDetail(props: {
                   </p>
                 </Show>
                 <Show when={error()}>
-                  {(message) => <NoticeCard tone="danger" title={text("Task action failed")} detail={message()} />}
+                  {(message) => <NoticeCard tone="danger" title={text("Routine action failed")} detail={message()} />}
                 </Show>
               </div>
               <div class="assistant-task-detail__actions">

@@ -1,0 +1,211 @@
+import { beforeAll, describe, expect, test } from "bun:test";
+import { dirname, resolve } from "node:path";
+import { transformAsync } from "@babel/core";
+import typescript from "@babel/preset-typescript";
+import type { BunPlugin } from "bun";
+import { launchBrowser } from "../../../ui/test/browser";
+import { html, installCompactShellHarness, ipadPortrait, open, phone } from "./compact-shell.browser-harness";
+
+installCompactShellHarness(launchBrowser);
+
+const solid = (await import(Bun.resolveSync("babel-preset-solid", `${import.meta.dir}/`))).default;
+const compile: BunPlugin = {
+  name: "soft-shell-client",
+  setup(builder) {
+    // The distributed UI and CloudShell must share the browser Solid runtime.
+    builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(import.meta.dir, "../../../ui/dist/browser/index.js") }));
+    builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+      const result = await transformAsync(await Bun.file(path).text(), {
+        filename: path,
+        babelrc: false,
+        configFile: false,
+        presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+      });
+      if (!result?.code) throw new Error(`Could not compile ${path}`);
+      return { contents: result.code, loader: "js", resolveDir: dirname(path) };
+    });
+  },
+};
+
+// Stringified into the server response and executed only after its first animation frame.
+const measure = () => {
+  const selectors = [
+    ".layout-rail",
+    ".layout-rail .rail-item",
+    ".layout-header",
+    ".layout-header button",
+    ".layout-header a",
+    ".layout-shell-content",
+    "main.layout-content-main",
+    ".k2b-app-workspace",
+    ".cloud-tab-bar",
+    ".cloud-tab-bar a",
+  ];
+  return selectors.flatMap((selector) =>
+    [...document.querySelectorAll(selector)].map((element, index) => {
+      const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+      return { selector, index, visible: element.checkVisibility(), left, top, right, bottom, width, height };
+    }),
+  );
+};
+let client: string;
+beforeAll(async () => {
+  const entry = resolve(import.meta.dir, "soft-shell-frames.client.ts");
+  const bundle = await Bun.build({
+    entrypoints: [entry],
+    files: {
+      [entry]: `
+import { createComponent } from "solid-js";
+import { render } from "solid-js/web";
+import { fromJSON } from "seroval";
+import { LocaleProvider, installAppWorkspaceController } from "@k2b/ui";
+import CloudShell from "./CloudShell.island";
+window.mountShell = () => {
+  const islands = [...document.querySelectorAll("solid-island")].filter(element => element.innerHTML.includes("layout-rail-navigation") || element.closest(".layout-header"));
+  if (islands.length !== 2) throw new Error("Expected the real rail and header CloudShell islands, got " + islands.length);
+  for (const island of islands) {
+    const props = fromJSON(JSON.parse(island.dataset.props));
+    island.replaceChildren();
+    render(() => createComponent(LocaleProvider, {
+      locale: document.documentElement.lang,
+      get children() { return createComponent(CloudShell, props); },
+    }), island);
+  }
+  installAppWorkspaceController();
+};`,
+    },
+    plugins: [compile],
+    target: "browser",
+    conditions: ["browser"],
+    format: "iife",
+  });
+  if (!bundle.success) throw new AggregateError(bundle.logs, "Could not compile the real shell islands");
+  client = await bundle.outputs[0]!.text();
+}, 60_000);
+
+describe("soft shell server, mounted and settled frames", () => {
+  for (const device of [ipadPortrait, phone]) {
+    for (const theme of ["light", "dark"] as const) {
+      test(`${device.width}×${device.height} ${theme}: ten reloads preserve every shell rectangle`, async () => {
+        const { context, page } = await open(device, "/app/mail/inbox", { theme, attached: false });
+        const errors: string[] = [];
+        page.on("pageerror", (error) => errors.push(error.message));
+        try {
+          const markup = await html("/app/mail/inbox", { theme });
+          // Serve real SSR HTML. Framework asset scripts are stripped by the harness; the
+          // first measurement runs in rAF before the client bundle is inserted or mounted.
+          await page.route("https://shell.example.test/**", (route) =>
+            route.fulfill({
+              contentType: "text/html",
+              body: markup.replace(
+                "</body>",
+                `<script>
+window.measureShell = ${measure.toString()};
+requestAnimationFrame(() => { window.serverFrame = window.measureShell(); });
+</script></body>`,
+              ),
+            }),
+          );
+          for (let reload = 0; reload < 10; reload++) {
+            if (reload === 0) await page.goto("https://shell.example.test/app/mail/inbox");
+            else await page.reload();
+            await page.waitForFunction(() => "serverFrame" in window);
+            await page.addScriptTag({ content: client });
+            const frames = await page.evaluate(async () => {
+              const host = window as unknown as {
+                serverFrame: ReturnType<typeof measure>;
+                measureShell: typeof measure;
+                mountShell: () => void;
+              };
+              const server = host.serverFrame;
+              host.mountShell();
+              const mounted = host.measureShell();
+              await new Promise<void>((settle) => requestAnimationFrame(() => requestAnimationFrame(() => settle())));
+              return { server, mounted, settled: host.measureShell() };
+            });
+            expect(frames.server.some((rect) => rect.selector === ".layout-rail .rail-item")).toBe(true);
+            expect(frames.server.some((rect) => rect.selector === ".cloud-tab-bar a")).toBe(true);
+            for (const [stage, frame] of Object.entries({ mounted: frames.mounted, settled: frames.settled })) {
+              expect(frame.length, `${reload} ${stage}: element count`).toBe(frames.server.length);
+              for (const [index, rect] of frame.entries()) {
+                const before = frames.server[index]!;
+                const label = `${reload} ${stage} ${rect.selector}[${rect.index}]`;
+                expect([rect.selector, rect.index, rect.visible], label).toEqual([before.selector, before.index, before.visible]);
+                for (const edge of ["left", "top", "right", "bottom", "width", "height"] as const)
+                  expect(Math.abs(rect[edge] - before[edge]), `${label}.${edge}`).toBeLessThanOrEqual(0.01);
+              }
+            }
+          }
+          expect(errors).toEqual([]);
+        } finally {
+          await context.close();
+        }
+      }, 60_000);
+    }
+  }
+});
+
+describe("the phone bar follows saved rail preferences", () => {
+  test("390×844: hiding an app in Customize app bar takes it out of the bar without a reload", async () => {
+    const { context, page } = await open(phone, "/app/mail/inbox?overview=1", { attached: false });
+    try {
+      // A real origin, so the mounted shell can read its cookies.
+      const markup = await html("/app/mail/inbox?overview=1");
+      await page.route("https://shell.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }));
+      await page.goto("https://shell.example.test/app/mail/inbox?overview=1");
+      // A person who reaches Home with the keyboard before the shell loads keeps their focus when it mounts.
+      await page.locator('.cloud-tab-bar a[href="/"]').focus();
+      await page.addScriptTag({ content: client });
+      await page.evaluate(() => (window as unknown as { mountShell: () => void }).mountShell());
+      expect(
+        await page.evaluate(() => document.activeElement?.closest(".cloud-tab-bar") && document.activeElement.getAttribute("href")),
+      ).toBe("/");
+      const hrefs = () =>
+        page
+          .locator(".cloud-tab-bar a")
+          .evaluateAll((links) => links.filter((link) => link.checkVisibility()).map((link) => link.getAttribute("href")));
+      expect(await hrefs()).toEqual(["/", "/app/mail"]);
+      // Mounting keeps the server's bar, so a link focused before the shell loaded keeps its focus.
+      expect(await page.locator(".cloud-tab-bar__live").count()).toBe(0);
+      // What RailEditor's publishRailPreferences does after saving: new shell data, then the event.
+      await page.evaluate(() => {
+        const element = document.getElementById("cloud-shell-data")!;
+        const data = JSON.parse(element.textContent!);
+        data.rail = { ...data.rail, visibility: { ...data.rail.visibility, mail: false } };
+        element.textContent = JSON.stringify(data);
+        window.dispatchEvent(new CustomEvent("cloud:rail-preferences"));
+      });
+      expect(await hrefs()).toEqual(["/"]);
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("the phone bar follows in-page navigation", () => {
+  test("390×844: a pushState navigation moves the open item where the browser reports it", async () => {
+    const { context, page } = await open(phone, "/app/mail/inbox?overview=1", { attached: false });
+    try {
+      const markup = await html("/app/mail/inbox?overview=1");
+      await page.route("https://shell.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }));
+      await page.goto("https://shell.example.test/app/mail/inbox?overview=1");
+      await page.addScriptTag({ content: client });
+      await page.evaluate(() => (window as unknown as { mountShell: () => void }).mountShell());
+      const current = () =>
+        page
+          .locator('.cloud-tab-bar a[aria-current="page"]')
+          .evaluateAll((links) => links.filter((link) => link.checkVisibility()).map((link) => link.getAttribute("href")));
+      expect(await current()).toEqual(["/app/mail"]);
+      // What `@k2b/ssr/nav` does for an enhanced link: a history entry without a document load.
+      const reported = await page.evaluate(async () => {
+        history.pushState(null, "", "/");
+        await new Promise<void>((settle) => requestAnimationFrame(() => requestAnimationFrame(() => settle())));
+        return "navigation" in window;
+      });
+      // Without the Navigation API the browser reports nothing, and the next page load brings the bar up to date.
+      expect(await current()).toEqual(reported ? ["/"] : ["/app/mail"]);
+    } finally {
+      await context.close();
+    }
+  });
+});

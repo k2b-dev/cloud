@@ -5,10 +5,46 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-14
+updated: 2026-10-17
 ---
 
 # Deprecations and migrations
+
+## Cloud administrators see only granted contact books in Contacts
+
+Cloud administrators and their user-delegated keys now need a grant to read or
+change a contact book inside Contacts. This affects the Contacts app, API, app
+tools and capabilities (including Mail recipient suggestions), `cld contacts`,
+and live updates that previously let administrators read books without a grant.
+
+Requests for a book without access return HTTP 403, `forbidden`, or `not_found`,
+depending on the operation. Lists and suggestions show only granted books.
+
+**Administration → Contacts** still lists every book, shows its summary, and
+opens its permission dialog. The administration endpoint
+`/api/contacts/admin/books/:bookId/access` keeps the same behavior.
+
+To keep using a book in the app, open **Administration → Contacts**, open the
+access dialog of the book from its row, and grant yourself access. API clients
+can grant access with `POST /api/contacts/admin/books/:bookId/access`. Then use
+the Contacts app with that grant.
+
+## Contacts requires finished short IDs
+
+Contacts creates `short_id` as a required column on books, contacts, tags, and
+notes. It no longer assigns missing short IDs at startup, so startup no longer
+does work that grows with data.
+
+Every Cloud release from v0.7.0 through v0.45.0 finished the short IDs on its
+first Contacts start. An installation that started Contacts on any of these
+releases needs no action. The minimum direct upgrade source for Contacts is an
+installation whose Contacts has started on Cloud v0.7.0 or later.
+
+A database that never finished its short IDs, such as one upgraded straight
+from the June 23, 2026 production baseline, is no longer a supported direct
+upgrade source. Contacts refuses to start, points to this section, and leaves
+the database unchanged. Start Contacts once on Cloud v0.45.0 until
+`/_cloud/ready` answers ready, then upgrade to the current release.
 
 ## Help articles have kinds, next steps, key caps, and details
 
@@ -2013,6 +2049,8 @@ writers before starting updated services; no manual repair command is required.
 See [JSON metadata upgrade](/en/docs/operations/repair-jsonb-containers) for the
 preservation rules and optional diagnosis. The NATS, identity, and OAuth release
 prerequisites still apply independently.
+Contacts can no longer be upgraded directly from that baseline; follow the
+[Contacts short-ID upgrade path](/en/docs/reference/deprecations-and-migrations#contacts-requires-finished-short-ids).
 
 ## Notification email uses outgoing mail
 

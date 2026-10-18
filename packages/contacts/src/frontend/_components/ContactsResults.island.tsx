@@ -9,6 +9,8 @@ import { readErrorMessage } from "./api";
 import { openContactDuplicatesDialog } from "./ContactDuplicatesDialog";
 import ContactsBulkActions from "./ContactsBulkActions";
 import ContactsList from "./ContactsList";
+import CreateBookAction from "./CreateBookAction";
+import { type ContactsScope, contactsEmptyState } from "./contacts-empty-state";
 import { listenForContactFavoriteChanges } from "./contacts-favorites";
 import { listenForContactsLiveInvalidation, requiresContactsResultsRefresh } from "./contacts-live";
 import { createContactsResultsNavigation, selectContactsResultsSnapshot } from "./contacts-results-navigation";
@@ -23,6 +25,7 @@ import { syncContactDetailFromUrl } from "./context";
 import { type ResultsMessages, resultsMessages } from "./results-messages";
 
 type Props = {
+  scope: ContactsScope;
   bookId?: string;
   initialSearch: string;
   initialHref: string;
@@ -209,6 +212,23 @@ export default function ContactsResults(props: Props) {
     });
   };
   const currentHref = () => current()?.href ?? source();
+
+  // The scope comes from SSR and never changes inside this island, so the action is created once.
+  const createBookAction = props.scope === "noBooks" ? <CreateBookAction /> : undefined;
+  const emptyState = () => {
+    const href = currentHref();
+    const url = new URL(href, "http://contacts.local");
+    return contactsEmptyState(
+      {
+        ...readContactsQueryOptions(href),
+        scope: props.scope,
+        canWrite: props.bookId ? props.canWrite : props.writableBooks.length > 0,
+        search: url.searchParams.get("search") ?? "",
+        tagId: url.searchParams.get("tag_id"),
+      },
+      t(),
+    );
+  };
 
   const commitHistory = (href: string) => {
     navigate(href, { replace: true, scroll: "preserve" });
@@ -481,8 +501,9 @@ export default function ContactsResults(props: Props) {
                 selectionMode={selectionMode()}
                 selectedIds={selectedIds()}
                 onToggleSelection={toggleSelection}
-                emptyTitle={committedSearch().trim() ? t().noMatchingContacts : t().noContactsYet}
-                emptyDescription={committedSearch().trim() ? t().noMatchingContactsHint : t().noContactsYetHint}
+                emptyTitle={emptyState().title}
+                emptyDescription={emptyState().description}
+                emptyAction={emptyState().action === "createBook" ? createBookAction : undefined}
               />
               <Show when={snapshot().totalPages > 1}>
                 <div class="pt-3">

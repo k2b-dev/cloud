@@ -7,9 +7,7 @@ import {
   addBookAccess,
   CONTACT_BOOK_RESOURCE_TYPE,
   CONTACTS_APP_ID,
-  canAccessBook,
   countBookAccess,
-  getBookPermission,
   grantBookAccess,
   listBookAccessPaginated,
   listContactBookApiKeys,
@@ -87,7 +85,7 @@ export const list = async (config: { subject: AccessSubject; boundBookId?: strin
       a.permission IN ('read'::auth.permission_level, 'write'::auth.permission_level, 'admin'::auth.permission_level)
       AND ${principalMatch}
       AND ${bindingMatch}
-    ORDER BY b.name ASC
+    ORDER BY b.name ASC, b.id ASC
   `;
 
   return rows.map(mapBook);
@@ -254,7 +252,7 @@ export const listAdmin = async (params: {
       OR LOWER(COALESCE(b.description, '')) LIKE ${pattern}
     )
     GROUP BY b.id, b.name, b.description, b.created_at, b.updated_at
-    ORDER BY LOWER(b.name) ASC, b.created_at ASC
+    ORDER BY LOWER(b.name) ASC, b.created_at ASC, b.id ASC
     LIMIT ${params.pagination.limit}
     OFFSET ${params.pagination.offset}
   `;
@@ -428,25 +426,6 @@ export const remove = async (config: { id: string }): Promise<Result<void>> => {
   });
   return ok();
 };
-
-/**
- * Returns effective permission for one manual book.
- */
-export const getPermission = async (config: { bookId: string; subject: AccessSubject }): Promise<PermissionLevel> =>
-  getBookPermission({
-    bookId: config.bookId,
-    subject: config.subject,
-  });
-
-/**
- * Checks whether user/groups can access one manual book for the requested level.
- */
-export const canAccess = async (config: { bookId: string; subject: AccessSubject; requiredLevel?: PermissionLevel }): Promise<boolean> =>
-  canAccessBook({
-    bookId: config.bookId,
-    subject: config.subject,
-    requiredLevel: config.requiredLevel,
-  });
 
 /**
  * Access helpers scoped to manual contact books.

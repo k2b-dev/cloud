@@ -3,9 +3,10 @@ import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import type { NoteGraph } from "../../../../service/links";
 import NotebookGraph from "../graph/NotebookGraph.island";
+import type { GraphViewState } from "../graph/view-state";
 import BookNavigator, { type BookNavigatorProps } from "./BookNavigator.island";
 
-export type BookGraphFixtureProps = { navigator: BookNavigatorProps; graph: NoteGraph | null };
+export type BookGraphFixtureProps = { navigator: BookNavigatorProps; graph: NoteGraph | null; view: GraphViewState; now: string };
 type Box = { x: number; width: number; height: number };
 declare global {
   interface Window {
@@ -23,10 +24,15 @@ export function BookGraphFixture(props: BookGraphFixtureProps) {
             {props.graph ? (
               createComponent(NotebookGraph, {
                 notebookId: props.navigator.notebookId,
+                notebookName: props.navigator.notebookName,
                 selectedNoteId: props.navigator.selectedNoteId,
                 graph: props.graph,
                 from: "book",
                 backHref: props.navigator.graphBack,
+                view: props.view,
+                now: props.now,
+                timeZone: "Europe/Berlin",
+                navigationHidden: props.navigator.navigationHidden,
               })
             ) : (
               <article id="notebook-book-content" class="notebook-book-content">

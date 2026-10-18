@@ -517,6 +517,12 @@ export const migrateCloudAi = async (): Promise<void> => {
   `.simple();
 
   await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_turns_background_finished
+    ON ai.turns(completed_at, id)
+    WHERE run_config ? 'background' AND status IN ('completed', 'failed', 'aborted')
+  `.simple();
+
+  await sql`
     CREATE TABLE IF NOT EXISTS ai.conversation_resource_refs (
       conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
       resource_type TEXT NOT NULL,
@@ -1000,9 +1006,20 @@ export const migrateCloudAi = async (): Promise<void> => {
   `.simple();
 
   await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_turn
+    ON ai.chat_task_occurrences(turn_id)
+  `.simple();
+
+  await sql`
     CREATE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_queued
     ON ai.chat_task_occurrences(created_at ASC, id ASC)
     WHERE state = 'queued'
+  `.simple();
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_finished
+    ON ai.chat_task_occurrences(completed_at, id)
+    WHERE state IN ('completed', 'failed')
   `.simple();
 
   await sql`
@@ -1273,7 +1290,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       CONSTRAINT ai_memory_learning_runs_kind_check CHECK (run_kind IN ('turn', 'workflow')),
       CONSTRAINT ai_memory_learning_runs_evidence_check CHECK (
         (run_kind = 'turn' AND evidence_key IS NULL)
-        OR (run_kind = 'workflow' AND turn_id IS NOT NULL AND evidence_key IS NOT NULL)
+        OR (run_kind = 'workflow' AND evidence_key IS NOT NULL)
       ),
       CONSTRAINT ai_memory_learning_runs_changes_check CHECK (jsonb_typeof(changes) = 'array')
     )
@@ -1299,7 +1316,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`
     ALTER TABLE ai.memory_learning_runs ADD CONSTRAINT ai_memory_learning_runs_evidence_check CHECK (
       (run_kind = 'turn' AND evidence_key IS NULL)
-      OR (run_kind = 'workflow' AND turn_id IS NOT NULL AND evidence_key IS NOT NULL)
+      OR (run_kind = 'workflow' AND evidence_key IS NOT NULL)
     )
   `.simple();
   await sql`
@@ -2451,7 +2468,11 @@ export const migrateCloudAi = async (): Promise<void> => {
   {
     const { coreSettings } = await import("../services");
     const { setAiCredential, splitAiProfileCredentials } = await import("./credentials");
-    const split = splitAiProfileCredentials((await coreSettings.get<string>("ai.model_profiles_json")) ?? "[]");
+    const profiles = await coreSettings.read<string>("ai.model_profiles_json");
+    if (profiles.stored === "unreadable") {
+      console.warn('[ai] cannot read setting "ai.model_profiles_json"; skipping credential split');
+    }
+    const split = profiles.stored === "unreadable" ? null : splitAiProfileCredentials(profiles.value ?? "[]");
     if (split && split.credentials.length > 0) {
       for (const { profileId, secret } of split.credentials) await setAiCredential(profileId, secret);
       await coreSettings.set("ai.model_profiles_json", split.profilesJson);

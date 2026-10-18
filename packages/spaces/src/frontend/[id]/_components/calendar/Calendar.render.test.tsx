@@ -152,7 +152,7 @@ const columns: SpaceColumn[] = [
 ];
 const fair = { id: "Tag001", spaceId: "Space1", name: "Fair", color: "#8b5cf6" };
 const press = { id: "Tag002", spaceId: "Space1", name: "Press", color: "#ec4899" };
-const robin = { id: "11111111-1111-4111-8111-111111111111", displayName: "Robin Example", avatarHash: null };
+const robin = { id: "11111111-1111-4111-8111-111111111111", kind: "user" as const, displayName: "Robin Example", avatarHash: null };
 const base = (patch: Partial<CalendarItem>): CalendarItem => ({
   id: "Item01",
   spaceId: "Space1",

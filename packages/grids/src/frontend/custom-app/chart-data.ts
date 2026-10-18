@@ -1,6 +1,9 @@
 import type { BarItem, Point, Series, SliceItem } from "@k2b/stdlib";
 import type { PublicField as Field } from "../../api/public-dto";
 import type { AggregationSpec, GroupBySpec } from "../../contracts";
+import type { CustomAppChartData } from "../../service/custom-app-insights";
+
+export type ChartType = "bar" | "line" | "donut";
 
 /**
  * Transforms `record.group()` buckets into the shapes the platform
@@ -189,9 +192,9 @@ export const bucketsToLineSeries = (buckets: ChartBucket[], aggs: AggregationSpe
  * here keeps the renderer dumb (one switch on chartType) and the
  * transforms unit-testable in isolation.
  */
-type ChartRenderData =
-  | { kind: "donut"; data: SliceItem[] }
-  | { kind: "bar"; data: BarItem[] }
+export type ChartRenderData =
+  | { kind: "donut"; data: SliceItem[]; valueLabel: string }
+  | { kind: "bar"; data: BarItem[]; valueLabel: string }
   | {
       kind: "line";
       series: Series[];
@@ -230,18 +233,20 @@ export const buildChartRenderData = (input: ChartRenderInput): ChartRenderData =
     // Empty aggs is a misconfigured view (charts need at least 1 agg).
     // Returning a donut with no slices lets the renderer fall through
     // to the empty-state placeholder instead of crashing.
-    return { kind: "donut", data: [] };
+    return { kind: "donut", data: [], valueLabel: "" };
   }
   switch (input.widget.chartType) {
     case "donut":
       return {
         kind: "donut",
         data: bucketsToSlices(input.buckets, primary, groupBy, relLabels, input.categoryFormat),
+        valueLabel: aggLabel(primary, input.fieldsById),
       };
     case "bar":
       return {
         kind: "bar",
         data: bucketsToBars(input.buckets, primary, groupBy, relLabels, input.categoryFormat),
+        valueLabel: aggLabel(primary, input.fieldsById),
       };
     case "line":
       return {
@@ -251,3 +256,18 @@ export const buildChartRenderData = (input: ChartRenderInput): ChartRenderData =
       };
   }
 };
+
+export const customAppChartRenderData = (
+  chartType: ChartType,
+  data: Extract<CustomAppChartData, { kind: "chart" }>,
+  categoryFormat: { locale?: string; unknownRecordLabel?: string },
+): ChartRenderData =>
+  buildChartRenderData({
+    widget: { chartType },
+    groupBy: data.viewQuery.groupBy,
+    aggregations: data.viewQuery.aggregations,
+    buckets: data.buckets,
+    fieldsById: new Map(data.fields.map((field) => [field.id, field])),
+    relationLabels: data.relationLabels,
+    categoryFormat,
+  });

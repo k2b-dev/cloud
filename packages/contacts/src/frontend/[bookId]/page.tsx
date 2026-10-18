@@ -1,5 +1,5 @@
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale, hasPermission } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../../config";
@@ -48,24 +48,24 @@ export default ssr<AuthContext>(async (c) => {
   const [book, booksResult] = await Promise.all([
     contactsService.book.get({ id: bookId }),
     contactsService.book.list({
-      subject: { type: "user", userId: user.id },
+      subject: c.get("accessSubject"),
     }),
   ]);
   if (!book) return ssr.error(c, 404);
-  const hasReadAccess = await contactsService.book.permission.canAccess({
+  const permission = await contactsService.book.permission.forActor({
     bookId,
-    subject: { type: "user", userId: user.id },
-    requiredLevel: "read",
+    actor: c.get("actor"),
+    accessSubject: c.get("accessSubject"),
   });
-  if (!hasReadAccess) return ssr.error(c, 403, { description: t.askAdminDescription });
+  if (!hasPermission(permission, "read")) return ssr.error(c, 403, { description: t.askAdminDescription });
   const internalBooks = booksResult.items;
   const {
     entries: permissionEntries,
     adminBookIds: internalAdminBookIds,
     writableBooks: internalWritableBooks,
-  } = await loadContactBookPermissions({ books: internalBooks, user });
+  } = await loadContactBookPermissions({ books: internalBooks, actor: c.get("actor"), accessSubject: c.get("accessSubject") });
   const currentPermission = permissionForBook(permissionEntries, book.id);
-  const canWrite = currentPermission === "write" || currentPermission === "admin";
+  const canWrite = hasPermission(currentPermission, "write");
   const [activeTagInternalId] = activeTagId ? ((await resolveBookPublicIds("tags", bookId, [activeTagId])) ?? []) : [];
   const [contactsResult, internalBookTags] = await Promise.all([
     contactsService.contact.list({
@@ -87,7 +87,8 @@ export default ssr<AuthContext>(async (c) => {
     contacts: internalContacts,
     contactId: selectedContactIdFromUrl,
     bookId: publicBookId,
-    user,
+    actor: c.get("actor"),
+    accessSubject: c.get("accessSubject"),
   });
   const [internalNotesPage, internalFavoriteKeys] = await Promise.all([
     selectedContact
@@ -137,6 +138,7 @@ export default ssr<AuthContext>(async (c) => {
 
         <AppWorkspace.Content>
           <ContactsWorkspaceMain
+            scope="book"
             title={currentBook.name}
             description={currentBook.description ?? t.sharedBookDescription}
             total={contactsResult.total}

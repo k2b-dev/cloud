@@ -224,14 +224,20 @@ export function TabBarDemo() {
     <DemoCard
       id="tab-bar"
       chip={{ kind: "component", name: "TabBar", from: "@k2b/ui" }}
-      description="Up to five native links with an icon above each label; the open page carries aria-current. Flat and opaque on the canvas, without a rule; the content's scroll fade marks its edge."
-      code={`<TabBar label="App" items={[
+      description="Up to five native links with an icon above each label; the open page carries aria-current. Flat by default, or rounded with the floating variant; its host places it and keeps content clear."
+      code={`const tabs = [
   { id: "start", label: "Start", icon: "ti ti-home", href: "/pwa/", current: true },
   { id: "tasks", label: "Tasks", icon: "ti ti-checkbox", href: "/pwa/spaces" },
-]} />`}
+];
+
+<TabBar label="App" items={tabs} />
+<TabBar variant="floating" label="App" items={tabs} />`}
     >
       <div class="ui-phone-frame" data-size="bar">
         <TabBar label="Phone app" items={phoneTabs} />
+      </div>
+      <div class="ui-phone-frame p-3" data-size="bar">
+        <TabBar variant="floating" label="Floating app navigation" items={phoneTabs} />
       </div>
     </DemoCard>
   );
