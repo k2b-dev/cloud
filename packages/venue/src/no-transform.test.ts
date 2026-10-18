@@ -20,7 +20,7 @@ describe("compression boundaries", () => {
       expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }
-  for (const path of ["/venues/venue/shifts", "/public/venue/status"]) {
+  for (const path of ["/venues/venue/templates", "/public/venue/status"]) {
     test(`api ${path} stays eligible for compression`, async () => {
       const response = await api.request(path);
       expect(response.status).toBeLessThan(500);
