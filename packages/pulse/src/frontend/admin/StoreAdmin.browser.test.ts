@@ -88,7 +88,10 @@ const phone: View = { width: 390, height: 844, touch: true };
 const desktop: View = { width: 1440, height: 900, touch: false };
 
 /** Opens the page; `status` answers the status read once `release()` is called, so tests can look at the waiting frame. */
-const open = async (view: View, options: { dark?: boolean; locale?: string; initial: StoreConfig; status?: StoreStatus | "error" }) => {
+const open = async (
+  view: View,
+  options: { dark?: boolean; locale?: string; initial: StoreConfig; status?: StoreStatus | "error"; put?: StoreStatus },
+) => {
   const page = await browser.newPage({ viewport: { width: view.width, height: view.height }, isMobile: view.touch, hasTouch: view.touch });
   let release = () => {};
   const released = new Promise<void>((done) => {
@@ -99,6 +102,7 @@ const open = async (view: View, options: { dark?: boolean; locale?: string; init
     const path = new URL(route.request().url()).pathname;
     calls.push(`${route.request().method()} ${path}`);
     if (path.endsWith("/check")) return route.fulfill({ json: missingRight });
+    if (route.request().method() === "PUT") return route.fulfill({ json: options.put });
     await released;
     if (options.status === "error") return route.fulfill({ status: 500, json: { code: "STORE_REQUEST_FAILED" } });
     return route.fulfill({ json: options.status });
@@ -184,4 +188,26 @@ describe("Pulse data store page in a browser", () => {
           }
         }
   }, 60_000);
+  test("a slow status read never puts the previous connection back over a save", async () => {
+    const moved: StoreStatus = {
+      ...configured,
+      url: "http://clickhouse-new:8123",
+      status: { ...connected, steps: { ...connected.steps, rights: "ok", profiles: "ok" } },
+    };
+    const { page, release } = await open(desktop, { initial: configured, status: { ...configured, status: connected }, put: moved });
+    try {
+      await page.getByRole("button", { name: "Change" }).click();
+      const address = page.getByRole("dialog").getByRole("textbox", { name: /Address/ });
+      await address.fill("http://clickhouse-new:8123");
+      await page.getByRole("dialog").locator('input[type="password"]').fill("fixture-password");
+      await page.getByRole("button", { name: "Check and save" }).click();
+      await page.getByText("http://clickhouse-new:8123").waitFor();
+      release();
+      await page.waitForTimeout(300);
+      expect(await page.getByText("http://clickhouse-new:8123").count()).toBe(1);
+      expect(await page.getByText("http://clickhouse:8123").count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 });

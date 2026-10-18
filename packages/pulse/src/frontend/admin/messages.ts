@@ -89,7 +89,7 @@ export const storeMessages = i18n.define({
       fixBusy: "Another admin is saving the connection right now. Try again in a moment.",
       fixInvalidInput: "Check the address and the service user.",
       fixNotConfigured: "Enter address and service user first.",
-      fixRequest: "The request failed. Your saved connection did not change. Try again.",
+      fixRequest: "The request failed. Pulse reads the saved connection again; check it before you try again.",
     },
     de: {
       title: "Datenspeicher",
@@ -181,7 +181,7 @@ export const storeMessages = i18n.define({
       fixBusy: "Gerade speichert jemand anderes die Verbindung. Versuche es gleich noch einmal.",
       fixInvalidInput: "Prüfe Adresse und Dienst-Zugang.",
       fixNotConfigured: "Trage zuerst Adresse und Dienst-Zugang ein.",
-      fixRequest: "Die Anfrage ist fehlgeschlagen. Die gespeicherte Verbindung ist unverändert. Versuche es erneut.",
+      fixRequest: "Die Anfrage ist fehlgeschlagen. Pulse liest die gespeicherte Verbindung neu; prüfe sie, bevor du es erneut versuchst.",
     },
   },
 });

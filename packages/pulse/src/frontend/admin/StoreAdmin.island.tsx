@@ -85,6 +85,8 @@ type FormProps = {
   /** In a dialog: keeps the dialog open while a save runs, so its result is never dropped. */
   setDismissHandler?: (handler: () => void) => void;
   onSaved: (value: StoreStatus) => void;
+  /** A save without an answer may still have been stored; the page reads the saved connection again. */
+  onUncertain: () => void;
   onCancel?: () => void;
   signal: AbortSignal;
 };
@@ -115,7 +117,12 @@ const ConnectionForm = (props: FormProps) => {
     } catch (cause) {
       if (props.signal.aborted) return;
       if (cause instanceof StoreClientError && cause.check) setFailed(cause.check);
-      else setError(storeFixHint(cause instanceof StoreClientError ? cause.code : "STORE_REQUEST_FAILED", props.locale));
+      else {
+        const code = cause instanceof StoreClientError ? cause.code : "STORE_REQUEST_FAILED";
+        setError(storeFixHint(code, props.locale));
+        // Fixed refusals (input, password, busy) changed nothing; anything else may have saved.
+        if (!["INVALID_INPUT", "PASSWORD_REQUIRED", "STORE_BUSY", "ACCESS_DENIED"].includes(code)) props.onUncertain();
+      }
     } finally {
       setBusy(false);
     }
@@ -298,28 +305,37 @@ export default function StoreAdmin(props: { initial: StoreConfig }) {
   // Times are formatted only after the browser read them, in the person's own time zone.
   const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+  // Every read, check and save starts a new generation; an answer from an older one is dropped, so a
+  // slow status read can never put the previous connection back over a save.
+  let generation = 0;
   const load = async () => {
+    const mine = ++generation;
     setView({ kind: "loading" });
     try {
       const value = await storeClient.get(controller.signal);
+      if (mine !== generation) return;
       setConfig(value);
+      setFull(null);
       setView(value.status ? { kind: "result", status: value.status } : { kind: "loading" });
     } catch {
-      if (!controller.signal.aborted) setView({ kind: "error" });
+      if (!controller.signal.aborted && mine === generation) setView({ kind: "error" });
     }
   };
   const check = async () => {
     if (view().kind === "checking" || view().kind === "loading") return;
+    const mine = ++generation;
     setView({ kind: "checking" });
     try {
       const status = await storeClient.check(controller.signal);
+      if (mine !== generation) return;
       setFull(status);
       setView({ kind: "result", status });
     } catch {
-      if (!controller.signal.aborted) setView({ kind: "error" });
+      if (!controller.signal.aborted && mine === generation) setView({ kind: "error" });
     }
   };
   const saved = (value: StoreStatus) => {
+    generation++;
     setConfig(value);
     if (value.status) {
       setFull(value.status);
@@ -396,6 +412,7 @@ export default function StoreAdmin(props: { initial: StoreConfig }) {
             saved(value);
             close();
           }}
+          onUncertain={() => void load()}
           onCancel={() => close()}
         />
       ),
@@ -462,6 +479,7 @@ export default function StoreAdmin(props: { initial: StoreConfig }) {
               config={config()}
               submitLabel={t().connect}
               onSaved={saved}
+              onUncertain={() => void load()}
               signal={controller.signal}
             />
           </div>
