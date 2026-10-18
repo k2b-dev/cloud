@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { brotliCompressSync, brotliDecompressSync, constants, gunzipSync } from "node:zlib";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "@k2b/cloud/server/request-timeout.ts";
 import * as services from "@k2b/cloud/services";
 import { Hono } from "hono";
@@ -759,4 +760,294 @@ test("a full application omission header reaches the client unchanged", async ()
     upstream.mockRestore();
     telemetry.mockRestore();
   }
+});
+
+// Fixed mailbox rows and island props, with no clock or random input.
+const mailboxRows = Array.from({ length: 635 }, (_, i) => ({
+  id: `conversation-${i.toString(16).padStart(8, "0")}`,
+  sender: `Sender ${i % 83} <person${i % 83}@example.test>`,
+  subject: `${["Invoice", "Delivery", "Meeting", "Question", "Order update"][i % 5]} ${i * 17}: collection ${i % 29}`,
+  date: `2026-09-${String(1 + (i % 28)).padStart(2, "0")}T12:${String(i % 60).padStart(2, "0")}:00Z`,
+  preview: `Conversation ${i}: please review the attached details for order ${i * 31}. Thank you for your reply.`,
+}));
+const mailboxHtml = `<!doctype html><html><body><main class="mail-workspace"><ul>${mailboxRows.map((row) => `<li class="conversation-list-item" data-id="${row.id}"><a href="/app/mail/inbox/${row.id}"><span class="sender">${row.sender}</span><strong class="subject">${row.subject}</strong><time datetime="${row.date}">${row.date}</time><p class="preview">${row.preview}</p><button aria-label="Mark conversation as read">Read</button></a></li>`).join("")}</ul></main><script type="application/json" id="mail-props">${JSON.stringify({ mailbox: "inbox", conversations: mailboxRows })}</script></body></html>`;
+const workspaceJson = JSON.stringify({ workspace: "mail", conversations: mailboxRows.slice(0, 570) });
+
+// Budgets sit between the measured after and before values. Production mailbox
+// baseline: 472,135 B identity, 23.1 KB with local Brotli. This fixture through
+// the gateway: HTML 471,386 B identity, 29,164 B br and 37,248 B gzip on the
+// wire; JSON 144,739 B identity, 11,270 B br. The headroom absorbs socket chunk
+// boundaries, which change the per-chunk flush points.
+const compressionFixtures = [
+  { name: "mailbox Brotli", body: mailboxHtml, type: "text/html; charset=utf-8", accept: "br, gzip", encoding: "br", budget: 50_000 },
+  { name: "mailbox gzip", body: mailboxHtml, type: "text/html; charset=utf-8", accept: "gzip", encoding: "gzip", budget: 65_000 },
+  { name: "workspace JSON", body: workspaceJson, type: "application/json; charset=utf-8", accept: "br", encoding: "br", budget: 25_000 },
+];
+
+// Real sockets on both hops; never let the test client's fetch decompress wire bytes.
+const withCompressionGateway = async (handler: (req: Request) => Response | Promise<Response>, check: (url: URL) => Promise<void>) => {
+  const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+  let upstream: ReturnType<typeof Bun.serve> | undefined;
+  let gateway: ReturnType<typeof Bun.serve> | undefined;
+  try {
+    upstream = Bun.serve({ port: 0, fetch: handler });
+    const table = buildRouteTable([{ prefix: "/", appId: "compression", baseUrl: upstream.url.href }]);
+    gateway = Bun.serve({
+      port: 0,
+      fetch: (req, server) => proxyRequest(req, table, createProxyStats(), () => {}, null, server.timeout.bind(server)),
+    });
+    await check(gateway.url);
+  } finally {
+    await gateway?.stop(true);
+    await upstream?.stop(true);
+    telemetry.mockRestore();
+  }
+};
+
+describe("dynamic response compression on the wire", () => {
+  test.each(compressionFixtures)(
+    "$name decodes identically within its transfer budget",
+    async ({ body, type, accept, encoding, budget }) => {
+      await withCompressionGateway(
+        (req) => {
+          expect(req.headers.get("Accept-Encoding")).toBe(accept);
+          return new Response(body, {
+            headers: {
+              "Content-Type": type,
+              "Content-Length": String(Buffer.byteLength(body)),
+              Vary: "Cookie",
+              ETag: '"mail-v1"',
+              "Accept-Ranges": "bytes",
+            },
+          });
+        },
+        async (url) => {
+          const response = await fetch(url, { headers: { "Accept-Encoding": accept }, decompress: false });
+          expect(response.headers.get("Content-Encoding")).toBe(encoding);
+          expect(response.headers.has("Content-Length")).toBe(false);
+          expect(response.headers.has("Accept-Ranges")).toBe(false);
+          expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding");
+          expect(response.headers.get("ETag")).toBe('W/"mail-v1"');
+          const wire = Buffer.from(await response.arrayBuffer());
+          expect((encoding === "br" ? brotliDecompressSync(wire) : gunzipSync(wire)).toString()).toBe(body);
+          expect(wire.byteLength).toBeLessThan(budget);
+        },
+      );
+    },
+  );
+
+  test.each(["identity", "br;q=0, gzip;q=0"])("eligible identity (%s) merges Vary and preserves bytes and validators", async (accept) => {
+    await withCompressionGateway(
+      (req) => {
+        expect(req.headers.get("Accept-Encoding")).toBe(accept);
+        return new Response(mailboxHtml, { headers: { "Content-Type": "text/html", Vary: "Cookie", ETag: '"mail-v1"' } });
+      },
+      async (url) => {
+        const response = await fetch(url, { headers: { "Accept-Encoding": accept }, decompress: false });
+        expect(response.headers.has("Content-Encoding")).toBe(false);
+        expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding");
+        expect(response.headers.get("ETag")).toBe('"mail-v1"');
+        expect(await response.text()).toBe(mailboxHtml);
+      },
+    );
+  });
+
+  test.each(["Cookie, accept-encoding", "*"])("preserves Vary %s and an already weak ETag", async (vary) => {
+    await withCompressionGateway(
+      () => new Response(mailboxHtml, { headers: { "Content-Type": "text/html", Vary: vary, ETag: 'W/"mail-v1"' } }),
+      async (url) => {
+        const response = await fetch(url, { headers: { "Accept-Encoding": "br" }, decompress: false });
+        expect(response.headers.get("Vary")).toBe(vary);
+        expect(response.headers.get("ETag")).toBe('W/"mail-v1"');
+        expect(brotliDecompressSync(Buffer.from(await response.arrayBuffer())).toString()).toBe(mailboxHtml);
+      },
+    );
+  });
+
+  test("precompressed HTML passes byte-identically", async () => {
+    const encoded = brotliCompressSync(Buffer.from(mailboxHtml));
+    await withCompressionGateway(
+      () => new Response(encoded, { headers: { "Content-Type": "text/html", "Content-Encoding": "br", ETag: '"encoded"' } }),
+      async (url) => {
+        const response = await fetch(url, { headers: { "Accept-Encoding": "br, gzip" }, decompress: false });
+        expect(response.headers.get("Content-Encoding")).toBe("br");
+        expect(response.headers.has("Vary")).toBe(false);
+        expect(response.headers.get("ETag")).toBe('"encoded"');
+        expect(Buffer.from(await response.arrayBuffer())).toEqual(encoded);
+      },
+    );
+  });
+
+  test.each([
+    { method: "HEAD", status: 200, headers: {} },
+    { method: "GET", status: 204, headers: {} },
+    { method: "GET", status: 304, headers: {} },
+    { method: "GET", status: 206, headers: {} },
+    { method: "GET", status: 200, headers: { "Content-Range": "bytes 0-2047/5000" } },
+    { method: "GET", status: 200, headers: { "Cache-Control": "private, NO-TRANSFORM" } },
+    { method: "GET", status: 200, headers: { "Content-Type": "text/plain" } },
+    { method: "GET", status: 200, headers: { "Content-Length": "1023" } },
+  ])("passes $method $status $headers through", async ({ method, status, headers }) => {
+    const body = headers["Content-Length"] ? "x".repeat(1023) : "x".repeat(2048);
+    const responseHeaders = new Headers({ "Content-Type": "text/html" });
+    for (const [name, value] of Object.entries(headers)) {
+      if (value !== undefined) responseHeaders.set(name, value);
+    }
+    await withCompressionGateway(
+      () => new Response([204, 304].includes(status) ? null : body, { status, headers: responseHeaders }),
+      async (url) => {
+        const response = await fetch(url, { method, headers: { "Accept-Encoding": "br, gzip" }, decompress: false });
+        expect(response.status).toBe(status);
+        expect(response.headers.has("Content-Encoding")).toBe(false);
+        expect(response.headers.has("Vary")).toBe(false);
+        expect(await response.text()).toBe(method === "HEAD" || [204, 304].includes(status) ? "" : body);
+      },
+    );
+  });
+
+  test.each(["application/problem+json", " APPLICATION/LD+JSON ; charset=utf-8"])(
+    "compresses %s at the 1024 byte boundary",
+    async (type) => {
+      const body = JSON.stringify({ text: "x".repeat(1013) });
+      expect(Buffer.byteLength(body)).toBe(1024);
+      await withCompressionGateway(
+        () => new Response(body, { headers: { "Content-Type": type, "Content-Length": "1024" } }),
+        async (url) => {
+          const response = await fetch(url, { headers: { "Accept-Encoding": "br" }, decompress: false });
+          expect(response.headers.get("Content-Encoding")).toBe("br");
+          expect(brotliDecompressSync(Buffer.from(await response.arrayBuffer())).toString()).toBe(body);
+        },
+      );
+    },
+  );
+
+  test.each([
+    { type: "text/event-stream", encoding: null },
+    { type: "application/x-ndjson", encoding: null },
+    { type: "text/html", encoding: "br" },
+    { type: "text/html", encoding: "gzip" },
+  ])("$type ($encoding) exposes the first chunk before upstream finishes", async ({ type, encoding }) => {
+    const finish = Promise.withResolvers<void>();
+    const first = type === "text/html" ? "<p>first visible HTML chunk</p>" : 'data: {"first":true}\n\n';
+    const last = type === "text/html" ? "<p>last chunk</p>" : 'data: {"last":true}\n\n';
+    let ended = false;
+    try {
+      await withCompressionGateway(
+        () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(Buffer.from(first));
+              },
+              async pull(controller) {
+                await finish.promise;
+                ended = true;
+                controller.enqueue(Buffer.from(last));
+                controller.close();
+              },
+            }),
+            { headers: { "Content-Type": type } },
+          ),
+        async (url) => {
+          const response = await fetch(url, {
+            headers: { "Accept-Encoding": encoding ?? "br, gzip" },
+            decompress: false,
+            signal: AbortSignal.timeout(4000),
+          });
+          expect(response.headers.get("Content-Encoding")).toBe(encoding);
+          if (!response.body) throw new Error("Missing response body");
+          const reader = response.body.getReader();
+          const chunks: Uint8Array[] = [];
+          let visible = "";
+          while (!visible.includes(first)) {
+            const chunk = await reader.read();
+            if (chunk.done) throw new Error("Stream ended before first chunk");
+            chunks.push(chunk.value);
+            const bytes = Buffer.concat(chunks);
+            visible =
+              encoding === "br"
+                ? brotliDecompressSync(bytes, { finishFlush: constants.BROTLI_OPERATION_FLUSH }).toString()
+                : encoding === "gzip"
+                  ? gunzipSync(bytes, { finishFlush: constants.Z_SYNC_FLUSH }).toString()
+                  : bytes.toString();
+          }
+          expect(ended).toBe(false);
+          expect(visible).toBe(first);
+          finish.resolve();
+          for (;;) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            chunks.push(chunk.value);
+          }
+          const bytes = Buffer.concat(chunks);
+          expect((encoding === "br" ? brotliDecompressSync(bytes) : encoding === "gzip" ? gunzipSync(bytes) : bytes).toString()).toBe(
+            first + last,
+          );
+        },
+      );
+    } finally {
+      finish.resolve();
+    }
+  });
+
+  test.each(["br", "gzip"])("disconnect during a %s body aborts the upstream request", async (encoding) => {
+    const aborted = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<AbortSignal>();
+    const client = new AbortController();
+    try {
+      await withCompressionGateway(
+        (req) => {
+          started.resolve(req.signal);
+          req.signal.addEventListener("abort", () => aborted.resolve(), { once: true });
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(Buffer.from("<p>streaming mailbox</p>"));
+              },
+            }),
+            { headers: { "Content-Type": "text/html" } },
+          );
+        },
+        async (url) => {
+          const timeout = AbortSignal.timeout(4000);
+          const response = await fetch(url, {
+            headers: { "Accept-Encoding": encoding },
+            decompress: false,
+            signal: AbortSignal.any([client.signal, timeout]),
+          });
+          expect(response.headers.get("Content-Encoding")).toBe(encoding);
+          if (!response.body) throw new Error("Missing compressed body");
+          expect((await response.body.getReader().read()).done).toBe(false);
+          client.abort();
+          await Promise.race([
+            aborted.promise,
+            new Promise<never>((_, reject) => timeout.addEventListener("abort", () => reject(timeout.reason), { once: true })),
+          ]);
+          expect((await started.promise).aborted).toBe(true);
+        },
+      );
+    } finally {
+      client.abort();
+    }
+  });
+});
+
+describe("cross-site requests", () => {
+  test.each([
+    { site: "cross-site", encoding: null },
+    { site: "same-site", encoding: null },
+    { site: "same-origin", encoding: "br" },
+    { site: "none", encoding: "br" },
+  ])("Sec-Fetch-Site $site chooses its encoding", async ({ site, encoding }) => {
+    await withCompressionGateway(
+      () => new Response(mailboxHtml, { headers: { "Content-Type": "text/html" } }),
+      async (url) => {
+        const response = await fetch(url, { headers: { "Accept-Encoding": "br, gzip", "Sec-Fetch-Site": site }, decompress: false });
+        expect(response.headers.get("Content-Encoding")).toBe(encoding);
+        expect(response.headers.get("Vary")).toBe("Accept-Encoding");
+        const wire = Buffer.from(await response.arrayBuffer());
+        expect((encoding ? brotliDecompressSync(wire) : wire).toString()).toBe(mailboxHtml);
+      },
+    );
+  });
 });

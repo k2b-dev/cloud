@@ -413,6 +413,6 @@ no lock.
   runs on the same quiet host rather than reading absolute numbers.
 - The browser part opens a short conversation, not the 180-message thread,
   so the client cost of a large thread is not measured.
-- The run's Caddy does not compress dynamic responses, and neither does
-  Cloud's gateway. An ingress that compresses HTML and JSON changes the
-  document and API transfer times.
+- The gateway compresses dynamic HTML and JSON according to `Accept-Encoding`.
+  Document and API transfer times reflect Brotli when the browser accepts it.
+  The run's Caddy does not compress responses.

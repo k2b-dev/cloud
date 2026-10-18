@@ -59,6 +59,40 @@ const router = new Hono()
 Declaring a prefix does not create a Hono route. Mounting a Hono route does not
 publish it to the gateway.
 
+## Response compression
+
+The gateway forwards response bodies unchanged, with one exception: it
+compresses `text/html`, `application/json`, and `application/*+json`
+responses. It chooses Brotli or gzip from the request's `Accept-Encoding` and
+streams each upstream chunk as it arrives. Applications still receive the
+original `Accept-Encoding`, so they can serve precompressed static files.
+
+These responses stay unchanged:
+
+- responses that already have a `Content-Encoding`;
+- responses with `Cache-Control: no-transform`;
+- `206` and other responses with `Content-Range`, answers to `HEAD`, and
+  `1xx`, `204`, and `304` responses;
+- bodies with a `Content-Length` below 1024 bytes;
+- SSE (`text/event-stream`), NDJSON (`application/x-ndjson`), and every
+  other media type;
+- answers to cross-site and same-site browser requests (`Sec-Fetch-Site`
+  other than `same-origin` or `none`).
+
+An eligible response gets `Vary: Accept-Encoding`, also when it stays
+uncompressed. A compressed response loses `Content-Length` and
+`Accept-Ranges`, and a strong `ETag` becomes weak. Compare `If-None-Match`
+weakly: `W/"x"` matches `"x"`, a list matches when one tag matches, and `*`
+matches any current representation.
+
+Compression can reveal a secret through the response length (BREACH) when the
+same response also contains text that an attacker chose. Session cookies are
+`SameSite=Lax`, so an attacker can only send such requests as cross-site
+navigations, and those stay uncompressed. If your application copies text from
+its URL into a same-origin request whose response also contains a credential,
+such as a token or a feed URL, set `Cache-Control: no-transform` on that
+response.
+
 ## Internal service address
 
 `baseUrl` is the address used by the gateway:
