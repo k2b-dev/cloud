@@ -2152,6 +2152,13 @@ describe("waiting detail drawers", () => {
         else item.setAttribute("aria-selected", "true");
         title.textContent = "Another contact";
         if (interaction === "pointer") item.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+        // Space activates on release; a held key may span many frames first.
+        if (interaction === " ") {
+          flushFrames();
+          flushFrames();
+          expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+          item.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+        }
         await window.happyDOM.whenAsyncComplete();
         flushFrames();
         expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
@@ -2179,6 +2186,7 @@ describe("waiting detail drawers", () => {
     "cancelled",
     "cancelled after click",
     "roving row",
+    "data-selected row",
     "Main marked",
   ] as const) {
     test(`choosing the selected item again: ${gesture}`, async () => {
@@ -2191,6 +2199,8 @@ describe("waiting detail drawers", () => {
       const target = gesture === "roving row" ? row : item;
       if (gesture === "false current") target.setAttribute("aria-current", "false");
       else if (gesture === "Main marked") main.setAttribute("aria-current", "page");
+      // DataTable and Calendar mark their selected row or day with data-selected.
+      else if (gesture === "data-selected row") mainRow(item).setAttribute("data-selected", "true");
       else if (gesture !== "unmarked click") target.setAttribute("aria-selected", "true");
       const dispose = installAppWorkspaceController({ root });
       try {
@@ -2202,7 +2212,7 @@ describe("waiting detail drawers", () => {
         if (gesture === "cancelled after click") target.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
         flushFrames();
         flushFrames();
-        const opens = gesture === "click" || gesture === "roving row";
+        const opens = gesture === "click" || gesture === "roving row" || gesture === "data-selected row";
         expect(aside.dataset.workspaceDetailDrawer).toBe(opens ? "open" : undefined);
       } finally {
         dispose();

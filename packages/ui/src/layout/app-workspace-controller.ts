@@ -717,7 +717,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (snapshot.chosen) lastChosen = snapshot;
     if (snapshot.chosen) {
       const aside = openDetails(root).find((aside) => detailWaiting(aside) && !detailDrawer(aside));
-      if (aside) checkPendingDetail(root, aside, snapshot);
+      if (aside) checkPendingDetail(root, aside, snapshot, event instanceof KeyboardEvent && event.key === " ");
     }
     // Enter in an editor or a field types; only an item that chooses something moves on to its title.
     if (snapshot.chosen && snapshot.interaction === "keyboard") {
@@ -928,7 +928,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     pendingDetail?.stop();
     pendingDetail = null;
   };
-  const checkPendingDetail = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem) => {
+  const checkPendingDetail = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem, space = false) => {
     cancelPendingDetail();
     let frame: number | null = null;
     const settle = () => {
@@ -937,7 +937,10 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         frame = requestAnimationFrame(() => {
           frame = null;
           const main = mainElement(root);
-          const selected = snapshot.item.closest('[aria-selected="true"], [aria-current]:not([aria-current="false"])');
+          // ARIA marks, and `data-selected` as DataTable and Calendar mark their selection.
+          const selected = snapshot.item.closest(
+            '[aria-selected="true"], [aria-current]:not([aria-current="false"]), [data-selected="true"]',
+          );
           const opens =
             canOpenPendingDetail(aside) &&
             snapshot.chosen &&
@@ -960,14 +963,20 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       if (event.button === 0 && event.target instanceof Node && snapshot.item.contains(event.target)) settle();
       else cancelPendingDetail();
     };
+    // Space activates a button on release, so its check waits for keyup.
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === " ") settle();
+    };
     const stop = () => {
       if (frame !== null) cancelAnimationFrame(frame);
       ownerDocument.removeEventListener("click", onClick, true);
+      ownerDocument.removeEventListener("keyup", onKeyUp, true);
       ownerDocument.removeEventListener("pointercancel", cancelPendingDetail, true);
     };
     pendingDetail = { aside, snapshot, stop };
     ownerDocument.addEventListener("pointercancel", cancelPendingDetail, true);
-    if (snapshot.interaction === "keyboard") settle();
+    if (space) ownerDocument.addEventListener("keyup", onKeyUp, true);
+    else if (snapshot.interaction === "keyboard") settle();
     else ownerDocument.addEventListener("click", onClick, true);
   };
   const detailTransition = (aside: HTMLElement, wasHidden: boolean) => {

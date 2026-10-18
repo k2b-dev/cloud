@@ -260,7 +260,8 @@ focuses the Detail title; pointer activation keeps focus on the button.
 Choosing an item in Main opens a waiting Detail as the drawer when the Detail
 opens with that choice. While the Detail stays open, a choice reopens it only
 when the application marks the chosen item or an ancestor inside Main with
-`aria-selected="true"` or `aria-current` other than `"false"` after activation.
+`aria-selected="true"`, `aria-current` other than `"false"`, or
+`data-selected="true"` (as DataTable's `selectedRowId` does) after activation.
 Enter, Space, and assistive-technology clicks count as keyboard choices and
 focus the Detail title; a completed primary pointer click keeps focus on the
 item. Live content updates alone leave it waiting. An initially open Detail,
