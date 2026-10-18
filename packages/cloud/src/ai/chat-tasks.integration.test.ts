@@ -1337,6 +1337,12 @@ suite("AI chat tasks", () => {
       expect(await sql`SELECT id FROM ai.chat_task_occurrences WHERE task_id = ${task.id}::uuid`).toHaveLength(1);
       const paused = await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "paused" });
       expect(paused).toMatchObject({ state: "paused", reasonCode: "paused" });
+      // A repeated pause, such as a retry after a lost answer, keeps when the pause began.
+      await sql`UPDATE ai.chat_tasks SET reason_at = '2001-04-07T09:30:00Z'::timestamptz WHERE id = ${task.id}::uuid`;
+      expect(await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "paused" })).toMatchObject({
+        reasonCode: "paused",
+        reasonAt: "2001-04-07T09:30:00.000Z",
+      });
       expect(await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "active" })).toBeNull();
       expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({ state: "paused" });
     } finally {

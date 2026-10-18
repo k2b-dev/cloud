@@ -1001,7 +1001,7 @@ export const aiChatTasks = {
         UPDATE ai.chat_tasks task
         SET state = ${input.state === "paused" ? chatTaskReasonState("paused") : "active"}, mandate_revision = ${revision},
             reason_code = ${input.state === "paused" ? "paused" : null},
-            reason_at = CASE WHEN ${input.state} = 'active' THEN NULL ELSE now() END,
+            reason_at = CASE WHEN ${input.state} = 'active' THEN NULL WHEN task.reason_code = 'paused' THEN task.reason_at ELSE now() END,
             last_error = CASE WHEN task.state = ${input.state} THEN task.last_error ELSE NULL END,
             revision = CASE WHEN task.state = ${input.state} THEN task.revision ELSE task.revision + 1 END,
             updated_at = CASE WHEN task.state = ${input.state} THEN task.updated_at ELSE now() END
