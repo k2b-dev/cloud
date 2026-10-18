@@ -98,6 +98,9 @@ const FOCUSABLE_SELECTOR = [
 const KEY_OWNER_SELECTOR =
   "input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox'], [role='combobox'], [role='searchbox'], [role='spinbutton'], [role='menu'], [role='listbox'], [role='dialog'], dialog, [aria-haspopup]:not([aria-haspopup='false'])[aria-expanded='true']";
 const ITEM_SELECTOR = ".k2b-app-workspace__sidebar-item";
+/** Controls inside a selected row that act on their own instead of choosing the row. */
+const NESTED_CONTROL_SELECTOR =
+  "[aria-expanded], [aria-haspopup]:not([aria-haspopup='false']), [aria-pressed], [role='checkbox'], [role='switch'], [role='menuitem'], input, select, textarea, summary";
 const clamp = (value: number, min: number, max: number) => Math.round(Math.min(max, Math.max(min, value)));
 const eventElement = (event: Event) => (event.target instanceof Element ? event.target : null);
 const resizeHandle = (event: Event) => eventElement(event)?.closest<HTMLElement>(HANDLE_SELECTOR) ?? null;
@@ -949,7 +952,10 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
             snapshot.item.closest(ROOT_SELECTOR) === root &&
             selected &&
             selected !== main &&
-            main.contains(selected);
+            main.contains(selected) &&
+            // A control inside a selected row that discloses, toggles, or opens
+            // a menu does its own job and selects nothing.
+            (selected === snapshot.item || !snapshot.item.matches(NESTED_CONTROL_SELECTOR));
           cancelPendingDetail();
           if (!opens) return;
           snapshot.fresh = false;

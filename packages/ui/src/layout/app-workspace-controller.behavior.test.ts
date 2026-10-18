@@ -2220,6 +2220,30 @@ describe("waiting detail drawers", () => {
     });
   }
 
+  for (const nested of ["disclosure button", "row link"] as const) {
+    test(`a ${nested} inside a selected row ${nested === "row link" ? "reopens" : "leaves"} a parked Detail`, async () => {
+      const { root, aside, item, toggle } = waitingWorkspace();
+      const row = mainRow(item);
+      row.setAttribute("aria-selected", "true");
+      const control = document.createElement(nested === "row link" ? "a" : "button");
+      if (nested === "row link") control.setAttribute("href", "#file");
+      else control.setAttribute("aria-expanded", "false");
+      row.append(control);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        toggle.click();
+        detailKey(toggle, "Escape");
+        control.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+        control.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, detail: 1 }));
+        flushFrames();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBe(nested === "row link" ? "open" : undefined);
+      } finally {
+        dispose();
+      }
+    });
+  }
+
   test("a keyboard reopen moves focus to the title that replaces the previous one", async () => {
     const { root, aside, item, title, toggle } = waitingWorkspace();
     const dispose = installAppWorkspaceController({ root });

@@ -232,7 +232,10 @@ Set `AppWorkspace.Main minWidth` in pixels when the work needs more than the
 320 px default. Values at or below 320 and non-finite values keep the default.
 The minimum reserves Main's space beside the sidebar and Detail. CSS uses it
 from the first server frame, before any island mounts. Sidebar resizing keeps
-that minimum too; it cannot drag the sidebar into its overlay form.
+that minimum too; it cannot drag the sidebar into its overlay form. The
+minimum is bounded by the host's width (see [Host width](#host-width)): a
+workspace narrower than the window needs a named `k2b-app-area` host, as for
+the sidebar decision.
 
 Waiting depends on the width of the content region beside the sidebar at
 every host width and with every input device. Column fit requires Main's
@@ -262,6 +265,8 @@ opens with that choice. While the Detail stays open, a choice reopens it only
 when the application marks the chosen item or an ancestor inside Main with
 `aria-selected="true"`, `aria-current` other than `"false"`, or
 `data-selected="true"` (as DataTable's `selectedRowId` does) after activation.
+A control inside the selected row that discloses, toggles, opens a menu, or
+takes input does not count as a choice.
 Enter, Space, and assistive-technology clicks count as keyboard choices and
 focus the Detail title; a completed primary pointer click keeps focus on the
 item. Live content updates alone leave it waiting. An initially open Detail,
