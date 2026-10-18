@@ -1,4 +1,4 @@
-import { StorePassword, StorePrefix, StoreUser, quoteIdentifier } from "./validation";
+import { quoteIdentifier, StorePassword, StorePrefix, StoreUser } from "./validation";
 
 export const READ_PROFILES = {
   read_small: { max_memory_usage: 1_000_000_000, max_execution_time: 10 },

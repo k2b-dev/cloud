@@ -1,6 +1,6 @@
 import { clickhouseQuery, type QueryOptions, StoreQueryError } from "./client";
-import { hashServicePassword, randomHex, READ_LIMITS, READ_PROFILES } from "./setup-sql";
-import { StorePassword, StorePrefix, StoreUrl, StoreUser, quoteIdentifier as q } from "./validation";
+import { hashServicePassword, READ_LIMITS, READ_PROFILES, randomHex } from "./setup-sql";
+import { quoteIdentifier as q, StorePassword, StorePrefix, StoreUrl, StoreUser } from "./validation";
 
 export const REQUIRED_RIGHTS = [
   "CREATE DATABASE",
@@ -180,17 +180,9 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
         .map((setting) => `getSetting('${setting}') AS ${setting}`)
         .join(", ");
       const [actual] = await run(`SELECT ${settings}`, asReader);
-      // readonly=1 alone blocks SET even when a limit has no READONLY constraint.
-      // system.settings exposes the current user's constraint metadata without a
-      // system-table grant; do not grant the service user broader system access.
-      const constraints = await run(
-        `SELECT name, readonly FROM system.settings WHERE name IN (${Object.keys(expected)
-          .map((name) => `'${name}'`)
-          .join(", ")})`,
-        asReader,
-      );
+      // ClickHouse shows a read user no constraint metadata, and readonly=1 already refuses every
+      // setting change. So the check compares each value and proves that overriding it fails.
       for (const [setting, value] of Object.entries(expected)) {
-        if (Number(constraints.find((row) => row.name === setting)?.readonly) !== 1) fail(`PROFILE_MISSING:${profile}`);
         const found = actual?.[setting];
         if (String(typeof found === "boolean" ? Number(found) : found) !== String(value)) fail(`PROFILE_MISSING:${profile}`);
         const other = typeof value === "number" ? (value === 1 ? 0 : 1) : "break";

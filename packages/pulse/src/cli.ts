@@ -1,6 +1,6 @@
 import { arg, command, defineCliCommands, flag } from "@k2b/cloud/cli";
-import { adminCommands } from "./cli/admin";
 import { pulseAccessCommands } from "./cli/access";
+import { adminCommands } from "./cli/admin";
 import { baseCommands } from "./cli/bases";
 import { resolveBaseFromCommand, resolveSource } from "./cli/context";
 import { dashboardCommands } from "./cli/dashboards";

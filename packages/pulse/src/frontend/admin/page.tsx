@@ -3,8 +3,8 @@ import { AdminLayout } from "@k2b/cloud/ssr";
 import { Hono } from "hono";
 import { ssr } from "../../config";
 import { storeAdmin } from "../../store/service";
-import StoreAdmin from "./StoreAdmin.island";
 import { storeMessages } from "./messages";
+import StoreAdmin from "./StoreAdmin.island";
 
 const page = ssr<AuthContext>(async (c) => {
   // Local settings only: a slow or unavailable store must never delay SSR.

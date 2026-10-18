@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prepareDevClickhouse } from "./dev-clickhouse";
+
 test("local credentials are private, created once and never replaced", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cloud-clickhouse-fixture-"));
   try {

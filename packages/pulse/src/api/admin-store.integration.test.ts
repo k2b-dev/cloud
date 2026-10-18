@@ -177,7 +177,7 @@ suite("Pulse store admin API", () => {
     await expect(
       storeAdmin.read({ actor: { kind: "user", user: asUser(personId) }, accessSubject: { type: "user", userId: personId } }),
     ).rejects.toMatchObject({ code: "ACCESS_DENIED", status: 403 });
-    const authenticated = await credentialLookup.getMockImplementation()!("fixture");
+    const authenticated = await serviceAccountCredentials.authenticateApiToken("fixture");
     if (!authenticated) throw new Error("Missing agent fixture");
     await expect(
       storeAdmin.read({

@@ -1,5 +1,6 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { StoreClientError, storeClient } from "./store-client";
+
 let mock: ReturnType<typeof spyOn<typeof globalThis, "fetch">> | undefined;
 afterEach(() => mock?.mockRestore());
 test("store helpers use same-origin paths, credentials and typed sanitized check failures", async () => {

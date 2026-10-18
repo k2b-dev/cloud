@@ -1,8 +1,8 @@
 import { type CloudCliContext, command, flag, readCliInput } from "@k2b/cloud/cli";
+import { storeFixHint } from "../frontend/admin/messages";
 import type { StoreCheckResult } from "../store/check";
 import type { StoreStatus } from "../store/contracts";
 import { StorePassword, StoreSaveInput, StoreUser } from "../store/validation";
-import { storeFixHint } from "../frontend/admin/messages";
 import { jsonRequest, printJsonOrTable } from "./shared";
 
 const passwordFlags = {

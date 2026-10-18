@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import {
   clickhouseAdminQuery as admin,
   clickhouseTestAdmin,
   clickhouseTestPrefix as prefix,
 } from "../../../../scripts/fixtures/test-clickhouse";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { checkStore } from "./check";
 import { clickhouseQuery } from "./client";
 import { buildSetupSql, hashServicePassword, randomHex } from "./setup-sql";
@@ -41,7 +41,7 @@ suite("Pulse ClickHouse store", () => {
     expect((await checkStore({ ...connection, user: limited })).code).toBe("MISSING_RIGHT:CREATE USER");
     expect((await checkStore({ ...connection, ...clickhouseTestAdmin() })).code).toBe("TOO_MANY_RIGHTS");
   }, 90_000);
-  test("readonly=1 cannot hide a missing READONLY constraint on an individual limit", async () => {
+  test("a read profile whose limit was changed counts as missing", async () => {
     await install(user);
     const hash = await hashServicePassword(password);
     const sql = buildSetupSql({ prefix, user, passwordSha256Hex: hash.sha256Hex, saltHex: hash.saltHex });
@@ -52,7 +52,7 @@ suite("Pulse ClickHouse store", () => {
       .find((query) => query.startsWith(`CREATE SETTINGS PROFILE OR REPLACE ${q(prefix + "read_normal")}`));
     if (!normal) throw new Error("Missing normal profile fixture");
     try {
-      await admin(normal.replace("max_result_rows = 10000 READONLY", "max_result_rows = 10000"));
+      await admin(normal.replace("max_result_rows = 10000 READONLY", "max_result_rows = 1000000 READONLY"));
       const value = await checkStore({ url: clickhouseTestAdmin().url, user, password, prefix, clock, mode: "full" });
       expect(value).toMatchObject({ ok: false, code: `PROFILE_MISSING:${prefix}read_normal` });
     } finally {

@@ -31,8 +31,8 @@
  *    captured by an agent), no ANSI escapes leak into the output.
  */
 import { $ } from "bun";
-import { prepareDevFilegate } from "./dev-filegate";
 import { prepareDevClickhouse } from "./dev-clickhouse";
+import { prepareDevFilegate } from "./dev-filegate";
 import { prepareDevRsql } from "./dev-rsql";
 
 export const COMPOSE_FILE = "compose.dev.yml";

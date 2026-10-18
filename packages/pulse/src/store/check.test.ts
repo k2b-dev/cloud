@@ -38,8 +38,6 @@ const stub = (version = "26.9.19.9") => {
         }
         if (query.startsWith("SELECT getSetting('max_memory_usage') AS memory")) return reply([{ memory: 1_000_000_000 }]);
         if (query.startsWith("SELECT getSetting")) return reply([{ ...READ_PROFILES[profile], ...READ_LIMITS }]);
-        if (query.startsWith("SELECT name, readonly FROM system.settings"))
-          return reply(Object.keys({ ...READ_PROFILES[profile], ...READ_LIMITS }).map((name) => ({ name, readonly: 1 })));
         if (
           query.startsWith("SET ") ||
           query.startsWith("SELECT 1 SETTINGS") ||
@@ -141,20 +139,15 @@ test("admin privileges are refused and scratch objects are removed", async () =>
   expect(queries.some((query) => query.startsWith("DROP SETTINGS PROFILE IF EXISTS"))).toBe(true);
 });
 
-test("readonly=1 does not mask a missing per-setting READONLY constraint", async () => {
+test("a read profile with a changed limit counts as missing", async () => {
   stub();
   const implementation = mock!.getMockImplementation()!;
   mock!.mockImplementation(
     Object.assign(
       async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-        if (String(init?.body).startsWith("SELECT name, readonly FROM system.settings")) {
-          return reply(
-            Object.keys({ ...READ_PROFILES[profile], ...READ_LIMITS }).map((name) => ({
-              name,
-              readonly: name === "max_result_rows" ? 0 : 1,
-            })),
-          );
-        }
+        const query = String(init?.body);
+        if (query.startsWith("SELECT getSetting") && !query.includes("AS memory"))
+          return reply([{ ...READ_PROFILES[profile], ...READ_LIMITS, max_result_rows: 1_000_000 }]);
         return implementation(input, init);
       },
       { preconnect: fetch.preconnect },

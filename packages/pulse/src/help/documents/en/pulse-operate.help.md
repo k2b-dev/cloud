@@ -7,11 +7,11 @@ order: 140
 ---
 Use this page when data is missing, when access must change, or when a public display must show only one dashboard.
 
-## Connect the data store (Cloud admins) {icon="database"}
+## Connect the data store (Cloud administrators) {icon="database"}
 
 Open **Administration → Pulse → Data store**. An operator provides a dedicated
 ClickHouse instance, version 26.9 or newer. Choose the service password, get the
-setup script and have the ClickHouse admin run it. Then enter the address and
+setup script and have the ClickHouse administrator run it. Then enter the address and
 service credentials and choose **Check and connect**. Failed checks explain
 what to fix and leave the saved connection unchanged.
 

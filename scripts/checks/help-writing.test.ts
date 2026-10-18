@@ -145,6 +145,12 @@ test("uses the German terms in German articles and respects capitalized terms", 
   ).toEqual(["1 term Berechtigung*", "1 term klick*", "2 term Rechte"]);
 });
 
+test("a product name that starts with an avoided prefix is not the avoided word", () => {
+  expect(check("packages/demo/src/help/documents/en/demo.help.md", ["Connect ClickHouse first. Clicking the row opens it."])).toEqual([
+    "1 term click*",
+  ]);
+});
+
 const workspace = async (help: string, baseline?: string[]) => {
   const root = await mkdtemp(join(tmpdir(), "cloud-help-writing-"));
   const files: Record<string, string> = {

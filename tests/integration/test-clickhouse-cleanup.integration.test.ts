@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
+import { cleanupClickhouseTestObjects, clickhouseAdminQuery, clickhouseTestPrefix } from "../../scripts/fixtures/test-clickhouse";
 import { suiteFor } from "../../scripts/fixtures/test-infra";
-import { clickhouseAdminQuery, clickhouseTestPrefix, cleanupClickhouseTestObjects } from "../../scripts/fixtures/test-clickhouse";
 
 suiteFor("clickhouse")("ClickHouse prefix cleanup", () => {
   test("drops only this process's objects and leaves an outside database", async () => {

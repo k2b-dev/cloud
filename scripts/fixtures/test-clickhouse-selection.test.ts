@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { selectClickhouseTestNames } from "./test-clickhouse-selection";
+
 const prefix = "pulsetest_1234abcd_";
 test("cleanup selects only names inside the validated process prefix, including the prefix itself", () => {
   expect(selectClickhouseTestNames(prefix, ["pulse_x", "pulsetest_other_x", "default", prefix, prefix + "x", "x" + prefix])).toEqual([
