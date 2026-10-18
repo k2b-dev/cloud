@@ -43,7 +43,7 @@ const grant = async (bookId: string, caller: BookCaller, permission: "read" | "w
 
 const account = async (kind: "agent" | "standalone" | "resource_bound", resourceId: string | null = null): Promise<BookCaller> => {
   const [row] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
-    VALUES (${`${marker}-${kind}`}, ${kind}, ${resourceId ? "contacts" : null},
+    VALUES (${`${marker}-${kind}-${crypto.randomUUID()}`}, ${kind}, ${resourceId ? "contacts" : null},
       ${resourceId ? "contact_book" : null}, ${resourceId}) RETURNING id`;
   if (!row) throw new Error("Missing fixture account");
   accountIds.push(row.id);
