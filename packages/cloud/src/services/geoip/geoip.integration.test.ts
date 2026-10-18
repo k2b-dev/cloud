@@ -149,6 +149,26 @@ suite("GeoIP Postgres replacement, audit and multi-instance reload", () => {
     expect(other.status().city?.source).toBe("bundled");
   });
 
+  test("a reset that deleted nothing keeps the reader of an upload that committed meanwhile", async () => {
+    const begin = sql.begin.bind(sql);
+    let uploaded: Awaited<ReturnType<typeof service.upload>> | undefined;
+    const race = spyOn(sql, "begin").mockImplementationOnce(async (run) => {
+      if (typeof run !== "function") throw new Error("Expected transaction callback");
+      // The reset's DELETE has committed without a row; an upload lands before the reset touches the reader.
+      const result: unknown = await begin(run);
+      uploaded = await service.upload(admin, body(bytes()), {});
+      return result;
+    });
+    try {
+      const reset = await service.reset(admin, "city");
+      expect(reset.changed).toBe(false);
+      expect(reset.databases[0].source).toBe("uploaded");
+    } finally {
+      race.mockRestore();
+    }
+    expect(reader.status().city).toMatchObject({ source: "uploaded", sha256: uploaded!.databases[0].upload!.sha256 });
+  });
+
   test("an audit failure rolls back an upload and a reset before installing a reader", async () => {
     const uploaded = await service.upload(admin, body(bytes()), {});
     const record = spyOn(audit, "record").mockRejectedValue(new Error("Audit fixture failure"));

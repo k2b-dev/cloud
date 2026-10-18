@@ -143,7 +143,10 @@ export const createGeoIpService = (options: { db?: typeof sql; reader?: GeoIp; b
         );
         return true;
       });
-      reader().install(kind, null);
+      // A reset that deleted nothing must not clear a reader that a concurrent upload installed meanwhile;
+      // a refresh brings this instance in line with Postgres instead.
+      if (changed) reader().install(kind, null);
+      else await reader().refresh();
       return { ...(await status(actor)), changed };
     },
   };
