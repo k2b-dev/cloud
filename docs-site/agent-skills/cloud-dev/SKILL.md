@@ -52,6 +52,7 @@ and durable data.
   changes keep a manager (`ensureManagerRemains()`). Only a `resource_bound`
   service account carries `appId`, `resourceType`, and `resourceId`;
   `standalone` and `agent` accounts hold their own grants, capped by scopes.
+- Page context refs are selectors, never authority: read through your own server with the session's actor and accessSubject.
 - Send an interactive credential only to Core. Framework-owned cross-app calls
   exchange it for a short-lived target- and operation-bound invocation; never
   forward a cookie, OAuth token, or API key directly to another application.

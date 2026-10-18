@@ -1,8 +1,17 @@
 import { attachResizeSeparator, parkWorkspaceDetailDrawers } from "@k2b/ui";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, readPanelCookie, serializePanelCookie } from "../_internal/panel-cookie";
+import { CloudResourceRefSchema } from "../contracts/capabilities";
+import { withPanelContext } from "../contracts/panel-context";
 import { platformMessages } from "../ssr/platform-messages";
 import { readShellData } from "../ssr/shell-data";
 import type { PanelRequest } from "./panel";
+import {
+  PAGE_CONTEXT_CHANGED,
+  PAGE_CONTEXT_COLLECT,
+  type PageContextCollection,
+  type PanelConsentRequest,
+  type PanelState,
+} from "./panel-context-bridge";
 import { isPanelCloseMessage, isPanelReadyMessage } from "./panel-messages";
 
 export const PANEL_READY_TIMEOUT_MS = 10_000;
@@ -34,6 +43,58 @@ export function installPanelSlot(): () => void {
   const grow = slot.querySelector<HTMLButtonElement>("[data-cloud-panel-grow]");
   let provider = panel.providers.find((item) => item.id === slot.dataset.provider) ?? panel.providers[0]!;
   let frame = slot.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]");
+  let disposed = false;
+  let context = panel.context ?? null;
+  let loadVersion = 0;
+  const answers = new Map<string, boolean | null>();
+  if (panel.consent) answers.set(panel.consent.provider, panel.consent.allowed);
+  const saving = new Set<string>();
+  const errors = new Set<string>();
+  const requests = new AbortController();
+  let answersRequest: Promise<void> | undefined;
+  const allowed = () => !provider.consent || answers.get(provider.id) === true;
+  const sendContext = () => {
+    if (isOpen() && allowed() && context && slot.dataset.state === "ready")
+      frame?.contentWindow?.postMessage({ type: "cloud.panel.context", v: 1, context }, location.origin);
+  };
+  const clearContext = () => {
+    if (allowed() && panel.context)
+      frame?.contentWindow?.postMessage({ type: "cloud.panel.context", v: 1, context: null }, location.origin);
+  };
+  const collectContext = () => {
+    if (!context) return;
+    const collection: PageContextCollection = { sources: [] };
+    window.dispatchEvent(new CustomEvent(PAGE_CONTEXT_COLLECT, { detail: collection }));
+    const source = collection.sources.findLast((source) => source.scope !== undefined);
+    const parsed = source ? CloudResourceRefSchema.safeParse(source.scope) : undefined;
+    const scope = source ? (parsed?.success ? parsed.data : undefined) : panel.context?.scope;
+    if (scope?.type === context.scope?.type && scope?.id === context.scope?.id) return;
+    const { scope: _previous, ...base } = context;
+    context = { ...base, seq: context.seq + 1, ...(scope ? { scope } : {}) };
+    sendContext();
+  };
+  const readAnswers = () => {
+    answersRequest ??= (async () => {
+      try {
+        const response = await fetch("/api/me/panel-consent", {
+          cache: "no-store",
+          signal: AbortSignal.any([requests.signal, AbortSignal.timeout(PANEL_READY_TIMEOUT_MS)]),
+        });
+        if (!response.ok) throw new Error("Panel consent unavailable");
+        const data: unknown = await response.json();
+        if (data && typeof data === "object" && "answers" in data && data.answers && typeof data.answers === "object") {
+          for (const item of panel.providers) {
+            const value: unknown = Reflect.get(data.answers, item.id);
+            if (!answers.has(item.id) && typeof value === "boolean") answers.set(item.id, value);
+          }
+        }
+      } catch {
+        // No answer is fail closed, including an unavailable store or an aborted request.
+      }
+      for (const item of panel.providers) if (!answers.has(item.id)) answers.set(item.id, null);
+    })();
+    return answersRequest;
+  };
   let search: string | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let opener: HTMLElement | undefined;
@@ -76,6 +137,33 @@ export function installPanelSlot(): () => void {
       tab.setAttribute("aria-selected", String(selected));
       tab.tabIndex = selected ? 0 : -1;
     }
+    slot.dataset.appName = provider.appName;
+    slot.dataset.providerConsent = String(provider.consent);
+    slot.dataset.contextAllowed = String(allowed());
+    slot.dataset.consentSaving = String(saving.has(provider.id));
+    const ask =
+      isOpen() && provider.consent && ((answers.has(provider.id) && answers.get(provider.id) === null) || errors.has(provider.id));
+    if (ask) slot.dataset.consent = "ask";
+    else delete slot.dataset.consent;
+    const title = slot.querySelector<HTMLElement>("[data-cloud-panel-consent-title]");
+    const text = slot.querySelector<HTMLElement>("[data-cloud-panel-consent-body]");
+    const error = slot.querySelector<HTMLElement>("[data-cloud-panel-consent-error]");
+    if (title) title.textContent = t.panelConsentTitle({ app: provider.appName });
+    if (text) text.textContent = t.panelConsentBody({ app: provider.appName });
+    if (error) error.textContent = errors.has(provider.id) ? t.panelConsentSaveError : "";
+    for (const button of slot.querySelectorAll<HTMLButtonElement>("[data-cloud-panel-consent-answer]"))
+      button.disabled = saving.has(provider.id);
+    window.dispatchEvent(
+      new CustomEvent<PanelState>("cloud.panel.state", {
+        detail: {
+          provider: provider.id,
+          appName: provider.appName,
+          consent: provider.consent,
+          allowed: allowed(),
+          saving: saving.has(provider.id),
+        },
+      }),
+    );
     const description = slot.querySelector<HTMLElement>(".k2b-placeholder__description");
     if (description) description.textContent = t.panelNotResponding({ label: provider.label });
   };
@@ -96,8 +184,11 @@ export function installPanelSlot(): () => void {
     clearTimer();
     slot.dataset.state = "ready";
     if (status) status.textContent = "";
+    sendContext();
   };
   const unload = () => {
+    ++loadVersion;
+    clearContext();
     clearTimer();
     frame?.remove();
     frame = null;
@@ -107,6 +198,10 @@ export function installPanelSlot(): () => void {
   const target = () => {
     const url = new URL(provider.href, location.origin);
     if (search !== undefined) url.search = search;
+    if (url.origin === location.origin) {
+      const path = withPanelContext(`${url.pathname}${url.search}${url.hash}`, allowed() ? context : null);
+      return new URL(path, location.origin);
+    }
     return url;
   };
   // The page the iframe shows now; a reader may have moved on inside the panel since it loaded.
@@ -117,9 +212,10 @@ export function installPanelSlot(): () => void {
       return undefined;
     }
   };
-  const load = (replace = false) => {
+  const loadNow = (replace = false) => {
     const url = target();
     if (!replace && frame?.src === url.href) return;
+    clearContext();
     frame?.remove();
     // The server validates every provider path; the iframe still never leaves this origin.
     if (url.origin !== location.origin) {
@@ -135,6 +231,69 @@ export function installPanelSlot(): () => void {
     frame.src = url.href;
     loading();
     body.append(frame);
+  };
+  const load = (replace = false) => {
+    const version = ++loadVersion;
+    if (provider.consent && !answers.has(provider.id)) {
+      clearContext();
+      frame?.remove();
+      frame = null;
+      loading();
+      clearTimer(); // The consent read has its own bounded timeout; provider readiness starts with its load.
+      void readAnswers().then(() => {
+        if (disposed || !isOpen() || version !== loadVersion) return;
+        loadNow(replace);
+        update();
+      });
+    } else loadNow(replace);
+  };
+  const saveConsent = async (request: PanelConsentRequest) => {
+    const item = panel.providers.find((item) => item.id === request.provider && item.consent);
+    if (!item || typeof request.allowed !== "boolean" || saving.has(item.id)) return;
+    saving.add(item.id);
+    errors.delete(item.id);
+    // Withdrawal stops disclosure immediately, including while the idempotent save is in flight.
+    if (!request.allowed) {
+      if (provider.id === item.id) clearContext();
+      answers.set(item.id, false);
+    }
+    update();
+    try {
+      const response = await fetch(`/api/me/panel-consent/${encodeURIComponent(item.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowed: request.allowed }),
+        signal: AbortSignal.any([requests.signal, AbortSignal.timeout(PANEL_READY_TIMEOUT_MS)]),
+      });
+      if (!response.ok) throw new Error("Panel consent was not saved");
+      const saved: unknown = await response.json();
+      if (
+        !saved ||
+        typeof saved !== "object" ||
+        !("provider" in saved) ||
+        saved.provider !== item.id ||
+        !("allowed" in saved) ||
+        saved.allowed !== request.allowed
+      )
+        throw new Error("Invalid panel consent answer");
+      if (disposed) return;
+      answers.set(item.id, request.allowed);
+      const questionHadFocus = slot.querySelector("[data-cloud-panel-consent]")?.contains(document.activeElement);
+      update();
+      if (provider.id === item.id && isOpen() && questionHadFocus) frame?.focus();
+      if (provider.id === item.id && request.allowed) sendContext();
+    } catch {
+      if (disposed) return;
+      if (provider.id === item.id) clearContext();
+      answers.set(item.id, null);
+      errors.add(item.id);
+    } finally {
+      saving.delete(item.id);
+      if (!disposed) update();
+    }
+  };
+  const consentRequest = (event: CustomEvent<PanelConsentRequest>) => {
+    void saveConsent(event.detail);
   };
   let removeFallbackFocus = () => {};
   const returnFocus = () => {
@@ -172,6 +331,7 @@ export function installPanelSlot(): () => void {
     parkWorkspaceDetailDrawers(document);
     const active = document.activeElement;
     if (active instanceof HTMLElement && active !== document.body && !slot.contains(active)) opener = active;
+    if (provider.id !== next.id) unload();
     provider = next;
     search = typeof nextSearch === "string" && nextSearch.length <= 2048 ? nextSearch : undefined;
     canvas.setAttribute(attribute(), "open");
@@ -183,7 +343,9 @@ export function installPanelSlot(): () => void {
     load(search !== undefined && shown !== undefined && shown !== "about:blank" && shown !== target().href);
     writeCookie();
     update();
-    frame?.focus();
+    // An open question takes focus first, so the reader hears it before the provider page.
+    if (slot.dataset.consent === "ask") slot.querySelector<HTMLElement>("[data-cloud-panel-consent]")?.focus();
+    else frame?.focus();
   };
   const request = (request: PanelRequest) => {
     if (request.action === "open") open(request.provider, request.search);
@@ -197,7 +359,9 @@ export function installPanelSlot(): () => void {
   };
   const click = (event: MouseEvent) => {
     if (!(event.target instanceof Element)) return;
-    if (event.target.closest("[data-cloud-panel-close]")) close();
+    const answer = event.target.closest<HTMLElement>("[data-cloud-panel-consent-answer]");
+    if (answer && isOpen()) void saveConsent({ provider: provider.id, allowed: answer.dataset.cloudPanelConsentAnswer === "allow" });
+    else if (event.target.closest("[data-cloud-panel-close]")) close();
     else if (event.target.closest("[data-cloud-panel-retry]") && isOpen()) {
       load(true);
       frame?.focus();
@@ -313,6 +477,9 @@ export function installPanelSlot(): () => void {
         })
       : () => {};
   let disposeResize = attachResize();
+  collectContext();
+  window.addEventListener(PAGE_CONTEXT_CHANGED, collectContext);
+  window.addEventListener("cloud.panel.consent", consentRequest);
   window.addEventListener("message", message);
   window.addEventListener("keydown", key);
   slot.addEventListener("click", click);
@@ -331,13 +498,17 @@ export function installPanelSlot(): () => void {
   } else if (isOpen()) load();
   else unload();
   update();
-  let disposed = false;
   const dispose = () => {
     if (disposed) return;
     disposed = true;
+    requests.abort();
+    ++loadVersion;
+    clearContext();
     clearTimer();
     disposeResize();
     removeFallbackFocus();
+    window.removeEventListener(PAGE_CONTEXT_CHANGED, collectContext);
+    window.removeEventListener("cloud.panel.consent", consentRequest);
     window.removeEventListener("message", message);
     window.removeEventListener("keydown", key);
     slot.removeEventListener("click", click);

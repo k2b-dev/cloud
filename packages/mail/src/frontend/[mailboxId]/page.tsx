@@ -44,6 +44,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout
       c={c}
+      context={{ scope: { type: "mail.mailbox", id: data.mailbox.id } }}
       help={mailPageHelp.mailbox}
       printHint={t.printHint}
       fullPage

@@ -2,6 +2,7 @@ import type { HtmlFn, RenderFn } from "@k2b/ssr";
 import { createSSRHandler } from "@k2b/ssr/hono";
 import type { Context, Env, MiddlewareHandler, TypedResponse } from "hono";
 import type { StatusCode } from "hono/utils/http-status";
+import type { PanelConsentSnapshot } from "../contracts/panel-context";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { SettingsFlat, Unflatten } from "../contracts/settings-types";
 import type { User } from "../contracts/shared";
@@ -13,6 +14,7 @@ type PageEnv<T extends object> = {
     page: Partial<T>;
     user?: User;
     railPreferences?: RailSnapshot;
+    panelConsent?: PanelConsentSnapshot;
     settings?: Unflatten<SettingsFlat<typeof CORE_SETTINGS>>;
   };
 };

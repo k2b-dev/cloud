@@ -1,0 +1,26 @@
+import type { Context } from "hono";
+import { readPanelCookie } from "../_internal/panel-cookie";
+import { getLocale } from "../server/locale";
+import { panelContextConsent } from "../services/panel-context-consent";
+import { visiblePanelProviders } from "./app-navigation";
+import { getRuntimeContext } from "./runtime";
+
+/** One read, only for the persisted open provider. Fail closed when the consent store is unavailable. */
+export async function preloadPanelConsent(c: Context): Promise<void> {
+  const user = c.get("user");
+  if (!user || !c.get("runtime")) return;
+  const providers = visiblePanelProviders(getRuntimeContext(c).apps, user, getLocale(c));
+  const state = readPanelCookie(
+    c.req.header("Cookie"),
+    providers.map((provider) => provider.id),
+  );
+  const provider = state.open && providers.find((provider) => provider.id === state.provider);
+  if (!provider || !provider.consent) return;
+  let allowed: boolean | null = null;
+  try {
+    allowed = await panelContextConsent.get(user.id, provider.id);
+  } catch {
+    // The shell shows the unanswered question, without context in the URL or messages.
+  }
+  c.set("panelConsent", { provider: provider.id, allowed });
+}

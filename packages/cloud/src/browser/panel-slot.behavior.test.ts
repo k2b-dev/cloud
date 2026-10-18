@@ -1,7 +1,8 @@
-import { afterEach, expect, jest, test } from "bun:test";
+import { afterEach, expect, jest, mock, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import type { PanelPageContext } from "../contracts/panel-context";
 
 if (isServer) test.skip("requires browser conditions and solid-dom-preload", () => {});
 else {
@@ -11,8 +12,11 @@ else {
   bootstrap.cleanup();
 
   let cleanup = () => {};
+  let fetchSpy: { mockRestore(): void } | undefined;
   afterEach(() => {
     cleanup();
+    fetchSpy?.mockRestore();
+    fetchSpy = undefined;
     jest.useRealTimers();
   });
   function setup(
@@ -22,14 +26,22 @@ else {
     beforeInstall?: (frame: HTMLIFrameElement) => void,
     navigationApi = false,
     href = (id: string) => `/app/${id}/panel?base=1`,
+    contextOptions: { context: PanelPageContext | null; consent: boolean; answer?: boolean | null } = { context: null, consent: false },
   ) {
     const dom = createDomTestHarness();
     const navigation = new dom.window.EventTarget();
     if (navigationApi) Object.defineProperty(dom.window, "navigation", { value: navigation });
     dom.window.innerWidth = viewport;
     document.documentElement.style.fontSize = "16px";
-    const providers = ["fixture", "second"].map((id) => ({ id, label: `${id} panel`, icon: "ti ti-box", href: href(id) }));
-    dom.root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({ panel: { providers, provider: "fixture" } })}</script>
+    const providers = ["fixture", "second"].map((id) => ({
+      id,
+      label: `${id} panel`,
+      appName: id,
+      consent: contextOptions.consent,
+      icon: "ti ti-box",
+      href: href(id),
+    }));
+    dom.root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({ panel: { providers, provider: "fixture", context: contextOptions.context, ...(Object.hasOwn(contextOptions, "answer") ? { consent: { provider: "fixture", allowed: contextOptions.answer } } : {}) } })}</script>
     <button id="opener" data-cloud-panel-toggle>Panel</button>
     <div class="cloud-app-canvas" ${initialOpen ? 'data-panel="open"' : ""} style="${storedWidth ? "--cloud-panel-width-set:24rem" : ""}">
       <div data-cloud-app-area><main class="layout-content-main">Application</main></div>
@@ -37,7 +49,7 @@ else {
         <div class="cloud-panel__resize" aria-orientation="vertical" tabindex="0"></div>
         <button data-cloud-panel-close>Close</button><button data-cloud-panel-grow>Grow</button>
         <button data-cloud-panel-provider="fixture">Fixture</button><button data-cloud-panel-provider="second">Second</button>
-        <div class="cloud-panel__body">${initialOpen ? '<iframe src="/app/fixture/panel?base=1" data-cloud-panel-frame="fixture"></iframe>' : ""}<button data-cloud-panel-retry>Try again</button><div class="k2b-placeholder__description"></div></div>
+        <div class="cloud-panel__body"><div data-cloud-panel-consent><h3 data-cloud-panel-consent-title></h3><p data-cloud-panel-consent-body></p><button data-cloud-panel-consent-answer="allow">Allow</button><button data-cloud-panel-consent-answer="deny">Deny</button><p data-cloud-panel-consent-error></p></div>${initialOpen ? '<iframe src="/app/fixture/panel?base=1" data-cloud-panel-frame="fixture"></iframe>' : ""}<button data-cloud-panel-retry>Try again</button><div class="k2b-placeholder__description"></div></div>
         <div data-cloud-panel-status></div>
       </aside>
     </div>`;
@@ -392,5 +404,175 @@ else {
     separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", cancelable: true }));
     expect(h.canvas.style.getPropertyValue("--cloud-panel-width-set")).toBe("22.5rem");
     expect(document.cookie).toBe("cloud_panel=1:fixture:22.5");
+  });
+  const pageContext: PanelPageContext = {
+    v: 1,
+    seq: 0,
+    pageId: "11111111-1111-4111-8111-111111111111",
+    app: "mail",
+    scope: { type: "mail.mailbox", id: "Box001" },
+  };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const setupContext = (context: PanelPageContext | null = pageContext, consent = true, answer?: boolean | null) =>
+    setup(1440, false, true, undefined, false, undefined, { context, consent, ...(answer !== undefined ? { answer } : {}) });
+  const spyFrame = (h: ReturnType<typeof setup>) => {
+    const post = mock((_data: unknown, _origin: string) => {});
+    Object.defineProperty(h.frame(), "contentWindow", { configurable: true, value: { postMessage: post } });
+    return post;
+  };
+  const ready = (h: ReturnType<typeof setup>, provider = "fixture") => h.message({ type: "cloud.panel.ready", v: 1, provider });
+  const consent = (provider: string, allowed: boolean) =>
+    window.dispatchEvent(new CustomEvent("cloud.panel.consent", { detail: { provider, allowed } }));
+
+  test("foreign providers receive no URL or live context until consent; allow delivers live without reloading", async () => {
+    const fetch = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: {} })))
+      .mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: true })));
+    fetchSpy = fetch;
+    const h = setupContext();
+    h.open();
+    expect(h.slot.dataset.state).toBe("loading");
+    expect(h.slot.querySelector("iframe")).toBeNull();
+    await tick();
+    expect(h.frame().src).not.toContain("cloud_panel_context");
+    expect(h.slot.dataset.consent).toBe("ask");
+    const frame = h.frame();
+    const post = spyFrame(h);
+    ready(h);
+    expect(post).not.toHaveBeenCalled();
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    expect(h.slot.querySelector<HTMLButtonElement>('[data-cloud-panel-consent-answer="deny"]')!.disabled).toBe(true);
+    await tick();
+    expect(h.frame()).toBe(frame);
+    expect(post.mock.calls).toEqual([[{ type: "cloud.panel.context", v: 1, context: pageContext }, location.origin]]);
+    expect(h.slot.dataset.consent).toBeUndefined();
+    h.click("[data-cloud-panel-retry]");
+    expect(new URL(h.frame().src).searchParams.get("cloud_panel_context")).toBe(JSON.stringify(pageContext));
+    expect(fetch.mock.calls.filter(([, init]) => !init?.method)).toHaveLength(1);
+  });
+
+  test("stored approval is read before the first provider load; a failed read asks and never leaks", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: true } })));
+    const h = setupContext();
+    h.open();
+    await tick();
+    expect(new URL(h.frame().src).searchParams.get("cloud_panel_context")).toBe(JSON.stringify(pageContext));
+    h.dispose();
+    h.dom.cleanup();
+    fetchSpy.mockRestore();
+    fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Offline"));
+    const failed = setupContext();
+    failed.open();
+    await tick();
+    expect(failed.frame().src).not.toContain("cloud_panel_context");
+    expect(failed.slot.dataset.consent).toBe("ask");
+  });
+
+  test("platform providers get scope without a consent read, and false context sends nothing", () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Unexpected consent read"));
+    const h = setupContext(pageContext, false);
+    h.open();
+    expect(h.frame().src).toContain("cloud_panel_context");
+    const post = spyFrame(h);
+    ready(h);
+    expect(post.mock.calls[0]).toEqual([{ type: "cloud.panel.context", v: 1, context: pageContext }, location.origin]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    h.dispose();
+    h.dom.cleanup();
+    const disabled = setupContext(null, false);
+    disabled.open();
+    const disabledPost = spyFrame(disabled);
+    ready(disabled);
+    expect(disabled.frame().src).not.toContain("cloud_panel_context");
+    expect(disabledPost).not.toHaveBeenCalled();
+  });
+
+  test("switch, close and consent withdrawal clear the old context, and withdrawal stops later updates", async () => {
+    fetchSpy = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: { second: true } })))
+      .mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
+    const { publishPageContext } = await import("./panel");
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const old = spyFrame(h);
+    ready(h);
+    h.open("second");
+    expect(old.mock.calls.at(-1)).toEqual([{ type: "cloud.panel.context", v: 1, context: null }, location.origin]);
+    await tick();
+    const second = spyFrame(h);
+    ready(h, "second");
+    handlePanelRequest({ action: "close" });
+    expect(second.mock.calls.at(-1)?.[0]).toEqual({ type: "cloud.panel.context", v: 1, context: null });
+    h.open();
+    const active = spyFrame(h);
+    ready(h);
+    consent("fixture", false);
+    expect(active.mock.calls.at(-1)?.[0]).toEqual({ type: "cloud.panel.context", v: 1, context: null });
+    await tick();
+    const count = active.mock.calls.length;
+    const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    expect(active).toHaveBeenCalledTimes(count);
+    h.click("[data-cloud-panel-retry]");
+    expect(h.frame().src).not.toContain("cloud_panel_context");
+    dispose();
+  });
+
+  test("publisher collection works before lazy loading; last source wins, effective changes advance seq and disposal restores only its part", async () => {
+    const dom = createDomTestHarness();
+    const { publishPageContext } = await import("./panel");
+    const a = publishPageContext({ scope: { type: "mail.mailbox", id: "Box002" } });
+    // setup installs a fresh document: use its beforeInstall callback to publish before the controller.
+    a();
+    dom.cleanup();
+    let disposeEarly = () => {};
+    const h = setup(
+      1440,
+      true,
+      true,
+      () => {
+        disposeEarly = publishPageContext({ scope: { type: "mail.mailbox", id: "Box002" } });
+      },
+      false,
+      undefined,
+      { context: pageContext, consent: false },
+    );
+    const post = spyFrame(h);
+    ready(h);
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({ context: { seq: 1, scope: { id: "Box002" } } });
+    const b = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({
+      context: { seq: 2, scope: { type: "spaces.space", id: "Space1" }, pageId: pageContext.pageId },
+    });
+    disposeEarly(); // A hidden older source does not change the effective place.
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({ context: { seq: 2 } });
+    b();
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({ context: { seq: 3, scope: pageContext.scope } });
+  });
+
+  test("save failures keep the question and error visible and re-enable the answers", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Offline"));
+    const h = setupContext(pageContext, true, null);
+    h.open();
+    ready(h);
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    await tick();
+    expect(h.slot.dataset.consent).toBe("ask");
+    expect(h.slot.querySelector("[data-cloud-panel-consent-error]")!.textContent).toContain("Not saved");
+    expect(h.slot.querySelector<HTMLButtonElement>('[data-cloud-panel-consent-answer="allow"]')!.disabled).toBe(false);
+    expect(h.frame().src).not.toContain("cloud_panel_context");
+  });
+
+  test("a failed repeated approval clears previously delivered context before forgetting the answer", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Offline"));
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const post = spyFrame(h);
+    ready(h);
+    consent("fixture", true);
+    await tick();
+    expect(post.mock.calls.at(-1)?.[0]).toEqual({ type: "cloud.panel.context", v: 1, context: null });
+    expect(h.slot.dataset.consent).toBe("ask");
+    h.click("[data-cloud-panel-retry]");
+    expect(h.frame().src).not.toContain("cloud_panel_context");
   });
 }

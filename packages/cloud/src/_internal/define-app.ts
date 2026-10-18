@@ -2,6 +2,7 @@ import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, valid
 import { startLiveOutbox } from "../events/live";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
+import { preloadPanelConsent } from "../ssr/panel-consent";
 import { invokeCapabilityStream } from "./capability-streams";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
 /**
@@ -520,6 +521,7 @@ export const defineApp = <
       await Promise.all([
         preloadLayoutAnnouncements(c),
         preloadLayoutHelp(c),
+        user ? preloadPanelConsent(c) : undefined,
         user ? readRailSnapshot(user).then((snapshot) => c.set("railPreferences", snapshot)) : undefined,
       ]);
     }),

@@ -1,5 +1,6 @@
 import { installAppWorkspaceController, installInputModeController, keyboardPlatform } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
+import { installPanelContextReceiver } from "../browser/panel-context-receiver";
 import { syncTimezoneCookie } from "./timezone-cookie";
 
 export default function PanelRuntime(props: { provider?: string; scope?: string }) {
@@ -12,6 +13,7 @@ export default function PanelRuntime(props: { provider?: string; scope?: string 
     const deferred = new Set<ReturnType<typeof setTimeout>>();
     const embedded = window.parent !== window;
     let disposeTheme = () => {};
+    let disposeContext = () => {};
     let resumeTheme = () => {};
     // A page kept in the back/forward cache keeps following the host; only a removed iframe lets go.
     const pageHide = (event: PageTransitionEvent) => {
@@ -49,6 +51,7 @@ export default function PanelRuntime(props: { provider?: string; scope?: string 
       }
     };
     if (embedded) {
+      disposeContext = installPanelContextReceiver();
       try {
         const parent = window.parent;
         const parentRoot = parent.document.documentElement;
@@ -73,6 +76,7 @@ export default function PanelRuntime(props: { provider?: string; scope?: string 
       window.addEventListener("click", click);
     }
     onCleanup(() => {
+      disposeContext();
       disposeInput();
       disposeWorkspace();
       disposeTheme();

@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Build and deploy
@@ -315,6 +315,26 @@ proxy or security headers must not set `X-Frame-Options: DENY` or a
 `frame-ancestors` policy that blocks `'self'`. The provider remains responsible
 for authorization: panel visibility grants no route or resource access.
 See [Offer a panel](/en/docs/platform/panels).
+
+### Panel context consent after the upgrade
+
+The panel runtime now supplies place context through the first iframe URL and
+subsequent same-origin messages. Providers served by Core need no consent;
+every other provider receives context only after the person allows it. Older
+application images do not report or receive this context. Rebuild applications
+that use the new `Layout.context` or provider helpers against this runtime.
+
+Core's normal migrations create `auth.panel_context_consent` before startup
+completes; no manual migration or configuration step is needed. The
+idempotent `panel-context-consent` migration adds one row per user and provider
+app ID, holding `allowed` and `updated_at`. It preserves existing answers and
+deletes a person's rows when their `auth.users` account is deleted. Include
+this table in the existing Core database backup policy. The table stores
+answers only, never resource refs or page context.
+
+Keep provider `Referrer-Policy: same-origin` responses intact, and keep query
+strings out of proxy logs and error reports. See the
+[panel context contract](/en/docs/platform/panels#page-context).
 
 ## Roll out a release
 

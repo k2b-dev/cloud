@@ -53,6 +53,7 @@ import {
 import { MandatePolicyV1Schema } from "../services/mandates";
 import { coreSettings } from "../services/settings/api";
 
+import { createMePanelConsentRoutes } from "./me-panel-consent";
 import { createMeRailRoutes } from "./me-rail";
 import { createMeWebVitalsRoutes } from "./me-web-vitals";
 
@@ -199,6 +200,7 @@ const app = new Hono<AuthContext>()
   .use(auth.requireUser())
   .route("/", mandateRoutes)
   .route("/", createMeRailRoutes())
+  .route("/", createMePanelConsentRoutes())
   .route("/", createMeWebVitalsRoutes())
 
   .get(

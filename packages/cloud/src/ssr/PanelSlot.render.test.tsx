@@ -18,6 +18,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { defineApp } = await import("../_internal/define-app");
 const { person } = await import("../_internal/define-app.test-fixture");
+const { panelContextConsent } = await import("../services/panel-context-consent");
 const rail = await import("../services/rail-snapshot");
 const settings = await import("../server/middleware/settings");
 const help = await import("./help");
@@ -52,7 +53,9 @@ const app = defineApp({
 });
 const server = new Hono<Environment>()
   .use("*", async (c, next) => {
-    c.set("runtime", { apps: providers.slice(0, Number(c.req.query("providers") ?? 1)) });
+    c.set("runtime", {
+      apps: c.req.query("core") ? [{ ...providers[0]!, id: "core" }] : providers.slice(0, Number(c.req.query("providers") ?? 1)),
+    });
     c.set("user", c.req.query("anonymous") === "true" ? undefined : person);
     c.set("settings", { app: { name: "Cloud" } });
     await next();
@@ -64,6 +67,11 @@ const server = new Hono<Environment>()
         createComponent(Layout, {
           c,
           title: "Fixture",
+          context:
+            c.req.query("context") === "false"
+              ? false
+              : { scope: { type: "fixture.place", id: c.req.query("invalidScope") ? "" : "public01" } },
+          help: ["known", "unknown", "known", "other", "third", "fourth"],
           panel: c.req.query("panel") === "false" ? false : undefined,
           focusMode: c.req.query("focus") === "true",
           children: "Application",
@@ -73,6 +81,9 @@ const server = new Hono<Environment>()
 
 async function render(query = "", cookie = "") {
   const spies = [
+    spyOn(panelContextConsent, "get").mockResolvedValue(
+      query.includes("answer=allow") ? true : query.includes("answer=deny") ? false : null,
+    ),
     spyOn(rail, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
     spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
@@ -148,3 +159,70 @@ for (const query of ["panel=false", "providers=0", "anonymous=true"])
       expect(html).not.toContain("--cloud-panel-width-set");
     }
   });
+
+const shellPanel = (html: string) => JSON.parse(html.match(/id="cloud-shell-data" type="application\/json">([^<]*)/)![1]!).panel;
+const frameContext = (html: string) => {
+  const src = html.match(/<iframe[^>]*src="([^"]*)"/)?.[1]?.replaceAll("&amp;", "&");
+  return src ? new URL(src, "https://cloud.test").searchParams.get("cloud_panel_context") : null;
+};
+
+test("SSR asks in the server frame only for an open unanswered foreign provider", async () => {
+  const question = await render("", "cloud_panel=1:fixture:24");
+  expect(question).toContain('data-consent="ask"');
+  expect(question).toMatch(/class="k2b-notice-card cloud-panel__consent\b/);
+  expect(question).toContain("May fixture see where you are?");
+  expect(question).toContain('data-cloud-panel-consent-answer="allow"');
+  expect(question).toContain('data-cloud-panel-consent-answer="deny"');
+  expect(frameContext(question)).toBeNull();
+  for (const [query, cookie] of [
+    ["", ""],
+    ["answer=deny", "cloud_panel=1:fixture:24"],
+    ["answer=allow", "cloud_panel=1:fixture:24"],
+    ["core=1", "cloud_panel=1:core:24"],
+  ]) {
+    expect(await render(query, cookie)).not.toContain('data-consent="ask"');
+  }
+});
+
+test("SSR URL includes the first place only for allowed providers; false shares nothing", async () => {
+  for (const [query, cookie] of [
+    ["answer=allow", "cloud_panel=1:fixture:24"],
+    ["core=1", "cloud_panel=1:core:24"],
+  ]) {
+    const html = await render(query, cookie);
+    const panel = shellPanel(html);
+    expect(panel.context).toMatchObject({
+      v: 1,
+      seq: 0,
+      app: query === "core=1" ? "core" : "fixture",
+      scope: { type: "fixture.place", id: "public01" },
+    });
+    expect(JSON.parse(frameContext(html)!)).toEqual(panel.context);
+    expect(panel.providers[0]).toMatchObject({ appName: "fixture", consent: query !== "core=1" });
+  }
+  const disabled = await render("context=false&answer=allow", "cloud_panel=1:fixture:24");
+  expect(shellPanel(disabled).context).toBeNull();
+  expect(frameContext(disabled)).toBeNull();
+  const first = shellPanel(await render()).context;
+  const second = shellPanel(await render()).context;
+  expect(first.pageId).not.toBe(second.pageId);
+});
+
+test("Layout omits invalid scopes and shares only its filtered page Help ids", async () => {
+  const manifest = spyOn(help, "getLayoutHelp").mockReturnValue({
+    manifestHash: "fixture",
+    baseLocale: "en",
+    locale: "en",
+    pageBase: "/help/apps/fixture",
+    documents: ["known", "other", "third", "fourth"].map((id) => ({ id, title: id, order: 0, searchUrl: "/api/help", url: `/help/${id}` })),
+  });
+  try {
+    const html = await render("invalidScope=1&answer=allow", "cloud_panel=1:fixture:24");
+    const panel = shellPanel(html);
+    expect(panel.context.scope).toBeUndefined();
+    expect(panel.context.help).toEqual(["known", "other", "third"]);
+    expect(JSON.parse(frameContext(html)!)).toEqual(panel.context);
+  } finally {
+    manifest.mockRestore();
+  }
+});

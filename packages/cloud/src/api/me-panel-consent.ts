@@ -1,0 +1,57 @@
+import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { describeRoute } from "hono-openapi";
+import { z } from "zod";
+import { CapabilityAppIdSchema } from "../contracts/capabilities";
+import { panelProviderNeedsConsent } from "../contracts/panel-context";
+import { type AuthContext, jsonResponse, requiresAuth, v } from "../server";
+import { panelContextConsent } from "../services/panel-context-consent";
+import { getRuntimeContext } from "../ssr/runtime";
+
+const AnswerSchema = z.object({ allowed: z.boolean() }).strict();
+const AnswersSchema = z.object({ answers: z.record(CapabilityAppIdSchema, z.boolean()) }).strict();
+const ProviderSchema = z.object({ provider: CapabilityAppIdSchema }).strict();
+const SavedSchema = ProviderSchema.extend({ allowed: z.boolean() }).strict();
+
+/** Mounted below /me's session and user guards. The live request registry owns provider membership. */
+export const createMePanelConsentRoutes = (service = panelContextConsent) => {
+  const providers = (c: Parameters<typeof getRuntimeContext>[0]) =>
+    getRuntimeContext(c)
+      .apps.filter((app) => app.panel && panelProviderNeedsConsent(app.id))
+      .map((app) => app.id);
+  return new Hono<AuthContext>()
+    .use("*", async (c, next) => {
+      c.header("Cache-Control", "no-store");
+      if (!c.get("user")) return c.json({ message: "Authentication required" }, 401);
+      await next();
+    })
+    .get(
+      "/panel-consent",
+      describeRoute({
+        tags: ["Me"],
+        summary: "Read personal panel context answers",
+        ...requiresAuth,
+        responses: { 200: jsonResponse(AnswersSchema, "Answers for registered panel providers") },
+      }),
+      async (c) => c.json({ answers: await service.list(c.get("user").id, providers(c)) }),
+    )
+    .put(
+      "/panel-consent/:provider",
+      describeRoute({
+        tags: ["Me"],
+        summary: "Save a personal panel context answer",
+        ...requiresAuth,
+        responses: { 200: jsonResponse(SavedSchema, "Saved answer"), 404: { description: "Panel provider not found" } },
+      }),
+      // A boolean object is under 32 bytes; 256 leaves room for ordinary JSON whitespace.
+      bodyLimit({ maxSize: 256 }),
+      v("param", ProviderSchema),
+      v("json", AnswerSchema),
+      async (c) => {
+        const { provider } = c.req.valid("param");
+        if (!providers(c).includes(provider)) return c.json({ code: "PANEL_PROVIDER_NOT_FOUND", message: "Panel provider not found" }, 404);
+        const allowed = await service.set(c.get("user").id, provider, c.req.valid("json").allowed);
+        return c.json({ provider, allowed });
+      },
+    );
+};

@@ -17,8 +17,9 @@ setDefaultTimeout(30_000);
 const rail = await import("../services/rail-snapshot");
 const settings = await import("../server/middleware/settings");
 const help = await import("./help");
+const { panelContextConsent } = await import("../services/panel-context-consent");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
-const { server, panelGeometry } = await import("./panel-slot.browser-harness");
+const { server, panelGeometry, consentGeometry, consentAnswers, fixtureConsent } = await import("./panel-slot.browser-harness");
 let browser: Browser;
 let providerRequests = 0;
 let origin: string;
@@ -27,6 +28,7 @@ const spies: { mockRestore(): void }[] = [];
 
 beforeAll(async () => {
   spies.push(
+    spyOn(panelContextConsent, "get").mockImplementation(fixtureConsent.get),
     spyOn(rail, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
     spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
@@ -70,11 +72,25 @@ beforeAll(async () => {
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import ShellRuntime from "./ShellRuntime.island";
-import { openPanel } from "../browser/panel";
+import { openPanel, publishPageContext } from "../browser/panel";
+import PanelMenu from "./PanelMenu.island";
 render(() => createComponent(ShellRuntime, { panel: true, workspace: { appId: "fixture" }, commands: { searchResources: false } }), document.createElement("div"));
 for (const button of document.querySelectorAll("[data-cloud-panel-toggle]")) button.addEventListener("click", () => window.dispatchEvent(new CustomEvent("cloud.panel.request", { detail: { action: "toggle" } })));
 document.getElementById("open-panel").addEventListener("click", () => openPanel("fixture"));
 document.getElementById("open-silent-panel").addEventListener("click", () => openPanel("fixture", { search: "mode=silent" }));
+const slot = document.getElementById("cloud-panel");
+const menu = document.querySelector("[data-cloud-panel-menu]")?.closest("solid-island");
+if (menu) {
+  menu.replaceChildren();
+  render(() => createComponent(PanelMenu, { initial: { provider: slot.dataset.provider, appName: slot.dataset.appName, consent: slot.dataset.providerConsent === "true", allowed: slot.dataset.contextAllowed === "true", saving: false } }), menu);
+}
+let disposeContext = () => {};
+document.getElementById("change-context")?.addEventListener("click", () => {
+  const previous = disposeContext;
+  disposeContext = publishPageContext({ scope: { type: "fixture.place", id: "place2" } });
+  previous();
+});
+document.documentElement.dataset.consentFirstFrame = JSON.stringify((${consentGeometry.toString()})());
 document.documentElement.dataset.panelFirstFrame = JSON.stringify((${panelGeometry.toString()})());
 document.documentElement.dataset.panelHostMounted = "true";
 `,
@@ -85,6 +101,10 @@ document.documentElement.dataset.panelHostMounted = "true";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import PanelRuntime from "./PanelRuntime.island";
+import { getContext, onContextChange } from "../browser/panel";
+const showContext = () => document.getElementById("panel-context-probe").textContent = JSON.stringify(getContext());
+showContext();
+onContextChange(showContext);
 document.getElementById("prevent-escape").addEventListener("keydown", event => { if (event.key === "Escape") event.preventDefault(); });
 if (new URL(location.href).searchParams.get("mode") !== "silent" || document.cookie.includes("fixture_ready=1")) {
   render(() => createComponent(PanelRuntime, { provider: document.querySelector("[data-cloud-panel-page]").dataset.panelProvider }), document.createElement("div"));
@@ -112,7 +132,7 @@ document.documentElement.dataset.panelProviderMounted = "true";
           "</body>",
           embedded
             ? '<script src="/panel-provider.js"></script></body>'
-            : `<script>document.documentElement.dataset.panelServerFrame=JSON.stringify((${panelGeometry.toString()})());</script><script src="/panel-host.js"></script></body>`,
+            : `<script>document.documentElement.dataset.consentServerFrame=JSON.stringify((${consentGeometry.toString()})());document.documentElement.dataset.panelServerFrame=JSON.stringify((${panelGeometry.toString()})());</script><script src="/panel-host.js"></script></body>`,
         );
       return new Response(markup, { headers: { "content-type": "text/html; charset=utf-8" } });
     },
@@ -135,10 +155,22 @@ const settle = (page: Page) => page.evaluate(() => new Promise((done) => request
 const panelCookie = async (context: BrowserContext) => (await context.cookies()).find((cookie) => cookie.name === "cloud_panel")?.value;
 const modJ = async (page: Page) =>
   (await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent))) ? "Meta+j" : "Control+j";
-async function fixture(width = 1440, cookie?: string) {
-  const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC", reducedMotion: "reduce" });
+async function fixture(width = 1440, cookie?: string, height = 900, ask = false) {
+  const context = await browser.newContext({ viewport: { width, height }, locale: "en", timezoneId: "UTC", reducedMotion: "reduce" });
+  const personId = crypto.randomUUID();
+  consentAnswers.set(
+    personId,
+    ask
+      ? new Map()
+      : new Map([
+          ["fixture", true],
+          ["second", true],
+        ]),
+  );
+  context.on("close", () => consentAnswers.delete(personId));
   try {
     await context.addCookies([
+      { name: "fixture_person", value: personId, url: origin },
       { name: "cloud.timezone", value: "UTC", url: origin },
       ...(cookie ? [{ name: "cloud_panel", value: cookie, url: origin }] : []),
     ]);
@@ -522,6 +554,68 @@ test("two provider tabs switch and unload, with one iframe in the DOM", async ()
     expect(await second.getAttribute("aria-selected")).toBe("true");
     expect(await first.getAttribute("aria-selected")).toBe("false");
     expect(await panelCookie(context)).toBe("1:second:");
+  } finally {
+    await context.close();
+  }
+});
+
+for (const [width, height] of [
+  [1440, 900],
+  [1194, 834],
+] as const)
+  test(`${width}x${height}: unanswered consent has identical server, first and settled rectangles`, async () => {
+    const { context, page } = await fixture(width, "1:fixture:", height, true);
+    try {
+      await page.waitForFunction(() => document.documentElement.dataset.consentFirstFrame !== undefined);
+      await settle(page);
+      await expect(page.locator("[data-cloud-panel-consent]").isVisible()).resolves.toBe(true);
+      const serverFrame = await page.evaluate(() => document.documentElement.dataset.consentServerFrame ?? "");
+      expect(await page.evaluate(() => document.documentElement.dataset.consentFirstFrame)).toBe(serverFrame);
+      expect(JSON.stringify(await page.evaluate(consentGeometry))).toBe(serverFrame);
+      expect(await page.locator(slot).getAttribute("data-consent")).toBe("ask");
+      expect(await page.locator("[data-cloud-panel-frame]").getAttribute("src")).not.toContain("cloud_panel_context");
+    } finally {
+      await context.close();
+    }
+  });
+
+test("Allow delivers the place live; the menu checkbox withdraws it and stops subsequent updates", async () => {
+  const { context, page } = await fixture(1440, "1:fixture:", 900, true);
+  try {
+    // A consent-covered iframe may still be lazy. Wait for its runtime before proving no reload on Allow.
+    const frameElement = page.locator("[data-cloud-panel-frame]");
+    await frameElement.evaluate((frame) => {
+      if (frame instanceof HTMLIFrameElement) frame.loading = "eager";
+    });
+    await ready(page);
+    const provider = page.frameLocator("[data-cloud-panel-frame]");
+    expect(await provider.locator("#panel-context-probe").textContent()).toBe("null");
+    const before = providerRequests;
+    await page.getByRole("button", { name: "Allow", exact: true }).click();
+    await page.waitForFunction(() => document.getElementById("cloud-panel")?.dataset.contextAllowed === "true");
+    await provider.locator("#panel-context-probe").waitFor();
+    await page.waitForFunction(() =>
+      document
+        .querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")
+        ?.contentDocument?.getElementById("panel-context-probe")
+        ?.textContent?.includes('"id":"place1"'),
+    );
+    expect(providerRequests).toBe(before);
+    await page.getByRole("button", { name: "Panel menu", exact: true }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Share context", exact: true }).click();
+    await page.waitForFunction(
+      () =>
+        document.getElementById("cloud-panel")?.dataset.contextAllowed === "false" &&
+        document.getElementById("cloud-panel")?.dataset.consentSaving === "false",
+    );
+    await page.waitForFunction(
+      () =>
+        document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentDocument?.getElementById("panel-context-probe")
+          ?.textContent === "null",
+    );
+    await page.locator("#change-context").click();
+    await settle(page);
+    expect(await provider.locator("#panel-context-probe").textContent()).toBe("null");
   } finally {
     await context.close();
   }
