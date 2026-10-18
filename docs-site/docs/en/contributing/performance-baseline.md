@@ -235,3 +235,76 @@ browser context makes each navigation cold, but does not flush server or OS
 caches. TTI covers initial mounting, script loading, and Chromium long tasks,
 not every later interaction or data request. Treat small differences within
 the reported range as inconclusive.
+
+## Measure Mail at mailbox scale
+
+`packages/mail/scripts/perf-baseline.ts` measures the Mail server and its APIs
+at a realistic mailbox size. It reuses this page's isolated production stack
+but starts no browsers:
+
+```bash
+bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 5
+```
+
+The script needs Docker and takes the machine-wide heavy lock. It creates and
+removes only its own labelled containers, publishes them on free loopback
+ports, and never uses port 3000 or the development database. Builds and
+startup take 5–15 minutes, seeding 20,000 messages takes about 2 minutes, and
+measuring takes 2–5 minutes; a busy host takes longer. `--help` lists every
+flag without starting Docker.
+
+### Fixture
+
+`packages/mail/test/fixtures/large-mailbox.ts` builds the mailbox from a fixed
+seed and a frozen anchor date (`2026-10-01T00:00:00Z`), so two runs with the
+same flags seed the same rows. The defaults are 20,000 messages, 3,000
+conversations, and 30 folders; `--messages` (up to 100,000),
+`--conversations`, `--folders`, and `--seed` change them. Use
+`--folders 350` for the folder scale reported in #1268.
+
+The shape follows a real shared mailbox: large Inbox and Archive, many small
+folders in a tree, 70% of threads with 1–3 messages, a tail up to 99, and one
+180-message thread that exceeds the detail limit of 100. About 5% of messages
+are unread, 10% have an attachment, and 30% are HTML-only with 2–50 KB bodies.
+Every date lies before the anchor, and snoozes lie in 2099, so results do not
+depend on the day of the run.
+
+The fixture writes the same tables as real ingest and hydration through the
+persistence boundary. An integration test ingests one message through
+`ingestEnvelope` and fails if the fixture leaves a table or column empty that
+real ingest fills.
+
+### Scenarios and results
+
+Each scenario runs once cold and then `--runs` times warm: SSR of the mailbox
+and of the large thread, list pages 2–5 through `workspace-route` and the
+public conversation list, conversation detail for a small, the large, and an
+HTML-heavy thread, rare, common, and structured search, three folder switches,
+view counts, a message arriving live, and opening compose for a new message
+and a reply.
+
+For each scenario the run records cold, median, and p95 times, response and
+island props bytes, Server-Timing phases, and the statement count and
+database time from `pg_stat_statements`. It also keeps the `auto_explain`
+plan of the slowest statement, from one extra pass that is not timed.
+
+The result is `.local/mail-perf/<UTC timestamp>/result.json` and
+`summary.md`; existing files are never overwritten. Pass
+`--compare <earlier result.json>` to add median deltas to the summary.
+
+### Limits
+
+- No provider connection: IMAP fetch and hydration time are not measured.
+  The Mail connector accepts only public hosts with verified TLS.
+- HTML-only bodies are seeded words in one paragraph. They reproduce the
+  byte volume of HTML mail, not the tables, inline styles, and nesting of
+  real newsletters, so render cost for complex HTML can be higher.
+- Plain PostgreSQL has no BM25 index, so search uses the fallback path. The
+  summary records whether the index exists.
+- Core and Mail background work keeps running. The summary shows its
+  statement rate from an idle window; scenario counts include it.
+- Live arrival is ingested from the harness process, which cannot wake the
+  Mail dispatcher, so the socket event waits for the 1-second reconcile.
+  Real sync wakes the dispatcher right after commit.
+- Cold means the first request of a scenario; caches are not flushed. Compare
+  runs on the same quiet host rather than reading absolute numbers.
