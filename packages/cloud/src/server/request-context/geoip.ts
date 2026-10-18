@@ -46,14 +46,25 @@ const record = (value: unknown): Record<string, unknown> =>
 
 export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "bundled" | "uploaded" = "bundled") => {
   try {
+    // Cache decoded pointer targets by byte offset so shared containers decode once per lookup.
+    const cache = new Map<string | number, unknown>();
     // This Buffer is a view: Buffer.from(bytes) would copy the entire mmap.
-    const reader = new Reader(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+    const reader = new Reader(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), { cache });
     const metadata = reader.metadata;
     // An IPv4-only tree answers IPv6 lookups with unrelated IPv4 records, so only IPv6 databases qualify.
     if (metadata.ipVersion !== 6 || !metadata.databaseType.toLowerCase().includes(kind)) return null;
     const info: GeoIpDatabaseInfo = { databaseType: metadata.databaseType, buildDate: metadata.buildEpoch, source };
     if (!Number.isFinite(info.buildDate.getTime())) return null;
-    return { reader, info };
+    return {
+      info,
+      get(address: string) {
+        try {
+          return reader.get(address);
+        } finally {
+          cache.clear();
+        }
+      },
+    };
   } catch {
     return null;
   }
@@ -171,7 +182,7 @@ export const createGeoIp = (
   };
   const read = (kind: "city" | "asn", database: GeoIpDatabase | null, address: string) => {
     try {
-      return record(database?.reader.get(address));
+      return record(database?.get(address));
     } catch {
       logOnce(`${kind}-lookup`, `GeoIP ${kind} lookup failed; sign-in details are unavailable for this request`);
       return {};

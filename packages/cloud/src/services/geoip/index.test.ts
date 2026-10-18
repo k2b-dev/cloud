@@ -188,6 +188,34 @@ test("valid uploads use a fixed, bounded probe across IPv4 and IPv6", () => {
   }
 });
 
+test("shared pointer containers stay bounded during upload probes and lookups", () => {
+  const bytes = mmdbFixture("city", { repeatedPointerDepth: 22 });
+  const started = performance.now();
+  const parsed = parseGeoIpUpload(bytes);
+  const probeMs = performance.now() - started;
+  console.info(`Repeated-pointer upload probe: ${probeMs.toFixed(2)} ms`);
+  expect(parsed.kind).toBe("city");
+
+  const database = openGeoIpDatabase("city", bytes)!;
+  const lookupStarted = performance.now();
+  const result = database.get("8.8.8.8");
+  const lookupMs = performance.now() - lookupStarted;
+  console.info(`Repeated-pointer lookup: ${lookupMs.toFixed(2)} ms`);
+  expect(probeMs).toBeLessThan(500);
+  expect(lookupMs).toBeLessThan(500);
+  expect(result).not.toBeNull();
+  let shared: unknown = result && "shared" in result ? result.shared : null;
+  for (let depth = 0; depth < 22; depth++) {
+    if (!Array.isArray(shared)) throw new Error("Expected a shared pointer array");
+    expect(shared).toHaveLength(2);
+    expect(shared[0]).toBe(shared[1]);
+    shared = shared[0];
+  }
+  expect(shared).toBe("leaf");
+  // A fresh object proves the decoder cache does not retain results between lookups.
+  expect(database.get("8.8.8.8")).not.toBe(result);
+});
+
 test("a concurrent upload fails immediately and the flag clears after failure", async () => {
   const service = createGeoIpService();
   const actor = { id: "unused", roles: ["admin"] };

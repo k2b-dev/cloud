@@ -134,7 +134,7 @@ export const parseGeoIpUpload = (bytes: Uint8Array) => {
     if (Buffer.byteLength(JSON.stringify(subset, null, 1)) > 4096) throw new GeoIpError("geoip_invalid");
     // A bounded probe catches gross corruption, not every bad record; request lookups still fail closed.
     for (const address of probeAddresses) {
-      const record: unknown = database.reader.get(address);
+      const record: unknown = database.get(address);
       if (record !== null && (typeof record !== "object" || Array.isArray(record))) throw new GeoIpError("geoip_invalid");
     }
     return { kind, database, metadata: subset };

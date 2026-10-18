@@ -143,7 +143,7 @@ describe("GeoIP", () => {
     const bytes = mmdbFixture("city");
     const padded = Buffer.concat([Buffer.alloc(5), bytes, Buffer.alloc(3)]);
     const database = openGeoIpDatabase("city", padded.subarray(5, 5 + bytes.length), "bundled");
-    expect(database?.reader.get("8.8.8.8")).toHaveProperty("country.iso_code", "at");
+    expect(database?.get("8.8.8.8")).toHaveProperty("country.iso_code", "at");
     expect(openGeoIpDatabase("asn", bytes)).toBeNull();
   });
 });

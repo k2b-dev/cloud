@@ -33,6 +33,7 @@ export const mmdbFixture = (
     buildEpoch?: number | string;
     description?: string;
     cityName?: string;
+    repeatedPointerDepth?: number;
     /** Null leaves out the optional `languages` metadata key. */
     languages?: string[] | null;
   },
@@ -41,13 +42,36 @@ export const mmdbFixture = (
   const root: Node = { children: [null, null], index: 0 };
   const nodes = [root];
   const data: Buffer[] = [];
+  let shared: Buffer | undefined;
+  if (options?.repeatedPointerDepth !== undefined) {
+    const pointer = (offset: number) => {
+      const bytes = Buffer.alloc(5);
+      bytes[0] = 0x38; // Four-byte pointer relative to the data section.
+      bytes.writeUInt32BE(offset, 1);
+      return bytes;
+    };
+    data.push(encode("leaf"));
+    let offset = 0;
+    for (let depth = 0; depth < options.repeatedPointerDepth; depth++) {
+      shared = pointer(offset);
+      offset = data.reduce((total, bytes) => total + bytes.length, 0);
+      data.push(Buffer.concat([Buffer.from([0x02, 0x04]), shared, shared]));
+    }
+    shared = pointer(offset);
+  }
   const insert = (bits: string, value: Value) => {
     let node = root;
     for (let i = 0; i < bits.length; i++) {
       const side = bits[i] === "1" ? 1 : 0;
       if (i === bits.length - 1) {
         node.children[side] = data.reduce((total, bytes) => total + bytes.length, 0);
-        data.push(options?.corruptData ? Buffer.from([0]) : encode(value));
+        data.push(
+          options?.corruptData
+            ? Buffer.from([0])
+            : shared
+              ? Buffer.concat([Buffer.from([0xe2]), encode("value"), encode(value), encode("shared"), shared])
+              : encode(value),
+        );
       } else {
         let next = node.children[side];
         if (!next || typeof next === "number") {
