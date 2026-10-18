@@ -460,11 +460,18 @@ branch:
   wider than the screen. Measure sideways overflow against
   `document.documentElement.clientWidth`.
 - Playwright can read and type into a page before its first frame, and WebKit
-  can hold that frame back while a page loads. A dialog places its initial
-  focus in the next frame after it opens; until then, keys go to the element
-  the browser focused first. A test that types into a dialog right after it
-  opens first waits for the dialog's content and then for one frame:
+  can hold that frame back while a page loads or the machine is busy. A dialog
+  places its initial focus in the next frame after it opens; until then, keys
+  go to the element the browser focused first, which is the content's
+  `autofocus` element or else its first focusable element. A test that types
+  into a dialog right after it opens first waits for the dialog's content and
+  then for one frame:
   `await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))`.
+  Waiting for the content alone is not a frame: a test that read focus after
+  it failed in WebKit CI (#1456). Where keys must reach the target at once, as
+  in the Notebooks attachment preview, the target carries `autofocus`, and the
+  test reads focus in the same `page.evaluate` that opens the dialog, before
+  any frame can pass.
 - Neither engine shows a PDF in a frame. Chromium's headless shell reports
   `navigator.pdfViewerEnabled === false`, so `PdfPreview` shows its
   missing-viewer hint instead of the frame, and an automatic preview requests
