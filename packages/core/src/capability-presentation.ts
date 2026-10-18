@@ -14,18 +14,18 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description: "Ein wiederverwendbarer Ablauf für den Assistenten mit eigenen Zugriffsrechten.",
         },
         "ai.task": {
-          title: "Geplante KI-Aufgabe",
+          title: "Assistant-Routine",
           description: "Ein einmaliger oder wiederkehrender Auftrag in einem deiner KI-Chats.",
         },
       },
       queries: {
         "ai.task.run.read": {
-          title: "Ausführung einer Hintergrundaufgabe lesen",
+          title: "Lauf einer Assistant-Routine lesen",
           description:
-            "Zeigt Ergebnis, Fehler und isolierten Ausführungsverlauf einer eigenen Aufgabe. Verwenden Sie Aufgaben- und Ausführungs-IDs aus ai.task.read. Für eine blockierte Aufgabe zuerst die Berechtigungen mit ai.task.update prüfen und ändern, danach ai.task.run aufrufen.",
+            "Zeigt Ergebnis, Fehler und den eigenen Laufverlauf einer deiner Routinen. Nutze Routine- und Lauf-IDs aus ai.task.read. Prüfe und ändere bei einer blockierten Routine zuerst die Freigaben mit ai.task.update. Rufe danach ai.task.run auf.",
           input: {
-            taskId: "Öffentliche ID der eigenen Aufgabe aus ai.task.read.",
-            occurrenceId: "ID der konkreten Ausführung aus ai.task.read.",
+            taskId: "Routine-ID aus ai.task.read.",
+            occurrenceId: "ID des konkreten Laufs aus ai.task.read.",
           },
         },
         "entities.search": {
@@ -129,22 +129,22 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.task.read": {
-          title: "Geplante KI-Aufgabe lesen",
+          title: "Assistant-Routine lesen",
           description:
-            "Lesen Sie einen von ai.tasks.list zurückgegebenen core.ai.task ref oder einen Task Action, einschließlich seines übergeordneten core.ai.chat ref und der letzten Ausführungen.",
+            "Lies eine Routine aus ai.tasks.list oder einer Routine-Aktion über ihren core.ai.task-Verweis, einschließlich des zugehörigen core.ai.chat-Verweises und der letzten Läufe.",
           input: {
-            id: "Geplante Aufgabe ID, zurückgegeben von Liste geplanter AI-Aufgaben oder core.ai.task ref.",
+            id: "Routine-ID aus „Assistant-Routinen auflisten“ oder einem core.ai.task-Verweis.",
           },
         },
         "ai.tasks.list": {
-          title: "Geplante KI-Aufgaben auflisten",
+          title: "Assistant-Routinen auflisten",
           description:
-            "Normaler Eintrag für geplante Aufgaben. Listen Sie die Aufgaben des aktuellen Benutzers auf, optional für einen core.ai.chat ref oder einen Status; Verwenden Sie das zurückgegebene core.ai.task refs mit ai.task.read oder der Aufgabe Actions.",
+            "Liste deine Routinen auf, optional für einen core.ai.chat-Verweis oder einen Status. Nutze die zurückgegebenen core.ai.task-Verweise mit ai.task.read oder den Routine-Aktionen.",
           input: {
-            chatId: "Optionale AI-Konversation ID, zurückgegeben durch Chat-Suche/Lesen oder ein core.ai.chat ref.",
-            state: "Optionaler Aufgabenlebenszyklusstatus.",
-            limit: "Maximale Anzahl der zurückzugebenden Aufgaben.",
-            cursor: "Undurchsichtiger Cursor, der von der vorherigen Aufgabenseite zurückgegeben wurde.",
+            chatId: "Optionale KI-Chat-ID aus der Chat-Suche, dem Lesen eines Chats oder einem core.ai.chat-Verweis.",
+            state: "Optionaler Status der Routine.",
+            limit: "Maximale Anzahl der zurückzugebenden Routinen.",
+            cursor: "Cursor aus der vorherigen Seite mit Routinen.",
           },
         },
       },
@@ -241,65 +241,68 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.task.create": {
-          title: "Geplante KI-Aufgabe erstellen",
+          title: "Assistant-Routine anlegen",
           description:
-            "Erstellen Sie eine autonome Aufgabe in einer eigenen AI-Konversation. Ermitteln Sie vorher die benötigten Capabilities und lassen Sie deren Berechtigungsumfang prüfen. Code Mode läuft mit bestätigten Capability-, HTTP- und Datenbankfreigaben im Hintergrund. Immer bestätigungspflichtige Capabilities und interaktive Dialoge sind dort nicht verfügbar. Lösen Sie relative Zeitangaben vor dem Aufruf in localAt auf.",
+            "Lege eine autonome Routine in einem deiner KI-Chats an. Ermittle vorher die benötigten Capabilities und lass deren Freigaben prüfen. Code Mode läuft mit bestätigten Capability-, HTTP- und Datenbankfreigaben im Hintergrund. Immer bestätigungspflichtige Capabilities und interaktive Dialoge sind dort nicht verfügbar. Rechne relative Zeitangaben vor dem Aufruf in localAt um.",
           input: {
-            grants: "Geprüfte Freigaben für Capabilities, HTTP und RSQL für diese Aufgabe.",
+            grants: "Geprüfte Freigaben für Capabilities, HTTP und RSQL für diese Routine.",
             "grants[].appId": "ID der App, die die Capability bereitstellt.",
             "grants[].capabilityId": "Lokale ID der zuvor gefundenen Capability.",
             "grants[].kind": "Freigabetyp: query/action für Capabilities, http für HTTP-Anfragen oder database für RSQL.",
             "grants[].fixedInput":
               "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
-            chatId: "Lesbare sechsstellige AI-Konversation ID.",
-            prompt: "Genaue Aufforderung zur Übermittlung an diesen Chat, wenn die Aufgabe ausgeführt wird.",
-            schedule: "Wann diese Aufgabe ausgeführt werden soll.",
+            chatId: "Lesbare KI-Chat-ID mit sechs Zeichen.",
+            prompt: "Genauer Auftrag für diesen Chat, wenn die Routine läuft.",
+            schedule: "Wann diese Routine laufen soll.",
             timezone: "Genaue IANA-Zeitzone aus dem aktuellen Laufzeitkontext.",
+            title:
+              "Kurzer Name der Routine in der Sprache der Person, etwa „Neue Rechnungen eintragen“. Er steht in Benachrichtigungen und Listen.",
           },
         },
         "ai.task.delete": {
-          title: "Geplante KI-Aufgabe löschen",
-          description: "Löschen Sie eine Aufgabe und ihren gesamten Ereignisverlauf nach der Überprüfung.",
+          title: "Assistant-Routine löschen",
+          description: "Lösche eine Routine und ihren gesamten Laufverlauf nach der Prüfung.",
           input: {
-            taskId: "Lesbare geplante Aufgabe mit sechs Zeichen ID.",
+            taskId: "Lesbare Routine-ID mit sechs Zeichen.",
           },
         },
         "ai.task.pause": {
-          title: "Geplante KI-Aufgabe pausieren",
-          description: "Pausieren Sie eine eigene geplante Aufgabe nach der Überprüfung.",
+          title: "Assistant-Routine pausieren",
+          description: "Pausiere eine deiner Routinen nach der Prüfung.",
           input: {
-            taskId: "Lesbare geplante Aufgabe mit sechs Zeichen ID.",
+            taskId: "Lesbare Routine-ID mit sechs Zeichen.",
           },
         },
         "ai.task.resume": {
-          title: "Geplante KI-Aufgabe fortsetzen",
-          description: "Nehmen Sie nach der Überprüfung eine eigene geplante Aufgabe wieder auf.",
+          title: "Assistant-Routine fortsetzen",
+          description: "Setze eine deiner Routinen nach der Prüfung fort.",
           input: {
-            taskId: "Lesbare geplante Aufgabe mit sechs Zeichen ID.",
+            taskId: "Lesbare Routine-ID mit sechs Zeichen.",
           },
         },
         "ai.task.run": {
-          title: "Geplante KI-Aufgabe jetzt ausführen",
-          description: "Stellen Sie ein manuelles Ereignis in die Warteschlange, ohne den zukünftigen Zeitplan zu ändern.",
+          title: "Assistant-Routine jetzt ausführen",
+          description: "Plane einen manuellen Lauf ein, ohne den zukünftigen Zeitplan zu ändern.",
           input: {
-            taskId: "Lesbare geplante Aufgabe mit sechs Zeichen ID.",
+            taskId: "Lesbare Routine-ID mit sechs Zeichen.",
           },
         },
         "ai.task.update": {
-          title: "Geplante KI-Aufgabe ändern",
+          title: "Assistant-Routine ändern",
           description:
-            "Aktualisieren Sie Aufforderung, zukünftigen Zeitplan oder Capability-Berechtigungen einer eigenen Aufgabe nach Prüfung des genauen Ersatzes. Lesen Sie bei fehlenden Rechten zuerst Aufgabe und fehlgeschlagene Ausführung. Lassen Sie erweiterte Rechte ausdrücklich prüfen und berücksichtigen Sie bereits ausgeführte Änderungen vor einem erneuten Start.",
+            "Ändere Auftrag, zukünftigen Zeitplan oder Capability-Freigaben einer deiner Routinen nach Prüfung der genauen Änderungen. Lies bei fehlenden Rechten zuerst die Routine und den fehlgeschlagenen Lauf. Lass erweiterte Rechte ausdrücklich prüfen und berücksichtige bereits ausgeführte Änderungen vor einem erneuten Start.",
           input: {
-            grants: "Vollständige Ersatzliste der Berechtigungen; erfordert Benutzerprüfung. Weglassen erhält bestehende Berechtigungen.",
+            grants: "Vollständige neue Liste der Freigaben; du musst sie prüfen. Lass sie weg, um bestehende Freigaben zu behalten.",
             "grants[].appId": "ID der App, die die Capability bereitstellt.",
             "grants[].capabilityId": "Lokale ID der zuvor gefundenen Capability.",
             "grants[].kind": "Freigabetyp: query/action für Capabilities, http für HTTP-Anfragen oder database für RSQL.",
             "grants[].fixedInput":
               "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
-            taskId: "Lesbare geplante Aufgabe mit sechs Zeichen ID.",
-            prompt: "Beim Ausführen der Aufgabe wird eine Ersatzaufforderung bereitgestellt.",
-            schedule: "Einmaliger oder wiederkehrender Ersatzplan.",
-            timezone: "Erforderlich mit Zeitplan; Kopieren Sie die aktuelle Laufzeit-IANA-Zeitzone.",
+            taskId: "Lesbare Routine-ID mit sechs Zeichen.",
+            prompt: "Neuer Auftrag für die nächsten Läufe der Routine.",
+            schedule: "Neuer einmaliger oder wiederkehrender Zeitplan.",
+            title: "Neuer kurzer Name der Routine in der Sprache der Person. Er steht in Benachrichtigungen und Listen.",
+            timezone: "Mit Zeitplan erforderlich; übernimm die aktuelle IANA-Zeitzone aus dem Laufzeitkontext.",
           },
         },
       },

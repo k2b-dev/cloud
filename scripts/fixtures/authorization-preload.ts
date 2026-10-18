@@ -12,6 +12,7 @@ import { requireInfra, testInfra } from "./test-infra";
  */
 type Routes = ReturnType<typeof createIdentityPublicRoutes>;
 type IssuanceModule = { createIdentityOAuthIssuanceRoutes: () => Routes };
+type DeviceApprovalModule = { createIdentityOAuthDeviceApprovalRoutes: () => Routes };
 type OAuthModule = { default: Routes };
 
 if (testInfra.database && testInfra.nats) {
@@ -19,13 +20,16 @@ if (testInfra.database && testInfra.nats) {
   // Loaded through computed specifiers so a test in one package does not pull the
   // Core and OAuth programs into that package's typecheck.
   const issuancePath = "../../packages/core/src/api/identity-oauth-issuance";
+  const deviceApprovalPath = "../../packages/core/src/api/identity-oauth-device-approval";
   const oauthPath = "../../packages/oauth/src/oauth";
   const { createIdentityOAuthIssuanceRoutes } = (await import(issuancePath)) as IssuanceModule;
+  const { createIdentityOAuthDeviceApprovalRoutes } = (await import(deviceApprovalPath)) as DeviceApprovalModule;
   const { default: oauthRoutes } = (await import(oauthPath)) as OAuthModule;
   bindProcessApplicationId("core");
   const runtime = await startProcessSync({ application: "core" });
   const routes = createIdentityPublicRoutes()
     .route("/api/_internal/identity/v1", createIdentityOAuthIssuanceRoutes())
+    .route("/api/_internal/identity/v1", createIdentityOAuthDeviceApprovalRoutes())
     .route("/", oauthRoutes);
   const authority = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: routes.fetch });
   process.env.CLOUD_CORE_INTERNAL_ORIGIN = authority.url.origin;

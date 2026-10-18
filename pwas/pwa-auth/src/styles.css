@@ -161,6 +161,16 @@ body {
   font-size: 0.9375rem;
   line-height: 1.5;
 }
+.auth-decision__started {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.auth-decision__started > i {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 1.125rem;
+}
 .auth-comparison {
   display: flex;
   justify-content: center;
@@ -177,6 +187,14 @@ body {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.06em;
   line-height: 1.1;
+}
+/* Rows the Cloud reported for this sign-in; a value with several parts lists one per line. */
+.auth-decision__details ul {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 /* Both choices share the row; a label too long for half of it moves the main action above. Done takes
    their place after an ending, in the same grid cell. */

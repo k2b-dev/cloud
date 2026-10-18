@@ -60,7 +60,7 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   for (const text of [
     "one lasting fact or preference, such as reports always as PDF: personalization memory",
     "a personalization workflow default",
-    "work that should run at a set time: a scheduled task, which can load the Skill",
+    "work that should run at a set time: a routine, which can load the Skill",
     "a Studio App that the Skill references",
     "name the subject, such as the team or the report, not only the output format",
     "the exact capability IDs that worked",
@@ -89,7 +89,10 @@ test("Assistant skills retain workflow and capability guidance", async () => {
     expect(assistant?.instructions).toContain(text);
   }
   const scheduled = inputs.find((candidate) => candidate.name === "scheduled-tasks");
+  expect(scheduled?.description).toContain("Create and manage Assistant routines");
   expect(scheduled?.description).toContain("one-time reminders");
+  expect(scheduled?.description).toContain("set up a routine");
+  expect(scheduled?.instructions).toContain("In conversation, call these routines");
   expect(scheduled?.instructions).toContain("fixedInput");
   expect(scheduled?.instructions).toContain("core.ai.task.run.read");
   const coreSource = await Bun.file(new URL("../../core/src/capabilities.ts", import.meta.url)).text();

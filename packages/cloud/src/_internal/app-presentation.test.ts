@@ -140,3 +140,14 @@ test("retains translated option values that name an object prototype property", 
   });
   expect(compiled?.translations.de?.widgets?.stock?.settings?.mode?.options?.__proto__).toBe("Prototyp");
 });
+
+test("panelLabel is trimmed and bounded like name, and requires a declared panel", () => {
+  const catalog = { baseLocale: "en", translations: { de: { panelLabel: " Bestand " } } };
+  expect(() => compileAppPresentation(app, catalog)).toThrow("unknown key");
+  const configured = { ...app, panel: { href: "/app/inventory/panel", label: "Stock", icon: "ti ti-box" } };
+  expect(compileAppPresentation(configured, catalog)?.translations.de?.panelLabel).toBe("Bestand");
+  for (const panelLabel of ["", " ", "x".repeat(201)])
+    expect(() => compileAppPresentation(configured, { baseLocale: "en", translations: { de: { panelLabel } } })).toThrow(
+      "1 to 200 characters",
+    );
+});

@@ -16,6 +16,7 @@ import {
   type ItemListResult,
   type SpaceColumn,
   type SpaceItem,
+  type SpaceItemReaction,
   type SpaceItemTemplate,
   type SpaceTag,
   type SpaceVirtualColumnKind,
@@ -35,6 +36,8 @@ import ClaimButton from "../shared/claim/ClaimButton";
 import { type ClaimFields, claimTask, releaseTask, resolveCompletionClaim, resolveTransferClaim } from "../shared/claim/claim";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { isInactiveTask } from "../shared/item-activity";
+import ItemReactions, { createReactionPicker } from "../shared/reactions/ItemReactions";
+import { onReactionAnswer } from "../shared/reactions/reaction-queue";
 import CreateItemButton from "../sidebar/CreateItemButton";
 import {
   invalidateSpacesData,
@@ -160,6 +163,8 @@ export default function KanbanBoard(props: Props) {
   const locale = useLocale();
   const t = useSpaceMessages();
   const retryToast = createRetryToasts();
+  const reactionPicker = createReactionPicker();
+  const cardMetaId = (itemId: string) => `spaces-kanban-card-meta-${props.spaceId}-${itemId}`;
   // The route mounts a new board for every snapshot, so one board keeps one filter for its lifetime.
   const filter = props.filter;
   const filtered = hasActiveFilters(filter);
@@ -268,6 +273,34 @@ export default function KanbanBoard(props: Props) {
     return order ? [...list].sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key)) : list;
   };
   const buckets = () => inColumnOrder(optimisticBuckets() ?? canonicalBuckets());
+  const bucketKeys = createMemo(() => buckets().map((bucket) => bucket.key));
+  /**
+   * Reactions as the columns last read them. A card can show a board copy a write made, whose write response carries no
+   * reactions and which a later reload does not update, so its chips come from the reads instead.
+   */
+  const readReactions = createMemo(
+    () => new Map(canonicalBuckets().flatMap((bucket) => bucket.items.map((item) => [item.id, item.reactions] as const))),
+  );
+  /**
+   * The newest reactions the board has seen per card, from a column read or a saved reaction's answer, in the order they
+   * arrived. A card that no loaded page holds any more, but that the board copy still shows (#1388), gets no reload,
+   * so it shows these. A read that holds the card always wins, so a late answer never hides a fresher live reload.
+   */
+  const [seenReactions, setSeenReactions] = createSignal<ReadonlyMap<string, SpaceItemReaction[] | undefined>>(new Map());
+  const seeReactions = (seen: Iterable<readonly [string, SpaceItemReaction[] | undefined]>) =>
+    setSeenReactions((current) => new Map([...current, ...seen]));
+  createEffect(() => {
+    const read = readReactions();
+    untrack(() => seeReactions(read));
+  });
+  onMount(() =>
+    onCleanup(
+      onReactionAnswer((target, reactions) => {
+        if (target.spaceId === props.spaceId) seeReactions([[target.itemId, reactions]]);
+      }),
+    ),
+  );
+  const cardReactions = (item: SpaceItem) => readReactions().get(item.id) ?? seenReactions().get(item.id) ?? item.reactions;
   const setBuckets = (update: KanbanBucketInitial[] | ((current: KanbanBucketInitial[]) => KanbanBucketInitial[])) =>
     setOptimisticBuckets((current) => (typeof update === "function" ? update(current ?? canonicalBuckets()) : update));
   const [movingItemId, setMovingItemId] = createSignal<string | null>(null);
@@ -709,21 +742,24 @@ export default function KanbanBoard(props: Props) {
     onSuccess: (updated, ctx) => {
       withBoardScrollPreserved(() => {
         withViewTransition(() => {
-          setBuckets((current) =>
-            current.map((bucket) => {
+          setBuckets((current) => {
+            // A write omits reactions; keep the last summary if the card leaves the loaded pages.
+            const previous = current.flatMap((bucket) => bucket.items).find((item) => item.id === updated.id);
+            const item = { ...updated, reactions: updated.reactions ?? (previous ? cardReactions(previous) : undefined) };
+            return current.map((bucket) => {
               const hadItem = bucket.items.some((item) => item.id === updated.id);
               const nextItems = bucket.items.filter((item) => item.id !== updated.id);
               let delta = hadItem ? -1 : 0;
 
               if (bucket.key === ctx?.targetBucketKey) {
                 const insertIndex = clamp(ctx.targetIndex, 0, nextItems.length);
-                nextItems.splice(insertIndex, 0, updated);
+                nextItems.splice(insertIndex, 0, item);
                 delta += 1;
               }
 
               return { ...bucket, items: nextItems, ...shiftTotals(bucket, delta) };
-            }),
-          );
+            });
+          });
         });
       });
       if (ctx?.gatheredBy) {
@@ -872,25 +908,35 @@ export default function KanbanBoard(props: Props) {
   type KeyboardMove = { itemId: string; title: string; bucketKey: string; position: number };
   const [keyboardMove, setKeyboardMove] = createSignal<KeyboardMove | null>(null);
   /**
-   * A keyboard drop draws the columns again, so the grip it started from is gone. The card's new grip takes over the
-   * focus, or, when the card went into a folded column that shows no cards, that column's strip. The person's next
-   * focus change or click ends this, so a later redraw never pulls the focus back.
+   * A keyboard drop takes the focus to the page: the grip turns into a spinner while the move saves, and the card moves
+   * within its column or to another one. The card's grip takes the focus back, or, when the card went into a folded
+   * column that shows no cards, that column's strip. The person's next focus change or click ends this, so a later
+   * redraw never pulls the focus back.
    */
   let dropFocus: { itemId: string; bucketKey: string } | null = null;
   const isDropFocusTarget = (element: Element, focus: { itemId: string; bucketKey: string }) =>
     element.closest<HTMLElement>("[data-spaces-kanban-grip]")?.dataset.spacesKanbanGrip === focus.itemId ||
     element.closest<HTMLElement>("[data-spaces-kanban-fold]")?.dataset.spacesKanbanFold === focus.bucketKey;
-  const restoreDropFocus = (element: HTMLElement, owns: (focus: { itemId: string; bucketKey: string }) => boolean) => {
+  const restoreDropFocus = () => {
     const focus = dropFocus;
     if (!focus) return;
     queueMicrotask(() => {
-      // Only while focus fell to the page because the dropped card was drawn again.
+      // Only while focus fell to the page because the dropped card moved or its grip was drawn again.
       const focusLost = !document.activeElement || document.activeElement === document.body;
-      if (dropFocus !== focus || !element.isConnected || !focusLost || !owns(focus)) return;
-      element.focus({ preventScroll: true });
-      element.scrollIntoView({ block: "nearest", inline: "nearest" });
+      if (dropFocus !== focus || !focusLost) return;
+      const target =
+        boardScrollContainer?.querySelector<HTMLElement>(`[data-spaces-kanban-grip="${CSS.escape(focus.itemId)}"]`) ??
+        boardScrollContainer?.querySelector<HTMLElement>(
+          `button[data-spaces-kanban-fold="${CSS.escape(focus.bucketKey)}"][aria-expanded="false"]`,
+        );
+      if (!target) return;
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ block: "nearest", inline: "nearest" });
     });
   };
+  // Runs after each redraw that can take the focus: the optimistic move, which can come frames later inside a view
+  // transition, the grip returning after the save, and the refresh.
+  createEffect(on([buckets, movingItemId], restoreDropFocus));
   onMount(() => {
     const endDropFocus = () => {
       dropFocus = null;
@@ -1078,7 +1124,12 @@ export default function KanbanBoard(props: Props) {
         (assignee) => assignee.kind === "user" && assignee.id === props.currentUserId,
       );
       setBuckets((current) =>
-        current.map((bucket) => ({ ...bucket, items: bucket.items.map((candidate) => (candidate.id === item.id ? item : candidate)) })),
+        current.map((bucket) => ({
+          ...bucket,
+          items: bucket.items.map((candidate) =>
+            candidate.id === item.id ? { ...item, reactions: item.reactions ?? cardReactions(candidate) } : candidate,
+          ),
+        })),
       );
       const refocus = () => focusCard(kanbanCards().find((card) => card.dataset.itemId === item.id));
       queueMicrotask(refocus);
@@ -1322,28 +1373,32 @@ export default function KanbanBoard(props: Props) {
         data-scroll-preserve={`spaces-kanban-board-${props.spaceId}`}
       >
         <div class="flex h-full min-w-max items-stretch gap-[var(--ui-space-shell)]">
-          <For each={buckets()}>
-            {(bucket, bucketIndex) => {
-              const canDropInBucket = props.canWrite && !!resolveTargetColumnId(bucket);
-              const virtual = bucket.kind === "column" ? null : bucket.kind;
+          <For each={bucketKeys()}>
+            {(key, bucketIndex) => {
+              const bucket = createMemo<KanbanBucketInitial>((previous) => getBucketByKey(key) ?? previous, getBucketByKey(key)!);
+              const itemsById = createMemo(() => new Map(bucket().items.map((item) => [item.id, item])));
+              const itemIds = createMemo(() => bucket().items.map((item) => item.id));
+              const canDropInBucket = props.canWrite && !!resolveTargetColumnId(bucket());
+              const kind = bucket().kind;
+              const virtual = kind === "column" ? null : kind;
               // An automatic column stays a droppable, so a card over it can say that it takes no drop.
               const cardDropDisabled = () =>
                 !props.canWrite || (!canDropInBucket && !virtual) || moveMutation.loading() || transferMutation.loading();
-              const refuseDrop = () => boardDnd.isDragging() && refusingBucketKey() === bucket.key;
+              const refuseDrop = () => boardDnd.isDragging() && refusingBucketKey() === key;
               const registerColumn = (element: HTMLElement, draggable: boolean) => {
                 columnDnd.droppable(element, () => ({
-                  id: `drop:board-column:${bucket.key}`,
+                  id: `drop:board-column:${key}`,
                   disabled: !props.canWrite,
-                  meta: { bucketKey: bucket.key },
+                  meta: { bucketKey: key },
                 }));
                 if (!draggable) return;
                 columnDnd.draggable(element, () => ({
-                  id: `drag:board-column:${bucket.key}`,
+                  id: `drag:board-column:${key}`,
                   disabled: !props.canWrite || reorderColumnsMutation.loading(),
                   focusable: false,
                   keyboard: false,
                   handleSelector: "[data-spaces-kanban-column-handle]",
-                  meta: { bucketKey: bucket.key },
+                  meta: { bucketKey: key },
                 }));
               };
               /** Accent line where a dragged column lands: centred in the gap beside this column, or on the outer edge of the
@@ -1377,18 +1432,18 @@ export default function KanbanBoard(props: Props) {
                 ) : (
                   <span
                     class={`h-2 w-2 shrink-0 rounded-full ${markProps.class ?? ""}`}
-                    style={`background-color:${bucketColor(bucket)}`}
+                    style={`background-color:${bucketColor(bucket())}`}
                   />
                 );
 
               return (
                 <Show
-                  when={!props.folded.has(bucket.key)}
+                  when={!props.folded.has(key)}
                   fallback={
                     // A folded column stays a drop target: a card dropped on it lands at the top of the column.
                     <section
                       ref={(element) => registerColumn(element, false)}
-                      data-spaces-kanban-column={bucket.key}
+                      data-spaces-kanban-column={key}
                       class="relative flex h-full w-10 shrink-0 flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1"
                     >
                       <ColumnDropLine />
@@ -1396,34 +1451,27 @@ export default function KanbanBoard(props: Props) {
                         type="button"
                         ref={(element) => {
                           boardDnd.droppable(element, () => ({
-                            id: `drop:column:${bucket.key}`,
+                            id: `drop:column:${key}`,
                             disabled: cardDropDisabled(),
-                            meta: { kind: "column", bucketKey: bucket.key },
+                            meta: { kind: "column", bucketKey: key },
                           }));
-                          // The strip takes the focus of a card dropped here, unless the card still shows elsewhere.
-                          restoreDropFocus(
-                            element,
-                            (focus) =>
-                              focus.bucketKey === bucket.key &&
-                              !boardScrollContainer?.querySelector(`[data-spaces-kanban-grip="${CSS.escape(focus.itemId)}"]`),
-                          );
                         }}
-                        data-spaces-kanban-fold={bucket.key}
+                        data-spaces-kanban-fold={key}
                         aria-expanded="false"
-                        aria-label={t.unfoldColumn({ column: bucket.label, count: countLabel(bucket) })}
-                        title={t.unfoldColumn({ column: bucket.label, count: countLabel(bucket) })}
-                        onClick={() => toggleFolded(bucket.key)}
+                        aria-label={t.unfoldColumn({ column: bucket().label, count: countLabel(bucket()) })}
+                        title={t.unfoldColumn({ column: bucket().label, count: countLabel(bucket()) })}
+                        onClick={() => toggleFolded(key)}
                         class={`focus-ui flex min-h-0 flex-1 flex-col items-center gap-2 rounded-[var(--ui-radius-control)] px-1 py-1.5 transition-[background-color] ${
-                          isColumnTargetActive(bucket.key) ? "bg-[var(--ui-selected)]" : "hover:bg-[var(--ui-hover)]"
+                          isColumnTargetActive(key) ? "bg-[var(--ui-selected)]" : "hover:bg-[var(--ui-hover)]"
                         } ${refuseDrop() ? "cursor-not-allowed outline-1 outline-dashed outline-[var(--ui-border-strong)]" : ""}`}
                         data-spaces-kanban-no-drop={refuseDrop() ? "" : undefined}
                       >
                         <ColumnMark class="mt-1" />
                         <span class="text-[11px] tabular-nums text-dimmed" aria-hidden="true">
-                          {countText(bucket)}
+                          {countText(bucket())}
                         </span>
                         <span class="min-h-0 truncate text-xs font-medium [writing-mode:vertical-rl]" aria-hidden="true">
-                          {bucket.label}
+                          {bucket().label}
                         </span>
                       </button>
                     </section>
@@ -1431,8 +1479,8 @@ export default function KanbanBoard(props: Props) {
                 >
                   <section
                     ref={(element) => registerColumn(element, true)}
-                    data-spaces-kanban-column={bucket.key}
-                    aria-labelledby={`spaces-kanban-column-${props.spaceId}-${bucket.key}`}
+                    data-spaces-kanban-column={key}
+                    aria-labelledby={`spaces-kanban-column-${props.spaceId}-${key}`}
                     class="relative flex h-full w-72 shrink-0 flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1"
                   >
                     <ColumnDropLine />
@@ -1453,14 +1501,14 @@ export default function KanbanBoard(props: Props) {
                             </Tooltip.Anchor>
                           )}
                         </Show>
-                        <h3 id={`spaces-kanban-column-${props.spaceId}-${bucket.key}`} class="flex-1 truncate text-xs font-medium">
-                          {bucket.label}
+                        <h3 id={`spaces-kanban-column-${props.spaceId}-${key}`} class="flex-1 truncate text-xs font-medium">
+                          {bucket().label}
                           <Show when={virtual}>
                             {(kind) => <span class="sr-only">. {kind() === "blocked" ? t.blockedColumnHelp : t.overdueColumnHelp}</span>}
                           </Show>
                         </h3>
                       </div>
-                      <ColumnCount bucket={bucket} />
+                      <ColumnCount bucket={bucket()} />
                       <Show when={props.canWrite}>
                         <Dropdown.Root
                           position="bottom-left"
@@ -1470,8 +1518,8 @@ export default function KanbanBoard(props: Props) {
                               icon: "ti ti-arrow-left",
                               disabled: bucketIndex() === 0 || reorderColumnsMutation.loading(),
                               action: () => {
-                                moveColumn(bucket.key, bucketIndex() - 1);
-                                focusColumnMenu(bucket.key);
+                                moveColumn(key, bucketIndex() - 1);
+                                focusColumnMenu(key);
                               },
                             },
                             {
@@ -1479,8 +1527,8 @@ export default function KanbanBoard(props: Props) {
                               icon: "ti ti-arrow-right",
                               disabled: bucketIndex() === buckets().length - 1 || reorderColumnsMutation.loading(),
                               action: () => {
-                                moveColumn(bucket.key, bucketIndex() + 2);
-                                focusColumnMenu(bucket.key);
+                                moveColumn(key, bucketIndex() + 2);
+                                focusColumnMenu(key);
                               },
                             },
                           ]}
@@ -1490,20 +1538,20 @@ export default function KanbanBoard(props: Props) {
                             size="xs"
                             variant="ghost"
                             class="h-6 w-6 text-dimmed"
-                            label={t.columnActions({ column: bucket.label })}
-                            data-spaces-kanban-column-menu={bucket.key}
+                            label={t.columnActions({ column: bucket().label })}
+                            data-spaces-kanban-column-menu={key}
                           >
                             <i class="ti ti-dots text-sm" aria-hidden="true" />
                           </Dropdown.Trigger>
                         </Dropdown.Root>
                       </Show>
                       <IconButton
-                        label={t.foldColumn({ column: bucket.label })}
+                        label={t.foldColumn({ column: bucket().label })}
                         size="xs"
                         class="h-6 w-6 text-dimmed"
-                        data-spaces-kanban-fold={bucket.key}
+                        data-spaces-kanban-fold={key}
                         aria-expanded="true"
-                        onClick={() => toggleFolded(bucket.key)}
+                        onClick={() => toggleFolded(key)}
                       >
                         <i class="ti ti-viewport-narrow text-sm" aria-hidden="true" />
                       </IconButton>
@@ -1523,23 +1571,23 @@ export default function KanbanBoard(props: Props) {
                       <div
                         ref={(element) => {
                           boardDnd.droppable(element, () => ({
-                            id: `drop:column:${bucket.key}`,
+                            id: `drop:column:${key}`,
                             disabled: cardDropDisabled(),
-                            meta: { kind: "column", bucketKey: bucket.key },
+                            meta: { kind: "column", bucketKey: key },
                           }));
                         }}
                         class={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] p-1.5 transition-[background-color] ${
-                          isColumnTargetActive(bucket.key) ? "bg-[var(--ui-selected)]" : "bg-transparent"
+                          isColumnTargetActive(key) ? "bg-[var(--ui-selected)]" : "bg-transparent"
                         }`}
-                        data-scroll-preserve={`spaces-kanban-column-${props.spaceId}-${bucket.key}`}
+                        data-scroll-preserve={`spaces-kanban-column-${props.spaceId}-${key}`}
                       >
                         <Show
-                          when={bucket.items.length > 0}
+                          when={bucket().items.length > 0}
                           fallback={
                             <>
-                              <DropLine bucketKey={bucket.key} index={0} />
+                              <DropLine bucketKey={key} index={0} />
                               <p class="px-2 py-6 text-center text-[11px] text-dimmed">
-                                {bucket.unfilteredTotal
+                                {bucket().unfilteredTotal
                                   ? t.noMatchingItems
                                   : virtual === "blocked"
                                     ? t.blockedColumnHelp
@@ -1550,30 +1598,37 @@ export default function KanbanBoard(props: Props) {
                             </>
                           }
                         >
-                          <For each={bucket.items}>
-                            {(item, itemIndex) => {
-                              const priority = item.priority ? priorityMeta[item.priority] : null;
-                              const isSelected = () => item.id === selectedItemId();
-                              const dragId = `drag:item:${item.id}`;
-                              const dropId = `drop:item:${bucket.key}:${item.id}`;
+                          <For each={itemIds()}>
+                            {(id, itemIndex) => {
+                              const item = createMemo<SpaceItem>((previous) => itemsById().get(id) ?? previous, itemsById().get(id)!);
+                              const priority = () => {
+                                const value = item().priority;
+                                return value ? priorityMeta[value] : null;
+                              };
+                              const isSelected = () => id === selectedItemId();
+                              // Per column: a moved card's new element registers before its old one leaves, and an automatic
+                              // column shows a card twice.
+                              const dragId = `drag:item:${key}:${id}`;
+                              const dropId = `drop:item:${key}:${id}`;
                               const isDraggingThis = () => boardDnd.activeId() === dragId;
                               // A keyboard pick-up keeps full opacity, so the focus ring on the grip stays clear.
-                              const isPickedUpThis = () => keyboardMove()?.itemId === item.id;
-                              const isMovingThis = () =>
-                                (moveMutation.loading() || transferMutation.loading()) && movingItemId() === item.id;
+                              const isPickedUpThis = () => keyboardMove()?.itemId === id;
+                              const isMovingThis = () => (moveMutation.loading() || transferMutation.loading()) && movingItemId() === id;
+                              let cardLink: HTMLAnchorElement | undefined;
 
                               return (
                                 <>
-                                  <DropLine bucketKey={bucket.key} index={itemIndex()} />
+                                  <DropLine bucketKey={key} index={itemIndex()} />
                                   <article
                                     ref={(element) => {
-                                      // A refresh replaces the row, so its pending or held press must end with it.
+                                      // Leaving this column (moved, filtered out, deleted) ends a pending or held press.
+                                      // A refresh that keeps the card keeps its element and press.
                                       onCleanup(() => endCardPress?.(element));
                                       boardDnd.droppable(element, () => ({
                                         id: dropId,
                                         disabled: cardDropDisabled(),
                                         meta: {
-                                          bucketKey: bucket.key,
+                                          bucketKey: key,
                                           index: itemIndex(),
                                           kind: "item",
                                         },
@@ -1584,14 +1639,14 @@ export default function KanbanBoard(props: Props) {
                                         focusable: false,
                                         keyboard: false,
                                         handleSelector: "[data-dnd-card-handle], [data-spaces-kanban-touch-press]",
-                                        meta: { itemId: item.id },
+                                        meta: { itemId: id },
                                       }));
                                     }}
                                     data-card-index={itemIndex()}
                                     // On touch screens the grip's 44 px area ends 39 px below the card's top and the claim button's
                                     // starts 43 px above its bottom. A card with both is 82 px tall at least, so neither takes the other's taps.
                                     class={`k2b-progressive-row relative rounded-[var(--ui-radius-control)] border p-2.5 shadow-none transition-[background-color,border-color] any-pointer-coarse:has-[[data-spaces-claim-action]]:min-h-[5.125rem] ${
-                                      isPickedUpThis() || heldItemId() === item.id
+                                      isPickedUpThis() || heldItemId() === id
                                         ? "border-[var(--ui-app-accent-border)] bg-[var(--ui-surface)]"
                                         : isSelected()
                                           ? "border-[var(--ui-border-strong)] bg-[var(--ui-selected)]"
@@ -1602,14 +1657,13 @@ export default function KanbanBoard(props: Props) {
                                       <Show
                                         when={isMovingThis()}
                                         fallback={
-                                          // The card link is not positioned, so the handle's touch area paints over it. A finger on the
-                                          // handle must not scroll the board: the browser would cancel the drag.
-                                          <div class="k2b-progressive-action absolute right-1.5 top-1.5 flex">
+                                          // The card link's stretched area is positioned, so the handle sits a layer above it. A finger on
+                                          // the handle must not scroll the board: the browser would cancel the drag.
+                                          <div class="k2b-progressive-action absolute right-1.5 top-1.5 z-[2] flex">
                                             <IconButton
-                                              ref={(grip) => restoreDropFocus(grip, (focus) => focus.itemId === item.id)}
                                               data-dnd-card-handle
-                                              data-spaces-kanban-grip={item.id}
-                                              label={t.dragItem({ title: item.title })}
+                                              data-spaces-kanban-grip={id}
+                                              label={t.dragItem({ title: item().title })}
                                               tooltip={t.drag}
                                               aria-describedby={`spaces-kanban-grip-help-${props.spaceId}`}
                                               size="xs"
@@ -1618,9 +1672,9 @@ export default function KanbanBoard(props: Props) {
                                                 event.preventDefault();
                                                 event.stopPropagation();
                                               }}
-                                              onKeyDown={(event) => handleGripKeyDown(event, item.id)}
+                                              onKeyDown={(event) => handleGripKeyDown(event, id)}
                                               onBlur={() => {
-                                                if (keyboardMove()?.itemId === item.id) cancelKeyboardMove();
+                                                if (keyboardMove()?.itemId === id) cancelKeyboardMove();
                                               }}
                                             >
                                               <i class="ti ti-grip-vertical text-[13px]" aria-hidden="true" />
@@ -1628,62 +1682,77 @@ export default function KanbanBoard(props: Props) {
                                           </div>
                                         }
                                       >
-                                        <div class="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center text-dimmed">
+                                        <div class="pointer-events-none absolute right-1.5 top-1.5 z-[2] inline-flex h-5 w-5 items-center justify-center text-dimmed">
                                           <i class="ti ti-loader-2 animate-spin text-[11px]" />
                                         </div>
                                       </Show>
                                     </Show>
-                                    <Show when={props.canWrite && !item.completedAt && !item.startsAt && !item.endsAt}>
+                                    <Show when={props.canWrite && !item().completedAt && !item().startsAt && !item().endsAt}>
                                       {/* The wrapper places the button: on touch screens buttons are positioned relative for their larger hit area. */}
-                                      <div class={`absolute bottom-1.5 right-1.5 flex ${item.claim ? "" : "k2b-progressive-action"}`}>
+                                      <div
+                                        class={`absolute bottom-1.5 right-1.5 z-[2] flex ${item().claim ? "" : "k2b-progressive-action"}`}
+                                      >
                                         <ClaimButton
-                                          claim={item.claim}
+                                          claim={item().claim}
                                           currentUserId={props.currentUserId}
                                           canTakeOver={false}
                                           compact
-                                          loading={claimingItemId() === item.id}
-                                          disabled={claimCardMutation.loading() || (!item.claim && item.activeBlockerCount > 0)}
+                                          loading={claimingItemId() === id}
+                                          disabled={claimCardMutation.loading() || (!item().claim && item().activeBlockerCount > 0)}
                                           class="h-6 w-6"
-                                          onClaim={() => void claimCardMutation.mutate(item)}
-                                          onRelease={() => void claimCardMutation.mutate(item)}
+                                          onClaim={() => void claimCardMutation.mutate(item())}
+                                          onRelease={() => void claimCardMutation.mutate(item())}
                                           onTakeOver={() => undefined}
                                         />
                                       </div>
                                     </Show>
                                     <a
+                                      ref={cardLink}
                                       data-spaces-kanban-card
-                                      data-bucket-key={bucket.key}
-                                      data-item-id={item.id}
+                                      data-bucket-key={key}
+                                      data-item-id={id}
                                       aria-keyshortcuts={props.canWrite ? "Enter M D" : "Enter"}
-                                      href={buildItemUrl(props.baseUrl, item.id)}
+                                      aria-describedby={cardMetaId(id)}
+                                      href={buildItemUrl(props.baseUrl, id)}
                                       onClick={(event) => {
                                         if (!shouldHandleDetailClick(event, event.currentTarget)) return;
                                         event.preventDefault();
-                                        const href = buildItemUrl(props.baseUrl, item.id);
-                                        setSelectedItemId(item.id);
+                                        const href = buildItemUrl(props.baseUrl, id);
+                                        setSelectedItemId(id);
                                         requestSpacesRouteNavigation(href, { scroll: "preserve" });
                                       }}
-                                      // On touch screens the grip's area reaches 12 px past its box; the text ends before it, so a tap on it opens the item.
-                                      class={`focus-ui block rounded-[var(--ui-radius-control)] ${props.canWrite ? "pr-5 any-pointer-coarse:pr-8" : ""}`}
+                                      // The link spans the whole card through its ::after, which also carries the focus ring; the footer
+                                      // lies above it and lets the pointer through to it except on reaction controls. On touch screens
+                                      // the grip's area reaches 12 px past its box; the text ends before it, so a tap on it opens the item.
+                                      class={`block rounded-[var(--ui-radius-control)] outline-none after:absolute after:-inset-px after:rounded-[var(--ui-radius-control)] focus-visible:after:shadow-[var(--ui-focus)] ${props.canWrite ? "pr-5 any-pointer-coarse:pr-8" : ""}`}
                                     >
                                       <div class="flex items-start gap-2">
-                                        <Show when={priority}>
-                                          <i class={`ti ${priority!.icon} ${priority!.color} mt-0.5 shrink-0 text-xs`} />
+                                        <Show when={priority()}>
+                                          <i class={`ti ${priority()!.icon} ${priority()!.color} mt-0.5 shrink-0 text-xs`} />
                                         </Show>
                                         <p
-                                          class={`break-words text-xs font-medium leading-tight ${item.completedAt ? "line-through text-dimmed" : ""}`}
+                                          class={`break-words text-xs font-medium leading-tight ${item().completedAt ? "line-through text-dimmed" : ""}`}
                                         >
-                                          {item.title}
+                                          {item().title}
                                         </p>
                                       </div>
 
-                                      <Show when={descriptionPreview(item.description)}>
+                                      <Show when={descriptionPreview(item().description)}>
                                         {(preview) => <p class="mt-1.5 line-clamp-3 break-words text-[11px] text-dimmed">{preview()}</p>}
                                       </Show>
+                                    </a>
 
-                                      <div class={`mt-2 flex flex-wrap items-center gap-1.5 ${props.canWrite ? "min-h-6 pr-6" : ""}`}>
+                                    {/* A sibling of the link, because its reaction chips and "Add reaction" are buttons. For writers the
+                                        row keeps the chips' height, so the first reaction does not grow a card whose row has room. */}
+                                    <div
+                                      data-spaces-kanban-card-footer
+                                      class={`pointer-events-none relative z-[1] mt-2 flex flex-wrap items-center gap-1.5 ${props.canWrite ? "min-h-6 pr-6 any-pointer-coarse:pr-8" : ""}`}
+                                    >
+                                      {/* The metadata lies outside the link, so it describes the link: a focused card still says its status,
+                                          deadline, and people. The reactions are their own controls and stay out of it. */}
+                                      <span id={cardMetaId(id)} class="contents">
                                         {/* In an automatic column the status is no longer the column, so the card names it. */}
-                                        <Show when={virtual && columnOf(item.columnId)}>
+                                        <Show when={virtual && columnOf(item().columnId)}>
                                           {(column) => (
                                             <span
                                               data-spaces-kanban-card-status
@@ -1702,7 +1771,7 @@ export default function KanbanBoard(props: Props) {
                                             </span>
                                           )}
                                         </Show>
-                                        <Show when={virtual === "blocked" && isTaskOverdue(item, props.dateConfig)}>
+                                        <Show when={virtual === "blocked" && isTaskOverdue(item(), props.dateConfig)}>
                                           <span
                                             data-spaces-kanban-card-overdue
                                             class="inline-flex items-center gap-1 text-[11px] text-red-600 dark:text-red-400"
@@ -1711,19 +1780,19 @@ export default function KanbanBoard(props: Props) {
                                             {t.overdue}
                                           </span>
                                         </Show>
-                                        <Show when={item.deadline}>
+                                        <Show when={item().deadline}>
                                           <span class="inline-flex items-center gap-1 text-[11px] text-dimmed">
                                             <i class="ti ti-clock text-[10px]" />
-                                            {dates.formatDateRelative(item.deadline!, props.dateConfig)}
+                                            {dates.formatDateRelative(item().deadline!, props.dateConfig)}
                                           </span>
                                         </Show>
                                         <AssigneeAvatars
-                                          assignees={item.assignees ?? []}
-                                          claim={item.claim}
+                                          assignees={item().assignees ?? []}
+                                          claim={item().claim}
                                           currentUserId={props.currentUserId}
                                           max={3}
                                         />
-                                        <Show when={isInactiveTask(item)}>
+                                        <Show when={isInactiveTask(item())}>
                                           <span
                                             class="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300"
                                             title={t.inactiveFor({ days: INACTIVE_ITEM_DAYS })}
@@ -1732,44 +1801,58 @@ export default function KanbanBoard(props: Props) {
                                             {t.inactive}
                                           </span>
                                         </Show>
-                                      </div>
-                                    </a>
+                                      </span>
+                                      <Show when={props.canWrite || (cardReactions(item())?.length ?? 0) > 0}>
+                                        <ItemReactions
+                                          spaceId={props.spaceId}
+                                          itemId={id}
+                                          reactions={cardReactions(item())}
+                                          canReact={props.canWrite}
+                                          picker={reactionPicker}
+                                          retryToast={retryToast}
+                                          density="compact"
+                                          add="progressive"
+                                          max={3}
+                                          // A removed chip with nothing left to focus beside it, such as on touch without Add reaction.
+                                          focusFallback={() => cardLink}
+                                          class="spaces-card-reactions"
+                                        />
+                                      </Show>
+                                    </div>
                                   </article>
                                 </>
                               );
                             }}
                           </For>
-                          <DropLine bucketKey={bucket.key} index={bucket.items.length} />
+                          <DropLine bucketKey={key} index={bucket().items.length} />
                         </Show>
 
-                        <Show when={bucketQuery(bucket.key)?.hasMore()}>
+                        <Show when={bucketQuery(key)?.hasMore()}>
                           <IconButton
-                            label={t.loadMoreIn({ group: bucket.label })}
+                            label={t.loadMoreIn({ group: bucket().label })}
                             size="sm"
-                            onClick={() => void bucketQuery(bucket.key)?.loadMore()}
-                            disabled={bucketQuery(bucket.key)?.loadingMore()}
+                            onClick={() => void bucketQuery(key)?.loadMore()}
+                            disabled={bucketQuery(key)?.loadingMore()}
                             class="mx-auto mt-1 h-7 w-7"
                             title={t.loadMore}
                           >
-                            <i
-                              class={`ti ${bucketQuery(bucket.key)?.loadingMore() ? "ti-loader-2 animate-spin" : "ti-arrow-down"} text-sm`}
-                            />
+                            <i class={`ti ${bucketQuery(key)?.loadingMore() ? "ti-loader-2 animate-spin" : "ti-arrow-down"} text-sm`} />
                           </IconButton>
                         </Show>
 
-                        <Show when={bucketQuery(bucket.key)?.error()}>
+                        <Show when={bucketQuery(key)?.error()}>
                           {(error) => (
                             <button
                               type="button"
                               class="focus-ui mx-1 mb-1 rounded-[var(--ui-radius-control)] px-2 py-1.5 text-left text-xs text-red-600"
-                              onClick={() => void bucketQuery(bucket.key)?.refresh()}
+                              onClick={() => void bucketQuery(key)?.refresh()}
                             >
                               {error().message} {t.retry}
                             </button>
                           )}
                         </Show>
 
-                        <Show when={props.canWrite && bucket.columnId}>
+                        <Show when={props.canWrite && bucket().columnId}>
                           <CreateItemButton
                             spaceId={props.spaceId}
                             columns={props.columns}
@@ -1778,7 +1861,7 @@ export default function KanbanBoard(props: Props) {
                             dateConfig={props.dateConfig}
                             variant="inline"
                             defaultType="task"
-                            defaultColumnId={bucket.columnId!}
+                            defaultColumnId={bucket().columnId!}
                           />
                         </Show>
                       </div>
@@ -1843,6 +1926,7 @@ export default function KanbanBoard(props: Props) {
           </Show>
         </div>
       </div>
+      {reactionPicker.popover()}
     </div>
   );
 }

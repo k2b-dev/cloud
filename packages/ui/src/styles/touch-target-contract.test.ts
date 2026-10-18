@@ -57,7 +57,7 @@ describe("@k2b/ui touch targets", () => {
     ).toEqual([]);
   });
 
-  test("changes nothing without a coarse pointer and keeps the visible size, except for flush DetailPanel.Action rows", () => {
+  test("changes nothing without a coarse pointer and keeps the visible size, except for flush DetailPanel.Action rows and the quiet chat answer", () => {
     const controls = /\.k2b-(?:button|dialog__close|toast__(?:action|close))\b/;
     const pseudo = rules.filter((rule) => controls.test(rule.selector) && /::?(?:before|after)\b/.test(rule.selector));
     expect(pseudo.length).toBeGreaterThan(0);
@@ -69,8 +69,14 @@ describe("@k2b/ui touch targets", () => {
         [...cssDeclarations(rule.body).keys()].some((property) => /^(?:width|height|min-|max-|padding|margin|font-size)/.test(property)),
       )
       .map((rule) => rule.selector);
-    // Stacked action rows have no room for a tap area beyond their box, so the row itself grows to 2.75rem.
-    expect(resized).toEqual([".k2b-ui .k2b-button.k2b-detail-panel__action", ".k2b-ui .k2b-detail-panel__action-row .k2b-button"]);
+    // Stacked action rows have no room for a tap area beyond their box, so the row itself grows to 2.75rem. The quiet
+    // answer of a chat question wraps flush under the two answers for the same reason; it has no visible box to grow.
+    expect(resized).toEqual([
+      ".k2b-ui .k2b-button.k2b-detail-panel__action",
+      ".k2b-ui .k2b-detail-panel__action-row .k2b-button",
+      ".k2b-ui .k2b-button.k2b-chat-decision__remember",
+    ]);
+    expect([...declarations(".k2b-ui .k2b-button.k2b-chat-decision__remember").entries()]).toEqual([["min-height", ["2.75rem"]]]);
     const row = declarations(".k2b-ui .k2b-button.k2b-detail-panel__action");
     expect([...row.entries()]).toEqual([["min-height", ["2.75rem"]]]);
     expect([...declarations(".k2b-ui .k2b-detail-panel__action-row .k2b-button").entries()]).toEqual([["min-height", ["2.75rem"]]]);

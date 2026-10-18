@@ -76,10 +76,12 @@ test("shortcut groups put stable shell rows first, respect selection scope and d
 test("shell shortcuts share localized labels and stable ids without actions", () => {
   for (const locale of ["en", "de"]) {
     const { t } = platformMessages.resolve([locale]);
-    const shortcuts = shellShortcuts(t);
+    const shortcuts = shellShortcuts(t, { panel: true });
     expect(shortcuts.map((command) => command.id)).toEqual([...SHELL_SHORTCUT_ORDER]);
-    expect(shortcuts.map((command) => command.shortcut)).toEqual(["mod+k", "shift+/"]);
-    expect(shortcuts.map((command) => command.title)).toEqual([t.openGlobalSearch, t.openShortcutHelp]);
+    expect(shortcuts.map((command) => command.shortcut)).toEqual(["mod+k", "shift+/", "mod+j"]);
+    expect(shortcuts.map((command) => command.title)).toEqual([t.openGlobalSearch, t.openShortcutHelp, t.togglePanel]);
     for (const command of shortcuts) expect(command).not.toHaveProperty("action");
+    // Pages without a panel slot list no panel shortcut.
+    expect(shellShortcuts(t).map((command) => command.id)).toEqual(["cloud.search", "cloud.help"]);
   }
 });

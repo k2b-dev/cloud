@@ -50,7 +50,7 @@ afterAll(async () => {
 });
 
 type View = "week" | "day";
-type PanelWidth = "md" | "lg";
+type PanelWidth = "md" | "lg" | "xl";
 /** The event a test opens: "Sunday meeting", or with lanes, which share Sunday 10:00 in three lanes, one of them. */
 const eventOf = (page: Page, title = "Sunday meeting") => page.locator("[data-calendar-event]", { hasText: title });
 const motion: BrowserContextOptions = { reducedMotion: "no-preference" };
@@ -93,6 +93,8 @@ const load = async (
     await page.locator(".k2b-app-workspace__detail").waitFor();
     await page.waitForFunction(() => document.querySelector(".k2b-app-workspace__detail")!.getAnimations().length === 0);
     await hoursSettled(page);
+    if (panel === "xl" || (width === 768 && panel === "lg"))
+      expect(await page.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBe("open");
     return { page, closed };
   }
   const closed = await columns(page);
@@ -101,6 +103,8 @@ const load = async (
   // animation to wait for. A frame requested now runs after that reveal, so every measurement sees its result.
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   await page.waitForFunction(() => document.querySelector(".k2b-app-workspace__detail")!.getAnimations().length === 0);
+  if (panel === "xl" || (width === 768 && panel === "lg"))
+    expect(await page.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBe("open");
   // The reveal's scroll event must reach the header and all-day row before measuring their alignment.
   await page.waitForFunction(() => {
     const hoursScroll = document.querySelector(".k2b-calendar-time-grid__scroll")!.scrollLeft;
@@ -298,9 +302,10 @@ describe("dayHours calendar beside the workspace detail", () => {
     }
   });
 
+  // xl waits at both tablet widths; md now fits as a column even on touch.
   for (const [width, height, panel] of [
-    [820, 1180, "md"],
-    [768, 1024, "md"],
+    [820, 1180, "xl"],
+    [768, 1024, "xl"],
     [768, 1024, "lg"],
   ] as const) {
     test(`${width}×${height} touch tablet, ${panel} drawer: the dayHours week keeps aligned days and settles Sunday beside the drawer`, async () => {
@@ -395,7 +400,7 @@ describe("dayHours calendar beside the workspace detail", () => {
     }
   });
   test("820×1180 touch tablet with motion: the dayHours week settles Sunday's end beside the drawer", async () => {
-    const { page } = await load(820, 1180, "week", { ...touch, ...motion }, "md", true);
+    const { page } = await load(820, 1180, "week", { ...touch, ...motion }, "xl", true);
     try {
       const shape = await hoursPlacement(page);
       expect(Math.abs(shape.columnRight! - shape.trailEnd)).toBeLessThan(0.5);
@@ -407,7 +412,7 @@ describe("dayHours calendar beside the workspace detail", () => {
   });
   // A narrow lane ends well inside its day, so the nearest day edge would slide the strip back over it.
   for (const [width, height, panel, lane] of [
-    [820, 1180, "md", "Sunday meeting"],
+    [820, 1180, "xl", "Sunday meeting"],
     [768, 1024, "lg", "Sunday standup"],
   ] as const) {
     test(`${width}×${height} touch tablet, ${panel} drawer: ${lane} in a lane of three settles whole beside the drawer`, async () => {
@@ -425,9 +430,10 @@ describe("dayHours calendar beside the workspace detail", () => {
 });
 
 describe("calendar beside the workspace detail", () => {
+  // xl waits at both tablet widths; md now fits as a column even on touch.
   for (const [width, height, panel] of [
-    [820, 1180, "md"],
-    [768, 1024, "md"],
+    [820, 1180, "xl"],
+    [768, 1024, "xl"],
     // The drawer is capped at the workspace minus 21 rem here, so it is narrower than the large panel.
     [768, 1024, "lg"],
   ] as const) {
@@ -526,7 +532,7 @@ describe("calendar beside the workspace detail", () => {
     }
   });
   test("820×1180 touch tablet with motion: the smooth reveal scrolls Sunday out beside the drawer", async () => {
-    const { page } = await load(820, 1180, "week", { ...touch, reducedMotion: "no-preference" });
+    const { page } = await load(820, 1180, "week", { ...touch, reducedMotion: "no-preference" }, "xl");
     try {
       await settled(page);
       const shape = await placement(page);
@@ -566,8 +572,11 @@ describe("calendar beside the workspace detail", () => {
       await page.close();
     }
   });
-  test("820×1180: Tuesday's overflow menu stays above the hour gutter it opens over", async () => {
-    const { page } = await load(820, 1180, "week", touch);
+  test("820×1180 with a waiting drawer: Tuesday's overflow menu stays above the hour gutter it opens over", async () => {
+    // md now fits as a column (744px fit). Its narrower calendar clips the 14rem menu
+    // at the scrollport's left edge. Keep this gutter-stacking test in a full-width
+    // calendar beside an overlay: xl waits until 872px.
+    const { page } = await load(820, 1180, "week", touch, "xl");
     try {
       await page.evaluate(() => {
         document.querySelector<HTMLElement>(".k2b-calendar-time-grid__scroll")!.scrollLeft = 0;
@@ -577,10 +586,16 @@ describe("calendar beside the workspace detail", () => {
       const covered = await page.locator(".k2b-calendar-time-grid__overflow-menu").evaluate((menu) => {
         const box = menu.getBoundingClientRect();
         const gutter = menu.closest(".k2b-calendar-time-grid")!.querySelector(".k2b-calendar-time-grid__gutter")!.getBoundingClientRect();
+        const scrollport = menu.closest(".k2b-calendar-time-grid__scroll")!.getBoundingClientRect();
         const y = box.top + box.height / 2;
         const xs = [box.left + 2, (Math.max(box.left, gutter.left) + gutter.right) / 2, gutter.right - 2];
-        return { overlaps: box.left < gutter.right, hits: xs.map((x) => menu.contains(document.elementFromPoint(x, y))) };
+        return {
+          overlaps: box.left < gutter.right,
+          samplesInside: xs.every((x) => x >= scrollport.left && x < scrollport.right),
+          hits: xs.map((x) => menu.contains(document.elementFromPoint(x, y))),
+        };
       });
+      expect(covered.samplesInside).toBe(true);
       expect(covered.overlaps).toBe(true);
       expect(covered.hits).toEqual([true, true, true]);
     } finally {

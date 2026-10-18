@@ -125,6 +125,8 @@ Message paths:
 - `inputs.message.attachments.0.id`, `filename`, `contentType`, `disposition`, `contentId`, or `sizeBytes`
 - `inputs.message.hasAttachments`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, `receivedAt`
 
+Mail reads `body`, `bodyText`, and `bodyHtml` when a step needs them. The step waits until Mail has loaded the message and fails if the message no longer exists. A whole message value such as `inputs.message` includes the body only when Mail has already loaded it; use a body path when a step needs the text. Run details no longer show message bodies in the event data.
+
 Conversation paths:
 
 - `inputs.conversation.id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`
@@ -228,7 +230,7 @@ Reference fields named `message`, `conversation`, or `draft` accept a raw value 
 
 `createDraft.to` is required. `cc` and `bcc` are optional. `createReplyDraft` takes recipients and subject from the source message. The `model` field accepts the ID of an enabled AI model profile, at most 120 characters. AI outputs, draft outputs, reference outputs, and variables are visible only to later steps in the same reachable scope.
 
-On one reachable path, any number of `addFlag`, `removeFlag`, `addKeyword`, and `removeKeyword` changes can come before at most one `moveMessage`, `copyMessage`, `archiveMessage`, `trashMessage`, or `junkMessage` for the same message. No provider action can follow that move or copy; Mail rejects such a definition with `action.sequence`. The first provider action checks the message state from the start of the run. Later ones also expect this run's confirmed changes, so a flag the workflow set itself does not stop its move. Keep these changes in one workflow: when two workflows change the same message, one of them can fail.
+On one reachable path, any number of `addFlag`, `removeFlag`, `addKeyword`, and `removeKeyword` changes can come before at most one `moveMessage`, `copyMessage`, `archiveMessage`, `trashMessage`, or `junkMessage` for the same message. No provider action can follow that move or copy; Mail rejects such a definition with `action.sequence`. The first provider action checks the message state from the start of the run. Later ones also expect this run's confirmed changes, so a flag the workflow set itself does not stop its move. Keep these changes in one workflow: when two workflows change the same message, one of them can fail. A workflow's move, archive, trash, or junk step does not skip: it fails if the message has already left its folder or another change is moving it.
 
 `createDraft` and `createReplyDraft` always produce `deliveryClass: normal`. `createReplyDraft` takes the recipient and subject from the source message, keeps reply threading, and stays attached to its conversation. Only `automaticReply` can create `deliveryClass: automatic_reply`. Normal workflow sends therefore get no automatic-reply headers and no null envelope sender. `scheduleDraftSend` accepts only a `mail.draft` result created earlier in the same reachable scope.
 

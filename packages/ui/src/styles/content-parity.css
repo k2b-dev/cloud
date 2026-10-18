@@ -4208,8 +4208,10 @@
   background: color-mix(in srgb, var(--k2b-action) 8%, var(--k2b-surface));
 }
 
+/* The 1.25rem file-type tile and 2px block padding keep the row at the 1.5rem
+   it had with a bare glyph. */
 .k2b-ui .k2b-content-file-tree__select {
-  @apply flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1 text-left text-xs;
+  @apply flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-0.5 text-left text-xs;
   border: 0;
   color: inherit;
   background: transparent;
@@ -4230,9 +4232,9 @@
   outline-offset: min(var(--k2b-focus-offset), 0px);
 }
 
+/* A `FileTypeIcon` tile; its type colour comes from the shared rule. */
 .k2b-ui .k2b-content-file-tree__icon {
-  @apply shrink-0 text-sm;
-  color: var(--k2b-text-muted);
+  @apply shrink-0;
 }
 
 .k2b-ui .k2b-content-file-tree__name {
@@ -4846,6 +4848,38 @@
 .k2b-ui .k2b-reference[data-reference="note"] { --k2b-reference-icon: var(--k2b-reference-note); }
 .k2b-ui .k2b-reference:is([data-reference="heading"], [data-reference="page"]) { --k2b-reference-icon: var(--k2b-reference-heading); }
 .k2b-ui .k2b-reference[data-reference="task"] { --k2b-reference-icon: var(--k2b-reference-task); }
+
+/* Typed chips (`ReferenceChip`) in a sentence: a little smaller than the
+   text around them. A chip moves to the next line as a whole and wraps
+   inside its fill only when it is wider than the line itself, so it never
+   overflows. Its tighter line height keeps the sentence's line spacing. Only
+   a link darkens on hover. A thing that is gone is struck through and never
+   a link. */
+.k2b-ui .k2b-reference-chip {
+  display: inline-block;
+  max-width: 100%;
+  font-size: 0.94em;
+  line-height: 1.3;
+}
+
+.k2b-ui .k2b-reference-chip:not(a):hover {
+  background: var(--k2b-reference-surface);
+}
+
+.k2b-ui .k2b-reference-chip[data-gone="true"] {
+  color: var(--k2b-text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.k2b-ui .k2b-reference__avatar > .k2b-avatar[data-size] {
+  width: 2.35em;
+  height: 2.35em;
+  margin-inline: -0.3em 0.5em;
+  font-size: 0.6em;
+  line-height: 1;
+  vertical-align: 0.12em;
+}
 
 .k2b-ui :is(.k2b-reference__document, .k2b-reference__size) {
   color: var(--k2b-text-muted);

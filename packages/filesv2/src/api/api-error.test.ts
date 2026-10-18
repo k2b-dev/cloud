@@ -33,3 +33,7 @@ test("the log entry names the underlying cause", () => {
     filegateCode: "http_error",
   });
 });
+
+test("unreadable configuration keeps its conflict code and status", () => {
+  expect(apiError(new FilesError("configuration_unreadable", 409))).toEqual({ code: "configuration_unreadable", status: 409 });
+});

@@ -97,12 +97,23 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
     if (props.options === undefined) props.onLoad?.();
   };
 
-  // The collapsed rail is a narrow column from 64 rem, so the panel opens beside it instead of below.
-  const inRail = () =>
-    Boolean(
-      trigger?.closest('[data-sidebar-collapsed="true"] .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]') &&
-        window.matchMedia("(min-width: 64rem)").matches,
+  // The collapsed rail is a narrow column from a 64 rem host, so the panel opens beside it instead of below.
+  // The workspace's stylesheet states which form its sidebar has.
+  const inRail = () => {
+    const root = trigger?.closest<HTMLElement>("[data-k2b-app-workspace]");
+    const sidebar = root
+      ? Array.from(root.querySelectorAll<HTMLElement>(".k2b-app-workspace__sidebar")).find(
+          (element) => element.closest("[data-k2b-app-workspace]") === root,
+        )
+      : undefined;
+    return Boolean(
+      root?.dataset.sidebarCollapsed === "true" &&
+        sidebar?.dataset.workspaceCollapsible === "true" &&
+        getComputedStyle(sidebar ?? root)
+          .getPropertyValue("--k2b-workspace-sidebar-form")
+          .trim() === "column",
     );
+  };
   /** Whether the panel opens above its trigger; chosen on opening and on a viewport resize only. */
   let above = false;
   /**
@@ -155,6 +166,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
   const reposition = () => open() && place();
   const resize = () => open() && place(true);
   // Arriving options, an error, or the search field grow the panel after it opened, so its size places it too.
+  // The trigger changes size when a host turns the rail into the expanded overlay, without a window resize.
   let resizing: ResizeObserver | undefined;
   const listen = (on: boolean) => {
     const method = on ? "addEventListener" : "removeEventListener";
@@ -163,6 +175,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
     if (on && panel) {
       resizing ??= new ResizeObserver(reposition);
       resizing.observe(panel);
+      if (trigger) resizing.observe(trigger);
     } else resizing?.disconnect();
   };
   // Server rendering cleans up too, where no window exists.

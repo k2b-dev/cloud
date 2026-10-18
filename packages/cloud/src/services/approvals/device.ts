@@ -21,6 +21,8 @@ const cut = (value: string, limit: number): string => {
   return points.length > limit ? `${points.slice(0, limit - 1).join("")}…` : value;
 };
 
+export const appApprovalText = (value: string, limit: number): string => cut(plain(value), limit);
+
 /** A deterministic, plain-text snapshot; the digest binds the device's choice to everything it shows. */
 export const appActionView = async (
   row: PendingApprovalRow,

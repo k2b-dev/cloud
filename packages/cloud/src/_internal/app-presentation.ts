@@ -92,7 +92,11 @@ export const compileAppPresentation = (app: AppMeta, catalog: AppPresentationCat
     if (!canonical) throw new Error(`App presentation locale ${JSON.stringify(locale)} is not a valid BCP 47 locale`);
     if (canonical === baseLocale) throw new Error(`App presentation translations must not repeat base locale ${baseLocale}`);
     if (translations[canonical]) throw new Error(`App presentation locale ${canonical} is duplicated after canonicalization`);
+    if (translation.panelLabel !== undefined && !app.panel) {
+      throw new Error(`${canonical}.panelLabel contains unknown key "panel"`);
+    }
     translations[canonical] = {
+      ...(translation.panelLabel !== undefined ? { panelLabel: text(translation.panelLabel, `${canonical}.panelLabel`) } : {}),
       ...(translation.name !== undefined ? { name: text(translation.name, `${canonical}.name`) } : {}),
       ...(translation.description !== undefined
         ? { description: text(translation.description, `${canonical}.description`, MAX_DESCRIPTION) }

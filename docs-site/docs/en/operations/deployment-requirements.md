@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Deployment requirements
@@ -208,6 +208,14 @@ header through unchanged. Traefik replaces it by default; do not enable
 `forwardedHeaders.trustedIPs`. To verify, sign in from two networks: rate
 limits and audit entries must show different addresses, not the proxy's.
 
+A public proxy or CDN in front of the gateway that is absent from
+`GATEWAY_TRUSTED_PROXIES`, such as Cloudflare, makes Core see the proxy's
+address. Sign-in places and network names will then describe the proxy instead
+of the person when those details are used; see
+[Sign-in locations](/en/docs/operations/sign-in-locations). Private-network
+proxy addresses are ignored by the place lookup, but those proxies still need
+to be trusted for rate limits.
+
 ## Assign configuration to the correct service
 
 Inject secrets at runtime, never into image build arguments, browser bundles,
@@ -234,7 +242,7 @@ signing-key rotation, KEK recovery and revocation. Keep these secrets independen
 `APP_SECRET` is not a signing key or an OAuth broker credential.
 
 Managed Assistant code hosts serve every Assistant turn that runs code,
-including API clients, `cld assistant --detach`, and scheduled tasks. They
+including API clients, `cld assistant --detach`, and routines (scheduled tasks). They
 validate `CLOUD_CORE_INTERNAL_ORIGIN` when a host is created, before launching
 Chromium. It must be an HTTP(S) origin reachable
 from the Assistant service. Each host also uses an authenticated ephemeral
@@ -304,7 +312,7 @@ or mutate real data without approval.
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, IMAP bounce polling, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/gateway/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails use notifications as app `core` and require a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
-| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and matching broker secret. Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device`. Discovery alone is insufficient. |
+| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and matching broker secret. Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device` and, with Cloud Login approval enabled, one `cld login --user` request on a paired phone. Discovery alone is insufficient. |
 | [Proxy Auth](/en/apps/proxy-auth) (`proxy-auth`) | Baseline | Configure a proxy-auth client and the external reverse proxy's forward-auth/callback integration. This is not an OAuth-client requirement. | Check denied and permitted access to one test upstream through that reverse proxy. |
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
@@ -555,6 +563,24 @@ has the same effect for drafts saved after the update. After the rollout, open
 a new message in a mailbox with a default signature and check that the preview
 shows the signature below the text.
 
+### Mail mailbox logos
+
+On its next start, Mail adds `mail.mailbox_logo_versions`,
+`mail.mailboxes.logo_version_id`, and
+`mail.outbox_submissions.inline_logo_version_id`. No configuration change is
+needed. Roll all Mail replicas together: an older replica ignores the frozen
+logo in a queued message and sends HTML whose `cid:` image has no inline part.
+A rollback has the same limitation for messages queued with logos.
+
+Logos count toward the Mail database share, at most 100 KiB per immutable
+version. Unused versions are removed hourly; current logos and versions still
+needed by queued messages or Sent-copy retries are retained. Local sent copies
+retain their inline images in the deduplicated Mail blob store, independently
+of logo versions. After upgrading,
+upload a test logo, preview a signature containing `{{ mailbox.logo }}`, and
+schedule it. Check that the local copy shows the logo before provider sync,
+then send it and check that it arrives as an inline image without a remote image link.
+
 ### Mail storage for kept conversations
 
 Mail adds the table `mail.conversation_keeps` and a trigger on
@@ -602,6 +628,15 @@ waiting verifications. After the next update, a verification that waited
 longer than 10 minutes fails with `SENDER_VERIFICATION_TIMEOUT`, and the person
 verifies the identity again.
 
+### Index Mail's per-message command lookups
+
+After its first start with this update, Mail builds `commands_message_target_idx`
+on `mail.commands` in the background with `CREATE INDEX CONCURRENTLY`, so
+command writes and Mail's start continue. No configuration change is needed.
+Until the index is valid, the lookups use the previous plan. One Mail process
+builds an index at a time, including the optional BM25 search index. An
+interrupted build is replaced on the next start.
+
 ### Update Assistant approvals for chats and websites
 
 This release lets people remember an approval for one chat and allow a website
@@ -620,7 +655,7 @@ Two behaviors change for people. More built-in Actions can be remembered, and
 chat did not supply, which means an address that is not in the person's
 message, a search result, or a link of a page read earlier. Search results and
 pages read before the update are not recorded, so reading one of their links
-in an existing chat asks once. A scheduled task cannot ask, so a task that
+in an existing chat asks once. A routine cannot ask, so a routine that
 reads such an address now fails with a message to run it in the normal chat;
 give it the address in its prompt instead.
 
@@ -953,8 +988,8 @@ without bound. It needs no configuration change. Both limits are fixed:
 
 - An emit whose `data` or `context` is larger than 16 MiB fails with
   `WORKFLOW_EVENT_TOO_LARGE`. Grids answers such a start with a bad-input
-  error. Mail emits an oversized message without its body, and the run reads
-  the body from Mail when a step needs it.
+  error. Mail emits every message without its body, and the run reads the
+  body from Mail when a step needs it.
 - 30 days after dispatch or dead-lettering, Core deletes the event's
   deliveries and empties its data, context, and authorization snapshot, once no
   queued, running, waiting, or needs-attention run references it. The row and
@@ -970,16 +1005,16 @@ for new rows; the table files shrink only after `VACUUM FULL` or a similar
 rewrite. See
 [Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
 
-### Expire scheduled task runs after 90 days
+### Expire routine runs after 90 days
 
-This release expires finished scheduled task runs after 90 days. It needs no
+This release expires finished routine runs after 90 days. It needs no
 configuration change. The first Core start adds the indexes
 `idx_ai_chat_task_occurrences_finished`, `idx_ai_chat_task_occurrences_turn`,
 and `idx_ai_turns_background_finished`.
 The latter uses a plain `CREATE INDEX` on `ai.turns`, briefly blocking writes
 to `ai.turns` while it builds; allow for a longer build on large installations.
-The scheduled task recovery tick then
-deletes completed and failed runs older than 90 days, their background turns
+The routine recovery tick then
+deletes completed, failed and stopped runs older than 90 days, their background turns
 with tool calls, and their run transcripts (`ai.task_messages`) in batches of
 100 per minute. Queued and running runs, finished runs whose turns are still
 active, and chat result messages stay.
@@ -993,14 +1028,56 @@ same 90-day clock, measured from when the turn finished.
 
 An installation with a large backlog drains it over time. PostgreSQL reuses
 the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
-See [Scheduled task run history](/en/docs/ai/structured-and-background-ai#keep-scheduled-task-run-history-for-90-days).
+See [Routine run history](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days).
+
+### Record why routines stop
+
+This release gives every paused routine and every routine that needs its owner
+a reason. It needs no configuration change. The first Core start adds the
+columns `reason_code`, `reason_at`, `title`, and `locale` to `ai.chat_tasks`,
+fills the reason and locale of existing routines once, and adds the constraint
+`ai_chat_tasks_reason_state_check`. Adding the constraint locks
+`ai.chat_tasks` while it checks the existing rows.
+
+Earlier Core and Assistant processes write such states without a reason, which
+the constraint rejects. Stop them before the new Core starts instead of
+running both versions side by side. Before rolling Core back to an earlier
+release, run the following in the Cloud database:
+
+```sql
+ALTER TABLE ai.chat_tasks DROP CONSTRAINT IF EXISTS ai_chat_tasks_reason_state_check;
+```
+
+See [Routine names and stop reasons](/en/docs/ai/structured-and-background-ai#routine-names-and-stop-reasons).
+
+### Approve OAuth sign-ins in Cloud Login
+
+Update **Core before OAuth** to enable the
+[`login_hint` device flow](/en/docs/identity/oauth#approve-in-cloud-login).
+An older Core cannot accept these requests; OAuth returns HTTP 503
+`temporarily_unavailable`. Nothing changes for clients that do not send
+`login_hint`.
+
+`cld login --user` needs all three parts: Core, then OAuth with the
+`login_hint` handoff, then Cloud Login with terminal sign-ins. Only Cloud Login
+on a paired phone shows the request. Without `--ttl`, such a login lasts
+`user.session.expiry_hours`; browser and `--device` logins without `--ttl` stay
+at 90 days. `--ttl` only shortens a login, the Cloud caps it at
+`user.session.expiry_hours`, and `cld` shows the actual end. Cloud Login shows
+the requested rights in plain words and approves with a single tap; people who
+want fewer rights sign in with `cld login --scope`. When discovery lacks
+`cloud_login_hint_supported`, `cld` refuses `--user` and prints the matching
+`--device` command. When it lacks `cloud_login_ttl_supported`, `cld` refuses
+`--ttl` and asks to sign in without it. See
+[Upgrade the three components](/en/docs/operations/app-approval#upgrade-the-three-components).
 
 ### End OAuth sign-ins sooner
 
 OAuth logins can request a shorter absolute lifetime with `ttl`, capped at
 `user.session.expiry_hours` and the 90-day default; see
 [Login lifetime](/en/docs/identity/oauth#login-lifetime). It needs no
-configuration change. Without `ttl`, logins keep their 90-day refresh family.
+configuration change. Without `ttl` or `login_hint`, logins keep their 90-day
+refresh family.
 
 Deploy Core with or before OAuth. OAuth now asks Core for access and ID tokens
 shorter than one hour when a login ends within the hour. An older Core
@@ -1081,7 +1158,7 @@ Notebook, or application-schema upgrade checks.
    repairs run on startup; no blanket manual repair or database reset is needed.
    Apply each app's separate schema requirements before enabling it. Provision
    Mail's workload credential only if its background integrations are used;
-   scheduled AI tasks without a mandate require owner recreation. Neither is
+   routines without a mandate require owner recreation. Neither is
    an OAuth startup prerequisite.
 5. For the supplied platform Compose, run the read-only
    [fleet check](/en/docs/operations/build-and-deploy#deploy-the-service) against

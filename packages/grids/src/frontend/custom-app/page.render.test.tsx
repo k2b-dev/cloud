@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
+import { fromJSON } from "seroval";
 import { type ComponentProps, createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import "../_components/ssr-test-plugin";
 
 const { LocaleProvider } = await import("@k2b/ui");
 const { CustomAppPage } = await import("./page");
+const { default: CustomAppChart } = await import("./Chart");
 const timestamp = "2026-09-17T12:00:00.000Z";
 
 const fixture = (): ComponentProps<typeof CustomAppPage> => {
@@ -225,7 +227,114 @@ test("a chart block keeps its subtitle above a fixed-height chart and shows its 
   });
   const html = renderToString(() => createComponent(CustomAppPage, input));
   // The subtitle must not eat into the chart's height, or the chart spills over the next block.
-  expect(html).toContain('<p class="mb-3 text-sm text-secondary">Open tickets by status</p><div class="flex h-72 flex-col">');
+  expect(html).toMatch(
+    /<p class="mb-3 text-sm text-secondary">Open tickets by status<\/p><solid-island data-id="[^"]+"[^>]*><div class="flex h-72 flex-col">/,
+  );
   expect(html).toMatch(/<p[^>]*data-chart-y-axis-label[^>]*>Tickets<\/p>/);
   expect(html).toMatch(/<p[^>]*data-chart-x-axis-label[^>]*>Status<\/p>/);
+});
+
+test("signed-in and anonymous chart blocks serialize only display data and preserve their server SVG", async () => {
+  for (const signedIn of [true, false]) {
+    const input = fixture();
+    input.signedIn = signedIn;
+    const fieldId = "FIELDSECRET1";
+    const relationId = "a64d7c8a-9fc4-4836-a75e-2ee931491020";
+    const data: Extract<ComponentProps<typeof CustomAppChart>["data"], { kind: "chart" }> = {
+      kind: "chart",
+      fields: [
+        {
+          id: fieldId,
+          tableId: "TABLE1",
+          name: "Internal metadata",
+          type: "number",
+          config: {},
+          required: false,
+          position: 0,
+          presentable: false,
+          hideInTable: false,
+          indexed: false,
+          uniqueConstraint: false,
+          defaultValue: null,
+          description: null,
+          deletedAt: null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      buckets: [
+        { keys: ["Neu"], values: { [`${fieldId}__sum`]: 4 } },
+        { keys: [relationId], values: { [`${fieldId}__sum`]: 9 } },
+      ],
+      viewQuery: { groupBy: [{ fieldId: "RELATIONSECRET1" }], aggregations: [{ fieldId, agg: "sum", label: "Umsatz" }] },
+      relationLabels: { [relationId]: "Kundendienst" },
+    };
+    const chartTypes = ["bar", "line", "donut"] as const;
+    input.page.rows[0]!.columns[0]!.blocks = chartTypes.map((chartType) => ({
+      id: chartType,
+      type: "chart",
+      chartType,
+      source: { kind: "view", viewId: "VIEWSECRET1" },
+      limit: 100,
+    }));
+    for (const kind of chartTypes) input.charts.set(kind, { ok: true, chart: data });
+    const html = renderToString(() => createComponent(CustomAppPage, input));
+    const islands: { id: string | null; file: string | null; props: string | null }[] = [];
+    await new HTMLRewriter()
+      .on("solid-island", {
+        element(element) {
+          if (element.getAttribute("data-file") === "Chart.island.tsx") {
+            islands.push({
+              id: element.getAttribute("data-id"),
+              file: element.getAttribute("data-file"),
+              props: element.getAttribute("data-props"),
+            });
+          }
+        },
+      })
+      .transform(new Response(html))
+      .text();
+    expect(islands).toHaveLength(3);
+    expect(new Set(islands.map((island) => island.id)).size).toBe(1);
+    const chartBodies = [...html.matchAll(/<solid-island\b[^>]*>([\s\S]*?)<\/solid-island>/g)]
+      .map((match) => match[1]!)
+      .filter((body) => body.includes("data-chart-kind="));
+    expect(chartBodies).toHaveLength(3);
+    for (const [index, chartType] of chartTypes.entries()) {
+      const island = islands[index]!;
+      expect(island.id).toMatch(/^[a-f0-9]{12}$/);
+      expect(island.file).toBe("Chart.island.tsx");
+      const props: unknown = fromJSON(
+        JSON.parse(island.props!.replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&")),
+      );
+      const decoded = JSON.stringify(props);
+      expect(decoded).toContain('"kind":"' + chartType + '"');
+      for (const label of ["Neu", "Kundendienst", "Umsatz"]) expect(decoded).toContain(label);
+      for (const secret of [fieldId, relationId, "RELATIONSECRET1", "VIEWSECRET1", "Internal metadata"])
+        expect(decoded).not.toContain(secret);
+      for (const key of ["fields", "buckets", "relationLabels", "viewQuery"]) expect(decoded).not.toContain(`"${key}":`);
+      const original = renderToString(() => createComponent(CustomAppChart, { chartType, data, dateConfig: input.dateConfig }));
+      expect(chartBodies[index]!.match(/<svg\b[\s\S]*?<\/svg>/)?.[0]).toBe(original.match(/<svg\b[\s\S]*?<\/svg>/)?.[0]);
+    }
+  }
+});
+
+test("an error chart keeps its subtitle and unavailable placeholder without a chart island", () => {
+  const input = fixture();
+  input.page.rows[0]!.columns[0]!.blocks = [
+    {
+      id: "failed",
+      type: "chart",
+      chartType: "bar",
+      source: { kind: "view", viewId: "VIEW01" },
+      limit: 100,
+      subtitle: "Chart subtitle",
+    },
+  ];
+  input.charts.set("failed", { ok: true, chart: { kind: "error", reason: "x" } });
+  const html = renderToString(() => createComponent(CustomAppPage, input));
+  expect(html).toContain("Chart subtitle");
+  expect(html).toContain("Chart data is unavailable.");
+  expect(html).not.toContain("Chart.island.tsx");
+  expect(html).not.toContain("data-chart-kind");
 });

@@ -28,6 +28,7 @@ import {
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import type { SettingFieldDef } from "./CoreSettingsForm.island";
 import { settingsMessages } from "./messages";
+import { UnreadableSettingBadge, UnreadableSettingsNotice, unreadableReplacements } from "./UnreadableSettings";
 
 type LegalKind = "terms" | "privacy" | "imprint";
 type LegalMode = "local" | "external";
@@ -90,6 +91,7 @@ export default function LegalSettingsForm(props: Props) {
   const [resetKeys, setResetKeys] = createSignal<Record<string, true>>({});
   const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
 
+  const isLegalKey = (key: string): key is keyof LegalInitial => key in props.initial;
   const entryMap = createMemo(() => {
     const entries: Partial<Record<keyof LegalInitial, SettingFieldDef>> = {};
     for (const entry of props.entries) entries[entry.key as keyof LegalInitial] = entry;
@@ -160,7 +162,10 @@ export default function LegalSettingsForm(props: Props) {
       for (const k of changedKeys()) {
         if (!resets.includes(k)) updates[k] = draft()[k];
       }
-      const response = await coreClient.admin.core.settings.$put({ json: resets.length > 0 ? { updates, resets } : updates });
+      const replaceUnreadable = unreadableReplacements(updates, entryMap());
+      const response = await coreClient.admin.core.settings.$put({
+        json: resets.length > 0 || replaceUnreadable.length > 0 ? { updates, resets, replaceUnreadable } : updates,
+      });
       if (!response.ok) {
         const { message, fields } = await readSettingsError(response, t().saveFailed({ status: response.status }));
         setFieldErrors(fields);
@@ -194,6 +199,13 @@ export default function LegalSettingsForm(props: Props) {
         />
       }
     >
+      <UnreadableSettingsNotice
+        entries={props.entries}
+        canUseDefault={(key) => isLegalKey(key) && canUseDefault(key)}
+        onUseDefault={(key) => {
+          if (isLegalKey(key)) stageDefault(key);
+        }}
+      />
       {kinds(t()).map((kind) => {
         const modeKey = `legal.${kind.id}.mode` as const;
         const contentKey = `legal.${kind.id}.content` as const;
@@ -310,15 +322,17 @@ function LegalField(props: {
               {(entry) => (
                 <>
                   <code class="text-[10px] text-dimmed">{entry().key}</code>
-                  <span
-                    class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                      entry().valueSource === "custom"
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                        : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-                    }`}
-                  >
-                    {legalSourceLabel(entry().valueSource, t())}
-                  </span>
+                  <Show when={!entry().unreadable} fallback={<UnreadableSettingBadge />}>
+                    <span
+                      class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                        entry().valueSource === "custom"
+                          ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                          : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                      }`}
+                    >
+                      {legalSourceLabel(entry().valueSource, t())}
+                    </span>
+                  </Show>
                 </>
               )}
             </Show>

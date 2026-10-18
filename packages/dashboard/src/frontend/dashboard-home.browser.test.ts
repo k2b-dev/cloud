@@ -1140,6 +1140,48 @@ describe("the dashboard board in a browser", () => {
     }
   }, 30_000);
 
+  test("a small widget on a 390px and a 320px phone keeps its failure message and Try again inside its frame", async () => {
+    // Playwright's click scrolls a cut-off button into view, so only the boxes show whether the recovery stays reachable.
+    const failing: DashboardBoardEntry[] = [
+      { id: "w-error", key: "weather/current", size: "small" },
+      { id: "w-timeout", key: "gateway/health", size: "small" },
+    ];
+    answer = async (asked, write) => {
+      for (const entry of asked)
+        write({ type: "widget", id: entry.id, key: entry.key, status: entry.id === "w-error" ? "error" : "timeout", ms: 5 });
+    };
+    try {
+      const narrow: View = { width: 320, height: 640, touch: true };
+      for (const [view, lang] of [
+        [phone, "en"],
+        [narrow, "en"],
+        [phone, "de"],
+        [narrow, "de"],
+      ] as const) {
+        const { page, close } = await open(view, { lang, props: { ...baseProps, board: failing, kept: [] } });
+        try {
+          await waitForState(page, "w-error", "error");
+          await waitForState(page, "w-timeout", "timeout");
+          for (const id of ["w-error", "w-timeout"]) {
+            const frame = (await tile(page, id).locator(".k2b-widget").boundingBox())!;
+            const retry = (await tile(page, id)
+              .getByRole("button", { name: lang === "de" ? "Erneut versuchen" : "Try again" })
+              .boundingBox())!;
+            const body = await tile(page, id)
+              .locator(".k2b-widget__body")
+              .evaluate((element) => element.scrollHeight - element.clientHeight);
+            const fits = { top: retry.y >= frame.y, bottom: retry.y + retry.height <= frame.y + frame.height, scrolls: body };
+            expect({ width: view.width, lang, id, ...fits }).toEqual({ width: view.width, lang, id, top: true, bottom: true, scrolls: 0 });
+          }
+        } finally {
+          await close();
+        }
+      }
+    } finally {
+      answer = answerAll;
+    }
+  }, 30_000);
+
   test("settings keep defaults unset, trim text on Enter, reset fields, and display resource snapshots", async () => {
     const { page, close } = await open(desktop, {
       props: {

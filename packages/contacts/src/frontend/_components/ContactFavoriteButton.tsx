@@ -13,7 +13,6 @@ type Props = {
   bookId: string;
   contactId: string;
   initialFavorite: boolean;
-  class?: string;
 };
 
 export default function ContactFavoriteButton(props: Props) {
@@ -82,7 +81,6 @@ export default function ContactFavoriteButton(props: Props) {
   return (
     <IconButton
       label={favorite() ? t().removeFromFavorites : t().addToFavorites}
-      class={props.class}
       classList={{ "app-accent-text": favorite(), "text-dimmed": !favorite() }}
       aria-pressed={favorite()}
       disabled={saving()}

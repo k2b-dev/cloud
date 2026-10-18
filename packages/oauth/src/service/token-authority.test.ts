@@ -4,6 +4,7 @@ import {
   OAuthAuthorityGrantRejectedError,
   type OAuthTokenRequest,
   probeOAuthTokenAuthority,
+  startOAuthDeviceApproval,
 } from "./token-authority";
 
 const request: OAuthTokenRequest = {
@@ -89,5 +90,97 @@ describe("OAuth Core token authority client", () => {
         fetch: async () => new Response(null, { status: 403 }),
       }),
     ).rejects.toBeInstanceOf(OAuthAuthorityGrantRejectedError);
+  });
+});
+
+describe("OAuth Core device approval client", () => {
+  const approval = {
+    deviceAuthorizationId: "a5ae9b9c-94f4-49a8-a954-c87839affc3d",
+    identifier: "alice@example.test",
+    clientId: "cloud-cli",
+    scopes: ["openid", "offline_access"],
+    lifetimeSeconds: 28_800,
+  };
+  const options = { origin: "http://core.internal:3000", brokerSecret: "ab".repeat(32) };
+  const result = { comparison: "012345", expiresAt: "2026-10-17T12:05:00.000Z" };
+
+  test("sends one bounded, broker-authenticated request and parses Core's comparison", async () => {
+    const seen: Request[] = [];
+    expect(
+      await startOAuthDeviceApproval(approval, {
+        ...options,
+        fetch: async (input, init) => {
+          expect(init?.signal).toBeInstanceOf(AbortSignal);
+          seen.push(new Request(input, init));
+          return Response.json(result);
+        },
+      }),
+    ).toEqual(result);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.url).toBe("http://core.internal:3000/api/_internal/identity/v1/oauth/device-approval");
+    expect(seen[0]?.method).toBe("POST");
+    expect(seen[0]?.redirect).toBe("error");
+    expect(seen[0]?.headers.get("authorization")).toBe(`Bearer ${options.brokerSecret}`);
+    expect(seen[0]?.headers.get("content-type")).toBe("application/json");
+    expect(await seen[0]?.json()).toEqual(approval);
+  });
+
+  test("rejects invalid broker configuration before fetching", async () => {
+    let calls = 0;
+    for (const brokerSecret of ["", "z".repeat(64), "a".repeat(63)]) {
+      await expect(
+        startOAuthDeviceApproval(approval, {
+          ...options,
+          brokerSecret,
+          fetch: async () => {
+            calls += 1;
+            return Response.json(result);
+          },
+        }),
+      ).rejects.toThrow("64 hexadecimal characters");
+    }
+    expect(calls).toBe(0);
+  });
+
+  test("rejects every non-200 response without retrying", async () => {
+    for (const status of [201, 204, 302, 404, 409, 503]) {
+      let calls = 0;
+      await expect(
+        startOAuthDeviceApproval(approval, {
+          ...options,
+          fetch: async () => {
+            calls += 1;
+            return new Response(null, { status });
+          },
+        }),
+      ).rejects.toThrow(`status ${status}`);
+      expect(calls).toBe(1);
+    }
+  });
+
+  test("rejects malformed comparisons, missing expiry, invalid JSON and network failures", async () => {
+    for (const body of [
+      { ...result, comparison: "12345" },
+      { ...result, comparison: "abcdef" },
+      { ...result, comparison: 123456 },
+      { comparison: "123456" },
+      null,
+    ]) {
+      await expect(startOAuthDeviceApproval(approval, { ...options, fetch: async () => Response.json(body) })).rejects.toThrow();
+    }
+    await expect(startOAuthDeviceApproval(approval, { ...options, fetch: async () => new Response("not JSON") })).rejects.toThrow();
+    for (const error of [new TypeError("Network failure"), new DOMException("Timed out", "TimeoutError")]) {
+      let calls = 0;
+      await expect(
+        startOAuthDeviceApproval(approval, {
+          ...options,
+          fetch: async () => {
+            calls += 1;
+            throw error;
+          },
+        }),
+      ).rejects.toBe(error);
+      expect(calls).toBe(1);
+    }
   });
 });

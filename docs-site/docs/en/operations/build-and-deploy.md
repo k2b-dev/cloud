@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-12
+updated: 2026-10-17
 ---
 
 # Build and deploy
@@ -49,7 +49,13 @@ cd dist
 bun server.js
 ```
 
-The bundle does not need `node_modules` at runtime.
+The server bundle does not need root `node_modules` at runtime. Native workers
+are shipped under `dist/canvas/` only when their caller survives bundling, with
+their own `node_modules` dependency closure for the build OS, CPU, and libc.
+Copy the whole directory into the runtime image and keep build and runtime
+platforms aligned. Print image preparation adds sharp's libvips (about 18 MB);
+the build runs the packaged image worker once to verify native loading. See
+[Prepare images for print](/en/docs/platform/pdf-and-templates#prepare-images-for-print).
 
 Cloud maintainers building an application from the monorepo use the same build
 contract through the checked-out script:
@@ -295,6 +301,20 @@ App Skills are offered only to people who may open the app, by the same rule
 as Help. Guests no longer see the Skills of apps that require a full account,
 such as Grids, Mail, Contacts, Spaces, and Weather. See
 [Ship Assistant Skills](/en/docs/platform/assistant-skills#who-can-use-an-app-skill).
+
+## Enable panel providers
+
+Registry entries now accept optional `panel` metadata, and signed-in pages show
+a panel slot when a running application declares one. Nothing changes for
+readers until an application does. During a mixed rollout, pages served by an
+application built against an older `@k2b/cloud` show no slot; they ignore the
+new field.
+
+Keep same-origin iframes allowed on provider routes. An operator's reverse
+proxy or security headers must not set `X-Frame-Options: DENY` or a
+`frame-ancestors` policy that blocks `'self'`. The provider remains responsible
+for authorization: panel visibility grants no route or resource access.
+See [Offer a panel](/en/docs/platform/panels).
 
 ## Roll out a release
 

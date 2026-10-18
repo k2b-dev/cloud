@@ -5,7 +5,7 @@ section: Platform services
 order: 550
 description: Record security-relevant and administrative actions as durable audit evidence.
 tags: [audit, security, operations]
-updated: 2026-07-27
+updated: 2026-10-17
 ---
 
 # Audit events
@@ -130,3 +130,28 @@ the batch change. An audit failure rolls back that change. Delivery jobs are
 submitted after commit. These events describe the administrative action, not
 mail delivery success. They contain batch IDs, counts, or a retried user ID;
 message content and recipient email addresses are omitted.
+
+## Remembered AI approvals
+
+Remembering an AI tool approval for one chat or always writes
+`ai.approval.remember`. Revoking it through the approvals page or API, or
+`forgetAiToolApproval`, writes `ai.approval.revoke`. A Core migration can also
+revoke approvals as system work, with a stable `reason` code and no actor.
+Each changed preference writes one event with outcome `allowed` in the same
+transaction as the change. An audit failure rolls back the change. A revoke
+that deletes nothing writes no event. Remembering the same approval again
+keeps its preference ID and writes another `ai.approval.remember` event.
+
+The target has type `ai_approval`, the preference ID, and the tool name as its
+label. Metadata contains `toolName`, `approvalScope`, `remember` (`chat`
+or `always`), `conversationId` for chat approvals, and `accessSubject`.
+The actor records the request's user or delegated user. `accessSubject` is
+derived from the request actor and includes `delegatedByServiceAccountId`
+for a delegated user. Service-account requests also record `serviceAccountId`
+in metadata. Calls without request identity record the preference's owner in
+both fields. System revocations have no actor and record the owner as
+`accessSubject`, or null when the approval has no owner.
+The event includes the request ID when known.
+
+No chat content, tool input, or model reason is stored. Deleting a chat or a
+Studio app ends its approvals without separate audit events.

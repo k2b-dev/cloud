@@ -414,6 +414,30 @@ Use Markdown and Liquid in signatures and snippets. Type `/` to insert snippets
 only. Mail fills in snippet values when you insert them; signatures keep their
 variables until preview and send.
 
+Each mailbox can have one logo. A mailbox administrator uploads it with
+`cld mail compose logo set --file logo.png`; logo settings in the browser come
+later. Use `{{ mailbox.logo }}` in any signature to place it in new messages,
+replies, forwards, and older signatures still marked in the body. Mail sends
+the logo as an inline image part referenced by `cid:`, never as a remote link.
+The API, CLI, and composer previews show the same image bytes. In plain text,
+the placeholder becomes the logo's alt text. In snippets it stays empty.
+Use the logo tag alone: filters, conditions, and assignments using `mailbox.logo`
+are rejected. Whitespace variations such as `{{mailbox.logo}}` and
+`{{- mailbox.logo -}}` are supported. Each image occurrence counts toward the
+same preview and send size limit; reduce repeated logos if the message is too large.
+
+Upload a PNG or JPEG of at most 100 KiB (102400 bytes) and 1200×400 pixels.
+Mail removes private image metadata, including camera and GPS details, before
+storing the logo. JPEG files marked as rotated are rejected; save the image upright first.
+Display width defaults to 200 px; `--width` accepts 1–600 px. Alt text is
+required and defaults to the trimmed mailbox name; use `--alt` to change it
+(1–200 characters, no control characters). `cld mail compose logo get` shows
+the current logo; `cld mail compose logo remove --yes` removes it. Without a
+logo, the placeholder stays empty and preview warns that the logo is missing.
+The provider's Drafts copy has no signature and therefore no logo. A message
+keeps the logo it had when it was queued for sending, including scheduled
+messages and retries, even if an administrator later replaces or removes the logo.
+
 API and Assistant clients choose the signature with `signatureTemplateId` on
 draft create, update, or patch. Pass a template ID for that signature or `null`
 for none. Omit the field to use the sender's default on create or keep the
@@ -426,6 +450,7 @@ current choice on update or patch. Never write a signature into the body.
 | `sender.display_name` | Display name of the sender identity, or its address when it has no name |
 | `sender.email` | From address of the sender identity |
 | `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
+| `mailbox.logo` | The mailbox logo as an inline image in signatures; empty when the mailbox has no logo and in snippets |
 | `mailbox.name` | Mailbox name |
 | `mailbox.description` | Mailbox description; empty when not set |
 | `message.subject` | Subject of the draft |

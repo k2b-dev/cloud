@@ -23,6 +23,15 @@ const items = [
 ];
 
 describe("TabBar", () => {
+  test("floating is explicit and the default and bar variants retain flat markup", () => {
+    const floating = renderToString(() => createComponent(TabBar, { label: "Apps", items, variant: "floating" }));
+    expect(floating).toContain('data-variant="floating"');
+    for (const variant of [undefined, "bar"] as const) {
+      const flat = renderToString(() => createComponent(TabBar, { label: "Apps", items, variant }));
+      expect(flat).not.toContain("data-variant");
+      expect(floating.replace(' data-variant="floating"', "")).toBe(flat);
+    }
+  });
   test("renders a labelled list of native links with the open page marked, at most five", () => {
     const html = renderToString(() => createComponent(TabBar, { label: "App", items }));
 

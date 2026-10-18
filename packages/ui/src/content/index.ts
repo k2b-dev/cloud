@@ -70,6 +70,7 @@ export { DocCode, DocConceptGrid, DocInlineCode, DocLead, DocNote, DocPage, DocR
 export { FileBrowserPanel, type FileBrowserPanelProps, type FileSource, openFileBrowser } from "./FileBrowser";
 export { FileGrid, type FileGridProps } from "./FileGrid";
 export { default as FileTree, type FileTreeActions, type FileTreeEntry, type FileTreeProps } from "./FileTree";
+export { type FileType, FileTypeIcon, type FileTypeIconProps, fileTypeOf } from "./FileTypeIcon";
 export {
   canPreviewFile,
   default as FileView,
@@ -135,6 +136,13 @@ export { default as PdfPreview } from "./PdfPreview";
 export type { RangeOption, RangePickerProps } from "./RangePicker";
 export { default as RangePicker } from "./RangePicker";
 export { ReactionBar, type ReactionBarItem, type ReactionBarProps } from "./ReactionBar";
+export type {
+  ReferenceChipObjectProps,
+  ReferenceChipPersonProps,
+  ReferenceChipProps,
+  ReferenceChipTimeProps,
+} from "./ReferenceChip";
+export { REFERENCE_CHIP_MAX_CHARACTERS, ReferenceChip, truncateMiddle } from "./ReferenceChip";
 export type { StepsProps } from "./Steps";
 export { Steps } from "./Steps";
 export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredDataValue } from "./StructuredDataPreview";

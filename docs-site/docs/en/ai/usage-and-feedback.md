@@ -158,7 +158,7 @@ Model permissions remain separate, including for administrators.
 These budgets cover direct Assistant calls, including API/CLI submissions,
 queued messages and retries, and OpenAI-compatible API calls. Compaction,
 enrichment, image inspection, audio,
-scheduled tasks and workflows are excluded. Switching chat models does not
+routines and workflows are excluded. Switching chat models does not
 refill the shared wildcard allowance.
 
 Admission reserves estimated input and an affordable maximum output atomically

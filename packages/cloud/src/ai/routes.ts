@@ -17,6 +17,7 @@ import {
   respond,
   v,
 } from "../server";
+import { isAppSessionActor } from "../server/actor";
 import { isRequestCredentialCurrent } from "../server/middleware/auth";
 import { approvalDecisionChannel } from "../services/approvals";
 import { ImageMetadataError } from "../services/image-metadata";
@@ -28,6 +29,7 @@ import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
+import { aiChatTasks } from "./chat-tasks";
 import { AI_CLIENT_TOOL_ACTION_MAX_BYTES, aiClientToolOutputSchemas } from "./client-tool-results";
 import { createCloudAiLocalBashTool, createCloudAiLocalTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { enqueueAiDictation } from "./dictation-runtime";
@@ -784,6 +786,13 @@ export const aiRoutes = (() => {
           ownerUserId: ctx.ownerUserId,
         });
         if (!archived) return notFound(c);
+        // The chat is archived either way; admission pauses a routine this step missed before its next run.
+        await aiChatTasks.pauseForArchivedChat({ conversationId: conversation.id, userId: ctx.ownerUserId }).catch((error) =>
+          logger("ai:chat-tasks").warn("Could not pause the routines of an archived chat", {
+            conversationId: conversation.id,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
         return respond(c, ok({ ok: true }));
       })
       .post("/conversations/:conversationId/restore", async (c) => {
@@ -791,10 +800,27 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx, true);
         if (!conversation) return notFound(c);
+        await aiChatTasks.markRestoreStarted({ conversationId: conversation.id, userId: ctx.ownerUserId });
         const restored = await aiConversations.restoreConversation({
           conversationId: conversation.id,
           ownerUserId: ctx.ownerUserId,
         });
+        // A restored chat must not leave archive reasons on routines that stay paused.
+        // The phone app may restore the chat and relabel pauses, but may not resume background authority.
+        // If this step fails, the routine recovery relabels them after a grace period; it never resumes.
+        if (restored)
+          await aiChatTasks
+            .resumeForRestoredChat({
+              conversationId: conversation.id,
+              userId: ctx.ownerUserId,
+              resume: !isAppSessionActor(c.get("actor")),
+            })
+            .catch((error) =>
+              logger("ai:chat-tasks").warn("Could not resume the routines of a restored chat", {
+                conversationId: conversation.id,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            );
         return restored ? respond(c, ok(await publicConversationFor(restored, c.get("accessSubject")))) : notFound(c);
       })
       .post("/conversations/:conversationId/viewed", async (c) => {
@@ -1168,7 +1194,7 @@ export const aiRoutes = (() => {
                 client: c.req.header(APPROVAL_CLIENT_HEADER),
               }),
             },
-            toolApprovalContext: ctx.toolApprovalContext,
+            toolApprovalContext: ctx.toolApprovalChangeContext,
             signedInSession: ctx.signedInSession,
           });
           if (!result.ok) return toAiActionFailureResponse(c, result);

@@ -89,18 +89,7 @@ export type MailWorkflowTargetSnapshot = {
   internalDate: string;
 };
 
-/**
- * The run reads the body by reference through the lazy hydration resolver, so
- * the event stays under the 16 MiB workflow event limit. Keep receipt-time preconditions.
- */
-export const mailWorkflowSnapshotWithoutBody = (snapshot: MailWorkflowTargetSnapshot): MailWorkflowTargetSnapshot => ({
-  ...snapshot,
-  source: {
-    ...snapshot.source,
-    message: { ...snapshot.source.message, body: "", bodyText: "", bodyHtml: "", bodyAvailable: false },
-  },
-});
-
+/** Message snapshots omit bodies; runs read and freeze them through the lazy hydration resolver. */
 export const mailWorkflowEventContext = (snapshot: MailWorkflowTargetSnapshot): Record<string, WorkflowJsonValue> => ({
   mailboxId: snapshot.mailboxShortId,
   source: snapshot.source as unknown as WorkflowJsonValue,
@@ -115,8 +104,6 @@ type WorkflowSnapshotRow = {
   conversation_short_id: string | null;
   mailbox_short_id: string;
   subject: string;
-  plain_text: string | null;
-  sanitized_html: string | null;
   hydration_status: string;
   sender: FrozenMailAddress[] | string;
   recipients: FrozenMailAddress[] | string;
@@ -171,8 +158,6 @@ const snapshotColumns = sql`
   conversation.short_id AS conversation_short_id,
   mailbox.short_id AS mailbox_short_id,
   mc.subject,
-  mc.plain_text,
-  mc.sanitized_html,
   mc.hydration_status,
   COALESCE(sender.value, '[]'::jsonb) AS sender,
   COALESCE(recipient.value, '[]'::jsonb) AS recipients,
@@ -274,10 +259,10 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
       id: row.message_short_id,
       conversationId: row.conversation_short_id,
       subject: row.subject,
-      body: row.plain_text ?? "",
-      bodyText: row.plain_text ?? "",
-      bodyHtml: row.sanitized_html ?? "",
-      bodyAvailable: row.hydration_status === "body" || row.hydration_status === "complete",
+      body: "",
+      bodyText: "",
+      bodyHtml: "",
+      bodyAvailable: false,
       attachmentsAvailable: row.hydration_status === "complete",
       sender,
       fromAddress,

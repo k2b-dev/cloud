@@ -6,6 +6,7 @@ import {
   DataTable,
   type DataTableColumn,
   dialogCore,
+  InlineGuidance,
   NoticeCard,
   NumberInput,
   PanelDialog,
@@ -321,7 +322,8 @@ const ScheduleEditor = (props: { schedule: SettingEntry | undefined; close: () =
       const response = await apiClient.settings[":key{.+}"].$put(
         {
           param: { key: "gateway.health_check_schedule" },
-          json: { value },
+          // The editor shows the unreadable warning, so saving is an explicit replacement.
+          json: props.schedule?.unreadable ? { value, replaceUnreadable: true } : { value },
         },
         { init: { signal: abortSignal } },
       );
@@ -381,6 +383,11 @@ const ScheduleEditor = (props: { schedule: SettingEntry | undefined; close: () =
         onValueChange={setScheduleValue}
         required
       />
+      <Show when={props.schedule?.unreadable}>
+        <InlineGuidance tone="warning" icon="ti ti-alert-triangle">
+          {t.scheduleUnreadable}
+        </InlineGuidance>
+      </Show>
       <Show when={reconcileError()}>
         {(error) => (
           <NoticeCard tone="danger" title={t.scheduleSavedRefreshFailed} detail={error().message}>

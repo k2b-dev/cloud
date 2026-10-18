@@ -1,6 +1,6 @@
 import type { GraphLinksFilter } from "./model";
 
-export const GRAPH_DISPLAYS = ["network", "neighborhood"] as const;
+export const GRAPH_DISPLAYS = ["network", "circle", "neighborhood", "timeline"] as const;
 export type GraphDisplay = (typeof GRAPH_DISPLAYS)[number];
 export const DEFAULT_GRAPH_DISPLAY: GraphDisplay = "network";
 export const PHONE_GRAPH_DISPLAY: GraphDisplay = "neighborhood";
@@ -11,7 +11,9 @@ export function resolveGraphDisplay(display: GraphDisplay | null, phone: boolean
   return display ?? (phone === null ? null : phone ? PHONE_GRAPH_DISPLAY : DEFAULT_GRAPH_DISPLAY);
 }
 export const GRAPH_QUERY_MAX = 200;
+export type GraphListSort = "changed" | "changed-asc" | null;
 export type GraphViewState = {
+  sort: GraphListSort;
   display: GraphDisplay | null;
   depth: 1 | 2;
   list: boolean;
@@ -28,6 +30,7 @@ export function normalizeGraphViewState(state: GraphViewState): GraphViewState {
   return {
     ...state,
     display: GRAPH_DISPLAYS.find((display) => display === state.display) ?? null,
+    sort: state.sort === "changed" || state.sort === "changed-asc" ? state.sort : null,
     depth: state.depth === 1 ? 1 : 2,
     hide: areaKeys(state.hide),
     q: state.q.slice(0, GRAPH_QUERY_MAX),
@@ -36,9 +39,11 @@ export function normalizeGraphViewState(state: GraphViewState): GraphViewState {
 export function parseGraphViewState(params: URLSearchParams): GraphViewState {
   const links = params.get("links");
   const display = params.get("display");
+  const sort = params.get("sort");
   return normalizeGraphViewState({
     display: GRAPH_DISPLAYS.find((value) => value === display) ?? null,
     depth: params.get("depth") === "1" ? 1 : 2,
+    sort: sort === "changed" || sort === "changed-asc" ? sort : null,
     list: params.get("list") === "1",
     links: links === "linked" || links === "unlinked" ? links : "all",
     hide: (params.get("hide") ?? "").split(","),
@@ -54,6 +59,7 @@ export function writeGraphViewState(url: URL, state: GraphViewState): URL {
     else params.set(key, value);
   };
   put("display", normalized.display);
+  put("sort", normalized.sort);
   put("depth", normalized.depth === 1 ? "1" : null);
   put("list", normalized.list ? "1" : null);
   put("links", normalized.links === "all" ? null : normalized.links);

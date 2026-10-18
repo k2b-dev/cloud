@@ -442,6 +442,15 @@ as AI Project references do. Set `resourceType` to list only resources whose
 `ref.type` matches that type, for example `"spaces.space"`. This filters picker
 results in the browser; the consumer still authorizes the chosen resource.
 
+Pass `scope: { appId, tag?, label, icon? }` to narrow the search on the server
+to one app and, optionally, one of its search tags. The removable chip shows
+`label` and `icon`; `scope` takes precedence over `initialAppId`.
+Pass `query` to prefill the search text. An app scope starts searching at once,
+even with empty text. Server filtering by app and tag happens before the
+per-app result limit, so other resource kinds do not crowd out matching
+results as they can with the browser-only `resourceType` filter.
+`requireReader` still applies within the scope.
+
 ```ts
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 
@@ -465,6 +474,87 @@ result limits are applied. An empty unscoped request returns only the app
 catalog without calling providers. The picker owns this platform-specific
 discovery UI; `@k2b/ui` remains independent of Cloud applications and resource
 contracts.
+
+### Insert resources from a composer
+
+Every app's search tags appear under **Insert** in a composer's slash menu
+once someone types their word. The translated title names the row; the tag,
+aliases, title, and app name are search words. Translate tag titles in
+`presentation.translations` under `searchTags`. Write aliases in German and
+English, for example `"tabelle"` and `"table"`, because aliases are not translated.
+
+Use `cloudInsertMenu` from `@k2b/cloud/browser/composer-insert` to build the
+rows, scopes, and fallback for `Chat.Composer`. Enter opens the resource picker
+narrowed on the server to the app and tag, with `requireReader: true`. Tab
+narrows the slash list. A selection returns `{ mention }` for the token's place;
+cancelling keeps `/…`. Supply `mention` to build the reference your draft stores,
+and `excludeRefs` to omit resources already in it.
+
+`createCloudComposerCatalog()` gives one composer its tags from a catalog load
+shared by every composer on the page. Call `catalog.ready(query, search, locale)`
+at the start of each `searchCommands` run. The first run of a menu opening,
+identified by `search.opening`, starts the load, so no keystroke sends a request.
+A successful load stays cached for the page; a failed one is retried at the next
+opening and keeps the previous tags. Only typed text outside a scope waits for
+the load, so a tag word does not settle as **Nothing found** before its tag
+arrives. The overview and scoped searches do not wait, and after a failed load
+no search waits again. Each catalog page has a 15-second deadline.
+
+The catalog leaves out the tags of apps that declare no resource reader,
+because a picker with `requireReader: true` can show none of their results.
+
+```tsx
+import { cloudInsertMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
+import { Chat, type ChatMention, useLocale } from "@k2b/ui";
+import { createMemo, createSignal } from "solid-js";
+
+export function ResourceComposer() {
+  const locale = useLocale();
+  const [text, setText] = createSignal("");
+  const [mentions, setMentions] = createSignal<readonly ChatMention[]>([]);
+  const catalog = createCloudComposerCatalog();
+  const menu = createMemo(() =>
+    cloudInsertMenu({
+      locale: locale(),
+      tags: catalog.tags(),
+      section: "insert",
+      mention: (item) => ({ id: `resource:${item.ref.type}:${item.ref.id}`, name: item.title, data: item.ref }),
+    }),
+  );
+  return (
+    <Chat.Composer
+      value={text()}
+      onValueChange={setText}
+      mentions={mentions()}
+      onMentionsChange={setMentions}
+      commandSections={[{ id: "insert", label: "Insert" }]}
+      commands={[menu().insert, ...menu().tags]}
+      commandScopes={menu().scopes}
+      commandFallback={menu().fallback}
+      searchCommands={async (query, _signal, search) => {
+        // Starts this opening's catalog load; typed text outside a scope waits for it.
+        await catalog.ready(query, search, locale());
+        return [];
+      }}
+      onSubmit={(input) => {
+        console.log(input.text, input.mentions);
+      }}
+    />
+  );
+}
+```
+
+Compose these rows and scopes with your own commands. Pass their scope words as
+`reservedWords` so a catalog tag cannot claim them. `reason` disables the insert,
+tag, and fallback rows with a visible explanation, such as a full message.
+Use `ownReaders` only for a resource type your composer reads itself, for
+example `{ "assistant:studio-app": "assistant.app" }`, and add that tag to
+`tags` yourself when its app has no reader. That tag's picker then lists only
+this type, also without a Cloud reader, even after the person removes the scope
+chip. A word that two tags share narrows to neither, so it
+does not become a scope word.
+The example stores the reference in `attachment.data`; adapt that value to your
+application's draft format and persist the submitted mentions.
 
 ## Actions in the global palette
 

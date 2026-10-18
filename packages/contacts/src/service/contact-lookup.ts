@@ -5,7 +5,6 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
 import type { ContactResolveDataSchema, ContactResolveInputSchema, ContactResolveMatchDataSchema } from "../capability-contracts";
-import { mayReadAcrossBooks } from "./access";
 
 const cursorSchema = z.object({ version: z.literal(1), id: z.uuid() }).strict();
 type MatchCursor = z.infer<typeof cursorSchema>;
@@ -47,7 +46,6 @@ export const resolveContactsByEmail = async (params: {
 }): Promise<Result<ContactResolvePage>> => {
   const cursor = decodeCursor(params.input.cursor);
   if (!cursor.ok) return cursor;
-  if (!(await mayReadAcrossBooks(params.subject, params.boundBookId))) return ok({ items: [], matchedEmails: [], nextCursor: null });
 
   const principalMatch = buildAccessPrincipalCondition({
     subject: params.subject,
@@ -58,8 +56,7 @@ export const resolveContactsByEmail = async (params: {
       authenticatedOnly: sql`a.authenticated_only`,
     },
   });
-  const boundBookMatch =
-    params.subject.type === "service_account" && params.boundBookId ? sql`c.book_id = ${params.boundBookId}::uuid` : sql`true`;
+  const boundBookMatch = params.boundBookId ? sql`c.book_id = ${params.boundBookId}::uuid` : sql`true`;
   const emails = toPgTextArray(params.input.emails);
   const contactIds = params.input.contactIds?.length ? toPgUuidArray(params.input.contactIds) : null;
   const limit = params.input.limit;

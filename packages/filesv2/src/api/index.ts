@@ -358,6 +358,10 @@ const api = new Hono<AuthContext>()
     v("query", AdminQuerySchema),
     async (c) => respond(c, ok(await filesService.admin(c.get("actor"), c.req.valid("query")))),
   )
+  .delete("/admin/configuration", middleware.openapi({ summary: "Reset Files configuration to defaults", ...requiresAdmin }), async (c) => {
+    await filesService.resetConfiguration(c.get("actor"));
+    return respond(c, ok({ reset: true }));
+  })
   .put(
     "/admin/configuration",
     middleware.openapi({ summary: "Save Files configuration", ...requiresAdmin }),

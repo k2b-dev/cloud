@@ -87,7 +87,7 @@ jobs:
           changed=$(git diff --name-only "$BASE" HEAD)
           printf '%s\n' "$changed"
           match() { grep -qE "$1" <<<"$changed" && echo true || echo false; }
-          shared='^(packages/cloud/|packages/core/|packages/gateway/|packages/ssr/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|actions/|nats-ci\.conf|pull-images\.sh|poppler\.sh|mirror-images\.(txt|sh)))'
+          shared='^(packages/cloud/|packages/core/|packages/gateway/|packages/ssr/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|actions/|nats-ci\.conf|pull-images\.sh|process-crashes\.sh|poppler\.sh|mirror-images\.(txt|sh)))'
           # Workspaces with tests that `bun run test --browser` runs: they start a browser through
           # packages/ui/test/browser.ts and need no integration targets. Some import tests/fixtures/.
           browser=$(git grep -lF '/test/browser"' -- 'packages/*' 'pwas/*' ':!*.integration.test.ts' | cut -d/ -f1-2 | sort -u | paste -sd '|')
@@ -236,6 +236,7 @@ jobs:
       - name: Start WebKit in the Playwright image
         run: |
           set -euo pipefail
+          "$GITHUB_WORKSPACE/.github/process-crashes.sh" install
           version=$(jq -r '.workspaces.catalog.playwright' package.json)
           "$GITHUB_WORKSPACE/.github/pull-images.sh" "mcr.microsoft.com/playwright:v$version-noble"
           docker run --detach --name playwright --network host --init --ipc=host --user pwuser --workdir /home/pwuser \
@@ -250,6 +251,7 @@ jobs:
       - run: bun run test --browser --shard ${{ matrix.shard }}/3
       - if: always()
         run: |
+          "$GITHUB_WORKSPACE/.github/process-crashes.sh" report
           docker logs playwright 2>&1 | tail -50
           docker rm --force playwright
 
@@ -648,6 +650,8 @@ jobs:
           for container in app-core gateway; do
             [[ "$(docker exec "$container" id -u)" != "0" ]] || { echo "$container runs as root" >&2; exit 1; }
           done
+          # Core maps the GeoIP snapshot as its runtime user, and Bun.mmap opens files read-write.
+          docker exec app-core bun -e 'for (const kind of ["city", "asn"]) if (Bun.mmap(`/app/geoip/dbip-${kind}-lite.mmdb`, { shared: false }).length < 1e6) throw new Error(`${kind} snapshot is incomplete`)'
           for _attempt in {1..90}; do
             ready=$(curl --silent --fail http://127.0.0.1:3001/_cloud/ready || true)
             routes=$(curl --silent --fail http://127.0.0.1:3000/health | jq -r '.routeTable.routeCount // 0' || echo 0)

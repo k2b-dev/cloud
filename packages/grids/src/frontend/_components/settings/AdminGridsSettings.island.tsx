@@ -24,6 +24,8 @@ type SettingEntry = {
   default: unknown;
   value: unknown;
   isCustom: boolean;
+  /** A saved value exists that this application cannot read; `value` is the one in use. */
+  unreadable: boolean;
 };
 
 const fetchSettings = async (fallback: string): Promise<SettingEntry[]> => {
@@ -32,10 +34,11 @@ const fetchSettings = async (fallback: string): Promise<SettingEntry[]> => {
   return res.json();
 };
 
-const updateSetting = async (key: string, value: unknown, fallback: string): Promise<void> => {
+const updateSetting = async (key: string, value: unknown, replaceUnreadable: boolean, fallback: string): Promise<void> => {
   const res = await apiClient.admin.settings[":key{.+}"].$put({
     param: { key },
-    json: { value },
+    // The row shows the unreadable warning, so a changed value is an explicit replacement.
+    json: replaceUnreadable ? { value, replaceUnreadable } : { value },
   });
   if (!res.ok) throw new Error(fallback);
 };
@@ -66,31 +69,38 @@ const SettingRow = (props: { entry: SettingEntry; disabled: boolean; onChange: (
   };
 
   return (
-    <Show
-      when={isNumber}
-      fallback={
-        <TextInput
+    <div class="flex flex-col gap-1.5">
+      <Show
+        when={isNumber}
+        fallback={
+          <TextInput
+            id={`setting-${props.entry.key}`}
+            label={label()}
+            description={description()}
+            value={value}
+            onValueChange={updateText}
+            disabled={props.disabled}
+          />
+        }
+      >
+        <NumberInput
           id={`setting-${props.entry.key}`}
           label={label()}
           description={description()}
-          value={value}
-          onValueChange={updateText}
+          min={props.entry.key === "grids.query_concurrency" || props.entry.key === "grids.query_queue_limit" ? 0 : 1}
           disabled={props.disabled}
+          step={1}
+          value={() => (value().trim() === "" ? null : Number(value()))}
+          onValueChange={updateNumber}
+          suffix={suffix ? <span class="font-mono text-xs text-dimmed">{suffix}</span> : undefined}
         />
-      }
-    >
-      <NumberInput
-        id={`setting-${props.entry.key}`}
-        label={label()}
-        description={description()}
-        min={props.entry.key === "grids.query_concurrency" || props.entry.key === "grids.query_queue_limit" ? 0 : 1}
-        disabled={props.disabled}
-        step={1}
-        value={() => (value().trim() === "" ? null : Number(value()))}
-        onValueChange={updateNumber}
-        suffix={suffix ? <span class="font-mono text-xs text-dimmed">{suffix}</span> : undefined}
-      />
-    </Show>
+      </Show>
+      <Show when={props.entry.unreadable}>
+        <InlineGuidance tone="warning" icon="ti ti-alert-triangle">
+          {t().settingUnreadable}
+        </InlineGuidance>
+      </Show>
+    </div>
   );
 };
 
@@ -113,7 +123,8 @@ export const SettingsBody = (props: { close: () => void; setDismissHandler: (han
     mutation: async () => {
       if (pending.size === 0) return false;
       for (const [key, value] of pending) {
-        await updateSetting(key, value, t().updateSettingFailed);
+        const unreadable = entries.data()?.find((entry) => entry.key === key)?.unreadable === true;
+        await updateSetting(key, value, unreadable, t().updateSettingFailed);
         baseline.set(key, value);
         pending.delete(key);
         setDirty(pending.size > 0);
