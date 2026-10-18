@@ -396,6 +396,17 @@ describe("sign-in locations block", () => {
     expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot");
   });
 
+  test("a reset that another administrator's upload already replaced says so instead of claiming empty places", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    view.respondWith(() => Response.json({ ...uploadedStatus, changed: true }));
+    view.resetButton("city").click();
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Reset. Places already come from a newer upload.");
+    expect(view.announce).toHaveBeenCalledWith("Reset. Places already come from a newer upload.");
+    expect(view.source("city")).toBe("Uploaded file");
+  });
+
   test("a refused reset keeps the uploaded file and offers a retry", async () => {
     const view = await mount({ initial: uploadedStatus, locale: "de" });
     view.respondWith(() => Response.json({}, { status: 409 }));

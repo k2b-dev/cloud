@@ -26,7 +26,8 @@ export type SignInLocationPhase =
   | { kind: "uploaded"; type: GeoIpKind }
   | { kind: "resetting"; type: GeoIpKind }
   | { kind: "reset-error"; type: GeoIpKind; code?: "not_allowed" | "refused" }
-  | { kind: "reset"; type: GeoIpKind; bundled: boolean }
+  /** The source after the reset: another administrator's upload may already have replaced it. */
+  | { kind: "reset"; type: GeoIpKind; source: GeoIpAdminDatabase["source"] }
   /** After a write without a clear answer, the block reads what is active before it allows another change. */
   | { kind: "reconciling" }
   | { kind: "unknown-outcome" };
@@ -234,9 +235,9 @@ export default function SignInLocations(props: {
     if (!confirmed) return;
     setPhase({ kind: "resetting", type: database.kind });
     const done = (next: GeoIpAdminStatus) => {
-      const bundled = next.databases.find((entry) => entry.kind === database.kind)?.source === "bundled";
-      setPhase({ kind: "reset", type: database.kind, bundled });
-      announce(bundled ? t().resetDoneBundled({ type }) : t().resetDoneEmpty({ type }));
+      const source = next.databases.find((entry) => entry.kind === database.kind)?.source ?? null;
+      setPhase({ kind: "reset", type: database.kind, source });
+      announce(resetText(database.kind, source));
     };
     let refusal: "not_allowed" | "refused" | undefined;
     try {
@@ -263,6 +264,12 @@ export default function SignInLocations(props: {
     const after = await reconcile();
     if (after && after.databases.find((entry) => entry.kind === database.kind)?.source !== "uploaded") return done(after);
     unknownOutcome();
+  };
+
+  const resetText = (kind: GeoIpKind, source: GeoIpAdminDatabase["source"]) => {
+    const type = typeName(kind);
+    if (source === "uploaded") return t().resetDoneReplaced({ type });
+    return source === "bundled" ? t().resetDoneBundled({ type }) : t().resetDoneEmpty({ type });
   };
 
   const errorText = (code: ErrorCode) =>
@@ -482,9 +489,7 @@ export default function SignInLocations(props: {
           <Match when={current("reset")}>
             {(done) => (
               <StatusText tone="success" icon="ti ti-circle-check">
-                {done().bundled
-                  ? t().resetDoneBundled({ type: typeName(done().type) })
-                  : t().resetDoneEmpty({ type: typeName(done().type) })}
+                {resetText(done().type, done().source)}
               </StatusText>
             )}
           </Match>
