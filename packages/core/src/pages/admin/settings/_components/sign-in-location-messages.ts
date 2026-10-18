@@ -49,6 +49,8 @@ export const signInLocationMessages = i18n.define({
       unsupported: "This is neither a City nor an ASN database. Nothing was changed.",
       empty: "The file is empty. Nothing was changed.",
       busy: "Another upload is still running.",
+      notAllowed: "Your sign-in no longer allows this change. Sign in again as an administrator. Nothing was changed.",
+      refused: "Cloud refused the upload. Nothing was changed.",
       attribution: "Place and network data:",
     },
     de: {
@@ -97,6 +99,8 @@ export const signInLocationMessages = i18n.define({
       unsupported: "Das ist weder eine City- noch eine ASN-Datenbank. Nichts wurde geändert.",
       empty: "Die Datei ist leer. Nichts wurde geändert.",
       busy: "Ein anderes Hochladen läuft noch.",
+      notAllowed: "Deine Anmeldung erlaubt diese Änderung nicht mehr. Melde dich erneut als Administrator an. Nichts wurde geändert.",
+      refused: "Cloud hat das Hochladen abgelehnt. Nichts wurde geändert.",
       attribution: "Orts- und Netzdaten:",
     },
   },

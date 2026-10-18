@@ -11,7 +11,9 @@ type ErrorCode =
   | "geoip_invalid"
   | "geoip_unsupported_type"
   | "geoip_empty"
-  | "geoip_upload_busy";
+  | "geoip_upload_busy"
+  | "not_allowed"
+  | "refused";
 
 /** One fixed status line under the list; every transient state replaces its text in place. */
 export type SignInLocationPhase =
@@ -41,6 +43,10 @@ const errorCode = (status: number, body: unknown): ErrorCode | "ambiguous" => {
   if (isApiCode(code)) return code;
   // A 413 without Cloud's code comes from the platform request cap or a proxy in front of Cloud.
   if (status === 413) return "geoip_request_too_large";
+  // An expired session or a removed admin role: nothing was saved, and signing in again is the way out.
+  if (status === 401 || status === 403) return "not_allowed";
+  // Any other client error is a definite refusal; a timeout (408, 499) or server error may hide a commit.
+  if (status >= 400 && status < 500 && status !== 408 && status !== 499) return "refused";
   return "ambiguous";
 };
 
@@ -248,6 +254,8 @@ export default function SignInLocations(props: {
       geoip_unsupported_type: t().unsupported,
       geoip_empty: t().empty,
       geoip_upload_busy: t().busy,
+      not_allowed: t().notAllowed,
+      refused: t().refused,
     })[code];
 
   const sourceLine = (database: GeoIpAdminDatabase) => {

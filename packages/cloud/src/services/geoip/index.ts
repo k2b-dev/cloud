@@ -78,7 +78,7 @@ export const createGeoIpService = (options: { db?: typeof sql; reader?: GeoIp; b
     const rows = await db<GeoIpUploadInfo[]>`
       SELECT d.kind, d.sha256, (d.metadata->>'size')::int AS size, d.database_type, d.build_epoch,
         d.metadata->'description'->>'en' AS description, d.uploaded_at, d.uploaded_by,
-        COALESCE(u.display_name, u.uid) AS uploader_name
+        COALESCE(NULLIF(u.display_name, ''), u.uid) AS uploader_name
       FROM geoip.databases d LEFT JOIN auth.users u ON u.id = d.uploaded_by`;
     return geoIpAdminStatus(rows, (options.bundled ?? getBundledInfo)(), (config.now ?? Date.now)());
   };

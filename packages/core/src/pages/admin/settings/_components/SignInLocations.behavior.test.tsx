@@ -168,6 +168,20 @@ describe("sign-in locations block", () => {
     expect(view.statusLine()).toBe("The file is too large to send. Upload it as .mmdb.gz.");
   });
 
+  test("an expired sign-in or removed admin role is a definite refusal that says to sign in again", async () => {
+    const view = await mount();
+    await view.choose();
+    FakeXhr.last!.respond(403, { code: "FORBIDDEN" });
+    await flush();
+    expect(view.requests).toEqual([]);
+    expect(view.statusLine()).toBe("Your sign-in no longer allows this change. Sign in again as an administrator. Nothing was changed.");
+    await view.choose();
+    FakeXhr.last!.respond(400, "Bad Request");
+    await flush();
+    expect(view.requests).toEqual([]);
+    expect(view.statusLine()).toBe("Cloud refused the upload. Nothing was changed.");
+  });
+
   test("an interrupted upload whose result Cloud does not show yet stays unclear instead of claiming nothing changed", async () => {
     const view = await mount();
     await view.choose();

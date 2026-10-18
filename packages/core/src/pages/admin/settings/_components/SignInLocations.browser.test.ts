@@ -48,6 +48,7 @@ const phases: [GeoIpAdminStatus | null, SignInLocationPhase][] = [
   [bundledStatus, { kind: "upload-error", code: "geoip_invalid", file }],
   [bundledStatus, { kind: "upload-error", code: "geoip_request_too_large", file }],
   [bundledStatus, { kind: "upload-error", code: "geoip_upload_busy", file }],
+  [bundledStatus, { kind: "upload-error", code: "not_allowed", file }],
   [uploadedStatus, { kind: "uploaded", type: "city" }],
   [uploadedStatus, { kind: "resetting", type: "city" }],
   [uploadedStatus, { kind: "reset-error", type: "city" }],

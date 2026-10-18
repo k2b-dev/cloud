@@ -107,6 +107,13 @@ suite("GeoIP Postgres replacement, audit and multi-instance reload", () => {
       upload: { uploadedBy: { id: admin.id, name: "GeoIP Admin" } },
     });
     expect(second.databases[0].upload?.sha256).not.toBe(first.databases[0].upload?.sha256);
+    // auth.users.display_name defaults to '', which must fall back to the uid instead of a blank name.
+    await sql`UPDATE auth.users SET display_name = '' WHERE id = ${admin.id}::uuid`;
+    try {
+      expect((await service.status(admin)).databases[0].upload?.uploadedBy?.name).toBe(admin.uid);
+    } finally {
+      await sql`UPDATE auth.users SET display_name = 'GeoIP Admin' WHERE id = ${admin.id}::uuid`;
+    }
     expect(reader.status().city?.databaseType).toBe("Custom-City");
     expect((await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM geoip.databases WHERE kind = 'city'`)[0]?.count).toBe(1);
     const reset = await service.reset(admin, "city");
