@@ -78,11 +78,16 @@ These responses stay unchanged:
 - SSE (`text/event-stream`), NDJSON (`application/x-ndjson`), and every
   other media type;
 - answers to cross-site and same-site browser requests (`Sec-Fetch-Site`
-  other than `same-origin` or `none`).
+  other than `same-origin` or `none`);
+- answers to browser subresource requests, such as images, styles, scripts
+  and frames (`Sec-Fetch-Dest` other than `document` or `empty`).
 
-An eligible response gets `Vary: Accept-Encoding, Sec-Fetch-Site`, also when
-it stays uncompressed. A compressed response loses `Content-Length` and
-`Accept-Ranges`, and a strong `ETag` becomes weak. Compare `If-None-Match`
+Browsers that send no Fetch Metadata headers, such as Safari before 16.4, get
+compressed answers like other clients without these headers.
+
+An eligible response gets `Vary: Accept-Encoding, Sec-Fetch-Site,
+Sec-Fetch-Dest`, also when it stays uncompressed. A compressed response loses
+`Content-Length` and `Accept-Ranges`, and a strong `ETag` becomes weak. Compare `If-None-Match`
 weakly: `W/"x"` matches `"x"`, a list matches when one tag matches, and `*`
 matches any current representation.
 
@@ -96,8 +101,12 @@ out with `middleware.noTransform()` only when **both** conditions hold:
   worth guessing: message, note, comment or record text; other submitters'
   personal data; or credentials and tokens, including secret request headers.
 
-This includes same-origin refetches triggered by live events. One shared
-container stays compressed when every writer can read the entire response.
+This includes same-origin refetches triggered by live events. Request input a
+page echoes, such as its path and query, is chosen text only for requests the
+other party can trigger. Cross-site requests and subresource loads, such as a
+Markdown image with a same-origin URL, stay uncompressed for that reason; do not
+compress such requests in an application or proxy. One shared container stays
+compressed when every writer can read the entire response.
 Names, titles and display names are not secrets worth guessing, but any text
 another party controls counts as chosen text in the first condition, including
 other containers’ names, backlink titles and profile names. Metadata alone

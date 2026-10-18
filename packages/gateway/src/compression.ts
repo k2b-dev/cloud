@@ -119,12 +119,12 @@ export const encodeStream = (
   return output;
 };
 
-/** The encoding depends on both request headers, so caches must key on both. */
+/** The encoding depends on these request headers, so caches must key on all of them. */
 const mergeVary = (headers: Headers) => {
   const vary = headers.get("Vary");
   const tokens = vary?.split(",").map((token) => token.trim().toLowerCase()) ?? [];
   if (tokens.includes("*")) return;
-  const missing = ["Accept-Encoding", "Sec-Fetch-Site"].filter((name) => !tokens.includes(name.toLowerCase()));
+  const missing = ["Accept-Encoding", "Sec-Fetch-Site", "Sec-Fetch-Dest"].filter((name) => !tokens.includes(name.toLowerCase()));
   if (missing.length > 0) headers.set("Vary", [vary, ...missing].filter(Boolean).join(", "));
 };
 
@@ -156,6 +156,11 @@ export const compressBody = (req: Request, response: Response, headers: Headers)
   // request without it comes from a non-browser client or a browser too old for it.
   const site = req.headers.get("Sec-Fetch-Site");
   if (site !== null && site !== "same-origin" && site !== "none") return body;
+  // Stored Markdown can embed same-origin images with a chosen URL, and pages echo
+  // their path and query. Only documents and fetch/XHR get a compressed body;
+  // HTML and JSON loaded as an image, style, script or frame gain nothing from it.
+  const dest = req.headers.get("Sec-Fetch-Dest");
+  if (dest !== null && dest !== "document" && dest !== "empty") return body;
   const encoding = chooseEncoding(req.headers.get("Accept-Encoding"));
   if (!encoding) return body;
   const length = headers.has("Content-Length") ? Number(headers.get("Content-Length")) : undefined;

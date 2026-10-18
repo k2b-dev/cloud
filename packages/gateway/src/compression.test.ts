@@ -129,7 +129,7 @@ test.each([null, "identity", "br;q=0, gzip;q=0"])("eligible identity (%s) adds V
     headers,
   );
   expect(result).toBe(response.body);
-  expect(headers.get("Vary")).toBe("Cookie, Accept-Encoding, Sec-Fetch-Site");
+  expect(headers.get("Vary")).toBe("Cookie, Accept-Encoding, Sec-Fetch-Site, Sec-Fetch-Dest");
   expect(headers.get("ETag")).toBe('"strong"');
   expect(headers.has("Content-Encoding")).toBe(false);
   expect(await new Response(result).text()).toBe("x".repeat(2048));

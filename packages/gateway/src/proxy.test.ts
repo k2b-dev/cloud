@@ -851,7 +851,7 @@ describe("dynamic response compression on the wire", () => {
           expect(response.headers.get("Content-Encoding")).toBe(encoding);
           expect(response.headers.has("Content-Length")).toBe(false);
           expect(response.headers.has("Accept-Ranges")).toBe(false);
-          expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding, Sec-Fetch-Site");
+          expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding, Sec-Fetch-Site, Sec-Fetch-Dest");
           expect(response.headers.get("ETag")).toBe('W/"mail-v1"');
           const wire = Buffer.from(await response.arrayBuffer());
           expect((encoding === "br" ? brotliDecompressSync(wire) : gunzipSync(wire)).toString()).toBe(body);
@@ -870,7 +870,7 @@ describe("dynamic response compression on the wire", () => {
       async (url) => {
         const response = await fetch(url, { headers: { "Accept-Encoding": accept }, decompress: false });
         expect(response.headers.has("Content-Encoding")).toBe(false);
-        expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding, Sec-Fetch-Site");
+        expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding, Sec-Fetch-Site, Sec-Fetch-Dest");
         expect(response.headers.get("ETag")).toBe('"mail-v1"');
         expect(await response.text()).toBe(mailboxHtml);
       },
@@ -878,8 +878,9 @@ describe("dynamic response compression on the wire", () => {
   });
 
   test.each([
-    { vary: "Cookie, accept-encoding", expected: "Cookie, accept-encoding, Sec-Fetch-Site" },
-    { vary: "sec-fetch-site, Accept-Encoding", expected: "sec-fetch-site, Accept-Encoding" },
+    { vary: "Cookie, accept-encoding", expected: "Cookie, accept-encoding, Sec-Fetch-Site, Sec-Fetch-Dest" },
+    { vary: "sec-fetch-site, Accept-Encoding", expected: "sec-fetch-site, Accept-Encoding, Sec-Fetch-Dest" },
+    { vary: "sec-fetch-dest, sec-fetch-site, Accept-Encoding", expected: "sec-fetch-dest, sec-fetch-site, Accept-Encoding" },
     { vary: "*", expected: "*" },
   ])("merges Vary $vary once and keeps an already weak ETag", async ({ vary, expected }) => {
     await withCompressionGateway(
@@ -1073,7 +1074,33 @@ describe("cross-site requests", () => {
       async (url) => {
         const response = await fetch(url, { headers: { "Accept-Encoding": "br, gzip", "Sec-Fetch-Site": site }, decompress: false });
         expect(response.headers.get("Content-Encoding")).toBe(encoding);
-        expect(response.headers.get("Vary")).toBe("Accept-Encoding, Sec-Fetch-Site");
+        expect(response.headers.get("Vary")).toBe("Accept-Encoding, Sec-Fetch-Site, Sec-Fetch-Dest");
+        const wire = Buffer.from(await response.arrayBuffer());
+        expect((encoding ? brotliDecompressSync(wire) : wire).toString()).toBe(mailboxHtml);
+      },
+    );
+  });
+});
+
+describe("subresource requests", () => {
+  test.each([
+    { dest: "document", encoding: "br" },
+    { dest: "empty", encoding: "br" },
+    { dest: "image", encoding: null },
+    { dest: "style", encoding: null },
+    { dest: "script", encoding: null },
+    { dest: "iframe", encoding: null },
+    { dest: "video", encoding: null },
+  ])("same-origin Sec-Fetch-Dest $dest chooses its encoding", async ({ dest, encoding }) => {
+    await withCompressionGateway(
+      () => new Response(mailboxHtml, { headers: { "Content-Type": "text/html" } }),
+      async (url) => {
+        const response = await fetch(url, {
+          headers: { "Accept-Encoding": "br, gzip", "Sec-Fetch-Site": "same-origin", "Sec-Fetch-Dest": dest },
+          decompress: false,
+        });
+        expect(response.headers.get("Content-Encoding")).toBe(encoding);
+        expect(response.headers.get("Vary")).toBe("Accept-Encoding, Sec-Fetch-Site, Sec-Fetch-Dest");
         const wire = Buffer.from(await response.arrayBuffer());
         expect((encoding ? brotliDecompressSync(wire) : wire).toString()).toBe(mailboxHtml);
       },
@@ -1088,7 +1115,7 @@ describe("revalidation and client opt-out", () => {
       async (url) => {
         const response = await fetch(url, { headers: { "Accept-Encoding": "br" }, decompress: false });
         expect(response.status).toBe(304);
-        expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding, Sec-Fetch-Site");
+        expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding, Sec-Fetch-Site, Sec-Fetch-Dest");
       },
     );
   });
@@ -1120,7 +1147,7 @@ describe("revalidation and client opt-out", () => {
           decompress: false,
         });
         expect(response.headers.has("Content-Encoding")).toBe(false);
-        expect(response.headers.get("Vary")).toBe("Accept-Encoding, Sec-Fetch-Site");
+        expect(response.headers.get("Vary")).toBe("Accept-Encoding, Sec-Fetch-Site, Sec-Fetch-Dest");
         expect(await response.text()).toBe(mailboxHtml);
       },
     );
