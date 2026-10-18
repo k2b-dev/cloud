@@ -551,8 +551,11 @@ function MailWorkspaceView(props: {
         next = { ...next, listItems: merged.items, nextListCursor: merged.nextCursor, listError: reconciled.listError };
       }
       batch(() => {
-        committedRouteSource = source;
-        setRequestPath(target.href);
+        // Only the page 1 of the requested selection commits its route; an older one keeps the route shown.
+        if (!otherSelection) {
+          committedRouteSource = source;
+          setRequestPath(target.href);
+        }
         const rawItems = new Map(pages.flatMap((page) => pageList(page).listItems.map((item) => [mailListRowKey(item), item] as const)));
         setSnapshotItems([...rawItems.values()]);
         setData(reconcile(next));
@@ -1122,7 +1125,12 @@ function MailWorkspaceView(props: {
       selectedSubject: selectedSubject || subject,
     });
     // Page 1 now asks for this conversation, so reloading it brings the change the detail may have missed.
-    if (opening.changed) void workspaceQuery.invalidate().catch(() => undefined);
+    if (opening.changed)
+      void workspaceQuery
+        .invalidate()
+        .catch((error: unknown) =>
+          reportRefreshFailure(error instanceof Error ? error : new Error(String(error)), t().refreshMailboxFailed),
+        );
     return "applied";
   };
 

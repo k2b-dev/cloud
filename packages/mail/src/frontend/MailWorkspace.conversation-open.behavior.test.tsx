@@ -149,6 +149,8 @@ describe("Mail workspace conversation open", () => {
   let detailStatus: (id: string) => number;
   /** Holds every workspace-route response until the test releases it. */
   let routeGate: Promise<void> | undefined;
+  /** Decides each workspace-route response's status, possibly later. */
+  let routeStatus: (href: string) => number | Promise<number>;
 
   const row = (id: string): MailListItem =>
     mailTestRow(id, {
@@ -281,6 +283,7 @@ describe("Mail workspace conversation open", () => {
     detailGate = new Map();
     detailStatus = () => 200;
     routeGate = undefined;
+    routeStatus = () => 200;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
@@ -290,7 +293,8 @@ describe("Mail workspace conversation open", () => {
           // The server reads the snapshot when the request arrives; a held response arrives later with that data.
           const snapshot = snapshotFor(href);
           await routeGate;
-          return Response.json(snapshot);
+          const status = await routeStatus(href);
+          return status === 200 ? Response.json(snapshot) : Response.json({ error: "unavailable" }, { status });
         }
         if (url.pathname.endsWith("/workspace-list")) {
           listRequests.push(href);
@@ -493,6 +497,54 @@ describe("Mail workspace conversation open", () => {
     await until(() => dom.document.body.textContent?.includes("A reply during the open") === true, "the reply");
     expect(routeRequests.at(-1)).toBe(`${folderPath}&conversation=${rowId(10)}`);
     expect(shows(rowId(10))).toBe(true);
+  });
+
+  test("a refresh failure after the catch-up of a changed conversation says so", async () => {
+    mount();
+    const socket = FakeWebSocket.instances.at(-1)!;
+    socket.open();
+    socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+    let release = () => {};
+    detailGate.set(
+      rowId(10),
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    open(rowId(10));
+    await until(() => detailRequests.length === 1, "the held detail");
+    socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: rowId(10) } });
+    await until(() => routeRequests.length === 1, "the live refresh");
+    await settle();
+    routeStatus = () => 503;
+    release();
+    await until(() => routeRequests.length === 2, "the catch-up refresh");
+    await until(() => dom.document.body.textContent?.includes("Could not refresh this mailbox yet") === true, "the failure notice");
+    expect(shows(rowId(10))).toBe(true);
+  });
+
+  test("an older refresh that lands during a view reload keeps the shown conversation's route", async () => {
+    mount(`${folderPath}&conversation=${A}`);
+    const socket = FakeWebSocket.instances.at(-1)!;
+    socket.open();
+    socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+    const held: Array<(status: number) => void> = [];
+    routeStatus = () => new Promise<number>((resolve) => held.push(resolve));
+    socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: rowId(1) } });
+    await until(() => held.length === 1, "the held live refresh");
+    dom.root.querySelector<HTMLAnchorElement>(`a[href="${folderPath}"]`)!.click();
+    held[0]!(200);
+    await until(() => held.length === 2, "the held view reload");
+    expect(shows(A)).toBe(true);
+    held[1]!(503);
+    await until(() => dom.document.body.textContent?.includes("Could not open this mailbox view") === true, "the failure notice");
+    routeStatus = () => 200;
+    socket.message({ t: "event", id: "1", cursor: "s6t.mail.6", data: { conversationId: rowId(1) } });
+    await until(() => routeRequests.length === 3, "the next live refresh");
+    await settle();
+    expect(routeRequests.at(-1)).toBe(`${folderPath}&conversation=${A}`);
+    expect(shows(A)).toBe(true);
+    expect(selected()).toBe(A);
   });
 
   test("a reload of the shown view that ends after a conversation opened keeps that conversation and its URL", async () => {
