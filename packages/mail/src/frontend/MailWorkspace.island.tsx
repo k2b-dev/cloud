@@ -947,6 +947,7 @@ function MailWorkspaceView(props: {
   onCleanup(() => {
     disposed = true;
     if (preferenceTimer) clearTimeout(preferenceTimer);
+    conversationDetailRequest?.abort();
     workspaceTransition?.resolve("stale");
     workspaceTransition = null;
     for (const frame of focusFrames) cancelAnimationFrame(frame);
