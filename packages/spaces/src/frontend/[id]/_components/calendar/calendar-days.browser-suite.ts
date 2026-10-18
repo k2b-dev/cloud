@@ -64,6 +64,7 @@ const base = {
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   priority: null,
   recurrence: null,
   recurringEventId: null,
@@ -150,6 +151,7 @@ const trayTask = (id: string, title: string, deadline: string | null = null, ext
   endsAt: null,
   allDay: false,
   deadline,
+  deadlineAllDay: false,
   estimatedDurationMinutes: null,
   activeBlockerCount: 0,
   priority: null,
@@ -529,6 +531,31 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     expect(await note.getAttribute("data-cheer")).toBe("true");
     await page.waitForFunction(() => !document.querySelector(".k2b-calendar-days__note[data-cheer]"), undefined, { timeout: 4000 });
     await page.context().close();
+  }, 60_000);
+
+  test("a drag in free time opens the quick create at the drawn time and keeps it open", async () => {
+    const page = await open(desktop);
+    try {
+      // Chromium 156 light-dismisses a popover that opens while it dispatches the pointerup that ends the drag.
+      const gap = (await page
+        .locator(".k2b-calendar-days__day[data-today] .k2b-calendar-gap")
+        .filter({ hasText: "1 Std. 15 frei" })
+        .boundingBox())!;
+      const day = (await page.locator(".k2b-calendar-days__day[data-today]").boundingBox())!;
+      const x = day.x + day.width - 6;
+      await page.mouse.move(x, gap.y + 4);
+      await page.mouse.down();
+      await page.mouse.move(x, gap.y + 30, { steps: 3 });
+      await page.mouse.move(x, gap.y + gap.height - 4, { steps: 3 });
+      await page.mouse.up();
+      const popover = page.locator(".k2b-calendar-popover:popover-open");
+      await popover.waitFor();
+      expect(await popover.locator("[data-spaces-quick-create-when]").textContent()).toBe("Fr 9. Okt · 11:15–12:30");
+      await rested(page);
+      expect(await popover.count()).toBe(1);
+    } finally {
+      await page.context().close();
+    }
   }, 60_000);
 
   test("plans a task from the row below into free time by dragging it there", async () => {

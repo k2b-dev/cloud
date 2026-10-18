@@ -27,12 +27,7 @@ import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AiChatTaskAuthorityError, aiChatTasks } from "./chat-tasks";
 import { createCloudCompactFn } from "./compaction";
-import {
-  createCloudAiCodeTools,
-  createCloudAiLocalBashTool,
-  createCloudAiLocalTools,
-  createConfiguredDefaultCloudAiTools,
-} from "./default-tools";
+import { createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import {
@@ -690,10 +685,7 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
               accessSubject: aiChatAccessSubject(config.actor),
               allowedDataBoundaries: config.modelPolicy?.allowedDataBoundaries,
             })),
-            // Cloud runs the code tools itself; only tools a client must run wait for that client to declare them.
-            ...[createCloudAiLocalBashTool(), ...createCloudAiLocalTools(), ...createCloudAiCodeTools()].filter(
-              (tool) => tool.location === "server" || config.clientToolIds?.some((name) => name === tool.def.name),
-            ),
+            ...createAiTurnCodeAndClientTools(config),
           ]
         : [],
     toolApprovalContext: config.toolApprovalContext,
@@ -997,11 +989,7 @@ export class AiTurnExecutor {
     ];
     const toolsSupported = resolved.profile.capabilities.includes("tools");
     const allowed = allowedTools === null ? null : new Set(allowedTools);
-    const activeTools = toolsSupported
-      ? runtimeTools.filter(
-          (tool) => (!allowed || allowed.has(tool.def.name)) && !(config.mandate && ["code_open", "code_secret"].includes(tool.def.name)),
-        )
-      : [];
+    const activeTools = toolsSupported ? runtimeTools.filter((tool) => !allowed || allowed.has(tool.def.name)) : [];
     let audioUnavailableInstruction: string | undefined;
     if (
       defaultToolSource &&

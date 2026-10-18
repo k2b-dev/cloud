@@ -52,6 +52,8 @@ const dockerHubFinding = (state: State, source: Source, image: string, needle: s
 const checkMirrorReferences = (state: State, source: Source) => {
   for (const match of source.text.matchAll(mirrorReference)) {
     const pinned = match[0].slice(mirror.length);
+    // DB-IP is not a Docker Hub image; its gzip checksums pin the tagged snapshot.
+    if (/^dbip-lite:\d{4}-(0[1-9]|1[0-2])$/.test(pinned)) continue;
     const image = pinned.split("@")[0] ?? "";
     const entry = state.entries.get(image);
     const line = source.text.slice(0, match.index).split("\n").length;

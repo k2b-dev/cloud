@@ -160,8 +160,8 @@ export function aggregateMetrics(samples: Metrics[]) {
   );
 }
 
-export function interactive(state: { initial: number; mounted: number; pendingScripts: number; quietMs: number }) {
-  return state.mounted === state.initial && state.pendingScripts === 0 && state.quietMs >= 500;
+export function interactive(state: { initial: number; mounted: number; pendingScripts: number; untimedScripts: number; quietMs: number }) {
+  return state.mounted === state.initial && state.pendingScripts === 0 && state.untimedScripts === 0 && state.quietMs >= 500;
 }
 
 export function timeToInteractive(timing: {

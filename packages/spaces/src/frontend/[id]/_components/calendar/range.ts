@@ -1,5 +1,7 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import type { CalendarItem } from "@/contracts";
+import { deadlineDayKey, isDateOnlyDeadline } from "@/presentation/deadline";
+import { allDayStart } from "../shared/item-form/date";
 import type { CalendarView } from "./types";
 
 /** Waking hours of the day and week views: a day starts at 06:00, and the night after 22:00 belongs to it. */
@@ -83,7 +85,9 @@ export const calendarItemsEnd = (to: string, dateConfig?: DateContext): string =
 const touches = (item: CalendarItem, range: CalendarRange, dateConfig?: DateContext): boolean => {
   const from = Date.parse(range.from);
   const to = Date.parse(calendarItemsEnd(range.to, dateConfig));
-  const due = item.deadline ? Date.parse(item.deadline) : Number.NaN;
+  const due = item.deadline
+    ? Date.parse(isDateOnlyDeadline(item.deadline) ? allDayStart(item.deadline, dateConfig) : item.deadline)
+    : Number.NaN;
   const overlaps = Boolean(item.startsAt && item.endsAt) && Date.parse(item.startsAt!) < to && Date.parse(item.endsAt!) > from;
   return overlaps || (due >= from && due < to);
 };
@@ -114,10 +118,11 @@ export const countCalendarDays = (items: readonly CalendarItem[], first: string,
   const from = dayStart(first, dateConfig);
   const to = dayStart(nextDayKey(last), dateConfig);
   return items.filter((item) => {
+    if (!item.startsAt && item.deadline && isDateOnlyDeadline(item.deadline)) return item.deadline >= first && item.deadline <= last;
     if (item.allDay) {
       const start = item.startsAt ?? item.deadline;
       if (!start) return false;
-      const firstKey = dates.formatDateKey(new Date(start), dateConfig);
+      const firstKey = deadlineDayKey(start, dateConfig);
       // An all-day range ends at the midnight after its last day.
       const lastKey =
         item.endsAt && Date.parse(item.endsAt) > Date.parse(start)
@@ -126,7 +131,9 @@ export const countCalendarDays = (items: readonly CalendarItem[], first: string,
       return firstKey <= last && lastKey >= first;
     }
     if (item.startsAt && item.endsAt) return Date.parse(item.startsAt) < to && Date.parse(item.endsAt) > from;
-    const due = item.deadline ? Date.parse(item.deadline) : Number.NaN;
+    const due = item.deadline
+      ? Date.parse(isDateOnlyDeadline(item.deadline) ? allDayStart(item.deadline, dateConfig) : item.deadline)
+      : Number.NaN;
     return due >= from && due < to;
   }).length;
 };

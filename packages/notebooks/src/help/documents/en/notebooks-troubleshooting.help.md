@@ -20,6 +20,22 @@ Before you change the structure of a note, check its Markdown source and your ac
 - **An old script no longer runs:** Executable scripting is no longer supported. Existing script fences stay readable code. Replace page lists with :::query and contents with :::toc. Script buttons and write actions have no replacement.
 :::
 
+## An image is missing from the PDF {icon="photo"}
+
+The PDF marks each missing image with **Image not included: …** and a reason. The download dialog lists the same omissions.
+
+:::reference
+- **File not found:** Attach the file to this notebook again. An attachment from another notebook is not available here.
+- **Format cannot be printed:** Use JPEG, PNG, WebP or GIF. SVG files stay available as downloads.
+- **File could not be read:** Open the file to check it, then export it again and attach the new copy.
+- **File too large:** Attach a smaller image. The notebook's attachment limit also applies to PDF images.
+- **No room left in the PDF:** Use smaller images or split the note. Images share **Max input bytes** with the document; an administrator can raise that budget. Large images print at 300, 200 or 150 dpi.
+- **Preparation took too long:** Try again, or use fewer or smaller images. Preparing images gets the same time as the PDF renderer, at most 115 seconds; an administrator can raise the renderer **Timeout**.
+- **Address not allowed:** Attach the image to this notebook and use its attachment link.
+- **Not printed in PDFs yet:** External HTTP(S) images are not included yet. Attach the image instead, or open the note to view it.
+- **Address not reachable:** Check the address or try again later.
+:::
+
 ## Check updates {icon="refresh"}
 
 **Write** synchronizes the note text with other editors. Saved changes refresh query previews and Book content. **Read-only** does not receive shared text edits. Reload it after the saved source changes.

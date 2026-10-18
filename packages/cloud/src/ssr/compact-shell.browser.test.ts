@@ -33,9 +33,9 @@ type Geometry = {
   workspace: { box: Box; borders: number[]; radius: string; shadow: string } | null;
   bar: { display: string; box: Box; borders: number[]; title: string } | null;
   sidebar: { visibility: string; display: string; box: Box; borders: number[] } | null;
-  pane: { box: Box; borders: number[] } | null;
+  pane: { box: Box; borders: number[]; edge: string; surface: string } | null;
   main: { box: Box; borders: number[] } | null;
-  detail: { box: Box; borders: number[] } | null;
+  detail: { box: Box; borders: number[]; background: string; shadow: string; surface: string } | null;
   avatar: { box: Box; visible: boolean } | null;
   hairlines: string[];
 };
@@ -59,6 +59,14 @@ const geometry = (page: Page, rounded = true): Promise<Geometry> =>
       return [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth].map((value) =>
         Number.parseFloat(value),
       );
+    };
+    // The first painted background at or above an element: the surface it lies on.
+    const surface = (element: Element | null): string => {
+      for (let current = element; current; current = current.parentElement) {
+        const color = getComputedStyle(current).backgroundColor;
+        if (color !== "rgba(0, 0, 0, 0)") return color;
+      }
+      return "none";
     };
     const find = (selector: string) => document.querySelector(selector);
     const header = find(".layout-header");
@@ -112,9 +120,17 @@ const geometry = (page: Page, rounded = true): Promise<Geometry> =>
             borders: borders(sidebar),
           }
         : null,
-      pane: pane ? { box: box(pane), borders: borders(pane) } : null,
+      pane: pane ? { box: box(pane), borders: borders(pane), edge: getComputedStyle(pane).borderRightColor, surface: surface(pane) } : null,
       main: main ? { box: box(main), borders: borders(main) } : null,
-      detail: detail ? { box: box(detail), borders: borders(detail) } : null,
+      detail: detail
+        ? {
+            box: box(detail),
+            borders: borders(detail),
+            background: getComputedStyle(detail).backgroundColor,
+            shadow: getComputedStyle(detail).boxShadow,
+            surface: surface(detail),
+          }
+        : null,
       avatar: avatar ? { box: box(avatar), visible: true } : null,
       hairlines,
     };
@@ -204,12 +220,18 @@ describe("signed-in shell", () => {
             }
             expect(shape.workspace?.shadow).not.toBe("none");
           }
-          // Sidebar and Main draw no lines. List/reader panes keep their
-          // separator; the raised detail floats without one.
+          // Sidebar, Main, and the detail draw no lines. List and reader
+          // panes are apart by 12 px of space: a transparent edge, not a line.
           expect(shape.sidebar?.borders).toEqual(none);
           expect(shape.main?.borders).toEqual(none);
-          expect(shape.pane?.borders).toEqual([0, 1, 0, 0]);
+          expect(shape.pane?.borders).toEqual([0, 12, 0, 0]);
+          expect(shape.pane?.edge).toBe("rgba(0, 0, 0, 0)");
           expect(shape.detail?.borders).toEqual([0, 0, 0, 0]);
+          // The detail column is part of the list's surface, also in dark mode: no
+          // fill, no shadow, so nothing between them reads as a seam.
+          expect(shape.detail?.background).toBe("rgba(0, 0, 0, 0)");
+          expect(shape.detail?.shadow).toBe("none");
+          expect(shape.detail?.surface).toBe(shape.pane?.surface);
           // List and reader stay side by side; the detail spans the workspace.
           expect(shape.pane!.box.right).toBeLessThanOrEqual(shape.detail!.box.left);
           expect(shape.detail!.box.top).toBe(shape.workspace!.box.top + shape.workspace!.borders[0]! + 8);
@@ -967,6 +989,28 @@ describe("workspace detail", () => {
       await context.close();
     }
   });
+});
+
+describe("workspace phone title menu before hydration", () => {
+  for (const device of [phone, ipadPortrait, laptop]) {
+    test(`${device.width}: only a page with workspace navigation turns the phone title into a menu`, async () => {
+      for (const navigation of [false, true]) {
+        const { context, page } = await open(device, `/app/mail/inbox?${navigation ? "navigation" : "overview"}=1`, { attached: false });
+        try {
+          const title = page.locator(".layout-header-title");
+          const menu = page.locator(".layout-header-title-menu");
+          expect(await page.locator("script[data-cloud-workspace-navigation]").count()).toBe(navigation ? 1 : 0);
+          expect(await title.isVisible()).toBe(device.width === 390 && !navigation);
+          expect(await menu.isVisible()).toBe(device.width === 390 && navigation);
+          expect(await menu.getAttribute("aria-haspopup")).toBe("dialog");
+          expect(await menu.textContent()).toContain("Mail");
+          expect(await title.textContent()).toBe("Mail");
+        } finally {
+          await context.close();
+        }
+      }
+    });
+  }
 });
 
 describe("soft tablet and phone shell", () => {

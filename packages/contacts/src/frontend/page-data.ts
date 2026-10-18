@@ -12,8 +12,8 @@ export const parseContactsPage = (value: string | undefined): number => {
   return parsed;
 };
 
-export const loadFavoriteKeysForContacts = (userId: string, contacts: Contact[]): Promise<string[]> =>
-  contactsService.favorite.listKeysForContacts({ userId, contacts });
+export const loadFavoriteKeysForContacts = (actor: RequestActor, contacts: Contact[]): Promise<string[]> =>
+  contactsService.favorite.listKeysForContacts({ actor, contacts });
 
 export const loadContactBookPermissions = async (config: { books: ContactBook[]; actor: RequestActor; accessSubject: AccessSubject }) => {
   const entries = await Promise.all(
@@ -56,12 +56,11 @@ export const resolveSelectedContact = async (config: {
   const selectedFromPage = config.contacts.find((contact) => contact.id === internalContactId && contact.bookId === internalBookId) ?? null;
   if (selectedFromPage) return selectedFromPage;
 
-  const permission = await contactsService.book.permission.forActor({
+  const result = await contactsService.contact.get({
     bookId: internalBookId,
+    id: internalContactId,
     actor: config.actor,
     accessSubject: config.accessSubject,
   });
-  if (!hasPermission(permission, "read")) return null;
-
-  return contactsService.contact.get({ bookId: internalBookId, id: internalContactId });
+  return result.ok ? result.data : null;
 };

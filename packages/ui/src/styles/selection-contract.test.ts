@@ -23,6 +23,19 @@ const navFill = [
   ".k2b-ui .k2b-navigation__row[data-active] > .k2b-navigation__control",
   '.k2b-ui .k2b-settings__tabs button[data-active="true"]',
 ];
+// The stacked object chip below 64rem (#1441) is the same selected navigation fill.
+const stackedChip =
+  '.k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"] > .k2b-app-workspace__sidebar-desktop :is( .k2b-app-workspace__sidebar-body > .k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-section-content > .k2b-app-workspace__sidebar-item ):is(.is-active, [aria-current], :has(> [aria-current]))';
+// The soft tabs, view tabs, segments, and active filter chips (#1493) share the navigation fill.
+const softControls = [
+  '.k2b-ui .k2b-segmented-control__option[data-selected="true"]',
+  '.k2b-ui .k2b-segmented-control__option[aria-checked="true"]',
+  '.k2b-ui .k2b-filter-chip[data-active="true"]',
+  '.k2b-ui .k2b-filter-chip[data-active="true"]:hover',
+  '.k2b-ui .k2b-tabs__list button[aria-selected="true"]',
+  '.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"])',
+  '.k2b-ui .k2b-view-tabs__tab[aria-current="page"]',
+];
 const navInk = [
   `${sidebar}.is-active`,
   `${sidebar}[data-variant="object"].is-active:not(.has-action)`,
@@ -39,17 +52,23 @@ const rows = [
 ];
 
 describe("selection hooks", () => {
-  test("standalone defaults alias platform selection and action without color-mix", () => {
+  test("one navigation fill and one row fill alias platform selection and action without color-mix", () => {
     const scope = declarations(".k2b-ui");
-    for (const hook of ["--k2b-nav-selected", "--k2b-row-selected"]) {
+    for (const hook of ["--k2b-app-workspace-selected", "--k2b-row-selected"]) {
       expect(scope.get(hook), hook).toEqual(["var(--k2b-selected)"]);
       expect(scope.get(hook)!.join()).not.toContain("color-mix(");
     }
     expect(scope.get("--k2b-app-workspace-active")).toEqual(["var(--k2b-action)"]);
+    // --k2b-app-workspace-selected is the navigation fill; no second hook or alias means the same.
+    expect(rules.filter((rule) => rule.body.includes("--k2b-nav-selected")).map((rule) => rule.selector)).toEqual([]);
   });
 
   test("navigation uses the host fill and ink, including selected hover", () => {
-    for (const selector of navFill) expect(declarations(selector).get("background"), selector).toEqual(["var(--k2b-nav-selected)"]);
+    for (const selector of navFill)
+      expect(declarations(selector).get("background"), selector).toEqual(["var(--k2b-app-workspace-selected)"]);
+    const chip = rules.filter((rule) => rule.selector === stackedChip && rule.context.startsWith("@container k2b-app-area"));
+    expect(chip.length).toBeGreaterThan(0);
+    expect(cssDeclarations(chip.map((rule) => rule.body).join(";")).get("background")).toEqual(["var(--k2b-app-workspace-selected)"]);
     for (const selector of navInk) expect(declarations(selector).get("color"), selector).toEqual(["var(--k2b-app-workspace-active)"]);
     expect(declarations(`${sidebar}.is-active`).get("font-weight")).toEqual(["600"]);
   });
@@ -75,8 +94,6 @@ describe("selection hooks", () => {
       '.k2b-ui .k2b-choice-option[aria-selected="true"]',
       '.k2b-ui .k2b-choice-groups > button[aria-checked="true"]',
       '.k2b-ui .k2b-autocomplete__option[aria-selected="true"]',
-      '.k2b-ui .k2b-filter-chip[data-active="true"]',
-      '.k2b-ui .k2b-panel-dialog__tabs .k2b-tabs__list button[aria-selected="true"]',
       ".k2b-ui .k2b-pagination__page.is-current",
       '.k2b-ui .k2b-date-durations button[aria-pressed="true"]',
       '.k2b-ui .k2b-toolbar .k2b-button[aria-pressed="true"]',
@@ -91,20 +108,16 @@ describe("selection hooks", () => {
   });
 
   test("other controls retain their existing platform surfaces and solid action fill", () => {
-    for (const selector of [
-      '.k2b-ui .k2b-segmented-control__option[data-selected="true"]',
-      '.k2b-ui .k2b-segmented-control__option[aria-checked="true"]',
-      '.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]',
-    ])
-      expect(declarations(selector).get("background"), selector).toEqual(["var(--k2b-surface)"]);
+    expect(declarations('.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]').get("background")).toEqual([
+      "var(--k2b-surface)",
+    ]);
     for (const selector of ['.k2b-ui .k2b-date-grid button[aria-selected="true"]', '.k2b-ui .k2b-date-months button[data-selected="true"]'])
       expect(declarations(selector).get("background"), selector).toEqual(["var(--k2b-action-solid)"]);
-    expect(declarations('.k2b-ui .k2b-tabs__list button[aria-selected="true"]').has("background")).toBe(false);
   });
 
   test("only the listed navigation and content rules consume selection hooks", () => {
     for (const [hook, allowed] of [
-      ["--k2b-nav-selected", navFill],
+      ["--k2b-app-workspace-selected", [...navFill, stackedChip, ...softControls]],
       ["--k2b-row-selected", rows],
     ] as const) {
       const consumers = rules.filter((rule) => [...cssDeclarations(rule.body).values()].flat().some((value) => value.includes(hook)));

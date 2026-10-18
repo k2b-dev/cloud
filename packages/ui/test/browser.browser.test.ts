@@ -82,6 +82,25 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     }
   }, 20_000);
 
+  test("a failed navigation names each failed request with its error", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      const start = new URL("/start", server.url).href;
+      const offline = new URL("/offline", server.url).href;
+      expect((await page.goto(start))?.status()).toBe(200);
+      await context.setOffline(true);
+      const error = await page.goto(offline).catch((error: unknown) => error);
+      if (!(error instanceof Error)) throw new Error("Expected the offline navigation to fail");
+      const reason = browserName === "webkit" ? "WebKit encountered an internal error" : "net::ERR_INTERNET_DISCONNECTED";
+      expect(error.message).toContain(`Requests failed:\nGET ${offline}: ${reason}`);
+      // Offline WebKit fails loads with the error that a crashed network process gives every open load (#1431).
+      expect(error.message.includes("WebKit internal error: WebKit fails every open load this way")).toBe(browserName === "webkit");
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
   test(`the shared ${browserName} browser recovers after a test times out`, async () => {
     const child = Bun.spawn([process.execPath, "test", import.meta.path], {
       env: { ...process.env, UI_BROWSER_RECOVERY_CHILD: "1" },

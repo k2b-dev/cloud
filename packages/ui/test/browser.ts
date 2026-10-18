@@ -1,4 +1,14 @@
-import { type Browser, type BrowserContext, chromium, type LaunchOptions, type Locator, type Page, type Request, webkit } from "playwright";
+import {
+  type Browser,
+  type BrowserContext,
+  chromium,
+  errors,
+  type LaunchOptions,
+  type Locator,
+  type Page,
+  type Request,
+  webkit,
+} from "playwright";
 
 /**
  * The engine that Playwright tests run in, chosen with `TEST_BROWSER`:
@@ -60,6 +70,11 @@ const probeMainThread = async (page: Page): Promise<string> => {
   }
 };
 
+const webkitInternalError = "WebKit encountered an internal error";
+const webkitInternalErrorHint =
+  "WebKit internal error: WebKit fails every open load this way when its network process ends, for example in a crash, " +
+  "or when the context is offline. In CI, the webkit job lists crashed processes at its end.";
+
 type NavigationRecord = {
   open: Map<Request, string>;
   failed: string[];
@@ -84,7 +99,7 @@ const explainNavigations = (page: Page): Page => {
   });
   page.on("requestfailed", (request) => {
     for (const record of records) {
-      record.failed.push(`${request.method()} ${request.url()}`);
+      record.failed.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText ?? "no error text"}`);
       record.open.delete(request);
     }
   });
@@ -149,6 +164,7 @@ const explainNavigations = (page: Page): Page => {
         ...(failed.length > 0
           ? ["Requests failed:", ...failed.slice(0, 10), ...(failed.length > 10 ? [`and ${failed.length - 10} more`] : [])]
           : []),
+        ...(failed.some((line) => line.endsWith(`: ${webkitInternalError}`)) ? [webkitInternalErrorHint] : []),
         closed ? "Main thread: page or browser is closed" : await probeMainThread(page),
       ];
       const diagnosis = lines.join("\n");
@@ -188,6 +204,7 @@ const wrapContext = (context: BrowserContext): BrowserContext => {
  * Closing a page or context of a killed browser succeeds, so the late error of
  * a timed-out test names the step that hung, not its cleanup (#1355).
  * Navigation timeouts and navigations cut off by a closed browser carry document, request, load, and main-thread evidence (#1367).
+ * Failed requests carry their error, and WebKit's internal error names a crashed network process as one cause (#1431).
  */
 export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browser> => {
   let current = await start(options);
@@ -270,5 +287,62 @@ export const keptThrough = async (
     return { replaced: !after.same, heightChange: after.height - before };
   } finally {
     await original.dispose();
+  }
+};
+
+declare global {
+  interface Window {
+    [key: `__k2bMostAtOnce${number}`]: { most: number; observer: MutationObserver } | undefined;
+  }
+}
+
+let mostAtOnceId = 0;
+
+/**
+ * Counts the most elements matching `selector` during `change`, which must end with exactly one.
+ * Guards against a leaving entity showing beside its restored copy after Undo or a refresh (#1450).
+ */
+export const mostAtOnce = async (page: Page, selector: string, change: () => Promise<unknown>): Promise<number> => {
+  const key = `__k2bMostAtOnce${mostAtOnceId++}` as const;
+  try {
+    await page.evaluate(
+      ({ key, selector }) => {
+        const state = {
+          most: document.querySelectorAll(selector).length,
+          // A duplicate inserted and removed within one task is never painted and is not the subject of this guard.
+          observer: new MutationObserver(() => {
+            state.most = Math.max(state.most, document.querySelectorAll(selector).length);
+          }),
+        };
+        window[key] = state;
+        state.observer.observe(document, { subtree: true, childList: true, attributes: true });
+      },
+      { key, selector },
+    );
+    await change();
+    try {
+      await page.waitForFunction((selector) => document.querySelectorAll(selector).length === 1, selector, { timeout: 10_000 });
+    } catch (error) {
+      if (!(error instanceof errors.TimeoutError)) throw error;
+      const count = await page.evaluate((selector) => document.querySelectorAll(selector).length, selector);
+      throw new Error(`mostAtOnce timed out waiting for exactly one element matching '${selector}'; current count: ${count}.`);
+    }
+    return await page.evaluate(
+      async ({ key, selector }) => {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const state = window[key]!;
+        state.most = Math.max(state.most, document.querySelectorAll(selector).length);
+        return state.most;
+      },
+      { key, selector },
+    );
+  } finally {
+    // A page that closed took its observer along, and the step that closed it reports why.
+    await page
+      .evaluate((key) => {
+        window[key]?.observer.disconnect();
+        delete window[key];
+      }, key)
+      .catch(() => {});
   }
 };

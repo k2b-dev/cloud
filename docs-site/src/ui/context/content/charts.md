@@ -6,6 +6,8 @@
 
 Use it to show a trend, distribution, comparison, geographic series, or state history.
 
+Every non-empty chart has tooltips, keyboard inspection, and tap by default; see [How to customize](#how-to-customize).
+
 Use `StatCell` for one value. Use `DataTable` when readers need exact records rather than a visual summary.
 
 ## Import
@@ -366,12 +368,13 @@ including logarithmic axes, nested map viewports, and responsive sizing.
 
 Reactive data rebuilds the complete SVG. This suits dashboard polling and normal realtime updates, not frame-by-frame animation.
 
-Tooltips, keyboard inspection and navigation require browser code. The SVG and native mark titles remain readable in the server response.
+Tooltips, keyboard inspection and navigation require browser code. Render charts inside an island. A server-only chart has no tooltips, and the `chart-rendering` check fails for it. The SVG and native mark titles remain readable in the server response.
 
 ## Inspection without Solid
 
 Use `@k2b/ui/chart-inspection` when your host renders stdlib chart SVG itself,
 for example in a sandboxed HTML document that cannot load a framework.
+Raw stdlib renderers are allowed only with `inspectChart`; the `chart-rendering` check enforces this with a file allow-list.
 The module contains no Solid. The base stylesheet styles chart tooltips in HTML apps.
 It keeps `<table class="k2b-chart__table" hidden>` after a chart hidden on screen
 and prints it below the chart, breaking between rows with the header repeated.

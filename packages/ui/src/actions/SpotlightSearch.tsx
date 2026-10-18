@@ -63,7 +63,9 @@ export function SpotlightButton(props: SpotlightButtonProps): JSX.Element {
       onClick={() => void props.onClick()}
     >
       <i class={icon()} aria-hidden="true" />
-      <span class="k2b-spotlight-button__label">{label()}</span>
+      <span class={variant() === "sidebar" ? "k2b-spotlight-button__label k2b-truncate-fade" : "k2b-spotlight-button__label"}>
+        {label()}
+      </span>
       {showsShortcut() &&
         (props.shortcut !== undefined ? (
           <Kbd keys={props.shortcut} />

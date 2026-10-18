@@ -164,6 +164,9 @@ export {
   renderHtmlToPdfWithConfig,
   renderTemplatePdfPreview,
   testGotenberg,
+  preparePdfImage,
+  PDF_IMAGE_MAX_INPUT_BYTES,
+  PDF_IMAGE_MAX_BOXES,
 } from "./pdf";
 export type {
   BuildPresetPdfHtmlInput,
@@ -184,6 +187,12 @@ export type {
   TemplatePdfPreviewError,
   TemplatePdfPreviewPhase,
   TemplatePdfPreviewResult,
+  PdfImageBox,
+  PdfImageVariant,
+  PdfImageErrorCode,
+  PreparePdfImageInput,
+  PreparePdfImageOptions,
+  PreparePdfImageResult,
 } from "./pdf";
 
 export { createSyncOpsRoutes, SYNC_OPS_DEAD_LETTER_LIMIT } from "./sync-ops";
@@ -237,3 +246,5 @@ export {
   resolveAllowedNetworkAddresses,
 } from "./network-security";
 export type { NetworkLookup, PublicNetworkAddress } from "./network-security";
+
+export { knownBrowsers } from "./known-browsers";

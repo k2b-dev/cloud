@@ -72,7 +72,8 @@ describe("Notebooks overview", () => {
     expect(html).toContain('class="k2b-app-workspace notebooks-overview-workspace"');
     expect(html).toMatch(/class="k2b-app-workspace notebooks-overview-workspace"[^>]*data-flat="true"/);
     // Notebooks are object rows in a stacked-on-mobile sidebar, not a page tree.
-    expect(html).toMatch(/<aside[^>]*aria-label="Notebooks"[^>]*data-mobile="stacked"/);
+    expect(html).toMatch(/<nav[^>]*aria-label="Notebooks"[^>]*data-mobile="stacked"/);
+    expect(html).toContain('class="k2b-app-workspace__sidebar-all" aria-haspopup="dialog" aria-expanded="false"');
     expect(html).not.toContain("k2b-app-workspace__nav-tree");
     expect(html).toContain("--k2b-workspace-sidebar-width:304px");
     expect(html.match(/data-variant="object"/g)).toHaveLength(1);

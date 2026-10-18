@@ -128,17 +128,11 @@
   outline-offset: var(--k2b-focus-offset);
 }
 
-/* `rounded` (0.25rem) and a neutral tile: `.link-card-icon` overrides the
-   tinted `bg-*-100` utility with `!important`, so only the glyph is tinted. */
+/* The glyph takes the card colour and sits in the shared `k2b-icon-tile`
+   chip of that colour. */
 .k2b-ui .k2b-link-card__icon {
-  display: flex;
   width: 2.5rem;
   height: 2.5rem;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.25rem;
-  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-link-card__glyph { font-size: 1.25rem; }
@@ -183,14 +177,15 @@
    action colour outside a host that maps it. */
 .k2b-ui .k2b-link-card:not([data-color]) .k2b-link-card__icon { color: var(--k2b-app-workspace-active); }
 
+/* Each light glyph keeps 3:1 on its own chip, also over hover and muted fills. */
 .k2b-ui .k2b-link-card[data-color="blue"] .k2b-link-card__icon { color: var(--k2b-accent-600); }
-.k2b-ui .k2b-link-card[data-color="emerald"] .k2b-link-card__icon { color: var(--k2b-success-600); }
+.k2b-ui .k2b-link-card[data-color="emerald"] .k2b-link-card__icon { color: #047857; }
 .k2b-ui .k2b-link-card[data-color="violet"] .k2b-link-card__icon { color: #7c3aed; }
-.k2b-ui .k2b-link-card[data-color="orange"] .k2b-link-card__icon { color: #ea580c; }
+.k2b-ui .k2b-link-card[data-color="orange"] .k2b-link-card__icon { color: #c2410c; }
 .k2b-ui .k2b-link-card[data-color="red"] .k2b-link-card__icon { color: var(--k2b-danger-600); }
-.k2b-ui .k2b-link-card[data-color="amber"] .k2b-link-card__icon { color: #d97706; }
+.k2b-ui .k2b-link-card[data-color="amber"] .k2b-link-card__icon { color: #b45309; }
 .k2b-ui .k2b-link-card[data-color="zinc"] .k2b-link-card__icon { color: var(--k2b-neutral-600); }
-.k2b-ui .k2b-link-card[data-color="cyan"] .k2b-link-card__icon { color: #0891b2; }
+.k2b-ui .k2b-link-card[data-color="cyan"] .k2b-link-card__icon { color: #0e7490; }
 .k2b-ui .k2b-link-card[data-color="rose"] .k2b-link-card__icon { color: #e11d48; }
 
 .k2b-ui[data-theme="dark"] .k2b-link-card[data-color="blue"] .k2b-link-card__icon,
@@ -410,6 +405,9 @@
 }
 .k2b-ui .k2b-notice-card__description { margin: 0; }
 .k2b-ui .k2b-notice-card__body { min-width: 0; }
+/* Buttons in a notice take its line height instead of their own, so a card's
+   actions keep the height its 22px lines give them (32px for `sm`). */
+.k2b-ui .k2b-notice-card .k2b-button { line-height: inherit; }
 /* A Markdown info block's body sits directly in the card and holds flow
    content. Whatever prose spacing the host applies, its outer margins would
    read as empty rows inside the card. `[data-tone]` lifts these rules above
@@ -467,10 +465,14 @@
    padding and gap, so the line starts where the first row would. */
 .k2b-ui .k2b-placeholder[data-variant="inline"] { flex-direction: row; align-items: flex-start; gap: 0.5rem; padding: 0.375rem 0.5625rem; }
 .k2b-ui .k2b-placeholder[data-variant="inline"][data-align="center"] { justify-content: center; }
+/* The icon box is fixed per variant and the same in every state. An empty
+   state's icon is a `k2b-icon-tile` in the app accent hook; loading and error
+   keep their status colours on the same box without a fill, so switching
+   state moves nothing. Inline rows keep a plain glyph like the rows beside them. */
 .k2b-ui .k2b-placeholder__icon {
   display: flex;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 2rem;
+  height: 2rem;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
@@ -480,6 +482,10 @@
 .k2b-ui[data-theme="dark"] .k2b-placeholder__icon,
 .k2b-ui.k2b-dark .k2b-placeholder__icon,
 .dark .k2b-ui .k2b-placeholder__icon { color: var(--k2b-neutral-500); }
+.k2b-ui .k2b-placeholder__icon.k2b-icon-tile,
+.k2b-ui[data-theme="dark"] .k2b-placeholder__icon.k2b-icon-tile,
+.k2b-ui.k2b-dark .k2b-placeholder__icon.k2b-icon-tile,
+.dark .k2b-ui .k2b-placeholder__icon.k2b-icon-tile { color: var(--k2b-app-workspace-active); }
 .k2b-ui .k2b-placeholder[data-variant="panel"] .k2b-placeholder__icon {
   width: 2.5rem;
   height: 2.5rem;
@@ -499,7 +505,7 @@
 .k2b-ui .k2b-placeholder__title,
 .k2b-ui .k2b-placeholder__description { margin: 0; }
 .k2b-ui .k2b-placeholder__title { color: var(--k2b-text-secondary); font-size: 0.75rem; font-weight: 500; line-height: 1rem; }
-.k2b-ui .k2b-placeholder[data-variant="panel"] .k2b-placeholder__title { font-size: 0.875rem; font-weight: 600; line-height: 1.25rem; }
+.k2b-ui .k2b-placeholder[data-variant="panel"] .k2b-placeholder__title { font-size: 0.875rem; font-weight: 600; line-height: 1.25rem; letter-spacing: -0.018em; }
 .k2b-ui .k2b-placeholder__description { max-width: 24rem; font-size: 0.75rem; line-height: 1rem; }
 .k2b-ui .k2b-placeholder__action { margin-top: 0.5rem; }
 .k2b-ui .k2b-placeholder[data-variant="panel"] .k2b-placeholder__action { margin-top: 0.25rem; }
@@ -534,7 +540,7 @@
   overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.625rem;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1rem;
   white-space: nowrap;
 }
@@ -869,18 +875,14 @@
 .k2b-ui a.k2b-widget__header:hover { background: transparent; }
 .k2b-ui a.k2b-widget__header:hover .k2b-widget__title { color: var(--k2b-text); }
 .k2b-ui a.k2b-widget__header:hover .k2b-widget__chevron { color: var(--k2b-text-secondary); }
+/* The source app's icon in a soft chip of its accent hook; the dashboard sets
+   that hook to each widget's own app. */
 .k2b-ui .k2b-widget__icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  color: var(--k2b-neutral-600);
-  background: transparent;
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--k2b-app-workspace-active);
   font-size: 0.875rem;
 }
-.k2b-ui[data-theme="dark"] .k2b-widget__icon,
-.k2b-ui.k2b-dark .k2b-widget__icon,
-.dark .k2b-ui .k2b-widget__icon { color: var(--k2b-neutral-300); }
 .k2b-ui .k2b-widget__heading { min-width: 0; flex: 1; }
 .k2b-ui .k2b-widget__title,
 .k2b-ui .k2b-widget__meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

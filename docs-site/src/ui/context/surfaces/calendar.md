@@ -76,6 +76,10 @@ off. Put state that the line shows only as an icon into `accessibleDetail`.
 
 ## Views and navigation
 
+Weekend shading follows the locale's week data in month, week, and phone month
+views, with Saturday and Sunday as the fallback. Day and year views keep their
+existing backgrounds without weekend shading.
+
 `view` accepts:
 
 - `day` for one timed column;
@@ -410,11 +414,11 @@ selection and compact status context.
 
 The day and week views mark their own scroller with `k2b-detail-trail`, so
 applications add nothing beside an
-[AppWorkspace detail panel](/en/ui/layout/workspace#floating-detail).
+[AppWorkspace detail panel](/en/ui/layout/workspace#detail-and-panel).
 Without `dayHours`, that is the hour scroller,
 `k2b-calendar-time-grid__scroll`; with `dayHours`, it is the strip of days
 in the week and the stream of days in the day view.
-Under the touch-tablet drawer, the week keeps the width of its days and
+Under an open waiting drawer, the week keeps the width of its days and
 scrolls sideways, with its day header and all-day row. Selecting an event
 scrolls its day out beside the drawer. With `dayHours`, the strip then
 settles on the next day start or day end at the drawer in the direction it

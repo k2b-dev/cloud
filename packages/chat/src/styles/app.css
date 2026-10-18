@@ -20,7 +20,7 @@
   min-height: 2.875rem;
   padding: 0.25rem 0.75rem;
 }
-/* The list is its own page below 64 rem; from 64 rem the sidebar beside the chat holds it. */
+/* The list is its own page below a 64 rem app host; from 64 rem the sidebar beside the chat holds it. */
 .chat-conversation__back {
   display: flex;
   flex: none;
@@ -29,7 +29,7 @@
 .chat-conversation__back i {
   font-size: 1.25rem;
 }
-@media (min-width: 64rem) {
+@container k2b-app-area (min-width: 64rem) {
   .chat-conversation__back {
     display: none;
   }
@@ -67,7 +67,9 @@
   }
 }
 
-/* Below 64 rem the list of chats is its own page; from 64 rem the sidebar holds it and the work area asks for a chat. */
+/* Below a 64 rem app host the list of chats is its own page; from 64 rem the sidebar holds it and the work area asks for
+   a chat. Like the sidebar column, this follows the host, not the window, so the app beside Cloud's panel matches a
+   window as wide as the app. */
 .chat-list-page {
   display: flex;
   flex: 1;
@@ -81,7 +83,7 @@
   flex: 1;
   flex-direction: column;
 }
-@media (min-width: 64rem) {
+@container k2b-app-area (min-width: 64rem) {
   .chat-list-page {
     display: none;
   }

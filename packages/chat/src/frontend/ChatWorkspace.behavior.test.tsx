@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -109,6 +109,7 @@ describe("ChatWorkspace interactions", () => {
   let memberName: string | null = null;
   let answer: (response: Response) => void;
   beforeEach(() => {
+    setSystemTime(new Date(now));
     dom = createDomTestHarness();
     delegateEvents(["click", "input", "keydown"], dom.document);
     posted.length = 0;
@@ -193,6 +194,7 @@ describe("ChatWorkspace interactions", () => {
     if (originalWebSocket) Object.defineProperty(globalThis, "WebSocket", originalWebSocket);
     else Reflect.deleteProperty(globalThis, "WebSocket");
     dom.cleanup();
+    setSystemTime();
   });
   const mount = async (
     open: boolean,

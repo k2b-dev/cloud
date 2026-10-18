@@ -59,6 +59,10 @@ export const EVENT_DURATION_PRESETS: DurationPreset[] = [
   { label: "3h", minutes: 180 },
 ];
 
+/** The time a deadline starts with when someone adds one; a deadline without a time lasts the whole day. */
+export const DEADLINE_DEFAULT_TIME = "17:00";
+
+/** Deadline presets name whole days, so a preset never adds a time. */
 export const deadlinePresets = (dateConfig?: DateContext): DatePreset<string | null>[] => {
   const { t } = spaceMessages.resolve(dateConfig?.locale ? [dateConfig.locale] : []);
   const context = pickerContext(dateConfig);
@@ -67,8 +71,8 @@ export const deadlinePresets = (dateConfig?: DateContext): DatePreset<string | n
   const weekStart = dates.startOfWeek(todayDate, context);
   const friday = dates.addDays(weekStart, 4, context);
   return [
-    { label: t.today, value: instantFromLocalDateTime(dateKey(todayDate, context), "17:00", context) },
-    { label: t.tomorrow, value: instantFromLocalDateTime(dateKey(tomorrowDate, context), "17:00", context) },
-    { label: t.endOfWeek, value: instantFromLocalDateTime(dateKey(friday, context), "17:00", context) },
+    { label: t.today, value: dateKey(todayDate, context) },
+    { label: t.tomorrow, value: dateKey(tomorrowDate, context) },
+    { label: t.endOfWeek, value: dateKey(friday, context) },
   ];
 };

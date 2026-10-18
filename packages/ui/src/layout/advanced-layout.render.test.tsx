@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent, type JSX } from "solid-js";
-import { renderToString } from "solid-js/web";
+import { Dynamic, renderToString } from "solid-js/web";
 import {
   APP_WORKSPACE_MAIN_MIN,
   APP_WORKSPACE_MAIN_MIN_HEIGHT,
@@ -24,6 +24,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: AppWorkspace } = await import("./AppWorkspace");
+const { LocaleProvider } = await import("../intl/locale");
 const { PageTrailProvider } = await import("./PageTitle");
 
 describe("@k2b/ui complete advanced layout migrations", () => {
@@ -195,10 +196,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(html).toContain("data-k2b-app-workspace");
     // A tree item's description is a second line under its label.
     expect(html).toMatch(
-      /k2b-app-workspace__sidebar-item-copy"><span class="k2b-app-workspace__sidebar-item-label" data-label="Available"><span class="k2b-app-workspace__sidebar-item-label-text">Available<\/span><\/span><span class="k2b-app-workspace__sidebar-item-description">Updated today<\/span>/,
+      /k2b-app-workspace__sidebar-item-copy"><span class="k2b-app-workspace__sidebar-item-label" data-label="Available"><span class="k2b-app-workspace__sidebar-item-label-text k2b-truncate-fade-lines">Available<\/span><\/span><span class="k2b-app-workspace__sidebar-item-description k2b-truncate-fade">Updated today<\/span>/,
     );
     expect(html).not.toContain("k2b-app-workspace__sidebar-mobile");
     expect(html).not.toContain('data-mobile="stacked"');
+    expect(html).toMatch(/<aside[^>]*class="k2b-app-workspace__sidebar/);
+    expect(html).not.toContain('class="k2b-app-workspace__sidebar-all"');
     expect(html).toContain("Inventory");
     expect(html).toContain("k2b-app-workspace__sidebar-desktop");
     // The sidebar body's scroll memory runs inline right after the body so a
@@ -230,54 +233,75 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(html).toContain('class="k2b-app-workspace__sidebar-item-meta k2b-app-workspace__nav-tree-leaf-meta"');
   });
 
-  test("renders object rows and an opt-in stacked mobile sidebar", () => {
-    const html = renderToString(() =>
-      createComponent(AppWorkspace, {
-        get children() {
-          return [
-            createComponent(AppWorkspace.Sidebar, {
-              label: "Mailboxes",
-              mobile: "stacked",
-              get children() {
-                return createComponent(AppWorkspace.SidebarDesktop, {
-                  get children() {
-                    return createComponent(AppWorkspace.SidebarBody, {
-                      get children() {
-                        return createComponent(AppWorkspace.SidebarItem, {
-                          variant: "object",
-                          href: "/app/mail/support",
-                          description: "support@example.test",
-                          get children() {
-                            return [
-                              createComponent(AppWorkspace.SidebarItemIcon, { icon: "ti ti-mail" }),
-                              createComponent(AppWorkspace.SidebarItemLabel, { children: "Support" }),
-                              createComponent(AppWorkspace.SidebarItemMeta, { children: "12" }),
-                            ];
-                          },
-                        });
-                      },
-                    });
-                  },
-                });
-              },
-            }),
-            createComponent(AppWorkspace.Content, {
-              get children() {
-                return createComponent(AppWorkspace.Main, { width: "content", children: "Main content" });
-              },
-            }),
-          ];
-        },
-      }),
-    );
+  for (const [locale, all] of [
+    ["en", "All"],
+    ["de", "Alle"],
+  ] as const) {
+    test(`renders accessible stacked object navigation in ${locale}`, () => {
+      const workspace = () =>
+        createComponent(AppWorkspace, {
+          get children() {
+            return [
+              createComponent(AppWorkspace.Sidebar, {
+                label: "Mailboxes",
+                mobile: "stacked",
+                get children() {
+                  return createComponent(AppWorkspace.SidebarDesktop, {
+                    get children() {
+                      return createComponent(AppWorkspace.SidebarBody, {
+                        get children() {
+                          return createComponent(AppWorkspace.SidebarItem, {
+                            variant: "object",
+                            active: true,
+                            href: "/app/mail/support",
+                            description: "support@example.test",
+                            get children() {
+                              return [
+                                createComponent(AppWorkspace.SidebarItemIcon, { icon: "ti ti-mail" }),
+                                createComponent(AppWorkspace.SidebarItemLabel, { children: "Support" }),
+                                createComponent(AppWorkspace.SidebarItemMeta, { children: "12" }),
+                              ];
+                            },
+                          });
+                        },
+                      });
+                    },
+                  });
+                },
+              }),
+              createComponent(AppWorkspace.Content, {
+                get children() {
+                  return createComponent(AppWorkspace.Main, { width: "content", children: "Main content" });
+                },
+              }),
+            ];
+          },
+        });
+      const html = renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return workspace();
+          },
+        }),
+      );
 
-    expect(html).toMatch(/<aside[^>]*aria-label="Mailboxes"[^>]*data-mobile="stacked"/);
-    expect(html).toMatch(/class="k2b-app-workspace__main[^"]*"[^>]*data-width="content"/);
-    expect(html).toMatch(/<a href="\/app\/mail\/support"[^>]*data-variant="object"/);
-    expect(html).toContain('class="k2b-app-workspace__sidebar-item-label" data-lines="1"');
-    expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-description">support@example.test</span>');
-    expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-meta">12</span>');
-  });
+      expect(html).toMatch(/<nav[^>]*aria-label="Mailboxes"[^>]*data-mobile="stacked"/);
+      expect(html).toMatch(/class="k2b-app-workspace__main[^"]*"[^>]*data-width="content"/);
+      expect(html).toMatch(/<a href="\/app\/mail\/support"[^>]*data-variant="object"/);
+      expect(html).toMatch(/<a[^>]*href="\/app\/mail\/support"[^>]*aria-current="page"/);
+      expect(html).toContain('data-scroll-fade-mode="both" data-scroll-fade-axis="horizontal"');
+      expect(html).toContain(
+        `class="k2b-app-workspace__sidebar-all" aria-haspopup="dialog" aria-expanded="false" aria-label="${all} Mailboxes"`,
+      );
+      expect(html).toContain(`<span>${all}</span>`);
+      expect(html).toMatch(/<script>\(function settleChipRow\(/);
+      expect(html).toContain("document.currentScript.previousElementSibling");
+      expect(html).toContain('class="k2b-app-workspace__sidebar-item-label" data-lines="1"');
+      expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-description k2b-truncate-fade">support@example.test</span>');
+      expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-meta">12</span>');
+    });
+  }
   test("renders labelled actions beside a sidebar section title", () => {
     const html = renderToString(() =>
       createComponent(AppWorkspace.SidebarSection, {
@@ -390,12 +414,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     expect(css).toContain("--k2b-app-workspace-active: var(--k2b-action)");
     expect(activeItemRule).toContain("color: var(--k2b-app-workspace-active)");
-    expect(activeItemRule).toContain("background: var(--k2b-nav-selected)");
+    expect(activeItemRule).toContain("background: var(--k2b-app-workspace-selected)");
     expect(activeItemRule).toContain("font-weight: 600");
-    expect(activeItemHoverRule).toContain("background: var(--k2b-nav-selected)");
+    expect(activeItemHoverRule).toContain("background: var(--k2b-app-workspace-selected)");
     expect(activeIconRule).toContain("color: var(--k2b-app-workspace-active)");
-    expect(activeIconRule).toContain("background: var(--k2b-nav-selected)");
-    expect(activeIconHoverRule).toContain("background: var(--k2b-nav-selected)");
+    expect(activeIconRule).toContain("background: var(--k2b-app-workspace-selected)");
+    expect(activeIconHoverRule).toContain("background: var(--k2b-app-workspace-selected)");
     // Ordinary hover uses one neutral fill; selected rows retain their navigation fill.
     expect(css).toContain("--k2b-app-workspace-hover: color-mix(in srgb, var(--k2b-text) 5%, transparent)");
     for (const selector of [
@@ -562,7 +586,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     expect(rootRule).toBeDefined();
     expect(rootRule).not.toContain("--k2b-workspace-sidebar-width");
-    expect(css.match(/var\(--k2b-workspace-sidebar-width, 13rem\)/g)).toHaveLength(3);
+    // The sidebar space calculation also inherits the server-rendered width.
+    expect(css.match(/var\(--k2b-workspace-sidebar-width, 13rem\)/g)).toHaveLength(4);
     expect(css).not.toContain("var(--k2b-workspace-sidebar-width)");
   });
 
@@ -764,12 +789,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       );
 
     // Only wrapping plain strings reserve their selected weight.
-    expect(item()).toContain('class="k2b-app-workspace__sidebar-item-label-text"');
+    expect(item()).toContain('class="k2b-app-workspace__sidebar-item-label-text k2b-truncate-fade-lines"');
     expect(item()).toContain('data-label="A very long row label"');
     expect(item()).not.toContain("data-lines");
     expect(item(false)).toContain('data-lines="1"');
     expect(item(false)).not.toContain("data-label");
-    expect(item(undefined, <strong>Styled label</strong>)).not.toContain("data-label");
+    expect(item(undefined, createComponent(Dynamic, { component: "strong", children: "Styled label" }))).not.toContain("data-label");
     expect(item(undefined, 123)).not.toContain("data-label");
   });
 
@@ -887,7 +912,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
         ".k2b-ui[data-theme=dark] .k2b-app-workspace,.k2b-ui.k2b-dark .k2b-app-workspace,.dark .k2b-ui .k2b-app-workspace",
       );
       expect(css).toContain("border-color:var(--k2b-border)");
-      expect(rule(".k2b-app-workspace__sidebar")).toContain("background:var(--k2b-surface-muted)");
+      expect(rule(".k2b-app-workspace__sidebar")).toContain("background:var(--k2b-surface)");
       expect(rule(".k2b-app-workspace__sidebar-desktop")).toContain("display:flex");
       expect(rule(".k2b-app-workspace__sidebar-desktop")).toContain("padding:.5rem");
       expect(rule(".k2b-app-workspace__sidebar-body")).toContain("padding:0");
@@ -896,15 +921,14 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-app-workspace__main[data-scroll=false]")).toContain("overflow:hidden");
       expect(rule(".k2b-app-workspace__main-pane[data-scroll=false]")).toContain("overflow:hidden");
       expect(rule(".k2b-app-workspace__main-pane")).not.toContain("border-right");
-      expect(css).toMatch(
-        /\.k2b-app-workspace__main-pane:has\(~\s*\[data-workspace-main-region\]\)[^{]*\{border-right:1px solid var\(--k2b-border\)/,
-      );
+      // Peer panes now separate with a 12px gap carried by a transparent border.
+      expect(rule(".k2b-app-workspace__main-pane:has(~[data-workspace-main-region])")).toContain("border-right:.75rem solid #0000");
       expect(rule(".k2b-app-workspace__sidebar-item")).toContain("--k2b-sidebar-item-depth");
       expect(rule(".k2b-app-workspace__sidebar-icon-action")).toContain("width:100%");
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("background:var(--k2b-surface-muted)");
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("padding:.5rem");
       expect(rule(".k2b-app-workspace__detail")).toContain("background:var(--k2b-surface-elevated)");
-      // A phone sheet belongs to the window; from 48 rem the panel floats inside the content area.
+      // A phone sheet belongs to the window; from 48 rem the column or drawer sits inside the workspace.
       expect(rule(".k2b-app-workspace__detail")).toContain("position:fixed");
       expect(css).toContain(".k2b-ui .k2b-app-workspace__detail{position:absolute;");
       expect(rule(".k2b-app-workspace__drawer")).toContain("background:var(--k2b-surface-muted)");
@@ -950,9 +974,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     });
 
     test("gives object rows an accent tile, a strong title, and stacked counts", () => {
-      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-icon")).toContain(
-        "width:1.25rem",
-      );
+      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-icon")).toContain("width:2rem");
       expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-main")).toContain(
         "min-height:2.75rem",
       );
@@ -978,7 +1000,28 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       const stacked = css.match(/\.k2b-app-workspace__sidebar\[data-mobile=stacked\]:not\(\[hidden\]\)\{([^}]*)\}/)?.[1] ?? "";
       expect(stacked).toContain("display:flex");
       expect(stacked).toContain("grid-area:mobile");
-      expect(stacked).toContain("max-height:50dvh");
+      expect(stacked).not.toContain("max-height");
+      expect(stacked).toMatch(/background:(?:0 0|transparent)/);
+      const source = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
+      const allRules = [...source.matchAll(/([^{}]+sidebar-all[^{}]*)\{([^{}]*)\}/g)];
+      expect(allRules[0]![2]).toContain("display: none");
+      const visible = allRules.filter((rule) => /display:\s*inline-flex/.test(rule[2]!));
+      expect(visible).toHaveLength(1);
+      const queryStart = source.lastIndexOf("@container k2b-app-area (max-width: 63.999rem)", visible[0]!.index);
+      expect(queryStart).toBeGreaterThan(-1);
+      // Balance braces to prove the visible rule belongs to that query.
+      let depth = 1;
+      let queryEnd = source.indexOf("{", queryStart) + 1;
+      for (; depth && queryEnd < source.length; queryEnd++) {
+        if (source[queryEnd] === "{") depth++;
+        if (source[queryEnd] === "}") depth--;
+      }
+      expect(visible[0]!.index! + visible[0]![0].length).toBeLessThan(queryEnd);
+      const row = source.slice(queryStart, queryEnd);
+      expect(row).toContain("border-radius: 999px");
+      expect(row).toMatch(/sidebar-body[^{]*sidebar-section-content:not\(\[hidden\]\)[^{]*\{\s*display: contents/);
+      expect(row).toMatch(/data-collapsible="true"[^{]*\{\s*display: none/);
+      expect(row).toMatch(/sidebar-desktop\s*> :not\(\.k2b-app-workspace__sidebar-body[^{]*\{\s*display: none/);
     });
 
     test("gives the settings rail Cloud's sidebar-item affordances", () => {
@@ -990,7 +1033,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(css).toContain(".k2b-settings__tabs button:focus-visible");
       expect(css).toContain(".k2b-settings__tabs button:not([data-active=true]):hover");
       // A single-line label truncates; it is not a flex column.
-      expect(rule(".k2b-settings__tabs button>span")).toContain("text-overflow:ellipsis");
+      expect(rule(".k2b-settings__tabs button>span")).not.toContain("text-overflow:ellipsis");
       expect(rule(".k2b-settings__tabs button>span")).not.toContain("flex-direction:column");
     });
 
@@ -1145,11 +1188,11 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     test("balances two label lines and reserves the selected weight", () => {
       expect(rule(".k2b-app-workspace__sidebar-item-label")).toContain("display:grid");
-      expect(css).toContain("-webkit-line-clamp:2");
+      expect(css).toContain("max-height:calc(var(--k2b-truncate-fade-lines,2)*1lh)");
       expect(css).toContain("text-wrap:balance");
       expect(css).toMatch(/sidebar-item-label\[data-label\]:after\{[^}]*font-weight:600/);
-      // One-line labels, and labels beside a live status, keep the ellipsis.
-      expect(css).toMatch(/sidebar-item-label:is\(\[data-lines="1"\][^{]*sidebar-status[^{]*\{[^}]*text-overflow:ellipsis/);
+      // One-line labels, and labels beside a live status, use the same fade on one line.
+      expect(css).toMatch(/sidebar-item-label:is\(\[data-lines="1"\][^{]*sidebar-status[^{]*\{[^}]*--k2b-truncate-fade-lines:1/);
     });
 
     test("mutes a pane separator that cannot be dragged", () => {

@@ -1,8 +1,18 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { AccessSubject, RequestActor } from "@k2b/cloud/server";
 import { type ContactBook, contactsService } from "../service";
+import * as access from "../service/access";
+import * as booksService from "../service/books";
+import * as contacts from "../service/contacts";
+import * as favorites from "../service/favorites";
 import * as publicResources from "../service/public-resources";
-import { loadContactBookPermissions, parseContactsPage, parseContactsQueryOptions, resolveSelectedContact } from "./page-data";
+import {
+  loadContactBookPermissions,
+  loadFavoriteKeysForContacts,
+  parseContactsPage,
+  parseContactsQueryOptions,
+  resolveSelectedContact,
+} from "./page-data";
 
 describe("contacts page state", () => {
   test("normalizes invalid page values", () => {
@@ -71,8 +81,9 @@ test("SSR forwards actor and accessSubject and preserves book order and permissi
 test("SSR selection checks the shared permission before loading a contact outside the page", async () => {
   spyOn(publicResources, "resolvePublicId").mockResolvedValue("internal-book");
   spyOn(publicResources, "resolveBookPublicIds").mockResolvedValue(["internal-contact"]);
-  const permission = spyOn(contactsService.book.permission, "forActor").mockResolvedValue("none");
-  const get = spyOn(contactsService.contact, "get").mockResolvedValue(null);
+  spyOn(booksService, "get").mockResolvedValue(books[0]!);
+  const permission = spyOn(access, "getActorBookPermission").mockResolvedValue("none");
+  const get = spyOn(contacts, "get").mockResolvedValue(null);
   const selection = { contacts: [], contactId: "Cont01", bookId: "Book01", actor, accessSubject };
   expect(await resolveSelectedContact(selection)).toBeNull();
   expect(permission).toHaveBeenCalledWith({ bookId: "internal-book", actor, accessSubject });
@@ -80,4 +91,10 @@ test("SSR selection checks the shared permission before loading a contact outsid
   permission.mockResolvedValue("read");
   expect(await resolveSelectedContact(selection)).toBeNull();
   expect(get).toHaveBeenCalledWith({ bookId: "internal-book", id: "internal-contact" });
+});
+
+test("SSR favorite projection derives user identity from the actor and skips machine actors", async () => {
+  const keys = spyOn(favorites, "listKeysForContacts").mockResolvedValue([]);
+  expect(await loadFavoriteKeysForContacts(actor, [])).toEqual([]);
+  expect(keys).not.toHaveBeenCalled();
 });

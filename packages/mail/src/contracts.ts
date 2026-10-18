@@ -2853,6 +2853,7 @@ export const MAX_COMPOSE_FORMATTING_WARNINGS = 20;
  * message, or parts of a stored mailbox design that no longer pass the CSS check.
  */
 export const composeFormattingWarningSchema = z.discriminatedUnion("code", [
+  z.object({ code: z.literal("missing_mailbox_logo") }).strict(),
   z
     .object({
       code: z.enum(["unsupported_element", "unsupported_attribute", "unsupported_link"]),
@@ -2907,6 +2908,7 @@ export const composeTemplateVariables = {
   "sender.display_name": "Display name of the sender identity, or its address when it has no name",
   "sender.email": "From address of the sender identity",
   "sender.reply_to": "Reply-To address of the sender identity; empty when not set",
+  "mailbox.logo": "The mailbox logo as an inline image in signatures; empty when the mailbox has no logo and in snippets",
   "mailbox.name": "Mailbox name",
   "mailbox.description": "Mailbox description; empty when not set",
   "message.subject": "Subject of the draft",
@@ -2978,6 +2980,41 @@ export const setComposeSignatureDefaultInputSchema = z
   })
   .strict();
 export type SetComposeSignatureDefaultInput = z.infer<typeof setComposeSignatureDefaultInputSchema>;
+
+export const mailboxComposeLogoSchema = z.object({
+  logo: z
+    .object({
+      contentType: z.enum(["image/png", "image/jpeg"]),
+      pixelWidth: z.number().int().min(1).max(1200),
+      pixelHeight: z.number().int().min(1).max(400),
+      displayWidth: z.number().int().min(1).max(600),
+      altText: z.string().min(1).max(200),
+      byteLength: z.number().int().min(1).max(102400),
+      sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      dataUrl: z.string(),
+      createdAt: z.string().datetime(),
+    })
+    .nullable(),
+});
+export type MailboxComposeLogo = z.infer<typeof mailboxComposeLogoSchema>;
+export const mailboxLogoAltTextSchema = z
+  .string()
+  .refine((value) => !/[\u0000-\u001f\u007f-\u009f]/.test(value), "Logo alt text must not contain control characters")
+  .trim()
+  .min(1)
+  .max(200);
+export const updateMailboxComposeLogoInputSchema = z
+  .object({
+    content: z
+      .string()
+      .min(4)
+      .max(136536)
+      .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/, "Logo content must be valid padded base64"),
+    displayWidth: z.number().int().min(1).max(600).optional(),
+    altText: mailboxLogoAltTextSchema.optional(),
+  })
+  .strict();
+export type UpdateMailboxComposeLogoInput = z.infer<typeof updateMailboxComposeLogoInputSchema>;
 
 export const mailboxComposeStyleSchema = z.object({
   formattingWarnings: composeFormattingWarningsSchema,

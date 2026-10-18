@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-10-11
+updated: 2026-10-18
 ---
 
 # Request identity
@@ -181,6 +181,10 @@ The cookie is:
 - `SameSite=Lax`;
 - secure outside development;
 - valid for the configured `user.session.expiry_hours`.
+
+Successful browser sign-ins also set a separate 90-day
+[browser cookie](/en/docs/operations/sign-in-locations#browser-cookie) that is
+kept on sign-out; it does not authenticate requests.
 
 Signing out removes the current session. Revoking all sessions for a user
 with `auth.session.revokeAllForUser` invalidates every older session and also

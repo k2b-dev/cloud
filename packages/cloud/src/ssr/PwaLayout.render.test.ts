@@ -219,6 +219,7 @@ describe("PwaLayout", () => {
       { href: "/pwa/inventory", label: "Inventory", title: "Inventory", current: true },
     ]);
     expect(document.querySelector(".k2b-tab-bar")?.getAttribute("aria-label")).toBe("App");
+    expect(document.querySelectorAll(".k2b-tab-bar a > span.k2b-truncate-fade").length).toBe(4);
   });
 
   test("marks Start, which lists every part, for a part without its own tab", async () => {

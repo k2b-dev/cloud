@@ -47,6 +47,9 @@ type Permission = z.infer<typeof PermissionSchema>;
 type Chat = { conversation: Conversation; messages: Message[]; members: Member[]; archived: boolean };
 type Subscription = { socket: ServerWebSocket<unknown>; id: string; channel: string; scope: { conversation?: string } };
 
+/** Midday in Berlin keeps even the longest seeded history on one fixed calendar day. */
+export const chatTestNow = new Date("2026-10-14T10:00:00.000Z");
+
 export const viewer: Person = { id: "11111111-1111-4111-8111-111111111111", name: "Robin Example" };
 export const nora: Person = { id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" };
 export const tobias: Person = { id: "33333333-3333-4333-8333-333333333333", name: "Tobias Brandt" };
@@ -109,6 +112,8 @@ const messageId = (chat: string, seq: number) => `${chat}${String(seq).padStart(
  * the chat app does, and make the next sends fail with `failSends`.
  */
 export const startChatHarness = async () => {
+  const started = performance.now();
+  const now = () => new Date(chatTestNow.getTime() + (performance.now() - started));
   const [harness, css, fontAssets] = await Promise.all([
     buildHarness(),
     Promise.all([
@@ -283,7 +288,7 @@ export const startChatHarness = async () => {
     publish(message);
   };
   const revoke = (chat: string) => {
-    publish(append(chat, nora, "", new Date(), "system"));
+    publish(append(chat, nora, "", now(), "system"));
     chats.delete(chat);
     deliver("me", chat, { type: "membership", conversationId: chat });
   };
@@ -463,12 +468,13 @@ export const startChatHarness = async () => {
             .map((chat) => ExistingMatchSchema.parse({ ...chat.conversation, archived: chat.archived }));
           if (matches.length) return Response.json(CreateOutcomeSchema.parse({ outcome: "existing", matches }));
         }
+        // A new chat is the newest one, also within the same millisecond as the latest activity.
         const latest = [...chats.values()].reduce((at, chat) => Math.max(at, Date.parse(chat.conversation.lastActivityAt)), 0);
         const id = addChat({
           members: [...direct].map((id) => people.get(id)!),
           name: input.name ?? undefined,
           count: 1,
-          end: new Date(latest + 1),
+          end: new Date(Math.max(latest + 1, now().getTime())),
           spacing: 0,
         });
         const chat = chats.get(id)!;
@@ -658,7 +664,7 @@ export const startChatHarness = async () => {
             failing -= 1;
             return Response.json({ message: "Unavailable" }, { status: 503 });
           }
-          const message = append(id!, viewer, input.body, new Date());
+          const message = append(id!, viewer, input.body, now());
           publish(message);
           return Response.json(message, { status: 201 });
         }
@@ -716,6 +722,7 @@ export const startChatHarness = async () => {
 
   return {
     url: server.url.href,
+    now,
     addChat,
     /** Adds a person to the directory available to the member pickers. */
     addPerson: (person: Person) => {
@@ -781,7 +788,7 @@ export const startChatHarness = async () => {
       failing = count;
     },
     /** Stores a message from another person and delivers it live. */
-    receive: (chat: string, author: Person, body: string) => publish(append(chat, author, body, new Date())),
+    receive: (chat: string, author: Person, body: string) => publish(append(chat, author, body, now())),
     /** Renames a chat and announces it live with a system message, as a details change does. */
     rename: (chat: string, title: string) => {
       const entry = chats.get(chat)!;
@@ -792,11 +799,7 @@ export const startChatHarness = async () => {
     revoke,
     messageId,
     /** The island's props for an address, as the server renders them. */
-    props: (
-      address: { chat?: string; message?: string; panel?: string },
-      now: Date,
-      options: { guest?: boolean } = {},
-    ): ChatWorkspaceProps => {
+    props: (address: { chat?: string; message?: string; panel?: string }, options: { guest?: boolean } = {}): ChatWorkspaceProps => {
       const open = address.chat ? snapshot(address.chat, address.message ?? null) : null;
       return {
         cursor: `c.${cursor}`,
@@ -807,7 +810,7 @@ export const startChatHarness = async () => {
         panel: open && address.panel === "info" ? "info" : null,
         viewerId: viewer.id,
         dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
-        now: now.toISOString(),
+        now: now().toISOString(),
       };
     },
     stop: () => server.stop(true),

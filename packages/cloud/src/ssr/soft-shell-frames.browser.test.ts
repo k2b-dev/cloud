@@ -209,3 +209,53 @@ describe("the phone bar follows in-page navigation", () => {
     }
   });
 });
+
+test("390×844: the workspace primary sits beside the phone bar and both leave the last task reachable", async () => {
+  const { context, page } = await open(phone, "/app/mail/inbox?list=page&head=1");
+  try {
+    const primary = page.getByRole("link", { name: "New task", exact: true });
+    const action = await primary.boundingBox();
+    const nav = await page.locator(".cloud-tab-bar nav").boundingBox();
+    expect(action).not.toBeNull();
+    expect(nav).not.toBeNull();
+    expect(Math.abs(action!.y + action!.height / 2 - nav!.y - nav!.height / 2)).toBeLessThanOrEqual(2);
+    expect(action!.x).toBeGreaterThanOrEqual(nav!.x + nav!.width);
+    expect(action!.x + action!.width).toBeLessThanOrEqual(phone.width);
+    expect(action!.y + action!.height).toBeLessThanOrEqual(phone.height);
+    const assertLastIsClear = async () => {
+      const geometry = await page
+        .locator(".list-row")
+        .last()
+        .evaluate((element) => {
+          const row = element.getBoundingClientRect();
+          return {
+            top: row.top,
+            bottom: row.bottom,
+            covered: [...document.querySelectorAll(".cloud-tab-bar,[data-workspace-primary]")].some((overlay) => {
+              const box = overlay.getBoundingClientRect();
+              return row.left < box.right && row.right > box.left && row.top < box.bottom && row.bottom > box.top;
+            }),
+          };
+        });
+      expect(geometry.top).toBeGreaterThanOrEqual(0);
+      expect(geometry.bottom).toBeLessThanOrEqual(phone.height);
+      expect(geometry.covered).toBe(false);
+    };
+    await page.locator(".k2b-app-workspace__main").evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+    expect(await page.locator(".k2b-app-workspace__main").evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await assertLastIsClear();
+    await page.locator(".list-row").last().focus();
+    await assertLastIsClear();
+    expect(
+      await page
+        .locator(".list-row")
+        .last()
+        .evaluate((element) => element === document.activeElement),
+    ).toBe(true);
+  } finally {
+    await context.close();
+  }
+});

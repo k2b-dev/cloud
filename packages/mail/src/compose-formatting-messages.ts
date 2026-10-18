@@ -5,6 +5,7 @@ export const composeFormattingMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      missingMailboxLogo: "This signature uses a mailbox logo, but no logo is uploaded. Mail leaves it empty.",
       ignoredMailboxCss: ({ properties }: { properties: string }) =>
         `This design contains values that email no longer accepts: ${properties}. Messages still send without them. Remove or replace them and save the design.`,
       ignoredMailboxCssProperty: ({ property }: { property: string }) =>
@@ -19,6 +20,7 @@ export const composeFormattingMessages = i18n.define({
       unsupportedLink: "A link address that email does not support was removed. Its text stays.",
     },
     de: {
+      missingMailboxLogo: "Diese Signatur verwendet ein Postfachlogo, aber es ist keines hochgeladen. Mail lässt die Stelle leer.",
       ignoredMailboxCss: ({ properties }) =>
         `Dieses Design enthält Werte, die E-Mails nicht mehr zulassen: ${properties}. Nachrichten werden ohne sie gesendet. Entferne oder ersetze sie und speichere das Design.`,
       ignoredMailboxCssProperty: ({ property }) =>
@@ -37,6 +39,7 @@ export const composeFormattingMessages = i18n.define({
 /** One line per warning, in the reader's language. */
 export const describeComposeFormattingWarning = (warning: ComposeFormattingWarning, locale: string | undefined): string => {
   const t = composeFormattingMessages.resolve([locale ?? "en"]).t;
+  if (warning.code === "missing_mailbox_logo") return t.missingMailboxLogo;
   if (warning.code === "ignored_mailbox_css") {
     return warning.property ? t.ignoredMailboxCssProperty({ property: warning.property }) : t.ignoredMailboxCssDesign;
   }

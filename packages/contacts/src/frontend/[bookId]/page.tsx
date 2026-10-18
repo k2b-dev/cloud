@@ -1,6 +1,7 @@
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale, hasPermission } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { ok } from "@k2b/stdlib";
 import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../../config";
 import { contactsService } from "../../service";
@@ -45,20 +46,20 @@ export default ssr<AuthContext>(async (c) => {
   const initialLiveCursor = await captureContactLiveCursor();
   const bookId = await resolvePublicId("books", publicBookId);
   if (!bookId) return ssr.error(c, 404);
-  const [book, booksResult] = await Promise.all([
-    contactsService.book.get({ id: bookId }),
+  const [bookResult, booksResult] = await Promise.all([
+    contactsService.book.get({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), id: bookId }),
     contactsService.book.list({
-      subject: c.get("accessSubject"),
+      actor: c.get("actor"),
+      accessSubject: c.get("accessSubject"),
     }),
   ]);
-  if (!book) return ssr.error(c, 404);
-  const permission = await contactsService.book.permission.forActor({
-    bookId,
-    actor: c.get("actor"),
-    accessSubject: c.get("accessSubject"),
-  });
-  if (!hasPermission(permission, "read")) return ssr.error(c, 403, { description: t.askAdminDescription });
-  const internalBooks = booksResult.items;
+  if (!bookResult.ok)
+    return ssr.error(c, bookResult.error.code === "NOT_FOUND" ? 404 : 403, {
+      description: bookResult.error.code === "FORBIDDEN" ? t.askAdminDescription : undefined,
+    });
+  const { book } = bookResult.data;
+  if (!booksResult.ok) return ssr.error(c, 403);
+  const internalBooks = booksResult.data.items;
   const {
     entries: permissionEntries,
     adminBookIds: internalAdminBookIds,
@@ -69,6 +70,8 @@ export default ssr<AuthContext>(async (c) => {
   const [activeTagInternalId] = activeTagId ? ((await resolveBookPublicIds("tags", bookId, [activeTagId])) ?? []) : [];
   const [contactsResult, internalBookTags] = await Promise.all([
     contactsService.contact.list({
+      actor: c.get("actor"),
+      accessSubject: c.get("accessSubject"),
       bookId,
       pagination: { page, perPage },
       filter: {
@@ -80,9 +83,17 @@ export default ssr<AuthContext>(async (c) => {
         favoriteUserId: queryOptions.favorites ? user.id : undefined,
       },
     }),
-    contactsService.tag.list({ bookId }),
+    contactsService.tag.list({ bookId, actor: c.get("actor"), accessSubject: c.get("accessSubject") }),
   ]);
-  const internalContacts = contactsResult.items;
+  if (!contactsResult.ok)
+    return ssr.error(c, contactsResult.error.code === "NOT_FOUND" ? 404 : 403, {
+      description: contactsResult.error.code === "FORBIDDEN" ? t.askAdminDescription : undefined,
+    });
+  if (!internalBookTags.ok)
+    return ssr.error(c, internalBookTags.error.code === "NOT_FOUND" ? 404 : 403, {
+      description: internalBookTags.error.code === "FORBIDDEN" ? t.askAdminDescription : undefined,
+    });
+  const internalContacts = contactsResult.data.items;
   const selectedContact = await resolveSelectedContact({
     contacts: internalContacts,
     contactId: selectedContactIdFromUrl,
@@ -90,17 +101,23 @@ export default ssr<AuthContext>(async (c) => {
     actor: c.get("actor"),
     accessSubject: c.get("accessSubject"),
   });
-  const [internalNotesPage, internalFavoriteKeys] = await Promise.all([
+  const [notesResult, internalFavoriteKeys] = await Promise.all([
     selectedContact
       ? contactsService.contact.notes.listPage({
           bookId,
           contactId: selectedContact.id,
-          viewerUserId: user.id,
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
           pagination: { page: 1, perPage: 30 },
         })
-      : Promise.resolve({ items: [], page: 1, perPage: 30, total: 0, hasNext: false }),
-    loadFavoriteKeysForContacts(user.id, selectedContact ? [...internalContacts, selectedContact] : internalContacts),
+      : Promise.resolve(ok({ items: [], page: 1, perPage: 30, total: 0, hasNext: false })),
+    loadFavoriteKeysForContacts(c.get("actor"), selectedContact ? [...internalContacts, selectedContact] : internalContacts),
   ]);
+  if (!notesResult.ok)
+    return ssr.error(c, notesResult.error.code === "NOT_FOUND" ? 404 : 403, {
+      description: notesResult.error.code === "FORBIDDEN" ? t.askAdminDescription : undefined,
+    });
+  const internalNotesPage = notesResult.data;
   const favoriteContacts = selectedContact ? [...internalContacts, selectedContact] : internalContacts;
   const [books, publicBook, contacts, projectedSelected, initialNoteItems, favoriteKeys, bookTags] = await Promise.all([
     projectBooks(internalBooks),
@@ -109,7 +126,7 @@ export default ssr<AuthContext>(async (c) => {
     selectedContact ? projectContacts([selectedContact]) : Promise.resolve([]),
     projectNotes(internalNotesPage.items),
     projectFavoriteKeys(favoriteContacts, internalFavoriteKeys),
-    projectTags(internalBookTags),
+    projectTags(internalBookTags.data),
   ]);
   const initialNotesPage = { ...internalNotesPage, items: initialNoteItems };
   const selectedPublicContact = projectedSelected[0] ?? null;
@@ -120,7 +137,7 @@ export default ssr<AuthContext>(async (c) => {
     .filter((entry) => Boolean(entry.id));
   const currentBook = publicBook[0]!;
   const bookNames = Object.fromEntries(books.map((entry) => [entry.id, entry.name]));
-  const totalPages = Math.max(1, Math.ceil(contactsResult.total / perPage));
+  const totalPages = Math.max(1, Math.ceil(contactsResult.data.total / perPage));
   const requestUrl = new URL(c.req.raw.url);
   const resultHref = `${requestUrl.pathname}${requestUrl.search}`;
   const initialSelectedContactId = selectedPublicContact?.id ?? selectedContactIdFromUrl ?? null;
@@ -141,7 +158,7 @@ export default ssr<AuthContext>(async (c) => {
             scope="book"
             title={currentBook.name}
             description={currentBook.description ?? t.sharedBookDescription}
-            total={contactsResult.total}
+            total={contactsResult.data.total}
             search={search}
             resultHref={resultHref}
             bookId={publicBookId}
@@ -154,7 +171,7 @@ export default ssr<AuthContext>(async (c) => {
             writableBooks={writableBooks}
             defaultCreateBookId={canWrite ? currentBook.id : (writableBooks[0]?.id ?? null)}
             chooseBookOnCreate={!canWrite}
-            currentPage={contactsResult.page}
+            currentPage={contactsResult.data.page}
             totalPages={totalPages}
             tags={bookTags}
             activeTagId={activeTagId}

@@ -19,6 +19,10 @@ Use `FileBrowserPanel` for the ready tree-and-preview composition over a
 import {
   FileBrowserPanel,
   FileTree,
+  FileTypeIcon,
+  fileTypeOf,
+  type FileType,
+  type FileTypeIconProps,
   FileView,
   canPreviewFile,
   formatFileViewSize,
@@ -37,6 +41,38 @@ import {
   type FileViewRendererProps,
 } from "@k2b/ui";
 ```
+
+## File and folder icon tiles
+
+`FileTypeIcon` shows a file or folder glyph in a soft chip of its type color.
+`FileTree` rows use it at `size="sm"`; use `size="md"` in file-list rows and
+`size="lg"` for `FileGrid` previews without a thumbnail. `FileGrid` leaves
+preview content to its host. Folders take the app accent hook
+`--k2b-app-workspace-active`.
+
+```tsx
+<FileTypeIcon name="report.pdf" size="md" />
+<FileTypeIcon name="Projects" folder open size="sm" />
+```
+
+| Property | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `name` | `string` | required | File or folder name; its extension selects the glyph and color family. |
+| `mediaType` | `string` | none | Media type used when resolving the file glyph and family. |
+| `folder` | `boolean` | `false` | Uses the folder family and app accent. |
+| `open` | `boolean` | `false` | Shows the open-folder glyph for a folder. |
+| `icon` | `string` | inferred | Overrides the Tabler glyph without changing its type color. Colour utility classes are ignored. |
+| `size` | `"sm" \| "md" \| "lg"` | `"md"` | Fixed box of 1.25rem, 2rem, or 4.5rem. |
+| `class` | `string` | none | Adds classes to the icon wrapper. |
+
+`data-file-type` records one `FileType`: `folder`, `pdf`, `image`, `sheet`,
+`document`, `slides`, `video`, `audio`, `archive`, or `other`. Code, text, and
+unknown files use the neutral `other` family. The glyph and chip keep their
+size and fill on hover, focus, and selection, in light and dark themes.
+`fileTypeOf({ name, mediaType?, folder? })` returns this family without rendering.
+
+The component renders on the server and needs no browser code. Its wrapper
+is decorative (`aria-hidden="true"`); keep a visible file name beside it.
 
 ## FileSource
 
@@ -290,7 +326,7 @@ const selection = createCollectionSelection({ ids: () => entries().map(file => f
   selection={selection}
   label="Files"
   size="md"
-  renderPreview={file => <i class={file.icon} aria-hidden="true" />}
+  renderPreview={file => <FileTypeIcon name={file.name} folder={file.directory} size="lg" />}
   renderLabel={file => file.name}
   renderMeta={file => file.sizeLabel}
   onOpen={openFile}

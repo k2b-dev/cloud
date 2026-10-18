@@ -7,18 +7,14 @@ import {
   ensureManagerRemains,
   getEffectivePermission,
   getEffectivePermissions,
+  hasPermission,
   type PermissionLevel,
   type Principal,
   paginateItems,
   type RequestActor,
   resolveDisplayNames,
 } from "@k2b/cloud/server";
-import {
-  isStandaloneServiceAccountKind,
-  type ServiceAccountCredential,
-  serviceAccountCredentials,
-  serviceAccounts,
-} from "@k2b/cloud/services";
+import { isStandaloneServiceAccountKind, type ServiceAccountCredential, serviceAccountCredentials } from "@k2b/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
 import { type SQL, sql } from "bun";
 import { publishContactChange } from "./live";
@@ -42,16 +38,26 @@ export type ContactBookApiKey = ServiceAccountCredential & {
   permission: PermissionLevel;
 };
 
-/**
- * Reads across contact books. A resource-bound service account must pass its
- * bound book; a standalone or agent account is limited only by its own grants.
- * The kind is read from the account row, so a caller that omits a binding
- * fails closed.
- */
-export const mayReadAcrossBooks = async (subject: AccessSubject, boundBookId: string | null | undefined): Promise<boolean> => {
-  if (subject.type !== "service_account" || isUuid(boundBookId ?? "")) return true;
-  const account = await serviceAccounts.get({ id: subject.serviceAccountId });
-  return Boolean(account && isStandaloneServiceAccountKind(account.kind));
+/** How far one caller reads across books. */
+export const readableBookScope = (caller: {
+  actor: RequestActor;
+  accessSubject: AccessSubject;
+}): Result<{ boundBookId: string | null }> => {
+  if (caller.accessSubject.type !== "service_account") return ok({ boundBookId: null });
+  if (caller.actor.kind !== "service_account") return fail(err.forbidden("Access denied"));
+  const { serviceAccount: account, scopes } = caller.actor;
+  if (isStandaloneServiceAccountKind(account.kind)) {
+    return account.id === caller.accessSubject.serviceAccountId && hasPermission(permissionFromScopes(scopes), "read")
+      ? ok({ boundBookId: null })
+      : fail(err.forbidden("Access denied"));
+  }
+  return account.kind === "resource_bound" &&
+    account.appId === CONTACTS_APP_ID &&
+    account.resourceType === CONTACT_BOOK_RESOURCE_TYPE &&
+    isUuid(account.resourceId ?? "") &&
+    hasPermission(permissionFromScopes(scopes), "read")
+    ? ok({ boundBookId: account.resourceId })
+    : fail(err.forbidden("Access denied"));
 };
 
 /**
@@ -426,10 +432,12 @@ export const isContactsAdministrator = (actor: RequestActor): boolean => {
 };
 
 /** Only a user-delegated credential acts as its user; every other service account is capped by its scopes. */
-const capByCredential = (actor: RequestActor, permission: PermissionLevel): PermissionLevel =>
+export const capByCredential = (actor: RequestActor, permission: PermissionLevel): PermissionLevel =>
   actor.kind === "service_account" && actor.serviceAccount.kind !== "user_delegated"
     ? minPermission(permission, permissionFromScopes(actor.scopes))
     : permission;
+
+export const credentialPermission = (actor: RequestActor): PermissionLevel => capByCredential(actor, "admin");
 
 /**
  * Resolves one existing book through the actor's exact resource binding and

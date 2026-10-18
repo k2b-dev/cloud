@@ -114,7 +114,13 @@ const PanelDialogHeader = (props: PanelDialogHeaderProps): JSX.Element => {
   const messages = useUiMessages();
   return (
     <header class="k2b-panel-dialog__header" data-surface={usePanelDialogSurface()} data-has-subtitle={Boolean(props.subtitle)}>
-      <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+      <Show when={props.icon}>
+        {(icon) => (
+          <span class="k2b-panel-dialog__icon k2b-icon-tile" aria-hidden="true">
+            <i class={icon()} />
+          </span>
+        )}
+      </Show>
       <div class="k2b-panel-dialog__heading">
         <h2>{props.title}</h2>
         <Show when={props.subtitle}>

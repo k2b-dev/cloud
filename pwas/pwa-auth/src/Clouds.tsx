@@ -16,7 +16,7 @@ import { ActionSheet } from "./ActionSheet";
 import type { ActionView, Authenticator, Login } from "./authenticator";
 import { openDetails } from "./Details";
 import { openDialog } from "./dialog";
-import { authMessages } from "./i18n";
+import { authMessages, scopeLabel } from "./i18n";
 import type { Preferences } from "./preferences";
 import type { Binding } from "./storage";
 
@@ -53,10 +53,33 @@ function Decision(props: {
   });
   // A memo, so effects run when the ending changes, not on every clock tick.
   const ending = createMemo((): "uncertain" | "expired" | undefined => (error() ? "uncertain" : expired() ? "expired" : undefined));
+  const terminal = () => props.request.terminal;
   const endings = {
-    uncertain: { icon: "ti ti-alert-triangle", title: () => t().actionUncertainTitle, text: () => t().loginUncertain },
-    expired: { icon: "ti ti-clock", title: () => t().actionExpiredTitle, text: () => t().requestExpired },
+    uncertain: {
+      icon: "ti ti-alert-triangle",
+      title: () => t().actionUncertainTitle,
+      text: () => (terminal() ? t().terminalUncertain : t().loginUncertain),
+    },
+    expired: {
+      icon: "ti ti-clock",
+      title: () => t().actionExpiredTitle,
+      text: () => (terminal() ? t().terminalExpired : t().requestExpired),
+    },
   } as const;
+  // Cloud Login's own words for what the Cloud reported, as label and value rows; later context adds rows here.
+  const details = createMemo(() => {
+    const login = terminal();
+    if (!login) return [];
+    return [
+      { label: t().terminalCloud, values: [new URL(props.binding.issuer).host] },
+      {
+        label: t().terminalLifetime,
+        values: [dates.formatDuration(new Date(0), new Date(login.lifetimeSeconds * 1000), { locale: locale() })],
+      },
+      // The longest row goes last, so a small screen shows the short rows before it scrolls.
+      { label: t().terminalScopes, values: login.scopes.map((scope) => scopeLabel(scope, t())) },
+    ];
+  });
   let done: HTMLButtonElement | undefined;
   // An ending replaces both choices with Done; focus moves there instead of staying on a disabled button.
   createEffect(() => {
@@ -78,7 +101,19 @@ function Decision(props: {
   );
   return (
     <BottomSheet onDismiss={props.dismiss}>
-      <PanelDialog.Header title={props.binding.label} subtitle={props.total > 1 ? `${props.position} / ${props.total}` : undefined} />
+      <Show
+        when={terminal()}
+        fallback={
+          <PanelDialog.Header title={props.binding.label} subtitle={props.total > 1 ? `${props.position} / ${props.total}` : undefined} />
+        }
+      >
+        {(login) => (
+          <PanelDialog.Header
+            title={t().terminalTitle({ client: login().client.name })}
+            subtitle={props.total > 1 ? `${props.binding.label} · ${props.position} / ${props.total}` : props.binding.label}
+          />
+        )}
+      </Show>
       <PanelDialog.Body>
         {/* The request and its ending share one grid cell, sized from the first frame by the longest ending, so the
             dialog keeps its height when the ending replaces the request. */}
@@ -88,10 +123,28 @@ function Decision(props: {
               <i class="ti ti-clock" aria-hidden="true" />
               <time dateTime={props.request.createdAt}>{t().loginStarted({ time: started() })}</time>
             </p>
-            <p>{t().loginComparison}</p>
+            <p>{terminal() ? t().terminalComparison : t().loginComparison}</p>
             <output class="auth-comparison" aria-label={groups().join(" ")}>
               <For each={groups()}>{(group) => <span>{group}</span>}</For>
             </output>
+            <Show when={details().length > 0}>
+              <dl class="auth-action-details auth-decision__details">
+                <For each={details()}>
+                  {(row) => (
+                    <>
+                      <dt>{row.label}</dt>
+                      <dd>
+                        <Show when={row.values.length > 1} fallback={row.values[0]}>
+                          <ul>
+                            <For each={row.values}>{(value) => <li>{value}</li>}</For>
+                          </ul>
+                        </Show>
+                      </dd>
+                    </>
+                  )}
+                </For>
+              </dl>
+            </Show>
           </div>
           <div class="auth-action-result auth-decision__sizer" aria-hidden="true">
             <Ending kind="uncertain" />
@@ -526,7 +579,7 @@ function RequestRow(props: { auth: Authenticator; binding: Binding; request: Log
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   return (
     <div class="auth-request auth-request-row">
-      <span>{t().loginRequest}</span>
+      <span>{props.request.terminal ? t().terminalTitle({ client: props.request.terminal.client.name }) : t().loginRequest}</span>
       <div class="auth-request-actions">
         <Button variant="secondary" onClick={props.open}>
           {t().signIn}

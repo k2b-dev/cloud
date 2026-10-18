@@ -40,7 +40,9 @@ export default function Placeholder(props: PlaceholderProps): JSX.Element {
     >
       <Show when={icon()}>
         {(iconClass) => (
-          <span class="k2b-placeholder__icon">
+          // An empty state's icon sits in a soft chip of the app colour; loading and error keep their status
+          // colours on the same box, so a state change never resizes it.
+          <span class={state() === "empty" && variant() !== "inline" ? "k2b-placeholder__icon k2b-icon-tile" : "k2b-placeholder__icon"}>
             <i class={iconClass()} aria-hidden="true" />
           </span>
         )}

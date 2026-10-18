@@ -10,7 +10,7 @@ const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
 const ruleBlocks = (css: string) =>
   [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
     selector: normalize(selector!),
-    declarations: [...body!.matchAll(/(--[\w-]+)\s*:\s*([^;]+)/g)].map(([, property, value]) => ({
+    declarations: [...body!.matchAll(/(?:^|;)\s*(--[\w-]+|color)\s*:\s*([^;]+)/g)].map(([, property, value]) => ({
       property: property!,
       value: normalize(value!),
     })),
@@ -24,6 +24,34 @@ const compileGlobal = () =>
   }));
 
 describe("Cloud tokens", () => {
+  test("pins light and dark ink and uses secondary ink for compiled text utilities", async () => {
+    const source = ruleBlocks(await Bun.file(resolve(import.meta.dir, "tokens.css")).text());
+    for (const { selector, secondary, dimmed } of [
+      { selector: ":root", secondary: "#27272a", dimmed: "#55555e" },
+      { selector: ".dark", secondary: "#f1f1f3", dimmed: "#a8a8b2" },
+    ]) {
+      const declarations = source.filter((rule) => rule.selector === selector).flatMap((rule) => rule.declarations);
+      expect({
+        selector,
+        ink: declarations.filter(({ property }) => ["--ui-text-secondary", "--ui-text-dimmed"].includes(property)),
+      }).toEqual({
+        selector,
+        ink: [
+          { property: "--ui-text-secondary", value: secondary },
+          { property: "--ui-text-dimmed", value: dimmed },
+        ],
+      });
+    }
+
+    const compiled = ruleBlocks(await compileGlobal());
+    for (const selector of [".text-secondary", ".text-label"]) {
+      const colors = compiled
+        .filter((rule) => rule.selector.split(",").map(normalize).includes(selector))
+        .flatMap((rule) => rule.declarations.filter(({ property }) => property === "color"));
+      expect({ selector, colors }).toEqual({ selector, colors: [{ property: "color", value: "var(--ui-text-secondary)" }] });
+    }
+  });
+
   test("has the motion tokens and stops view transitions under reduced motion", async () => {
     const css = (await compileGlobal()).replace(/\s+/g, "");
     const auto = /@media\(prefers-reduced-motion:no-preference\)\{@view-transition\{navigation:auto;?\}\}/g;
@@ -76,7 +104,7 @@ describe("Cloud tokens", () => {
       ];
       const appMappings = [
         ...mappings,
-        { property: "--k2b-nav-selected", value: "var(--ui-app-selected-nav)" },
+        { property: "--k2b-app-workspace-selected", value: "var(--ui-app-selected-nav)" },
         { property: "--k2b-row-selected", value: "var(--ui-app-selected)" },
       ];
       expect(

@@ -25,7 +25,7 @@ Use `disabled` for the whole group. Set an option's `disabled` property to skip 
 
 Keep the option set short. Each option should describe the same dimension, such as List, Board, or Calendar.
 
-Dividers appear only between adjacent inactive options. Selecting an option removes the dividers next to that option so its active surface remains visually continuous.
+The soft control has no tray, separators, or selection ring. The selected option is a fill in the app's selection tint with its ink. Font weight and geometry stay the same through selection and hover, so no option moves; keyboard focus keeps its visible ring. In forced-color mode the selected option is underlined.
 
 ## API reference
 

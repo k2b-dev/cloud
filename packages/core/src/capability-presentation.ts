@@ -255,6 +255,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             prompt: "Genauer Auftrag für diesen Chat, wenn die Routine läuft.",
             schedule: "Wann diese Routine laufen soll.",
             timezone: "Genaue IANA-Zeitzone aus dem aktuellen Laufzeitkontext.",
+            title:
+              "Kurzer Name der Routine in der Sprache der Person, etwa „Neue Rechnungen eintragen“. Er steht in Benachrichtigungen und Listen.",
           },
         },
         "ai.task.delete": {
@@ -299,6 +301,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             taskId: "Lesbare Routine-ID mit sechs Zeichen.",
             prompt: "Neuer Auftrag für die nächsten Läufe der Routine.",
             schedule: "Neuer einmaliger oder wiederkehrender Zeitplan.",
+            title: "Neuer kurzer Name der Routine in der Sprache der Person. Er steht in Benachrichtigungen und Listen.",
             timezone: "Mit Zeitplan erforderlich; übernimm die aktuelle IANA-Zeitzone aus dem Laufzeitkontext.",
           },
         },

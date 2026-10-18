@@ -153,7 +153,7 @@ describe("selection colors in the browser", () => {
             );
             const colors = app === "standalone" ? undefined : apps[app][theme];
             const hooks = colors
-              ? `--k2b-app-workspace-active:${colors.ink};--k2b-nav-selected:${colors.nav};--k2b-row-selected:${colors.row}`
+              ? `--k2b-app-workspace-active:${colors.ink};--k2b-app-workspace-selected:${colors.nav};--k2b-row-selected:${colors.row}`
               : "";
             await page.setContent(`<!doctype html><html lang="en"><head><style>${css}</style><style>${fonts}</style>
             <style>*,*::before,*::after{transition:none!important;animation:none!important}

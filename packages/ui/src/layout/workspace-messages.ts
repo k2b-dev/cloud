@@ -21,6 +21,8 @@ const workspaceMessages = i18n.define({
       backTo: ({ page }: { page: string }) => `Back to ${page}`,
       path: "Path",
       moreLevels: "More levels",
+      sidebarAll: "All",
+      sidebarAllLabel: ({ label }: { label: string }) => `All ${label}`,
     },
     de: {
       rowAction: "Zeilenaktion",
@@ -39,6 +41,8 @@ const workspaceMessages = i18n.define({
       backTo: ({ page }) => `Zurück zu ${page}`,
       path: "Pfad",
       moreLevels: "Weitere Ebenen",
+      sidebarAll: "Alle",
+      sidebarAllLabel: ({ label }) => `Alle ${label}`,
     },
   },
 });

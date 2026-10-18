@@ -722,11 +722,11 @@ describe("Venue shift detail and schedule", () => {
   };
   const detailOf = (html: string) => html.match(/<aside[^>]*k2b-app-workspace__detail[\s\S]*?<\/aside>/)?.[0] ?? "";
 
-  test("renders the selected shift's detail on the server, beside the calendar from 1024 px on", () => {
+  test("renders the selected shift's detail on the server, beside the calendar from a 64 rem app host on", () => {
     const html = render("admin", [], { calendarDate: day, shift: `Temp01:${day}`, dashboard: board });
     const detail = detailOf(html);
 
-    expect(detail).toContain("max-lg:hidden!");
+    expect(detail).toContain("venue-shift-detail");
     expect(detail).not.toMatch(/<aside[^>]*\shidden/);
     expect(text(detail)).toContain("Theke");
     expect(text(detail)).toContain("Tue, Jan 8 · 11:00–14:00");

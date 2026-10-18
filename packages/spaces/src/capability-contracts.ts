@@ -3,7 +3,9 @@ import { z } from "zod";
 import {
   CreateItemTemplateSchema,
   CreateTaskChecklistEntrySchema,
+  DeadlineAllDaySchema,
   DeadlineFilterSchema,
+  DeadlineInputSchema,
   EstimatedDurationMinutesSchema,
   ItemTemplateKindSchema,
   LocalDateSchema,
@@ -243,7 +245,8 @@ export const TaskDataSchema = z
   .object({
     kind: z.literal("task"),
     ...ItemBaseDataShape,
-    deadline: TimestampSchema.nullable(),
+    deadline: DeadlineInputSchema.nullable(),
+    deadlineAllDay: DeadlineAllDaySchema,
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable(),
     activeBlockerCount: z.number().int().nonnegative(),
     priority: PrioritySchema.nullable(),
@@ -323,7 +326,8 @@ export const TaskListItemDataSchema = z
   .object({
     kind: z.literal("task"),
     ...ItemListBaseDataShape,
-    deadline: TimestampSchema.nullable(),
+    deadline: DeadlineInputSchema.nullable(),
+    deadlineAllDay: DeadlineAllDaySchema,
     overdue: z.boolean().describe("True only for an open task whose deadline is before today in the configured application timezone."),
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable(),
     activeBlockerCount: z.number().int().nonnegative(),
@@ -408,7 +412,9 @@ const ItemRelationInputShape = {
 const TaskFieldsInputShape = {
   title: z.string().trim().min(1).max(200).optional().describe("Optional task title."),
   description: markdownInput(z.string().max(5000).nullable().optional().describe("Optional task description; null clears it.")),
-  deadline: TimestampSchema.nullable().optional().describe("Optional task deadline; null clears it."),
+  deadline: DeadlineInputSchema.nullable()
+    .optional()
+    .describe("Task deadline: YYYY-MM-DD (all-day) or ISO date-time (timed); null clears it."),
   estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable().optional().describe("Optional estimate in minutes; null clears it."),
   priority: PrioritySchema.nullable().optional().describe("Optional task priority; null clears it."),
 };
@@ -440,7 +446,7 @@ const TemplateSummaryDataShape = {
   name: z.string().min(1).max(100),
   dateRule: TemplateDateRuleSchema,
   timeOfDay: TimeOfDaySchema.nullable(),
-  rule: z.string().max(200).describe("The date rule as people read it, e.g. Wed or Thu · 17:00."),
+  rule: z.string().max(200).describe("The date rule as people read it, e.g. Wed or Thu · all day."),
   proposals: z.array(LocalDateSchema).max(3).describe("Next proposed local dates in timeZone, earliest first."),
   timeZone: z.string().max(100),
 };
@@ -488,7 +494,7 @@ export const TaskCreateInputSchema = z
     columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
     title: z.string().trim().min(1).max(200).optional().describe("Task title; required unless the template has one."),
     description: markdownInput(z.string().max(5000).optional().describe("Optional task description.")),
-    deadline: TimestampSchema.optional().describe("Optional task deadline."),
+    deadline: DeadlineInputSchema.optional(),
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.optional().describe("Optional estimate in minutes."),
     priority: PrioritySchema.optional().describe("Optional task priority."),
     assigneeIds: UserIdListSchema.optional().describe("Optional assignee person or service account UUIDs from this Space."),

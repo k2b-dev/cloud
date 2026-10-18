@@ -244,7 +244,7 @@ const measure = () => {
       background: style(element).backgroundColor,
       rules: [style(element).borderTopStyle, style(element).borderBottomStyle],
     })),
-    inset: box(grouped.querySelector(".k2b-panel-dialog__header > i")!).left - box(grouped).left,
+    inset: box(grouped.querySelector(".k2b-panel-dialog__icon")!).left - box(grouped).left,
     bodyInset: box(grouped.querySelector(".k2b-panel-dialog__section")!).left - box(grouped).left,
     sections: sections.map((element) => ({ border: style(element).borderTopStyle, background: style(element).backgroundColor })),
     tints: visibleBodies.map((element) => style(element).backgroundColor),
@@ -441,8 +441,9 @@ describe("@k2b/ui PanelDialog sections are titled groups without frames", () => 
               panelWell: getComputedStyle(group.querySelector(".k2b-detail-panel__group .k2b-input-shell")!).backgroundColor,
             };
           });
-          expect(result.loose).toEqual({ subtle: result.muted, track: result.muted, chip: result.muted });
-          expect(result.grouped).toEqual({ subtle: result.surface, track: result.surface, chip: result.surface });
+          // A segmented control is soft and draws no track on either surface.
+          expect(result.loose).toEqual({ subtle: result.muted, track: "rgba(0, 0, 0, 0)", chip: result.muted });
+          expect(result.grouped).toEqual({ subtle: result.surface, track: "rgba(0, 0, 0, 0)", chip: result.surface });
           // A surface inside the group starts over with muted wells.
           expect(result.panelWell).toBe(result.muted);
 

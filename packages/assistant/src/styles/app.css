@@ -233,12 +233,11 @@
 .k2b-ui .assistant-sidebar-group__chevron,
 .k2b-ui .assistant-sidebar-group__icon { flex: none; color: var(--k2b-text-muted); font-size: 0.875rem; }
 .k2b-ui .assistant-sidebar-group__copy { display: flex; min-width: 0; flex-direction: column; }
-.k2b-ui .assistant-sidebar-group__title { overflow: hidden; font-size: 0.8125rem; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .assistant-sidebar-group__title { overflow: hidden; font-size: 0.8125rem; white-space: nowrap; }
 .k2b-ui .assistant-sidebar-group__description {
   overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .k2b-ui .assistant-sidebar-group__body { display: flex; min-width: 0; flex-direction: column; padding-inline-start: 1rem; }

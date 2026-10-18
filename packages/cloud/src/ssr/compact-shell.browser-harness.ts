@@ -24,6 +24,7 @@ const { person } = await import("../_internal/define-app.test-fixture");
 const railSnapshot = await import("../services/rail-snapshot");
 const settingsMiddleware = await import("../server/middleware/settings");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
+const { default: WorkspaceNavigation } = await import("./WorkspaceNavigation.island");
 const { default: Layout } = await import("./Layout");
 
 const probe = defineApp({
@@ -115,30 +116,38 @@ const workspace = (selected: string) =>
  * A task-list page: a long list in Main and an open detail that the server renders with its own close
  * control, as Contacts and Capabilities do. Invented content.
  */
-const listWorkspace = () =>
+const listWorkspace = (head = false) =>
   createComponent(AppWorkspace, {
     class: "min-h-0 flex-1",
     get children() {
-      return createComponent(AppWorkspace.Content, {
-        get children() {
-          return [
-            createComponent(AppWorkspace.Main, {
-              get children() {
-                return Array.from({ length: 80 }, (_, index) =>
-                  createComponent(Button, { class: "list-row", align: "start", children: `Task ${index + 1}` }),
-                );
-              },
-            }),
-            createComponent(AppWorkspace.Detail, {
-              id: "task-detail",
-              open: true,
-              get children() {
-                return createComponent(Button, { "data-workspace-detail-close": "", children: "Close task" });
-              },
-            }),
-          ];
-        },
-      });
+      return [
+        head ? createComponent(AppWorkspace.Head, { primary: { label: "New task", icon: "ti ti-plus", href: "?new=task" } }) : null,
+        createComponent(AppWorkspace.Content, {
+          get children() {
+            return [
+              createComponent(AppWorkspace.Main, {
+                get children() {
+                  return Array.from({ length: 80 }, (_, index) =>
+                    createComponent(Button, {
+                      variant: head ? "ghost" : undefined,
+                      class: "list-row",
+                      align: "start",
+                      children: `Task ${index + 1}`,
+                    }),
+                  );
+                },
+              }),
+              createComponent(AppWorkspace.Detail, {
+                id: "task-detail",
+                open: true,
+                get children() {
+                  return createComponent(Button, { "data-workspace-detail-close": "", children: "Close task" });
+                },
+              }),
+            ];
+          },
+        }),
+      ];
     },
   });
 
@@ -206,6 +215,18 @@ const server = new Hono()
     ...probe.ssr((c) => {
       const folder = c.req.param("folder") ?? "inbox";
       const title = folder[0]!.toUpperCase() + folder.slice(1);
+      if (c.req.query("navigation"))
+        return () =>
+          createComponent(Layout, {
+            c: c as unknown as LayoutContextArg,
+            title: [{ title: "Home", href: "/" }, { title: "Mail" }],
+            get children() {
+              return [
+                createComponent(WorkspaceNavigation, { label: "Mail", items: [{ id: "inbox", label: "Inbox", href: "/app/mail/inbox" }] }),
+                overviewWorkspace(),
+              ];
+            },
+          });
       // `?overview=` keeps regular Layout props, including its page scroller's gutter.
       if (c.req.query("overview"))
         return () =>
@@ -257,7 +278,7 @@ const server = new Hono()
             fullPage: list === "page",
             title: [{ title: "Home", href: "/" }, { title: "Tasks" }],
             get children() {
-              return listWorkspace();
+              return listWorkspace(c.req.query("head") === "1");
             },
           });
       return () =>

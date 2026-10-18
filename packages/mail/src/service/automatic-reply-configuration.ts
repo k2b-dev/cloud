@@ -212,6 +212,7 @@ export const previewAutomaticReply = async (params: {
     },
     actor: actorRefFromRequest(params.context),
     renderLiquid: false,
+    logoSource: "data",
   });
   if (!rendered.ok) return rendered;
   return ok({

@@ -19,6 +19,14 @@ pages, breadcrumbs and a footer.
 Layout owns Cloud chrome; an [application shell](/en/docs/frontend/application-shells)
 owns the geometry inside it.
 
+Application authors put objects in the sidebar and views of the open object
+in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and
+quiet secondary actions share that row while the workspace width permits;
+filters wrap and the quiet filtered result count disappears first. Put the
+one filled primary action in `Head.primary`; on phones the shell leaves its
+place beside the bottom bar. See [Objects on the left, views in the head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head)
+for the complete rule and API.
+
 ## Know the shell at each width
 
 The shell has three forms. They are CSS on the same server-rendered markup, so
@@ -80,20 +88,17 @@ A regular page, without `fullWidth` or `fullPage`, owns its inset: from 768 px
 no header sits above a signed-in page, so give the content its own padding, as
 `AppOverview` does.
 
-`AppWorkspace.Detail` occupies a full-height column beside the workspace head
-and panes from 768 px. Below 768 px it is a half or full sheet at the window’s
-bottom edge. A closable panel on a coarse pointer from 768 to 1023 px overlays
-Main as a drawer. Pass its existing close action as `onClose` in an island or
-client component, or mark a server-rendered panel’s close control with
-`data-workspace-detail-close`. Use `scrollClass="k2b-detail-trail"` on
-DataTable, and `k2b-detail-trail` on a board’s horizontal scroller: beside
-the panel the table keeps its column widths, and under a tablet drawer both
-get the drawer’s width as space at their end. The trail is the clipping scroll
-viewport and carries the surface radius. Put it directly in Main’s content box
-with `scroll={false}` on Main and no vertical scroller around it; a reserved
-scrollbar gutter would widen the gap before the panel beyond
-`--k2b-workspace-detail-inset`.
-See [Add contextual detail](/en/docs/frontend/application-shells#add-contextual-detail).
+From 768 px, `AppWorkspace.Detail` is a column when it fits beside Main's
+minimum (320 px, raised with `AppWorkspace.Main minWidth`). Otherwise it waits
+behind **Details**; selecting an item opens it directly as a drawer. The
+column shares the workspace surface. The drawer sits flush with the app card's
+edge; Escape parks it and returns focus to Details. Opening Cloud's panel
+parks the drawer; closing the panel restores the column if it fits. The panel
+never closes automatically. Below 768 px, Detail remains a phone sheet or page.
+Use `scrollClass="k2b-detail-trail"` on DataTable or mark a board's horizontal
+scroller with `k2b-detail-trail` so its last item can scroll beside an open drawer.
+See [Detail and panel](/en/ui/layout/workspace#detail-and-panel) for sizing,
+focus, gestures, and the close-action contract.
 
 ### Hide the app bar and navigation
 
@@ -129,6 +134,12 @@ the shell. The entries above it are the pages above this one; on signed-in
 pages the shell turns them into the way up (see below). Anonymous pages show
 the entries as breadcrumbs in their header from 1024 px; the final breadcrumb
 has no link. A plain string is valid for a one-level title.
+
+Signed-in pages show the shared panel slot when at least one authorized
+application declares a provider. Use `panel={false}` to hide it on sign-in,
+print, presentation, or public pages that use `Layout`. Anonymous pages have
+no slot. `PanelLayout` renders the provider page itself, without shell chrome.
+See [Offer a panel](/en/docs/platform/panels).
 
 `help?: string[]` names two or three articles from the current app's Help that
 fit this page, for example `help={["inventory-start", "inventory-access"]}`.
@@ -675,7 +686,12 @@ search, and keyboard behavior.
 ## Mobile workspace menu
 
 Below 768 px, the header launcher hosts the current application's navigation
-and an **All apps** switch. From 768 px the app bar and the workspace's own
+and an **All apps** switch. Pages with `WorkspaceNavigation` also turn the
+phone title into **Name ⌄**, which opens the same menu. Other pages keep the
+plain title. An overview sidebar with `mobile="stacked"` shows a horizontally
+scrolling row of object chips above the content below 64 rem; **All** opens
+the complete sidebar in a bottom sheet below 48 rem and a centered dialog
+from 48 rem. From 768 px the app bar and the workspace's own
 navigation take over. The mobile workspace uses the full canvas without a
 second application title or exterior frame. See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation)
 for the SSR snapshot and island-owned action APIs. `@k2b/ui` remains independent

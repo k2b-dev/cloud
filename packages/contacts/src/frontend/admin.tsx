@@ -17,13 +17,17 @@ export default ssr<AuthContext>(async (c) => {
   const pageRaw = Number.parseInt(c.req.query("page") ?? "1", 10);
   const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
 
-  const [books, summary] = await Promise.all([
+  const [booksResult, summaryResult] = await Promise.all([
     contactsService.book.admin.list({
+      actor: c.get("actor"),
       pagination: { page, perPage: PER_PAGE },
       filter: { query: search || undefined },
     }),
-    contactsService.book.admin.summary({ filter: { query: search || undefined } }),
+    contactsService.book.admin.summary({ actor: c.get("actor"), filter: { query: search || undefined } }),
   ]);
+  if (!booksResult.ok || !summaryResult.ok) return ssr.error(c, 403);
+  const books = booksResult.data;
+  const summary = summaryResult.data;
   const publicBooks = await projectBooks(books.items);
 
   const totalPages = Math.ceil(books.total / books.perPage);

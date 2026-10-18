@@ -48,6 +48,10 @@ test("the mount probe counts initial empty clients as well as SSR islands, after
       expect(time).toBeGreaterThan(0);
       expect(time).toBeLessThanOrEqual(performance.now());
     }
+    // Mount windows start at the clear-and-render setter and end after the synchronous render.
+    expect(window.__cloudPerf.started.size).toBe(2);
+    for (const [element, started] of window.__cloudPerf.started)
+      expect(started).toBeLessThanOrEqual(window.__cloudPerf.mounted.get(element) ?? Number.NaN);
   } finally {
     if (innerHtml) Object.defineProperty(Element.prototype, "innerHTML", innerHtml);
     if (observer) Object.defineProperty(globalThis, "PerformanceObserver", observer);

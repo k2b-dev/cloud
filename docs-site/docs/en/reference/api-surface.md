@@ -31,7 +31,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
 | `@k2b/stdlib/solid` | Supported, SolidJS | Owner-local queries, mutations, and browser interaction primitives |
-| `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, and admin layouts; runtime context; request path; URL filters |
+| `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters |
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
 | `@k2b/cloud/ai` | Supported, server-only | AI APIs named by the AI guides |
 | `@k2b/cloud/cli` | Supported | Cloud CLI modules |
@@ -65,6 +65,10 @@ includes typed settings and notification definitions, and `skill()` with
 runtime-composition exports from the same barrel are platform-owned.
 
 See [Define an application](/en/docs/build/define-app).
+
+`PanelLayout` and `PanelLayoutProps` from `@k2b/cloud/ssr` render an
+application's provider page with its request locale and the embedded panel
+runtime. See [Panels](/en/docs/platform/panels).
 
 ## Handle server requests
 
@@ -319,10 +323,12 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/notifications` | Supported, browser | Browser notification state | [Notifications](/en/docs/platform/notifications) |
 | `@k2b/cloud/browser/reload` | Supported, browser | `reloadOnce`: bounded automatic page reload that cannot loop and, under an open modal dialog, offers the reload once the dialog closes; `importOnDemand`: load code when an action needs it and offer a reload when it cannot load | [Realtime UI](/en/docs/frontend/realtime-ui#preserve-reload-behavior), [Islands](/en/docs/frontend/islands-and-hydration#keep-the-first-load-small) |
 | `@k2b/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
+| `@k2b/cloud/browser/panel` | Supported, browser | `openPanel` and `closePanel`: open a visible provider or close the current panel | [Panels](/en/docs/platform/panels) |
 | `@k2b/cloud/browser/search` | Supported, browser | Open global search with an optional context and register app navigation | [Universal search](/en/docs/platform/search) |
 | `@k2b/cloud/browser/widgets` | Supported, browser | `streamWidgets`: read dashboard widgets from Core as each one answers | [Dashboard widgets](/en/docs/platform/dashboard-widgets#read-widgets-from-a-browser) |
 | `@k2b/cloud/browser/commands` | Supported, browser | Open interactive Commands, handle command links, and register context actions | [Capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/browser/testing` | Supported, browser tests | Inspect mounted context actions and navigation, and capture search requests | [Universal search](/en/docs/platform/search#test-application-search-and-context-actions) |
+| `@k2b/cloud/browser/composer-insert` | Supported, SolidJS | Build composer insert rows and scopes with `cloudInsertMenu`; give each composer its tags from one shared catalog load with `createCloudComposerCatalog` | [Universal search](/en/docs/platform/search#insert-resources-from-a-composer) |
 | `@k2b/cloud/browser/resource-picker` | Supported, SolidJS | Choose a stable resource reference through Universal Search | [Universal search](/en/docs/platform/search) |
 | `@k2b/cloud/browser/files` | Supported, SolidJS | `chooseFiles`: add files from this device or from Cloud apps that offer files, as `File` objects; `saveFiles`, `SaveFilesButton`, `saveFilesLabel`, `SAVE_FILES_ICON`: save copies into Cloud apps that store files | [File providers](/en/docs/platform/file-providers) |
 | `@k2b/cloud/clients/core` | Platform-owned, browser | Typed client for the Core platform API | — |
@@ -428,7 +434,10 @@ capability calls through Core; see [App capabilities](/en/docs/platform/capabili
 
 PDF applications use `renderHtmlToPdf`, `renderFacturXHtmlToPdf` and
 `attachPdfFiles` from `@k2b/cloud/services` for HTML conversion, invoice XML
-embedding and ordinary file attachments. See [PDF and templates](/en/docs/platform/pdf-and-templates)
+embedding and ordinary file attachments. `preparePdfImage` and its input,
+variant, result, and error types are available from `@k2b/cloud/services` and
+`@k2b/cloud/services/pdf` for bounded print image preparation.
+See [PDF and templates](/en/docs/platform/pdf-and-templates)
 for their input, access, cancellation and deployment responsibilities.
 
 ### Workspace navigation

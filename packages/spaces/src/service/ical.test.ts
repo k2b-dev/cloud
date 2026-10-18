@@ -1,5 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { createICalContent } from "./ical";
+
+beforeEach(() => setSystemTime(new Date("2026-10-24T12:00:00Z")));
+afterEach(() => setSystemTime());
 
 const space = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -23,6 +26,7 @@ const baseItem = {
   endsAt: new Date("2026-06-01T08:00:00.000Z"),
   allDay: false,
   deadline: null,
+  deadlineDate: null,
   priority: "high" as const,
   recurrenceRrule: null,
   recurrenceDtstart: null,
@@ -126,3 +130,27 @@ describe("createICalContent", () => {
     expect(content).toContain("SUMMARY:Moved planning");
   });
 });
+
+const processTimeZone = process.env.TZ;
+afterEach(() => {
+  if (processTimeZone === undefined) delete process.env.TZ;
+  else process.env.TZ = processTimeZone;
+});
+
+const zones = ["America/Los_Angeles", "Europe/Berlin", "Pacific/Kiritimati", "Pacific/Pago_Pago"];
+// The server process's own zone must not move the date either, so both zones vary.
+test.each(zones.flatMap((timeZone) => zones.map((processZone) => [timeZone, processZone])))(
+  "exports a calendar date unchanged in %s (process in %s)",
+  async (timeZone, processZone) => {
+    process.env.TZ = processZone;
+    const content = await createICalContent({
+      space,
+      items: [{ ...baseItem, startsAt: null, endsAt: null, deadlineDate: "2026-10-24" }],
+      baseUrl: "https://cloud.test",
+      appName: "Cloud",
+      dateConfig: { timeZone },
+    });
+    expect(content).toContain("DTSTART;VALUE=DATE:20261024");
+    expect(content).toContain("DTEND;VALUE=DATE:20261025");
+  },
+);

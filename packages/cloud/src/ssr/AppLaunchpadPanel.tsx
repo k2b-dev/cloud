@@ -143,7 +143,7 @@ export const AppLaunchpadPanel = (
                       <i class={shortcut.iconClass} aria-hidden="true" />
                       <AppBadge endpoint={shortcut.badge} appId={shortcut.appId} />
                     </span>
-                    <span class="max-w-full truncate text-[11px] font-medium text-primary dark:text-white">
+                    <span class="max-w-full k2b-truncate-fade text-[11px] font-medium text-primary dark:text-white">
                       {shortcut.label}
                       <Show when={badge()}>
                         <span class="sr-only">, {badge()}</span>
@@ -173,7 +173,7 @@ export const AppLaunchpadPanel = (
                   <i class={app.iconClass} />
                   <AppBadge endpoint={app.badge} appId={app.id} />
                 </span>
-                <span class="max-w-full truncate text-[11px] font-medium text-primary sm:text-xs dark:text-white">
+                <span class="max-w-full k2b-truncate-fade text-[11px] font-medium text-primary sm:text-xs dark:text-white">
                   {app.label}
                   <Show when={badge()}>
                     <span class="sr-only">, {badge()}</span>

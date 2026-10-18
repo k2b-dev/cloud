@@ -268,7 +268,7 @@ describe(`Spaces templates in the + dialog in ${browserName}`, () => {
       const [first] = proposeTemplateDates(weekly, { now: new Date(), timeZone: TIME_ZONE });
       const dates = page.getByRole("radiogroup", { name: "Fällig" });
       expect(await dates.getByRole("radio", { name: formatTemplateDate(first!, "de") }).getAttribute("aria-checked")).toBe("true");
-      expect(await page.getByText("Vorschlag aus der Vorlage · Mi oder Do · 17:00").count()).toBe(1);
+      expect(await page.getByText("Vorschlag aus der Vorlage · Mi oder Do · ganztägig").count()).toBe(1);
       expect(await page.locator("[data-testid='template-summary']").textContent()).toBe(
         "Aus der Vorlage: 3 Checklistenpunkte · Report · Mittel · Du",
       );

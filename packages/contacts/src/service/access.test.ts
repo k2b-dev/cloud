@@ -3,7 +3,7 @@ import type { User } from "@k2b/cloud/contracts";
 import type { PermissionLevel, RequestActor } from "@k2b/cloud/server";
 import type { ServiceAccount } from "@k2b/cloud/services";
 import type { SQL } from "bun";
-import { getActorBookPermission, isContactsAdministrator } from "./access";
+import { getActorBookPermission, isContactsAdministrator, readableBookScope } from "./access";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const bookId = "22222222-2222-4222-8222-222222222222";
@@ -124,4 +124,56 @@ test("Contacts administration requires an admin user, directly or delegated", ()
   expect(isContactsAdministrator(accountActor("user_delegated", admin))).toBe(true);
   expect(isContactsAdministrator(accountActor("agent"))).toBe(false);
   expect(isContactsAdministrator({ kind: "user", user })).toBe(false);
+});
+
+describe("readableBookScope", () => {
+  test("user subjects read through grants, including delegated credentials without read scopes", () => {
+    const accessSubject = { type: "user" as const, userId };
+    expect(readableBookScope({ actor: { kind: "user", user }, accessSubject })).toEqual({ ok: true, data: { boundBookId: null } });
+    const actor = accountActor("user_delegated", user);
+    if (actor.kind !== "service_account") throw new Error("Expected service account fixture");
+    expect(readableBookScope({ actor: { ...actor, scopes: [] }, accessSubject })).toEqual({ ok: true, data: { boundBookId: null } });
+  });
+
+  test.each(["agent", "standalone"] as const)("%s needs the matching subject and a readable scope", (kind) => {
+    const actor = accountActor(kind);
+    if (actor.kind !== "service_account") throw new Error("Expected service account fixture");
+    const accessSubject = { type: "service_account" as const, serviceAccountId };
+    for (const scope of ["read", "write", "admin"]) {
+      expect(readableBookScope({ actor: { ...actor, scopes: [scope] }, accessSubject })).toEqual({ ok: true, data: { boundBookId: null } });
+    }
+    expect(readableBookScope({ actor: { ...actor, scopes: ["openid"] }, accessSubject })).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN", message: "Access denied" },
+    });
+    expect(readableBookScope({ actor, accessSubject: { type: "service_account", serviceAccountId: userId } })).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
+    });
+  });
+
+  test("resource-bound scopes need an exact Contacts binding, UUID, and read scope", () => {
+    const actor = accountActor("resource_bound");
+    if (actor.kind !== "service_account") throw new Error("Expected service account fixture");
+    const accessSubject = { type: "service_account" as const, serviceAccountId };
+    expect(readableBookScope({ actor, accessSubject })).toEqual({ ok: true, data: { boundBookId: bookId } });
+    for (const binding of [{ appId: "other" }, { resourceType: "other" }, { resourceId: null }, { resourceId: "Book01" }]) {
+      expect(
+        readableBookScope({ actor: { ...actor, serviceAccount: { ...actor.serviceAccount, ...binding } }, accessSubject }),
+      ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    }
+    expect(readableBookScope({ actor: { ...actor, scopes: [] }, accessSubject })).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
+    });
+  });
+
+  test("a service-account subject cannot borrow a user actor or a delegated account binding", () => {
+    const accessSubject = { type: "service_account" as const, serviceAccountId };
+    expect(readableBookScope({ actor: { kind: "user", user }, accessSubject })).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(readableBookScope({ actor: accountActor("user_delegated", user), accessSubject })).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
+    });
+  });
 });
