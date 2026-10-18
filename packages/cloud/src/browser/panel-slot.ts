@@ -391,17 +391,24 @@ export function installPanelSlot(): () => void {
     errors.delete(item.id);
     const questionHadFocus = slot.querySelector("[data-cloud-panel-consent]")?.contains(document.activeElement);
     // Enqueueing blocks sharing at once, so a withdrawal stops disclosure before its save even starts.
+    // keepalive: leaving the page does not cancel the save. A save the browser gives up on (timeout) is rolled back
+    // by the server, so no answer lands after this page stopped waiting for it.
+    const put = () =>
+      fetch(`/api/me/panel-consent/${encodeURIComponent(item.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowed: request.allowed, revision: revisions.get(item.id) ?? 0 }),
+        keepalive: true,
+        signal: AbortSignal.timeout(PANEL_READY_TIMEOUT_MS),
+      });
     void enqueueConsent(async () => {
       try {
-        const response = await fetch(`/api/me/panel-consent/${encodeURIComponent(item.id)}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ allowed: request.allowed, revision: revisions.get(item.id) ?? 0 }),
-          signal: AbortSignal.any([requests.signal, AbortSignal.timeout(PANEL_READY_TIMEOUT_MS)]),
-        });
+        let response = await put();
+        // Changed meanwhile (another tab, or a read that failed): the person's choice now is the newest one, so read
+        // the current revision and save it once more. A second conflict shows the question again.
         if (response.status === 409) {
           await readAnswersNow();
-          return;
+          response = await put();
         }
         if (!response.ok) throw new Error("Panel consent was not saved");
         const saved: unknown = await response.json();
@@ -421,8 +428,10 @@ export function installPanelSlot(): () => void {
         answers.set(item.id, request.allowed);
         revisions.set(item.id, saved.revision);
       } catch {
-        answers.set(item.id, null);
+        // Not saved: nothing is shared until the person answers again; the read learns the current revision.
         errors.add(item.id);
+        await readAnswersNow();
+        answers.set(item.id, null);
       } finally {
         saving.delete(item.id);
       }

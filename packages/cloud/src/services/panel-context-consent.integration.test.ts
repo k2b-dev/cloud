@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { SQL } from "bun";
 import { createDisposableDatabase, databaseSuite } from "../../../../scripts/fixtures/test-infra";
-import { createPanelContextConsentService } from "./panel-context-consent";
+import { createPanelContextConsentService, PanelConsentCancelled } from "./panel-context-consent";
 
 const suite = databaseSuite();
 suite("Core panel consent persistence", () => {
@@ -63,5 +63,12 @@ suite("Core panel consent persistence", () => {
     expect(await service.get(second, "delayed")).toEqual({ allowed: true, revision: 2 });
     const [after] = await db`SELECT updated_at FROM auth.panel_context_consent WHERE user_id = ${second}::uuid AND provider = 'delayed'`;
     expect(after.updated_at).toEqual(before.updated_at);
+  });
+  test("a save whose request was cancelled is rolled back, so it cannot land after the browser gave up", async () => {
+    expect(await service.set(second, "cancelled", true, 0)).toEqual({ allowed: true, revision: 1 });
+    const gaveUp = new AbortController();
+    gaveUp.abort();
+    await expect(service.set(second, "cancelled", false, 1, gaveUp.signal)).rejects.toBeInstanceOf(PanelConsentCancelled);
+    expect(await service.get(second, "cancelled")).toEqual({ allowed: true, revision: 1 });
   });
 });

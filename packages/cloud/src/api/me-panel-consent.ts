@@ -5,7 +5,7 @@ import { z } from "zod";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { panelProviderNeedsConsent } from "../contracts/panel-context-plain";
 import { type AuthContext, jsonResponse, requiresAuth, v } from "../server";
-import { panelContextConsent } from "../services/panel-context-consent";
+import { PanelConsentCancelled, panelContextConsent } from "../services/panel-context-consent";
 import { getRuntimeContext } from "../ssr/runtime";
 
 const AnswerSchema = z.object({ allowed: z.boolean(), revision: z.number().int().min(0).max(2_147_483_647) }).strict();
@@ -55,7 +55,14 @@ export const createMePanelConsentRoutes = (service = panelContextConsent) => {
         const { provider } = c.req.valid("param");
         if (!providers(c).includes(provider)) return c.json({ code: "PANEL_PROVIDER_NOT_FOUND", message: "Panel provider not found" }, 404);
         const { allowed, revision } = c.req.valid("json");
-        const saved = await service.set(c.get("user").id, provider, allowed, revision);
+        let saved: Awaited<ReturnType<typeof service.set>>;
+        try {
+          saved = await service.set(c.get("user").id, provider, allowed, revision, c.req.raw.signal);
+        } catch (error) {
+          // The browser stopped waiting; the save was rolled back and nobody reads this answer.
+          if (error instanceof PanelConsentCancelled) return c.json({ code: "CANCELLED", message: "Request cancelled" }, 503);
+          throw error;
+        }
         return saved
           ? c.json({ provider, ...saved })
           : c.json({ code: "CONFLICT", message: "Panel consent changed. Read the current answer before saving again." }, 409);

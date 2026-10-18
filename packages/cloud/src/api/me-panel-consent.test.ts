@@ -70,3 +70,38 @@ test("personal panel consent authenticates, filters the live registry and separa
   expect((await put("fixture", { allowed: true, revision: 1 })).status).toBe(409);
   expect(stored.size).toBe(2);
 });
+
+test("a save the browser gave up on answers 503 and stores nothing", async () => {
+  const { PanelConsentCancelled } = await import("../services/panel-context-consent");
+  const service = {
+    get: async () => null,
+    list: async () => ({}),
+    set: async (): Promise<{ allowed: boolean; revision: number } | null> => {
+      throw new PanelConsentCancelled();
+    },
+  };
+  const routes = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>()
+    .use("*", async (c, next) => {
+      c.set("user", person);
+      c.set("runtime", {
+        apps: [
+          {
+            id: "fixture",
+            name: "fixture",
+            icon: "ti ti-box",
+            description: "Fixture",
+            routes: ["/app/fixture"],
+            panel: { href: "/app/fixture/panel", label: "fixture", icon: "ti ti-box" },
+          },
+        ],
+      });
+      await next();
+    })
+    .route("/", createMePanelConsentRoutes(service));
+  const response = await routes.request("/panel-consent/fixture", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ allowed: false, revision: 1 }),
+  });
+  expect(response.status).toBe(503);
+});

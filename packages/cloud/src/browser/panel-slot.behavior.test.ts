@@ -782,94 +782,75 @@ else {
     ).toBe(true);
   });
 
-  test("a timed-out withdrawal, renewed Allow and later conflict follow the server without sharing a stored denial", async () => {
-    const read = deferred();
+  const bodies = (fetch: { mock: { calls: unknown[][] } }) =>
+    fetch.mock.calls.flatMap(([, init]) => {
+      const body = (init as RequestInit | undefined)?.body;
+      return typeof body === "string" ? [JSON.parse(body)] : [];
+    });
+
+  test("a conflict reads the current revision and saves the person's choice once more", async () => {
     const fetch = spyOn(globalThis, "fetch")
-      .mockRejectedValueOnce(new DOMException("The operation timed out.", "TimeoutError"))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ provider: "fixture", allowed: true, revision: 2 })))
       .mockResolvedValueOnce(new Response(JSON.stringify({ code: "CONFLICT" }), { status: 409 }))
-      .mockReturnValueOnce(read.promise);
-    fetchSpy = fetch;
-    const h = setupContext(pageContext, true, true);
-    h.open();
-    const { shown, post } = loadedDocument(h, h.frame().src);
-    ready(h);
-    consent("fixture", false);
-    await tick();
-    expect(h.slot.dataset.contextAllowed).toBe("false");
-    expect(h.slot.dataset.consent).toBe("ask");
-    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
-    h.click('[data-cloud-panel-consent-answer="allow"]');
-    await tick();
-    expect(h.slot.dataset.contextAllowed).toBe("true");
-    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({ allowed: false, revision: 1 });
-    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({ allowed: true, revision: 1 });
-
-    // The old withdrawal is fenced at revision 1. Another answer has since stored false at revision 3.
-    // A stale Allow must wait for its conflict's read, without an error or disclosure.
-    post.mockClear();
-    consent("fixture", true);
-    await tick();
-    expect(fetch).toHaveBeenCalledTimes(4);
-    expect(JSON.parse(String(fetch.mock.calls[2]?.[1]?.body))).toEqual({ allowed: true, revision: 2 });
-    expect(h.slot.dataset.contextAllowed).toBe("false");
-    expect(h.slot.dataset.consentSaving).toBe("true");
-    expect(h.slot.querySelector("[data-cloud-panel-consent-error]")!.textContent).toBe("");
-    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
-    read.resolve(new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 3 } } })));
-    await tick();
-    ready(h);
-    expect(h.slot.dataset.contextAllowed).toBe("false");
-    expect(h.slot.dataset.consentSaving).toBe("false");
-    expect(h.slot.dataset.consent).toBeUndefined();
-    expect(h.slot.querySelector("[data-cloud-panel-consent-error]")!.textContent).toBe("");
-    expect(contexts(post).every((context) => context === null)).toBe(true);
-    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
-  });
-
-  test("a conflict read can allow sharing and replaces the revision for the next queued save", async () => {
-    const read = deferred();
-    const fetch = spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response(null, { status: 409 }))
-      .mockReturnValueOnce(read.promise)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 7 } } })))
       .mockResolvedValueOnce(new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 8 })));
     fetchSpy = fetch;
-    const h = setupContext(pageContext, true, null);
+    const h = setupContext(pageContext, true, true);
     h.open();
     const { post } = loadedDocument(h, h.frame().src);
     ready(h);
-    consent("fixture", true);
-    await tick();
-    expect(h.slot.dataset.contextAllowed).toBe("false");
-    expect(contexts(post).every((context) => context === null)).toBe(true);
-    read.resolve(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 7 } } })));
-    await tick();
-    expect(h.slot.dataset.contextAllowed).toBe("true");
+    post.mockClear();
     consent("fixture", false);
     await tick();
-    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({ allowed: true, revision: 0 });
-    expect(JSON.parse(String(fetch.mock.calls[2]?.[1]?.body))).toEqual({ allowed: false, revision: 7 });
+    await tick();
+    expect(bodies(fetch).at(-1)).toEqual({ allowed: false, revision: 7 });
     expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(h.slot.dataset.consent).toBeUndefined();
+    expect(contexts(post).every((context) => context === null)).toBe(true);
   });
 
-  test("a failed conflict revalidation leaves the answer unanswered and sharing blocked", async () => {
+  test("a second conflict shows the question again and shares nothing", async () => {
     fetchSpy = spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(null, { status: 409 }))
-      .mockRejectedValueOnce(new Error("Offline"));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 7 } } })))
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 9 } } })));
     const h = setupContext(pageContext, true, true);
     h.open();
-    const { shown, post } = loadedDocument(h, h.frame().src);
+    const { post } = loadedDocument(h, h.frame().src);
     ready(h);
-    consent("fixture", true);
     post.mockClear();
+    consent("fixture", false);
     await tick();
-    ready(h);
+    await tick();
+    await tick();
     expect(h.slot.dataset.contextAllowed).toBe("false");
     expect(h.slot.dataset.consent).toBe("ask");
-    expect(h.slot.dataset.consentSaving).toBe("false");
-    expect(h.slot.querySelector("[data-cloud-panel-consent-error]")!.textContent).toBe("");
-    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    expect(h.slot.querySelector("[data-cloud-panel-consent-error]")!.textContent).toContain("Not saved");
     expect(contexts(post).every((context) => context === null)).toBe(true);
+  });
+
+  test("a save that failed reads the current revision and keeps sharing off until the person answers again", async () => {
+    const fetch = spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new DOMException("The operation timed out.", "TimeoutError"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 2 } } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ provider: "fixture", allowed: true, revision: 3 })));
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    post.mockClear();
+    consent("fixture", false);
+    await tick();
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(h.slot.dataset.consent).toBe("ask");
+    expect(contexts(post).every((context) => context === null)).toBe(true);
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    await tick();
+    await tick();
+    expect(bodies(fetch).at(-1)).toEqual({ allowed: true, revision: 2 });
+    expect(h.slot.dataset.contextAllowed).toBe("true");
   });
 
   test("a slow save does not pull focus back into the panel after the reader moved on", async () => {

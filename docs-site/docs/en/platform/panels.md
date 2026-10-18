@@ -206,20 +206,28 @@ Providers served by Core (app ID `core`) are the platform's own surface and
 need no consent. Every other provider asks once per provider app. Cloud stores
 the answer server-side per person and provider app ID. Unanswered, denied, or
 unreadable answers send no context, in either the URL or a message.
-Answers carry a revision, and a stale save is refused so an older save can never overwrite a newer answer.
 
 The person chooses **Allow** or **Don't share** in the slot. They can later
-change **Share context** in the **⋯** menu, below **Panel from <App>**. The new
-answer applies from then on; it does not recall context already seen. Saving
-an answer can fail: the question stays open with a retry message, and nothing is
-shared until the person answers again. Withdrawing
-sharing stops further updates immediately and removes the context from the
-provider's current address, so reloading the provider page does not bring it
-back. Other open tabs follow on their next page load; a page restored from the
-browser's back/forward cache stops sharing until it has read the answers again.
-Context goes only to the selected provider's page below its panel path; a
-frame that navigated elsewhere receives none. A provider page that the browser restores from
-the panel's own history keeps the context it had already seen.
+change **Share context** in the **⋯** menu, below **Panel from <App>**. A new
+answer applies from the moment Cloud has saved it; it does not recall context
+already seen.
+
+- **Withdrawing** stops sharing at the click, before the save finishes. It also
+  removes the context from the provider's current address, so reloading the
+  provider page does not bring it back.
+- **Saves are ordered.** Each answer carries a revision, and a save based on an
+  older revision is refused. After such a conflict, Cloud reads the current
+  answer and saves the person's choice once more. A save that the browser gives
+  up on after 10 seconds is rolled back on the server, so it cannot land later.
+- **A failed save** keeps the question open with **Not saved. Try again.**, and
+  nothing is shared until the person answers again.
+- **Other pages and tabs** that are already open follow the new answer on their
+  next page load. A page restored from the browser's back/forward cache stops
+  sharing until it has read the answers again.
+- Context goes only to the selected provider's page below its panel path; a
+  frame that navigated elsewhere receives none. A provider page that the
+  browser restores from the panel's own history keeps the context it had
+  already seen.
 
 ### Read the first context on the server
 
