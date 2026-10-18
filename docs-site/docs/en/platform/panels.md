@@ -217,7 +217,8 @@ provider's current address, so reloading the provider page does not bring it
 back. Other open tabs follow on their next page load; a page restored from the
 browser's back/forward cache stops sharing until it has read the answers again.
 Context goes only to the selected provider's page below its panel path; a
-frame that navigated elsewhere receives none.
+frame that navigated elsewhere receives none. A provider page that the browser restores from
+the panel's own history keeps the context it had already seen.
 
 ### Read the first context on the server
 
