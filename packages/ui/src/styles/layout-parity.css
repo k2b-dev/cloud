@@ -91,18 +91,12 @@
 }
 
 /* The icon follows the active application accent through the same optional
-   hook as the workspace's active navigation; it defaults to the action colour. */
+   hook as the workspace's active navigation; it defaults to the action colour.
+   Its chip is the shared `k2b-icon-tile`. */
 .k2b-ui .k2b-app-overview__icon {
-  display: flex;
   width: 2.5rem;
   height: 2.5rem;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--k2b-radius-control);
   color: var(--k2b-app-workspace-active);
-  background: color-mix(in srgb, var(--k2b-app-workspace-active) 9%, var(--k2b-surface));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k2b-app-workspace-active) 16%, transparent);
   font-size: 1.25rem;
 }
 
@@ -2244,7 +2238,11 @@ html {
     )
     .k2b-app-workspace__sidebar-item-icon {
     width: 1rem;
+    /* The chip is the object's only box: an object row's icon tile drops its
+       own fill and 2rem height here. */
+    height: 1rem;
     color: var(--k2b-app-workspace-active);
+    background: transparent;
     font-size: 0.9375rem;
     line-height: 1;
   }

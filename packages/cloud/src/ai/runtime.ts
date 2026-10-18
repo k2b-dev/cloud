@@ -26,8 +26,9 @@ import { aiQuotas } from "./quotas";
 import { parseAiResourceMarker } from "./resource-markers";
 import { isAiVisionModelConfigured } from "./settings";
 import { aiConversations } from "./store";
-import { publishAiTurnAbort, publishAiWireEvent } from "./stream";
+import { publishAiWireEvent } from "./stream";
 import { aiToolAudit } from "./tool-audit";
+import { finishAiTurnAbort } from "./turn-abort";
 import type {
   AiChatTurnRunConfig,
   AiClientToolId,
@@ -279,32 +280,10 @@ export const submitAiCompaction = async (input: SubmitAiCompactionInput): Promis
 // ---------------------------------------------------------------------------
 
 export const abortAiTurn = async (input: { conversationId: string; turnId: string }): Promise<{ ok: true }> => {
-  // Capture the wire coordinates before finalization so we can emit turn_finished.
+  // Capture wire coordinates before the cancellation flag can wake its owner.
   const active = await aiConversations.getActiveTurn({ conversationId: input.conversationId }).catch(() => null);
   const request = await aiConversations.requestTurnAbort({ ...input, reason: "user" });
-  if (!request.found) return { ok: true };
-
-  // Tell any live owner to stop (its heartbeat also detects the cancel flag).
-  await publishAiTurnAbort(input).catch(() => undefined);
-
-  if (request.ownerless) {
-    const finalized = await aiConversations.completeTurn({ ...input, status: "aborted", error: null });
-    const config = await aiConversations.getTurnRunConfig(input);
-    if (finalized === "completed" && !(config?.kind === "chat" && config.background)) {
-      const attempt = active?.turn.id === input.turnId ? active.turn.attempt : 1;
-      const seq = (active?.turn.id === input.turnId ? active.liveSeq : 0) + 1;
-      await publishAiWireEvent({
-        v: 1,
-        conversationId: input.conversationId,
-        turnId: input.turnId,
-        attempt,
-        seq,
-        type: "turn_finished",
-        status: "aborted",
-        error: null,
-      }).catch(() => undefined);
-    }
-  }
+  await finishAiTurnAbort(input, request, active);
   return { ok: true };
 };
 

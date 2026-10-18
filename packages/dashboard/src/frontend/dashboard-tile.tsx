@@ -1,4 +1,5 @@
 import type { WidgetBlock } from "@k2b/cloud/contracts";
+import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
 import {
   Button,
   Placeholder,
@@ -113,58 +114,67 @@ export function DashboardWidgetFrame(props: { widget: DashboardCatalogWidget; st
   );
   const state = (children: JSX.Element) => frame(<div class="dashboard-widget-state">{children}</div>);
   const loaded = () => (props.state.status === "ok" ? props.state.widget : undefined);
+  // The widget belongs to its source app: its header icon and empty states use that app's colour, not the dashboard's.
   return (
-    <Switch>
-      <Match when={loaded()}>
-        {(widget) => (
-          <Widget title={widget().title} icon={widget().icon ?? props.widget.appIcon} href={widget().href} meta={widget().meta} size="fill">
-            {widget().blocks.map((block) => renderBlock(block))}
-          </Widget>
-        )}
-      </Match>
-      <Match when={props.state.status === "loading"}>
-        {state(
-          <Placeholder
-            state="loading"
-            title={t().widgetLoading}
-            // The slow notice has its line from the start, so showing it moves nothing.
-            description={
-              <span class="dashboard-widget-slow" data-shown={slow() ? "true" : undefined}>
-                {t().widgetSlow({ app: props.widget.appName })}
-              </span>
-            }
-            variant="compact"
-            class="dashboard-widget-placeholder"
-          />,
-        )}
-      </Match>
-      <Match when={props.state.status === "timeout" || props.state.status === "error"}>
-        {state(
-          <Placeholder
-            state="error"
-            variant="compact"
-            title={
-              props.state.status === "timeout"
-                ? t().widgetTimeout({ app: props.widget.appName })
-                : t().widgetFailed({ app: props.widget.appName })
-            }
-            action={
-              props.onRetry ? (
-                <Button variant="secondary" size="sm" onClick={() => props.onRetry?.()}>
-                  {t().widgetRetry}
-                </Button>
-              ) : undefined
-            }
-            class="dashboard-widget-placeholder"
-          />,
-        )}
-      </Match>
-      <Match when={props.state.status === "forbidden"}>
-        {state(<Placeholder icon="ti ti-lock" title={t().widgetForbidden} variant="compact" class="dashboard-widget-placeholder" />)}
-      </Match>
-      <Match when={props.state.status === "empty"}>
-        {state(<Placeholder title={t().widgetEmpty} variant="compact" class="dashboard-widget-placeholder" />)}
-      </Match>
-    </Switch>
+    <div class="dashboard-widget-accent app-accent-scope" data-app-id={props.widget.appId} style={appAccentStyle(props.widget.appAccent)}>
+      <Switch>
+        <Match when={loaded()}>
+          {(widget) => (
+            <Widget
+              title={widget().title}
+              icon={widget().icon ?? props.widget.appIcon}
+              href={widget().href}
+              meta={widget().meta}
+              size="fill"
+            >
+              {widget().blocks.map((block) => renderBlock(block))}
+            </Widget>
+          )}
+        </Match>
+        <Match when={props.state.status === "loading"}>
+          {state(
+            <Placeholder
+              state="loading"
+              title={t().widgetLoading}
+              // The slow notice has its line from the start, so showing it moves nothing.
+              description={
+                <span class="dashboard-widget-slow" data-shown={slow() ? "true" : undefined}>
+                  {t().widgetSlow({ app: props.widget.appName })}
+                </span>
+              }
+              variant="compact"
+              class="dashboard-widget-placeholder"
+            />,
+          )}
+        </Match>
+        <Match when={props.state.status === "timeout" || props.state.status === "error"}>
+          {state(
+            <Placeholder
+              state="error"
+              variant="compact"
+              title={
+                props.state.status === "timeout"
+                  ? t().widgetTimeout({ app: props.widget.appName })
+                  : t().widgetFailed({ app: props.widget.appName })
+              }
+              action={
+                props.onRetry ? (
+                  <Button variant="secondary" size="sm" onClick={() => props.onRetry?.()}>
+                    {t().widgetRetry}
+                  </Button>
+                ) : undefined
+              }
+              class="dashboard-widget-placeholder"
+            />,
+          )}
+        </Match>
+        <Match when={props.state.status === "forbidden"}>
+          {state(<Placeholder icon="ti ti-lock" title={t().widgetForbidden} variant="compact" class="dashboard-widget-placeholder" />)}
+        </Match>
+        <Match when={props.state.status === "empty"}>
+          {state(<Placeholder title={t().widgetEmpty} variant="compact" class="dashboard-widget-placeholder" />)}
+        </Match>
+      </Switch>
+    </div>
   );
 }

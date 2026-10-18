@@ -29,6 +29,16 @@ import {
   type QueryField,
 } from "./query-blocks";
 
+export type BookImagePlacement = {
+  token: string;
+  href: string;
+  alt: string;
+  title: string | null;
+  width: number | null;
+  height: number | null;
+  omissionIndex: number;
+};
+
 export type BookHeading = { id: string; depth: number; text: string; line?: number };
 
 /**
@@ -49,8 +59,8 @@ export type NotebookBookInput = {
   locale: string;
   linkMode?: "book" | "write" | "readonly";
   /**
-   * Render for the PDF export: images appear as their label because the print
-   * preset loads no images yet, and math leaves out MathML the PDF drops.
+   * Render for PDF export: image slots are resolved to offline assets or visible
+   * placeholders by the service; math leaves out MathML the PDF drops.
    */
   print?: boolean;
   /** Short ID of the rendered note. In print, a link to this note stays inside the document. */
@@ -92,6 +102,7 @@ export const renderNotebookBook = (
   blocks: { line: number; html: string }[];
   diagnostics: NotebookBlockDiagnostic[];
   omissions: NotePdfOmission[];
+  images: BookImagePlacement[];
 } => {
   const markdown = input.markdown.replace(/\r\n?/g, "\n");
   const { locale, t } = bookRendererMessages.resolve([input.locale]);
@@ -115,8 +126,14 @@ export const renderNotebookBook = (
   const slots: Array<() => string> = [];
   const mathSlots: string[] = [];
   const mathLabels: string[] = [];
-  // Markers never reach the output. Unpredictability also prevents a Markdown
-  // entity or escape from reconstructing an authored marker during parsing.
+  const imageSlots: Omit<BookImagePlacement, "omissionIndex">[] = [];
+  const imageSlot = (image: Omit<BookImagePlacement, "token" | "omissionIndex">) => {
+    const token = `${prefix}IMAGE${imageSlots.length}END`;
+    imageSlots.push({ ...image, token });
+    return token;
+  };
+  // Markers never reach the output, except print image slots, which the PDF service resolves.
+  // Unpredictability also prevents a Markdown entity or escape from reconstructing an authored marker during parsing.
   const prefix = `NOTEBOOKBOOKSLOT${crypto.randomUUID().replaceAll("-", "")}`;
   const anchorId = (base: string): string => {
     let id = base;
@@ -263,6 +280,7 @@ export const renderNotebookBook = (
         .replace(new RegExp(`<span class="${LIGATURE_CLASS}" title="([^"]*)">[^<]*</span>`, "g"), "$1"),
       { allowedTags: [], allowedAttributes: {} },
     )
+      .replace(new RegExp(`${prefix}IMAGE(\\d+)END`, "g"), (_raw, index: string) => escape(imageSlots[Number(index)]?.alt ?? ""))
       .replace(new RegExp(`${prefix}MATH(\\d+)END`, "g"), (_raw, index: string) => mathLabels[Number(index)] ?? "")
       .replace(
         /&(amp|lt|gt|quot|#39);/g,
@@ -312,20 +330,6 @@ export const renderNotebookBook = (
       locale,
     });
   };
-  const imageOmissionLabel = (href: string, alt: string): string => {
-    if (alt) return alt;
-    const attachmentId = /^attach:\/\/([A-Za-z0-9]{6})$/.exec(href)?.[1];
-    if (attachmentId) return input.references?.attachments?.get(attachmentId)?.filename ?? "";
-    try {
-      const url = new URL(href);
-      return /^https?:$/.test(url.protocol) ? `${url.origin}${url.pathname}` : "";
-    } catch {
-      return "";
-    }
-  };
-  const imageLabel = (alt: string, href: string) =>
-    omission("not_rendered", "image", imageOmissionLabel(href, alt)) +
-    `<span class="notebook-book-image-label">${escape(t.image({ alt }))}</span>`;
   // An attached image links to its file, so a reader can open it from the keyboard too; Book shows it in the lightbox.
   // The image's text names the link; an image without text keeps its empty alt, and the link takes the image label.
   const imageHtml = (href: string, url: string, alt: string, img: string) =>
@@ -334,7 +338,7 @@ export const renderNotebookBook = (
       : img;
   renderer.image = function ({ href, title, tokens }) {
     const alt = plainText(this.parser.parseInline(tokens));
-    if (input.print) return imageLabel(alt, href);
+    if (input.print) return imageSlot({ href, alt, title: title ?? null, width: null, height: null });
     const url = resolveUrl(href, true);
     if (!url) return escape(alt);
     return imageHtml(
@@ -451,7 +455,14 @@ export const renderNotebookBook = (
         },
         renderer(token) {
           const alt = plainText(this.parser.parseInline(token.tokens ?? []));
-          if (input.print) return imageLabel(alt, String(token.href));
+          if (input.print)
+            return imageSlot({
+              href: String(token.href),
+              alt,
+              title: typeof token.title === "string" ? token.title : null,
+              width: typeof token.width === "number" ? token.width : null,
+              height: typeof token.height === "number" ? token.height : null,
+            });
           const url = resolveUrl(String(token.href), true);
           return url
             ? imageHtml(
@@ -601,15 +612,28 @@ export const renderNotebookBook = (
   const headingIds = new Set(headings.map(({ id }) => id));
   for (const anchor of printAnchors) if (!headingIds.has(anchor)) html = html.replaceAll(`href="${anchorHash(anchor)}"`, 'href="#top"');
   const omissions: NotePdfOmission[] = [];
+  const images: BookImagePlacement[] = [];
   const seenOmissions = new Set<number>();
-  html = html.replace(new RegExp(`<!--${prefix}OMISSION(\\d+)-->`, "g"), (_raw, index: string) => {
-    const key = Number(index);
-    if (!seenOmissions.has(key)) {
-      omissions.push(pendingOmissions[key]!);
-      seenOmissions.add(key);
-    }
-    return "";
-  });
+  const seenImages = new Set<number>();
+  html = html.replace(
+    new RegExp(`<!--${prefix}OMISSION(\\d+)-->|${prefix}IMAGE(\\d+)END`, "g"),
+    (raw, omissionId: string | undefined, imageId: string | undefined) => {
+      if (imageId !== undefined) {
+        const key = Number(imageId);
+        if (!seenImages.has(key)) {
+          images.push({ ...imageSlots[key]!, omissionIndex: omissions.length });
+          seenImages.add(key);
+        }
+        return raw;
+      }
+      const key = Number(omissionId);
+      if (!seenOmissions.has(key)) {
+        omissions.push(pendingOmissions[key]!);
+        seenOmissions.add(key);
+      }
+      return "";
+    },
+  );
   html = sanitizeNotebookBookHtml(html, resolveUrl);
   html = html.replace(new RegExp(`${prefix}MATH(\\d+)END`, "g"), (_raw, index: string) => mathSlots[Number(index)] ?? "");
   const restoreCharts = (html: string) =>
@@ -617,6 +641,7 @@ export const renderNotebookBook = (
   return {
     html: restoreCharts(html),
     omissions,
+    images,
     diagnostics: [...queryResult.diagnostics, ...tocResult.diagnostics, ...chartResult.diagnostics],
     headings,
     blocks: [...blockHtml].map(([line, html]) => ({ line, html: restoreCharts(sanitizeNotebookBookHtml(html, resolveUrl)) })),

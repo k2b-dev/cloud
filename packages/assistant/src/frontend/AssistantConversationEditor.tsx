@@ -216,12 +216,22 @@ function EditConversationForm(props: EditConversationFormProps) {
   const archive = mutation.create<boolean, void>({
     mutation: async () => {
       if (props.archiveDisabled) return false;
-      const confirmed = await prompts.confirm(copy().archiveChat({ title: props.conversation.title }), {
-        title: text("Archive chat"),
-        icon: "ti ti-archive",
-        confirmText: text("Archive"),
-        cancelText: text("Cancel"),
-      });
+      // Archiving pauses the chat's running routines, so the question names them before anything changes.
+      // Without the list the question still says so; archiving itself does not depend on it.
+      const routines = await assistantApi.listChatTasks({ chatId: props.conversation.id, state: "active", limit: 100 }).catch(() => null);
+      const confirmed = await prompts.confirm(
+        routines === null
+          ? copy().archiveChatAnyRoutines
+          : routines.length
+            ? copy().archiveChatRoutines({ names: routines.map((routine) => routine.name) })
+            : copy().archiveChat({ title: props.conversation.title }),
+        {
+          title: routines?.length !== 0 ? copy().archiveChat({ title: props.conversation.title }) : text("Archive chat"),
+          icon: "ti ti-archive",
+          confirmText: text(routines?.length ? "Archive anyway" : "Archive"),
+          cancelText: text("Cancel"),
+        },
+      );
       if (!confirmed) return false;
 
       await assistantApi.archiveConversation(props.conversation.id);

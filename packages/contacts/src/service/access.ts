@@ -432,10 +432,12 @@ export const isContactsAdministrator = (actor: RequestActor): boolean => {
 };
 
 /** Only a user-delegated credential acts as its user; every other service account is capped by its scopes. */
-const capByCredential = (actor: RequestActor, permission: PermissionLevel): PermissionLevel =>
+export const capByCredential = (actor: RequestActor, permission: PermissionLevel): PermissionLevel =>
   actor.kind === "service_account" && actor.serviceAccount.kind !== "user_delegated"
     ? minPermission(permission, permissionFromScopes(actor.scopes))
     : permission;
+
+export const credentialPermission = (actor: RequestActor): PermissionLevel => capByCredential(actor, "admin");
 
 /**
  * Resolves one existing book through the actor's exact resource binding and
