@@ -2157,6 +2157,48 @@ describe("waiting detail drawers", () => {
     });
   }
 
+  for (const marked of [true, false]) {
+    test(`choosing the ${marked ? "selected" : "unmarked"} item again ${marked ? "reopens" : "leaves"} a parked Detail without a content change`, async () => {
+      const { root, aside, item, toggle } = waitingWorkspace();
+      if (marked) item.setAttribute("aria-selected", "true");
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        toggle.click();
+        detailKey(toggle, "Escape");
+        rememberPointer(item);
+        item.focus();
+        flushFrames();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBe(marked ? "open" : undefined);
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  test("a choice that another interaction replaced does not open a Detail that opens later", async () => {
+    const { root, aside, item, title } = waitingWorkspace();
+    // Focus leaves the workspace, for example to the host's search field.
+    const other = document.createElement("button");
+    other.textContent = "Elsewhere";
+    document.body.append(other);
+    aside.hidden = true;
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      item.focus();
+      detailKey(item, "Enter");
+      other.focus();
+      aside.hidden = false;
+      await window.happyDOM.whenAsyncComplete();
+      expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+      expect(document.activeElement === other).toBe(true);
+      expect(document.activeElement === title).toBe(false);
+    } finally {
+      dispose();
+      other.remove();
+    }
+  });
+
   for (const cancellation of ["none", "pointer", "key", "focus", "hidden", "removed", "not waiting", "dispose"] as const) {
     test(`a content update does not open a parked Detail after ${cancellation}`, async () => {
       const { root, aside, item, title } = waitingWorkspace();

@@ -685,6 +685,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     };
     refreshItem(snapshot);
     remembered.set(root, snapshot);
+    if (snapshot.chosen) lastChosen = snapshot;
     if (snapshot.chosen) {
       const aside = openDetails(root).find((aside) => detailWaiting(aside) && !detailDrawer(aside));
       if (aside) watchPendingDetail(root, aside, snapshot);
@@ -740,7 +741,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   // content, so focus falls to the body. The panel keeps owning the steps until
   // focus or a pointer goes elsewhere, so a quick second J still ends on the title.
   let panelStep: HTMLElement | null = null;
+  // The last choice in Main, until another interaction replaces it: a Detail
+  // that opens later than that does not take the drawer or the focus.
+  let lastChosen: RememberedItem | null = null;
   const cancelTitleOnInteraction = (event: Event) => {
+    if (lastChosen && !(event.target instanceof Node && lastChosen.item.contains(event.target))) {
+      lastChosen.chosen = false;
+      lastChosen = null;
+    }
     if (
       pendingDetail &&
       !(event.target instanceof Node && pendingDetail.aside.contains(event.target)) &&
@@ -893,19 +901,30 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   };
   const watchPendingDetail = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem) => {
     cancelPendingDetail();
-    const observer = new MutationObserver((records) => {
-      if (!canOpenPendingDetail(aside)) {
-        cancelPendingDetail();
-        return;
-      }
-      if (!records.some((record) => aside.contains(record.target))) return;
+    const open = () => {
       cancelPendingDetail();
       snapshot.fresh = false;
       openDetailDrawer(aside);
       revealItem(root, aside, snapshot);
       if (snapshot.interaction === "keyboard") requestTitle(aside);
+    };
+    const observer = new MutationObserver((records) => {
+      if (!canOpenPendingDetail(aside)) {
+        cancelPendingDetail();
+        return;
+      }
+      if (records.some((record) => aside.contains(record.target))) open();
     });
     pendingDetail = { aside, snapshot, observer };
+    // Choosing the item that is already selected changes no content. An item
+    // that the app marks as selected or current once the choice has settled
+    // reopens the drawer as well.
+    const selected = () => snapshot.item.closest('[aria-selected="true"], [aria-current]:not([aria-current="false"])');
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (pendingDetail?.observer === observer && canOpenPendingDetail(aside) && selected()) open();
+      }),
+    );
     observer.observe(aside, { childList: true, subtree: true, characterData: true });
     // Also detect removal when this controller is scoped to the removed workspace itself.
     observer.observe(ownerDocument, { childList: true, subtree: true });
