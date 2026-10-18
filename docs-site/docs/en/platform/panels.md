@@ -168,7 +168,9 @@ Arrays, extra fields, unknown providers, and other versions are rejected.
 
 Without ready within 10 seconds, the slot shows **The panel did not load** and
 **Try again**. Retry replaces the iframe and starts a new timeout. A late valid
-ready message also recovers. Loading and failure surfaces occupy the same box,
+ready message also recovers. The timeout covers the loads the slot starts:
+opening, retrying, and switching providers.
+Pages reached through links inside the panel show as the browser loads them. Loading and failure surfaces occupy the same box,
 so they do not move the app.
 
 ## Page context
