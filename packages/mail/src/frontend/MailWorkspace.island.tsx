@@ -1072,7 +1072,25 @@ function MailWorkspaceView(props: {
     const path = `${target.pathname}${target.search}`;
     const source = encodeRouteSource(path, data.listMode);
     routeGeneration++;
+    // The row was loaded earlier than the detail. A message that arrived unread since then makes the row unread
+    // again, so opening it marks it read as a snapshot that carries both would.
+    const conversationId = selection.selectedConversationId;
+    const unreadFolderIds = [
+      ...new Set(
+        (selection.detailMessages ?? []).flatMap((message) =>
+          !message.flags.includes("\\Seen") && message.folderId ? [message.folderId] : [],
+        ),
+      ),
+    ];
     batch(() => {
+      if (conversationId && unreadFolderIds.length > 0)
+        setData("listItems", (items) =>
+          items.map((item) =>
+            item.selectionKind === "conversation" && item.conversationId === conversationId && !item.unread
+              ? { ...item, unread: true, unreadFolderIds }
+              : item,
+          ),
+        );
       setData(selection);
       committedRouteSource = source;
       setRouteSource(source);

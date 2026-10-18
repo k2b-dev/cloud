@@ -660,6 +660,15 @@ describe("Mail workspace conversation open", () => {
     expect(detailSignals[0]?.aborted).toBe(true);
   });
 
+  test("a message that arrived unread after the list loaded is marked read on open", async () => {
+    mount();
+    unread.add(rowId(12));
+    open(rowId(12));
+    await until(() => actionRequests.length === 1, "the mark read request");
+    expect(actionRequests[0]!.conversationId).toBe(rowId(12));
+    expect(actionRequests[0]!.body).toMatchObject({ kind: "change_state", change: { addFlags: ["seen"] }, sourceFolderId: FOLDER });
+  });
+
   test("Enter on a row focuses the reader heading", async () => {
     mount();
     open(rowId(7), "keyboard");
