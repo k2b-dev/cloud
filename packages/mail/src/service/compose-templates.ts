@@ -1,4 +1,5 @@
 import { audit } from "@k2b/cloud/services";
+import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
@@ -690,10 +691,17 @@ export const updateMailboxComposeLogo = async (params: {
 }): Promise<Result<MailboxComposeLogo>> => {
   const parsed = updateMailboxComposeLogoInputSchema.safeParse(params.input);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid mailbox logo"));
-  const content = Buffer.from(parsed.data.content, "base64");
+  let content = Buffer.from(parsed.data.content, "base64");
   if (content.toString("base64") !== parsed.data.content) return fail(err.badInput("Logo content must be valid padded base64"));
+  const originalImage = validateMailboxLogoImage(content);
+  if (!originalImage.ok) return originalImage;
+  try {
+    content = Buffer.from(stripImageMetadata(content));
+  } catch {
+    return fail(err.badInput("The logo file is damaged or truncated"));
+  }
   const image = validateMailboxLogoImage(content);
-  if (!image.ok) return image;
+  if (!image.ok) return fail(err.badInput("The logo file is damaged or truncated"));
   try {
     return await sql.begin(async (tx) => {
       const allowed = await requireMailboxPermission(params.context, params.mailboxId, "admin", tx);
@@ -809,7 +817,7 @@ const composeRenderContext = async (params: {
 
   return ok({
     actor,
-    mailbox: { name: base.mailbox_name, description: base.mailbox_description ?? "", logo: "" },
+    mailbox: { name: base.mailbox_name, description: base.mailbox_description ?? "" },
     sender: {
       display_name: base.sender_name || base.sender_email,
       email: base.sender_email,
@@ -864,6 +872,7 @@ export const renderComposeDraft = async (params: {
           src: params.logoSource === "cid" ? `cid:${contentId}` : mailboxLogoDataUrl(logo),
           altText: logo.alt_text,
           displayWidth: logo.display_width,
+          byteLength: logo.content.byteLength,
         }
       : null,
     signature: signature?.body_template ?? null,

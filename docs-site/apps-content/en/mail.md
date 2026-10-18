@@ -421,8 +421,14 @@ replies, forwards, and older signatures still marked in the body. Mail sends
 the logo as an inline image part referenced by `cid:`, never as a remote link.
 The API, CLI, and composer previews show the same image bytes. In plain text,
 the placeholder becomes the logo's alt text. In snippets it stays empty.
+Use the logo tag alone: filters, conditions, and assignments using `mailbox.logo`
+are rejected. Whitespace variations such as `{{mailbox.logo}}` and
+`{{- mailbox.logo -}}` are supported. Each image occurrence counts toward the
+same preview and send size limit; reduce repeated logos if the message is too large.
 
 Upload a PNG or JPEG of at most 100 KiB (102400 bytes) and 1200×400 pixels.
+Mail removes private image metadata, including camera and GPS details, before
+storing the logo. Image orientation is preserved.
 Display width defaults to 200 px; `--width` accepts 1–600 px. Alt text is
 required and defaults to the trimmed mailbox name; use `--alt` to change it
 (1–200 characters, no control characters). `cld mail compose logo get` shows

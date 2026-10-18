@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
+import { cameraExif, imageBytes, jpegSegment, tinyJpeg } from "../../../../scripts/fixtures/image-metadata";
 import { logoJpeg, logoPng } from "../../test/mailbox-logo-fixtures";
 import { validateMailboxLogoImage } from "./mailbox-logo-image";
 
@@ -9,6 +11,23 @@ describe("mailbox logo byte validation", () => {
       expect(validateMailboxLogoImage(upload.bytes)).toEqual({ ok: true, data: { contentType: "image/png", width: 1, height: 1 } });
     }
     expect(validateMailboxLogoImage(logoJpeg())).toEqual({ ok: true, data: { contentType: "image/jpeg", width: 1, height: 1 } });
+  });
+  test("accepts real JPEG and PNG layouts before and after metadata stripping", async () => {
+    for (const progressive of [false, true]) {
+      const jpeg = await tinyJpeg(progressive);
+      for (const orientation of [1, 6]) {
+        const input = imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, cameraExif(orientation)), jpeg.subarray(2));
+        expect(validateMailboxLogoImage(input)).toMatchObject({ ok: true, data: { contentType: "image/jpeg", width: 3, height: 2 } });
+        const stripped = stripImageMetadata(input);
+        expect(validateMailboxLogoImage(stripped)).toEqual(validateMailboxLogoImage(input));
+        expect(Buffer.from(stripped).includes(Buffer.from("Apple"))).toBe(false);
+        if (orientation === 1) {
+          expect(Buffer.from(stripped)).toEqual(Buffer.from(jpeg));
+          expect(Buffer.from(stripped).includes(Buffer.from("Exif"))).toBe(false);
+        }
+      }
+    }
+    expect(validateMailboxLogoImage(stripImageMetadata(logoPng()))).toEqual(validateMailboxLogoImage(logoPng()));
   });
   test("checks byte size before parsing and reads dimension limits only from headers", () => {
     expect(validateMailboxLogoImage(Buffer.alloc(102401))).toMatchObject({

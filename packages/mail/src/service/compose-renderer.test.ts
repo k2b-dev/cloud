@@ -21,7 +21,7 @@ const markComposeTemplateSegment = (source: string): string => `\u2063${source}\
 
 const context: ComposeRenderContext = {
   actor: { display_name: "Ada Lovelace", email: "ada@example.test" },
-  mailbox: { name: "Support", description: "Customer support", logo: "" },
+  mailbox: { name: "Support", description: "Customer support" },
   sender: { display_name: "Support", email: "support@example.test", reply_to: "" },
   message: { subject: "Hello", to: ["reader@example.test"], cc: [] },
 };
@@ -357,7 +357,7 @@ describe("compose renderer", () => {
       ok: false,
       error: {
         message:
-          'Mail template variable "user.name" is not available here. Available: actor.display_name, actor.email, sender.display_name, sender.email, sender.reply_to, mailbox.logo, mailbox.name, mailbox.description, message.subject, message.to, message.cc.',
+          'Mail template variable "user.name" is not available here. Available: actor.display_name, actor.email, sender.display_name, sender.email, sender.reply_to, mailbox.name, mailbox.description, message.subject, message.to, message.cc.',
       },
     });
     expect(validateComposeTemplateSource("<{{ sender.reply_to }}>").ok).toBe(false);
@@ -1265,7 +1265,12 @@ describe("separate draft signatures", () => {
 });
 
 describe("mailbox signature logos", () => {
-  const logo = { src: "cid:logo.00000000-0000-4000-8000-000000000001@example.test", altText: 'Team "<>& $&', displayWidth: 234 };
+  const logo = {
+    src: "cid:logo.00000000-0000-4000-8000-000000000001@example.test",
+    altText: 'Team "<>& $&',
+    displayWidth: 234,
+    byteLength: 68,
+  };
   const render = (input: Partial<Parameters<typeof renderComposeContent>[0]> = {}) =>
     renderComposeContent({
       body: "Hello",
@@ -1289,6 +1294,69 @@ describe("mailbox signature logos", () => {
     expect(result.data.text).toContain(logo.altText);
     expect(result.data.html).not.toContain("MAILLOGO");
     expect(result.data.text).not.toContain("MAILLOGO");
+  });
+  test("budgets repeated logos as data URLs before allocating images in both delivery modes", () => {
+    const byteLength = 100 * 1024;
+    for (const mode of ["cid", "data"] as const) {
+      const src = mode === "cid" ? logo.src : `data:image/png;base64,${Buffer.alloc(byteLength).toString("base64")}`;
+      let sourceReads = 0;
+      const largeLogo = {
+        ...logo,
+        byteLength,
+        get src() {
+          sourceReads += 1;
+          return src;
+        },
+      };
+      expect(render({ signature: "{{ mailbox.logo }}".repeat(30), logo: largeLogo })).toMatchObject({
+        ok: false,
+        error: { composeRender: { reason: "tooLarge" } },
+      });
+      expect(sourceReads).toBe(0);
+      const two = render({ signature: "{{ mailbox.logo }}".repeat(2), logo: largeLogo });
+      expect(two).toMatchObject({ ok: true });
+      if (two.ok) expect(two.data.html?.match(/<img /g)).toHaveLength(2);
+    }
+  });
+  test("counts inserted images toward the HTML element budget", () => {
+    expect(render({ signature: "{{ mailbox.logo }}".repeat(999) })).toMatchObject({
+      ok: false,
+      error: { composeRender: { reason: "tooComplex" } },
+    });
+  });
+  test("accepts exact tags and whitespace control in selected and stored signatures", () => {
+    for (const tag of [
+      "{{ mailbox.logo }}",
+      "{{mailbox.logo}}",
+      "{{- mailbox.logo -}}",
+      "{{- mailbox.logo }}",
+      "{{ mailbox.logo -}}",
+      "{{\nmailbox.logo\n}}",
+    ]) {
+      expect(validateComposeTemplateSource(tag)).toMatchObject({ ok: true });
+      expect(render({ signature: tag })).toMatchObject({ ok: true, data: { logoUsed: true } });
+      const segment = markComposeTemplateSegment(tag);
+      expect(hasUnrenderedTemplateSyntax(segment)).toBe(false);
+      const legacy = render({ signature: null, body: segment });
+      expect(legacy).toMatchObject({ ok: true, data: { logoUsed: true } });
+      if (legacy.ok) expect(legacy.data.html).toContain(`<img src="${logo.src}"`);
+    }
+    expect(renderComposeTemplateSource("left  {{- mailbox.logo -}}  right", context, "markdown")).toEqual({ ok: true, data: "leftright" });
+  });
+  test("rejects filters, conditions, assignments and bracket access to the logo", () => {
+    for (const signature of [
+      "{{ mailbox.logo | downcase }}",
+      "{% if mailbox.logo %}x{% endif %}",
+      "{% assign l = mailbox.logo %}{{ l }}",
+      '{{ mailbox["logo"] }}',
+    ]) {
+      expect(validateComposeTemplateSource(signature)).toMatchObject({
+        ok: false,
+        error: { message: expect.stringContaining('variable "mailbox.logo" is not available') },
+      });
+      expect(render({ signature })).toMatchObject({ ok: false });
+      expect(renderComposeTemplateSource(signature, context, "markdown")).toMatchObject({ ok: false });
+    }
   });
   test("removes an unavailable logo and reports its formatting warning", () => {
     for (const format of ["plain", "markdown"] as const) {

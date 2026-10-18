@@ -1175,9 +1175,25 @@ suite("mail sent message projection", () => {
         const preview = await previewComposeDraft({
           context,
           mailboxId: mailbox.mailboxId,
-          input: { draft: draft.data, conversationId: null },
+          input: {
+            // Preview accepts editable content, not the full saved-draft response.
+            draft: {
+              senderIdentityId: draft.data.senderIdentityId,
+              signatureTemplateId: draft.data.signatureTemplateId,
+              to: draft.data.to,
+              cc: draft.data.cc,
+              bcc: draft.data.bcc,
+              subject: draft.data.subject,
+              body: draft.data.body,
+              format: draft.data.format,
+              priority: draft.data.priority,
+              requestDeliveryReceipt: draft.data.requestDeliveryReceipt,
+              requestReadReceipt: draft.data.requestReadReceipt,
+            },
+            conversationId: draft.data.conversationId,
+          },
         });
-        expect(preview.ok).toBe(true);
+        expect(preview).toMatchObject({ ok: true });
         if (preview.ok) expect(preview.data.html).toContain(`src="data:image/png;base64,${original.toString("base64")}"`);
         const outbox = await schedule(mailbox, draft.data.id, draft.data.revision, `inline-logo-${intent}`);
         const [frozen] = await sql<{ draft_snapshot: unknown; inline_logo_version_id: string | null }[]>`
