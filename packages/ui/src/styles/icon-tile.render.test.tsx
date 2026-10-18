@@ -144,6 +144,17 @@ describe("shared icon tile contract", () => {
       ["notes.constructor", undefined, "other"],
     ] as const)
       expect(fileTypeOf({ name, mediaType }), name).toBe(type);
+    // Names that match inherited object members still render the generic glyph instead of throwing.
+    for (const [name, folder, expected] of [
+      ["notes.constructor", false, "ti-file"],
+      ["constructor", false, "ti-file"],
+      ["__proto__", false, "ti-file"],
+      ["constructor", true, "ti-folder"],
+    ] as const)
+      expect(
+        render(() => createComponent(FileTypeIcon, { name, folder })),
+        name,
+      ).toContain(`class="ti ${expected}"`);
     const tree = render(() =>
       createComponent(FileTree, { entries: [{ path: "/report.pdf" }, { path: "/budget.xlsx" }, { path: "/Projects", kind: "folder" }] }),
     );

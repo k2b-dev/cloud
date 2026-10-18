@@ -44,12 +44,15 @@ export const fileTypeOf = (file: { name: string; mediaType?: string; folder?: bo
 
 /** `fileIcons` adds Tailwind colour utilities that @k2b/ui does not ship; only the `ti-*` glyph is kept. */
 const glyph = (props: FileTypeIconProps): string => {
-  const icon = (
-    props.icon ?? fileIcons.getFileIcon({ name: props.name, type: props.folder ? "directory" : "file", mimeType: props.mediaType })
-  )
-    .split(/\s+/)
-    .filter((token) => token.startsWith("ti-"))
-    .join(" ");
+  // `fileIcons` looks names up in plain objects, so a name such as `constructor` returns an inherited member
+  // instead of a class string; such names fall back to the generic glyph.
+  const found: unknown =
+    props.icon ?? fileIcons.getFileIcon({ name: props.name, type: props.folder ? "directory" : "file", mimeType: props.mediaType });
+  const icon =
+    (typeof found === "string" ? found : "")
+      .split(/\s+/)
+      .filter((token) => token.startsWith("ti-"))
+      .join(" ") || (props.folder ? "ti-folder" : "ti-file");
   return props.folder && props.open ? icon.replace(/\bti-folder$/, "ti-folder-open") : icon;
 };
 
