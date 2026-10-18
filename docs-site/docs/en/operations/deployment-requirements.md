@@ -962,8 +962,8 @@ without bound. It needs no configuration change. Both limits are fixed:
 
 - An emit whose `data` or `context` is larger than 16 MiB fails with
   `WORKFLOW_EVENT_TOO_LARGE`. Grids answers such a start with a bad-input
-  error. Mail emits an oversized message without its body, and the run reads
-  the body from Mail when a step needs it.
+  error. Mail emits every message without its body, and the run reads the
+  body from Mail when a step needs it.
 - 30 days after dispatch or dead-lettering, Core deletes the event's
   deliveries and empties its data, context, and authorization snapshot, once no
   queued, running, waiting, or needs-attention run references it. The row and
