@@ -5,8 +5,8 @@ import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { env } from "../config/env";
 import * as requestContext from "../server/request-context";
-import { browserHash, cleanup, countrySeen, findBrowser, newBrowserCookie, rememberSignIn, trustState } from "./known-browsers";
 import * as keyRing from "./identity/key-ring";
+import { browserHash, cleanup, countrySeen, findBrowser, newBrowserCookie, rememberSignIn, trustState } from "./known-browsers";
 import { session } from "./session";
 import { createTestAppSession } from "./session/session.test-fixture";
 
@@ -39,8 +39,9 @@ const login = async (userId: string, cookie?: string, country = "AT", city: stri
   expect(responseCookie(response)).toMatch(/^[A-Za-z0-9_-]{43}$/);
   return response;
 };
-const rows = (id: string) =>
-  sql<
+// Plain arrays: a Bun SQL result carries `count` and `command`, which toMatchObject compares.
+const rows = async (id: string) => [
+  ...(await sql<
     {
       id: string;
       browser_hash: Buffer;
@@ -52,10 +53,13 @@ const rows = (id: string) =>
       country: string | null;
       city: string | null;
     }[]
-  >`SELECT * FROM auth.known_browsers WHERE user_id = ${id}::uuid ORDER BY last_seen_at, id`;
-const countries = (id: string) => sql<{ country: string; last_seen_at: Date }[]>`
-  SELECT country, last_seen_at FROM auth.sign_in_countries WHERE user_id = ${id}::uuid ORDER BY last_seen_at, country
-`;
+  >`SELECT * FROM auth.known_browsers WHERE user_id = ${id}::uuid ORDER BY last_seen_at, id`),
+];
+const countries = async (id: string) => [
+  ...(await sql<{ country: string; last_seen_at: Date }[]>`
+    SELECT country, last_seen_at FROM auth.sign_in_countries WHERE user_id = ${id}::uuid ORDER BY last_seen_at, country
+  `),
+];
 const countryCode = (index: number) => String.fromCharCode(65 + Math.floor(index / 26), 65 + (index % 26));
 
 suite("known browsers at the web session boundary", () => {

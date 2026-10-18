@@ -109,8 +109,10 @@ extends how long a record counts as remembered.
 
 Each account keeps at most 100 browsers and 50 countries. New sign-ins evict
 the oldest records first. An installation-wide introduction phase lasts 14
-days from the first Core start after the upgrade. Accounts and requests cannot
-restart or extend it.
+days from the first Core start after the upgrade. During it, later releases
+will not call any browser new and will send no new-sign-in notice, because
+Core has not seen the browsers yet. Accounts and requests cannot restart or
+extend it.
 
 ## Where traces of a sign-in end up
 
