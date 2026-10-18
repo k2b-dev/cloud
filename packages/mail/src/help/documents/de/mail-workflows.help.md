@@ -124,6 +124,8 @@ Nachrichtenpfade:
 - `inputs.message.attachments.0.id`, `filename`, `contentType`, `disposition`, `contentId` oder `sizeBytes`
 - `inputs.message.hasAttachments`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, `receivedAt`
 
+Mail liest `body`, `bodyText` und `bodyHtml`, wenn ein Schritt sie benötigt. Der Schritt wartet, bis Mail die Nachricht geladen hat, und schlägt fehl, wenn die Nachricht nicht mehr existiert. Ein vollständiger Nachrichtenwert wie `inputs.message` enthält den Text nur, wenn Mail ihn bereits geladen hat; lies den Text über `body`, `bodyText` oder `bodyHtml`, wenn ein Schritt ihn benötigt. Die Ausführungsdetails zeigen keine Nachrichtentexte mehr in den Ereignisdaten.
+
 Unterhaltungspfade:
 
 - `inputs.conversation.id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`

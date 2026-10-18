@@ -19,10 +19,12 @@ const SettingEntrySchema = z.object({
   default: z.unknown(),
   value: z.unknown(),
   isCustom: z.boolean(),
+  unreadable: z.boolean(),
 });
 
 const UpdateSettingSchema = z.object({
   value: z.unknown(),
+  replaceUnreadable: z.boolean().optional(),
 });
 
 const app = new Hono<AuthContext>()
@@ -53,6 +55,7 @@ const app = new Hono<AuthContext>()
         200: jsonResponse(z.object({ message: z.string() }), "Updated"),
         400: jsonResponse(ErrorResponseSchema, "Invalid key or value"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        409: jsonResponse(ErrorResponseSchema, "Stored setting unreadable"),
       },
     }),
     v("json", UpdateSettingSchema),
@@ -61,7 +64,8 @@ const app = new Hono<AuthContext>()
       if (!key.startsWith(GRIDS_SETTING_PREFIX)) {
         return respond(c, fail(err.badInput(`Setting "${key}" is not in the grids namespace`)));
       }
-      const result = await settingsService.entry.update({ key, value: c.req.valid("json").value });
+      const { value, replaceUnreadable } = c.req.valid("json");
+      const result = await settingsService.entry.update({ key, value, replaceUnreadable });
       if (!result.ok) return respond(c, result);
       return respond(c, ok({ message: apiMessages(c).settingUpdated }));
     },

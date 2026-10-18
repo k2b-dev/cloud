@@ -13,6 +13,7 @@ const entry: SettingFieldDef = {
   valueSource: "default",
   resetValueSource: "default",
   isCustom: false,
+  unreadable: false,
   group: "freeipa",
   options: [
     { value: "delete", label: "Delete account" },

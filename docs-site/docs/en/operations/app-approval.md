@@ -5,7 +5,7 @@ section: Reference
 order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Integrate an authenticator website
@@ -303,6 +303,9 @@ A terminal sign-in links an OAuth device authorization (RFC 8628) to the
 paired app. The app approves authentication and consent in one step.
 Only the OAuth app can create it, through Core's broker-authenticated internal
 endpoint. Browser sign-in endpoints cannot create or complete it.
+OAuth sends these requests when a first-party client supplies
+[`login_hint`](/en/docs/identity/oauth#approve-in-cloud-login). Today that
+client is the Cloud CLI: `cld login --user <username or email>` creates them.
 
 Check for `"terminal-logins"` in `/info.features`. Opt in only when your app can
 show the client, every scope code, and the login lifetime before a decision:
@@ -346,7 +349,8 @@ Reload the inbox after a conflict. Do not retry an uncertain decision.
 Browser and terminal sign-ins share five outstanding requests per account.
 Each request expires after 300 seconds. Unknown, ambiguous, unpaired, expired,
 category-disabled, client-disallowed and over-budget accounts receive the same
-response shape and no wake-up.
+response shape and no wake-up. So do accounts that have not yet accepted the
+legal documents.
 
 Before token issuance, Core checks that the approving device still exists,
 is active and belongs to the account, and that the account's authentication
@@ -374,7 +378,7 @@ The handoff and Cloud Login's consent UI are separate changes.
 | Component version capability | Required behavior |
 | --- | --- |
 | Core with `terminal-logins` | Internal broker endpoint, signed inbox extension, atomic decisions and issuance recheck. |
-| OAuth with app-approval handoff | Creates the linked request and uses the existing browser flow when the channel is unavailable. |
+| OAuth with app-approval handoff | Creates the linked request for `login_hint`; clients can start without the hint to use browser approval. |
 | Cloud Login with terminal consent | Shows client, scope codes and lifetime, then opts in explicitly. |
 
 ## Approve an Action

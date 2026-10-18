@@ -10,7 +10,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, Index, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
-import type { CloudAiChartRow } from "../chart-block";
+import { type CloudAiChartRow, cloudAiNumberFormatters } from "../chart-block";
 import {
   CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
   CLOUD_AI_VIEW_MAX_BYTES,
@@ -244,12 +244,17 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudAiStatsView 
         {(value) => (
           <StatGrid columns={columns()}>
             <Index each={value()}>
-              {(tile) => (
+              {(tile, index) => (
                 <StatCell
                   label={tile().label}
                   value={tile().value}
                   title={tile().value}
                   trend={tile().sparkline}
+                  trendTooltip={({ datum }) => {
+                    const point = tile().sparkline?.[datum.index];
+                    const format = cloudAiNumberFormatters(props.input?.items[index]?.format, locale()).value;
+                    return { rows: point === undefined ? [] : [{ label: tile().label, value: format(point) }] };
+                  }}
                   sub={tile().sub}
                   accent={deltaAccent(tile().delta)}
                 />

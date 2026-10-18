@@ -1,9 +1,71 @@
-import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import type { AiChatTaskView, AiSkillSummary } from "@k2b/cloud/ai";
+import type { AiComposerAttachment } from "@k2b/cloud/ai/ui";
+import type { CloudResourcePickerItem, CloudResourcePickerOptions } from "@k2b/cloud/browser/resource-picker";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
+import { ok } from "@k2b/stdlib";
 import type { ChatMention } from "@k2b/ui";
-import { batch, createSignal } from "solid-js";
+import { batch, createMemo, createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
+import { z } from "zod";
 import { createDomTestHarness } from "../../../ui/test/dom";
+
+const picker = mock<(options?: CloudResourcePickerOptions) => Promise<CloudResourcePickerItem | undefined>>(async () => undefined);
+mock.module("@k2b/cloud/browser/resource-picker", () => ({ openCloudResourcePicker: picker }));
+const catalogTags = [
+  { tag: "note", title: "Notizen", description: "Notizen suchen", aliases: ["notes", "markdown"] },
+  { tag: "notebook", title: "Notizbücher", description: "Notizbücher suchen", aliases: ["notebooks"] },
+];
+const catalog = {
+  protocolVersion: 2,
+  apps: [
+    {
+      appId: "notebooks",
+      appName: "Notebooks",
+      appIcon: "ti ti-notebook",
+      appDescription: "Notes",
+      // The manifest Notebooks would register, with its search tags.
+      manifest: compileCapabilityManifest(
+        "notebooks",
+        defineCapabilities({
+          protocolVersion: 2,
+          // An app needs a resource reader for its tags to reach the composer.
+          types: { note: { title: "Note", description: "One note.", reader: "read" } },
+          queries: {
+            read: {
+              title: "Read a note",
+              description: "Read one note.",
+              input: z.object({ id: z.string().describe("Note id.") }).strict(),
+              data: z.object({ title: z.string().describe("Note title.") }).strict(),
+              openWorld: false,
+              run: async () => ok({ data: { title: "Q3 plan" } }),
+            },
+            search: {
+              title: "Search notes",
+              description: "Find notes and notebooks.",
+              input: UniversalSearchInputSchema,
+              data: UniversalSearchDataSchema,
+              openWorld: false,
+              universalSearch: { tags: catalogTags },
+              run: async () => ok({ data: [] }),
+            },
+          },
+        }),
+      ),
+    },
+  ],
+  page: { hasMore: false },
+};
+const chosenNote: CloudResourcePickerItem = {
+  appId: "notebooks",
+  appName: "Notebooks",
+  appIcon: "ti ti-notebook",
+  readable: true,
+  ref: { type: "notebooks.note", id: "Q3note" },
+  title: "Q3 plan",
+  href: "/notebooks/Q3note",
+};
 
 const fixedNow = "2026-10-10T12:00:00.000Z";
 beforeEach(() => setSystemTime(new Date(fixedNow)));
@@ -11,6 +73,7 @@ const cleanups: (() => void)[] = [];
 afterEach(() => {
   for (const cleanup of cleanups.splice(0).reverse()) cleanup();
   setSystemTime();
+  picker.mockReset();
 });
 const flush = async () => {
   for (let i = 0; i < 12; i++) await Promise.resolve();
@@ -71,7 +134,15 @@ const installPopoverStub = () => {
 
 const mount = async (
   options: {
+    host?: ReturnType<typeof createDomTestHarness>;
     value?: string;
+    locale?: string;
+    attachments?: AiComposerAttachment[];
+    mentions?: ChatMention[];
+    choose?: () => Promise<readonly File[]>;
+    catalogFail?: () => boolean;
+    /** The catalog answers only once this settles. */
+    catalogGate?: Promise<void>;
     empty?: boolean;
     skills?: AiSkillSummary[];
     tasks?: AiChatTaskView[];
@@ -80,29 +151,42 @@ const mount = async (
     scheduledTaskSkills?: AiSkillSummary[];
     scheduledTaskSkillsFail?: () => boolean;
     post?: () => Promise<Response>;
+    track?: <T>(picking: Promise<T>) => Promise<T>;
   } = {},
 ) => {
-  const dom = createDomTestHarness();
-  cleanups.push(dom.cleanup);
-  dom.document.documentElement.lang = "de";
-  installPopoverStub();
+  const dom = options.host ? { ...options.host, root: options.host.document.createElement("div") } : createDomTestHarness();
+  if (options.host) {
+    dom.document.body.append(dom.root);
+    cleanups.push(() => dom.root.remove());
+  } else cleanups.push(dom.cleanup);
+  const locale = options.locale ?? "de";
+  dom.document.documentElement.lang = locale;
+  if (!options.host) installPopoverStub();
   delegateEvents(["click", "input", "keydown", "keyup"]);
   const { Chat } = await import("@k2b/ui");
+  const { aiChatAttachments } = await import("@k2b/cloud/ai/ui");
   const {
     assistantBuiltInCommands,
     assistantCommandScopes,
     assistantCommandSections,
     assistantComposerCommands,
+    assistantExcludedRefs,
+    assistantInsertCommands,
     createAssistantCommandSession,
     createAssistantTaskRunKeys,
   } = await import("./composer-commands");
   const { assistantCopyFor } = await import("./ui-copy");
+  const { createCloudComposerCatalog } = await import("@k2b/cloud/browser/composer-insert");
   const requests: { url: URL; init?: RequestInit }[] = [];
   const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
         const url = new URL(String(input), "http://localhost");
         requests.push({ url, init });
+        if (url.pathname === "/api/capabilities/v1/catalog") {
+          await options.catalogGate;
+          return options.catalogFail?.() ? Response.json({ message: "Offline" }, { status: 500 }) : Response.json(catalog);
+        }
         if (url.pathname.endsWith("/run")) return options.post ? options.post() : Response.json({});
         if (url.pathname === "/api/ai/tasks")
           return options.tasksFail?.()
@@ -121,12 +205,6 @@ const mount = async (
           return options.skillsFail?.()
             ? Response.json({ message: "Skills offline" }, { status: 500 })
             : Response.json({ skills: options.skills ?? skills });
-        if (url.pathname.includes("artifacts"))
-          return Response.json({
-            items: [{ id: "app-1", kind: "app", title: "Studio app", description: "Example" }],
-            page: 1,
-            hasNext: false,
-          });
         if (url.pathname.endsWith("/files")) return Response.json({ files: [] });
         throw new Error(`Unexpected request: ${url}`);
       },
@@ -146,12 +224,24 @@ const mount = async (
   const [value, setValue] = createSignal(options.value ?? "/");
   const [selectedModel, setSelectedModel] = createSignal("alpha");
   const [state, setState] = createSignal<"idle" | "running">("idle");
-  const [mentions, setMentions] = createSignal<readonly ChatMention[]>([]);
+  const [mentions, setMentions] = createSignal<readonly ChatMention[]>(options.mentions ?? []);
   const models = [
     { id: "alpha", label: "Alpha" },
     { id: "beta", label: "Beta" },
   ];
-  const copy = assistantCopyFor("de");
+  const copy = assistantCopyFor(locale);
+  const catalogTags = createCloudComposerCatalog();
+  const insert = createMemo(() =>
+    assistantInsertCommands({
+      copy,
+      locale,
+      tags: catalogTags.tags(),
+      partCount: () => (options.attachments ?? []).length + mentions().length,
+      excludeRefs: () => assistantExcludedRefs(options.attachments ?? [], mentions()),
+      fileSelectionDisabled: state() === "running",
+      track: options.track,
+    }),
+  );
   const modelChanges: string[] = [];
   const chooseModel = (id: string) => {
     modelChanges.push(id);
@@ -173,42 +263,52 @@ const mount = async (
         selectedModelId={selectedModel()}
         onModelChange={chooseModel}
         commandSections={assistantCommandSections(copy)}
-        commandScopes={assistantCommandScopes(copy, "de")}
-        commands={assistantBuiltInCommands({
-          copy,
-          projectComposer: false,
-          running: state() === "running",
-          recording: false,
-          models,
-          selectedModelId: selectedModel(),
-          hasMessages: !options.empty,
-          hasAssistantMessage: !options.empty,
-          compact: async () => {},
-          fork: async () => {},
-          newChat: async () => {},
-          searchChat: () => {
-            searches++;
-          },
-        })}
-        searchCommands={(query, signal, search) =>
-          assistantComposerCommands({
-            query,
-            signal,
-            session: search.opening,
-            scope: search.scope,
-            sessionLoader: loader,
-            runKeys,
+        commandScopes={[...assistantCommandScopes(copy, locale), ...insert().scopes]}
+        commandFallback={insert().fallback}
+        attachments={aiChatAttachments(options.attachments ?? [])}
+        fileSelection={{ choose: options.choose ?? (async () => []), onSelect() {} }}
+        commands={[
+          ...insert().commands,
+          ...assistantBuiltInCommands({
+            copy,
+            projectComposer: false,
+            running: state() === "running",
+            recording: false,
             models,
             selectedModelId: selectedModel(),
-            chooseModel,
-            isRunning: () => state() === "running",
-            locale: "de",
-            conversationId: "chat-1",
-            projects: [],
-            running: state() === "running",
-            assignProject: async () => {},
-          })
-        }
+            hasMessages: !options.empty,
+            hasAssistantMessage: !options.empty,
+            compact: async () => {},
+            fork: async () => {},
+            newChat: async () => {},
+            searchChat: () => {
+              searches++;
+            },
+          }),
+        ]}
+        searchCommands={(query, signal, search) => {
+          // As the workspace does: typed text outside a scope waits for the opening's catalog answer.
+          return Promise.all([
+            assistantComposerCommands({
+              query,
+              signal,
+              session: search.opening,
+              scope: search.scope,
+              sessionLoader: loader,
+              runKeys,
+              models,
+              selectedModelId: selectedModel(),
+              chooseModel,
+              isRunning: () => state() === "running",
+              locale,
+              conversationId: "chat-1",
+              projects: [],
+              running: state() === "running",
+              assignProject: async () => {},
+            }),
+            catalogTags.ready(query, search, locale),
+          ]).then(([rows]) => rows);
+        }}
       />
     ),
     dom.root,
@@ -233,6 +333,8 @@ const mount = async (
   input.setSelectionRange(value().length, value().length);
   input.click();
   await settled();
+  // The first catalog load can resolve a tag scope and start that scope’s search.
+  await settled();
   return {
     ...dom,
     input,
@@ -256,25 +358,26 @@ const mount = async (
 test("overview groups and rows have the requested order and independent task bound", async () => {
   const h = await mount();
   expect([...h.root.querySelectorAll(".k2b-chat-composer__command-heading span")].map((el) => el.textContent)).toEqual([
+    "Einfügen",
     "Skills",
-    "Studio-Apps",
     "Dieser Chat",
-    "Geplante Aufgaben",
+    "Routinen",
   ]);
   expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual([
+    "Aus Cloud einfügen",
+    "Datei anhängen",
     "Skill 0",
     "Skill 1",
     "Skill 2",
     "Skill 3",
     "Alle 6 Skills",
-    "Studio app",
     "Modell wählen",
     "Projekt zuordnen",
     "Chat kompaktieren",
     "Chat abzweigen",
     "In diesem Chat suchen",
     "Neuer Chat",
-    "Neue geplante Aufgabe",
+    "Neue Routine",
     "Bericht 6",
     "Bericht 5",
     "Bericht 4",
@@ -361,7 +464,7 @@ test("task running status appears only after the deferred server acceptance", as
   expect(new Headers(h.posts()[0]?.init?.headers).get("Idempotency-Key")).toMatch(/^[a-f0-9]{32}$/);
   accept(Response.json({}));
   await flush();
-  expect(h.status()).toBe("„Bericht 6“ läuft. Das Ergebnis kommt in den Chat der geplanten Aufgabe.");
+  expect(h.status()).toBe("„Bericht 6“ läuft. Das Ergebnis kommt in den Chat der Routine.");
   expect(h.value()).toBe("");
 });
 
@@ -484,8 +587,7 @@ test("after a lost answer, a rejected retry still says the start is unconfirmed"
 
 test.each(["paused", "needs_attention"] as const)("%s task explains its reason and sends no POST", async (state) => {
   const h = await mount({ value: "/routine ", tasks: [{ ...tasks[0]!, state }] });
-  const reason =
-    state === "paused" ? "Pausiert. Setze die geplante Aufgabe zuerst fort." : "Braucht deinen Eingriff, bevor sie laufen kann";
+  const reason = state === "paused" ? "Pausiert. Setze die Routine zuerst fort." : "Braucht deinen Eingriff, bevor sie laufen kann";
   expect(h.row("Bericht 0").querySelector("small")?.textContent).toBe(reason);
   h.mark("Bericht 0");
   h.key("Enter");
@@ -494,7 +596,7 @@ test.each(["paused", "needs_attention"] as const)("%s task explains its reason a
   expect(h.value()).toBe("/routine ");
 });
 
-test("new scheduled task inserts the Assistant Skill from the name lookup when absent from the full list", async () => {
+test("new routine inserts the Assistant Skill from the name lookup when absent from the full list", async () => {
   const h = await mount({
     skills: skills.slice(0, 5),
     scheduledTaskSkills: [skills[5]!],
@@ -502,7 +604,7 @@ test("new scheduled task inserts the Assistant Skill from the name lookup when a
   expect(h.row("Alle 5 Skills")).toBeDefined();
   h.type("/routine neu");
   await settled();
-  h.mark("Neue geplante Aufgabe");
+  h.mark("Neue Routine");
   h.key("Enter");
   await flush();
   expect(h.mentions()).toHaveLength(1);
@@ -515,7 +617,7 @@ test.each(["disabled", "missing"])("%s scheduled-tasks Skill explains why insert
     value: "/routine ",
     skills: kind === "missing" ? skills.slice(0, 5) : skills.map((skill) => ({ ...skill, enabled: skill.id !== "skill-5" })),
   });
-  expect(h.row("Neue geplante Aufgabe").querySelector("small")?.textContent).toBe(
+  expect(h.row("Neue Routine").querySelector("small")?.textContent).toBe(
     kind === "missing" ? "Der Skill dafür ist für dich nicht verfügbar" : "Du hast den Skill dafür ausgeschaltet",
   );
   h.key("Enter");
@@ -557,10 +659,10 @@ test.each([
     scheduledTaskSkillsFail: () => failure === "skill" && fail,
   });
   if (!value.startsWith("/routine")) expect(h.row("Skill 0")).toBeDefined();
-  expect(h.row("Geplante Aufgaben konnten nicht geladen werden").querySelector("small")?.textContent).toBe("Erneut versuchen");
-  expect(h.row("Neue geplante Aufgabe")).toBeUndefined();
+  expect(h.row("Routinen konnten nicht geladen werden").querySelector("small")?.textContent).toBe("Erneut versuchen");
+  expect(h.row("Neue Routine")).toBeUndefined();
   fail = false;
-  h.mark("Geplante Aufgaben konnten nicht geladen werden");
+  h.mark("Routinen konnten nicht geladen werden");
   h.key("Enter");
   await settled();
   expect(h.value()).toBe(value);
@@ -573,11 +675,11 @@ test("full Skill-list failure keeps other sections and retries Skills with Enter
   const h = await mount({ skillsFail: () => fail });
   const skillGets = () => h.requests.filter(({ url }) => url.pathname === "/api/ai/skills" && !url.search);
   expect(skillGets()).toHaveLength(1);
-  expect(h.row("Neue geplante Aufgabe")).toBeDefined();
+  expect(h.row("Neue Routine")).toBeDefined();
   expect(h.row("Bericht 6")).toBeDefined();
   expect(h.row("Bericht 2")).toBeDefined();
   expect(h.row("Modell wählen")).toBeDefined();
-  expect(h.row("Studio app")).toBeDefined();
+  expect(h.row("Aus Cloud einfügen")).toBeDefined();
   expect(h.row("Skills konnten nicht geladen werden").querySelector("small")?.textContent).toBe("Erneut versuchen");
   expect(h.row("Alle 6 Skills")).toBeUndefined();
   fail = false;
@@ -589,16 +691,220 @@ test("full Skill-list failure keeps other sections and retries Skills with Enter
   expect(h.row("Skills konnten nicht geladen werden")).toBeUndefined();
   expect(h.row("Skill 0")).toBeDefined();
   expect(h.row("Alle 6 Skills")).toBeDefined();
-  expect(h.row("Neue geplante Aufgabe")).toBeDefined();
+  expect(h.row("Neue Routine")).toBeDefined();
   expect(h.row("Bericht 6")).toBeDefined();
 });
 
 test("a failed full Skill list does not prevent task rows or the scheduled Skill reference", async () => {
   const h = await mount({ value: "/routine ", skillsFail: () => true });
   expect(h.row("Bericht 6")).toBeDefined();
-  expect(h.row("Geplante Aufgaben konnten nicht geladen werden")).toBeUndefined();
-  h.mark("Neue geplante Aufgabe");
+  expect(h.row("Routinen konnten nicht geladen werden")).toBeUndefined();
+  h.mark("Neue Routine");
   h.key("Enter");
   await flush();
   expect(h.mentions()[0]?.attachment.data).toMatchObject({ kind: "resource", ref: { type: "core.ai.skill", id: "Skill5" } });
+});
+
+test("Insert leads the overview and tags appear only while typing", async () => {
+  const h = await mount();
+  expect(h.root.querySelector(".k2b-chat-composer__command-heading span")?.textContent).toBe("Einfügen");
+  expect(
+    h
+      .rows()
+      .slice(0, 2)
+      .map((row) => row.querySelector("strong")?.textContent),
+  ).toEqual(["Aus Cloud einfügen", "Datei anhängen"]);
+  expect(h.row("Notizen")).toBeUndefined();
+  expect(h.row("Notizbücher")).toBeUndefined();
+  h.type("/notiz");
+  await settled();
+  expect(h.row("Notizen")).toBeDefined();
+  expect(h.row("Notizbücher")).toBeDefined();
+  expect(h.row("Notizen").closest('[role="group"]')?.textContent).toContain("Einfügen");
+});
+
+test("a narrowed picker inserts at the token place and one Undo restores it; cancelling preserves it", async () => {
+  picker.mockResolvedValue(chosenNote);
+  const h = await mount({ value: "Bitte /notiz q3" });
+  expect(h.root.textContent).toContain("Notizen aus Notebooks");
+  expect(h.row("„q3“ in Notizen suchen").querySelector("small")?.textContent).toBe("Aus Notebooks, mit Vorschau");
+  h.key("Enter");
+  await flush();
+  expect(picker).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      scope: { appId: "notebooks", tag: "note", label: "Notizen · Notebooks", icon: "ti ti-notebook" },
+      query: "q3",
+      requireReader: true,
+    }),
+  );
+  expect(h.value()).toBe("Bitte Q3 plan ");
+  expect(h.mentions()).toEqual([
+    { start: 6, end: 13, attachment: expect.objectContaining({ id: "resource:notebooks.note:Q3note", name: "Q3 plan" }) },
+  ]);
+  h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+  expect(h.value()).toBe("Bitte /notiz q3");
+  expect(h.mentions()).toEqual([]);
+  picker.mockResolvedValue(undefined);
+  h.type("/notiz q3");
+  await settled();
+  h.key("Enter");
+  await flush();
+  expect(h.value()).toBe("/notiz q3");
+});
+
+test("sixteen attachments disable Attach file and every resource insert row", async () => {
+  const choose = mock(async () => []);
+  const h = await mount({
+    value: "/attach",
+    choose,
+    attachments: Array.from({ length: 16 }, (_, i) => ({
+      kind: "resource",
+      id: `resource:${i}`,
+      name: `Note ${i}`,
+      icon: "ti ti-note",
+      ref: { type: "notebooks.note", id: `Note${i}` },
+    })),
+  });
+  expect(h.row("Datei anhängen").querySelector("small")?.textContent).toBe("Eine Nachricht kann höchstens 16 Elemente enthalten.");
+  h.key("Enter");
+  await flush();
+  expect(choose).not.toHaveBeenCalled();
+  h.type("/notiz q3");
+  await settled();
+  expect(h.row("„q3“ in Notizen suchen").getAttribute("aria-disabled")).toBe("true");
+  h.key("Enter");
+  expect(picker).not.toHaveBeenCalled();
+});
+
+test("an unmatched query offers Cloud search and /app narrows to the Assistant's Studio tag", async () => {
+  const h = await mount({ value: "/xylo", skills: [], tasks: [] });
+  expect(h.root.textContent).toContain("Nichts gefunden für „xylo“");
+  expect(h.row("„xylo“ in Cloud suchen")).toBeDefined();
+  h.key("Enter");
+  await flush();
+  expect(picker).toHaveBeenLastCalledWith(expect.objectContaining({ scope: undefined, query: "xylo", requireReader: true }));
+  h.type("/app q");
+  await settled();
+  expect(h.root.textContent).toContain("Studio-Apps aus Assistent");
+});
+
+test("a Studio app chosen through /app becomes the artifact reference the Assistant reads", async () => {
+  picker.mockResolvedValueOnce({
+    ref: { type: "assistant.app", id: "App1" },
+    title: "Angebotsrechner",
+    appId: "assistant",
+    appName: "Assistent",
+    appIcon: "ti ti-sparkles",
+    readable: false,
+    href: "/app/assistant/apps/App1",
+  });
+  const h = await mount({ value: "/app rech", skills: [], tasks: [] });
+  h.key("Enter");
+  await flush();
+  // Studio apps have no Cloud reader, so this one picker lists only them, also after the chip is removed.
+  expect(picker).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      scope: expect.objectContaining({ appId: "assistant", tag: "studio-app" }),
+      query: "rech",
+      resourceType: "assistant.app",
+    }),
+  );
+  expect(picker.mock.calls.at(-1)?.[0]?.requireReader).toBeUndefined();
+  await settled();
+  expect(h.mentions()[0]?.attachment.data).toMatchObject({ kind: "resource", ref: { type: "assistant.artifact", id: "App1" } });
+});
+
+test("an open picker is tracked until it settles, so the workspace holds back saving a new chat meanwhile", async () => {
+  let open = 0;
+  let resolve!: (item: CloudResourcePickerItem | undefined) => void;
+  picker.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const h = await mount({
+    value: "/notiz q3",
+    track: (picking) => {
+      open++;
+      return picking.finally(() => open--);
+    },
+  });
+  h.key("Enter");
+  await flush();
+  expect(open).toBe(1);
+  resolve(chosenNote);
+  await settled();
+  expect(open).toBe(0);
+  expect(h.mentions()).toHaveLength(1);
+});
+
+test("attached and mentioned resources are excluded from the picker", async () => {
+  const attachment: AiComposerAttachment = {
+    kind: "resource",
+    id: "resource:notebooks.note:old",
+    name: "Old",
+    icon: "ti ti-note",
+    ref: { type: "notebooks.note", id: "old" },
+  };
+  const h = await mount({
+    value: "Old /notiz q3",
+    attachments: [{ ...attachment, id: "attached", ref: { type: "notebooks.note", id: "attached" } }],
+    mentions: [{ start: 0, end: 3, attachment: { id: attachment.id, name: attachment.name, kind: "resource", data: attachment } }],
+  });
+  h.key("Enter");
+  await flush();
+  expect(picker.mock.calls.at(-1)?.[0]?.excludeRefs).toEqual([{ type: "notebooks.note", id: "attached" }, attachment.ref]);
+});
+
+test("a slow first catalog keeps the search pending, so a space after /notiz narrows once the tags arrive", async () => {
+  let answer!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const h = await mount({ locale: "de-LI", value: "/notiz", catalogGate: gate, skills: [], tasks: [] });
+  await settled();
+  // Not "nothing found" yet: the tags that could match have not arrived.
+  expect(h.root.textContent).not.toContain("Nichts gefunden");
+  h.type("/notiz ");
+  answer();
+  await settled();
+  h.type("/notiz q3");
+  await settled();
+  expect(h.root.textContent).toContain("Notizen aus Notebooks");
+  expect(h.row("„q3“ in Notizen suchen")).toBeDefined();
+});
+
+test("the Assistant's own scopes never wait for a catalog that does not answer", async () => {
+  const h = await mount({ locale: "de-LU", value: "/modell ", catalogGate: new Promise<void>(() => {}), skills: [], tasks: [] });
+  await settled();
+  expect(h.row("Alpha")).toBeDefined();
+  expect(h.row("Beta")).toBeDefined();
+});
+
+test("one successful catalog fetch serves two composers, keystrokes and later openings", async () => {
+  const first = await mount({ locale: "de-AT" });
+  const second = await mount({ locale: "de-AT", host: first });
+  for (const h of [first, second]) {
+    for (const value of ["/not", "/notiz", "/notiz q3", "plain", "/", "plain", "/notiz"]) {
+      h.type(value);
+      await settled();
+    }
+  }
+  expect([...first.requests, ...second.requests].filter(({ url }) => url.pathname === "/api/capabilities/v1/catalog")).toHaveLength(1);
+});
+
+test("a failed catalog retries at the next opening and Studio narrowing works before success", async () => {
+  let failed = true;
+  const h = await mount({ locale: "de-CH", value: "/app q", catalogFail: () => failed });
+  expect(h.root.textContent).toContain("Studio-Apps aus Assistent");
+  h.type("/app qt");
+  await settled();
+  expect(h.requests.filter(({ url }) => url.pathname === "/api/capabilities/v1/catalog")).toHaveLength(1);
+  failed = false;
+  h.type("plain");
+  h.type("/notiz");
+  await settled();
+  expect(h.row("Notizen")).toBeDefined();
+  expect(h.requests.filter(({ url }) => url.pathname === "/api/capabilities/v1/catalog")).toHaveLength(2);
 });

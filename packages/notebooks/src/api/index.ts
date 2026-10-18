@@ -3415,10 +3415,12 @@ const SettingEntrySchema = z.object({
   default: z.unknown(),
   value: z.unknown(),
   isCustom: z.boolean(),
+  unreadable: z.boolean(),
 });
 
 const UpdateSettingSchema = z.object({
   value: z.unknown(),
+  replaceUnreadable: z.boolean().optional(),
 });
 
 const requireAdmin = (c: Context<AuthContext>) => {
@@ -3462,6 +3464,7 @@ const appWithAdmin = appWithLimits
         200: jsonResponse(MessageResponseSchema, "Updated"),
         400: jsonResponse(ErrorResponseSchema, "Invalid key or value"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        409: jsonResponse(ErrorResponseSchema, "Stored setting unreadable"),
       },
     }),
     v("json", UpdateSettingSchema),
@@ -3472,11 +3475,11 @@ const appWithAdmin = appWithLimits
       if (!key.startsWith(NOTEBOOKS_SETTING_PREFIX)) {
         return respond(c, fail(err.badInput(messages(c).settingOutsideNamespace({ key }))));
       }
-      const { value } = c.req.valid("json");
+      const { value, replaceUnreadable } = c.req.valid("json");
       const result =
         key === "notebooks.snapshot_cron" && typeof value === "string"
-          ? await notebooksService.backup.updateCron(value)
-          : await settingsService.entry.update({ key, value });
+          ? await notebooksService.backup.updateCron(value, { replaceUnreadable })
+          : await settingsService.entry.update({ key, value, replaceUnreadable });
       if (!result.ok) {
         const message =
           key === "notebooks.snapshot_cron"

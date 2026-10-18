@@ -148,6 +148,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
     await deps.identities.inventory(actor, { kind: "groups", provider: "local" });
     const self = await deps.identities.self(actor);
     const config = await deps.readConfiguration();
+    if (config.unreadable) throw new FilesError("configuration_unreadable", 409);
     checkArea(config, area, self.availability);
     return { config, root: deps.connect(config).root(config[area].root), actorId: self.user.id, actorName: self.user.username };
   }
@@ -803,6 +804,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
     async maintain(input: { signal?: AbortSignal; heartbeat?: () => Promise<void> } = {}): Promise<MaintenanceResult> {
       const totals: MaintenanceResult = { processed: 0, archived: 0, pending: 0 };
       const config = await deps.readConfiguration();
+      if (config.unreadable) throw new FilesError("configuration_unreadable", 409);
       const pending = await sql<
         Operation[]
       >`SELECT * FROM filesv2.operations WHERE state='pending' ORDER BY updated_at,id LIMIT ${PAGE_SIZE}`;

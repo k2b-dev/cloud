@@ -95,18 +95,18 @@ const CHAT_MESSAGE_TOOL_NAME = aiCapabilityId(CORE_APP_ID, "ai.chat.message");
 const ChatTaskCreateInputSchema = z
   .object({
     chatId: ChatIdSchema,
-    prompt: z.string().trim().min(1).max(10_000).describe("Exact prompt to deliver to this chat when the task runs."),
+    prompt: z.string().trim().min(1).max(10_000).describe("Exact prompt to deliver to this chat when the routine runs."),
     grants: ChatTaskGrantsSchema.default([]).describe(
-      "Task grants: capability query/action, HTTP requests or Studio RSQL database operations. Fix input fields as narrowly as the request allows; empty fixedInput permits any inputs within current user access. Always-approval capabilities cannot be granted.",
+      "Routine grants: capability query/action, HTTP requests or Studio RSQL database operations. Fix input fields as narrowly as the request allows; empty fixedInput permits any inputs within current user access. Always-approval capabilities cannot be granted.",
     ),
-    schedule: ChatTaskScheduleInputSchema.describe("When this task should run."),
+    schedule: ChatTaskScheduleInputSchema.describe("When this routine should run."),
     timezone: z.string().min(1).max(100).describe("Exact IANA timezone from the current runtime context."),
   })
   .strict();
 const ChatTaskUpdateInputSchema = z
   .object({
     taskId: ChatTaskIdSchema,
-    prompt: z.string().trim().min(1).max(10_000).optional().describe("Replacement prompt delivered when the task runs."),
+    prompt: z.string().trim().min(1).max(10_000).optional().describe("Replacement prompt delivered when the routine runs."),
     grants: ChatTaskGrantsSchema.optional().describe("Replacement full grant list; requires user review. Omit to retain existing grants."),
     schedule: ChatTaskScheduleInputSchema.optional().describe("Replacement one-time or recurring schedule."),
     timezone: z.string().min(1).max(100).optional().describe("Required with schedule; copy the current runtime IANA timezone."),
@@ -122,14 +122,14 @@ const ChatTaskUpdateInputSchema = z
   });
 const ChatTaskIdInputSchema = z.object({ taskId: ChatTaskIdSchema }).strict();
 const ChatTaskReadInputSchema = z
-  .object({ id: ChatTaskIdSchema.describe("Scheduled-task ID returned by List scheduled AI tasks or a core.ai.task ref.") })
+  .object({ id: ChatTaskIdSchema.describe("Routine ID returned by List Assistant routines or a core.ai.task ref.") })
   .strict();
 const ChatTasksListInputSchema = z
   .object({
     chatId: ChatIdSchema.optional().describe("Optional AI conversation ID returned by chat search/read or a core.ai.chat ref."),
-    state: z.enum(["active", "paused", "completed", "needs_attention"]).optional().describe("Optional task lifecycle state."),
-    limit: z.number().int().min(1).max(50).default(20).describe("Maximum number of tasks to return."),
-    cursor: z.string().regex(/^\d+$/).optional().describe("Opaque cursor returned by the previous task page."),
+    state: z.enum(["active", "paused", "completed", "needs_attention"]).optional().describe("Optional routine lifecycle state."),
+    limit: z.number().int().min(1).max(50).default(20).describe("Maximum number of routines to return."),
+    cursor: z.string().regex(/^\d+$/).optional().describe("Opaque cursor returned by the previous routine page."),
   })
   .strict();
 const ChatTaskDataSchema = z
@@ -643,8 +643,8 @@ export const aiCapabilities = defineCapabilities({
       reader: "ai.chat.read",
     },
     "ai.task": {
-      title: "Scheduled AI task",
-      description: "A one-time or recurring prompt attached to an owned AI conversation.",
+      title: "Assistant routine",
+      description: "A one-time or recurring prompt attached to one of your AI conversations.",
       icon: "ti ti-calendar-clock",
       reader: "ai.task.read",
     },
@@ -803,9 +803,9 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.tasks.list": {
-      title: "List scheduled AI tasks",
+      title: "List Assistant routines",
       description:
-        "Normal entry for scheduled-task work. List the current user's tasks, optionally for a core.ai.chat ref or state; use returned core.ai.task refs with ai.task.read or task Actions.",
+        "Normal entry for routine work. List your routines, optionally for a core.ai.chat ref or state; use returned core.ai.task refs with ai.task.read or routine Actions.",
       input: ChatTasksListInputSchema,
       data: z.array(ChatTaskListItemDataSchema),
       openWorld: false,
@@ -822,9 +822,9 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.run.read": {
-      title: "Read a background task run",
+      title: "Read an Assistant routine run",
       description:
-        "Inspect one owned task run, including its normal-language result, errors and isolated execution history. Use task IDs and run IDs returned by ai.task.read. To repair a blocked task, use ai.task.update with reviewed grants and then ai.task.run.",
+        "Inspect one of your routine runs, including its normal-language result, errors and isolated execution history. Use routine IDs and run IDs returned by ai.task.read. To repair a blocked routine, use ai.task.update with reviewed grants and then ai.task.run.",
       input: z.object({ taskId: ChatTaskIdSchema, occurrenceId: ChatTaskOccurrenceIdSchema }).strict(),
       data: z
         .object({
@@ -864,9 +864,9 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.read": {
-      title: "Read a scheduled AI task",
+      title: "Read an Assistant routine",
       description:
-        "Read one core.ai.task ref returned by ai.tasks.list or a task Action, including its parent core.ai.chat ref and recent runs.",
+        "Read one core.ai.task ref returned by ai.tasks.list or a routine Action, including its parent core.ai.chat ref and recent runs.",
       input: ChatTaskReadInputSchema,
       data: ChatTaskDetailDataSchema,
       openWorld: false,
@@ -1411,9 +1411,9 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.create": {
-      title: "Create a scheduled AI task",
+      title: "Create an Assistant routine",
       description:
-        "Create one reviewed autonomous task in an owned AI conversation. Discover the capabilities needed for the whole task first and propose their grants. Fix input fields such as a note or notebook ID where the user's task permits; leave them unrestricted when broader scope is needed. Code Mode works unattended with confirmed capability, HTTP and database grants; always-approval capabilities and interactive dialogs remain unavailable. Explain the proposed scope for user review. Resolve relative user wording to localAt before calling.",
+        "Create one reviewed autonomous routine in one of your AI conversations. Discover the capabilities needed for the whole routine first and propose their grants. Fix input fields such as a note or notebook ID where the user's request permits; leave them unrestricted when broader scope is needed. Code Mode works unattended with confirmed capability, HTTP and database grants; always-approval capabilities and interactive dialogs remain unavailable. Explain the proposed scope for user review. Resolve relative user wording to localAt before calling.",
       input: ChatTaskCreateInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
@@ -1497,9 +1497,9 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.update": {
-      title: "Update a scheduled AI task",
+      title: "Update an Assistant routine",
       description:
-        "Update the prompt, future schedule or capability grants of one owned task after reviewing the exact replacement. Read the task and failed run first when repairing missing rights. Fix inputs where practical, retain the intended broader scope where needed, and explicitly review expanded authority. Then resume or retry only after accounting for any writes already performed.",
+        "Update the prompt, future schedule or capability grants of one of your routines after reviewing the exact replacement. Read the routine and failed run first when repairing missing rights. Fix inputs where practical, retain the intended broader scope where needed, and explicitly review expanded authority. Then resume or retry only after accounting for any writes already performed.",
       input: ChatTaskUpdateInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
@@ -1560,8 +1560,8 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.pause": {
-      title: "Pause a scheduled AI task",
-      description: "Pause one owned scheduled task after review.",
+      title: "Pause an Assistant routine",
+      description: "Pause one of your routines after review.",
       input: ChatTaskIdInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
@@ -1606,8 +1606,8 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.resume": {
-      title: "Resume a scheduled AI task",
-      description: "Resume one owned scheduled task after review.",
+      title: "Resume an Assistant routine",
+      description: "Resume one of your routines after review.",
       input: ChatTaskIdInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
@@ -1654,7 +1654,7 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.run": {
-      title: "Run a scheduled AI task now",
+      title: "Run an Assistant routine now",
       description: "Queue one manual occurrence without changing the future schedule.",
       input: ChatTaskIdInputSchema,
       data: z.object({ id: ChatTaskOccurrenceIdSchema, state: z.enum(["queued", "running", "completed", "failed"]) }),
@@ -1703,8 +1703,8 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.delete": {
-      title: "Delete a scheduled AI task",
-      description: "Delete one task and all of its occurrence history after review.",
+      title: "Delete an Assistant routine",
+      description: "Delete one routine and all of its run history after review.",
       input: ChatTaskIdInputSchema,
       data: z.object({ deleted: z.literal(true) }),
       destructive: true,

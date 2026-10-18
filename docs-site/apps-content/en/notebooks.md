@@ -448,6 +448,8 @@ workflow, including moving a Git documentation folder into a notebook.
 
 ## Deployment requirements
 
+`PUT /api/notebooks/admin/settings/:key` accepts `replaceUnreadable: true` alongside `value` to explicitly replace an unreadable saved setting, including `notebooks.snapshot_cron`.
+
 Notebooks serves its math stylesheet and WOFF2 fonts below
 `/public/notebooks/katex-<version>/`. The app's development and production
 asset hooks copy these files together. Book and editor pages load the

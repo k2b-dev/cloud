@@ -435,9 +435,9 @@ const settle = async (ms = 20) => {
   await Bun.sleep(ms);
 };
 const until = async (condition: () => boolean, timeout = 2_000) => {
-  const deadline = Date.now() + timeout;
+  const deadline = performance.now() + timeout;
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error("Chat tab did not converge in time");
+    if (performance.now() > deadline) throw new Error("Chat tab did not converge in time");
     await settle(5);
   }
 };

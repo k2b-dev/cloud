@@ -1,6 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
+  InlineGuidance,
   NumberInput,
   prompts,
   readSettingsError,
@@ -13,7 +14,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, onCleanup } from "solid-js";
+import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { weatherMessages } from "../../messages";
 
@@ -24,7 +25,8 @@ type Initial = {
   "weather.geo_url": string;
 };
 
-export default function WeatherSettingsForm(props: { initial: Initial }) {
+/** `unreadable[key]` marks a saved value this application cannot read; `initial` then holds the value in use. */
+export default function WeatherSettingsForm(props: { initial: Initial; unreadable: Record<string, boolean> }) {
   const locale = useLocale();
   const t = () => weatherMessages.resolve([locale()]).t;
   const [draft, setDraft] = createSignal<Initial>({ ...props.initial });
@@ -73,7 +75,9 @@ export default function WeatherSettingsForm(props: { initial: Initial }) {
     const updates: Record<string, unknown> = {};
     const values = draft();
     for (const key of changedKeys()) updates[key] = values[key];
-    return save.mutate(updates);
+    // A changed field that shows the unreadable warning replaces the saved value explicitly.
+    const replaceUnreadable = changedKeys().filter((key) => props.unreadable[key] === true);
+    return save.mutate(replaceUnreadable.length > 0 ? { updates, replaceUnreadable } : updates);
   };
 
   const discardAll = () => {
@@ -82,6 +86,13 @@ export default function WeatherSettingsForm(props: { initial: Initial }) {
   };
 
   const isChanged = (key: keyof Initial) => !sameSettingValue(draft()[key], props.initial[key]);
+  const unreadableHint = (key: keyof Initial) => (
+    <Show when={props.unreadable[key]}>
+      <InlineGuidance tone="warning" icon="ti ti-alert-triangle">
+        {t().settingUnreadable}
+      </InlineGuidance>
+    </Show>
+  );
 
   return (
     <SettingsPage
@@ -124,6 +135,7 @@ export default function WeatherSettingsForm(props: { initial: Initial }) {
             onValueChange={(v) => update("weather.default_lat", v)}
             placeholder={t().exampleLatitude}
           />
+          {unreadableHint("weather.default_lat")}
         </SettingsField>
         <SettingsField
           label={t().defaultLongitude}
@@ -136,6 +148,7 @@ export default function WeatherSettingsForm(props: { initial: Initial }) {
             onValueChange={(v) => update("weather.default_lon", v)}
             placeholder={t().exampleLongitude}
           />
+          {unreadableHint("weather.default_lon")}
         </SettingsField>
       </SettingsSection>
 
@@ -154,6 +167,7 @@ export default function WeatherSettingsForm(props: { initial: Initial }) {
             min={1}
             max={1440}
           />
+          {unreadableHint("weather.cache_minutes")}
         </SettingsField>
       </SettingsSection>
 
@@ -170,6 +184,7 @@ export default function WeatherSettingsForm(props: { initial: Initial }) {
             type="url"
             placeholder={t().geoApiExample}
           />
+          {unreadableHint("weather.geo_url")}
         </SettingsField>
       </SettingsSection>
     </SettingsPage>

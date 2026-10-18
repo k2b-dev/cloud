@@ -7,14 +7,13 @@ import {
   type CloudResourceView,
   capabilityPage,
   defineCapabilities,
-  hasRole,
   UniversalSearchDataSchema,
   type UniversalSearchInput,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
-import { err, fail, ok, type Paginated, type Result } from "@k2b/stdlib";
+import { type AuditActor, audit } from "@k2b/cloud/services";
+import { err, fail, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
 import type { z } from "zod";
 import {
   CONTACT_COLLECTION_LIMIT,
@@ -55,7 +54,7 @@ import { type ContactCapabilityMessages, contactCapabilityMessages } from "./cap
 import { contactsCapabilityPresentation } from "./capability-presentation";
 import { ContactComposeInputSchema } from "./commands";
 import { type Contact, type ContactBook, type ContactNote, type ContactTag, contactsService } from "./service";
-import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID } from "./service/access";
+import { minPermission, permissionFromScopes, readableBookScope } from "./service/access";
 import {
   projectBooks,
   projectContactReferences,
@@ -432,63 +431,33 @@ const pageResult = <T>(
     page: capabilityPage(page.hasNext ? encodeCursor(page.page + 1) : undefined),
   });
 
-const permissionFromScopes = (scopes: readonly string[]): PermissionLevel => {
-  if (scopes.includes("admin")) return "admin";
-  if (scopes.includes("write")) return "write";
-  if (scopes.includes("read")) return "read";
-  return "none";
-};
-
-const minPermission = (left: PermissionLevel, right: PermissionLevel): PermissionLevel => {
-  const ranks: Record<PermissionLevel, number> = { none: 0, read: 1, write: 2, admin: 3 };
-  return ranks[left] <= ranks[right] ? left : right;
-};
-
 const userBacked = (context: CapabilityExecutionContext) => context.user;
 
-const resourceBoundBookId = (context: CapabilityExecutionContext): string | null => {
-  if (context.actor.kind !== "service_account" || context.actor.serviceAccount.kind !== "resource_bound") return null;
-  const account = context.actor.serviceAccount;
-  return account.appId === CONTACTS_APP_ID && account.resourceType === CONTACT_BOOK_RESOURCE_TYPE ? (account.resourceId ?? null) : null;
-};
+const withBookAccessMessage = <T extends Result<unknown>>(result: T, level: PermissionLevel): T | Result<never> =>
+  !result.ok && result.error.code === "FORBIDDEN"
+    ? fail(err.forbidden(`${level === "read" ? "Read" : "Write"} access to this address book is required`))
+    : result;
 
-/** A standalone or agent account acts under its own grants instead of a resource binding. */
-const isStandaloneAccount = (context: CapabilityExecutionContext): boolean =>
-  context.actor.kind === "service_account" &&
-  isStandaloneServiceAccountKind(context.actor.serviceAccount.kind) &&
-  context.accessSubject.type === "service_account" &&
-  context.accessSubject.serviceAccountId === context.actor.serviceAccount.id;
+const withCollectionAccessMessage = <T extends Result<unknown>>(result: T): T | Result<never> =>
+  !result.ok && result.error.code === "FORBIDDEN" ? fail(err.forbidden("A readable Contacts credential is required")) : result;
 
-/** A service account reads Contacts through its bound book or, when standalone, its own grants; either way with a `read` scope. */
-const serviceAccountMayRead = (context: CapabilityExecutionContext): boolean =>
-  context.accessSubject.type !== "service_account" ||
-  ((isStandaloneAccount(context) || resourceBoundBookId(context) !== null) &&
-    hasPermission(permissionFromScopes(context.actor.kind === "service_account" ? context.actor.scopes : []), "read"));
+const requireBookPermissionInternal = async (bookId: string, context: CapabilityExecutionContext, required: PermissionLevel) =>
+  withBookAccessMessage(
+    await contactsService.book.authorize({ bookId, level: required, actor: context.actor, accessSubject: context.accessSubject }),
+    required,
+  );
 
-const requireBookPermissionInternal = async (
-  bookId: string,
+/** Preserve book errors when a transport step fails before the checking operation runs. */
+const failAfterBookAccess = async (
   context: CapabilityExecutionContext,
-  required: PermissionLevel,
-): Promise<Result<{ book: ContactBook; permission: PermissionLevel }>> => {
-  const book = await contactsService.book.get({ id: bookId });
-  if (!book) return fail(err.notFound("Book"));
-
-  const user = userBacked(context);
-  if (user && hasRole(user, "admin")) return ok({ book, permission: "admin" });
-
-  if (context.accessSubject.type === "service_account" && !isStandaloneAccount(context)) {
-    const boundBookId = resourceBoundBookId(context);
-    if (!boundBookId || boundBookId !== bookId) return fail(err.forbidden("Access denied"));
+  checks: { bookId: string; level: PermissionLevel }[],
+  error: ServiceError,
+): Promise<Result<never>> => {
+  for (const check of checks) {
+    const access = await requireBookPermissionInternal(check.bookId, context, check.level);
+    if (!access.ok) return access;
   }
-
-  let permission = await contactsService.book.permission.get({ bookId, subject: context.accessSubject });
-  // Only a user-delegated credential acts as its user; every other service account is capped by its scopes.
-  if (context.actor.kind === "service_account" && context.actor.serviceAccount.kind !== "user_delegated") {
-    permission = minPermission(permission, permissionFromScopes(context.actor.scopes));
-  }
-  return hasPermission(permission, required)
-    ? ok({ book, permission })
-    : fail(err.forbidden(`${required === "read" ? "Read" : "Write"} access to this address book is required`));
+  return fail(error);
 };
 
 const requireBookPermission = async (
@@ -502,19 +471,42 @@ const requireBookPermission = async (
   return access.ok ? ok({ ...access.data, bookId }) : access;
 };
 
-const resolveContact = async (
+/**
+ * Resolve a contact for a following service operation that enforces `required` itself.
+ * This only reads at read level; `required` shapes the error message and the level checked
+ * when the contact is missing. Use `resolveContactWithAccess` before operations that do not check.
+ */
+const resolveContactForCheckedOperation = async (
   contactId: string,
   context: CapabilityExecutionContext,
-  required: PermissionLevel = "read",
+  required: PermissionLevel,
 ): Promise<Result<{ contact: Contact; bookId: string; contactId: string }>> => {
+  const internalContactId = await resolvePublicId("contacts", contactId);
+  if (!internalContactId) return fail(err.notFound("Contact"));
+  const bookId = await contactsService.contact.findBookId({ id: internalContactId });
+  if (!bookId) return fail(err.notFound("Contact"));
+  const contact = withBookAccessMessage(
+    await contactsService.contact.get({ actor: context.actor, accessSubject: context.accessSubject, bookId, id: internalContactId }),
+    required,
+  );
+  if (!contact.ok) return contact;
+  if (!contact.data) return failAfterBookAccess(context, [{ bookId, level: required }], err.notFound("Contact"));
+  return ok({ contact: contact.data, bookId, contactId: internalContactId });
+};
+
+const resolveContactWithAccess = async (contactId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
   const internalContactId = await resolvePublicId("contacts", contactId);
   if (!internalContactId) return fail(err.notFound("Contact"));
   const bookId = await contactsService.contact.findBookId({ id: internalContactId });
   if (!bookId) return fail(err.notFound("Contact"));
   const access = await requireBookPermissionInternal(bookId, context, required);
   if (!access.ok) return access;
-  const contact = await contactsService.contact.get({ bookId, id: internalContactId });
-  return contact ? ok({ contact, bookId, contactId: internalContactId }) : fail(err.notFound("Contact"));
+  const contact = withBookAccessMessage(
+    await contactsService.contact.get({ bookId, id: internalContactId, actor: context.actor, accessSubject: context.accessSubject }),
+    required,
+  );
+  if (!contact.ok) return contact;
+  return contact.data ? ok({ contact: contact.data, bookId, contactId: internalContactId }) : fail(err.notFound("Contact"));
 };
 
 const capabilityAuditActor = (context: CapabilityExecutionContext): AuditActor =>
@@ -567,14 +559,10 @@ const boundedCapabilitySummary = (value: string): string => {
 };
 
 const runSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
-  const user = userBacked(context);
-  if ((!user || (!user.roles.includes("user") && !user.roles.includes("admin"))) && !serviceAccountMayRead(context)) {
-    return ok({ data: [] });
-  }
   const tags = new Set(input.tags);
-  const page = await contactsService.contact.search({
-    subject: context.accessSubject,
-    boundBookId: resourceBoundBookId(context),
+  const result = await contactsService.contact.search({
+    actor: context.actor,
+    accessSubject: context.accessSubject,
     pagination: { page: 1, perPage: input.limit },
     filter: {
       query: input.query,
@@ -582,6 +570,8 @@ const runSearch = async (input: UniversalSearchInput, context: CapabilityExecuti
       phone: tags.has("phone") ? "yes" : "all",
     },
   });
+  if (!result.ok) return result.error.code === "FORBIDDEN" ? ok({ data: [] }) : result;
+  const page = result.data;
   const contacts = await projectContacts(page.items);
   const { t } = contactCapabilityMessages.resolve([context.locale]);
   const data = contacts.map((contact) => mapContactResourceView(contact, t));
@@ -591,37 +581,38 @@ const runSearch = async (input: UniversalSearchInput, context: CapabilityExecuti
 const runContactSuggest = async (input: z.infer<typeof ContactSuggestInputSchema>, context: CapabilityExecutionContext) => {
   const cursor = decodeContactCapabilityCursor(input.cursor);
   if (!cursor.ok) return cursor;
-  if (!serviceAccountMayRead(context)) return fail(err.forbidden("A readable Contacts credential is required"));
-  const user = userBacked(context);
-  const page = await contactsService.contact.search({
-    subject: context.accessSubject,
-    boundBookId: resourceBoundBookId(context),
-    bypassAccess: Boolean(user && hasRole(user, "admin")),
+  const result = await contactsService.contact.search({
+    actor: context.actor,
+    accessSubject: context.accessSubject,
     pagination: { page: cursor.data, perPage: input.limit },
     filter: {
       query: input.query,
       email: "yes",
     },
   });
+  if (!result.ok) return withCollectionAccessMessage(result);
+  const page = result.data;
   const contacts = await projectContacts(page.items);
   return pageResult(page, contacts.map(mapContactSuggestion), contacts.map(contactRef));
 };
 
 const runContactResolve = async (input: z.infer<typeof ContactResolveInputSchema>, context: CapabilityExecutionContext) => {
-  if (!serviceAccountMayRead(context)) return fail(err.forbidden("A readable Contacts credential is required"));
   const internalContactIds = input.contactIds ? await resolvePublicIds("contacts", input.contactIds) : undefined;
-  if (input.contactIds && !internalContactIds) return fail(err.notFound("Contact"));
+  if (input.contactIds && !internalContactIds) {
+    const scope = withCollectionAccessMessage(readableBookScope(context));
+    return scope.ok ? fail(err.notFound("Contact")) : scope;
+  }
   const normalizedInput = {
     ...input,
     emails: [...new Set(input.emails.map((email) => email.trim().toLowerCase()))],
     ...(internalContactIds ? { contactIds: [...new Set(internalContactIds)] } : {}),
   };
   const result = await contactsService.lookup.resolveContactsByEmail({
-    subject: context.accessSubject,
-    boundBookId: resourceBoundBookId(context),
+    actor: context.actor,
+    accessSubject: context.accessSubject,
     input: normalizedInput,
   });
-  if (!result.ok) return result;
+  if (!result.ok) return withCollectionAccessMessage(result);
   const { nextCursor, ...resolvedData } = result.data;
   const publicItems = await projectContactReferences(resolvedData.items);
   const data = {
@@ -649,13 +640,16 @@ const runContactResolve = async (input: z.infer<typeof ContactResolveInputSchema
 const runContactList = async (input: z.infer<typeof ContactListInputSchema>, context: CapabilityExecutionContext) => {
   const cursor = decodeContactCapabilityCursor(input.cursor);
   if (!cursor.ok) return cursor;
-  const access = await requireBookPermission(input.bookId, context, "read");
-  if (!access.ok) return access;
-  if (input.favoritesOnly && !userBacked(context)) return fail(err.forbidden("Favorites require a user-backed actor"));
-  const tagIds = input.tagIds ? await resolveBookPublicIds("tags", access.data.bookId, input.tagIds) : undefined;
-  if (input.tagIds && !tagIds) return fail(err.notFound("Tag"));
-  const page = await contactsService.contact.list({
-    bookId: access.data.bookId,
+  const bookId = await resolvePublicId("books", input.bookId);
+  if (!bookId) return fail(err.notFound("Book"));
+  if (input.favoritesOnly && !userBacked(context))
+    return failAfterBookAccess(context, [{ bookId, level: "read" }], err.forbidden("Favorites require a user-backed actor"));
+  const tagIds = input.tagIds ? await resolveBookPublicIds("tags", bookId, input.tagIds) : undefined;
+  if (input.tagIds && !tagIds) return failAfterBookAccess(context, [{ bookId, level: "read" }], err.notFound("Tag"));
+  const result = await contactsService.contact.list({
+    actor: context.actor,
+    accessSubject: context.accessSubject,
+    bookId,
     pagination: { page: cursor.data, perPage: input.limit },
     filter: {
       query: input.query,
@@ -666,6 +660,8 @@ const runContactList = async (input: z.infer<typeof ContactListInputSchema>, con
       ...(input.favoritesOnly && userBacked(context) ? { favoriteUserId: userBacked(context)?.id } : {}),
     },
   });
+  if (!result.ok) return withBookAccessMessage(result, "read");
+  const page = result.data;
   const contacts = await projectContacts(page.items);
   const { t } = contactCapabilityMessages.resolve([context.locale]);
   return pageResult(
@@ -675,7 +671,7 @@ const runContactList = async (input: z.infer<typeof ContactListInputSchema>, con
 };
 
 const runContactRead = async (input: z.infer<typeof ContactReadInputSchema>, context: CapabilityExecutionContext) => {
-  const resolved = await resolveContact(input.id, context);
+  const resolved = await resolveContactForCheckedOperation(input.id, context, "read");
   if (!resolved.ok) return resolved;
   const [contact] = await projectContacts([resolved.data.contact]);
   if (!contact) return fail(err.notFound("Contact"));
@@ -688,7 +684,12 @@ const runContactRead = async (input: z.infer<typeof ContactReadInputSchema>, con
 };
 
 const runBookRead = async (input: z.infer<typeof ContactBookReadInputSchema>, context: CapabilityExecutionContext) => {
-  const access = await requireBookPermission(input.id, context, "read");
+  const bookId = await resolvePublicId("books", input.id);
+  if (!bookId) return fail(err.notFound("Book"));
+  const access = withBookAccessMessage(
+    await contactsService.book.get({ actor: context.actor, accessSubject: context.accessSubject, id: bookId }),
+    "read",
+  );
   if (!access.ok) return access;
   const [book] = await projectBooks([access.data.book]);
   if (!book) return fail(err.notFound("Book"));
@@ -735,10 +736,16 @@ const runNoteRead = async (input: z.infer<typeof ContactNoteReadInputSchema>, co
   if (!bookId) return fail(err.notFound("Contact"));
   const access = await requireBookPermissionInternal(bookId, context, "read");
   if (!access.ok) return access;
-  const contact = await contactsService.contact.get({ bookId, id: note.contactId });
-  if (!contact) return fail(err.notFound("Contact"));
+  const contact = await contactsService.contact.get({
+    actor: context.actor,
+    accessSubject: context.accessSubject,
+    bookId,
+    id: note.contactId,
+  });
+  if (!contact.ok) return withBookAccessMessage(contact, "read");
+  if (!contact.data) return fail(err.notFound("Contact"));
   const [publicNote] = await projectNotes([note]);
-  const [publicContact] = await projectContacts([contact]);
+  const [publicContact] = await projectContacts([contact.data]);
   if (!publicNote || !publicContact) return fail(err.notFound("Note"));
   return ok({
     data: mapNote(publicNote),
@@ -751,7 +758,8 @@ const runNoteRead = async (input: z.infer<typeof ContactNoteReadInputSchema>, co
 const runBookList = async (input: z.infer<typeof ContactBookListInputSchema>, context: CapabilityExecutionContext) => {
   const cursor = decodeContactCapabilityCursor(input.cursor);
   if (!cursor.ok) return cursor;
-  if (!serviceAccountMayRead(context)) return fail(err.forbidden("A readable Contacts credential is required"));
+  const scope = withCollectionAccessMessage(readableBookScope(context));
+  if (!scope.ok) return scope;
   const scopedPermission =
     context.actor.kind === "service_account" && context.actor.serviceAccount.kind !== "user_delegated"
       ? permissionFromScopes(context.actor.scopes)
@@ -759,34 +767,15 @@ const runBookList = async (input: z.infer<typeof ContactBookListInputSchema>, co
   if (!hasPermission(scopedPermission, input.minimumPermission)) {
     return fail(err.forbidden(`The Contacts credential does not grant ${input.minimumPermission} access`));
   }
-  const user = userBacked(context);
-  if (user && hasRole(user, "admin")) {
-    const page = await contactsService.book.admin.list({
-      pagination: { page: cursor.data, perPage: input.limit },
-      filter: { query: input.query },
-    });
-    const books = await projectBooks(page.items);
-    return pageResult(
-      page,
-      books.map((book) => ({
-        ref: { type: "contacts.book" as const, id: book.id },
-        id: book.id,
-        name: book.name,
-        description: book.description,
-        permission: "admin" as const,
-        links: [{ rel: "open" as const, href: `/app/contacts/${book.id}` }],
-        createdAt: book.createdAt,
-        updatedAt: book.updatedAt,
-      })),
-      books.map(bookRef),
-    );
-  }
-  const page = await contactsService.book.listPage({
-    subject: context.accessSubject,
-    boundBookId: resourceBoundBookId(context),
+  const result = await contactsService.book.listPage({
+    actor: context.actor,
+    accessSubject: context.accessSubject,
     pagination: { page: cursor.data, perPage: input.limit },
     filter: { query: input.query, minimumPermission: input.minimumPermission },
   });
+  if (!result.ok) return withCollectionAccessMessage(result);
+  const page = result.data;
+
   const books = await projectBooks(page.items);
   return pageResult(
     page,
@@ -821,7 +810,7 @@ const runTagList = async (input: z.infer<typeof ContactTagListInputSchema>, cont
 const runNoteList = async (input: z.infer<typeof ContactNoteListInputSchema>, context: CapabilityExecutionContext) => {
   const cursor = decodeContactCapabilityCursor(input.cursor);
   if (!cursor.ok) return cursor;
-  const resolved = await resolveContact(input.contactId, context);
+  const resolved = await resolveContactWithAccess(input.contactId, context);
   if (!resolved.ok) return resolved;
   const page = await contactsService.contact.notes.listPage({
     bookId: resolved.data.bookId,
@@ -848,7 +837,7 @@ const reviewContactAction = async (
     internalContact: Contact,
   ) => Omit<CapabilityActionReview, "links"> | Promise<Omit<CapabilityActionReview, "links">>,
 ) => {
-  const resolved = await resolveContact(contactId, context, required);
+  const resolved = await resolveContactWithAccess(contactId, context, required);
   if (!resolved.ok) return resolved;
   const [contact] = await projectContacts([resolved.data.contact]);
   if (!contact) return fail(err.notFound("Contact"));
@@ -874,28 +863,38 @@ const runContactCreate = async (input: z.infer<typeof ContactCreateInputSchema>,
     auditParams,
     async () => {
       if (!context.idempotencyKey) return fail(err.badInput("Idempotency-Key is required"));
-      const access = await requireBookPermission(input.bookId, context, "write");
-      if (!access.ok) return access;
+      const internalBookId = await resolvePublicId("books", input.bookId);
+      if (!internalBookId) return fail(err.notFound("Book"));
       const { bookId, ...data } = input;
-      const internalData = await resolveWriteRelations(access.data.bookId, data);
-      if (!internalData.ok) return internalData;
+      const internalData = await resolveWriteRelations(internalBookId, data);
+      if (!internalData.ok) return failAfterBookAccess(context, [{ bookId: internalBookId, level: "write" }], internalData.error);
       const result = await contactsService.contact.createIdempotent({
-        bookId: access.data.bookId,
+        actor: context.actor,
+        accessSubject: context.accessSubject,
+        bookId: internalBookId,
         data: { ...internalData.data, source: "capability" },
         actorKey: actorKey(context),
         actionId: CONTACT_CREATE_ACTION_ID,
         idempotencyKeyHash: sha256(context.idempotencyKey),
         requestHash: sha256(JSON.stringify(input)),
       });
-      if (!result.ok) return result;
+      if (!result.ok) return withBookAccessMessage(result, "write");
       replayed = result.data.replayed;
-      const contact = await contactsService.contact.get({ bookId: access.data.bookId, id: result.data.id });
-      const [publicContact] = contact ? await projectContacts([contact]) : [];
+      const contact = await contactsService.contact.get({
+        actor: context.actor,
+        accessSubject: context.accessSubject,
+        bookId: internalBookId,
+        id: result.data.id,
+      });
+      if (!contact.ok) return withBookAccessMessage(contact, "write");
+      const book = await contactsService.book.get({ actor: context.actor, accessSubject: context.accessSubject, id: internalBookId });
+      if (!book.ok) return withBookAccessMessage(book, "write");
+      const [publicContact] = contact.data ? await projectContacts([contact.data]) : [];
       return publicContact
         ? ok({
             data: { contact: mapContactDetail(publicContact) },
-            summary: boundedCapabilitySummary(`Created ${resolveContactName(publicContact)} in ${access.data.book.name}.`),
-            refs: [bookRef(access.data.book), contactRef(publicContact)],
+            summary: boundedCapabilitySummary(`Created ${resolveContactName(publicContact)} in ${book.data.book.name}.`),
+            refs: [bookRef(book.data.book), contactRef(publicContact)],
             links: [
               { rel: "open", href: contactHref(publicContact) },
               { rel: "edit", href: contactHref(publicContact) },
@@ -910,12 +909,14 @@ const runContactCreate = async (input: z.infer<typeof ContactCreateInputSchema>,
 const runContactUpdate = async (input: z.infer<typeof ContactUpdateInputSchema>, context: CapabilityExecutionContext) => {
   const auditParams = actionAudit(context, "contact.update", "contact", input.contactId);
   return audited(auditParams, async () => {
-    const resolved = await resolveContact(input.contactId, context, "write");
+    const resolved = await resolveContactForCheckedOperation(input.contactId, context, "write");
     if (!resolved.ok) return resolved;
     const { contactId, expectedUpdatedAt, ...data } = input;
     const internalData = await resolveWriteRelations(resolved.data.bookId, data);
-    if (!internalData.ok) return internalData;
+    if (!internalData.ok) return failAfterBookAccess(context, [{ bookId: resolved.data.bookId, level: "write" }], internalData.error);
     const result = await contactsService.contact.update({
+      actor: context.actor,
+      accessSubject: context.accessSubject,
       bookId: resolved.data.bookId,
       id: resolved.data.contactId,
       expectedUpdatedAt,
@@ -934,44 +935,49 @@ const runContactUpdate = async (input: z.infer<typeof ContactUpdateInputSchema>,
             { rel: "edit", href: contactHref(contact!) },
           ],
         })
-      : result;
+      : withBookAccessMessage(result, "write");
   });
 };
 
 const runContactMove = async (input: z.infer<typeof ContactMoveInputSchema>, context: CapabilityExecutionContext) => {
   const auditParams = actionAudit(context, "contact.move", "contact", input.contactId);
   return audited(auditParams, async () => {
-    const source = await resolveContact(input.contactId, context, "write");
+    const source = await resolveContactForCheckedOperation(input.contactId, context, "write");
     if (!source.ok) return source;
-    const target = await requireBookPermission(input.targetBookId, context, "write");
-    if (!target.ok) return target;
+    const targetBookId = await resolvePublicId("books", input.targetBookId);
+    if (!targetBookId) return failAfterBookAccess(context, [{ bookId: source.data.bookId, level: "write" }], err.notFound("Book"));
     const result = await contactsService.contact.move({
+      actor: context.actor,
+      accessSubject: context.accessSubject,
       sourceBookId: source.data.bookId,
-      targetBookId: target.data.bookId,
+      targetBookId,
       id: source.data.contactId,
       expectedUpdatedAt: input.expectedUpdatedAt,
     });
-    const [contact] = result.ok ? await projectContacts([result.data]) : [];
-    return result.ok
-      ? ok({
-          data: { contact: mapContactDetail(contact!) },
-          summary: boundedCapabilitySummary(`Moved ${resolveContactName(contact!)} to ${target.data.book.name}.`),
-          refs: [contactRef(contact!)],
-          links: [
-            { rel: "open", href: contactHref(contact!) },
-            { rel: "edit", href: contactHref(contact!) },
-          ],
-        })
-      : result;
+    if (!result.ok) return withBookAccessMessage(result, "write");
+    const target = await contactsService.book.get({ actor: context.actor, accessSubject: context.accessSubject, id: targetBookId });
+    if (!target.ok) return withBookAccessMessage(target, "write");
+    const [contact] = await projectContacts([result.data]);
+    return ok({
+      data: { contact: mapContactDetail(contact!) },
+      summary: boundedCapabilitySummary(`Moved ${resolveContactName(contact!)} to ${target.data.book.name}.`),
+      refs: [contactRef(contact!)],
+      links: [
+        { rel: "open", href: contactHref(contact!) },
+        { rel: "edit", href: contactHref(contact!) },
+      ],
+    });
   });
 };
 
 const runContactDelete = async (input: z.infer<typeof ContactDeleteInputSchema>, context: CapabilityExecutionContext) => {
   const auditParams = actionAudit(context, "contact.delete", "contact", input.contactId);
   return audited(auditParams, async () => {
-    const resolved = await resolveContact(input.contactId, context, "write");
+    const resolved = await resolveContactForCheckedOperation(input.contactId, context, "write");
     if (!resolved.ok) return resolved;
     const result = await contactsService.contact.remove({
+      actor: context.actor,
+      accessSubject: context.accessSubject,
       bookId: resolved.data.bookId,
       id: resolved.data.contactId,
       expectedUpdatedAt: input.expectedUpdatedAt,
@@ -981,7 +987,7 @@ const runContactDelete = async (input: z.infer<typeof ContactDeleteInputSchema>,
           data: { contactId: input.contactId, deleted: true as const },
           summary: boundedCapabilitySummary(`Deleted ${resolveContactName(resolved.data.contact)}.`),
         })
-      : result;
+      : withBookAccessMessage(result, "write");
   });
 };
 
@@ -990,7 +996,7 @@ const runFavoriteSet = async (input: z.infer<typeof FavoriteSetInputSchema>, con
   return audited(auditParams, async () => {
     const user = userBacked(context);
     if (!user) return fail(err.forbidden("Favorites require a user-backed actor"));
-    const resolved = await resolveContact(input.contactId, context);
+    const resolved = await resolveContactWithAccess(input.contactId, context);
     if (!resolved.ok) return resolved;
     await contactsService.favorite.set({
       userId: user.id,
@@ -1012,7 +1018,7 @@ const runFavoriteSet = async (input: z.infer<typeof FavoriteSetInputSchema>, con
 const runTagChange = async (input: z.infer<typeof ContactTagChangeInputSchema>, context: CapabilityExecutionContext) => {
   const auditParams = actionAudit(context, "tag.change", "contact", input.contactId);
   return audited(auditParams, async () => {
-    const resolved = await resolveContact(input.contactId, context, "write");
+    const resolved = await resolveContactWithAccess(input.contactId, context, "write");
     if (!resolved.ok) return resolved;
     const addTagIds = await resolveBookPublicIds("tags", resolved.data.bookId, input.addTagIds);
     const removeTagIds = await resolveBookPublicIds("tags", resolved.data.bookId, input.removeTagIds);
@@ -1051,7 +1057,7 @@ const runNoteCreate = async (input: z.infer<typeof ContactNoteCreateInputSchema>
       const user = userBacked(context);
       if (!user) return fail(err.forbidden("Notes require a user-backed actor"));
       if (!context.idempotencyKey) return fail(err.badInput("Idempotency-Key is required"));
-      const resolved = await resolveContact(input.contactId, context, "write");
+      const resolved = await resolveContactWithAccess(input.contactId, context, "write");
       if (!resolved.ok) return resolved;
       const created = await contactsService.contact.notes.createIdempotent({
         bookId: resolved.data.bookId,
@@ -1397,7 +1403,7 @@ export const contactsCapabilities = defineCapabilities({
       approval: "rememberable",
       review: async (input, context) => {
         const { t } = contactCapabilityMessages.resolve([context.locale]);
-        const resolved = await resolveContact(input.contactId, context, "write");
+        const resolved = await resolveContactWithAccess(input.contactId, context, "write");
         if (!resolved.ok) return resolved;
         const [addTagIds, removeTagIds] = await Promise.all([
           resolveBookPublicIds("tags", resolved.data.bookId, input.addTagIds),

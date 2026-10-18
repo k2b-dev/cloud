@@ -1,4 +1,8 @@
 const messages: Record<string, [string, string]> = {
+  configuration_unreadable: [
+    "Files cannot read its saved configuration. Enter the Filegate token again to replace it, or reset the configuration.",
+    "Dateien kann die gespeicherte Konfiguration nicht lesen. Gib den Filegate-Token erneut ein, um sie zu ersetzen, oder setze die Konfiguration zurück.",
+  ],
   share_password_required: [
     "Enter the share password to continue. If your access expired, reload this page.",
     "Gib das Freigabe-Passwort ein. Wenn dein Zugriff abgelaufen ist, lade diese Seite neu.",
@@ -208,4 +212,13 @@ export function errorMessage(code: string, locale: string): string {
     "Storage is currently unavailable. Try again after checking the connection.",
     "Die Ablage ist derzeit nicht verfügbar. Bitte Verbindung prüfen und erneut versuchen.",
   ])[locale.startsWith("de") ? 1 : 0]!;
+}
+
+/** Public share failures offer recovery appropriate for a visitor. */
+export function publicErrorMessage(code: string, locale: string): string {
+  if (code === "configuration_unreadable")
+    return locale.startsWith("de")
+      ? "Dateien ist derzeit nicht verfügbar. Wende dich an eine Administratorin oder einen Administrator."
+      : "Files is not available right now. Ask an administrator.";
+  return errorMessage(code, locale);
 }

@@ -83,6 +83,12 @@ const run = async (tab: Page, script: string) => {
   await tab.evaluate(script);
   await settle(tab);
 };
+/** Rests the mouse on the middle of an element. */
+const pointAt = async (tab: Page, selector: string) => {
+  const box = (await (await tab.$(selector))!.boundingBox())!;
+  await tab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+};
+const active = '.filesv2-upload-row[data-status="working"]';
 
 /** Invented demo files, sizes in bytes. */
 const demo: [string, number][] = [
@@ -160,15 +166,35 @@ describe("upload panel in a browser", () => {
       // One finished row stays above the active one.
       expect(await scrollTop()).toBe(5 * 36);
       expect(await tab.getAttribute('.filesv2-upload-row[data-status="working"]', "style")).toContain("--filesv2-upload-index: 6");
-      const list = (await tab.$(".filesv2-upload__scroll"))!.boundingBox();
-      const box = (await list)!;
-      await tab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await pointAt(tab, `${active} .filesv2-upload-row__progress`);
       await run(tab, "window.uploads.finish()");
-      await run(tab, "window.uploads.finish()");
+      expect(await scrollTop()).toBe(5 * 36);
+      // Finishing a file removes its byte count from under the resting pointer. WebKit then sends no pointerleave when
+      // the pointer goes, unless a later hover update came first, so the pointer leaves right away (#1371).
+      await pointAt(tab, `${active} .filesv2-upload-row__progress`);
+      await tab.evaluate("window.uploads.finish()");
       expect(await scrollTop()).toBe(5 * 36);
       await tab.mouse.move(10, 10);
       await settle(tab);
       expect(await scrollTop()).toBe(7 * 36);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("a finished batch leaves after five seconds once the pointer left, also when its row changed under the pointer", async () => {
+    const tab = await open(desktop, "light", "en", true);
+    try {
+      await run(tab, `window.uploads.add(${JSON.stringify(demo.slice(0, 2))})`);
+      await run(tab, "window.uploads.finish()");
+      // As above: the last file's byte count leaves from under the pointer, and the pointer leaves right after it.
+      await pointAt(tab, `${active} .filesv2-upload-row__progress`);
+      await tab.evaluate("window.uploads.finish()");
+      await tab.mouse.move(10, 10);
+      await settle(tab);
+      expect(await tab.getAttribute(".filesv2-upload", "data-phase")).toBe("done");
+      await tab.clock.fastForward(5_000);
+      await tab.waitForSelector(".filesv2-upload", { state: "detached", timeout: 2_000 });
     } finally {
       await tab.context().close();
     }
@@ -308,7 +334,6 @@ describe("upload panel in a browser", () => {
           },
         }[lang];
         const shot = (state: string) => tab.screenshot({ path: `/tmp/filesv2-upload-wait-${device}-${theme}-${state}.png` });
-        const active = '.filesv2-upload-row[data-status="working"]';
         const rowState = () =>
           tab.$eval(active, (row) => {
             const reason = row.querySelector<HTMLElement>(".filesv2-upload-row__reason");
@@ -382,7 +407,6 @@ describe("upload panel in a browser", () => {
           de: { finishing: "Wird abgeschlossen…", status: "Wird abgeschlossen", busy: "Dateiserver ausgelastet, gleich neuer Versuch" },
         }[lang];
         const shot = (state: string) => tab.screenshot({ path: `/tmp/filesv2-upload-finishing-${device}-${theme}-${state}.png` });
-        const active = '.filesv2-upload-row[data-status="working"]';
         const rowState = () =>
           tab.$eval(active, (row) => {
             const reason = row.querySelector<HTMLElement>(".filesv2-upload-row__reason");

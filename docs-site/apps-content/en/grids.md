@@ -792,6 +792,8 @@ In **Grids administration** (`/admin/grids`), open **Settings** and set
 The value must be a positive whole number. Save it, then restart every Grids
 instance to apply it.
 
+`PUT /api/grids/admin/settings/:key` accepts `replaceUnreadable: true` alongside `value` to explicitly replace an unreadable saved setting.
+
 Executions and dry runs share this limit per process. Additional runs wait in
 the durable queue; steps within a run keep their declared order. More slots
 allow independent runs to progress together, but do not make an individual PDF

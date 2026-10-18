@@ -44,10 +44,12 @@ export default ssr<AuthContext>(async (c) => {
   const activeTagInternalId = activeTagId ? await resolvePublicId("tags", activeTagId) : null;
   const [booksResult, contactsResult] = await Promise.all([
     contactsService.book.list({
-      subject: { type: "user", userId: user.id },
+      actor: c.get("actor"),
+      accessSubject: c.get("accessSubject"),
     }),
     contactsService.contact.search({
-      subject: { type: "user", userId: user.id },
+      actor: c.get("actor"),
+      accessSubject: c.get("accessSubject"),
       pagination: { page, perPage },
       filter: {
         query: search.trim() || undefined,
@@ -59,16 +61,19 @@ export default ssr<AuthContext>(async (c) => {
       },
     }),
   ]);
-  const internalBooks = booksResult.items;
-  const internalContacts = contactsResult.items;
+  if (!booksResult.ok) return ssr.error(c, 403);
+  if (!contactsResult.ok) return ssr.error(c, 403);
+  const internalBooks = booksResult.data.items;
+  const internalContacts = contactsResult.data.items;
   const selectedContact = await resolveSelectedContact({
     contacts: internalContacts,
     contactId: selectedContactIdFromUrl,
     bookId: selectedBookIdFromUrl,
-    user,
+    actor: c.get("actor"),
+    accessSubject: c.get("accessSubject"),
   });
   const [permissions, internalNotesPage, internalFavoriteKeys, internalGlobalTags] = await Promise.all([
-    loadContactBookPermissions({ books: internalBooks, user }),
+    loadContactBookPermissions({ books: internalBooks, actor: c.get("actor"), accessSubject: c.get("accessSubject") }),
     selectedContact
       ? contactsService.contact.notes.listPage({
           bookId: selectedContact.bookId,
@@ -98,7 +103,7 @@ export default ssr<AuthContext>(async (c) => {
     .filter((book) => Boolean(book.id));
   const scope = books.length === 0 ? "noBooks" : queryOptions.favorites ? "favorites" : "all";
   const bookNames = Object.fromEntries(books.map((book) => [book.id, book.name]));
-  const totalPages = Math.max(1, Math.ceil(contactsResult.total / perPage));
+  const totalPages = Math.max(1, Math.ceil(contactsResult.data.total / perPage));
   const requestUrl = new URL(c.req.raw.url);
   const resultHref = `${requestUrl.pathname}${requestUrl.search}`;
   const initialSelectedContactId = selectedPublicContact?.id ?? selectedContactIdFromUrl;
@@ -116,7 +121,7 @@ export default ssr<AuthContext>(async (c) => {
             scope={scope}
             title={queryOptions.favorites ? t.favoritesTitle : t.allContactsTitle}
             description={queryOptions.favorites ? t.favoritesDescription : t.allContactsDescription}
-            total={contactsResult.total}
+            total={contactsResult.data.total}
             search={search}
             resultHref={resultHref}
             perPage={perPage}
@@ -129,7 +134,7 @@ export default ssr<AuthContext>(async (c) => {
             writableBooks={writableBooks}
             defaultCreateBookId={writableBooks[0]?.id ?? null}
             chooseBookOnCreate
-            currentPage={contactsResult.page}
+            currentPage={contactsResult.data.page}
             totalPages={totalPages}
             tags={globalTags}
             activeTagId={activeTagId}

@@ -440,7 +440,7 @@ describe("Core AI capabilities", () => {
     expect(aiChatTasks.list).toHaveBeenCalledWith(expect.objectContaining({ limit: 2, offset: 0 }));
   });
 
-  test("reads a scheduled task with its chat name and no extra task lookup", async () => {
+  test("reads a routine with its chat name and no extra task lookup", async () => {
     const get = spyOn(aiChatTasks, "get").mockResolvedValue(scheduledTask);
     const listOccurrences = spyOn(aiChatTasks, "listOccurrences").mockResolvedValue([taskOccurrence]);
 
@@ -450,7 +450,7 @@ describe("Core AI capabilities", () => {
     expect(listOccurrences).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       ok: true,
-      data: { summary: "Read a scheduled task in “Release planning” (Active)." },
+      data: { summary: "Read a routine in “Release planning” (Active)." },
     });
   });
 
@@ -683,7 +683,7 @@ describe("Core AI capabilities", () => {
     }
     expect(results["ai.task.update"]).toMatchObject({
       ok: true,
-      data: { summary: `Changed the instructions of a task in “${chat.title}”.` },
+      data: { summary: `Changed the instructions of a routine in “${chat.title}”.` },
     });
     expect(results["ai.chat.message"]).toMatchObject({ ok: true, data: { summary: "Sent a message to “Target chat”." } });
   });
@@ -889,7 +889,7 @@ describe("Core AI capabilities", () => {
     expect(result).toMatchObject({ ok: true, data: { data: { chat: { id: chat.shortId, archived: true } } } });
   });
 
-  test("the mobile app never creates, changes or resumes a scheduled task's mandate", async () => {
+  test("the mobile app never creates, changes or resumes a routine's mandate", async () => {
     const create = spyOn(aiChatTasks, "create");
     const update = spyOn(aiChatTasks, "update");
     const setState = spyOn(aiChatTasks, "setState");
@@ -968,21 +968,21 @@ test("Skill, task and chat reviews and summaries use the reader's language", asy
   ).toMatchObject({
     ok: true,
     data: {
-      message: `Geplante Aufgabe in ${chat.title} (${chat.shortId}) erstellen.`,
+      message: `Routine in ${chat.title} (${chat.shortId}) anlegen.`,
       details: [
         { label: "Chat", value: `${chat.title} (${chat.shortId})` },
         { label: "Zeitplan", value: "5. Jan. 2099, 09:30 (Europe/Berlin)" },
         { label: "Auftrag", value: scheduledTask.prompt },
-        { label: "Das erlaubst du dieser Aufgabe" },
+        { label: "Das erlaubst du dieser Routine" },
       ],
     },
   });
   expect(await aiCapabilities.actions["ai.task.pause"].review!({ taskId: scheduledTask.shortId }, german)).toMatchObject({
     ok: true,
     data: {
-      message: "Geplante Aufgabe tSk234 pausieren.",
+      message: "Routine tSk234 pausieren.",
       details: [
-        { label: "Aufgabe", value: scheduledTask.prompt },
+        { label: "Routine", value: scheduledTask.prompt },
         { label: "Zeitplan", value: "Wiederkehrend: 0 9 * * 1 (Europe/Berlin)" },
       ],
     },
@@ -1028,7 +1028,7 @@ test("Skill, task and chat reviews and summaries use the reader's language", asy
     await aiCapabilities.actions["ai.task.pause"].review!({ taskId: scheduledTask.shortId }, { ...context, locale: "fr" }),
   ).toMatchObject({
     ok: true,
-    data: { message: "Pause scheduled task tSk234.", details: [{ label: "Task" }, { label: "Schedule" }] },
+    data: { message: "Pause routine tSk234.", details: [{ label: "Routine" }, { label: "Schedule" }] },
   });
 });
 

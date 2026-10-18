@@ -49,6 +49,8 @@ Sign-ins and Actions open as a sheet on phones and as a centered dialog from
 tablet width (48rem), through `bottomSheetAdaptiveOptions`. A sign-in shows when
 it started (its `createdAt`, on the device clock) and its code in groups of three,
 and requires an explicit choice after comparing it.
+Terminal sign-ins also show the client name in the title, the Cloud host, the
+login lifetime and every scope in plain words (unknown codes verbatim).
 `src/decision.browser.test.ts` checks in Chromium that the sheet and the dialog
 keep their height when an ending replaces the request. The image build has no
 browser and skips `*.browser.test.*`; the gate runs them in Chromium and WebKit.

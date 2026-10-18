@@ -9,7 +9,7 @@ import { defaultRailPreferences } from "../contracts/rail-preferences";
 import { hasRole, type User } from "../contracts/shared";
 import { getLocale } from "../server/locale";
 import { getDateConfig } from "../server/time";
-import { dates } from "../shared";
+import { dates, resolveHomePath } from "../shared";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import AnnouncementBanners from "./AnnouncementBanners";
 import { appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
@@ -18,6 +18,7 @@ import { getLayoutHelp, layoutHelpFailed } from "./help";
 import LayoutFooter from "./LayoutFooter";
 import LayoutHeader from "./LayoutHeader";
 import LayoutRail, { type LayoutAppLink } from "./LayoutRail";
+import LayoutTabBar from "./LayoutTabBar";
 import type { LayoutContext } from "./layout-context";
 import { HELP_VIEW_LIMIT } from "./layout-help-start";
 import type { LayoutBreadcrumb } from "./layout-runtime";
@@ -219,7 +220,11 @@ export default function Layout(props: LayoutProps) {
     ...(layoutHelpFailed(c) ? { helpFailed: true as const } : {}),
     apps: allApps,
     ...(user
-      ? { rail: c.get("railPreferences") ?? defaultRailPreferences(), profile: { name: profileName, avatarSrc: profileAvatarSrc, appHref } }
+      ? {
+          rail: c.get("railPreferences") ?? defaultRailPreferences(),
+          home: resolveHomePath(settings?.app?.home_path),
+          profile: { name: profileName, avatarSrc: profileAvatarSrc, appHref },
+        }
       : {}),
     legalLinks,
     theme,
@@ -305,6 +310,7 @@ export default function Layout(props: LayoutProps) {
             </PageTrailProvider>
             {!fullPage && !showRail && <LayoutFooter appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />}
           </div>
+          {showRail && <LayoutTabBar currentPath={requestPath(c)} />}
         </ShellDataProvider>
         <div data-print-fallback="">
           <p>{t.printFallbackTitle}</p>

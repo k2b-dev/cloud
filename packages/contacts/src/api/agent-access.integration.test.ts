@@ -1,5 +1,5 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { serviceAccountCredentials } from "@k2b/cloud/services";
+import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -53,13 +53,25 @@ suite("Contacts REST access for standalone agents", () => {
       (${granted.id}::uuid, ${granted.shortId}, ${granted.name}), (${other.id}::uuid, ${other.shortId}, ${other.name})`;
     const accountIds: string[] = [];
     try {
+      const fixtureAccount = await insertAccount(`Fixture owner ${suffix}`);
+      accountIds.push(fixtureAccount.id);
+      await grant(granted.id, fixtureAccount.id, "admin");
+      await grant(other.id, fixtureAccount.id, "admin");
+      const fixtureActor = await serviceAccounts.get({ id: fixtureAccount.id });
+      if (!fixtureActor) throw new Error("Missing fixture service account");
+      const caller = {
+        actor: { kind: "service_account" as const, serviceAccount: fixtureActor, delegatedUser: null, scopes: ["admin"] },
+        accessSubject: { type: "service_account" as const, serviceAccountId: fixtureAccount.id },
+      };
       const email = `ada.${suffix}@example.test`;
       const created = await contactsService.contact.create({
+        ...caller,
         bookId: granted.id,
         data: { firstName: "Ada", lastName: `Example ${suffix}`, emails: [{ email }] },
       });
       if (!created.ok) throw new Error(created.error.message);
       const hidden = await contactsService.contact.create({
+        ...caller,
         bookId: other.id,
         data: { firstName: "Grace", lastName: `Example ${suffix}` },
       });
