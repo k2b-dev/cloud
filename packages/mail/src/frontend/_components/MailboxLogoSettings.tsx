@@ -133,7 +133,10 @@ export default function MailboxLogoSettings(props: {
     remove.abort();
   });
 
-  const busy = () => upload.loading() || saveDetails.loading() || remove.loading();
+  // Reading the chosen file is part of the upload: no other change may start meanwhile.
+  const [reading, setReading] = createSignal(false);
+  const uploading = () => reading() || upload.loading();
+  const busy = () => uploading() || saveDetails.loading() || remove.loading();
   const loaded = () => logo() !== undefined;
   const editable = () => props.canManage && loaded() && !busy();
   const detailsEditable = () => editable() && Boolean(logo());
@@ -153,11 +156,14 @@ export default function MailboxLogoSettings(props: {
       return;
     }
     let content: string;
+    setReading(true);
     try {
       content = toBase64(new Uint8Array(await file.arrayBuffer()));
     } catch {
       setUploadError(messages().logoReadFailed);
       return;
+    } finally {
+      setReading(false);
     }
     if (disposed) return;
     // A replacement keeps the stored width and alt text; a first upload takes the server's defaults.
@@ -244,7 +250,7 @@ export default function MailboxLogoSettings(props: {
             subtitle={messages().logoLimits}
             dropLabel={messages().dropLogo}
             class="sm:[&_.k2b-dropzone]:h-44"
-            busy={upload.loading()}
+            busy={uploading()}
             disabled={!editable()}
             error={uploadError}
             onDrop={([file]) => chooseFile(file)}

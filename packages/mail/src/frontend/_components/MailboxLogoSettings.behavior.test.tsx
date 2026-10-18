@@ -204,6 +204,10 @@ describe("Mailbox logo settings", () => {
     const input = group().querySelector<HTMLInputElement>('input[type="file"]')!;
     Object.defineProperty(input, "files", { configurable: true, value: [slowFile] });
     input.dispatchEvent(new Event("change", { bubbles: true }));
+    await waitFor(() => dropzone().disabled);
+    // Nothing else may start while the file is read.
+    expect(widthInput().disabled).toBe(true);
+    expect(button("Remove").disabled).toBe(true);
     dispose();
     dispose = () => {};
     finishRead();
