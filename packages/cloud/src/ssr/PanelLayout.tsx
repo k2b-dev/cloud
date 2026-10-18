@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { JSX } from "solid-js";
-import { getLocale } from "../server/locale";
 import { canonicalRoute } from "../_internal/app-path";
+import { getLocale } from "../server/locale";
 import { resolveRuntimeRoute } from "./app-navigation";
 import type { MinimalLayoutContext } from "./layout-context";
 import PanelRuntime from "./PanelRuntime.island";
@@ -19,7 +19,7 @@ export default function PanelLayout(props: PanelLayoutProps) {
   return (
     <LocaleProvider locale={getLocale(props.c)}>
       <div class="cloud-panel-page" data-cloud-panel-page="" data-panel-provider={app?.id}>
-        <PanelRuntime provider={app?.id} />
+        <PanelRuntime provider={app?.id} scope={app?.panel ? new URL(app.panel.href, props.c.req.raw.url).pathname : undefined} />
         {props.children}
       </div>
     </LocaleProvider>

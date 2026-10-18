@@ -23,8 +23,8 @@ import LayoutTabBar from "./LayoutTabBar";
 import type { LayoutContext } from "./layout-context";
 import { HELP_VIEW_LIMIT } from "./layout-help-start";
 import type { LayoutBreadcrumb } from "./layout-runtime";
-import PanelSlot from "./PanelSlot";
 import PageTrailRow from "./PageTrailRow";
+import PanelSlot from "./PanelSlot";
 import { derivePageTrail } from "./page-trail";
 import { platformMessages } from "./platform-messages";
 import { sortRailApps } from "./rail-navigation";
@@ -254,7 +254,7 @@ export default function Layout(props: LayoutProps) {
         <div
           class="cloud-app-canvas relative flex h-dvh w-full overflow-hidden"
           style={canvasStyle}
-          data-panel={panelState.open ? "open" : undefined}
+          data-panel-transient=""
           data-app-id={currentApp?.id}
           data-app-base={currentRoute?.prefix}
           data-page-trail-title-only=""
@@ -270,7 +270,7 @@ export default function Layout(props: LayoutProps) {
           {/* Focus pages carry shell data only for their panel providers. */}
           {panel && (
             <ShellDataProvider data={{ panel, platform: shellData.platform, theme, apps: [], legalLinks: [], searchLinks: {} }}>
-              <PanelSlot panel={panel} state={panelState} platform={shellData.platform} />
+              <PanelSlot panel={panel} state={{ ...panelState, open: false }} platform={shellData.platform} />
             </ShellDataProvider>
           )}
           <div data-print-fallback="">

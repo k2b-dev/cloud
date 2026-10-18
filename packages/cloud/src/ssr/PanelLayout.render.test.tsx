@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { fromJSON } from "seroval";
 import { createComponent } from "solid-js";
 import type { PageOptions } from "../_internal/define-app";
 import type { RuntimeContext } from "./runtime";
@@ -22,6 +23,7 @@ const options = {
   description: "Fixture",
   baseUrl: "http://fixture:3000",
   routes: ["/app/fixture"],
+  panel: { href: "/app/fixture/panel/?base=1", label: "Fixture panel", icon: "ti ti-box" },
 };
 const app = defineApp(options);
 type Environment = { Variables: { runtime: RuntimeContext; page: PageOptions } };
@@ -29,7 +31,17 @@ const Child = () => `Inherited locale: ${useLocale()()}`;
 const server = new Hono<Environment>()
   .use(async (c, next) => {
     // A trailing slash is a valid declaration; the gateway and the panel check read it canonically.
-    c.set("runtime", { apps: [{ ...options, routes: c.req.query("slash") ? ["/app/fixture/"] : options.routes }] });
+    c.set("runtime", {
+      apps: c.req.query("missing")
+        ? []
+        : [
+            {
+              ...options,
+              panel: c.req.query("noPanel") ? undefined : options.panel,
+              routes: c.req.query("slash") ? ["/app/fixture/"] : options.routes,
+            },
+          ],
+    });
     await next();
   })
   .get(
@@ -73,3 +85,17 @@ test("PanelLayout names its provider when the app declares its route with a trai
   const response = await server.request("/app/fixture/panel?slash=1");
   expect(await response.text()).toMatch(/data-panel-provider="fixture"/);
 });
+
+const runtimeProps = (html: string): unknown =>
+  fromJSON(JSON.parse(html.match(/data-props="([^"]*)"/)?.[1]?.replace(/&quot;/g, '"') ?? ""));
+
+test("PanelLayout passes the declared panel pathname as the runtime scope", async () => {
+  const html = await (await server.request("/app/fixture/panel?slash=1")).text();
+  expect(runtimeProps(html)).toEqual({ provider: "fixture", scope: "/app/fixture/panel/" });
+});
+
+for (const query of ["noPanel=1", "missing=1"])
+  test(`PanelLayout has no runtime scope when ${query}`, async () => {
+    const html = await (await server.request(`/app/fixture/panel?${query}`)).text();
+    expect(runtimeProps(html)).toEqual({ provider: query === "missing=1" ? undefined : "fixture", scope: undefined });
+  });

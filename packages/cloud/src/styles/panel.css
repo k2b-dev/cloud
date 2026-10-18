@@ -302,6 +302,13 @@
     height: 58dvh;
   }
 
+  /* The page's last row scrolls up above the sheet. Only the end of the page
+     grows, so nothing above it moves; full pages own their own scrollers. */
+  .cloud-app-canvas[data-layout-authenticated][data-panel-sheet="open"]:not([data-layout-full-page]) .layout-content-main {
+    padding-bottom: max(58dvh, var(--cloud-tab-bar-space, 0px));
+    scroll-padding-bottom: max(58dvh, var(--cloud-tab-bar-space, 0px));
+  }
+
   .cloud-app-canvas[data-panel-sheet="open"] > .cloud-panel[data-panel-size="full"] {
     height: calc(100dvh - 2.875rem - env(safe-area-inset-top, 0px));
   }

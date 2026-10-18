@@ -1,7 +1,7 @@
 import { afterEach, expect, jest, test } from "bun:test";
-import { createDomTestHarness } from "../../../ui/test/dom";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
+import { createDomTestHarness } from "../../../ui/test/dom";
 
 if (isServer) test.skip("requires browser conditions and solid-dom-preload", () => {});
 else {
@@ -15,8 +15,16 @@ else {
     cleanup();
     jest.useRealTimers();
   });
-  function setup(viewport = 1440, initialOpen = false, storedWidth = true, beforeInstall?: (frame: HTMLIFrameElement) => void) {
+  function setup(
+    viewport = 1440,
+    initialOpen = false,
+    storedWidth = true,
+    beforeInstall?: (frame: HTMLIFrameElement) => void,
+    navigationApi = false,
+  ) {
     const dom = createDomTestHarness();
+    const navigation = new dom.window.EventTarget();
+    if (navigationApi) Object.defineProperty(dom.window, "navigation", { value: navigation });
     dom.window.innerWidth = viewport;
     document.documentElement.style.fontSize = "16px";
     const providers = ["fixture", "second"].map((id) => ({ id, label: `${id} panel`, icon: "ti ti-box", href: `/app/${id}/panel?base=1` }));
@@ -60,7 +68,7 @@ else {
       dom.window.innerWidth = width;
       dom.window.dispatchEvent(new dom.window.Event("resize"));
     };
-    return { dom, canvas, slot, opener, frame, open, message, click, resize, dispose, serverFrame };
+    return { dom, canvas, slot, opener, frame, open, message, click, resize, dispose, serverFrame, navigation };
   }
 
   test("accepts only the current iframe, same origin and exact message schema", () => {
@@ -122,6 +130,37 @@ else {
       expect(h.opener.getAttribute("aria-expanded")).toBe("false");
       expect(document.cookie).toBe(viewport < 768 ? "" : "cloud_panel=0:fixture:24");
     });
+
+  test("transient canvases open and close without changing the shared cookie", () => {
+    const h = setup();
+    h.canvas.setAttribute("data-panel-transient", "");
+    document.cookie = "cloud_panel=1:second:30; Path=/";
+    h.open();
+    expect(h.canvas.dataset.panel).toBe("open");
+    expect(document.cookie).toBe("cloud_panel=1:second:30");
+    handlePanelRequest({ action: "close" });
+    expect(h.canvas.dataset.panel).toBeUndefined();
+    expect(document.cookie).toBe("cloud_panel=1:second:30");
+  });
+
+  test("in-page push navigation closes the phone sheet, while replace and traverse keep it", () => {
+    const h = setup(390, false, true, undefined, true);
+    h.open();
+    const change = (navigationType: string) =>
+      h.navigation.dispatchEvent(Object.assign(new h.dom.window.Event("currententrychange"), { navigationType }));
+    change("replace");
+    expect(h.canvas.dataset.panelSheet).toBe("open");
+    change("traverse");
+    expect(h.canvas.dataset.panelSheet).toBe("open");
+    change("push");
+    expect(h.canvas.dataset.panelSheet).toBeUndefined();
+    expect(h.slot.querySelector("iframe")).toBeNull();
+    expect(h.opener.getAttribute("aria-expanded")).toBe("false");
+    h.open();
+    h.dispose();
+    change("push");
+    expect(h.canvas.dataset.panelSheet).toBe("open");
+  });
 
   test("mode transitions keep independent flags and history only clears the phone sheet", () => {
     const h = setup();

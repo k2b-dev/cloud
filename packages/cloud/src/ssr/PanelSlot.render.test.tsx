@@ -88,19 +88,30 @@ async function render(query = "", cookie = "") {
   }
 }
 
-for (const focus of [false, true])
-  test(`SSR restores open panel and width in the canvas (focus=${focus})`, async () => {
-    const html = await render(`focus=${focus}`, "cloud_panel=1:fixture:24");
-    const canvas = html.match(/<div[^>]*class="cloud-app-canvas[^>]*>/)?.[0] ?? "";
-    expect(canvas).toContain('data-panel="open"');
-    expect(canvas).toContain("--cloud-panel-width-set:24rem");
-    expect(html).toMatch(/data-cloud-app-area(?:="")?[ >]/);
-    expect(html).toContain('data-state="loading" data-provider="fixture"');
-    expect(html).toMatch(/<iframe[^>]*src="\/app\/fixture\/panel\?base=1"[^>]*title="fixture panel"/);
-    expect(html).toContain('data-cloud-panel-frame="fixture"');
-    expect(html.match(/id="cloud-shell-data"/g)).toHaveLength(1);
-    expect(html).toContain('aria-valuenow="24"');
-  });
+test("SSR restores open panel and width in the normal canvas", async () => {
+  const html = await render("", "cloud_panel=1:fixture:24");
+  const canvas = html.match(/<div[^>]*class="cloud-app-canvas[^>]*>/)?.[0] ?? "";
+  expect(canvas).toContain('data-panel="open"');
+  expect(canvas).not.toContain("data-panel-transient");
+  expect(canvas).toContain("--cloud-panel-width-set:24rem");
+  expect(html).toMatch(/data-cloud-app-area(?:="")?[ >]/);
+  expect(html).toContain('data-state="loading" data-provider="fixture"');
+  expect(html).toMatch(/<iframe[^>]*src="\/app\/fixture\/panel\?base=1"[^>]*title="fixture panel"/);
+  expect(html).toContain('data-cloud-panel-frame="fixture"');
+  expect(html.match(/id="cloud-shell-data"/g)).toHaveLength(1);
+  expect(html).toContain('aria-valuenow="24"');
+});
+
+test("focus pages start closed with transient panel state and retain the saved width", async () => {
+  const html = await render("focus=true", "cloud_panel=1:fixture:24");
+  const canvas = html.match(/<div[^>]*class="cloud-app-canvas[^>]*>/)?.[0] ?? "";
+  expect(html).not.toContain('data-panel="open"');
+  expect(canvas).toMatch(/data-panel-transient(?:="")?[ >]/);
+  expect(canvas).toContain("--cloud-panel-width-set:24rem");
+  expect(html).toContain('data-state="closed"');
+  expect(html).not.toContain("<iframe");
+  expect(html.match(/id="cloud-shell-data"/g)).toHaveLength(1);
+});
 
 test("closed panel has a title, no iframe, tabs or Panel trigger for a single provider", async () => {
   const html = await render();

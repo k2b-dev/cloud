@@ -2,7 +2,7 @@ import { installInputModeController, keyboardPlatform } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { syncTimezoneCookie } from "./timezone-cookie";
 
-export default function PanelRuntime(props: { provider?: string }) {
+export default function PanelRuntime(props: { provider?: string; scope?: string }) {
   onMount(() => {
     syncTimezoneCookie(true);
     const disposeInput = installInputModeController();
@@ -18,6 +18,17 @@ export default function PanelRuntime(props: { provider?: string }) {
       if (event.persisted) resumeTheme();
     };
     const close = () => window.parent.postMessage({ type: "cloud.panel.close" }, location.origin);
+    const click = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!anchor || (anchor.target && anchor.target !== "_self") || anchor.hasAttribute("download")) return;
+      const url = new URL(anchor.getAttribute("href")!, document.baseURI);
+      if (url.origin !== location.origin) return;
+      const scope = props.scope?.replace(/\/$/, "");
+      if (scope !== undefined && (url.pathname === scope || url.pathname.startsWith(`${scope}/`))) return;
+      event.preventDefault();
+      window.parent.location.assign(url.href);
+    };
     const key = (event: KeyboardEvent) => {
       if (event.isComposing || event.defaultPrevented || event.altKey || event.shiftKey) return;
       const apple = keyboardPlatform() === "apple";
@@ -56,6 +67,7 @@ export default function PanelRuntime(props: { provider?: string }) {
       if (props.provider) document.documentElement.dataset.cloudPanelReady = props.provider;
       window.parent.postMessage({ type: "cloud.panel.ready", v: 1, provider: props.provider }, location.origin);
       window.addEventListener("keydown", key);
+      window.addEventListener("click", click);
     }
     onCleanup(() => {
       disposeInput();
@@ -63,6 +75,7 @@ export default function PanelRuntime(props: { provider?: string }) {
       window.removeEventListener("pagehide", pageHide);
       window.removeEventListener("pageshow", pageShow);
       window.removeEventListener("keydown", key);
+      window.removeEventListener("click", click);
       for (const timer of deferred) clearTimeout(timer);
     });
   });

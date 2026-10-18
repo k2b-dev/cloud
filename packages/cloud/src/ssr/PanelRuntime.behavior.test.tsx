@@ -14,12 +14,15 @@ else {
     cleanup();
     jest.useRealTimers();
   });
-  const mount = (embedded = true, crossOrigin = false) => {
+  const mount = (embedded = true, crossOrigin = false, props: { scope?: string } = { scope: "/app/fixture/panel/" }) => {
     const dom = createDomTestHarness();
+    // Happy DOM runs an anchor's native navigation before the click reaches window.
+    const open = jest.spyOn(dom.window, "open").mockReturnValue(null);
     const postMessage = mock((_message: unknown, _targetOrigin: string) => {});
+    const assign = mock((_url: string) => {});
     const parentDocument = document.implementation.createHTMLDocument();
     parentDocument.documentElement.className = "dark host";
-    const parent = Object.assign(new dom.window.EventTarget(), { postMessage });
+    const parent = Object.assign(new dom.window.EventTarget(), { postMessage, location: { assign } });
     Object.defineProperty(parent, "document", {
       get: () => {
         if (crossOrigin) throw new DOMException("Blocked cross-origin parent", "SecurityError");
@@ -29,13 +32,86 @@ else {
     Object.defineProperty(dom.window, "parent", { configurable: true, value: embedded ? parent : dom.window });
     document.documentElement.className = "light provider";
     document.cookie = `cloud.timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}; Path=/`;
-    const dispose = render(() => createComponent(PanelRuntime, { provider: "fixture" }), dom.root);
+    const dispose = render(() => createComponent(PanelRuntime, { provider: "fixture", ...props }), dom.root);
     cleanup = () => {
       dispose();
+      open.mockRestore();
       dom.cleanup();
     };
-    return { dom, postMessage, dispose, parent, parentDocument };
+    const click = (href: string, init: MouseEventInit = {}, attributes: Record<string, string> = {}, prevented = false) => {
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      for (const [name, value] of Object.entries(attributes)) anchor.setAttribute(name, value);
+      const child = document.createElement("span");
+      anchor.append(child);
+      dom.root.append(anchor);
+      if (prevented) anchor.addEventListener("click", (event) => event.preventDefault());
+      const event = new MouseEvent("click", { bubbles: true, cancelable: true, ...init });
+      child.dispatchEvent(event);
+      return event;
+    };
+    return { dom, postMessage, dispose, parent, parentDocument, assign, click };
   };
+  test("same-origin links outside the panel scope navigate the parent and clean up on dispose", () => {
+    const h = mount();
+    const base = document.createElement("base");
+    base.href = "/app/";
+    document.head.append(base);
+    expect(h.click("other?item=1#detail", {}, { target: "_self" }).defaultPrevented).toBe(true);
+    expect(h.assign).toHaveBeenLastCalledWith("http://localhost/app/other?item=1#detail");
+    expect(h.click("/app/fixture/panels").defaultPrevented).toBe(true);
+    expect(h.assign).toHaveBeenLastCalledWith("http://localhost/app/fixture/panels");
+    h.dispose();
+    expect(h.click("/app/other").defaultPrevented).toBe(false);
+    expect(h.assign).toHaveBeenCalledTimes(2);
+  });
+  for (const href of ["/app/fixture/panel", "/app/fixture/panel/", "/app/fixture/panel/item?q=1#detail"]) {
+    test(`links within the panel scope stay native: ${href}`, () => {
+      const h = mount();
+      expect(h.click(href).defaultPrevented).toBe(false);
+      expect(h.assign).not.toHaveBeenCalled();
+    });
+  }
+  test("hash links within the panel scope stay native", () => {
+    const h = mount();
+    history.replaceState(null, "", "/app/fixture/panel");
+    expect(h.click("#detail").defaultPrevented).toBe(false);
+    expect(h.assign).not.toHaveBeenCalled();
+  });
+  test("provider handlers that prevent a click keep control", () => {
+    const h = mount();
+    expect(h.click("/app/other", {}, {}, true).defaultPrevented).toBe(true);
+    expect(h.assign).not.toHaveBeenCalled();
+  });
+  for (const init of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true }, { button: 1 }]) {
+    test(`modified and non-primary clicks stay native: ${JSON.stringify(init)}`, () => {
+      const h = mount();
+      expect(h.click("/app/other", init).defaultPrevented).toBe(false);
+      expect(h.assign).not.toHaveBeenCalled();
+    });
+  }
+  for (const name of ["target", "download"]) {
+    test(`links with explicit browser behavior stay native: ${name}`, () => {
+      const h = mount();
+      expect(h.click("/app/other", {}, { [name]: name === "target" ? "_blank" : "" }).defaultPrevented).toBe(false);
+      expect(h.assign).not.toHaveBeenCalled();
+    });
+  }
+  test("cross-origin links stay native", () => {
+    const h = mount();
+    expect(h.click("https://elsewhere.test/app/other").defaultPrevented).toBe(false);
+    expect(h.assign).not.toHaveBeenCalled();
+  });
+  test("without a scope every same-origin link navigates the parent", () => {
+    const h = mount(true, false, {});
+    expect(h.click("/app/fixture/panel").defaultPrevented).toBe(true);
+    expect(h.assign).toHaveBeenCalledWith("http://localhost/app/fixture/panel");
+  });
+  test("standalone providers keep navigation native", () => {
+    const h = mount(false);
+    expect(h.click("/app/other").defaultPrevented).toBe(false);
+    expect(h.assign).not.toHaveBeenCalled();
+  });
   for (const teardown of ["dispose", "pagehide"]) {
     test(`mirrors the host theme live and removes its listener on ${teardown}`, () => {
       const h = mount();

@@ -43,7 +43,25 @@ export const server = new Hono<Environment>()
         <button type="button" id="prevent-escape">
           Keep Escape
         </button>
+        <a href="/app/fixture/next" id="leave-panel">
+          Open in the app
+        </a>
       </PanelLayout>
+    )),
+  )
+  .get(
+    "/app/fixture/long",
+    ...probe.ssr<Environment>((c) => () => (
+      <Layout c={c} title="Long fixture">
+        <button type="button" id="open-panel">
+          Open fixture
+        </button>
+        <button type="button" id="open-silent-panel">
+          Open silent fixture
+        </button>
+        <div style="height:150vh">Long content</div>
+        <p id="last-row">Last row</p>
+      </Layout>
     )),
   )
   .get(
@@ -86,7 +104,7 @@ export const server = new Hono<Environment>()
 /** Runs inline during parsing and again immediately after mounting the real runtime. */
 export function panelGeometry() {
   return [".layout-shell-content", "#cloud-panel", ".k2b-app-workspace"].map((selector) => {
-    const rect = document.querySelector(selector)!.getBoundingClientRect();
-    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    const rect = document.querySelector(selector)?.getBoundingClientRect();
+    return rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   });
 }

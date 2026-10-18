@@ -63,7 +63,7 @@ export function installPanelSlot(): () => void {
     if (apply && stored !== width) setWidth(stored);
   };
   const writeCookie = () => {
-    if (isPhone()) return;
+    if (isPhone() || canvas.hasAttribute("data-panel-transient")) return;
     document.cookie = serializePanelCookie(
       { open: canvas.dataset.panel === "open", provider: provider.id, widthRem: committedWidth },
       location.protocol === "https:",
@@ -230,6 +230,9 @@ export function installPanelSlot(): () => void {
   const pageShow = (event: PageTransitionEvent) => {
     if (event.persisted) closeSheet();
   };
+  const entryChange = (event: NavigationCurrentEntryChangeEvent) => {
+    if (event.navigationType === "push") closeSheet();
+  };
   let dragWidth = width;
   let dragStoredWidth = committedWidth;
   let dragInlineWidth = "";
@@ -296,6 +299,7 @@ export function installPanelSlot(): () => void {
   column.addEventListener("change", modeChange);
   window.addEventListener("pageshow", pageShow);
   window.addEventListener("popstate", closeSheet);
+  window.navigation?.addEventListener("currententrychange", entryChange);
   window.addEventListener("resize", seedWidth);
   // An SSR iframe can have posted its one-shot ready before this lazy module
   // arrived. Its runtime also marks its own same-origin document, so read that
@@ -320,6 +324,7 @@ export function installPanelSlot(): () => void {
     column.removeEventListener("change", modeChange);
     window.removeEventListener("pageshow", pageShow);
     window.removeEventListener("popstate", closeSheet);
+    window.navigation?.removeEventListener("currententrychange", entryChange);
     window.removeEventListener("resize", seedWidth);
     installed = undefined;
   };

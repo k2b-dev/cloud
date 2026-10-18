@@ -412,6 +412,45 @@ test("390px sheet grows and navigation, popstate and persisted pageshow close it
   }
 });
 
+// 10b: The page's last row scrolls up above the half-height sheet.
+test("390px sheet leaves room to scroll the page's last row above it", async () => {
+  const { context, page } = await fixture(390);
+  try {
+    await page.goto(`${origin}/app/fixture/long`);
+    await page.waitForFunction(() => document.documentElement.dataset.panelHostMounted === "true");
+    await open(page);
+    // Scroll to the very end, whether the page or the app card scrolls.
+    await page.evaluate(() => {
+      const main = document.querySelector<HTMLElement>(".layout-content-main");
+      if (main) main.scrollTop = main.scrollHeight;
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    });
+    await settle(page);
+    const last = await page.locator("#last-row").boundingBox();
+    const sheet = await page.locator(slot).boundingBox();
+    expect(last && sheet && last.y + last.height <= sheet.y).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+// 10c: A link that leaves the panel opens in the app, never a second shell in the iframe.
+test("a provider link outside the panel navigates the top document", async () => {
+  const { context, page } = await fixture(1440, "1:fixture:");
+  try {
+    await ready(page);
+    await page.frameLocator("[data-cloud-panel-frame]").locator("#leave-panel").click();
+    await page.waitForURL("**/app/fixture/next");
+    await page.waitForFunction(() => document.documentElement.dataset.panelHostMounted === "true");
+    await ready(page);
+    const frame = page.frameLocator("[data-cloud-panel-frame]");
+    expect(await frame.locator("[data-cloud-panel-page]").count()).toBe(1);
+    expect(await frame.locator(".cloud-app-canvas").count()).toBe(0);
+  } finally {
+    await context.close();
+  }
+});
+
 // 11: A detail waits beside the open column; opening a panel again parks its drawer.
 test("opening the panel parks an open workspace detail drawer", async () => {
   const { context, page } = await fixture(1194, "1:fixture:");

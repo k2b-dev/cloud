@@ -5,7 +5,7 @@ section: Platform services
 order: 588
 description: Offer an authorized application page beside the current Cloud app.
 tags: [panels, applications, layout, ssr]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Offer a panel
@@ -64,6 +64,13 @@ provider page instead of nesting `Layout` inside the iframe. Keep same-origin
 embedding allowed; see [Build and deploy](/en/docs/operations/build-and-deploy#enable-panel-providers).
 The embedded provider page follows the host's light or dark theme live, without
 reloading.
+
+Links stay in the panel only below the declared panel path. A same-origin link
+outside it opens in the app window, so the panel never shows a second Cloud
+shell. Links with a `target`, a `download` attribute, or modifier keys keep
+their browser behavior, and a click handler that calls `preventDefault()` wins.
+Navigation by script or form submission is the provider's own: keep it below
+the panel path.
 
 `requiresRoles` filters visibility only, using the same role rules as app
 navigation. **The slot grants nothing.** The provider route, APIs, and services
@@ -133,9 +140,16 @@ slot and app width in the first frame; starting the runtime must not shift the
 layout. Drawer and column share this persisted open flag. Printing hides the
 slot.
 
+Focus pages (`Layout focusMode`, such as pop-out editors) start with the panel
+closed and never write the cookie, so a pop-out window does not change the
+panel of the main window. Ctrl+J or Cmd+J opens the panel there.
+
 The phone sheet has a separate, transient flag. Below 768 px the controller
-never writes the panel cookie. Navigation, browser history changes, and a
-restored page close the sheet; a new document always starts with it closed.
+never writes the panel cookie. A new document always starts with it closed.
+Back and Forward, a restored page, and an in-page navigation that adds a
+history entry close the sheet; the last needs a browser with the Navigation
+API. Replacing the URL for page state keeps the sheet open. While the sheet is
+open, a regular page can scroll its last row above it.
 
 ## Loading and message boundaries
 
