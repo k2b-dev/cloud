@@ -1,41 +1,11 @@
+import { CHECK_STEPS, REQUIRED_RIGHTS, type StoreCheckCode, type StoreCheckResult } from "./check-codes";
 import { clickhouseQuery, type QueryOptions, StoreQueryError } from "./client";
 import { hashServicePassword, READ_LIMITS, READ_PROFILES, randomHex } from "./setup-sql";
+
 import { quoteIdentifier as q, StorePassword, StorePrefix, StoreUrl, StoreUser } from "./validation";
 
-export const REQUIRED_RIGHTS = [
-  "CREATE DATABASE",
-  "CREATE TABLE",
-  "ALTER TABLE",
-  "INSERT",
-  "SELECT",
-  "CREATE USER",
-  "ALTER USER",
-  "DROP USER",
-  "GRANT SELECT",
-  "DROP TABLE",
-  "DROP DATABASE",
-  "TRUNCATE",
-  "OPTIMIZE",
-  "SYSTEM PARTS",
-  "SYSTEM DISKS",
-  "KILL QUERY",
-] as const;
-export type StoreCheckCode =
-  | "UNREACHABLE"
-  | "AUTH_FAILED"
-  | "VERSION_TOO_OLD"
-  | "TOO_MANY_RIGHTS"
-  | `MISSING_RIGHT:${(typeof REQUIRED_RIGHTS)[number]}`
-  | `PROFILE_MISSING:${string}`;
-export const CHECK_STEPS = ["reach", "auth", "version", "rights", "profiles"] as const;
-export type StoreCheckResult = {
-  ok: boolean;
-  code?: StoreCheckCode;
-  version?: string;
-  latencyMs?: number;
-  checkedAt: string;
-  steps: Record<(typeof CHECK_STEPS)[number], "ok" | "failed" | "skipped">;
-};
+export { CHECK_STEPS, REQUIRED_RIGHTS, type StoreCheckCode, type StoreCheckResult };
+
 export const supportedVersion = (version: string): boolean => {
   const match = /^(\d+)\.(\d+)(?:\.\d+)*$/.exec(version);
   return Boolean(match && (Number(match[1]) > 26 || (Number(match[1]) === 26 && Number(match[2]) >= 9)));

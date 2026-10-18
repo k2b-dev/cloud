@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CHECK_STEPS, REQUIRED_RIGHTS, type StoreCheckCode } from "./check";
+import { CHECK_STEPS, REQUIRED_RIGHTS, type StoreCheckCode } from "./check-codes";
 
 const isCheckCode = (value: unknown): value is StoreCheckCode =>
   typeof value === "string" &&

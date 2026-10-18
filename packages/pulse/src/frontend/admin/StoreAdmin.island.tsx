@@ -12,7 +12,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { CHECK_STEPS, type StoreCheckResult } from "../../store/check";
+import { CHECK_STEPS, type StoreCheckResult } from "../../store/check-codes";
 import type { StoreConfig, StoreStatus } from "../../store/contracts";
 import { storeFixHint, storeMessages } from "./messages";
 import { StoreClientError, storeClient } from "./store-client";

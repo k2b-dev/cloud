@@ -1,4 +1,4 @@
-import type { StoreCheckResult } from "../../store/check";
+import type { StoreCheckResult } from "../../store/check-codes";
 import { StoreCheckSchema, type StoreStatus } from "../../store/contracts";
 import { jsonFetch } from "../http";
 

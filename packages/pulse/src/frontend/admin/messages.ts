@@ -1,5 +1,5 @@
 import { i18n } from "@k2b/stdlib";
-import { REQUIRED_RIGHTS, type StoreCheckCode } from "../../store/check";
+import { REQUIRED_RIGHTS, type StoreCheckCode } from "../../store/check-codes";
 
 export const storeMessages = i18n.define({
   baseLocale: "en",

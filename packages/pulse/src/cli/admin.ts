@@ -1,6 +1,6 @@
 import { type CloudCliContext, command, flag, readCliInput } from "@k2b/cloud/cli";
 import { storeFixHint } from "../frontend/admin/messages";
-import type { StoreCheckResult } from "../store/check";
+import type { StoreCheckResult } from "../store/check-codes";
 import type { StoreStatus } from "../store/contracts";
 import { StorePassword, StoreSaveInput, StoreUser } from "../store/validation";
 import { jsonRequest, printJsonOrTable } from "./shared";
