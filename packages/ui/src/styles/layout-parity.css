@@ -3066,6 +3066,21 @@ html {
   transform: translateY(-50%);
 }
 
+/* A head row can wrap to more lines; the Details button stays centred on
+   its first line, beside the actions: the row's top padding plus half of
+   its 2.5 rem line. */
+.k2b-ui
+  .k2b-app-workspace:has(> .k2b-app-workspace__head[data-row])
+  > .k2b-app-workspace__content
+  > .k2b-app-workspace__detail-toggle,
+.k2b-ui
+  .k2b-app-workspace:has(> .k2b-app-workspace__head[data-row])
+  > .k2b-app-workspace__content
+  > :is(solid-island, solid-client)
+  > .k2b-app-workspace__detail-toggle {
+  top: 1.75rem;
+}
+
 /* From 64 rem of host width, a sidebar whose column would leave `Main` less
    than its minimum is the overlay behind the head's button, as below 64 rem,
    and the head shows the page's title. The detail has started waiting

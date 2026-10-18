@@ -38,6 +38,8 @@ export type FixtureOptions = {
     /** A page at the app's root: the trail has no page above it. */
     root?: boolean;
     longLabels?: boolean;
+    /** Also render a detail of this width beside the head row. */
+    detail?: AppWorkspaceDetailWidth;
   };
   layoutState?: AppWorkspaceLayoutState;
 };
@@ -201,11 +203,11 @@ export function workspaceTree(
                         ];
                   },
                 }),
-                ...(!levels && !props.head
+                ...(!levels && (!props.head || props.head.detail)
                   ? [
                       createComponent(AppWorkspace.Detail, {
                         id: "contact",
-                        width: props.detailWidth ?? "md",
+                        width: props.head?.detail ?? props.detailWidth ?? "md",
                         get open() {
                           return open();
                         },

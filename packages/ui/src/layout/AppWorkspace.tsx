@@ -2283,7 +2283,8 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
   const contents = () => {
     const resolved = children(() => props.children);
     const slots = createMemo(() => flatten(resolved()));
-    const head = () => slots().find(headSlot)?.props;
+    // Same props object, same memo value: a sibling change must not rebuild the head's slots.
+    const head = createMemo(() => slots().find(headSlot)?.props);
     const content = () => slots().filter((value) => !headSlot(value)) as JSX.Element;
     return (
       <>

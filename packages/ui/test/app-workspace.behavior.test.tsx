@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { createSignal } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
@@ -405,5 +405,41 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     dispose();
     pushState.mockRestore();
     dom.cleanup();
+  });
+
+  test("keeps the head row's views mounted when another direct child of the workspace changes", async () => {
+    const dom = createDomTestHarness();
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    const [drawer, setDrawer] = createSignal(false);
+    let builds = 0;
+    const Views = () => {
+      builds++;
+      return <input aria-label="Views" />;
+    };
+    const dispose = render(
+      () => (
+        <AppWorkspace>
+          <AppWorkspace.Head views={<Views />} />
+          <AppWorkspace.Main>
+            <div>Main</div>
+          </AppWorkspace.Main>
+          <Show when={drawer()}>
+            <div data-drawer>Drawer</div>
+          </Show>
+        </AppWorkspace>
+      ),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>('input[aria-label="Views"]')!;
+      expect(input).not.toBeNull();
+      setDrawer(true);
+      expect(dom.root.querySelector("[data-drawer]")).not.toBeNull();
+      expect(builds).toBe(1);
+      expect(dom.root.querySelector('input[aria-label="Views"]')).toBe(input);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
   });
 });

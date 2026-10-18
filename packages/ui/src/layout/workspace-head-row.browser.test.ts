@@ -172,6 +172,26 @@ test("workspace width wraps filters while tabs and actions keep the first row", 
   }
 });
 
+test("a waiting detail's Details button stays in the first row when the filters wrap to row 2", async () => {
+  const page = await load({ head: { items: 4, detail: "sm" } }, 1440, 620);
+  try {
+    const toggle = await rect(page, "[data-app-workspace-detail-toggle]");
+    const primary = await rect(page, "[data-workspace-primary]");
+    const tabs = await rect(page, ".k2b-view-tabs");
+    const filters = await rect(page, ".k2b-app-workspace__head-filters");
+    const head = await rect(page, ".k2b-app-workspace__head");
+    // The row wraps: the filters stand below the views, the head grows.
+    expect(filters.y).toBeGreaterThanOrEqual(tabs.y + tabs.height);
+    expect(head.height).toBeGreaterThan(80);
+    // The button shares the first line with the actions, at the head's end.
+    expect(Math.abs(center(toggle) - center(primary))).toBeLessThanOrEqual(2);
+    expect(toggle.x).toBeGreaterThanOrEqual(primary.x + primary.width);
+    expect(toggle.x + toggle.width).toBeLessThanOrEqual(head.x + head.width);
+  } finally {
+    await page.close();
+  }
+});
+
 test("More lists exactly the CSS-hidden views at each level and always keeps the current view in the strip", async () => {
   const page = await load({ head: { items: 8, current: "7" } }, 1440, 1440, true);
   try {
