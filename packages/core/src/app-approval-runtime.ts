@@ -18,9 +18,10 @@ export const appApprovalRuntime = {
       misfire: "latest",
       meta: { appId: "core", family: "app-approval", label: "App device enrollment notices, expiry and known-browser cleanup" },
       process: async ({ signal }) => {
+        // First, so a failing enrollment notice never holds back the retention cleanup.
+        await knownBrowsers.cleanup(sql, { signal });
         await appApproval.maintain(sender.sendDeviceEnrollment, signal);
         await cleanupTerminalLogins();
-        await knownBrowsers.cleanup(sql, { signal });
       },
     });
     await scheduler().create({
