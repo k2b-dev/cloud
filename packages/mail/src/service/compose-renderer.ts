@@ -572,13 +572,21 @@ export const renderComposeContent = (params: {
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
   const requestedLogo = source.includes(token);
   const logoWarnings: ComposeFormattingWarning[] = requestedLogo && !params.logo ? [{ code: "missing_mailbox_logo" }] : [];
-  if (params.format === "plain")
+  if (params.format === "plain") {
+    if (!requestedLogo) return ok({ html: null, text: source, formattingWarnings: logoWarnings, logoUsed: false });
+    const altText = params.logo?.altText ?? "";
+    // Check the expanded size before allocating it: a loop can repeat the placeholder many times.
+    const occurrences = source.split(token).length - 1;
+    if (sourceBytes(source) + occurrences * (sourceBytes(altText) - token.length) > MAX_RENDERED_SOURCE_BYTES) {
+      return fail(composeRenderFailure("tooLarge"));
+    }
     return ok({
       html: null,
-      text: requestedLogo ? source.replaceAll(token, () => params.logo?.altText ?? "").trimEnd() : source,
+      text: source.replaceAll(token, () => altText).trimEnd(),
       formattingWarnings: logoWarnings,
-      logoUsed: requestedLogo,
+      logoUsed: true,
     });
+  }
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
 

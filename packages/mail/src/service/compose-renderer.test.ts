@@ -1282,6 +1282,18 @@ describe("mailbox signature logos", () => {
       logo,
       ...input,
     });
+  test("checks the plain-text size of repeated alt text before expanding it", () => {
+    const signature = "{% for i in (1..100) %}{% for j in (1..100) %}{{ mailbox.logo }}{% endfor %}{% endfor %}";
+    const wide = { ...logo, altText: "\u20ac".repeat(200) };
+    expect(render({ format: "plain", signature, logo: wide })).toMatchObject({
+      ok: false,
+      error: { composeRender: { reason: "tooLarge" } },
+    });
+    expect(render({ format: "plain", signature: "{{ mailbox.logo }} {{ mailbox.logo }}", logo: wide })).toMatchObject({
+      ok: true,
+      data: { text: `Hello\n\n${wide.altText} ${wide.altText}` },
+    });
+  });
   test("inserts one trusted CID image after sanitizing and keeps literal alt text in plain text", () => {
     const result = render();
     expect(result.ok).toBe(true);

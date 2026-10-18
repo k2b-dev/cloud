@@ -19,7 +19,8 @@ export type DbMailboxLogo = {
 export const mailboxLogoSha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 export const mailboxLogoContentId = (versionId: string, senderEmail: string): string => {
   const domain = senderEmail.split("@")[1]?.toLowerCase() ?? "";
-  return `logo.${versionId}@${/^[a-z0-9.-]+$/.test(domain) ? domain : "mail.invalid"}`;
+  // The snapshot accepts at most 255 characters: "logo." and a UUID leave 213 for "@" and the domain.
+  return `logo.${versionId}@${/^[a-z0-9.-]{1,213}$/.test(domain) ? domain : "mail.invalid"}`;
 };
 export const mailboxLogoDataUrl = (row: DbMailboxLogo): string =>
   `data:${row.content_type};base64,${Buffer.from(row.content).toString("base64")}`;

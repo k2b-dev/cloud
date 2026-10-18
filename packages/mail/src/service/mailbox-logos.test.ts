@@ -13,6 +13,8 @@ describe("mailbox logo Content-ID", () => {
       ["team@例え.test", "mail.invalid"],
       ["team@under_score.test", "mail.invalid"],
       ["team@[127.0.0.1]", "mail.invalid"],
+      [`team@${"a".repeat(208)}.test`, `${"a".repeat(208)}.test`],
+      [`team@${"a".repeat(209)}.test`, "mail.invalid"],
       ["team@", "mail.invalid"],
       ["team", "mail.invalid"],
     ] as const) {
