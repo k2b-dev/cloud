@@ -265,11 +265,12 @@ describe("the rule decides the form by depth", () => {
       const { context, page } = await open(ipadPortrait, path, { language });
       try {
         const before = await trail(page);
-        // The permanent detail now narrows the head too. Only the parent fits;
-        // the first level joins the middle levels in the menu.
+        // The lg detail does not fit beside Main here, so it waits behind
+        // Details and leaves the head its width: the first level and the
+        // parent fit, and only the middle levels go into the menu.
         expect(before.more).toBe(true);
-        expect(before.crumbs).toEqual(["…", folders[3]!]);
-        const hidden = folders.slice(0, 3);
+        expect(before.crumbs).toEqual([folders[0]!, "…", folders[3]!]);
+        const hidden = folders.slice(1, 3);
         expect(hidden.length).toBeGreaterThan(0);
         // The collapse changes no geometry.
         expect(before.head!.box.height).toBe(46);

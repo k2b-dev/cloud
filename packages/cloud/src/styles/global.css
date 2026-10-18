@@ -704,6 +704,7 @@ solid-island {
      Grids. */
   .cloud-app-canvas[data-shell-focus] .k2b-app-workspace:not(.k2b-app-workspace *) {
     --k2b-workspace-start-radius: var(--k2b-workspace-inner-radius);
+    --k2b-workspace-sidebar-space: 0px;
   }
   .cloud-app-canvas[data-shell-focus]
     .k2b-app-workspace:not(.k2b-app-workspace *)

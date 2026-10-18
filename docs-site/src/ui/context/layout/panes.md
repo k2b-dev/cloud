@@ -6,7 +6,9 @@
 
 Use it for code editors, query explorers, dashboard editors, and other workspaces where users open, close, move, or split peer tools.
 
-Use `Tabs` for one fixed tab group. Use `AppWorkspace.MainPane` for a fixed list-and-reader layout.
+Use `Tabs` for one fixed tab group. Use `AppWorkspace.MainPane` for a fixed
+list-and-reader layout, with 12 px of space between regions. Their resize
+grips appear on hover, keyboard focus, or drag, without a separator line.
 
 ## Import
 

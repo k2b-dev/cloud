@@ -138,6 +138,12 @@
     display: none !important;
   }
 
+  /* The workspace keeps the sidebar's and Main's measuring space in its end
+     padding on screen; print has neither. */
+  .k2b-ui .k2b-app-workspace {
+    padding-inline-end: 0 !important;
+  }
+
   .k2b-ui :is(.k2b-app-workspace, .k2b-app-workspace__content, .k2b-app-workspace__main, .k2b-app-workspace__main-pane) {
     display: block !important;
     height: auto !important;
