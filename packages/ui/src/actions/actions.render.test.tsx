@@ -32,10 +32,10 @@ const {
   SpotlightButton,
   Tabs,
   ViewTabs,
-  viewTabsLayout,
   Toolbar,
 } = await import("../index");
 const { copyText } = await import("./CopyButton");
+const { viewTabsLayout } = await import("./ViewTabs");
 const actionsCss = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
 const dropdownSource = await Bun.file(resolve(import.meta.dir, "Dropdown.tsx")).text();
 

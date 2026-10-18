@@ -44,4 +44,4 @@ export { Tabs } from "./Tabs";
 export type { ToolbarActionProps, ToolbarGroupProps, ToolbarLabelProps, ToolbarProps, ToolbarSeparatorProps } from "./Toolbar";
 export { Toolbar } from "./Toolbar";
 export type { ViewTab, ViewTabsProps } from "./ViewTabs";
-export { ViewTabs, viewTabsLayout } from "./ViewTabs";
+export { ViewTabs } from "./ViewTabs";
