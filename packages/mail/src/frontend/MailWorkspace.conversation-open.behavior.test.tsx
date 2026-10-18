@@ -550,6 +550,25 @@ describe("Mail workspace conversation open", () => {
     expect(selected()).toBe(A);
   });
 
+  test("returning to the shown folder while another view loads waits for that folder's own page 1", async () => {
+    mount();
+    open(A);
+    await until(() => shows(A), "conversation A");
+    const held: Array<(status: number) => void> = [];
+    routeStatus = () => new Promise<number>((resolve) => held.push(resolve));
+    dom.root.querySelector<HTMLAnchorElement>(`a[href="${path}?view=needs_action"]`)!.click();
+    await until(() => held.length === 1, "the held view switch");
+    dom.root.querySelector<HTMLAnchorElement>(`a[href="${folderPath}"]`)!.click();
+    await until(() => held.length === 2, "the held return to the folder");
+    await settle();
+    expect(selected()).toBe(A);
+    held[1]!(503);
+    await until(() => dom.document.body.textContent?.includes("Could not open this mailbox view") === true, "the failure notice");
+    expect(selected()).toBe(A);
+    expect(shows(A)).toBe(true);
+    held[0]!(200);
+  });
+
   test("a reload of the shown view that ends after a conversation opened keeps that conversation and its URL", async () => {
     mount();
     let release = () => {};

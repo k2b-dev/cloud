@@ -572,7 +572,8 @@ function MailWorkspaceView(props: {
         );
         if (scopeChanged) setSelectionMode(false);
       });
-      if (workspaceTransition?.source === first.source) {
+      // A transition ends only with the page 1 requested for it; an older one with the same href must not end it.
+      if (!otherSelection && workspaceTransition?.source === first.source) {
         workspaceTransition.resolve("applied");
         workspaceTransition = null;
       }
