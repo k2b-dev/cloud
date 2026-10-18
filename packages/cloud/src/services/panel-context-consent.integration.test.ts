@@ -48,11 +48,14 @@ suite("Core panel consent persistence", () => {
     await db`DELETE FROM auth.users WHERE id = ${first}::uuid`;
     expect(await service.list(first, ["fixture", "other"])).toEqual({});
     expect(await service.get(second, "fixture")).toEqual({ allowed: true, revision: 1 });
+    // A Bun SQL query runs only when awaited; `rejects` alone would wait on it forever.
     await expect(
-      db`INSERT INTO auth.panel_context_consent (user_id, provider, allowed, revision) VALUES (${second}::uuid, ${"a".repeat(81)}, true, 1)`,
+      (async () =>
+        await db`INSERT INTO auth.panel_context_consent (user_id, provider, allowed, revision) VALUES (${second}::uuid, ${"a".repeat(81)}, true, 1)`)(),
     ).rejects.toThrow();
     await expect(
-      db`INSERT INTO auth.panel_context_consent (user_id, provider, allowed, revision) VALUES (${second}::uuid, 'invalid', true, 0)`,
+      (async () =>
+        await db`INSERT INTO auth.panel_context_consent (user_id, provider, allowed, revision) VALUES (${second}::uuid, 'invalid', true, 0)`)(),
     ).rejects.toThrow();
   });
   test("a delayed withdrawal cannot overwrite a newer Allow saved from the same revision", async () => {
