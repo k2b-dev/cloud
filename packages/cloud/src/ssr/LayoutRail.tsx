@@ -5,7 +5,7 @@ import type { RailApp } from "./rail-navigation";
 export type LayoutAppLink = RailApp;
 
 /** The rail frame and Home stay server markup; only the navigation is interactive. */
-export default function LayoutRail(props: { currentPath: string }) {
+export default function LayoutRail(props: { currentPath: string; panelOpen?: boolean }) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   return (
@@ -15,7 +15,7 @@ export default function LayoutRail(props: { currentPath: string }) {
           <img src="/branding/logo" alt="Logo" class="h-5 w-5" />
         </a>
       </div>
-      <CloudShell slot="rail" currentPath={props.currentPath} />
+      <CloudShell slot="rail" currentPath={props.currentPath} panelOpen={props.panelOpen} />
     </aside>
   );
 }

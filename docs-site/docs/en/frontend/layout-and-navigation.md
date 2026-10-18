@@ -130,6 +130,12 @@ pages the shell turns them into the way up (see below). Anonymous pages show
 the entries as breadcrumbs in their header from 1024 px; the final breadcrumb
 has no link. A plain string is valid for a one-level title.
 
+Signed-in pages show the shared panel slot when at least one authorized
+application declares a provider. Use `panel={false}` to hide it on sign-in,
+print, presentation, or public pages that use `Layout`. Anonymous pages have
+no slot. `PanelLayout` renders the provider page itself, without shell chrome.
+See [Offer a panel](/en/docs/platform/panels).
+
 `help?: string[]` names two or three articles from the current app's Help that
 fit this page, for example `help={["inventory-start", "inventory-access"]}`.
 Help lists them first under **For this view**, in the declared order. Cloud
@@ -675,7 +681,12 @@ search, and keyboard behavior.
 ## Mobile workspace menu
 
 Below 768 px, the header launcher hosts the current application's navigation
-and an **All apps** switch. From 768 px the app bar and the workspace's own
+and an **All apps** switch. Pages with `WorkspaceNavigation` also turn the
+phone title into **Name ⌄**, which opens the same menu. Other pages keep the
+plain title. An overview sidebar with `mobile="stacked"` shows a horizontally
+scrolling row of object chips above the content below 64 rem; **All** opens
+the complete sidebar in a bottom sheet below 48 rem and a centered dialog
+from 48 rem. From 768 px the app bar and the workspace's own
 navigation take over. The mobile workspace uses the full canvas without a
 second application title or exterior frame. See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation)
 for the SSR snapshot and island-owned action APIs. `@k2b/ui` remains independent

@@ -5,7 +5,7 @@ section: Reference
 order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Integrate an authenticator website
@@ -304,7 +304,8 @@ paired app. The app approves authentication and consent in one step.
 Only the OAuth app can create it, through Core's broker-authenticated internal
 endpoint. Browser sign-in endpoints cannot create or complete it.
 OAuth sends these requests when a first-party client supplies
-[`login_hint`](/en/docs/identity/oauth#approve-in-cloud-login).
+[`login_hint`](/en/docs/identity/oauth#approve-in-cloud-login). Today that
+client is the Cloud CLI: `cld login --user <username or email>` creates them.
 
 Check for `"terminal-logins"` in `/info.features`. Opt in only when your app can
 show the client, every scope code, and the login lifetime before a decision:

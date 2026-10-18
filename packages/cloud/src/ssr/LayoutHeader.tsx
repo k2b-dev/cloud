@@ -5,6 +5,7 @@ import { platformMessages } from "./platform-messages";
 
 type LayoutHeaderProps = {
   authenticated: boolean;
+  panelOpen?: boolean;
   title?: string;
   launchpad: boolean;
   breadcrumbs?: LayoutBreadcrumb[];
@@ -40,6 +41,7 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
       )}
       <CloudShell
         slot="header"
+        panelOpen={props.panelOpen}
         authenticated={props.authenticated}
         title={props.title}
         launchpad={props.launchpad}

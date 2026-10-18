@@ -24,6 +24,7 @@ const { person } = await import("../_internal/define-app.test-fixture");
 const railSnapshot = await import("../services/rail-snapshot");
 const settingsMiddleware = await import("../server/middleware/settings");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
+const { default: WorkspaceNavigation } = await import("./WorkspaceNavigation.island");
 const { default: Layout } = await import("./Layout");
 
 const probe = defineApp({
@@ -206,6 +207,18 @@ const server = new Hono()
     ...probe.ssr((c) => {
       const folder = c.req.param("folder") ?? "inbox";
       const title = folder[0]!.toUpperCase() + folder.slice(1);
+      if (c.req.query("navigation"))
+        return () =>
+          createComponent(Layout, {
+            c: c as unknown as LayoutContextArg,
+            title: [{ title: "Home", href: "/" }, { title: "Mail" }],
+            get children() {
+              return [
+                createComponent(WorkspaceNavigation, { label: "Mail", items: [{ id: "inbox", label: "Inbox", href: "/app/mail/inbox" }] }),
+                overviewWorkspace(),
+              ];
+            },
+          });
       // `?overview=` keeps regular Layout props, including its page scroller's gutter.
       if (c.req.query("overview"))
         return () =>
