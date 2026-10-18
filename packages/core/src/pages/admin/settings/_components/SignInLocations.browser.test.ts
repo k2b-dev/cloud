@@ -52,6 +52,7 @@ const phases: [GeoIpAdminStatus | null, SignInLocationPhase][] = [
   [uploadedStatus, { kind: "uploaded", type: "city" }],
   [uploadedStatus, { kind: "resetting", type: "city" }],
   [uploadedStatus, { kind: "reset-error", type: "city" }],
+  [uploadedStatus, { kind: "reset-error", type: "city", code: "not_allowed" }],
   [bundledStatus, { kind: "reset", type: "city", bundled: true }],
   [bundledStatus, { kind: "reconciling" }],
   [bundledStatus, { kind: "unknown-outcome" }],

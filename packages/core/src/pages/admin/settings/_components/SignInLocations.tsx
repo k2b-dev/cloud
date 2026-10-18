@@ -25,7 +25,7 @@ export type SignInLocationPhase =
   | { kind: "upload-error"; code: ErrorCode; file: File }
   | { kind: "uploaded"; type: GeoIpKind }
   | { kind: "resetting"; type: GeoIpKind }
-  | { kind: "reset-error"; type: GeoIpKind }
+  | { kind: "reset-error"; type: GeoIpKind; code?: "not_allowed" | "refused" }
   | { kind: "reset"; type: GeoIpKind; bundled: boolean }
   /** After a write without a clear answer, the block reads what is active before it allows another change. */
   | { kind: "reconciling" }
@@ -220,7 +220,7 @@ export default function SignInLocations(props: {
       setPhase({ kind: "reset", type: database.kind, bundled });
       announce(bundled ? t().resetDoneBundled({ type }) : t().resetDoneEmpty({ type }));
     };
-    let refused = false;
+    let refusal: "not_allowed" | "refused" | undefined;
     try {
       const response = await fetch(`${API}/${database.kind}`, {
         method: "DELETE",
@@ -233,11 +233,12 @@ export default function SignInLocations(props: {
         return done(body);
       }
       // A client error is a definite refusal; a gateway or server error may hide a committed delete.
-      refused = response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 499;
+      if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 499)
+        refusal = response.status === 401 || response.status === 403 ? "not_allowed" : "refused";
     } catch {}
-    if (refused) {
-      setPhase({ kind: "reset-error", type: database.kind });
-      announce(t().resetFailed, { politeness: "assertive" });
+    if (refusal) {
+      setPhase({ kind: "reset-error", type: database.kind, code: refusal });
+      announce(refusal === "not_allowed" ? t().notAllowed : t().resetFailed, { politeness: "assertive" });
       return;
     }
     // Only a vanished upload proves the delete landed; an unchanged row may still be deleted by the open request.
@@ -442,19 +443,21 @@ export default function SignInLocations(props: {
             {(failure) => (
               <>
                 <StatusText tone="danger" icon="ti ti-alert-triangle">
-                  {t().resetFailed}
+                  {failure().code === "not_allowed" ? t().notAllowed : t().resetFailed}
                 </StatusText>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    const database = status()?.databases.find((entry) => entry.kind === failure().type);
-                    if (database) void reset(database);
-                  }}
-                >
-                  {t().retry}
-                </Button>
+                <Show when={failure().code !== "not_allowed"}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      const database = status()?.databases.find((entry) => entry.kind === failure().type);
+                      if (database) void reset(database);
+                    }}
+                  >
+                    {t().retry}
+                  </Button>
+                </Show>
               </>
             )}
           </Match>

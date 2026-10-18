@@ -289,13 +289,32 @@ describe("sign-in locations block", () => {
 
   test("a refused reset keeps the uploaded file and offers a retry", async () => {
     const view = await mount({ initial: uploadedStatus, locale: "de" });
-    view.respondWith(() => Response.json({ code: "FORBIDDEN" }, { status: 403 }));
+    view.respondWith(() => Response.json({}, { status: 409 }));
     view.resetButton("city").click();
     await flush();
     await flush();
     expect(view.requests.map((request) => request.method)).toEqual(["DELETE"]);
     expect(view.statusLine()).toBe("Zurücksetzen hat nicht geklappt. Nichts wurde geändert. Erneut versuchen");
     expect(view.source("city")).toBe("Hochgeladene Datei");
+  });
+
+  test.each([401, 403])("a reset refused with %i asks for an admin sign-in without a retry", async (status) => {
+    const view = await mount({ initial: uploadedStatus, locale: "de" });
+    const statusLine = view.root.querySelector("[data-geoip-status]")!;
+    const reservedHeight = statusLine.className;
+    view.respondWith(() => Response.json({}, { status }));
+    view.resetButton("city").click();
+    await flush();
+    await flush();
+    expect(view.requests).toEqual([{ url: "/api/admin/core/geoip/city", method: "DELETE" }]);
+    expect(view.statusLine()).toBe(
+      "Deine Anmeldung erlaubt diese Änderung nicht mehr. Melde dich erneut als Administrator an. Nichts wurde geändert.",
+    );
+    expect(view.button("Erneut versuchen")).toBeUndefined();
+    expect(view.source("city")).toBe("Hochgeladene Datei");
+    expect(view.root.querySelectorAll("[data-geoip-status]")).toHaveLength(1);
+    expect(view.root.querySelector("[data-geoip-status]")).toBe(statusLine);
+    expect(statusLine.className).toBe(reservedHeight);
   });
 
   test("a server error on reset with the upload still listed stays unclear", async () => {
