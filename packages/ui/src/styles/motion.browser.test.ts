@@ -50,7 +50,7 @@ for (const [size, options] of Object.entries(sizes)) {
             // Read the started motion in the same task: getAnimations() flushes
             // style, and a short entry cannot end before it is read.
             const toast = document.querySelector(".k2b-toast");
-            // This fixture has no navigation labels; count motion on every timeline.
+            // animation-settle: all timelines - Count fixture motion; there are no navigation labels.
             const started = document.getAnimations().map((animation) => ({
               name: animation instanceof CSSAnimation ? animation.animationName : "",
               toast: animation.effect instanceof KeyframeEffect && animation.effect.target === toast,
@@ -63,7 +63,7 @@ for (const [size, options] of Object.entries(sizes)) {
                 .map((value) => value.trim()),
             );
             await frame();
-            // Include every timeline when checking that reduced motion stops this fixture.
+            // animation-settle: all timelines - Verify reduced motion stops all fixture animations.
             const running = document.getAnimations().filter((animation) => animation.playState === "running").length;
             // Presentation swaps, not only timing: a muted full track instead of a
             // frozen segment, and the swipe icon above the content that stays put.

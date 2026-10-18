@@ -43,7 +43,7 @@ for (const [size, options] of Object.entries(sizes)) {
               button.textContent = "Saved";
             });
             await transition.ready;
-            // Count view-transition pseudo-elements on any timeline; this is not a settle wait.
+            // animation-settle: all timelines - Count view-transition pseudo-elements.
             const viewTransition = document
               .getAnimations()
               .filter(

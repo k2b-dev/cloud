@@ -55,7 +55,31 @@ test("keeps timeline checks local to the statement and ignores code examples", (
     const running = document.getAnimations().filter((animation) => animation.playState === "running").length;
   `,
     ),
-  ).toEqual([]);
+  ).toHaveLength(1);
+});
+
+test.each([
+  "// animation.timeline === document.timeline\nconst running = document.getAnimations().length;",
+  'const running = document.getAnimations().map(() => "animation.timeline");',
+  "const timeline = document.getAnimations().length;",
+  "const running = document.getAnimations().map(() => ({ timeline: true }));",
+  'const running = document.getAnimations().filter((animation) => animation["timeline"]);',
+  "/* animation-settle: all timelines */\nconst running = document.getAnimations().length;",
+  "// animation-settle: all timelines-extra\nconst running = document.getAnimations().length;",
+  "const running = document.getAnimations().length; // animation-settle: all timelines",
+  "const previous = 1; // animation-settle: all timelines\nconst running = document.getAnimations().length;",
+  "// animation-settle: all timelines\nconst previous = 1;\nconst running = document.getAnimations().length;",
+  "page.evaluate(() => {\n// animation-settle: all timelines\nreturn 0;\n}, document.getAnimations());",
+])("reports text or misplaced markers without a timeline property access: %s", (source) => {
+  expect(checkSource("settle.browser.test.ts", source)).toHaveLength(1);
+});
+
+test.each([
+  "// animation-settle: all timelines\nconst running = document.getAnimations().length;",
+  "// animation-settle: all timelines - Count view-transition pseudo-elements.\nconst running = document.getAnimations().length;",
+  "// Count all fixture motion.\n// animation-settle: all timelines\nconst running = container.getAnimations({ subtree: true }).length;",
+])("accepts an explicit leading all-timelines marker: %s", (source) => {
+  expect(checkSource("motion.browser.test.ts", source)).toEqual([]);
 });
 
 test("checks test files, browser suites, and browser harnesses across workspaces", async () => {

@@ -5,6 +5,9 @@ import { workspacePackages } from "../workspace";
 import { isTestFile, listFiles, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
+const hasTimelineAccess = (node: ts.Node): boolean =>
+  (ts.isPropertyAccessExpression(node) && node.name.text === "timeline") || (ts.forEachChild(node, hasTimelineAccess) ?? false);
+
 export const checkSource = (file: string, source: string): Finding[] => {
   if (!source.includes("getAnimations")) return [];
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -26,8 +29,14 @@ export const checkSource = (file: string, source: string): Finding[] => {
       if (documentWide || subtree) {
         let statement: ts.Node = node;
         while (statement.parent && !ts.isStatement(statement)) statement = statement.parent;
-        // Leading comments let motion-count tests explain why they intentionally inspect every timeline.
-        if (!/\btimeline\b/.test(statement.getFullText(sourceFile))) {
+        const allTimelines = ts
+          .getLeadingCommentRanges(source, statement.getFullStart())
+          ?.some(
+            (comment) =>
+              comment.kind === ts.SyntaxKind.SingleLineCommentTrivia &&
+              /^\/\/ animation-settle: all timelines(?:[ \t]+.*)?$/.test(source.slice(comment.pos, comment.end)),
+          );
+        if (!hasTimelineAccess(statement) && !allTimelines) {
           findings.push({
             file,
             line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,

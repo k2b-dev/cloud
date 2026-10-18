@@ -416,8 +416,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    The fade is a mask, not an overlay, so it works on any fill: selected,
    hovered, or dark. A scroll timeline on the label is active only while its
    text overflows, so a label that fits is never dimmed. The text, its box,
-   and its accessible name stay as they are. An engine without scroll
-   timelines always fades, which dims only text that reaches the faded end.
+   and its accessible name stay as they are. One line overflows only sideways,
+   so `k2b-truncate-fade` follows the inline axis alone: a tight line height
+   lets glyphs reach past the line box, which would read as block overflow.
+   `k2b-truncate-fade-lines` also follows the block axis and needs a line
+   height of at least 1.3. An engine without scroll timelines cannot tell a
+   label that fits from one that overflows, so it keeps an ellipsis or line
+   clamp instead of dimming every label.
    `--k2b-truncate-fade-inset` (inherited) is the length of the end that a
    control overlays, such as a row's hover actions, including a 0.75rem fade
    before it: text under that control fades out whether it overflows or not. */
@@ -437,7 +442,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui :is(.k2b-truncate-fade, .k2b-truncate-fade-lines) {
-  --k2b-truncate-fade-on: 1;
+  --k2b-truncate-fade-on: 0;
   --k2b-truncate-fade-length: 1.5rem;
   --k2b-truncate-fade-start: calc(var(--k2b-truncate-fade-inset, 0px) - min(var(--k2b-truncate-fade-inset, 0px), 0.75rem));
   --k2b-truncate-fade-end: linear-gradient(
@@ -507,14 +512,36 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @supports (animation-timeline: scroll()) {
-  .k2b-ui :is(.k2b-truncate-fade, .k2b-truncate-fade-lines) {
-    --k2b-truncate-fade-on: 0;
+  .k2b-ui .k2b-truncate-fade {
+    animation: k2b-truncate-fade linear both;
+    animation-timeline: scroll(self inline);
+  }
+
+  .k2b-ui .k2b-truncate-fade-lines {
     animation:
       k2b-truncate-fade linear both,
       k2b-truncate-fade linear both;
     animation-timeline:
       scroll(self inline),
       scroll(self block);
+  }
+}
+
+/* Without scroll timelines, labels keep the ellipsis they had before. A line
+   clamp ends only wrapping text with one, so a one-line `-lines` label wraps
+   into its single clamped line here instead of staying unwrapped. */
+@supports not (animation-timeline: scroll()) {
+  .k2b-ui .k2b-truncate-fade {
+    text-overflow: ellipsis;
+  }
+
+  .k2b-ui .k2b-truncate-fade-lines {
+    white-space: normal !important;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--k2b-truncate-fade-lines, 2);
+    line-clamp: var(--k2b-truncate-fade-lines, 2);
+    text-overflow: ellipsis;
   }
 }
 

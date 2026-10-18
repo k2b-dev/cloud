@@ -29,6 +29,16 @@ const nested = (title) => {
   row.append(text);
   return row;
 };
+// A short uppercase name in row metadata at a tight line height, as Grids renders a table name.
+const tight = (title) => createComponent(AppWorkspace.SidebarItemMeta, {
+  get children() {
+    const text = document.createElement("span");
+    text.className = "k2b-truncate-fade";
+    text.style.cssText = "display:block;max-width:5rem;font-size:9px;text-transform:uppercase;letter-spacing:.05em";
+    text.textContent = title;
+    return text;
+  },
+});
 const label = (children, marquee) => createComponent(AppWorkspace.SidebarItemLabel, { children, marquee });
 const meta = (visibility) => createComponent(AppWorkspace.SidebarItemMeta, {
   visibility, get children() { return createComponent(Tag, { size: "sm", children: "Table" }); },
@@ -50,6 +60,8 @@ const rows = [
   { href: "#status", meta: createComponent(AppWorkspace.SidebarItemStatus, { unread: 3 }), children: label(${JSON.stringify(long)}) },
   { href: "#live", get meta() { return createComponent(AppWorkspace.SidebarItemStatus, { get unread() { return unread(); } }); }, children: label(${JSON.stringify(long)}) },
   { href: "#after-live", children: label("Next row") },
+  { href: "#short-status", meta: createComponent(AppWorkspace.SidebarItemStatus, { unread: 3 }), children: label("Inbox") },
+  { href: "#tight", children: [label("Tasks"), tight("Tasks")] },
 ];
 render(() => createComponent(AppWorkspace, {
   resizable: false,
@@ -149,6 +161,25 @@ describe("sidebar row labels in the browser", () => {
         expect(await fadeStates()).toEqual(expected);
       };
       try {
+        await waitForStates(["0", "1", "1"]);
+        // A one-line label beside a status and a name in row metadata at line height 1 fit, so neither fades: glyphs
+        // that reach past a tight line box are no overflow.
+        const fittingStates = () =>
+          Promise.all(
+            [
+              '[href="#short-status"] .k2b-app-workspace__sidebar-item-label-text',
+              '[href="#tight"] .k2b-app-workspace__sidebar-item-meta .k2b-truncate-fade',
+            ].map((selector) =>
+              page.locator(selector).evaluate((element) => getComputedStyle(element).getPropertyValue("--k2b-truncate-fade-on").trim()),
+            ),
+          );
+        expect(await fittingStates()).toEqual(["0", "0"]);
+        // Without overflow detection, as in an engine without scroll timelines, nothing is dimmed either.
+        const withoutDetection = await page.addStyleTag({
+          content: ":is(.k2b-truncate-fade, .k2b-truncate-fade-lines) { animation:none!important }",
+        });
+        expect(await fadeStates()).toEqual(["0", "0", "0"]);
+        await withoutDetection.evaluate((element) => element.parentNode?.removeChild(element));
         await waitForStates(["0", "1", "1"]);
         // With detection at zero and no overlaid actions, the mask has no dimmed end.
         const short = await text("short").evaluate((element) => ({
