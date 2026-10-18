@@ -5,7 +5,7 @@ section: Companion apps
 order: 500
 description: Approve sign-ins and Actions for multiple Clouds from one installable app.
 tags: [authentication, pwa, devices]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Cloud Login
@@ -33,8 +33,9 @@ and choose the authenticator address. Use the app configured by your Cloud.
 A terminal sign-in shows **Terminal sign-in** with the client name in the
 title, the Cloud host, the comparison code, how long the terminal stays signed
 in, and its permissions in plain words. Only approve a sign-in you started
-yourself, for example with `cld login`, and only when the code matches the one
-in your terminal. Otherwise, choose **Deny**.
+yourself with `cld login --user <name>`, where `<name>` is your username or
+email, and only when the code matches the one in your terminal. Otherwise,
+choose **Deny**.
 
 Approving signs the terminal in with exactly these permissions for the time
 shown. To grant fewer permissions, start the sign-in again with fewer scopes,
