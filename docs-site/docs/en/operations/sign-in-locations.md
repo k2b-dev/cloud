@@ -5,16 +5,15 @@ section: Operations
 order: 1146
 description: Understand the bundled sign-in location snapshot, updates, proxy requirements, and privacy limits.
 tags: [operations, identity, privacy]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Sign-in locations
 
 Core includes a server module and a bundled database snapshot that describe a
 sign-in request by browser, operating system, approximate place, and network
-operator. No page, API, CLI, or sign-in flow uses them yet. Later releases show
-these details when someone approves a sign-in request and after a sign-in from
-a new browser.
+operator. Successful browser sign-ins now use this module to remember browsers
+and countries. No page, API, CLI, or notification exposes the stored data yet.
 
 ## Bundled snapshot and updates
 
@@ -32,7 +31,7 @@ automatic download at runtime.
 Without these files, as in development, tests, or custom images, the module
 returns no place or network name. Browser and operating system descriptions
 still work. When first used, it logs each missing or invalid database once;
-Core does not load the module in a sign-in flow yet. A lookup failure also
+sign-ins load the module when they describe the request. A lookup failure also
 returns no details from the affected database and logs once.
 Core maps the files through Bun, which needs write access to open them,
 although Core never writes to them. With a read-only root filesystem, such as
@@ -60,3 +59,66 @@ Configure [trusted reverse proxies](/en/docs/operations/deployment-requirements#
 so the gateway forwards the person's address. Otherwise results can describe
 the proxy. Private and other non-public addresses produce no place or network
 name.
+
+## Browser cookie
+
+A successful browser sign-in sets `__Host-cloud_browser`. It is HTTP-only,
+Secure, `SameSite=Strict`, and has `Path=/` with no Domain attribute. In
+HTTP development, the name is `cloud_browser` and Secure is omitted.
+
+The value is 32 random bytes encoded as 43 base64url characters without
+padding. The cookie lasts 90 days. Each successful sign-in refreshes its
+lifetime and keeps the same value. A missing or invalid value gets a new one.
+Core does not rotate it. Signing out keeps it. Failed sign-ins do not set or
+refresh it. The mobile app does not get this cookie.
+
+## Stored data
+
+Core stores three tables in Postgres:
+
+- `auth.device_trust_state` has one installation-wide row (`id`). `started_at`
+  records the first migration start and never changes. `geoip_since` records
+  when Core first stored a country and is set only once.
+- `auth.known_browsers` has a row ID, account ID, browser hash, browser and
+  operating system codes, and the latest sign-in's country and city. It records
+  the first and latest sign-in times. `notified_at` is reserved for a later
+  release and stays empty. Cities are limited to 96 UTF-8 bytes.
+- `auth.sign_in_countries` has an account ID, country code, and latest sign-in
+  time for each account and country pair.
+
+Only the hash `sha256(user ID ‖ cookie value)` is stored, as 32 raw bytes.
+The input is the lowercase UUID text followed directly by the cookie text.
+The cookie value itself is not stored in Postgres. A database dump alone
+cannot link two accounts in one browser. Anyone who sees the cookie value at
+runtime can compute the hash for any account. This includes an operator who
+can see cookies in proxy logs or a browser.
+
+No raw IP address is stored in these tables. No legal review was done for
+this storage or cookie behavior.
+
+## Retention and limits
+
+Browser and country records expire 90 days after `last_seen_at`. Every read
+applies this cutoff, even before a cleanup run deletes the row. A later
+sign-in from an expired browser starts a new first-seen period.
+
+Core's per-minute maintenance job deletes expired records in batches of up to
+1,000 rows, with at most 10 batches per table per run. The aim is deletion
+within a day after expiry. A stopped job only delays deletion; it never
+extends how long a record counts as remembered.
+
+Each account keeps at most 100 browsers and 50 countries. New sign-ins evict
+the oldest records first. An installation-wide introduction phase lasts 14
+days from the first Core start after the upgrade. Accounts and requests cannot
+restart or extend it.
+
+## Where traces of a sign-in end up
+
+| Storage | What it contains | Retention and deletion |
+| --- | --- | --- |
+| `auth.device_trust_state` | Installation start and first stored country time | Installation-wide; neither timestamp is reset by sign-ins or account deletion. |
+| `auth.known_browsers` | Account, browser hash, browser, OS, latest country and city, first and latest sign-in, reserved notification time | 90 days after the latest sign-in; at most 100 per account; account deletion removes rows by CASCADE. |
+| `auth.sign_in_countries` | Account, country and latest sign-in | 90 days after the latest sign-in; at most 50 per account; account deletion removes rows by CASCADE. |
+| Existing rate limiter in Valkey | IP addresses used briefly for rate limits | Unchanged; short-lived rate-limit keys. |
+| `auth.session_families.created_user_agent` | The sign-in's user-agent header | Unchanged; follows session-family retention. |
+| Proxy logs and backups | Depends on the operator's configuration | Outside Cloud's retention and deletion jobs. |

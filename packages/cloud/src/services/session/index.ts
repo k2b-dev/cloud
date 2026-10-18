@@ -5,6 +5,7 @@ import { HTTPException } from "hono/http-exception";
 import { env } from "../../config/env";
 import { PWA_AUTH_PATH, PWA_COOKIES } from "../../contracts/pwa";
 import type { User } from "../../contracts/shared";
+import { describeRequest } from "../../server/request-context";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { isAccountExpired } from "../account-model";
 import { audit } from "../audit";
@@ -12,6 +13,7 @@ import { IDENTITY_CLOCK_TOLERANCE_SECONDS, IDENTITY_ROLLOUT_MARGIN_MS } from "..
 import { invalidateIdentitySignerCache, type PreparedIdentitySigner, prepareIdentitySigner } from "../identity/key-ring";
 import { getIdentityRuntimeConfig } from "../identity/runtime-config";
 import { type CloudSessionClaims, isSessionJwtCandidate, signSessionToken, verifySessionToken } from "../identity/session-token";
+import { newBrowserCookie, readBrowserCookie, rememberSignIn, setBrowserCookie } from "../known-browsers";
 import * as settings from "../settings";
 import { loadJwtSession, loadJwtSessionIdentity } from "./user";
 
@@ -146,6 +148,8 @@ const revokeToken = async (token: string, requestId?: string | null): Promise<vo
 
 export type SessionIssueOptions = {
   ttlSeconds: number;
+  /** Only web session.create supplies browser persistence, never mobile issuance. */
+  knownBrowser?: Pick<Parameters<typeof rememberSignIn>[1], "cookie" | "browser" | "os" | "country" | "city">;
   /** Pre-chosen family id, for callers that record it in the same transaction. */
   sid?: string;
   /** Binds the family to a paired phone of the mobile app; the device must be active. */
@@ -208,6 +212,7 @@ const insertFamily = async (
     ) VALUES (${sid}, ${userId}, ${epoch}, ${signer.kid}, ${issuedAt}, ${expiresAt}, ${requestId}, ${userAgent},
       NOT EXISTS (SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${userId}::uuid), ${options.pwaDeviceId ?? null})
   `;
+  if (options.knownBrowser) await rememberSignIn(tx, { ...options.knownBrowser, userId, now: issuedAt });
   if (options.recordLogin !== false) await tx`UPDATE auth.users SET last_login_local = ${issuedAt} WHERE id = ${userId}::uuid`;
   return { userId, sid, authEpoch: epoch, issuedAt, expiresAt, signer, options };
 };
@@ -281,7 +286,7 @@ const issueInTransaction = async <T>(
       value = await sql.begin((tx) =>
         work(tx, async (userId, options) => {
           if (family) throw new Error("Only one session family per transaction");
-          family = await insertFamily(tx, c, userId, signer, options);
+          family = await insertFamily(tx, c, userId, signer, { ...options, knownBrowser: undefined });
           return family.sid;
         }),
       );
@@ -353,7 +358,9 @@ export const session = {
     const expiryHours = await settings.get<number>("user.session.expiry_hours");
     if (!Number.isFinite(expiryHours) || expiryHours < 1) throw new Error("user.session.expiry_hours must be a positive number");
     const ttlSeconds = Math.floor(expiryHours * 60 * 60);
-    const clientToken = await issueJwtSession(c, userId, { ttlSeconds });
+    const cookie = readBrowserCookie(c) ?? newBrowserCookie();
+    const { browser, os, country, city } = describeRequest(c);
+    const clientToken = await issueJwtSession(c, userId, { ttlSeconds, knownBrowser: { cookie, browser, os, country, city } });
 
     setCookie(c, "session_token", clientToken, {
       httpOnly: true,
@@ -362,6 +369,7 @@ export const session = {
       maxAge: ttlSeconds,
       path: "/",
     });
+    setBrowserCookie(c, cookie);
     return clientToken;
   },
 
