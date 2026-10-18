@@ -6,7 +6,10 @@
 
 Use `DatePicker` for a calendar date such as a birthday or due date.
 
-Use `DateTimePicker` for one date and time. Use `DateRangePicker` for a start and end, with `withTime` when both endpoints include time.
+Use `DateTimePicker` for one date and time. Set `optionalTime` when the
+date alone is the normal case and a time is the exception, such as a task's
+due date. Use `DateRangePicker` for a start and end, with `withTime` when both
+endpoints include time.
 
 ## Import
 
@@ -30,6 +33,9 @@ import type { DateContext } from "@k2b/stdlib";
 `DatePicker` reads and emits a date key such as `2026-07-27`.
 
 `DateTimePicker` emits a local date-time string when no time zone is configured. With `dateConfig.timeZone`, it displays wall-clock time in that zone and emits an instant.
+
+With `optionalTime`, `DateTimePicker` emits a date key such as `2026-10-24`
+until a time is added, and the date-time form above with a time.
 
 `DateRangePicker` uses `{ start, end }`. Both values are date keys unless `withTime` is enabled, in which case they follow the `DateTimePicker` rules.
 
@@ -65,6 +71,36 @@ hint. The panel and the emitted value are unchanged.
       {formatDateTime(value)} <span class="text-dimmed">· {formatTimeSpan(value)}</span>
     </>
   )}
+/>;
+```
+
+## Add a time only when needed
+
+With `optionalTime`, the panel ends with **Add time** (**Uhrzeit
+hinzufügen**) beside **Apply**. Without a time, choosing a day applies it and
+closes the panel, as in `DatePicker`. **Add time** turns the button into the
+time field with a **Remove time** button and moves the focus into the field;
+a day then only marks the date until **Apply**. **Remove time** brings the
+button back with the focus on it, and **Apply** saves the date alone. Both
+states have the same height in the same place, so the panel never moves. The
+time starts at `defaultTime` (`09:00` unless set), and a set value opens in
+its own state. The trigger shows the calendar icon for a date and the
+calendar-with-clock icon for a date with a time.
+
+Presets in this mode can mix both forms, for example a date key for
+**Tomorrow**.
+
+```tsx
+const [due, setDue] = createSignal<string | null>("2026-10-24");
+
+<DateTimePicker
+  label="Due"
+  optionalTime
+  defaultTime="17:00"
+  value={due}
+  onValueChange={setDue}
+  dateConfig={{ timeZone: "Europe/Berlin" }}
+  clearable
 />;
 ```
 
@@ -122,7 +158,7 @@ type DatePickerProps = DatePickerBaseProps<string | null> & {
 };
 
 type DateTimePickerProps = DatePickerBaseProps<string | null> & {
-  renderValue?: (value: string) => JSX.Element;
+  renderValue?: (value: string) => JSX.Element; optionalTime?: boolean; defaultTime?: string;
 };
 
 type DateRangePickerProps = DatePickerBaseProps<DateRangeValue> & {
@@ -131,7 +167,7 @@ type DateRangePickerProps = DatePickerBaseProps<DateRangeValue> & {
 };
 ```
 
-`DateContext` is defined under [date and locale options](/en/ui/content/intl#date-and-locale-options). `DatePicker` emits `YYYY-MM-DD`; without a timezone `DateTimePicker` emits `YYYY-MM-DDTHH:mm`, with a timezone it emits an ISO instant in UTC. `DateRangePicker` follows the date contract by default and the datetime contract with `withTime=true`. Empty range endpoints are `null`, not an absent range object. Supply preset values in the same format as the controlled value.
+`DateContext` is defined under [date and locale options](/en/ui/content/intl#date-and-locale-options). `DatePicker` emits `YYYY-MM-DD`; without a timezone `DateTimePicker` emits `YYYY-MM-DDTHH:mm`, with a timezone it emits an ISO instant in UTC. With `optionalTime`, `DateTimePicker` emits `YYYY-MM-DD` for a date without time and the datetime contract with one. `DateRangePicker` follows the date contract by default and the datetime contract with `withTime=true`. Empty range endpoints are `null`, not an absent range object. Supply preset values in the same format as the controlled value.
 
 `ChoiceAppearance` is `"field" | "plain"` and defaults to `"field"`. `renderValue` only replaces the trigger content of a set value. `presets` applies complete values; `datePresets` picks individual dates in a timed range, and `durationPresets.minutes` adjusts its duration. Clearing is enabled unless `clearable={false}`. Week-start and locale follow `dateConfig`; `withTime` defaults to false.
 
@@ -142,6 +178,9 @@ and expanded state, and direct JSX descriptions and errors are connected to it.
 A button's label replaces its content, so the trigger also names its shown
 value, or the placeholder, as its description: a plain picker with
 `aria-label="Due"` reads as **Due** followed by the date.
+
+With `optionalTime`, **Add time** is a button with its visible name, and
+the icon-only **Remove time** button carries that name as its label.
 
 Calendar navigation has named previous and next controls. Selected days and active duration presets expose pressed state. Time fields receive start and end labels in a range.
 

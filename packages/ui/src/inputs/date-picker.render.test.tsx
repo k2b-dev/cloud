@@ -57,6 +57,19 @@ describe("@k2b/ui complete date picker migration", () => {
   test("keeps date-only labels on their calendar day", () => {
     expect(displayDate("2026-07-27", { locale: "en" })).toBe("Jul 27, 2026");
     expect(displayDate("2026-07-27", { locale: "en", timeZone: "America/New_York" })).toBe("Jul 27, 2026");
+    // Both ends of the zone range, with the runtime in another zone: the label is the stored day everywhere.
+    const runtimeZone = process.env.TZ;
+    try {
+      for (const runtime of ["UTC", "Pacific/Kiritimati", "Pacific/Pago_Pago"]) {
+        process.env.TZ = runtime;
+        for (const timeZone of ["Pacific/Kiritimati", "Pacific/Pago_Pago", "Europe/Berlin"]) {
+          expect(displayDate("2026-10-24", { locale: "en", timeZone })).toBe("Oct 24, 2026");
+        }
+      }
+    } finally {
+      if (runtimeZone === undefined) delete process.env.TZ;
+      else process.env.TZ = runtimeZone;
+    }
   });
 
   test("orders and previews ranges while preserving inclusive duration", () => {

@@ -69,13 +69,17 @@ export const msUntilNextDay = (now: Date, context?: DateContext): number => {
   return delay > 0 ? delay : 60_000;
 };
 
+/** Whether `value` is a date key such as `2026-10-24`, a date without a time. */
+export const isDateKey = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
 export const parseDateValue = (value: string | null | undefined, context?: DateContext): Date => {
   if (!value) return dates.today(pickerContext(context));
   return dates.parseCalendarDate(value.slice(0, 10), pickerContext(context));
 };
 
+/** A date key names a calendar day, so it is formatted at noon UTC in UTC: no runtime or picker zone can move it. */
 export const displayDate = (value: string | null | undefined, context?: DateContext): string =>
-  value ? dates.formatDate(`${value.slice(0, 10)}T12:00`, pickerContext(context)) : "";
+  value ? dates.formatDate(`${value.slice(0, 10)}T12:00:00.000Z`, { ...pickerContext(context), timeZone: "UTC" }) : "";
 
 const localDateTimeInput = (value: string): string => {
   if (!hasInstantOffset(value)) return value.slice(0, 16);

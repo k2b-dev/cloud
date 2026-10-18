@@ -1,5 +1,5 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { type DateContext, dates } from "@k2b/stdlib";
+import type { DateContext } from "@k2b/stdlib";
 import {
   type DndBuildIntentContext,
   type DndDraggableSnapshot,
@@ -23,6 +23,7 @@ import {
   type SpaceWormhole,
   type WormholeTransferResult,
 } from "@/contracts";
+import { formatDeadline } from "@/presentation/deadline";
 import { descriptionPreview } from "@/presentation/description-preview";
 import { isTaskOverdue } from "@/task-overdue";
 import { spaceCommandMessages } from "../../../../commands";
@@ -1783,7 +1784,7 @@ export default function KanbanBoard(props: Props) {
                                         <Show when={item().deadline}>
                                           <span class="inline-flex items-center gap-1 text-[11px] text-dimmed">
                                             <i class="ti ti-clock text-[10px]" />
-                                            {dates.formatDateRelative(item().deadline!, props.dateConfig)}
+                                            {formatDeadline(item().deadline!, props.dateConfig)}
                                           </span>
                                         </Show>
                                         <AssigneeAvatars

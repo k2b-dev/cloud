@@ -13,6 +13,7 @@ import {
   formatDateTimeValue,
   inRange,
   isCompleteTime,
+  isDateKey,
   isRangeEdge,
   monthDate,
   monthNames,
@@ -60,6 +61,13 @@ export type DatePickerProps = DatePickerBaseProps<string | null> & {
 export type DateTimePickerProps = DatePickerBaseProps<string | null> & {
   /** Trigger content for a set value, for example the date and time with a relative hint. */
   renderValue?: (value: string) => JSX.Element;
+  /**
+   * The time is optional: the value is a date key such as `2026-10-24` until **Add time** adds one, then a date-time
+   * like without this option. Removing the time returns to the date key.
+   */
+  optionalTime?: boolean;
+  /** The time a new value starts with, `09:00` by default. */
+  defaultTime?: string;
 };
 export type DateRangePickerProps = DatePickerBaseProps<DateRangeValue> & {
   withTime?: boolean;
@@ -574,22 +582,39 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
   const value = () => resolveMaybeAccessor(props.value);
   const dateConfig = useDateConfigLocale(() => props.dateConfig);
   const parts = () => splitDateTime(value(), dateConfig());
+  const defaultTime = () => props.defaultTime ?? "09:00";
+  // Without `optionalTime` every value has a time; with it a date key has none.
+  const valueHasTime = () => !props.optionalTime || (Boolean(value()) && !isDateKey(value()!));
   const [visibleMonth, setVisibleMonth] = createSignal(parseDateValue(parts().date, dateConfig()));
   const [draftDate, setDraftDate] = createSignal(parts().date);
-  const [draftTime, setDraftTime] = createSignal(parts().time || "09:00");
-  const valueLabel = () => formatDateTimeValue(value(), dateConfig());
+  const [draftTime, setDraftTime] = createSignal(parts().time || defaultTime());
+  const [withTime, setWithTime] = createSignal(valueHasTime());
+  const valueLabel = () => (valueHasTime() ? formatDateTimeValue(value(), dateConfig()) : displayDate(value(), dateConfig()));
+  let addTimeButton: HTMLButtonElement | undefined;
+  let timeField: HTMLDivElement | undefined;
 
   const syncDraft = () => {
     const next = parts();
     setDraftDate(next.date);
-    setDraftTime(next.time || "09:00");
+    setDraftTime(next.time || defaultTime());
+    setWithTime(valueHasTime());
     setVisibleMonth(parseDateValue(next.date, dateConfig()));
+  };
+  const canApply = () => Boolean(draftDate()) && (!withTime() || isCompleteTime(draftTime()));
+  const draftValue = () => (withTime() ? toDateTimeValue(draftDate(), draftTime(), dateConfig()) : draftDate() || null);
+  const addTime = () => {
+    setWithTime(true);
+    queueMicrotask(() => timeField?.querySelector("input")?.focus());
+  };
+  const removeTime = () => {
+    setWithTime(false);
+    queueMicrotask(() => addTimeButton?.focus());
   };
 
   return (
     <PickerShell
       owner={props}
-      icon="ti ti-calendar-time"
+      icon={props.optionalTime && !valueHasTime() ? "ti ti-calendar" : "ti ti-calendar-time"}
       valueLabel={valueLabel}
       valueContent={props.renderValue ? () => props.renderValue!(value()!) : undefined}
       clearValue={null}
@@ -597,46 +622,70 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
       onOpen={syncDraft}
       wide={Boolean(props.presets?.length)}
     >
-      {(close) => (
-        <>
-          <div class="k2b-date-popover__body">
-            <PresetRail
-              presets={props.presets}
-              onSelect={(value) => {
-                close();
-                commitFieldValue(props, value);
-              }}
-            />
-            <DatePickerPanel
-              visibleMonth={visibleMonth}
-              setVisibleMonth={setVisibleMonth}
-              selected={draftDate}
-              focusDate={draftDate}
-              onSelect={(value) => {
-                setDraftDate(value);
-                setVisibleMonth(parseDateValue(value, dateConfig()));
-              }}
-              dateConfig={dateConfig()}
-            />
-          </div>
-          <div class="k2b-date-actions">
-            <TimeInput time={draftTime()} onChange={setDraftTime} />
-            <button
-              type="button"
-              class="k2b-date-apply"
-              disabled={!draftDate() || !isCompleteTime(draftTime())}
-              onClick={() => {
-                if (!draftDate() || !isCompleteTime(draftTime())) return;
-                const value = toDateTimeValue(draftDate(), draftTime(), dateConfig());
-                close();
-                commitFieldValue(props, value);
-              }}
-            >
-              {messages().apply}
-            </button>
-          </div>
-        </>
-      )}
+      {(close) => {
+        const apply = () => {
+          if (!canApply()) return;
+          const next = draftValue();
+          close();
+          commitFieldValue(props, next);
+        };
+        return (
+          <>
+            <div class="k2b-date-popover__body">
+              <PresetRail
+                presets={props.presets}
+                onSelect={(value) => {
+                  close();
+                  commitFieldValue(props, value);
+                }}
+              />
+              <DatePickerPanel
+                visibleMonth={visibleMonth}
+                setVisibleMonth={setVisibleMonth}
+                selected={draftDate}
+                focusDate={draftDate}
+                onSelect={(value) => {
+                  setDraftDate(value);
+                  setVisibleMonth(parseDateValue(value, dateConfig()));
+                  // A date without a time is complete with the day, as in the date picker.
+                  if (props.optionalTime && !withTime()) apply();
+                }}
+                dateConfig={dateConfig()}
+              />
+            </div>
+            <div class="k2b-date-actions">
+              <Show when={props.optionalTime} fallback={<TimeInput time={draftTime()} onChange={setDraftTime} />}>
+                {/* Adding and removing the time swap controls of one height in one place, so the panel never moves. */}
+                <div ref={timeField} class="k2b-date-optional-time" data-with-time={withTime() ? "true" : undefined}>
+                  <Show
+                    when={withTime()}
+                    fallback={
+                      <button ref={addTimeButton} type="button" class="k2b-date-optional-time__add" onClick={addTime}>
+                        <i class="ti ti-clock-plus" aria-hidden="true" />
+                        {messages().addTime}
+                      </button>
+                    }
+                  >
+                    <TimeInput time={draftTime()} onChange={setDraftTime} />
+                    <button
+                      type="button"
+                      class="k2b-date-optional-time__remove"
+                      aria-label={messages().removeTime}
+                      title={messages().removeTime}
+                      onClick={removeTime}
+                    >
+                      <i class="ti ti-x" aria-hidden="true" />
+                    </button>
+                  </Show>
+                </div>
+              </Show>
+              <button type="button" class="k2b-date-apply" disabled={!canApply()} onClick={apply}>
+                {messages().apply}
+              </button>
+            </div>
+          </>
+        );
+      }}
     </PickerShell>
   );
 }

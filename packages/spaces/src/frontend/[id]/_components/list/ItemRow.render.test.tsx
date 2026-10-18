@@ -28,6 +28,7 @@ const task = (overrides: Partial<SpaceItem> = {}): SpaceItem => ({
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   estimatedDurationMinutes: null,
   activeBlockerCount: 0,
   priority: null,
@@ -56,7 +57,7 @@ const renderRow = (item: SpaceItem, canWrite = true, locale = "en") =>
           tags: [],
           isSelected: false,
           baseUrl: "/app/spaces/Space1",
-          dateConfig: { timeZone: "Europe/Berlin" },
+          dateConfig: { timeZone: "Europe/Berlin", locale },
           canWrite,
           currentUserId: "33333333-3333-4333-8333-333333333333",
           isListed: () => true,
@@ -142,4 +143,17 @@ test("shows a claim holder even when the task has no assignees", () => {
   );
   expect(html.match(/data-ring="success"/g)).toHaveLength(1);
   expect(html).toContain('aria-label="Task worker is on it"');
+});
+
+test("SSR renders a German all-day deadline as the same calendar day", () => {
+  setSystemTime(new Date("2025-10-24T12:00:00Z"));
+  try {
+    const item = task({ deadline: "2025-10-24", deadlineAllDay: true });
+    const html = renderRow(item, true, "de");
+    expect(html).toContain("Fr., 24. Okt.");
+    expect(html).not.toContain("17:00");
+    expect(renderRow(item, true, "de")).toBe(html);
+  } finally {
+    setSystemTime();
+  }
 });

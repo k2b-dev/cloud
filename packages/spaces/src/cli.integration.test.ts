@@ -61,7 +61,15 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
     return JSON.parse(result.stdout) as T;
   };
 
-  type Item = { id: string; spaceId: string; title: string; columnId: string; deadline: string | null; completedAt: string | null };
+  type Item = {
+    id: string;
+    spaceId: string;
+    title: string;
+    columnId: string;
+    deadline: string | null;
+    deadlineAllDay: boolean;
+    completedAt: string | null;
+  };
 
   beforeAll(async () => {
     const server = await import("@k2b/cloud/server");
@@ -135,6 +143,7 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
       const ship = await cldJson<Item & { assignees: { id: string }[] }>(["add", `${name}:Ship release`, "--assignee", "me"]);
       expect(ship.assignees.map((assignee) => assignee.id)).toEqual([userId]);
       const approve = await cldJson<Item>(["add", `${name}:Approve scope`, "--deadline", "2026-10-20"]);
+      expect(approve).toMatchObject({ deadline: "2026-10-20", deadlineAllDay: true });
 
       // Every address form reaches the same item.
       for (const address of [ship.id, `${name}:Ship release`, `${space.id}:Ship release`])
@@ -150,7 +159,7 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
       );
       const german = await cld(["--locale", "de", "spaces", "show", `${name}:Duplicate`]);
       expect(german.stderr).toContain("„Duplicate“ passt zu mehreren Einträgen");
-      expect(await cldJson<Item>(["due", second.id, "2026-11-01"])).toMatchObject({ deadline: "2026-11-01T16:00:00.000Z" });
+      expect(await cldJson<Item>(["due", second.id, "2026-11-01"])).toMatchObject({ deadline: "2026-11-01", deadlineAllDay: true });
       expect((await cld(["spaces", "show", `${name}:Missing`])).stderr).toContain('exact title "Missing"');
 
       // Space names are resolved the same way.
@@ -166,6 +175,9 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
       expect(mine.items.map((item) => item.id)).toEqual([ship.id]);
       const dueSoon = await cldJson<{ items: Item[] }>(["ls", space.id, "--due-before", "2026-10-21"]);
       expect(dueSoon.items.map((item) => item.id)).toEqual([approve.id]);
+      // An all-day deadline is not before its own day.
+      const dueBefore = await cldJson<{ items: Item[] }>(["ls", space.id, "--due-before", "2026-10-20"]);
+      expect(dueBefore.items).toEqual([]);
 
       // Quick actions and dependencies.
       await cldJson(["assign", ship.id, "none"]);
