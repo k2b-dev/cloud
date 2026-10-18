@@ -46,7 +46,7 @@ describe("proposeTemplateDates", () => {
     ]);
   });
 
-  test("weekday sets cross month and year boundaries", () => {
+  test("weekday sets cross month and year boundaries and keep an all-day task open today", () => {
     const now = new Date("2026-12-29T08:00:00Z"); // Tuesday
     expect(proposeTemplateDates(task({ dateRule: { type: "weekdays", weekdays: ["FR"] } }), { now, timeZone: BERLIN })).toEqual([
       "2027-01-01",
@@ -56,16 +56,16 @@ describe("proposeTemplateDates", () => {
     const endOfFebruary = new Date("2027-02-26T20:00:00Z"); // Friday 21:00 in Berlin, after 17:00
     expect(
       proposeTemplateDates(task({ dateRule: { type: "weekdays", weekdays: ["FR", "MO"] } }), { now: endOfFebruary, timeZone: BERLIN }),
-    ).toEqual(["2027-03-01", "2027-03-05", "2027-03-08"]);
+    ).toEqual(["2027-02-26", "2027-03-01", "2027-03-05"]);
   });
 
-  test("today counts only while the template time still lies ahead", () => {
+  test("all-day tasks keep today while timed templates use their time", () => {
     const rule = { type: "weekdays" as const, weekdays: ["WE" as const] };
     // Wednesday 2026-10-14 in Berlin.
     const morning = new Date("2026-10-14T07:00:00Z"); // 09:00
     const evening = new Date("2026-10-14T16:30:00Z"); // 18:30
     expect(proposeTemplateDates(task({ dateRule: rule }), { now: morning, timeZone: BERLIN, count: 1 })).toEqual(["2026-10-14"]);
-    expect(proposeTemplateDates(task({ dateRule: rule }), { now: evening, timeZone: BERLIN, count: 1 })).toEqual(["2026-10-21"]);
+    expect(proposeTemplateDates(task({ dateRule: rule }), { now: evening, timeZone: BERLIN, count: 1 })).toEqual(["2026-10-14"]);
     expect(proposeTemplateDates(task({ dateRule: rule, timeOfDay: "20:00" }), { now: evening, timeZone: BERLIN, count: 1 })).toEqual([
       "2026-10-14",
     ]);
@@ -100,7 +100,7 @@ describe("proposeTemplateDates", () => {
     const now = new Date("2026-10-13T23:30:00Z"); // Wednesday 01:30 in Berlin, Tuesday 19:30 in New York
     const template = task({ dateRule: { type: "weekdays", weekdays: ["TU", "WE"] } });
     expect(proposeTemplateDates(template, { now, timeZone: BERLIN, count: 2 })).toEqual(["2026-10-14", "2026-10-20"]);
-    expect(proposeTemplateDates(template, { now, timeZone: "America/New_York", count: 2 })).toEqual(["2026-10-14", "2026-10-20"]);
+    expect(proposeTemplateDates(template, { now, timeZone: "America/New_York", count: 2 })).toEqual(["2026-10-13", "2026-10-14"]);
     expect(proposeTemplateDates(task({ ...template, timeOfDay: "20:00" }), { now, timeZone: "America/New_York", count: 2 })).toEqual([
       "2026-10-13",
       "2026-10-14",
@@ -129,7 +129,7 @@ describe("proposeTemplateDates", () => {
     const rule = { type: "weekdays" as const, weekdays: ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const };
     expect(
       proposeTemplateDates(task({ dateRule: { ...rule, weekdays: [...rule.weekdays] } }), { now, timeZone: BERLIN, count: 3 }),
-    ).toEqual(["2026-10-10", "2026-10-11", "2026-10-12"]);
+    ).toEqual(["2026-10-09", "2026-10-10", "2026-10-11"]);
   });
 });
 
@@ -139,7 +139,7 @@ describe("draftFromTemplate", () => {
     // Berlin leaves summer time on 2026-10-25 and enters it on 2027-03-28.
     expect(draftFromTemplate(template, { date: "2026-10-24", timeZone: BERLIN }).deadline).toBe("2026-10-24T07:30:00.000Z");
     expect(draftFromTemplate(template, { date: "2026-10-26", timeZone: BERLIN }).deadline).toBe("2026-10-26T08:30:00.000Z");
-    expect(draftFromTemplate(task(), { date: "2027-03-29", timeZone: BERLIN }).deadline).toBe("2027-03-29T15:00:00.000Z");
+    expect(draftFromTemplate(task(), { date: "2027-03-29", timeZone: BERLIN }).deadline).toBe("2027-03-29");
     // A time that does not exist on the change day moves forward, as in the item form.
     expect(draftFromTemplate(task({ timeOfDay: "02:30" }), { date: "2027-03-28", timeZone: BERLIN }).deadline).toBe(
       "2027-03-28T01:30:00.000Z",
@@ -192,7 +192,7 @@ describe("draftFromTemplate", () => {
       assignCreator: true,
       checklist: ["Collect numbers", "Send"],
       estimatedDurationMinutes: 30,
-      deadline: "2026-10-14T15:00:00.000Z",
+      deadline: "2026-10-14",
     });
     expect(draftFromTemplate(event({ checklist: ["x"] }), { date: null, timeZone: BERLIN }).checklist).toEqual([]);
   });
@@ -239,7 +239,7 @@ describe("placeholders and labels", () => {
   test("proposal chips and rule summaries are short and localized", () => {
     expect(formatTemplateDate("2026-10-14", "de")).toBe("Mi 14.10.");
     expect(formatTemplateDate("2026-10-14", "en")).toBe("Wed 10/14");
-    expect(describeTemplateDateRule(task({ dateRule: { type: "weekdays", weekdays: ["TH", "WE"] } }), "de")).toBe("Mi oder Do · 17:00");
+    expect(describeTemplateDateRule(task({ dateRule: { type: "weekdays", weekdays: ["TH", "WE"] } }), "de")).toBe("Mi oder Do · ganztägig");
     expect(describeTemplateDateRule(event({ dateRule: { type: "offset", days: 3 }, allDay: true }), "en")).toBe("In 3 days · all day");
     expect(describeTemplateDateRule(task({ dateRule: { type: "offset", days: 0 }, timeOfDay: "08:15" }), "de")).toBe("Heute · 08:15");
     expect(describeTemplateDateRule(task(), "de")).toBe("Ohne Datum");

@@ -3,39 +3,33 @@ import { useLocale } from "@k2b/ui";
 
 const germanText: Record<string, string> = {
   Finished: "Beendet",
-  "Task instructions": "Auftrag",
-  "Task queued. The result will appear here and in the chat when it is ready.":
-    "Ausführung angefordert. Sobald die Aufgabe fertig ist, erscheint das Ergebnis hier und im Chat.",
+  "Routine instructions": "Auftrag",
+  "Run queued. The result will appear here and in the chat when it is ready.":
+    "Ausführung angefordert. Sobald die Routine fertig ist, erscheint das Ergebnis hier und im Chat.",
   "Next run": "Nächster Lauf",
   "More actions": "Weitere Aktionen",
-  "Scheduled task": "Geplante Aufgabe",
-  "Task deleted": "Aufgabe gelöscht",
-  "Ask in the chat for a reminder or a recurring task.":
-    "Bitte den Assistenten im Chat um eine Erinnerung oder eine wiederkehrende Aufgabe.",
-  "Plan new tasks and make changes in the chat.": "Neue Aufgaben und Änderungen planst du im Chat.",
-  "Task unavailable": "Aufgabe nicht verfügbar",
-  "Review the result before retrying. The task may have completed some steps.":
+  Routine: "Routine",
+  "Routine deleted": "Routine gelöscht",
+  "Ask in the chat for a reminder or a routine.": "Bitte den Assistenten im Chat um eine Erinnerung oder eine Routine.",
+  "Set up new routines and make changes in the chat.": "Neue Routinen und Änderungen planst du im Chat.",
+  "Routine unavailable": "Routine nicht verfügbar",
+  "Review the result before retrying. The routine may have completed some steps.":
     "Prüfe vor einem erneuten Versuch das Ergebnis. Einzelne Schritte können bereits erledigt sein.",
   "Resolve in chat": "Im Chat klären",
   "Latest result": "Letztes Ergebnis",
   "The result will appear here and in the chat.": "Das Ergebnis erscheint hier und im Chat.",
-  "View task instructions": "Auftrag ansehen",
   "No additional access.": "Keine zusätzlichen Zugriffe.",
-  "Only for this task": "Nur für diese Aufgabe",
   "Additional access requires your approval. Your existing access rights still apply.":
     "Zusätzliche Freigaben brauchen deine Bestätigung. Deine bestehenden Zugriffsrechte gelten weiterhin.",
   "Adjust in chat": "Im Chat anpassen",
-  "Please review the last run of this scheduled task with me and help me fix the problem.":
-    "Bitte prüfe mit mir den letzten Lauf dieser geplanten Aufgabe und hilf mir, das Problem zu beheben.",
-  "Please help me adjust this scheduled task.": "Bitte passe diese geplante Aufgabe mit mir an.",
+  "Please review the last run of this routine with me and help me fix the problem.":
+    "Bitte prüfe mit mir den letzten Lauf dieser Routine und hilf mir, das Problem zu beheben.",
+  "Please help me adjust this routine.": "Bitte passe diese Routine mit mir an.",
 
   "Loading…": "Wird geladen…",
   New: "Neu",
   "Show more": "Mehr anzeigen",
-  "Capability grants must be a JSON list.": "Aufgabenfreigaben müssen eine JSON-Liste sein.",
   "Active schedule": "Aktiver Zeitplan",
-  "No capabilities approved yet. Ask in this chat to prepare permissions for the task.":
-    "Noch keine Capabilities genehmigt. Bitte im Chat darum, die Freigaben für diese Aufgabe vorzubereiten.",
   "Open chat": "Chat öffnen",
   "Open run": "Lauf öffnen",
   "No background activity yet": "Noch keine Hintergrundaktivitäten",
@@ -43,7 +37,7 @@ const germanText: Record<string, string> = {
   "What the Assistant wants to do for you. Nothing of it happens until you approve it here or in its chat.":
     "Was der Assistent für dich tun möchte. Nichts davon passiert, bevor du hier oder im Chat zustimmst.",
   "Background run": "Hintergrundlauf",
-  "Manage task": "Aufgabe verwalten",
+  "Manage routine": "Routine verwalten",
   "Run history": "Laufverlauf",
   "No run history": "Kein Laufverlauf",
   "Run needs attention": "Lauf benötigt Aufmerksamkeit",
@@ -52,12 +46,9 @@ const germanText: Record<string, string> = {
   "This run is no longer available": "Dieser Lauf ist nicht mehr verfügbar",
   "Run details are kept for 90 days after a run finishes. Its result stays in the chat.":
     "Details eines Laufs bleiben 90 Tage nach seinem Ende erhalten. Sein Ergebnis bleibt im Chat.",
-  "Approve these capabilities and fixed inputs for this task? Empty fixed inputs allow any input within your existing access.":
-    "Diese Capabilities und festen Eingaben für die Aufgabe genehmigen? Ohne feste Eingaben sind beliebige Eingaben innerhalb deiner bestehenden Zugriffsrechte erlaubt.",
   "A JSON list of appId, capabilityId, kind and fixedInput. Empty fixedInput allows any input within your access. Always-approval actions remain blocked.":
     "JSON-Liste mit appId, capabilityId, kind und fixedInput. Leeres fixedInput erlaubt beliebige Eingaben innerhalb deiner Zugriffsrechte. Aktionen mit zwingender Bestätigung bleiben gesperrt.",
   "Capabilities and fixed inputs": "Capabilities und feste Eingaben",
-  "Task permissions": "Aufgabenfreigaben",
   "Runs work independently using the completed chat context at their start. Files and memories remain live.":
     "Läufe arbeiten unabhängig mit dem abgeschlossenen Chatverlauf beim Start. Dateien und Erinnerungen bleiben aktuell.",
   "Changes apply immediately. At least one administrator must remain.":
@@ -115,7 +106,7 @@ const germanText: Record<string, string> = {
   "No apps or files yet.": "Noch keine Apps oder Dateien.",
   Ready: "Bereit",
   "Voice inputs": "Spracheingaben",
-  "Scheduled AI task": "Geplante KI-Aufgabe",
+  "Assistant routine": "Assistant-Routine",
   "AI conversation": "KI-Chat",
   "Assistant app": "Assistenten-App",
   "A reference with this name already exists.": "Eine Referenz mit diesem Namen ist bereits vorhanden.",
@@ -164,8 +155,7 @@ const germanText: Record<string, string> = {
   "Could not load system prompt": "System-Prompt konnte nicht geladen werden",
   "Could not open reference": "Referenz konnte nicht geöffnet werden",
   "Could not save Project": "Projekt konnte nicht gespeichert werden",
-  "Could not save task": "Aufgabe konnte nicht gespeichert werden",
-  "Could not update task": "Aufgabe konnte nicht aktualisiert werden",
+  "Could not update routine": "Routine konnte nicht aktualisiert werden",
   "Create Project": "Projekt erstellen",
   "Create weekly status reports from recent work. Use when asked for progress updates.":
     "Erstelle wöchentliche Statusberichte aus der letzten Arbeit. Verwende diesen Skill bei Fragen nach dem Fortschritt.",
@@ -292,10 +282,10 @@ const germanText: Record<string, string> = {
   "Save reference": "Referenz speichern",
   "Saved personalization": "Gespeicherte Personalisierung",
   Scheduled: "Geplant",
-  "Scheduled task request failed": "Die Anfrage für die geplante Aufgabe ist fehlgeschlagen",
+  "Routine request failed": "Die Anfrage für die Routine ist fehlgeschlagen",
   "No matching items.": "Keine passenden Einträge.",
   "No items yet.": "Noch keine Einträge.",
-  "Scheduled tasks": "Geplante Aufgaben",
+  Routines: "Routinen",
   "Search Project knowledge…": "Projektwissen durchsuchen…",
   "Search chats": "Chats durchsuchen",
   "Search chats…": "Chats durchsuchen…",
@@ -346,6 +336,11 @@ const germanText: Record<string, string> = {
   All: "Alle",
   Running: "Läuft",
   "Needs attention": "Eingriff erforderlich",
+  "Needs you": "Braucht dich",
+  "Fix in chat": "Im Chat beheben",
+  "Technical details": "Technische Details",
+  Stopped: "Angehalten",
+  "Archive anyway": "Trotzdem archivieren",
   Failed: "Fehlgeschlagen",
   "New responses": "Neue Antworten",
   Archived: "Archiviert",
@@ -406,8 +401,6 @@ const germanText: Record<string, string> = {
   Paused: "Pausiert",
   Completed: "Abgeschlossen",
   Queued: "Vorgemerkt",
-  "Edit task": "Aufgabe bearbeiten",
-  "Schedule a task": "Aufgabe planen",
   Prompt: "Auftrag",
   "What should Assistant do?": "Was soll der Assistent erledigen?",
   Schedule: "Zeitplan",
@@ -415,13 +408,10 @@ const germanText: Record<string, string> = {
   Recurring: "Wiederkehrend",
   "Cron expression": "Cron-Ausdruck",
   "Run at": "Ausführen am",
-  "Save task": "Aufgabe speichern",
-  "Schedule task": "Aufgabe planen",
-  "Task action failed": "Aktion für die Aufgabe fehlgeschlagen",
-  "Could not load tasks": "Aufgaben konnten nicht geladen werden",
-  "Loading tasks": "Aufgaben werden geladen",
-  "No scheduled tasks": "Keine geplanten Aufgaben",
-  "Create a one-time or recurring task for this chat.": "Erstelle für diesen Chat eine einmalige oder wiederkehrende Aufgabe.",
+  "Routine action failed": "Aktion für die Routine fehlgeschlagen",
+  "Could not load routines": "Routinen konnten nicht geladen werden",
+  "Loading routines": "Routinen werden geladen",
+  "No routines": "Keine Routinen",
   Edit: "Bearbeiten",
   Pause: "Pausieren",
   Resume: "Fortsetzen",
@@ -582,15 +572,15 @@ const copy = i18n.define({
       commandSearchChatHint: "Search messages and files",
       commandChatEmpty: "The chat is still empty",
       commandAllSkillsHint: "Narrow the list",
-      commandTasks: "Scheduled tasks",
-      commandNewTaskLabel: "New scheduled task",
+      commandTasks: "Routines",
+      commandNewTaskLabel: "New routine",
       commandNewTaskHint: "Have something done regularly, even without you",
       commandNewTaskSkillDisabled: "You turned off the Skill for this",
       commandNewTaskSkillUnavailable: "The Skill for this is not available to you",
-      commandTaskPaused: "Paused. Resume the scheduled task first.",
+      commandTaskPaused: "Paused. Resume the routine first.",
       commandTaskNeedsAttention: "Needs your attention before it can run",
       commandTaskAlreadyRunning: "it is already running or no longer active",
-      commandTasksFailed: "Scheduled tasks could not be loaded",
+      commandTasksFailed: "Routines could not be loaded",
       commandTryAgain: "Try again",
       commandSkillsFailed: "Skills could not be loaded",
       commandTaskGone: "it no longer exists",
@@ -600,19 +590,23 @@ const copy = i18n.define({
       commandTaskNoAnswer: "the server gave no clear answer",
       commandTaskRunUnconfirmed: ({ title, reason }: { title: string; reason: string }) =>
         `Not sure whether “${title}” started: ${reason}. Choose it here again to check; that does not start it twice.`,
-      commandTaskAlreadyRan: ({ title }: { title: string }) => `“${title}” already ran. The result is in the scheduled task's chat.`,
-      commandTaskAlreadyFailed: ({ title }: { title: string }) =>
-        `“${title}” already ran but failed. The scheduled task's chat has the details.`,
+      commandTaskAlreadyRan: ({ title }: { title: string }) => `“${title}” already ran. The result is in the routine's chat.`,
+      commandTaskAlreadyFailed: ({ title }: { title: string }) => `“${title}” already ran but failed. The routine's chat has the details.`,
+      commandTaskAlreadyStopped: ({ title }: { title: string }) =>
+        `“${title}” was stopped while it ran. The routine's chat says what was already done.`,
       commandModelNow: ({ name }: { name: string }) => `Now: ${name}`,
       commandModelChosen: ({ name }: { name: string }) => `Model for this chat: ${name}`,
       commandAllSkills: ({ count }: { count: number }) => `All ${count} Skills`,
       commandTaskRunHint: ({ schedule }: { schedule: string }) => `Run now · otherwise ${schedule}`,
       commandTaskStarting: ({ title }: { title: string }) => `Starting “${title}” …`,
-      commandTaskRunning: ({ title }: { title: string }) => `“${title}” is running. The result arrives in the scheduled task's chat.`,
+      commandTaskRunning: ({ title }: { title: string }) => `“${title}” is running. The result arrives in the routine's chat.`,
       commandTaskRunFailed: ({ title, reason }: { title: string; reason: string }) => `“${title}” did not start: ${reason}.`,
       commandSkills: "Skills",
       commandFiles: "Files in this chat",
       commandApps: "Studio apps",
+      commandInsert: "Insert",
+      commandAttachFile: "Attach file",
+      commandAttachFileHint: "From your device or an app",
       commandChat: "This chat",
       commandProjects: "Projects",
       assignProjectLabel: "Assign to project",
@@ -646,6 +640,14 @@ const copy = i18n.define({
       newChatDraftKept: ({ title }: { title: string }) => `Your draft stays in the chat “${title}”.`,
       text: ({ value }: { value: string }) => value,
       archiveChat: ({ title }: { title: string }) => `Archive "${title}"?`,
+      archiveChatRoutines: ({ names }: { names: string[] }) => {
+        const shown = names.slice(0, 3).map((name) => `“${name}”`);
+        const list = names.length > 3 ? `${shown.join(", ")} and ${names.length - 3} more` : shown.join(", ");
+        return names.length === 1
+          ? `1 routine runs in this chat (${list}). Archiving pauses it.`
+          : `${names.length} routines run in this chat (${list}). Archiving pauses them.`;
+      },
+      archiveChatAnyRoutines: "Archiving pauses the routines in this chat.",
       deleteNamed: ({ name }: { name: string }) => `Delete "${name}"?`,
       deleteChatFile: ({ name }: { name: string }) =>
         `Delete “${name}” from this chat? Earlier messages keep their text, but their links to this file stop working.`,
@@ -662,7 +664,7 @@ const copy = i18n.define({
       unsafeArchivePath: ({ path }: { path: string }) => `Skill archive contains an unsafe path: ${path}`,
       skippedSkillFiles: ({ paths }: { paths: string }) =>
         `${paths}. Cloud keeps SKILL.md and Markdown files directly in references/ with lowercase names (a-z, 0-9, ., _, -), and does not run scripts.`,
-      deleteScheduledTask: ({ prompt }: { prompt: string }) => `Delete scheduled task “${prompt}”?`,
+      deleteScheduledTask: ({ prompt }: { prompt: string }) => `Delete routine “${prompt}”?`,
       editNamed: ({ name }: { name: string }) => `Edit ${name}`,
       deleteFileNamed: ({ name }: { name: string }) => `Delete ${name}`,
       restoreNamed: ({ name }: { name: string }) => `Restore ${name}`,
@@ -681,15 +683,15 @@ const copy = i18n.define({
       commandSearchChatHint: "Nachrichten und Dateien durchsuchen",
       commandChatEmpty: "Der Chat ist noch leer",
       commandAllSkillsHint: "Liste eingrenzen",
-      commandTasks: "Geplante Aufgaben",
-      commandNewTaskLabel: "Neue geplante Aufgabe",
+      commandTasks: "Routinen",
+      commandNewTaskLabel: "Neue Routine",
       commandNewTaskHint: "Etwas regelmäßig erledigen lassen, auch ohne dich",
       commandNewTaskSkillDisabled: "Du hast den Skill dafür ausgeschaltet",
       commandNewTaskSkillUnavailable: "Der Skill dafür ist für dich nicht verfügbar",
-      commandTaskPaused: "Pausiert. Setze die geplante Aufgabe zuerst fort.",
+      commandTaskPaused: "Pausiert. Setze die Routine zuerst fort.",
       commandTaskNeedsAttention: "Braucht deinen Eingriff, bevor sie laufen kann",
       commandTaskAlreadyRunning: "sie läuft schon oder ist nicht mehr aktiv",
-      commandTasksFailed: "Geplante Aufgaben konnten nicht geladen werden",
+      commandTasksFailed: "Routinen konnten nicht geladen werden",
       commandTryAgain: "Erneut versuchen",
       commandSkillsFailed: "Skills konnten nicht geladen werden",
       commandTaskGone: "es gibt sie nicht mehr",
@@ -699,20 +701,24 @@ const copy = i18n.define({
       commandTaskNoAnswer: "der Server hat keine klare Antwort gegeben",
       commandTaskRunUnconfirmed: ({ title, reason }: { title: string; reason: string }) =>
         `Ob „${title}“ gestartet ist, ist unklar: ${reason}. Wähle sie hier noch einmal, um nachzusehen; das startet sie nicht doppelt.`,
-      commandTaskAlreadyRan: ({ title }: { title: string }) =>
-        `„${title}“ ist schon gelaufen. Das Ergebnis steht im Chat der geplanten Aufgabe.`,
+      commandTaskAlreadyRan: ({ title }: { title: string }) => `„${title}“ ist schon gelaufen. Das Ergebnis steht im Chat der Routine.`,
       commandTaskAlreadyFailed: ({ title }: { title: string }) =>
-        `„${title}“ ist schon gelaufen, aber fehlgeschlagen. Mehr dazu steht im Chat der geplanten Aufgabe.`,
+        `„${title}“ ist schon gelaufen, aber fehlgeschlagen. Mehr dazu steht im Chat der Routine.`,
+      commandTaskAlreadyStopped: ({ title }: { title: string }) =>
+        `„${title}“ wurde angehalten, während sie lief. Im Chat der Routine steht, was schon erledigt war.`,
       commandModelNow: ({ name }: { name: string }) => `Jetzt: ${name}`,
       commandModelChosen: ({ name }: { name: string }) => `Modell für diesen Chat: ${name}`,
       commandAllSkills: ({ count }: { count: number }) => `Alle ${count} Skills`,
       commandTaskRunHint: ({ schedule }: { schedule: string }) => `Jetzt ausführen · sonst ${schedule}`,
       commandTaskStarting: ({ title }: { title: string }) => `„${title}“ wird gestartet …`,
-      commandTaskRunning: ({ title }: { title: string }) => `„${title}“ läuft. Das Ergebnis kommt in den Chat der geplanten Aufgabe.`,
+      commandTaskRunning: ({ title }: { title: string }) => `„${title}“ läuft. Das Ergebnis kommt in den Chat der Routine.`,
       commandTaskRunFailed: ({ title, reason }: { title: string; reason: string }) => `„${title}“ ist nicht gestartet: ${reason}.`,
       commandSkills: "Skills",
       commandFiles: "Dateien in diesem Chat",
       commandApps: "Studio-Apps",
+      commandInsert: "Einfügen",
+      commandAttachFile: "Datei anhängen",
+      commandAttachFileHint: "Vom Gerät oder aus einer App",
       commandChat: "Dieser Chat",
       commandProjects: "Projekte",
       assignProjectLabel: "Projekt zuordnen",
@@ -746,6 +752,14 @@ const copy = i18n.define({
       newChatDraftKept: ({ title }: { title: string }) => `Dein Entwurf bleibt im Chat „${title}“.`,
       text: ({ value }: { value: string }) => germanText[value] ?? value,
       archiveChat: ({ title }: { title: string }) => `„${title}“ archivieren?`,
+      archiveChatRoutines: ({ names }: { names: string[] }) => {
+        const shown = names.slice(0, 3).map((name) => `„${name}“`);
+        const list = names.length > 3 ? `${shown.join(", ")} und ${names.length - 3} weitere` : shown.join(", ");
+        return names.length === 1
+          ? `In diesem Chat läuft 1 Routine (${list}). Archivieren pausiert sie.`
+          : `In diesem Chat laufen ${names.length} Routinen (${list}). Archivieren pausiert sie.`;
+      },
+      archiveChatAnyRoutines: "Archivieren pausiert die Routinen in diesem Chat.",
       deleteNamed: ({ name }: { name: string }) => `„${name}“ löschen?`,
       deleteChatFile: ({ name }: { name: string }) =>
         `„${name}“ aus diesem Chat löschen? Frühere Nachrichten bleiben erhalten, ihre Verweise auf diese Datei funktionieren aber nicht mehr.`,
@@ -763,7 +777,7 @@ const copy = i18n.define({
       unsafeArchivePath: ({ path }: { path: string }) => `Das Skill-Archiv enthält einen unsicheren Pfad: ${path}`,
       skippedSkillFiles: ({ paths }: { paths: string }) =>
         `${paths}. Cloud übernimmt SKILL.md und Markdown-Dateien direkt in references/ mit kleingeschriebenen Namen (a-z, 0-9, ., _, -) und führt keine Skripte aus.`,
-      deleteScheduledTask: ({ prompt }: { prompt: string }) => `Geplante Aufgabe „${prompt}“ löschen?`,
+      deleteScheduledTask: ({ prompt }: { prompt: string }) => `Routine „${prompt}“ löschen?`,
       editNamed: ({ name }: { name: string }) => `${name} bearbeiten`,
       deleteFileNamed: ({ name }: { name: string }) => `${name} löschen`,
       restoreNamed: ({ name }: { name: string }) => `${name} wiederherstellen`,

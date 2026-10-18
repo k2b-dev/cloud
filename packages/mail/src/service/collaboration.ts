@@ -26,6 +26,7 @@ import { listCurrentMailboxUsers, listEligibleAssignees } from "./collaborators"
 import { deriveReopenedConversationWorkStatus, isAutomaticSubmission } from "./conversation-work-state";
 import { resolveMailExecution } from "./execution";
 import { type MailActivityChange, mailLive } from "./live";
+import { isTerminalHydrationFailure } from "./message-hydration";
 import { parseMessageProtocolFacts } from "./message-protocol";
 
 type SqlClient = typeof sql;
@@ -623,7 +624,13 @@ const applyConversationCollaborationInTransaction = async (params: {
       JOIN mail.conversation_messages link ON link.conversation_id = conversation.id
       JOIN mail.message_contents message ON message.id = link.message_id
       WHERE conversation.id = ${params.conversationId}::uuid
-        AND message.hydration_status = 'complete'
+        AND (
+          message.hydration_status = 'complete'
+          OR ${isTerminalHydrationFailure({
+            hydrationStatus: sql`message.hydration_status`,
+            hydrationAttempt: sql`message.hydration_attempt`,
+          })}
+        )
         AND (
           NOT EXISTS (SELECT 1 FROM mail.outbox_submissions submission WHERE submission.message_id = message.id)
           OR EXISTS (

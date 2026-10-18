@@ -4,13 +4,17 @@ import type { AppSearchLink } from "../contracts/app";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { CloudThemePreference } from "../shared/theme";
 import type { AppLaunchpadLegalLink } from "./app-launchpad";
+import type { PanelProvider } from "./app-navigation";
 import type { RailApp } from "./rail-navigation";
 
 export type ShellData = {
+  panel?: { providers: PanelProvider[]; provider?: string };
   /** The authorized navigation catalog, sorted for the request locale: the rail, the app grid and the phone menu show it. */
   apps: RailApp[];
   /** Signed-in pages: the person's rail preferences. */
   rail?: RailSnapshot;
+  /** Signed-in pages: the start page that `/` opens, for the phone bar's Home. */
+  home?: string;
   legalLinks: AppLaunchpadLegalLink[];
   /** Signed-in pages: the person, for the profile menu and the phone menu's profile actions. */
   profile?: { name: string; avatarSrc?: string; appHref?: string };

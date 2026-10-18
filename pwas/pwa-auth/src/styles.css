@@ -188,6 +188,14 @@ body {
   letter-spacing: 0.06em;
   line-height: 1.1;
 }
+/* Rows the Cloud reported for this sign-in; a value with several parts lists one per line. */
+.auth-decision__details ul {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 /* Both choices share the row; a label too long for half of it moves the main action above. Done takes
    their place after an ending, in the same grid cell. */
 .auth-decision-actions {

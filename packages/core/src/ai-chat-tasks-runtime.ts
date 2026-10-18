@@ -4,6 +4,7 @@ import {
   aiConversationFileManifest,
   aiConversations,
   aiProjects,
+  chatTaskLocale,
   listAiConversationFiles,
   personalAiModelPolicy,
 } from "@k2b/cloud/ai";
@@ -72,18 +73,27 @@ const processOccurrence = async (ctx: JobContext<{ occurrenceId: string }>) => {
     aiConversations.getConversation({ conversationId: task.conversationId, ownerUserId: task.sponsorUserId }),
   ]);
   if (!user || isAccountExpired(user.accountExpires) || !conversation) {
-    const status = await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Task sponsor or chat is unavailable" });
+    const status = await aiChatTasks.failOccurrence({
+      occurrenceId: occurrence.id,
+      error: "Task sponsor or chat is unavailable",
+      code: !user || isAccountExpired(user.accountExpires) ? "owner_inactive" : "chat_archived",
+    });
     return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
   }
   const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, { type: "user", userId: user.id }) : null;
   if (conversation.projectId && !project) {
-    const status = await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Current Project access is unavailable" });
+    const status = await aiChatTasks.failOccurrence({
+      occurrenceId: occurrence.id,
+      error: "Current Project access is unavailable",
+      code: "failed",
+    });
     return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
   }
-  const text = `Scheduled task ${task.shortId} (${occurrence.scheduledFor}):\n\n${task.prompt}`;
+  const text = `Routine ${task.name} (${occurrence.scheduledFor}):\n\n${task.prompt}`;
   const files = await listAiConversationFiles(conversation.id);
   const prepared = await prepareAiChatTurn({
     assistantChat: true,
+    locale: chatTaskLocale(task.locale, await coreSettings.get<string>("app.locale")),
     conversationId: conversation.id,
     chatId: conversation.shortId,
     input: text,
@@ -128,6 +138,7 @@ const startTaskWorker = () =>
       // revision is a fresh continuation, not a failed delivery attempt.
       const status = await aiChatTasks.failOccurrence({
         occurrenceId: ctx.input.occurrenceId,
+        code: "failed",
         error: error instanceof Error ? error.message : "Scheduled task delivery failed",
       });
       if (status === "stale") await ctx.resubmit({ delayMs: 60_000 });
@@ -150,7 +161,7 @@ const registerRecurringTask = async (task: Awaited<ReturnType<typeof aiChatTasks
       family: "ai:chat-task",
       resourceKind: "chat-task",
       resourceId: task.shortId,
-      resourceLabel: task.prompt.slice(0, 200),
+      resourceLabel: task.name,
     },
     process: async (ctx) => {
       const slot = ctx.slot.toISOString();
@@ -208,6 +219,7 @@ type RecoveryDependencies = {
   listTerminal: typeof aiChatTasks.listTerminalRunningTurns;
   finalize: (terminal: Awaited<ReturnType<typeof aiChatTasks.listTerminalRunningTurns>>[number]) => Promise<unknown>;
   pruneExpiredRuns: () => Promise<unknown>;
+  relabelRestoredArchivePauses: () => Promise<unknown>;
   materialize: () => Promise<unknown>;
   listQueued: () => Promise<Array<{ occurrence: { id: string } }>>;
   submit: (occurrenceId: string) => Promise<unknown>;
@@ -220,6 +232,7 @@ export const recoverAiChatTasks = async (dependencies: RecoveryDependencies): Pr
     await recoveryStep(`finalize:${occurrence.turnId}`, () => dependencies.finalize(occurrence));
   }
   await recoveryStep("prune-expired-runs", dependencies.pruneExpiredRuns);
+  await recoveryStep("relabel-restored-archive-pauses", dependencies.relabelRestoredArchivePauses);
   await recoveryStep("materialize", dependencies.materialize);
   const queued = await recoveryStep("list-queued", dependencies.listQueued);
   let submitted = 0;
@@ -239,6 +252,7 @@ const recover = (): Promise<{ queued: number }> =>
     listTerminal: () => aiChatTasks.listTerminalRunningTurns(),
     finalize: (terminal) => aiChatTasks.finalizeTurn(terminal),
     pruneExpiredRuns: () => aiChatTasks.pruneExpiredRuns(),
+    relabelRestoredArchivePauses: () => aiChatTasks.relabelRestoredArchivePauses(),
     materialize: () => aiChatTasks.materializeDueOnce(),
     listQueued: () => aiChatTasks.listQueuedOccurrences(),
     submit: submitOccurrence,
@@ -257,7 +271,7 @@ export const aiChatTaskRuntime = {
         cron: "* * * * *",
         timezone,
         misfire: "latest",
-        meta: { appId: APP_ID, family: "ai:chat-task", label: "Scheduled chat task recovery" },
+        meta: { appId: APP_ID, family: "ai:chat-task", label: "Assistant routine recovery" },
         process: async () => {
           await recover();
         },

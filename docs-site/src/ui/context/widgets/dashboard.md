@@ -20,6 +20,9 @@ fills widgets after the page renders, such as a dashboard, renders the loading
 and failure states in the same fixed frame size so nothing moves when data
 arrives.
 
+The header icon sits in a soft chip of its color, using the host's
+`--k2b-app-workspace-active` accent hook.
+
 ## Import
 
 ```tsx

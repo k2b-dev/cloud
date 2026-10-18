@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Testing
@@ -139,6 +139,62 @@ its own document.
 loads its component after module mocks and registers delegated events in each
 test.
 
+## Pin the clock
+
+Tests that render dates use a fixed instant. In behavior tests, use
+`setSystemTime(new Date("2026-10-14T10:00:00.000Z"))` from `bun:test` and
+restore the clock with `setSystemTime()` after each test.
+
+In browser tests, fixtures stamp their data from a fixed clock, and each
+context gets an init script that replaces the page's `Date` with one that
+starts at that clock and flows from there. The Chat harness starts at
+`chatTestNow`, exposes its flowing clock as `harness.now()`, and pins pages
+with `pinPageClock` in `ChatWorkspace.browser.test.ts`. Do not use
+Playwright's `clock` for this: even `setSystemTime` replaces timers,
+animation frames, and `performance`, and the Chat read-state tests then
+failed in WebKit. Use `performance.now()` for durations and deadlines.
+
+Measure browser timing on the browser's clock. Playwright events such as
+`request` reach the test process late under load, so tests that assert a browser
+throttle or delay record `performance.now()` in the page, as the Chat read-state
+tests do with `chatReadStarts` in an init script that wraps fetch. Wait for
+browser-side windows with a timer inside the page. The `test-clock` check also
+rejects clock reads inside Playwright event listeners.
+
+The `test-clock` check rejects new `new Date()` and `Date.now()` reads in UI
+tests, fixtures, harnesses, and suites. A line comment
+`// real clock: <reason>` on the same line or directly above allows a read
+that needs the real clock. The reason must be non-empty. Known findings live
+in `scripts/checks/test-clock.baseline`. Its counts can only decrease;
+`bun scripts/check.ts test-clock --fix` lowers counts and removes entries
+when findings are gone.
+
+## Wait for conditions, not time
+
+A test waits for the state it needs: poll with a deadline, await an event,
+a recorded close, or a log. A fixed sleep assumes the state arrived and is
+still there. The live-routes slow-client test waits for the server's `1013`
+close before it resumes the client.
+
+The `test-waits` check rejects new awaited fixed waits of at least 1,000 ms
+with a numeric literal in `*.test.ts` and `*.test.tsx` files. A line comment
+`// fixed wait: <reason>` on the same line or directly above allows a wait
+whose duration is the subject of the test. The reason must be non-empty.
+Known findings live in `scripts/checks/test-waits.baseline`. Its counts can
+only decrease; `bun scripts/check.ts test-waits --fix` lowers counts and
+removes entries when findings are gone.
+
+Scroll-driven animations, such as the navigation label fade in `@k2b/ui`,
+keep running and never finish. Before waiting for page animations to stop or
+awaiting their `finished` promises, select only the document timeline with
+`document.getAnimations().filter((animation) => animation.timeline === document.timeline)`.
+Apply the same filter to element calls with `{ subtree: true }`, which can
+include navigation labels. The `animation-settle` check requires an actual
+`.timeline` property access in the surrounding statement of document-wide and
+subtree calls in tests, browser suites, and browser harnesses, or a leading
+`// animation-settle: all timelines` comment (optionally followed by a reason)
+for deliberate inspection of all timelines.
+
 ## Test in Chromium and WebKit
 
 Layout, focus, touch, and paint need a real engine, so these tests drive one
@@ -175,6 +231,38 @@ reports after the timeout names what it waited for, not the cleanup in
 kept across tests closes with its browser.
 `packages/ui/test/browser.browser.test.ts` guards this recovery.
 
+Open each URL state that a test checks in its own page. Navigate a loaded page
+in place only when the test checks navigation itself: reload, Back, Forward,
+or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place
+`goto` on an idle Notebooks page stalled before load in two WebKit CI runs,
+and a Back to a graph page in a third. The cause was a collapsed receive
+queue on the CI runner's kernel; see
+[When a page never fires load](#when-a-page-never-fires-load).
+
+When `goto`, `reload`, `goBack`, or `goForward` on a launcher page fails or
+times out, the error appends a navigation diagnosis. It names the call and how long it
+waited, the URL before the call and at failure, and up to five recent responses
+with their status, method, and URL. It also reports whether a document
+committed, the navigation response status, DOMContentLoaded and load events,
+open requests, failed requests with their error, and a main-thread probe. A navigation cut off when
+Bun's test timeout closes the browser carries the same evidence instead of a
+cleanup error; the probe reports that the page or browser is closed. Do not
+call Playwright between catching an error and reporting it: after the browser
+closed, Playwright rejects every call with one shared error object and
+rewrites its message, so the reported error names the later call.
+No commit with an open document request points to the server or network.
+A commit with an open subresource points to that request. A silent main
+thread after a commit points to a blocked page; see
+[When a WebKit page stops answering](#when-a-webkit-page-stops-answering).
+Before a commit, Chromium holds the probe until the navigation ends, so there
+silence alone proves nothing.
+A failed request with `WebKit encountered an internal error` adds a hint; see
+[When WebKit reports an internal error](#when-webkit-reports-an-internal-error).
+`packages/ui/test/browser.browser.test.ts` guards the diagnosis for an
+uncommitted navigation, a committed navigation whose load never fires, a
+navigation that fails with request errors, and a navigation cut off by Bun's
+test timeout.
+
 A step that scrolls the page, such as `focus()` on an element below the fold,
 dispatches its `scroll` event on the next frame. Chart inspection, popovers,
 and menus that close on scroll can then undo the result of the next step.
@@ -185,6 +273,17 @@ WebKit then sends a `pointermove` without any mouse movement, up to about
 100 ms later. Do not mix clicks into a keyboard flow that scrolls: press the
 control by keyboard instead. See `showFirst` and the repeated enhancement case
 in `packages/notebooks/src/frontend/lib/notebook-charts.browser.test.ts`.
+
+WebKit sends no `pointerleave` when the element under the pointer leaves the
+document, as when a row drops a line while the pointer rests on it. A state
+that lasts from `pointerenter` to `pointerleave`, such as a paused timer or a
+list that holds still, then stays after the pointer went. Confirm such a state
+with the next `pointerover` on the document: when its target is outside the
+container, the pointer has left. To test it, rest the mouse on the element that
+the change removes, make the change, and move the mouse away in the next step,
+before WebKit updates the hover. See `pointAt` in
+`packages/filesv2/src/frontend/UploadPanel.browser.test.ts` and the held toasts
+in `packages/ui/src/feedback/toast.ts`.
 
 A fake server started by a test records a request when it arrives. The page
 may have changed already, as seen in WebKit on a loaded machine. Never read
@@ -199,6 +298,14 @@ that a mutation keeps an element and its height. Never read `boundingBox()`
 right after a change: it does not wait and returns `null` for an element that
 a refresh is replacing. See the claim test in
 `packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts`.
+
+Use `mostAtOnce(page, selector, change)` from `packages/ui/test/browser.ts` to
+check that Undo or a refresh never shows an entity twice and ends with exactly
+one. Scope a locator that reads the entity to its row, not to the page. Await
+Playwright calls and read their values: `expect(await box.isChecked())`.
+Never use `expect(promise).resolves`, which hides the reason for a rejection.
+See the tray Undo test in
+`packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
 
 ### Run WebKit locally
 
@@ -272,6 +379,80 @@ docker run --rm --network host --pid=container:playwright-webkit \
 A main thread in `gst_pad_stop_task` under `gst_element_change_state` is the
 media deadlock.
 
+### When a page never fires load
+
+A navigation that commits but never fires load, or never commits, waits for a
+response that does not finish. The navigation diagnosis lists that response
+under "Requests still open". When the test server wrote the whole response,
+look at the sockets on the server's port while the page waits:
+
+```bash
+sudo ss -tnoiepm state all '( sport = :PORT or dport = :PORT )'
+grep -A1 '^TcpExt' /proc/net/netstat
+```
+
+A browser socket with a receive buffer of about 1 KB (`rb` in `skmem`), no
+unread data, and drops (`d`), next to a server socket that waits on a 2 KB
+window, is a collapsed receive queue. Rising `PruneCalled`, `TCPRcvQDrop`, and
+`BeyondWindow` counters confirm it. On Linux 6.17, the kernel of the CI
+runners, this happens when the busy browser reads a large page, bundle, or
+font slowly. The receive buffer then shrinks, and the connection never
+recovers ([#1367](https://github.com/k2b-dev/cloud/issues/1367)). Every CI job
+that installs dependencies sets an 8 MiB default receive buffer through
+`.github/actions/install`. When
+browser tests stall like this on a development machine, apply the CI setting
+until the next reboot:
+
+```bash
+sudo sysctl -w net.ipv4.tcp_rmem="4096 8388608 33554432"
+```
+
+### When WebKit reports an internal error
+
+`WebKit encountered an internal error` is the error that WebKit gives every
+load still open when its network process ends. The navigation in progress and
+the requests of the old page then fail together, the next test gets a new
+network process, and it passes. Offline emulation with
+`context.setOffline(true)` gives the same error without a crash. The webkit
+job in CI records every process that crashes on the runner, also in the
+Playwright container, with `.github/process-crashes.sh`. At the end of the job
+it lists each crash as an error with its time, process name, and signal. A
+`WPENetworkProce` crash at the time of the failed test confirms the cause.
+
+For a backtrace, let the kernel write core files to a directory that the
+Playwright container mounts. Start the container with `--ulimit core=-1 -v
+/tmp/cores:/tmp/cores` after this setup:
+
+```bash
+sudo mkdir -m 1777 -p /tmp/cores
+sudo sysctl -w kernel.core_pattern=/tmp/cores/core.%e.%p
+```
+
+Then read a core in the same image. Copy its libraries before installing gdb,
+because the install can update the C library, and gdb then reads the wrong
+symbols:
+
+```bash
+docker run --rm -v /tmp/cores:/cores:ro "mcr.microsoft.com/playwright:v$version-noble" bash -c '
+  mkdir -p /orig/usr && cp -a /usr/lib /orig/usr/lib && ln -s usr/lib /orig/lib
+  cp -a /lib64 /orig/lib64 && ln -s /ms-playwright /orig/ms-playwright
+  apt-get update -qq && apt-get install -y -qq gdb > /dev/null
+  for core in /cores/core.WPENetworkProce.*; do
+    gdb -q -batch -ex "set sysroot /orig" -ex "bt 30" \
+      /ms-playwright/webkit-*/minibrowser-wpe/bin/WPENetworkProcess "$core"
+  done'
+```
+
+In [#1431](https://github.com/k2b-dev/cloud/issues/1431), WebKit 26.6 of
+Playwright 1.63.0 crashed its network process in about one of seven runs of
+the Notebooks graph test file in CI. Each crash came in a Back from a note page
+that cancelled the page's font load. The process aborted after it used an
+object that was already released, mostly in `g_object_ref` under
+`soup_session_send_async`. That is the libsoup
+3.6.5 double release of
+[microsoft/playwright#42803](https://github.com/microsoft/playwright/issues/42803).
+Playwright 1.64.1 bundles libsoup 3.6.6 with the fix.
+
 ### Engine differences
 
 Write each test so that it checks the same behavior in both engines. Where
@@ -305,11 +486,18 @@ branch:
   wider than the screen. Measure sideways overflow against
   `document.documentElement.clientWidth`.
 - Playwright can read and type into a page before its first frame, and WebKit
-  can hold that frame back while a page loads. A dialog places its initial
-  focus in the next frame after it opens; until then, keys go to the element
-  the browser focused first. A test that types into a dialog right after it
-  opens first waits for the dialog's content and then for one frame:
+  can hold that frame back while a page loads or the machine is busy. A dialog
+  places its initial focus in the next frame after it opens; until then, keys
+  go to the element the browser focused first, which is the content's
+  `autofocus` element or else its first focusable element. A test that types
+  into a dialog right after it opens first waits for the dialog's content and
+  then for one frame:
   `await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))`.
+  Waiting for the content alone is not a frame: a test that read focus after
+  it failed in WebKit CI (#1456). Where keys must reach the target at once, as
+  in the Notebooks attachment preview, the target carries `autofocus`, and the
+  test reads focus in the same `page.evaluate` that opens the dialog, before
+  any frame can pass.
 - Neither engine shows a PDF in a frame. Chromium's headless shell reports
   `navigator.pdfViewerEnabled === false`, so `PdfPreview` shows its
   missing-viewer hint instead of the frame, and an automatic preview requests
@@ -598,8 +786,10 @@ writes for the current `bun.lock`. With that cache, `bun ci` needs no
 registry. `scripts/ci-install.ts` stops an install that takes over two
 minutes and retries a stalled install once. Any other install failure fails
 at once. A pull request that changes `bun.lock` installs from the registry
-until it merges. The `ci-install` check rejects direct dependency installs in
-workflows. Only the release workflow keeps a plain `bun ci`, because it can
+until it merges. Before the install, the action sets the default TCP receive
+buffer to 8 MiB, so a slow browser cannot stall a test server's response; see
+[When a page never fires load](#when-a-page-never-fires-load). The
+`ci-install` check rejects direct dependency installs in workflows. Only the release workflow keeps a plain `bun ci`, because it can
 finish an older release from a commit without the install action.
 
 The standalone `cld` test compiles the release target. On Linux x64, Bun
@@ -642,11 +832,11 @@ add the image to that pull step in `.github/workflows/ci.yml` and
 runs a test file, so it does not report a missing image there; without it, the
 job pulls a Docker Hub image from Docker Hub.
 
-Tests that read a rendered PDF call Poppler's `pdftotext`, `pdfinfo`, and
-`pdffonts` from `PATH`; locally, install Poppler (`poppler-utils` on Debian
+Tests that read a rendered PDF call Poppler's `pdftotext`, `pdfinfo`, `pdffonts`, and
+`pdfimages` from `PATH`; locally, install Poppler (`poppler-utils` on Debian
 and Ubuntu). CI does not install Poppler on the runner: `.github/poppler.sh
 install` pulls a Poppler image pinned by digest with the job's other images,
-starts it without network access, and links the three tools into
+starts it without network access, and links the four tools into
 `/usr/local/bin` as wrappers that run each call in that container. Installing
 from the runner's apt mirror hung, and Homebrew failed when its API host
 `formulae.brew.sh` timed out. In CI, the tools can open only files under the
@@ -686,6 +876,13 @@ stop the others. The same workflow, `mirror-images.yml`, also runs weekly and
 on demand. A new package created by the first copy must be public; if the
 check reports that it is not, change its visibility in the package settings on
 GitHub once.
+
+The Core image's DB-IP snapshot is the one mirror entry that is not a Docker
+Hub image: `ghcr.io/k2b-dev/mirror/dbip-lite:<YYYY-MM>`. It is referenced by
+tag and pinned by the gzip checksums in the Dockerfile. `.github/mirror-images.sh`
+copies it from DB-IP while DB-IP still serves that month. It holds only data
+and is pushed for `linux/amd64`; the Dockerfile takes that manifest with
+`FROM --platform=linux/amd64`, so arm64 release builds resolve it too.
 
 The `mirror-images` check fails when a workflow or Dockerfile would pull a
 Docker Hub image directly, including through BuildKit's default SBOM generator,
@@ -752,7 +949,9 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 them again in WebKit in three shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
-or `scripts/` changed.
+or `scripts/` changed. At its end, it lists every process that crashed on the
+runner; see
+[When WebKit reports an internal error](#when-webkit-reports-an-internal-error).
 
 The nightly workflow repeats the integration suites against PostgreSQL 15, the
 oldest supported version, and runs the longer acceptance checks that are too

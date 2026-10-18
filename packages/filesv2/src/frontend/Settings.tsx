@@ -1,8 +1,10 @@
 import { mutation } from "@k2b/stdlib/solid";
 import {
+  Button,
   Disclosure,
   InlineGuidance,
   NoticeCard,
+  prompts,
   Select,
   SettingsPage,
   SettingsPanelFooter,
@@ -58,9 +60,33 @@ export default function Settings(props: {
       await props.onSaved();
     },
   });
-  createEffect(() => props.onDirtyChange(dirty(), save.loading()));
+  // Reset is the explicit recovery when the saved configuration cannot be read here.
+  const reset = mutation.create({
+    mutation: async (_: void, { abortSignal }) => {
+      const response = await apiClient.admin.configuration.$delete({}, { init: { signal: abortSignal } });
+      if (!response.ok) {
+        const error = ErrorSchema.safeParse(await response.json());
+        throw new Error(error.success ? error.data.message : a().resetConfigurationFailed);
+      }
+      setSaved(false);
+      await props.onSaved();
+      // Drafts made before the reset would no longer match what is stored.
+      const next = clean(props.configuration);
+      setBaseline(next);
+      setConfiguration(reconcile(next));
+      setToken("");
+    },
+  });
+  // Save and reset write the same stored value; one at a time keeps their order.
+  const busy = () => save.loading() || reset.loading();
+  const confirmReset = async () => {
+    if (busy()) return;
+    if (await prompts.confirm(a().resetConfigurationConfirm, { title: a().resetConfiguration, variant: "danger" })) void reset.mutate();
+  };
+  createEffect(() => props.onDirtyChange(dirty(), busy()));
   onCleanup(() => {
     save.abort();
+    reset.abort();
     props.onDirtyChange(false, false);
   });
   onMount(() => {
@@ -82,7 +108,7 @@ export default function Settings(props: {
   const available = (area: Area) => (area === "cloud" ? props.availability.localLinuxEnabled : props.availability.freeipaEnabled);
   const submit = (event: SubmitEvent) => {
     event.preventDefault();
-    if (save.loading() || !dirty()) return;
+    if (busy() || !dirty()) return;
     setSaved(false);
     void save.mutate({
       url: configuration.url,
@@ -101,6 +127,7 @@ export default function Settings(props: {
         <SettingsPanelFooter
           changeCount={() => (dirty() ? 1 : 0)}
           loading={save.loading}
+          saveDisabled={reset.loading}
           saveLabel={t().save}
           onDiscard={discard}
           onSave={() => form.requestSubmit()}
@@ -108,8 +135,31 @@ export default function Settings(props: {
       }
     >
       <form ref={form} onSubmit={submit} class="flex flex-col gap-4" aria-label={t().settings}>
+        <Show when={props.configuration.unreadable}>
+          <NoticeCard tone="warning" title={a().configurationUnreadable} detail={a().configurationUnreadableDetail}>
+            <div class="flex flex-col items-start gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                loading={reset.loading()}
+                disabled={save.loading()}
+                onClick={() => void confirmReset()}
+              >
+                <i class="ti ti-arrow-back-up" /> {a().resetConfiguration}
+              </Button>
+              <Show when={reset.error()}>
+                {(error) => (
+                  <InlineGuidance tone="danger" role="alert">
+                    {error().message}
+                  </InlineGuidance>
+                )}
+              </Show>
+            </div>
+          </NoticeCard>
+        </Show>
         <SettingsSection title={t().connection} icon="ti ti-plug-connected">
-          <fieldset class="grid min-w-0 gap-4 md:grid-cols-2" disabled={save.loading()}>
+          <fieldset class="grid min-w-0 gap-4 md:grid-cols-2" disabled={busy()}>
             <TextInput
               name="filegate-url"
               type="url"
@@ -124,14 +174,20 @@ export default function Settings(props: {
               password
               autocomplete="new-password"
               label={t().token}
-              description={props.configuration.tokenConfigured ? t().tokenPresent : t().tokenMissing}
+              description={
+                props.configuration.unreadable
+                  ? t().tokenUnreadable
+                  : props.configuration.tokenConfigured
+                    ? t().tokenPresent
+                    : t().tokenMissing
+              }
               value={token()}
               onValueChange={setToken}
             />
           </fieldset>
         </SettingsSection>
         <SettingsSection title={a().collabora} icon="ti ti-file-text">
-          <fieldset class="flex min-w-0 flex-col gap-4" disabled={save.loading()}>
+          <fieldset class="flex min-w-0 flex-col gap-4" disabled={busy()}>
             <NoticeCard tone="info" title={a().collaboraPurpose} detail={a().collaboraExplanation} />
             <div class="grid min-w-0 gap-4 md:grid-cols-2">
               <TextInput
@@ -181,7 +237,7 @@ export default function Settings(props: {
         <For each={areas}>
           {(area) => (
             <SettingsSection title={t()[area]} icon={area === "cloud" ? "ti ti-cloud" : "ti ti-server"}>
-              <fieldset class="flex min-w-0 flex-col gap-4" disabled={save.loading()}>
+              <fieldset class="flex min-w-0 flex-col gap-4" disabled={busy()}>
                 <NoticeCard
                   tone="info"
                   title={area === "cloud" ? a().cloudPurpose : a().freeipaPurpose}

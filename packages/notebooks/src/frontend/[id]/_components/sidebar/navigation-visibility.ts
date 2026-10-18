@@ -39,6 +39,22 @@ export const setNavigationHidden = (hidden: boolean) => {
 };
 
 /**
+ * Below a 64 rem app host a toolbar's toggle only brings a hidden navigation back and then hides itself (app.css).
+ * Focus moves into the navigation when it can take it there, else to `fallback`, never to the page start.
+ */
+export const keepFocusAfterShowingNavigation = (toggle: HTMLElement, fallback: () => void) =>
+  requestAnimationFrame(() => {
+    if (toggle.getClientRects().length) return;
+    for (const element of document
+      .getElementById(NOTEBOOK_NAVIGATION_ID)
+      ?.querySelectorAll<HTMLElement>("a[href], button:not(:disabled)") ?? []) {
+      element.focus();
+      if (document.activeElement === element) return;
+    }
+    fallback();
+  });
+
+/**
  * Another tab may have changed the preference meanwhile. When this tab comes
  * back into view it follows the stored value, so every open notebook agrees.
  */

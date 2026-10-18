@@ -222,7 +222,7 @@ suite("Venue shift detail", () => {
 
       const asAdmin = await page(admin, selected);
       expect(asAdmin.status).toBe(200);
-      expect(asAdmin.text).toContain("k2b-app-workspace__detail max-lg:hidden!");
+      expect(asAdmin.text).toContain("k2b-app-workspace__detail venue-shift-detail");
       expect(asAdmin.text).toContain(`aria-label="Remove ${staff.name}"`);
 
       const asColleague = await page(colleague, selected);

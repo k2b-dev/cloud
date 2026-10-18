@@ -5,6 +5,7 @@ import type { InventoryEntry } from "../src/contracts";
 import AdminIssue from "../src/frontend/AdminIssue";
 import { parseAdminLocation } from "../src/frontend/admin-location";
 import FileList, { type FileRow } from "../src/frontend/FileList";
+import FileThumbnail from "../src/frontend/FileThumbnail";
 import { DirectoryStatus, IssueMessage } from "../src/frontend/feedback";
 import Inventory from "../src/frontend/Inventory";
 
@@ -135,6 +136,9 @@ describe("Filesv2 server-rendered feedback", () => {
     expect(tag(row(list, "Drafts"))).toContain("filesv2-list__row--active");
     expect(tag(row(list, "Drafts"))).toContain('aria-selected="true"');
     expect(row(list, "Drafts")).toContain("ti-folder-open");
+    expect(row(list, "Drafts")).toContain("k2b-icon-tile k2b-file-type-icon");
+    expect(row(list, "Drafts")).toContain('data-file-type="folder"');
+    expect(row(list, "Drafts")).toContain('data-size="md"');
     expect(tag(row(list, "Notes.md"))).not.toContain("filesv2-list__row--active");
 
     const selecting = render({ rows: flat, selected: ["Drafts"], selecting: true });
@@ -151,5 +155,35 @@ describe("Filesv2 server-rendered feedback", () => {
     expect(tag(row(tree, "Projects"))).toContain("filesv2-list__row--active");
     expect(tag(row(tree, "Projects"))).toContain('aria-current="location"');
     expect(tag(row(tree, "Projects/Drafts"))).not.toContain("filesv2-list__row--active");
+    for (const path of ["Projects", "Projects/Drafts"]) {
+      expect(row(tree, path)).toContain("k2b-icon-tile k2b-file-type-icon");
+      expect(row(tree, path)).toContain('data-file-type="folder"');
+    }
+    expect(row(tree, "Projects")).toContain("ti-folder-open");
+    expect(row(tree, "Projects/Drafts")).not.toContain("ti-folder-open");
   });
+});
+
+test("thumbnail fallbacks use file-type tiles at row, grid and hero sizes", () => {
+  for (const [name, directory, type] of [
+    ["report.pdf", false, "pdf"],
+    ["photo.png", false, "image"],
+    ["Projects", true, "folder"],
+  ] as const) {
+    for (const mode of ["row", "grid", "hero"] as const) {
+      const html = renderToString(() => (
+        <FileThumbnail
+          baseId="demo"
+          entry={{ name, path: name, directory, size: 12, modified: "2026-01-01T00:00:00Z" }}
+          large={mode === "grid"}
+          hero={mode === "hero"}
+        />
+      ));
+      expect(html).toContain("filesv2-thumbnail");
+      expect(html).toContain("k2b-icon-tile k2b-file-type-icon");
+      expect(html).toContain(`data-file-type="${type}"`);
+      expect(html).toContain(`data-size="${mode === "row" ? "md" : "lg"}"`);
+      expect(html).not.toContain("<img");
+    }
+  }
 });

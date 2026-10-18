@@ -176,6 +176,12 @@ const portableSections = [
         "ti ti-chevron-left",
         "A page title with its way up: a back link, or a path whose middle collapses only when it does not fit.",
       ),
+      page(
+        "resize-separator",
+        "ResizeSeparator",
+        "ti ti-separator-vertical",
+        "Keyboard and pointer resizing with application-owned size and optional collapse.",
+      ),
       page("panes", "Panes", "ti ti-columns", "Controlled serializable tabs and nested split layouts."),
       page("overview", "AppOverview", "ti ti-home", "Application landing page with primary and supporting panels."),
       page("settings-modal", "Settings", "ti ti-settings", "Accessible settings tabs, fields, and save state."),
@@ -383,7 +389,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 144;
+export const portableUiComponentCount = 146;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -473,11 +479,13 @@ export const documentedOnlyUiCatalogExports = {
   createPanesLayout: "Documented Panes initial-layout helper.",
   createTemplateEditorPanesLayout: "Documented TemplateEditor layout helper.",
   fitFloatingWindowRect: "Documented FloatingWindow geometry helper.",
+  fileTypeOf: "Documented FileTypeIcon color-family resolver in the file browser guide.",
   formatFileViewSize: "Documented FileView metadata formatter.",
   getFileViewPreviewKind: "Documented FileView preview classifier.",
   isStructuredDataValue: "Documented StructuredDataPreview boundary validator.",
   parkWorkspaceDetailDrawers: "Documented host helper for parking AppWorkspace detail drawers.",
   installAppWorkspaceController: "Documented AppWorkspace resize-controller installer.",
+  watchAppHostWidth: "Documented AppWorkspace host-width watcher for workspace chrome that script decides.",
   installationPlatform: "Documented InstallGuide platform classifier.",
   isPointInsideToast: "Documented toast interaction helper.",
   markdownInfoBlocks: "Documented MarkdownView info-block extension for renderers with their own marked instance.",
@@ -505,6 +513,7 @@ export const documentedOnlyUiCatalogExports = {
   renderMarkdownLink: "Documented MarkdownView link markup for renderers that know more about a link than its URL.",
   renderSafeMarkdown: "Documented MarkdownView safe renderer.",
   resolveAppWorkspaceSidebarWidth: "Documented AppWorkspace sidebar-state helper.",
+  attachResizeSeparator: "Documented ResizeSeparator installer for server-rendered markup.",
   resizePanesSplit: "Documented programmatic Panes resize helper.",
   safeAppWorkspacePanelId: "Documented AppWorkspace panel-id helper.",
   sameSettingValue: "Documented Settings dirty-state helper.",

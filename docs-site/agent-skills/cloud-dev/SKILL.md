@@ -68,6 +68,7 @@ and durable data.
   Use NATS-backed Sync for distributed coordination and Valkey for caches
   and Cloud rate limits. Commit state before retryable effects with stable keys; an effect
   that must survive a crash is an outbox row in the same transaction (`defineLive`, `createPgOutbox`).
+  A settings write over an unreadable stored value fails with `setting_unreadable`; merge only over `settings.read()` with `stored !== "unreadable"`.
 
 ## Reuse public building blocks
 
@@ -108,7 +109,7 @@ SolidJS library remains independent of Cloud and application domains.
 - Give an application's landing page the shared overview pattern: either a sidebar-first `AppWorkspace`
   (`SidebarItem variant="object"` rows, `AppWorkspace.Main width="content"`, a `PanelHeader size="lg"` with one
   primary action) for many objects, or `AppOverview.Cards` of `LinkCard`s for few; one secondary fact per row or
-  card. Inside one container, head its sidebar and phone menu with `AppWorkspace.SidebarSwitcher`.
+  card. Inside one container, head its sidebar and phone menu with `AppWorkspace.SidebarSwitcher`. Application chrome tied to the workspace sidebar or levels uses `@container k2b-app-area` queries, not viewport breakpoints.
 - Every view prints its complete content via `data-print-region` or the fallback with the app's export hint (`Layout.printHint`).
 
 ## Keep server and browser behavior coherent

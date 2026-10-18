@@ -2396,7 +2396,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Create item",
-      description: "Create a new item (event, todo, or ticket).",
+      description:
+        "Create a new item (event, todo, or ticket). A task deadline is YYYY-MM-DD (all-day, default) or an ISO date-time (timed); deadlineAllDay identifies date-only responses.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemSchema, "Created item"),
@@ -2463,7 +2464,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Update item",
-      description: "Update item properties.",
+      description:
+        "Update item properties. A task deadline is YYYY-MM-DD (all-day) or an ISO date-time (timed); null clears it. Responses include deadlineAllDay.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemSchema, "Updated item"),
@@ -3263,6 +3265,8 @@ const calendarApp = new Hono<AuthContext>()
         ...access.data,
         from,
         to,
+        // An all-day deadline is a day in the reader's timezone, not the server's.
+        dateConfig: getDateConfig(c),
       });
       return respond(c, ok(await projectCalendarItems(result)));
     },

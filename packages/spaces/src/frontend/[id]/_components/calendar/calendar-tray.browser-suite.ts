@@ -9,7 +9,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { CalendarItem, SpaceItem, SpaceTag } from "@/contracts";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, launchBrowser, mostAtOnce } from "../../../../../../ui/test/browser";
 import type { CalendarTray } from "../workspace/workspace-types";
 import { type CalendarFilter, parseCalendarRoute } from "./filter";
 import { calendarWindow } from "./range";
@@ -57,6 +57,7 @@ const base = {
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   priority: null,
   recurrence: null,
   recurringEventId: null,
@@ -94,6 +95,7 @@ const trayTask = (id: string, title: string, deadline: string | null = null): Sp
   endsAt: null,
   allDay: false,
   deadline,
+  deadlineAllDay: false,
   estimatedDurationMinutes: null,
   activeBlockerCount: 0,
   priority: null,
@@ -518,16 +520,23 @@ describe(`Spaces task tray in ${browserName}`, () => {
 
   test("keeps keyboard focus on a task of the tray while a refresh brings the same tasks again", async () => {
     const page = await open(desktop);
-    const link = page.getByRole("link", { name: /Feedback zu Wireframes/ });
-    await link.focus();
-    // A mark on the element shows whether the refresh kept it or drew a new one.
-    await link.evaluate((element) => element.setAttribute("data-kept", ""));
-    // The refresh brings the same tasks and one more undated task beyond the row, whose count shows once it is in.
-    latestCase().tray.undated.total = 4;
-    await invalidate(page);
-    await page.getByRole("link", { name: "Alle anzeigen: 4 deiner Aufgaben ohne Datum" }).waitFor();
-    expect(await page.evaluate(() => document.activeElement?.hasAttribute("data-kept") ?? false)).toBe(true);
-    await page.context().close();
+    try {
+      const link = page.getByRole("link", { name: /Feedback zu Wireframes/ });
+      await link.focus();
+      // A mark on the element shows whether the refresh kept it or drew a new one.
+      await link.evaluate((element) => element.setAttribute("data-kept", ""));
+      // The refresh brings the same tasks and one more undated task beyond the row, whose count shows once it is in.
+      latestCase().tray.undated.total = 4;
+      const most = await mostAtOnce(page, '[data-spaces-tray-item="Late02"]', async () => {
+        await invalidate(page);
+        await page.getByRole("link", { name: "Alle anzeigen: 4 deiner Aufgaben ohne Datum" }).waitFor();
+      });
+      // A refresh that brings the same tasks again must show each one only once.
+      expect(most).toBe(1);
+      expect(await page.evaluate(() => document.activeElement?.hasAttribute("data-kept") ?? false)).toBe(true);
+    } finally {
+      await page.context().close();
+    }
   }, 60_000);
 
   test("checks off a task the reader claimed with that claim", async () => {
@@ -572,34 +581,50 @@ describe(`Spaces task tray in ${browserName}`, () => {
 
   test("shows a task checked off in the tray as done before it goes, and Undo puts it back in its place", async () => {
     const page = await open(desktop);
-    completions.splice(0);
-    const tray = await rounded(page, TRAY);
     const answer = gate();
-    holdCompletion = () => answer.wait;
-    await page.locator('[data-spaces-tray-item="Late01"] .k2b-check').click();
-    // The tick shows at once, with the title struck through, while the server still works on it.
-    expect(await page.getByRole("checkbox", { name: "Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen" }).isChecked()).toBe(true);
-    await page.locator('[data-spaces-tray-item="Late01"] .line-through').waitFor();
-    expect(completions).toEqual([]);
-    holdCompletion = async () => {};
-    answer.open();
-    await page.getByRole("button", { name: "Rückgängig" }).click();
-    await page.locator('[data-spaces-tray-item="Late01"] .line-through').waitFor({ state: "detached" });
-    for (let tries = 0; tries < 200 && completions.length < 2; tries++) await Bun.sleep(25);
-    // Undo restores the status and position the task had, with the same completion change.
-    expect(completions).toEqual([
-      { itemId: "Late01", completed: true },
-      { itemId: "Late01", move: true, columnId: "Col001", rank: "1024", completed: false },
-    ]);
-    const box = page.getByRole("checkbox", { name: "Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen" });
-    await expect(box.isChecked()).resolves.toBe(false);
-    expect(
-      await page
-        .locator(`${TRAY} li[data-spaces-tray-item]`)
-        .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-spaces-tray-item"))),
-    ).toEqual(["Late01", "Late02", "Open01", "Open02"]);
-    expect(await rounded(page, TRAY)).toEqual(tray);
-    await page.context().close();
+    try {
+      completions.splice(0);
+      const tray = await rounded(page, TRAY);
+      const box = page
+        .locator('[data-spaces-tray-item="Late01"]')
+        .getByRole("checkbox", { name: "Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen" });
+      holdCompletion = () => answer.wait;
+      await page.locator('[data-spaces-tray-item="Late01"] .k2b-check').click();
+      // The tick shows at once, with the title struck through, while the server still works on it.
+      expect(await box.isChecked()).toBe(true);
+      await page.locator('[data-spaces-tray-item="Late01"] .line-through').waitFor();
+      expect(completions).toEqual([]);
+      holdCompletion = async () => {};
+      answer.open();
+      // The toast offers Undo once the refresh after the completion is in, so the next view answer is the Undo's.
+      const undo = page.getByRole("button", { name: "Rückgängig" });
+      await undo.waitFor();
+      const most = await mostAtOnce(page, '[data-spaces-tray-item="Late01"]', async () => {
+        const refreshed = page.waitForResponse((response) => response.url().includes("/api/spaces/workspace/view"));
+        await undo.click();
+        await page.locator('[data-spaces-tray-item="Late01"] .line-through').waitFor({ state: "detached" });
+        for (let tries = 0; tries < 200 && completions.length < 2; tries++) await Bun.sleep(25);
+        await (await refreshed).finished();
+      });
+      // Undo must put back exactly one row, never the leaving one beside the restored one.
+      expect(most).toBe(1);
+      // Undo restores the status and position the task had, with the same completion change.
+      expect(completions).toEqual([
+        { itemId: "Late01", completed: true },
+        { itemId: "Late01", move: true, columnId: "Col001", rank: "1024", completed: false },
+      ]);
+      expect(await box.isChecked()).toBe(false);
+      expect(
+        await page
+          .locator(`${TRAY} li[data-spaces-tray-item]`)
+          .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-spaces-tray-item"))),
+      ).toEqual(["Late01", "Late02", "Open01", "Open02"]);
+      expect(await rounded(page, TRAY)).toEqual(tray);
+    } finally {
+      holdCompletion = async () => {};
+      answer.open();
+      await page.context().close();
+    }
   }, 60_000);
 
   test("closes the gap of tasks that leave and of their part without a jump", async () => {

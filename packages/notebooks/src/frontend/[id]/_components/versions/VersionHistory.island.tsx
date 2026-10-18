@@ -385,7 +385,7 @@ export default function VersionHistory(props: Props) {
         <div class="flex-1 flex items-center justify-center">
           <Show
             when={!versionPages.error()}
-            fallback={<Placeholder icon="ti ti-alert-circle" title={t().versionsCouldNotLoad} description={t().reloadPage} />}
+            fallback={<Placeholder state="error" title={t().versionsCouldNotLoad} description={t().reloadPage} />}
           >
             <Placeholder icon="ti ti-history" description={t().noVersions} />
           </Show>
@@ -512,7 +512,7 @@ export default function VersionHistory(props: Props) {
                 <Show when={!previewLoading() && previewMode() === "content" && !selectedVersionData()}>
                   <div class="flex h-full items-center justify-center">
                     <Placeholder
-                      icon="ti ti-alert-circle"
+                      state="error"
                       title={t().versionCouldNotLoad}
                       description={t().versionRequestFailed}
                       action={
@@ -552,7 +552,7 @@ export default function VersionHistory(props: Props) {
                 <Show when={!previewLoading() && previewMode() === "changes" && previewError()}>
                   <div class="flex h-full items-center justify-center">
                     <Placeholder
-                      icon="ti ti-alert-circle"
+                      state="error"
                       title={t().comparisonCouldNotLoad}
                       description={t().comparisonRequestFailed}
                       action={

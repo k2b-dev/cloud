@@ -113,6 +113,15 @@ export const getContent = async (params: { id: string }): Promise<AttachmentCont
   return row ? { ...mapRow(row), content: row.content } : null;
 };
 
+/** Load bytes only from the notebook the caller was admitted to. */
+export const getContentInNotebook = async (params: { id: string; notebookId: string }): Promise<AttachmentContent | null> => {
+  const [row] = await sql<(DbRow & { content: Uint8Array })[]>`
+    SELECT id, short_id, notebook_id, filename, mime_type, size_bytes, kind, created_by, created_at, content
+    FROM notebooks.attachments WHERE id = ${params.id} AND notebook_id = ${params.notebookId}
+  `;
+  return row ? { ...mapRow(row), content: row.content } : null;
+};
+
 /** Load attachment content by its public short ID. */
 export const getContentByShortId = async (params: { shortId: string }): Promise<AttachmentContent | null> => {
   const [row] = await sql<(DbRow & { content: Uint8Array })[]>`

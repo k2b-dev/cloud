@@ -14,14 +14,24 @@ import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import { errorMessage } from "./api/messages";
+import { publicErrorMessage } from "./api/messages";
 import { EntryQuerySchema, PublicBrowseQuerySchema, PublicUploadInputSchema, UploadIdSchema } from "./contracts";
+import { publicUploadPath, publicUploadRateLimit } from "./public-upload-rate-limit";
 import { FilesError, filesService } from "./service";
 import { setShareAccessCookie, shareAccessCookie } from "./share-access-cookie";
 
 /** Public routes re-resolve the share and enforce its optional password on every call. */
 export const publicApi = new Hono<AuthContext>()
-  .use("*", rateLimit({ keyBy: "ip", limitPerSecond: 10, windowSecs: 60 }))
+  .use(
+    "*",
+    rateLimit({
+      keyBy: "ip",
+      limitPerSecond: 10,
+      windowSecs: 60,
+      routes: [{ method: "POST", path: publicUploadPath, disabled: true }],
+    }),
+  )
+  .use("*", publicUploadRateLimit)
   .use("*", auth.requireRole("*"))
   .use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
@@ -39,7 +49,7 @@ export const publicApi = new Hono<AuthContext>()
           : "unavailable";
     return respond(c, {
       ok: false,
-      error: errorMessage(code, getLocale(c)),
+      error: publicErrorMessage(code, getLocale(c)),
       status: known ? error.status : code === "cursor_invalid" ? 409 : code === "not_found" ? 404 : 503,
       code,
     });

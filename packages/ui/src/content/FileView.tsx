@@ -870,14 +870,10 @@ export default function FileView(props: FileViewProps) {
       >
         <Switch>
           <Match when={content.loading && content() === undefined}>
-            <Placeholder icon="ti ti-loader-2" title={messages().loading} />
+            <Placeholder state="loading" title={messages().loading} />
           </Match>
           <Match when={content.error}>
-            <Placeholder
-              icon="ti ti-alert-circle"
-              title={fileViewMessages().failedLoadFile}
-              description={String(content.error?.message ?? "")}
-            />
+            <Placeholder state="error" title={fileViewMessages().failedLoadFile} description={String(content.error?.message ?? "")} />
           </Match>
           <Match when={resolvedContent() && renderer()}>
             {(active) => {

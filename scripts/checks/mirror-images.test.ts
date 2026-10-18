@@ -50,6 +50,15 @@ test("accepts mirror references at the listed digest and images pulled through p
   ).toEqual([]);
 });
 
+test("accepts checksum-pinned DB-IP month tags and rejects other snapshot references", async () => {
+  for (const tag of ["2026-10", "latest", "2026-13", `2026-10@${digest("c")}`]) {
+    const snapshot = `ghcr.io/k2b-dev/mirror/dbip-lite:${tag}`;
+    expect(await findings({ Dockerfile: `FROM ${bun}\nFROM ${nats}\nFROM ${snapshot}\n` })).toEqual(
+      tag === "2026-10" ? [] : [`Dockerfile:3 ${snapshot} is not in .github/mirror-images.txt`],
+    );
+  }
+});
+
 test("rejects Docker Hub images in Dockerfiles and names the mirror reference", async () => {
   expect(
     await findings({

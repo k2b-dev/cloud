@@ -83,6 +83,8 @@ export const providerErrorDetail = (error: unknown, secrets: readonly string[] =
  * whether a provider effect may have happened track that themselves.
  */
 const TRANSIENT_PROVIDER_CODES = new Set([
+  // ImapFlow's code for a command the server throttled after its own retries ran out.
+  "ETHROTTLE",
   // The provider could not be reached.
   "ECONNREFUSED",
   "EAI_AGAIN",
@@ -114,9 +116,9 @@ const TRANSIENT_PROVIDER_CODES = new Set([
 ]);
 
 /**
- * The provider could not be reached, the connection broke, or the login failed for now. Nothing
- * about the request or the credentials failed, so the same work can succeed once the provider
- * recovers.
+ * The provider could not be reached, the connection broke, or a login or command was limited for
+ * now. Nothing about the request or the credentials failed, so the same work can succeed once
+ * the provider recovers.
  */
 export const isTransientProviderFailure = (error: unknown): boolean => {
   // The raw code, because providerErrorCode drops ImapFlow's mixed-case codes such as NoConnection.

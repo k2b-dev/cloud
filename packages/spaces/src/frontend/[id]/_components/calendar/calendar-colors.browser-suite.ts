@@ -66,6 +66,7 @@ const base = (id: string, title: string, patch: Partial<CalendarItem>): Calendar
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   priority: null,
   recurrence: null,
   recurringEventId: null,

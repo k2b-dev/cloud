@@ -190,6 +190,16 @@ export const launchAssistant = async (input: LaunchAssistantInput): Promise<Assi
 };
 
 export {
+  CHAT_TASK_REASON_CODES,
+  type ChatTaskReason,
+  type ChatTaskReasonCode,
+  chatTaskLocale,
+  chatTaskNeedsNewTime,
+  chatTaskReasonSentence,
+  chatTaskReasonState,
+  chatTaskStopSentence,
+} from "./chat-task-reasons";
+export {
   CLOUD_AI_STATS_MAX_ITEMS,
   CLOUD_AI_TABLE_MAX_COLUMNS,
   CLOUD_AI_TABLE_MAX_ROWS,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ResourceShortIdSchema } from "./contracts";
+import { DeadlineAllDaySchema, DeadlineInputSchema, ResourceShortIdSchema } from "./contracts";
 
 export const OverviewViewSchema = z.enum(["mine", "today", "upcoming"]);
 export const OverviewWorkSchema = z.object({
@@ -14,7 +14,8 @@ export const OverviewWorkSchema = z.object({
       priority: z.enum(["low", "medium", "high", "urgent"]).nullable(),
       startsAt: z.string().nullable(),
       endsAt: z.string().nullable(),
-      deadline: z.string().nullable(),
+      deadline: DeadlineInputSchema.nullable(),
+      deadlineAllDay: DeadlineAllDaySchema,
     }),
   ),
   counts: z.object({ mine: z.number(), today: z.number(), upcoming: z.number() }),

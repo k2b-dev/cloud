@@ -64,6 +64,7 @@ import {
   mailWorkflowExecutionAuthorityActive,
   resolveMailWorkflowExecutionAuthority,
 } from "../service/workflow-runtime-context";
+import { mailWorkflowTemplateOutput } from "./template-validation";
 
 type JsonObject = Record<string, WorkflowJsonValue>;
 type ActionResult = WorkflowActionResult<WorkflowJsonValue>;
@@ -990,7 +991,11 @@ export const MAIL_WORKFLOW_ACTIONS = {
           cc: addresses(values.cc, "cc"),
           bcc: addresses(values.bcc, "bcc"),
           subject: renderMailWorkflowTemplate(ctx, asText(values.subject, "subject"), "text"),
-          body: renderMailWorkflowTemplate(ctx, asText(values.body, "body"), values.format === "plain" ? "text" : "editable_markdown"),
+          body: renderMailWorkflowTemplate(
+            ctx,
+            asText(values.body, "body"),
+            mailWorkflowTemplateOutput("createDraft", "body", values.format),
+          ),
           format: values.format === "plain" ? "plain" : "markdown",
         });
         if (!draft.ok) return resultFailure(draft.error);
@@ -1050,7 +1055,11 @@ export const MAIL_WORKFLOW_ACTIONS = {
           conversationId,
           sourceMessageId,
           senderIdentityId,
-          body: renderMailWorkflowTemplate(ctx, asText(values.body, "body"), values.format === "plain" ? "text" : "editable_markdown"),
+          body: renderMailWorkflowTemplate(
+            ctx,
+            asText(values.body, "body"),
+            mailWorkflowTemplateOutput("createReplyDraft", "body", values.format),
+          ),
           format: values.format === "plain" ? "plain" : "markdown",
         });
         if (!draft.ok) return resultFailure(draft.error);
@@ -1223,7 +1232,11 @@ export const MAIL_WORKFLOW_ACTIONS = {
             conversationId,
             senderIdentityId,
             subject: renderMailWorkflowTemplate(ctx, asText(values.subject, "subject"), "text"),
-            body: renderMailWorkflowTemplate(ctx, asText(values.body, "body"), values.format === "markdown" ? "markdown" : "text"),
+            body: renderMailWorkflowTemplate(
+              ctx,
+              asText(values.body, "body"),
+              mailWorkflowTemplateOutput("automaticReply", "body", values.format),
+            ),
             format: values.format === "markdown" ? "markdown" : "plain",
             protocolFacts: parseMessageProtocolFacts(message.protocolFacts),
             occurredAt: ctx.invocation.occurredAt,

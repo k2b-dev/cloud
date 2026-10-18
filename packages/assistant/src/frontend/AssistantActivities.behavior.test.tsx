@@ -16,6 +16,9 @@ test("global task dialogs provide live context through activity, run detail and 
     chatId: "chat01",
     chatTitle: "Morning chat",
     grants: [],
+    title: "Changed task prompt",
+    name: "Changed task prompt",
+    reason: null,
     prompt: "Changed task prompt",
     schedule: { kind: "cron", cron: "0 9 * * *" },
     timezone: "UTC",
@@ -42,7 +45,7 @@ test("global task dialogs provide live context through activity, run detail and 
     conversationId: "chat01",
     seq: 1,
     kind: "message",
-    message: { role: "user", content: [{ type: "text", text: "Original run instruction" }] },
+    message: { role: "user", content: [{ type: "text", text: "Routine task01 (2026-09-20T08:00:00Z):\n\nOriginal run instruction" }] },
     loopId: "run001",
     modelProfileId: null,
     providerModel: null,
@@ -98,8 +101,9 @@ test("global task dialogs provide live context through activity, run detail and 
     const result = openAssistantTaskRun(task.id, occurrence.id, live);
     await tick();
     expect(dom.document.body.textContent).toContain("Original run instruction");
+    expect(dom.document.body.textContent).not.toContain("Routine task01");
     expect(dom.document.body.textContent).not.toContain("Changed task prompt");
-    const manage = Array.from(dom.document.querySelectorAll("button")).find((button) => button.textContent?.includes("Manage task"));
+    const manage = Array.from(dom.document.querySelectorAll("button")).find((button) => button.textContent?.includes("Manage routine"));
     expect(manage).toBeDefined();
     const history = Array.from(dom.document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Run history");
     expect(history).toBeDefined();
@@ -146,6 +150,9 @@ test("an expired run or run history explains that its result stays in the chat, 
     chatId: "chat01",
     chatTitle: "Morning chat",
     grants: [],
+    title: "Morning overview",
+    name: "Morning overview",
+    reason: null,
     prompt: "Morning overview",
     schedule: { kind: "cron", cron: "0 9 * * *" },
     timezone: "UTC",

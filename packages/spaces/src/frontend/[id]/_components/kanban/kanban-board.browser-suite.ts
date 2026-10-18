@@ -47,6 +47,7 @@ const item = (id: string, columnId: string, title: string, extra: Partial<SpaceI
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   estimatedDurationMinutes: null,
   activeBlockerCount: 0,
   priority: null,
@@ -590,7 +591,15 @@ const cardControls = (page: Page, title: string) =>
       };
     });
 /** Hover and focus fade the controls in; wait until the fade has finished. */
-const settled = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));
+const settled = (page: Page) =>
+  page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.timeline === document.timeline)
+        .map((animation) => animation.finished),
+    ),
+  );
 const expectGripBox = (state: Awaited<ReturnType<typeof cardControls>>) => {
   expect([state.grip.box.width, state.grip.box.height]).toEqual([20, 20]);
   // Absolute offsets start inside the article's border.
@@ -2313,7 +2322,8 @@ const reactionScenario = (canWrite = true): Scenario => ({
     bucket({ key: "virtual:overdue", label: "Overdue", color: null, kind: "overdue", columnId: null, isDone: false }, [
       item("ReactFull", "Col001", "Confirm all the stands", {
         updatedAt: reactionNow,
-        deadline: "2026-10-16T12:00:00.000Z",
+        deadline: "2026-10-16",
+        deadlineAllDay: true,
         assignees: [me, kim, { id: "33333333-3333-4333-8333-333333333333", kind: "user", displayName: "Alex Example", avatarHash: null }],
       }),
     ]),

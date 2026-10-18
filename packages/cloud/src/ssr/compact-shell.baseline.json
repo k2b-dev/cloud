@@ -1,0 +1,5270 @@
+{
+  "chromium": {
+    "1024x768 light /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "workspace": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 5,
+        "right": 265,
+        "bottom": 763,
+        "width": 208,
+        "height": 758
+      },
+      "pane": {
+        "left": 265,
+        "top": 5,
+        "right": 505,
+        "bottom": 763,
+        "width": 240,
+        "height": 758
+      },
+      "detail": {
+        "left": 691,
+        "top": 13,
+        "right": 1011,
+        "bottom": 755,
+        "width": 320,
+        "height": 742
+      }
+    },
+    "1024x768 light /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "workspace": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 5,
+        "right": 265,
+        "bottom": 763,
+        "width": 208,
+        "height": 758
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1024x768 light /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1024x768 light /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 60,
+        "width": 964,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 64,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 700
+      },
+      "workspace": {
+        "left": 56,
+        "top": 64,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 700
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 65,
+        "right": 265,
+        "bottom": 763,
+        "width": 208,
+        "height": 698
+      },
+      "pane": {
+        "left": 265,
+        "top": 65,
+        "right": 505,
+        "bottom": 763,
+        "width": 240,
+        "height": 698
+      },
+      "detail": {
+        "left": 691,
+        "top": 73,
+        "right": 1011,
+        "bottom": 755,
+        "width": 320,
+        "height": 682
+      }
+    },
+    "1024x768 dark /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "workspace": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 5,
+        "right": 265,
+        "bottom": 763,
+        "width": 208,
+        "height": 758
+      },
+      "pane": {
+        "left": 265,
+        "top": 5,
+        "right": 505,
+        "bottom": 763,
+        "width": 240,
+        "height": 758
+      },
+      "detail": {
+        "left": 691,
+        "top": 13,
+        "right": 1011,
+        "bottom": 755,
+        "width": 320,
+        "height": 742
+      }
+    },
+    "1024x768 dark /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "workspace": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 5,
+        "right": 265,
+        "bottom": 763,
+        "width": 208,
+        "height": 758
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1024x768 dark /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1024x768 dark /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 60,
+        "width": 964,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 64,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 700
+      },
+      "workspace": {
+        "left": 56,
+        "top": 64,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 700
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 65,
+        "right": 265,
+        "bottom": 763,
+        "width": 208,
+        "height": 698
+      },
+      "pane": {
+        "left": 265,
+        "top": 65,
+        "right": 505,
+        "bottom": 763,
+        "width": 240,
+        "height": 698
+      },
+      "detail": {
+        "left": 691,
+        "top": 73,
+        "right": 1011,
+        "bottom": 755,
+        "width": 320,
+        "height": 682
+      }
+    },
+    "1194x834 light /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "workspace": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 7,
+        "right": 265,
+        "bottom": 827,
+        "width": 208,
+        "height": 820
+      },
+      "pane": {
+        "left": 265,
+        "top": 7,
+        "right": 539,
+        "bottom": 827,
+        "width": 274,
+        "height": 820
+      },
+      "detail": {
+        "left": 859,
+        "top": 15,
+        "right": 1179,
+        "bottom": 819,
+        "width": 320,
+        "height": 804
+      }
+    },
+    "1194x834 light /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "workspace": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 7,
+        "right": 265,
+        "bottom": 827,
+        "width": 208,
+        "height": 820
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1194x834 light /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1194x834 light /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 62,
+        "width": 1132,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 68,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 760
+      },
+      "workspace": {
+        "left": 56,
+        "top": 68,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 760
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 69,
+        "right": 265,
+        "bottom": 827,
+        "width": 208,
+        "height": 758
+      },
+      "pane": {
+        "left": 265,
+        "top": 69,
+        "right": 539,
+        "bottom": 827,
+        "width": 274,
+        "height": 758
+      },
+      "detail": {
+        "left": 859,
+        "top": 77,
+        "right": 1179,
+        "bottom": 819,
+        "width": 320,
+        "height": 742
+      }
+    },
+    "1194x834 dark /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "workspace": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 7,
+        "right": 265,
+        "bottom": 827,
+        "width": 208,
+        "height": 820
+      },
+      "pane": {
+        "left": 265,
+        "top": 7,
+        "right": 539,
+        "bottom": 827,
+        "width": 274,
+        "height": 820
+      },
+      "detail": {
+        "left": 859,
+        "top": 15,
+        "right": 1179,
+        "bottom": 819,
+        "width": 320,
+        "height": 804
+      }
+    },
+    "1194x834 dark /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "workspace": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 7,
+        "right": 265,
+        "bottom": 827,
+        "width": 208,
+        "height": 820
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1194x834 dark /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1194x834 dark /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 62,
+        "width": 1132,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 68,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 760
+      },
+      "workspace": {
+        "left": 56,
+        "top": 68,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 760
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 69,
+        "right": 265,
+        "bottom": 827,
+        "width": 208,
+        "height": 758
+      },
+      "pane": {
+        "left": 265,
+        "top": 69,
+        "right": 539,
+        "bottom": 827,
+        "width": 274,
+        "height": 758
+      },
+      "detail": {
+        "left": 859,
+        "top": 77,
+        "right": 1179,
+        "bottom": 819,
+        "width": 320,
+        "height": 742
+      }
+    },
+    "1440x900 light /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 891,
+        "width": 208,
+        "height": 882
+      },
+      "pane": {
+        "left": 265,
+        "top": 9,
+        "right": 585,
+        "bottom": 891,
+        "width": 320,
+        "height": 882
+      },
+      "detail": {
+        "left": 1103,
+        "top": 17,
+        "right": 1423,
+        "bottom": 883,
+        "width": 320,
+        "height": 866
+      }
+    },
+    "1440x900 light /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 891,
+        "width": 208,
+        "height": 882
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1440x900 light /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1440x900 light /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 64,
+        "width": 1376,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 72,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 820
+      },
+      "workspace": {
+        "left": 56,
+        "top": 72,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 820
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 73,
+        "right": 265,
+        "bottom": 891,
+        "width": 208,
+        "height": 818
+      },
+      "pane": {
+        "left": 265,
+        "top": 73,
+        "right": 585,
+        "bottom": 891,
+        "width": 320,
+        "height": 818
+      },
+      "detail": {
+        "left": 1103,
+        "top": 81,
+        "right": 1423,
+        "bottom": 883,
+        "width": 320,
+        "height": 802
+      }
+    },
+    "1440x900 dark /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 891,
+        "width": 208,
+        "height": 882
+      },
+      "pane": {
+        "left": 265,
+        "top": 9,
+        "right": 585,
+        "bottom": 891,
+        "width": 320,
+        "height": 882
+      },
+      "detail": {
+        "left": 1103,
+        "top": 17,
+        "right": 1423,
+        "bottom": 883,
+        "width": 320,
+        "height": 866
+      }
+    },
+    "1440x900 dark /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 891,
+        "width": 208,
+        "height": 882
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1440x900 dark /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1440x900 dark /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 64,
+        "width": 1376,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 72,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 820
+      },
+      "workspace": {
+        "left": 56,
+        "top": 72,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 820
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 73,
+        "right": 265,
+        "bottom": 891,
+        "width": 208,
+        "height": 818
+      },
+      "pane": {
+        "left": 265,
+        "top": 73,
+        "right": 585,
+        "bottom": 891,
+        "width": 320,
+        "height": 818
+      },
+      "detail": {
+        "left": 1103,
+        "top": 81,
+        "right": 1423,
+        "bottom": 883,
+        "width": 320,
+        "height": 802
+      }
+    },
+    "1920x1080 light /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 1071,
+        "width": 208,
+        "height": 1062
+      },
+      "pane": {
+        "left": 265,
+        "top": 9,
+        "right": 585,
+        "bottom": 1071,
+        "width": 320,
+        "height": 1062
+      },
+      "detail": {
+        "left": 1583,
+        "top": 17,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 1046
+      }
+    },
+    "1920x1080 light /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 1071,
+        "width": 208,
+        "height": 1062
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1920x1080 light /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1920x1080 light /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 64,
+        "width": 1856,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 72,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1000
+      },
+      "workspace": {
+        "left": 56,
+        "top": 72,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1000
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 73,
+        "right": 265,
+        "bottom": 1071,
+        "width": 208,
+        "height": 998
+      },
+      "pane": {
+        "left": 265,
+        "top": 73,
+        "right": 585,
+        "bottom": 1071,
+        "width": 320,
+        "height": 998
+      },
+      "detail": {
+        "left": 1583,
+        "top": 81,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 982
+      }
+    },
+    "1920x1080 dark /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 1071,
+        "width": 208,
+        "height": 1062
+      },
+      "pane": {
+        "left": 265,
+        "top": 9,
+        "right": 585,
+        "bottom": 1071,
+        "width": 320,
+        "height": 1062
+      },
+      "detail": {
+        "left": 1583,
+        "top": 17,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 1046
+      }
+    },
+    "1920x1080 dark /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 1071,
+        "width": 208,
+        "height": 1062
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1920x1080 dark /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1920x1080 dark /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 64,
+        "width": 1856,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 72,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1000
+      },
+      "workspace": {
+        "left": 56,
+        "top": 72,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1000
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 73,
+        "right": 265,
+        "bottom": 1071,
+        "width": 208,
+        "height": 998
+      },
+      "pane": {
+        "left": 265,
+        "top": 73,
+        "right": 585,
+        "bottom": 1071,
+        "width": 320,
+        "height": 998
+      },
+      "detail": {
+        "left": 1583,
+        "top": 81,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 982
+      }
+    }
+  },
+  "webkit": {
+    "1024x768 light /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "workspace": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 5,
+        "right": 265,
+        "bottom": 763,
+        "width": 208,
+        "height": 758
+      },
+      "pane": {
+        "left": 265,
+        "top": 5,
+        "right": 505,
+        "bottom": 763,
+        "width": 240,
+        "height": 758
+      },
+      "detail": {
+        "left": 691,
+        "top": 13,
+        "right": 1011,
+        "bottom": 755,
+        "width": 320,
+        "height": 742
+      }
+    },
+    "1024x768 light /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "workspace": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 5,
+        "right": 265,
+        "bottom": 763,
+        "width": 208,
+        "height": 758
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1024x768 light /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1024x768 light /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 60,
+        "width": 964,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 64,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 700
+      },
+      "workspace": {
+        "left": 56,
+        "top": 64,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 700
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 65,
+        "right": 265,
+        "bottom": 763,
+        "width": 208,
+        "height": 698
+      },
+      "pane": {
+        "left": 265,
+        "top": 65,
+        "right": 505,
+        "bottom": 763,
+        "width": 240,
+        "height": 698
+      },
+      "detail": {
+        "left": 691,
+        "top": 73,
+        "right": 1011,
+        "bottom": 755,
+        "width": 320,
+        "height": 682
+      }
+    },
+    "1024x768 dark /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "workspace": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 5,
+        "right": 265,
+        "bottom": 763,
+        "width": 208,
+        "height": 758
+      },
+      "pane": {
+        "left": 265,
+        "top": 5,
+        "right": 505,
+        "bottom": 763,
+        "width": 240,
+        "height": 758
+      },
+      "detail": {
+        "left": 691,
+        "top": 13,
+        "right": 1011,
+        "bottom": 755,
+        "width": 320,
+        "height": 742
+      }
+    },
+    "1024x768 dark /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "workspace": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 5,
+        "right": 265,
+        "bottom": 763,
+        "width": 208,
+        "height": 758
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1024x768 dark /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1024x768 dark /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1024,
+        "bottom": 768,
+        "width": 1024,
+        "height": 768
+      },
+      "rail": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 764,
+        "width": 56,
+        "height": 760
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 4,
+        "right": 56,
+        "bottom": 50,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 106,
+        "right": 56,
+        "bottom": 150,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 720,
+        "right": 50,
+        "bottom": 764,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 760
+      },
+      "notice": {
+        "left": 56,
+        "top": 4,
+        "right": 1020,
+        "bottom": 60,
+        "width": 964,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 64,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 700
+      },
+      "workspace": {
+        "left": 56,
+        "top": 64,
+        "right": 1020,
+        "bottom": 764,
+        "width": 964,
+        "height": 700
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 65,
+        "right": 265,
+        "bottom": 763,
+        "width": 208,
+        "height": 698
+      },
+      "pane": {
+        "left": 265,
+        "top": 65,
+        "right": 505,
+        "bottom": 763,
+        "width": 240,
+        "height": 698
+      },
+      "detail": {
+        "left": 691,
+        "top": 73,
+        "right": 1011,
+        "bottom": 755,
+        "width": 320,
+        "height": 682
+      }
+    },
+    "1194x834 light /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "workspace": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 7,
+        "right": 265,
+        "bottom": 827,
+        "width": 208,
+        "height": 820
+      },
+      "pane": {
+        "left": 265,
+        "top": 7,
+        "right": 539,
+        "bottom": 827,
+        "width": 274,
+        "height": 820
+      },
+      "detail": {
+        "left": 859,
+        "top": 15,
+        "right": 1179,
+        "bottom": 819,
+        "width": 320,
+        "height": 804
+      }
+    },
+    "1194x834 light /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "workspace": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 7,
+        "right": 265,
+        "bottom": 827,
+        "width": 208,
+        "height": 820
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1194x834 light /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1194x834 light /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 62,
+        "width": 1132,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 68,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 760
+      },
+      "workspace": {
+        "left": 56,
+        "top": 68,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 760
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 69,
+        "right": 265,
+        "bottom": 827,
+        "width": 208,
+        "height": 758
+      },
+      "pane": {
+        "left": 265,
+        "top": 69,
+        "right": 539,
+        "bottom": 827,
+        "width": 274,
+        "height": 758
+      },
+      "detail": {
+        "left": 859,
+        "top": 77,
+        "right": 1179,
+        "bottom": 819,
+        "width": 320,
+        "height": 742
+      }
+    },
+    "1194x834 dark /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "workspace": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 7,
+        "right": 265,
+        "bottom": 827,
+        "width": 208,
+        "height": 820
+      },
+      "pane": {
+        "left": 265,
+        "top": 7,
+        "right": 539,
+        "bottom": 827,
+        "width": 274,
+        "height": 820
+      },
+      "detail": {
+        "left": 859,
+        "top": 15,
+        "right": 1179,
+        "bottom": 819,
+        "width": 320,
+        "height": 804
+      }
+    },
+    "1194x834 dark /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "workspace": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 7,
+        "right": 265,
+        "bottom": 827,
+        "width": 208,
+        "height": 820
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1194x834 dark /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1194x834 dark /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1194,
+        "bottom": 834,
+        "width": 1194,
+        "height": 834
+      },
+      "rail": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 828,
+        "width": 56,
+        "height": 822
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 6,
+        "right": 56,
+        "bottom": 52,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 108,
+        "right": 56,
+        "bottom": 152,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 784,
+        "right": 50,
+        "bottom": 828,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 822
+      },
+      "notice": {
+        "left": 56,
+        "top": 6,
+        "right": 1188,
+        "bottom": 62,
+        "width": 1132,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 68,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 760
+      },
+      "workspace": {
+        "left": 56,
+        "top": 68,
+        "right": 1188,
+        "bottom": 828,
+        "width": 1132,
+        "height": 760
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 69,
+        "right": 265,
+        "bottom": 827,
+        "width": 208,
+        "height": 758
+      },
+      "pane": {
+        "left": 265,
+        "top": 69,
+        "right": 539,
+        "bottom": 827,
+        "width": 274,
+        "height": 758
+      },
+      "detail": {
+        "left": 859,
+        "top": 77,
+        "right": 1179,
+        "bottom": 819,
+        "width": 320,
+        "height": 742
+      }
+    },
+    "1440x900 light /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 891,
+        "width": 208,
+        "height": 882
+      },
+      "pane": {
+        "left": 265,
+        "top": 9,
+        "right": 585,
+        "bottom": 891,
+        "width": 320,
+        "height": 882
+      },
+      "detail": {
+        "left": 1103,
+        "top": 17,
+        "right": 1423,
+        "bottom": 883,
+        "width": 320,
+        "height": 866
+      }
+    },
+    "1440x900 light /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 891,
+        "width": 208,
+        "height": 882
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1440x900 light /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1440x900 light /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 64,
+        "width": 1376,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 72,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 820
+      },
+      "workspace": {
+        "left": 56,
+        "top": 72,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 820
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 73,
+        "right": 265,
+        "bottom": 891,
+        "width": 208,
+        "height": 818
+      },
+      "pane": {
+        "left": 265,
+        "top": 73,
+        "right": 585,
+        "bottom": 891,
+        "width": 320,
+        "height": 818
+      },
+      "detail": {
+        "left": 1103,
+        "top": 81,
+        "right": 1423,
+        "bottom": 883,
+        "width": 320,
+        "height": 802
+      }
+    },
+    "1440x900 dark /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 891,
+        "width": 208,
+        "height": 882
+      },
+      "pane": {
+        "left": 265,
+        "top": 9,
+        "right": 585,
+        "bottom": 891,
+        "width": 320,
+        "height": 882
+      },
+      "detail": {
+        "left": 1103,
+        "top": 17,
+        "right": 1423,
+        "bottom": 883,
+        "width": 320,
+        "height": 866
+      }
+    },
+    "1440x900 dark /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 891,
+        "width": 208,
+        "height": 882
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1440x900 dark /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1440x900 dark /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 900,
+        "width": 1440,
+        "height": 900
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 892,
+        "width": 56,
+        "height": 884
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 848,
+        "right": 50,
+        "bottom": 892,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 884
+      },
+      "notice": {
+        "left": 56,
+        "top": 8,
+        "right": 1432,
+        "bottom": 64,
+        "width": 1376,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 72,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 820
+      },
+      "workspace": {
+        "left": 56,
+        "top": 72,
+        "right": 1432,
+        "bottom": 892,
+        "width": 1376,
+        "height": 820
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 73,
+        "right": 265,
+        "bottom": 891,
+        "width": 208,
+        "height": 818
+      },
+      "pane": {
+        "left": 265,
+        "top": 73,
+        "right": 585,
+        "bottom": 891,
+        "width": 320,
+        "height": 818
+      },
+      "detail": {
+        "left": 1103,
+        "top": 81,
+        "right": 1423,
+        "bottom": 883,
+        "width": 320,
+        "height": 802
+      }
+    },
+    "1920x1080 light /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 1071,
+        "width": 208,
+        "height": 1062
+      },
+      "pane": {
+        "left": 265,
+        "top": 9,
+        "right": 585,
+        "bottom": 1071,
+        "width": 320,
+        "height": 1062
+      },
+      "detail": {
+        "left": 1583,
+        "top": 17,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 1046
+      }
+    },
+    "1920x1080 light /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 1071,
+        "width": 208,
+        "height": 1062
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1920x1080 light /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1920x1080 light /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 64,
+        "width": 1856,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 72,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1000
+      },
+      "workspace": {
+        "left": 56,
+        "top": 72,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1000
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 73,
+        "right": 265,
+        "bottom": 1071,
+        "width": 208,
+        "height": 998
+      },
+      "pane": {
+        "left": 265,
+        "top": 73,
+        "right": 585,
+        "bottom": 1071,
+        "width": 320,
+        "height": 998
+      },
+      "detail": {
+        "left": 1583,
+        "top": 81,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 982
+      }
+    },
+    "1920x1080 dark /app/mail/inbox": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 1071,
+        "width": 208,
+        "height": 1062
+      },
+      "pane": {
+        "left": 265,
+        "top": 9,
+        "right": 585,
+        "bottom": 1071,
+        "width": 320,
+        "height": 1062
+      },
+      "detail": {
+        "left": 1583,
+        "top": 17,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 1046
+      }
+    },
+    "1920x1080 dark /app/mail/inbox?overview=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "workspace": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 9,
+        "right": 265,
+        "bottom": 1071,
+        "width": 208,
+        "height": 1062
+      },
+      "pane": null,
+      "detail": null
+    },
+    "1920x1080 dark /app/mail/inbox?cards=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": null,
+      "main": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "workspace": null,
+      "sidebar": null,
+      "pane": null,
+      "detail": null
+    },
+    "1920x1080 dark /app/mail/inbox?notice=1": {
+      "canvas": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1080,
+        "width": 1920,
+        "height": 1080
+      },
+      "rail": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 1072,
+        "width": 56,
+        "height": 1064
+      },
+      "railLogo": {
+        "left": 0,
+        "top": 8,
+        "right": 56,
+        "bottom": 54,
+        "width": 56,
+        "height": 46
+      },
+      "railItems": {
+        "left": 0,
+        "top": 110,
+        "right": 56,
+        "bottom": 154,
+        "width": 56,
+        "height": 44
+      },
+      "avatar": {
+        "left": 6,
+        "top": 1028,
+        "right": 50,
+        "bottom": 1072,
+        "width": 44,
+        "height": 44
+      },
+      "shell": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1064
+      },
+      "notice": {
+        "left": 56,
+        "top": 8,
+        "right": 1912,
+        "bottom": 64,
+        "width": 1856,
+        "height": 56
+      },
+      "main": {
+        "left": 56,
+        "top": 72,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1000
+      },
+      "workspace": {
+        "left": 56,
+        "top": 72,
+        "right": 1912,
+        "bottom": 1072,
+        "width": 1856,
+        "height": 1000
+      },
+      "sidebar": {
+        "left": 57,
+        "top": 73,
+        "right": 265,
+        "bottom": 1071,
+        "width": 208,
+        "height": 998
+      },
+      "pane": {
+        "left": 265,
+        "top": 73,
+        "right": 585,
+        "bottom": 1071,
+        "width": 320,
+        "height": 998
+      },
+      "detail": {
+        "left": 1583,
+        "top": 81,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 982
+      }
+    }
+  }
+}

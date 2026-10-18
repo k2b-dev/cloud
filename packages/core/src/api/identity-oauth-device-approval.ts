@@ -38,6 +38,9 @@ const clientAccess = async (tx: SQL, clientId: string, user: { id: string; profi
   return row?.allowed === true;
 };
 
+const legalAccepted = async (tx: SQL, userId: string) =>
+  (await tx`SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${userId}::uuid`).length > 0;
+
 /** OAuth schema access stays in Core; Cloud only owns the sign-in lifecycle. */
 export const terminalLogins: AppTerminalLogins = {
   describe: async (tx, ids) => {
@@ -122,7 +125,12 @@ export const createIdentityOAuthDeviceApprovalRoutes = (
         return c.json(
           await service.startTerminalLogin(
             { ...input, lifetimeSeconds: Math.min(input.lifetimeSeconds, Math.floor(hours * 3600)) },
-            (tx, user) => clientAccess(tx, input.clientId, user),
+            async (tx, user) => {
+              // Terminal sign-in cannot collect first-use legal consent; run both checks even for decoys.
+              const allowed = await clientAccess(tx, input.clientId, user);
+              const accepted = await legalAccepted(tx, user.id);
+              return allowed && accepted;
+            },
           ),
         );
       } catch (error) {

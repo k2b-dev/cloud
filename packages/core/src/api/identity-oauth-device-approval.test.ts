@@ -88,6 +88,8 @@ databaseSuite()("Core terminal authorization bridge", () => {
     const key = AppDevicePublicKeySchema.parse({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y });
     const issuer = "https://terminal-core.example.test";
     await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES (${userId}::uuid,${uid},'local','user')`;
+    await sql`INSERT INTO auth.legal_acceptances (user_id, session_id, document_version, documents)
+      VALUES (${userId}::uuid, ${crypto.randomUUID()}::uuid, 'test-fixture', '[]'::jsonb)`;
     await sql`INSERT INTO oauth.clients(id,name,client_id,redirect_uris,scopes,audiences,allowed_profiles,access_mode,registration_kind,is_public,allow_device_grant)
       VALUES (${clientPk}::uuid,'Terminal test client',${clientId},'{}',ARRAY['openid','profile','admin'],ARRAY['cloud'],ARRAY['user'],'profiles','managed',true,true)`;
     await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted,accepts)
@@ -193,13 +195,14 @@ databaseSuite()("Core terminal authorization bridge", () => {
     }
   });
 
-  test("unknown, real and client-disallowed accounts return the same shape; nested grants permit access", async () => {
+  test("unknown, real, not-accepted and client-disallowed accounts return the same shape; nested grants permit access", async () => {
     const f = await fixture();
     const groups = [crypto.randomUUID(), crypto.randomUUID()];
     try {
       const routes = createIdentityOAuthDeviceApprovalRoutes();
-      for (const kind of ["unknown", "real", "disallowed", "direct", "nested"] as const) {
+      for (const kind of ["unknown", "real", "not-accepted", "disallowed", "direct", "nested"] as const) {
         await sql`UPDATE oauth.clients SET access_mode=${["disallowed", "direct", "nested"].includes(kind) ? "specific" : "profiles"} WHERE id=${f.clientPk}::uuid`;
+        if (kind === "not-accepted") await sql`DELETE FROM auth.legal_acceptances WHERE user_id=${f.userId}::uuid`;
         if (kind === "direct")
           await sql`INSERT INTO oauth.client_access_users(client_id,user_id) VALUES (${f.clientPk}::uuid,${f.userId}::uuid)`;
         if (kind === "nested") {
@@ -218,7 +221,13 @@ databaseSuite()("Core terminal authorization bridge", () => {
         expect(body.comparison).toMatch(/^\d{6}$/);
         expect(new Date(body.expiresAt).toISOString()).toBe(body.expiresAt);
         const [login] = await sql`SELECT kind,user_id FROM auth.app_logins WHERE device_authorization_id=${id}::uuid`;
-        expect(login).toMatchObject({ kind: "terminal", user_id: ["unknown", "disallowed"].includes(kind) ? null : f.userId });
+        expect(login).toMatchObject({
+          kind: "terminal",
+          user_id: ["unknown", "not-accepted", "disallowed"].includes(kind) ? null : f.userId,
+        });
+        if (kind === "not-accepted")
+          await sql`INSERT INTO auth.legal_acceptances (user_id, session_id, document_version, documents)
+            VALUES (${f.userId}::uuid, ${crypto.randomUUID()}::uuid, 'test-fixture', '[]'::jsonb)`;
       }
     } finally {
       await f.cleanup();

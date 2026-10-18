@@ -30,6 +30,18 @@ const stored = (input: {
 });
 
 describe("AI message timeline", () => {
+  test("keeps each delivered routine run its own response, also when runs follow each other", () => {
+    const run = (id: string, seq: number, occurrenceId: string): AiStoredMessage => ({
+      ...stored({ id, seq, message: { role: "assistant", content: [{ type: "text", text: id }] } }),
+      meta: { scheduledTask: { taskId: "tSk234", occurrenceId, scheduledFor: "2026-10-16T08:00:00Z", trigger: "scheduled" } },
+    });
+    const timeline = buildAiMessageTimeline([run("first", 1, "rUn001"), run("second", 2, "rUn002"), run("again", 3, "rUn002")]);
+    expect(timeline.map((item) => (item.type === "assistant" ? item.entries.map((entry) => entry.id) : []))).toEqual([
+      ["first"],
+      ["second", "again"],
+    ]);
+  });
+
   test("groups one loop into one assistant response with unified blocks", () => {
     const firstAssistant: Message = {
       role: "assistant",

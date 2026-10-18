@@ -5,6 +5,7 @@ import { platformMessages } from "./platform-messages";
 
 type LayoutHeaderProps = {
   authenticated: boolean;
+  panelOpen?: boolean;
   title?: string;
   launchpad: boolean;
   breadcrumbs?: LayoutBreadcrumb[];
@@ -14,10 +15,12 @@ type LayoutHeaderProps = {
  * Phones (below `md`) always get this header. From `md` it remains only on
  * anonymous pages; signed-in people reach Home, search, help, the app grid,
  * and their profile through the rail, so the app area starts at the top edge.
- * Anonymous pages have no rail: up to `lg` their header keeps the app name,
- * help, search, and the app grid, and from `lg` it shows the breadcrumbs.
- * Home and Sign in stay server markup, so focus on them survives the shell's
- * mount; the shell renders the title and the controls between them.
+ * On a signed-in phone it is the title row on the app gradient: Home moves to
+ * the bottom bar's Start, so the row holds the title, search, help, and the
+ * app menu. Anonymous pages have no rail: up to `lg` their header keeps Home,
+ * the app name, help, search, and the app grid, and from `lg` it shows the
+ * breadcrumbs. Home and Sign in stay server markup, so focus on them survives
+ * the shell's mount; the shell renders the title and the controls between them.
  */
 export default function LayoutHeader(props: LayoutHeaderProps) {
   const locale = useLocale();
@@ -29,13 +32,16 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
     >
       {/* A long title must not squeeze the button; `shrink-0` sits on a wrapper because the button's own
           styles would win over a utility on the link. */}
-      <div class="flex shrink-0">
-        <IconButtonLink href="/" label={t().home}>
-          <img src="/branding/logo" alt="" class={props.authenticated ? "h-4 w-4" : "h-6 w-6"} />
-        </IconButtonLink>
-      </div>
+      {!props.authenticated && (
+        <div class="flex shrink-0">
+          <IconButtonLink href="/" label={t().home}>
+            <img src="/branding/logo" alt="" class="h-6 w-6" />
+          </IconButtonLink>
+        </div>
+      )}
       <CloudShell
         slot="header"
+        panelOpen={props.panelOpen}
         authenticated={props.authenticated}
         title={props.title}
         launchpad={props.launchpad}
