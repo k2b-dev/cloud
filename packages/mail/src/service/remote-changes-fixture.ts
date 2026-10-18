@@ -213,7 +213,6 @@ export const useRemoteChangesFixture = () => {
     state.work.add(work);
     return work;
   };
-  const track = <T>(work: Promise<T>): Promise<T> => trackForTest(currentTest, work);
   const endTest = (state: TestState) => {
     state.ended = true;
     for (const provider of state.providers) {
@@ -325,7 +324,12 @@ export const useRemoteChangesFixture = () => {
         WHERE content.mailbox_id = ${mailbox.data.id}::uuid AND content.message_id = ${messageId}
         ORDER BY folder.role, placement.deleted_at NULLS FIRST
       `;
-        return { remote: provider, mailboxId: mailbox.data.id, folderId, sync, placements };
+        /** Starts other provider work of this test, such as a maintenance command, so teardown awaits it. */
+        const track = <T>(start: () => Promise<T>): Promise<T> => {
+          assertTestActive(state);
+          return trackForTest(state, start());
+        };
+        return { remote: provider, mailboxId: mailbox.data.id, folderId, sync, track, placements };
       })(),
     );
   };
@@ -409,7 +413,6 @@ export const useRemoteChangesFixture = () => {
     id,
     suffix,
     ROLES,
-    track,
     mailboxIds,
     get ownerContext() {
       return ownerContext;

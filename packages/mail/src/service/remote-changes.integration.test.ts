@@ -13,7 +13,7 @@ const suite = suiteFor("database", "nats", "valkey");
 
 suite("mail sync of changes made in other clients", () => {
   const fixture = useRemoteChangesFixture();
-  const { connect, id, suffix, ROLES, track } = fixture;
+  const { connect, id, suffix, ROLES } = fixture;
 
   test("a kept message remains in its last folder after an external deletion, retires on reappearance and hides on release", async () => {
     const mailbox = await connect("keep-vanish", true);
@@ -172,7 +172,9 @@ suite("mail sync of changes made in other clients", () => {
       input: { kind: "rebuild_folder", folderId: mailbox.folderId("archive"), idempotencyKey: `keep-rebuild-${suffix}` },
     });
     if (!rebuild.ok) throw new Error(rebuild.error.message);
-    expect(await track(executeMaintenanceCommand(rebuild.data.id, async () => undefined, { enqueueWork: false }))).toBe("confirmed");
+    expect(await mailbox.track(() => executeMaintenanceCommand(rebuild.data.id, async () => undefined, { enqueueWork: false }))).toBe(
+      "confirmed",
+    );
     expect((await mailbox.placements(id("kept-reset"))).filter((placement) => !placement.deleted)).toHaveLength(1);
     expect(await getMessage({ context: fixture.ownerContext, mailboxId: mailbox.mailboxId, messageId: content.id })).toMatchObject({
       ok: true,
