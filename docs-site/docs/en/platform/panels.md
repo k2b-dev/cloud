@@ -63,7 +63,8 @@ Cloud's rail, header, footer, banners, or another panel slot. Use it for the
 provider page instead of nesting `Layout` inside the iframe. Keep same-origin
 embedding allowed; see [Build and deploy](/en/docs/operations/build-and-deploy#enable-panel-providers).
 The embedded provider page follows the host's light or dark theme live, without
-reloading.
+reloading. `AppWorkspace` works inside `PanelLayout` as in `Layout`; its sidebar
+and detail sizes are not saved for the panel page.
 
 Links stay in the panel only below the declared panel path. A same-origin link
 outside it opens in the app window, so the panel never shows a second Cloud
@@ -146,9 +147,10 @@ panel of the main window. Ctrl+J or Cmd+J opens the panel there.
 
 The phone sheet has a separate, transient flag. Below 768 px the controller
 never writes the panel cookie. A new document always starts with it closed.
-Back and Forward, a restored page, and an in-page navigation that adds a
-history entry close the sheet; the last needs a browser with the Navigation
-API. Replacing the URL for page state keeps the sheet open. While the sheet is
+Back and Forward between app pages, a restored page, and an in-page navigation
+of the app that adds a history entry close the sheet; the last needs a browser
+with the Navigation API. History entries of the provider page stay with the
+panel: Back after a navigation inside the panel shows the panel's previous page. Replacing the URL for page state keeps the sheet open. While the sheet is
 open, a regular page can scroll its last row above it.
 
 ## Loading and message boundaries

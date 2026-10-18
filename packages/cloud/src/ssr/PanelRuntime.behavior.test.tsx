@@ -14,8 +14,9 @@ else {
     cleanup();
     jest.useRealTimers();
   });
-  const mount = (embedded = true, crossOrigin = false, props: { scope?: string } = { scope: "/app/fixture/panel/" }) => {
+  const mount = (embedded = true, crossOrigin = false, props: { scope?: string } = { scope: "/app/fixture/panel/" }, markup = "") => {
     const dom = createDomTestHarness();
+    if (markup) dom.root.insertAdjacentHTML("beforebegin", markup);
     // Happy DOM runs an anchor's native navigation before the click reaches window.
     const open = jest.spyOn(dom.window, "open").mockReturnValue(null);
     const postMessage = mock((_message: unknown, _targetOrigin: string) => {});
@@ -52,6 +53,16 @@ else {
     };
     return { dom, postMessage, dispose, parent, parentDocument, assign, click };
   };
+  test("installs the workspace controller the SSR body marker hands to the page runtime", () => {
+    const h = mount(
+      false,
+      false,
+      {},
+      '<div data-k2b-app-workspace><aside class="k2b-app-workspace__sidebar" id="panel-sidebar"></aside><button data-app-workspace-sidebar-toggle aria-controls="server-id"></button></div>',
+    );
+    expect(document.querySelector("[data-app-workspace-sidebar-toggle]")?.getAttribute("aria-controls")).toBe("panel-sidebar");
+    h.dispose();
+  });
   test("same-origin links outside the panel scope navigate the parent and clean up on dispose", () => {
     const h = mount();
     const base = document.createElement("base");

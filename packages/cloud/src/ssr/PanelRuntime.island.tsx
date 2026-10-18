@@ -1,4 +1,4 @@
-import { installInputModeController, keyboardPlatform } from "@k2b/ui";
+import { installAppWorkspaceController, installInputModeController, keyboardPlatform } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { syncTimezoneCookie } from "./timezone-cookie";
 
@@ -6,6 +6,9 @@ export default function PanelRuntime(props: { provider?: string; scope?: string 
   onMount(() => {
     syncTimezoneCookie(true);
     const disposeInput = installInputModeController();
+    // The SSR body hands workspace controller ownership to the page runtime, as Layout's ShellRuntime does. A panel
+    // page keeps no workspace layout cookie: the app's own layout must not follow the reader into a narrow panel.
+    const disposeWorkspace = installAppWorkspaceController();
     const deferred = new Set<ReturnType<typeof setTimeout>>();
     const embedded = window.parent !== window;
     let disposeTheme = () => {};
@@ -71,6 +74,7 @@ export default function PanelRuntime(props: { provider?: string; scope?: string 
     }
     onCleanup(() => {
       disposeInput();
+      disposeWorkspace();
       disposeTheme();
       window.removeEventListener("pagehide", pageHide);
       window.removeEventListener("pageshow", pageShow);
