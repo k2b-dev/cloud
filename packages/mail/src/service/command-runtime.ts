@@ -26,6 +26,7 @@ import { isTransientDatabaseError } from "./database-errors";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { mailLive } from "./live";
 import { localStateProjectionSchema, rollbackLocalStateProjection } from "./local-state-projection";
+import { loadInlineLogoContent } from "./mailbox-logos";
 import {
   enqueueMaintenanceCommand,
   startMaintenanceRuntime,
@@ -2722,12 +2723,14 @@ const ensureMimeBlob = async (outbox: DbOutboxExecution): Promise<OutboxMime> =>
     const blob = await getStoredBlob(outbox.mime_blob_id);
     return { blobId: blob.id, byteLength: blob.byteLength, snapshot, date: new Date(outbox.mime_date) };
   }
+  const inlineLogoContent = await loadInlineLogoContent(snapshot.inlineLogo);
   const date = new Date();
   const source = buildMimeStream({
     snapshot,
     messageId: outbox.stable_message_id,
     date,
     openAttachment: createBlobReadable,
+    inlineLogoContent,
   });
   const blob = await storeReadableBlob(source);
   const [updated] = await sql<{ mime_blob_id: string; mime_date: Date | string }[]>`
@@ -3025,6 +3028,7 @@ const sentCopySource = async (outbox: DbOutboxExecution, mime: OutboxMime): Prom
       messageId: outbox.stable_message_id,
       date: mime.date,
       openAttachment: createBlobReadable,
+      inlineLogoContent: await loadInlineLogoContent(snapshot.inlineLogo),
       keepBcc: true,
     }),
   );

@@ -29,6 +29,7 @@ import { checkCommandKeepProtection, isKeptMessage, keepError } from "./conversa
 import { invalidateDraftLeaseAfterSend } from "./draft-leases";
 import { resolveMailExecution } from "./execution";
 import { mailLive } from "./live";
+import { loadInlineLogoContent } from "./mailbox-logos";
 import { createBlobReadable } from "./message-blobs";
 import { BASE_MAINTENANCE_KINDS, getOperatorActionEligibility } from "./operator-actions";
 import { OUTBOX_DISPATCH_GRACE_SECONDS } from "./outbound-delivery";
@@ -589,6 +590,7 @@ const createSendOutbox = async (params: {
     draft: content.data,
     actor: params.actor,
     renderLiquid: draft.origin === "user",
+    logoSource: "cid",
   });
   if (!rendered.ok) throw Object.assign(new Error(rendered.error.message), rendered.error);
   const senderDomain = draft.from_address.split("@")[1]?.toLowerCase() || "mail.invalid";
@@ -631,6 +633,7 @@ const createSendOutbox = async (params: {
     format: draft.body_format,
     renderedText: rendered.data.text,
     renderedHtml: rendered.data.html,
+    inlineLogo: rendered.data.inlineLogo,
     inReplyTo: draft.parent_message_id,
     references,
     attachments: draft.attachments,
@@ -640,11 +643,13 @@ const createSendOutbox = async (params: {
     throw Object.assign(new Error(message), err.badInput(message));
   }
   const mimeDate = new Date();
+  const inlineLogoContent = await loadInlineLogoContent(snapshot.data.inlineLogo, params.db);
   const byteLength = await measureMimeStream({
     snapshot: snapshot.data,
     messageId: stableMessageId,
     date: mimeDate,
     openAttachment: createBlobReadable,
+    inlineLogoContent,
   });
   const providerLimits = await loadBindingProviderLimits(params.db, params.selectedBindingId);
   const rawIdentityTransportCapabilities =
@@ -693,7 +698,8 @@ const createSendOutbox = async (params: {
       preflight_smtp_limit_bytes,
       preflight_checked_at,
       safety_review,
-      selected_identity_transport_revision
+      selected_identity_transport_revision,
+      inline_logo_version_id
     )
     VALUES (
       ${shortId},
@@ -723,7 +729,8 @@ const createSendOutbox = async (params: {
         warningIds: safety.data.warnings.map((warning) => warning.id),
         approved: safety.data.warnings.length === 0 || prepared.safetyApproval !== null,
       }}::jsonb,
-      ${draft.identity_transport_revision}
+      ${draft.identity_transport_revision},
+      ${snapshot.data.inlineLogo?.versionId ?? null}::uuid
     )
     RETURNING id
   `,
@@ -737,6 +744,7 @@ const createSendOutbox = async (params: {
     stableMessageId,
     conversationId: draft.conversation_id,
     snapshot: snapshot.data,
+    inlineLogoContent,
     internalDate: effectiveScheduledAt,
     byteLength,
   });
