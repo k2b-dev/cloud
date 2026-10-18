@@ -12,6 +12,7 @@ import {
   Show,
   untrack,
 } from "solid-js";
+import { isWeekendKey } from "../intl/weekend";
 import { prefersReducedMotion } from "../motion";
 import type { CalendarEvent } from "./Calendar";
 import { GESTURE_GAP_MS, snapToColumn, type WheelAxis, wheelAxis, wheelDelta, wheelPixels } from "./calendar-day-scroll";
@@ -662,6 +663,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                       .filter(Boolean)
                       .join(", ")}
                     data-today={today() ? "true" : undefined}
+                    data-weekend={isWeekendKey(key, view.dateConfig().locale) ? "true" : undefined}
                     data-past={key < view.calendarToday() ? "true" : undefined}
                     data-cheer={view.cheered() === key ? "true" : undefined}
                     style={{ "grid-column": String(indexOf(key) + 2) }}
@@ -737,6 +739,14 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                 else props.owner.onSlotActivate?.(range);
               }}
             >
+              {/* The weekend band runs on through the all-day row; positioned, it takes no cell from the bars. */}
+              <For each={keys()}>
+                {(key, index) => (
+                  <Show when={isWeekendKey(key, view.dateConfig().locale)}>
+                    <span class="k2b-calendar-week__weekend" style={{ "grid-column": `${index() + 1} / span 1` }} aria-hidden="true" />
+                  </Show>
+                )}
+              </For>
               <Show when={rangeSelection()}>
                 {(range) => (
                   <div
@@ -1032,6 +1042,7 @@ const WeekColumn = (props: {
       data-calendar-body={props.dayKey}
       data-expanded={props.expanded ? "true" : "false"}
       data-today={props.dayKey === view.calendarToday() ? "true" : undefined}
+      data-weekend={isWeekendKey(props.dayKey, view.dateConfig().locale) ? "true" : undefined}
       data-selected={selected() ? "true" : undefined}
       data-active={view.activeKey() === props.dayKey ? "true" : undefined}
       role="group"

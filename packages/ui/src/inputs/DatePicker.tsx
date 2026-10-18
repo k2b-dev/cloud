@@ -4,6 +4,7 @@ import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../i
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useDateConfigLocale } from "../intl/locale";
 import { resolveUiMessages, useUiMessages } from "../intl/messages";
+import { isWeekendKey } from "../intl/weekend";
 import {
   type DateRangeValue,
   dateKey,
@@ -19,13 +20,15 @@ import {
   monthNames,
   msUntilNextDay,
   normalizeTimeInput,
-  orderedRange,
   parseDateValue,
   pickerContext,
+  pickRangeDay,
   previewRange,
+  rangeAnchor,
   resolveFocusDay,
   splitDateTime,
   toDateTimeValue,
+  weekendBands,
   yearMonth,
 } from "./date-picker";
 import type { MaybeAccessor, ValueFieldProps } from "./field-contract";
@@ -363,6 +366,9 @@ function DatePickerPanel(props: {
     document.addEventListener("visibilitychange", refresh);
     onCleanup(() => document.removeEventListener("visibilitychange", refresh));
   });
+  // The weekend columns of the locale, read from the first week so they follow the grid's first day of the week.
+  const weekendColumns = createMemo(() => (dayRows()[0] ?? []).map((cell) => isWeekendKey(cell.key, context().locale)));
+  const bands = createMemo(() => weekendBands(weekendColumns()));
   let calendar: HTMLElement | undefined;
   // Days that belong to the visible month; the roving tabindex must land on one
   // of them or the grid becomes unreachable by keyboard after month navigation.
@@ -461,15 +467,29 @@ function DatePickerPanel(props: {
           </div>
         }
       >
+        {/* The weekend is a calm band behind its columns, from the weekday row through the last week. The band only
+            paints a background, so it never moves a day. */}
         <div class="k2b-date-weekdays" aria-hidden="true">
-          <For each={weekdays()}>{(day) => <span>{day}</span>}</For>
+          <For each={bands()}>
+            {(band) => <span class="k2b-date-weekend" style={{ "grid-column": `${band.start + 1} / span ${band.span}` }} />}
+          </For>
+          <For each={weekdays()}>{(day, index) => <span data-weekend={weekendColumns()[index()] ? "true" : undefined}>{day}</span>}</For>
         </div>
         <div class="k2b-date-grid" role="grid">
+          <For each={bands()}>
+            {(band) => (
+              <span
+                class="k2b-date-weekend"
+                aria-hidden="true"
+                style={{ "grid-column": `${band.start + 1} / span ${band.span}`, "grid-row": `1 / span ${dayRows().length}` }}
+              />
+            )}
+          </For>
           <For each={dayRows()}>
             {(week) => (
               <div class="k2b-date-week" role="row">
                 <For each={week}>
-                  {(cell) => {
+                  {(cell, cellIndex) => {
                     const selected = () => props.selected?.() === cell.key;
                     const range = () => props.range?.() ?? { start: null, end: null };
                     const active = () => selected() || isRangeEdge(cell.key, range());
@@ -482,6 +502,7 @@ function DatePickerPanel(props: {
                         data-date-day={cell.key}
                         data-date-focus={focusable() ? "true" : undefined}
                         data-outside={cell.outside ? "true" : undefined}
+                        data-weekend={weekendColumns()[cellIndex()] ? "true" : undefined}
                         data-in-range={inRange(cell.key, range()) && !active() ? "true" : undefined}
                         data-today={today() ? "true" : undefined}
                         aria-current={today() ? "date" : undefined}
@@ -704,14 +725,17 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
     start: parts().start.date || null,
     end: parts().end.date || null,
   });
+  // The day of the last click that started a one-day range; the next click on another day extends from it.
+  const [anchor, setAnchor] = createSignal<string | null>(null);
   const [previewDate, setPreviewDate] = createSignal<string | null>(null);
   const [startTime, setStartTime] = createSignal(parts().start.time || "09:00");
   const [endTime, setEndTime] = createSignal(parts().end.time || "10:00");
-  const displayRange = createMemo(() => previewRange(draftRange(), previewDate()));
+  const displayRange = createMemo(() => previewRange(draftRange(), anchor(), previewDate()));
 
   const syncDraft = () => {
     const next = parts();
     setDraftRange({ start: next.start.date || null, end: next.end.date || null });
+    setAnchor(null);
     setPreviewDate(null);
     setStartTime(next.start.time || "09:00");
     setEndTime(next.end.time || "10:00");
@@ -736,12 +760,9 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
   };
 
   const selectDate = (value: string) => {
-    const current = draftRange();
-    if (!current.start || current.end) {
-      setDraftRange({ start: value, end: null });
-    } else {
-      setDraftRange(orderedRange(current.start, value));
-    }
+    const next = pickRangeDay(draftRange(), anchor(), value);
+    setDraftRange(next.range);
+    setAnchor(next.anchor);
     setPreviewDate(null);
   };
 
@@ -839,10 +860,7 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
               range={displayRange}
               focusDate={() => draftRange().start}
               onSelect={selectDate}
-              onDayPreview={(value) => {
-                const current = draftRange();
-                setPreviewDate(current.start && !current.end ? value : null);
-              }}
+              onDayPreview={(value) => setPreviewDate(rangeAnchor(draftRange(), anchor()) ? value : null)}
               dateConfig={dateConfig()}
             />
           </div>
