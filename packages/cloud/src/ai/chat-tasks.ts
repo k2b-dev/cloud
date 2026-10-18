@@ -989,7 +989,9 @@ export const aiChatTasks = {
         const [available] = await tx`SELECT sponsor.id FROM auth.users sponsor JOIN ai.conversations conversation
           ON conversation.created_by_user_id = sponsor.id WHERE sponsor.id = ${current.sponsor_user_id}::uuid
           AND conversation.id = ${current.conversation_id}::uuid AND conversation.archived_at IS NULL
-          AND (sponsor.account_expires IS NULL OR sponsor.account_expires > now())`;
+          AND (sponsor.account_expires IS NULL OR sponsor.account_expires > now())
+          FOR SHARE OF conversation`;
+        // Held until this resume commits, so an archive waits for it and its follow-up then pauses the routine again.
         if (!available) throw new AiChatTaskAuthorityError("Scheduled task sponsor or chat is unavailable");
         const policy = taskMandatePolicy(mandate);
         if (!mandate.confirmed_at || !mandate.unexpired || !policy || !isChatTaskMandatePolicy(policy)) {
