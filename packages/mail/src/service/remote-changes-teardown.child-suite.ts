@@ -1,17 +1,26 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { useRemoteChangesFixture } from "./remote-changes-fixture";
 
 describe("remote changes teardown", () => {
   const { connect, id } = useRemoteChangesFixture();
   let hungMailboxId = "";
+  let hungSync: Promise<number> | null = null;
 
-  test("a sync that outlives its test", async () => {
+  // The first test's sync starts here, outside its one-second budget, and already waits on its held
+  // envelope fetch when the test starts, so the timeout always hits a sync in flight.
+  beforeEach(async () => {
+    if (hungSync) return;
     const mailbox = await connect("hung-sync", false);
     hungMailboxId = mailbox.mailboxId;
     for (let index = 1; index <= 3; index += 1) mailbox.remote.put("archive", id(`hung-${index}`));
-    mailbox.remote.holdNextEnvelopes();
-    await mailbox.sync("archive");
+    const held = mailbox.remote.holdNextEnvelopes();
+    hungSync = mailbox.sync("archive");
+    await held;
+  });
+
+  test("a sync that outlives its test", async () => {
+    await hungSync;
   }, 1_000);
 
   test("the next test sees none of it", async () => {

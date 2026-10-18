@@ -81,7 +81,8 @@ const createProvider = (params: { account: string; condstore: boolean; draftSear
   /** Runs once after the next envelope fetch, like a change another client makes meanwhile. */
   let afterNextEnvelopes: (() => void) | null = null;
   let ended = false;
-  let holdNextEnvelopes = false;
+  /** Set while the next envelope fetch is to be held; called once that fetch waits. */
+  let holdNextEnvelopes: (() => void) | null = null;
   let heldEnvelopes: { resolve: () => void; reject: (error: Error) => void } | null = null;
   const methods = {
     getFolderStatus: async (path: string) => ({
@@ -92,10 +93,12 @@ const createProvider = (params: { account: string; condstore: boolean; draftSear
     }),
     fetchEnvelopeBatch: async (request: EnvelopeBatchRequest) => {
       calls.envelopes += 1;
-      if (holdNextEnvelopes) {
-        holdNextEnvelopes = false;
+      const held = holdNextEnvelopes;
+      if (held) {
+        holdNextEnvelopes = null;
         await new Promise<void>((resolve, reject) => {
           heldEnvelopes = { resolve, reject };
+          held();
         });
       }
       if (ended) throw endedProviderError("fetchEnvelopeBatch", params.account);
@@ -167,10 +170,11 @@ const createProvider = (params: { account: string; condstore: boolean; draftSear
     setFlags: (path: string, uid: number, flags: string[]) => {
       folder(path).entries.get(uid)!.flags = new Set(flags);
     },
-    /** Holds the next envelope answer until teardown or another account connects. */
-    holdNextEnvelopes: () => {
-      holdNextEnvelopes = true;
-    },
+    /** Holds the next envelope answer until teardown or another account connects; resolves once that fetch waits. */
+    holdNextEnvelopes: () =>
+      new Promise<void>((resolve) => {
+        holdNextEnvelopes = resolve;
+      }),
     anotherProviderCreated: () => {
       heldEnvelopes?.resolve();
       heldEnvelopes = null;

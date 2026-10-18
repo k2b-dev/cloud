@@ -47,14 +47,14 @@ if (process.env.MAIL_REMOTE_CHANGES_TEARDOWN_CHILD === "1") {
         passed: 1,
       });
       // Bun reports a timed-out body's late rejection as an error between tests. It belongs to the hung
-      // test when Bun prints it before that test's result, during its teardown, and names the ended test.
+      // test when Bun prints it before that test's result, during its teardown, and comes from the held call.
       const late = Array.from(stderr.matchAll(/^# Unhandled error between tests\r?$/gm), (match) => match.index);
       const hungResult = stderr.indexOf("(fail) remote changes teardown > a sync that outlives its test");
       expect({ late: late.length, beforeHungResult: late.every((index) => index < hungResult) }, output).toEqual({
         late: 1,
         beforeHungResult: true,
       });
-      expect(stderr.slice(late[0], hungResult), output).toMatch(/code: "(?:ENDED_TEST_PROVIDER|TEST_ENDED)"/);
+      expect(stderr.slice(late[0], hungResult), output).toMatch(/code: "ENDED_TEST_PROVIDER"/);
     }, 120_000);
   });
 }
