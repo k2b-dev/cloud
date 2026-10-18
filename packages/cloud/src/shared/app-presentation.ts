@@ -65,6 +65,7 @@ export const resolveAppPresentation = <T extends AppMeta>(app: T, requestedLocal
   return {
     ...app,
     ...resolveAppIdentityPresentation(app, requestedLocale),
+    ...(app.panel ? { panel: { ...app.panel, label: translation.panelLabel ?? app.panel.label } } : {}),
     adminNav: app.adminNav?.map((group) => ({
       ...group,
       label: (group.id && translation.adminGroups?.[group.id]) || group.label,

@@ -518,6 +518,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       // Dialogs and popovers keep their own Tab order.
       const page = phone?.matches ? allRoots().flatMap(openDetails).find(phonePage) : undefined;
       if (!page || ownerDocument.querySelector("dialog[open], [aria-modal='true']") || target.closest("[popover]")) return;
+      if (target !== ownerDocument.body) {
+        const rect = target.getBoundingClientRect();
+        const hit = ownerDocument.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        if (hit && target.contains(hit)) return;
+      }
       const stops = tabStopsIn(page);
       event.preventDefault();
       (event.shiftKey ? stops.at(-1) : stops[0])?.focus();

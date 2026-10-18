@@ -39,6 +39,7 @@ const apps: RuntimeAppMeta[] = Array.from({ length: 12 }, (_, index) => ({
   description: "Manage projects, documents and daily work in your team.",
   routes: [`/app/app-${index}`, `/admin/app-${index}`],
   nav: { href: `/app/app-${index}`, section: index < 8 ? "primary" : "more", requiresAuth: false },
+  ...(index < 2 ? { panel: { href: `/app/app-${index}/panel`, label: `Panel ${index}`, icon: "ti ti-box" } } : {}),
   appearance: { accent: "#2563eb" },
   searchLinks: Array.from({ length: index < 6 ? 3 : 2 }, (_, link) => ({
     label: `Search destination ${index}-${link}`,

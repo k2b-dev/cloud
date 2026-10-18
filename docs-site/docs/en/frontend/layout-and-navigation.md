@@ -130,6 +130,12 @@ pages the shell turns them into the way up (see below). Anonymous pages show
 the entries as breadcrumbs in their header from 1024 px; the final breadcrumb
 has no link. A plain string is valid for a one-level title.
 
+Signed-in pages show the shared panel slot when at least one authorized
+application declares a provider. Use `panel={false}` to hide it on sign-in,
+print, presentation, or public pages that use `Layout`. Anonymous pages have
+no slot. `PanelLayout` renders the provider page itself, without shell chrome.
+See [Offer a panel](/en/docs/platform/panels).
+
 `help?: string[]` names two or three articles from the current app's Help that
 fit this page, for example `help={["inventory-start", "inventory-access"]}`.
 Help lists them first under **For this view**, in the declared order. Cloud

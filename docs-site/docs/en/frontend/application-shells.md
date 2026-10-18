@@ -5,7 +5,7 @@ section: Frontend
 order: 830
 description: Choose the shared shell that matches an application's information structure.
 tags: [shells, workspace, ui]
-updated: 2026-10-11
+updated: 2026-10-17
 ---
 
 # Application shells
@@ -88,6 +88,16 @@ Keep geometry IDs stable. Do not add another grid or resize handle.
 
 From 768 px, signed-in layouts expose Help and Search through the app bar.
 Their header controls exist only on phones.
+
+## Offer a page beside other apps
+
+Declare `panel: { href, label, icon, requiresRoles? }` in `defineApp()` to offer
+one application page in Cloud's panel slot. Render that route with
+`PanelLayout` from `@k2b/cloud/ssr`. From 1024 px, the open column narrows the
+app area, which Cloud supplies as the workspace's `k2b-app-area` host. At
+smaller widths it overlays the app as a drawer or phone sheet.
+See [Offer a panel](/en/docs/platform/panels) for authorization, opening,
+keyboard controls, loading, and persistence.
 
 ## Add contextual detail
 

@@ -155,3 +155,14 @@ test("option translations use only their own value keys, including prototype pro
     ],
   });
 });
+
+test("translates panel labels through regional fallback without changing stable fields", () => {
+  const configured = {
+    ...app,
+    panel: { href: "/app/inventory/panel", label: "Stock", icon: "ti ti-box", requiresRoles: ["user"] },
+    presentation: { baseLocale: "en", translations: { de: { panelLabel: "Bestand" } } },
+  } satisfies AppMeta;
+  expect(resolveAppPresentation(configured, "de-CH").panel).toEqual({ ...configured.panel, label: "Bestand" });
+  expect(resolveAppPresentation(configured, "fr").panel?.label).toBe("Stock");
+  expect(configured.panel.label).toBe("Stock");
+});

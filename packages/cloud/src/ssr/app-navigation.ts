@@ -1,3 +1,4 @@
+import { isOwnAppPath } from "../_internal/app-path";
 import { hasAnyAppRole } from "../_internal/app-roles";
 import type { RuntimeAppMeta } from "../contracts/app";
 import { isPwaPartId } from "../contracts/pwa-paths";
@@ -51,4 +52,18 @@ export const visiblePwaParts = (apps: readonly RuntimeAppMeta[], user: User | un
     )
     .map((app) => resolveAppPresentation(app, locale))
     .sort((a, b) => a.name.localeCompare(b.name, locale) || a.id.localeCompare(b.id));
+};
+
+export type PanelProvider = { id: string; label: string; icon: string; href: string };
+
+/** Authorized presentation only: the panel route still authorizes every request. */
+export const visiblePanelProviders = (apps: readonly RuntimeAppMeta[], user: User | undefined, locale: string): PanelProvider[] => {
+  if (!user) return [];
+  return apps
+    .flatMap((app) => {
+      if (!app.panel || !isOwnAppPath(app.panel.href, app.routes) || !hasAnyAppRole(user, app.panel.requiresRoles)) return [];
+      const panel = resolveAppPresentation(app, locale).panel;
+      return panel ? [{ id: app.id, label: panel.label, icon: panel.icon, href: panel.href }] : [];
+    })
+    .sort((a, b) => a.label.localeCompare(b.label, locale) || a.id.localeCompare(b.id));
 };
