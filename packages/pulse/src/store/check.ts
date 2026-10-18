@@ -53,6 +53,7 @@ export type CheckStoreOptions = {
   mode: "connection" | "full";
   signal?: AbortSignal;
   clock?: () => Date;
+  transport?: QueryOptions["transport"];
 };
 
 export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheckResult> => {
@@ -63,7 +64,7 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
     steps: { reach: "skipped", auth: "skipped", version: "skipped", rights: "skipped", profiles: "skipped" },
   };
   const signal = AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(15_000)]);
-  const base = { url: options.url, user: options.user, password: options.password, timeoutMs: 5_000, signal };
+  const base = { url: options.url, user: options.user, password: options.password, timeoutMs: 5_000, signal, transport: options.transport };
   const run = (query: string, extra?: Partial<Pick<QueryOptions, "params" | "settings" | "user" | "password">>) =>
     clickhouseQuery({ ...base, ...extra, query });
   let step: (typeof CHECK_STEPS)[number] = "reach";

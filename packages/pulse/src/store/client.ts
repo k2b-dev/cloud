@@ -1,3 +1,5 @@
+import { createAllowedNetworkFetch } from "@k2b/cloud/services";
+import { parseNetworkAllowlist } from "@k2b/cloud/shared";
 import { z } from "zod";
 import { StorePassword, StoreUrl, StoreUser } from "./validation";
 
@@ -21,8 +23,13 @@ export type QueryOptions = {
   signal?: AbortSignal;
   timeoutMs: number;
   format?: "JSON" | "TabSeparated";
+  transport?: (input: string, init: RequestInit) => Promise<Response>;
 };
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+
+// By Pulse's design, the Cloud admin owns internal targets: the saved or submitted
+// host is the allowlist entry, with no env vars. Remote responses are never echoed.
+export const storeAllowlist = (url: URL) => parseNetworkAllowlist([url.hostname]);
 
 export const clickhouseQuery = async (options: QueryOptions): Promise<Record<string, unknown>[]> => {
   // Validation errors never carry their input values.
@@ -39,7 +46,8 @@ export const clickhouseQuery = async (options: QueryOptions): Promise<Record<str
   for (const [name, value] of Object.entries(options.settings ?? {})) url.searchParams.set(name, String(value));
   const signal = AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(options.timeoutMs)]);
   try {
-    const response = await fetch(url, {
+    const transport = options.transport ?? createAllowedNetworkFetch(storeAllowlist(url));
+    const response = await transport(url.href, {
       method: "POST",
       body: options.query,
       redirect: "error",

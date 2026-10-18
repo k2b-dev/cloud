@@ -511,6 +511,11 @@ saved connection unchanged and identify the failed check with a repair hint.
 Store passwords only through the page, a private file or stdin; never put them
 in a CLI flag value or URL.
 
+The Cloud admin owns this internal target. Pulse allows exactly the host in
+the saved or submitted ClickHouse address, without environment configuration.
+Requests connect directly to checked addresses and never follow redirects.
+Remote response bodies are never echoed in errors.
+
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
 

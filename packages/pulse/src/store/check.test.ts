@@ -1,5 +1,6 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, expect, type Mock, mock, test } from "bun:test";
 import { checkStore, supportedVersion } from "./check";
+import type { QueryOptions } from "./client";
 import { READ_LIMITS, READ_PROFILES } from "./setup-sql";
 
 const clock = () => new Date("2026-10-17T12:00:00.000Z");
@@ -17,43 +18,32 @@ const reply = (data: Record<string, unknown>[] = [], code?: number) =>
   code
     ? new Response("REMOTE_BODY_MUST_NEVER_LEAK", { status: 403, headers: { "X-ClickHouse-Exception-Code": String(code) } })
     : Response.json({ data }, { headers: { "X-ClickHouse-Query-Id": "fixture" } });
-let mock: ReturnType<typeof spyOn<typeof globalThis, "fetch">> | undefined;
+let transport: Mock<NonNullable<QueryOptions["transport"]>>;
 const stub = (version = "26.9.19.9") => {
   queries.length = 0;
   profile = "read_normal";
-  mock = spyOn(globalThis, "fetch").mockImplementation(
-    Object.assign(
-      async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-        const query = String(init?.body);
-        queries.push(query);
-        const code = reject?.(query);
-        if (code) return reply([], code);
-        if (query === "SELECT version() AS version") return reply([{ version }]);
-        if (query.startsWith("CREATE SETTINGS PROFILE") || /^CREATE DATABASE `fixturex_/.test(query) || query.includes("system.query_log"))
-          return reply([], 497);
-        if (query === "SHOW GRANTS FINAL") return reply([{ grant: "GRANT KILL QUERY ON * TO fixture_service" }]);
-        if (query.startsWith("ALTER USER")) {
-          const selected = Object.keys(READ_PROFILES).find((key) => query.includes(key));
-          if (selected && selected in READ_PROFILES) profile = selected as keyof typeof READ_PROFILES;
-        }
-        if (query.startsWith("SELECT getSetting('max_memory_usage') AS memory")) return reply([{ memory: 1_000_000_000 }]);
-        if (query.startsWith("SELECT getSetting")) return reply([{ ...READ_PROFILES[profile], ...READ_LIMITS }]);
-        if (
-          query.startsWith("SET ") ||
-          query.startsWith("SELECT 1 SETTINGS") ||
-          new URL(String(_input)).searchParams.has("max_memory_usage")
-        )
-          return reply([], 164);
-        if (query.startsWith("SELECT value")) return reply([{ value: 1 }]);
-        return reply();
-      },
-      { preconnect: fetch.preconnect },
-    ),
-  );
+  transport = mock(async (_input: string, init: RequestInit) => {
+    const query = String(init?.body);
+    queries.push(query);
+    const code = reject?.(query);
+    if (code) return reply([], code);
+    if (query === "SELECT version() AS version") return reply([{ version }]);
+    if (query.startsWith("CREATE SETTINGS PROFILE") || /^CREATE DATABASE `fixturex_/.test(query) || query.includes("system.query_log"))
+      return reply([], 497);
+    if (query === "SHOW GRANTS FINAL") return reply([{ grant: "GRANT KILL QUERY ON * TO fixture_service" }]);
+    if (query.startsWith("ALTER USER")) {
+      const selected = Object.keys(READ_PROFILES).find((key) => query.includes(key));
+      if (selected && selected in READ_PROFILES) profile = selected as keyof typeof READ_PROFILES;
+    }
+    if (query.startsWith("SELECT getSetting('max_memory_usage') AS memory")) return reply([{ memory: 1_000_000_000 }]);
+    if (query.startsWith("SELECT getSetting")) return reply([{ ...READ_PROFILES[profile], ...READ_LIMITS }]);
+    if (query.startsWith("SET ") || query.startsWith("SELECT 1 SETTINGS") || new URL(String(_input)).searchParams.has("max_memory_usage"))
+      return reply([], 164);
+    if (query.startsWith("SELECT value")) return reply([{ value: 1 }]);
+    return reply();
+  });
 };
 afterEach(() => {
-  mock?.mockRestore();
-  mock = undefined;
   reject = undefined;
 });
 test("numeric version comparison accepts 26.9+ and rejects malformed or older versions", () => {
@@ -62,7 +52,7 @@ test("numeric version comparison accepts 26.9+ and rejects malformed or older ve
 });
 test("connection mode freezes time and skips all mutating probes", async () => {
   stub();
-  const value = await checkStore({ ...options, mode: "connection" });
+  const value = await checkStore({ ...options, transport, mode: "connection" });
   expect(value).toMatchObject({
     ok: true,
     version: "26.9.19.9",
@@ -73,7 +63,7 @@ test("connection mode freezes time and skips all mutating probes", async () => {
 });
 test("version failure is the first failure and stops probes", async () => {
   stub("26.8.1");
-  expect(await checkStore({ ...options, mode: "full" })).toMatchObject({
+  expect(await checkStore({ ...options, transport, mode: "full" })).toMatchObject({
     ok: false,
     code: "VERSION_TOO_OLD",
     steps: { version: "failed", rights: "skipped", profiles: "skipped" },
@@ -82,7 +72,7 @@ test("version failure is the first failure and stops probes", async () => {
 });
 test("full check validates every profile limit and all three normal override paths, then cleans up", async () => {
   stub();
-  const value = await checkStore({ ...options, mode: "full" });
+  const value = await checkStore({ ...options, transport, mode: "full" });
   expect(value).toMatchObject({ ok: true, steps: { reach: "ok", auth: "ok", version: "ok", rights: "ok", profiles: "ok" } });
   for (const setting of Object.keys(READ_LIMITS))
     expect(queries.some((query) => query.startsWith(`SELECT 1 SETTINGS ${setting} =`))).toBe(true);
@@ -92,7 +82,7 @@ test("full check validates every profile limit and all three normal override pat
 test("missing CREATE USER maps to a stable right and still attempts bounded cleanup", async () => {
   stub();
   reject = (query) => (query.startsWith("CREATE USER") ? 497 : undefined);
-  const value = await checkStore({ ...options, mode: "full" });
+  const value = await checkStore({ ...options, transport, mode: "full" });
   expect(value).toMatchObject({ ok: false, code: "MISSING_RIGHT:CREATE USER", steps: { rights: "failed" } });
   expect(queries.some((query) => query.startsWith("DROP USER IF EXISTS"))).toBe(true);
   expect(JSON.stringify(value)).not.toContain("REMOTE_BODY");
@@ -100,7 +90,7 @@ test("missing CREATE USER maps to a stable right and still attempts bounded clea
 test("wrong password is auth failure, never a remote message", async () => {
   stub();
   reject = () => 516;
-  expect(await checkStore({ ...options, mode: "connection" })).toMatchObject({
+  expect(await checkStore({ ...options, transport, mode: "connection" })).toMatchObject({
     ok: false,
     code: "AUTH_FAILED",
     steps: { reach: "ok", auth: "failed", version: "skipped" },
@@ -108,18 +98,11 @@ test("wrong password is auth failure, never a remote message", async () => {
 });
 test("a profile that permits overriding a limit is rejected", async () => {
   stub();
-  const previous = mock!;
-  previous.mockRestore();
-  stub();
-  const implementation = mock!.getMockImplementation()!;
-  mock!.mockImplementation(
-    Object.assign(
-      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
-        String(init?.body).startsWith("SELECT 1 SETTINGS max_memory_usage") ? reply([{ one: 1 }]) : implementation(input, init),
-      { preconnect: fetch.preconnect },
-    ),
+  const implementation = transport.getMockImplementation()!;
+  transport.mockImplementation(async (input, init) =>
+    String(init.body).startsWith("SELECT 1 SETTINGS max_memory_usage") ? reply([{ one: 1 }]) : implementation(input, init),
   );
-  expect(await checkStore({ ...options, mode: "full" })).toMatchObject({
+  expect(await checkStore({ ...options, transport, mode: "full" })).toMatchObject({
     ok: false,
     code: "PROFILE_MISSING:fixture_read_small",
     steps: { profiles: "failed" },
@@ -127,31 +110,25 @@ test("a profile that permits overriding a limit is rejected", async () => {
 });
 test("admin privileges are refused and scratch objects are removed", async () => {
   stub();
-  const implementation = mock!.getMockImplementation()!;
-  mock!.mockImplementation(
-    Object.assign(
-      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
-        String(init?.body).startsWith("CREATE SETTINGS PROFILE") ? reply() : implementation(input, init),
-      { preconnect: fetch.preconnect },
-    ),
+  const implementation = transport.getMockImplementation()!;
+  transport.mockImplementation(async (input, init) =>
+    String(init.body).startsWith("CREATE SETTINGS PROFILE") ? reply() : implementation(input, init),
   );
-  expect(await checkStore({ ...options, mode: "full" })).toMatchObject({ ok: false, code: "TOO_MANY_RIGHTS" });
+  expect(await checkStore({ ...options, transport, mode: "full" })).toMatchObject({ ok: false, code: "TOO_MANY_RIGHTS" });
   expect(queries.some((query) => query.startsWith("DROP SETTINGS PROFILE IF EXISTS"))).toBe(true);
 });
 
 test("a read profile with a changed limit counts as missing", async () => {
   stub();
-  const implementation = mock!.getMockImplementation()!;
-  mock!.mockImplementation(
-    Object.assign(
-      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-        const query = String(init?.body);
-        if (query.startsWith("SELECT getSetting") && !query.includes("AS memory"))
-          return reply([{ ...READ_PROFILES[profile], ...READ_LIMITS, max_result_rows: 1_000_000 }]);
-        return implementation(input, init);
-      },
-      { preconnect: fetch.preconnect },
-    ),
-  );
-  expect(await checkStore({ ...options, mode: "full" })).toMatchObject({ ok: false, code: "PROFILE_MISSING:fixture_read_small" });
+  const implementation = transport.getMockImplementation()!;
+  transport.mockImplementation(async (input, init) => {
+    const query = String(init?.body);
+    if (query.startsWith("SELECT getSetting") && !query.includes("AS memory"))
+      return reply([{ ...READ_PROFILES[profile], ...READ_LIMITS, max_result_rows: 1_000_000 }]);
+    return implementation(input, init);
+  });
+  expect(await checkStore({ ...options, transport, mode: "full" })).toMatchObject({
+    ok: false,
+    code: "PROFILE_MISSING:fixture_read_small",
+  });
 });

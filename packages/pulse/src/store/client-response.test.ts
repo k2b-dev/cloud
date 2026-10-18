@@ -1,4 +1,5 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { expect, test } from "bun:test";
+import { NetworkTargetBlockedError } from "@k2b/cloud/services";
 import { clickhouseQuery, StoreQueryError } from "./client";
 
 const marker = "REMOTE_BODY_MUST_NEVER_LEAK";
@@ -9,8 +10,6 @@ const options = {
   query: "SELECT version()",
   timeoutMs: 1000,
 };
-let mock: ReturnType<typeof spyOn<typeof globalThis, "fetch">> | undefined;
-afterEach(() => mock?.mockRestore());
 for (const [name, response, kind, code] of [
   ["missing ClickHouse header", () => new Response(marker), "unreachable", undefined],
   [
@@ -29,9 +28,8 @@ for (const [name, response, kind, code] of [
   ],
 ] as const)
   test(`sanitizes ${name} without a socket`, async () => {
-    mock = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async () => response(), { preconnect: fetch.preconnect }));
     try {
-      await clickhouseQuery(options);
+      await clickhouseQuery({ ...options, transport: async () => response() });
       throw new Error("Expected failure");
     } catch (error) {
       expect(error).toBeInstanceOf(StoreQueryError);
@@ -43,18 +41,18 @@ for (const [name, response, kind, code] of [
       expect(error instanceof Error ? error.cause : undefined).toBeUndefined();
     }
   });
-test("network errors are sanitized and fetch forbids redirects", async () => {
-  let init: RequestInit | undefined;
-  mock = spyOn(globalThis, "fetch").mockImplementation(
-    Object.assign(
-      async (_input: Parameters<typeof fetch>[0], options?: RequestInit) => {
-        init = options;
-        throw new Error(marker);
-      },
-      { preconnect: fetch.preconnect },
-    ),
-  );
-  await expect(clickhouseQuery(options)).rejects.toMatchObject({ kind: "unreachable", message: "ClickHouse is unreachable" });
-  expect(init?.redirect).toBe("error");
-  expect(init?.signal).toBeInstanceOf(AbortSignal);
-});
+for (const error of [new Error(marker), new NetworkTargetBlockedError(marker)])
+  test(`${error.name} transport failures are sanitized and requests forbid redirects`, async () => {
+    let init: RequestInit | undefined;
+    await expect(
+      clickhouseQuery({
+        ...options,
+        transport: async (_input, options) => {
+          init = options;
+          throw error;
+        },
+      }),
+    ).rejects.toMatchObject({ kind: "unreachable", message: "ClickHouse is unreachable" });
+    expect(init?.redirect).toBe("error");
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
