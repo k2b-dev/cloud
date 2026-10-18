@@ -1,355 +1,29 @@
-import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, describe, expect, test } from "bun:test";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
-import tailwind from "bun-plugin-tailwind";
-import type { Browser, BrowserContext, Page } from "playwright";
-import { createComponent } from "solid-js";
-import { launchBrowser } from "../../../ui/test/browser";
+import { dropdownPosition } from "@k2b/ui";
+import type { Page } from "playwright";
+import { browserName, launchBrowser } from "../../../ui/test/browser";
+import {
+  attach,
+  cardInset,
+  cardRadius,
+  type Device,
+  desktop,
+  devices,
+  html,
+  installCompactShellHarness,
+  ipadLandscape,
+  ipadPortrait,
+  ipadSplitView,
+  laptop,
+  open,
+  phone,
+  smallLaptop,
+  tabletBoundary,
+} from "./compact-shell.browser-harness";
 
-// The shell's geometry at every width — which chrome exists, where the app
-// area ends, which edges draw lines — is decided by real layout, so a real
-// engine loads the server-rendered Layout with the global stylesheet and the
-// shared workspace controller, as Cloud serves them.
-const root = mkdtempSync(resolve(tmpdir(), "cloud-compact-shell-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
-process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-// Several tests walk every device, each in a fresh browser context.
-setDefaultTimeout(30_000);
-
-const { Hono } = await import("hono");
-const { AppWorkspace, Button, dropdownPosition, ScrollArea } = await import("@k2b/ui");
-const { defineApp } = await import("../_internal/define-app");
-const { person } = await import("../_internal/define-app.test-fixture");
-const railSnapshot = await import("../services/rail-snapshot");
-const settingsMiddleware = await import("../server/middleware/settings");
-const { defaultRailPreferences } = await import("../contracts/rail-preferences");
-const { default: Layout } = await import("./Layout");
-
-const probe = defineApp({
-  id: "compact-shell-probe",
-  name: "Compact shell probe",
-  icon: "ti ti-layout",
-  description: "Shell geometry probe",
-  baseUrl: "http://compact-shell-probe:3000",
-  routes: ["/app/mail"],
-});
-const apps = [
-  {
-    id: "mail",
-    name: "Mail",
-    icon: "ti ti-mail",
-    description: "Read and write mail",
-    routes: ["/app/mail"],
-    nav: { href: "/app/mail", section: "primary" },
-  },
-  {
-    id: "pwa",
-    name: "Phone app",
-    icon: "ti ti-device-mobile",
-    description: "Phone app",
-    routes: ["/pwa"],
-    nav: { href: "/pwa", section: "hidden" },
-  },
-];
-
-type LayoutContextArg = Parameters<typeof Layout>[0]["c"];
-
-/** A mail-like workspace: navigation, a list pane beside the reader, and a detail panel. Invented content. */
-const workspace = (selected: string) =>
-  createComponent(AppWorkspace, {
-    mobileSurface: "flush",
-    class: "min-h-0 flex-1",
-    get children() {
-      return [
-        createComponent(AppWorkspace.Sidebar, {
-          id: "mail-navigation",
-          label: "Mailboxes",
-          get children() {
-            return createComponent(AppWorkspace.SidebarDesktop, {
-              get children() {
-                return createComponent(AppWorkspace.SidebarBody, {
-                  get children() {
-                    return ["inbox", "archive", "sent"].map((id) =>
-                      createComponent(AppWorkspace.SidebarItem, {
-                        href: `#${id}`,
-                        icon: "ti ti-inbox",
-                        active: id === selected,
-                        children: id[0]!.toUpperCase() + id.slice(1),
-                      }),
-                    );
-                  },
-                });
-              },
-            });
-          },
-        }),
-        createComponent(AppWorkspace.Content, {
-          get children() {
-            return [
-              createComponent(AppWorkspace.Main, {
-                get children() {
-                  return [
-                    createComponent(AppWorkspace.MainPane, { id: "messages", label: "Messages", children: "Quarterly numbers" }),
-                    `Reader for ${selected}`,
-                  ];
-                },
-              }),
-              createComponent(AppWorkspace.Detail, { id: "message-detail", open: true, width: "sm", children: "Sender details" }),
-            ];
-          },
-        }),
-      ];
-    },
-  });
-
-/**
- * A task-list page: a long list in Main and an open detail that the server renders with its own close
- * control, as Contacts and Capabilities do. Invented content.
- */
-const listWorkspace = () =>
-  createComponent(AppWorkspace, {
-    class: "min-h-0 flex-1",
-    get children() {
-      return createComponent(AppWorkspace.Content, {
-        get children() {
-          return [
-            createComponent(AppWorkspace.Main, {
-              get children() {
-                return Array.from({ length: 80 }, (_, index) =>
-                  createComponent(Button, { class: "list-row", align: "start", children: `Task ${index + 1}` }),
-                );
-              },
-            }),
-            createComponent(AppWorkspace.Detail, {
-              id: "task-detail",
-              open: true,
-              get children() {
-                return createComponent(Button, { "data-workspace-detail-close": "", children: "Close task" });
-              },
-            }),
-          ];
-        },
-      });
-    },
-  });
-
-/** A sidebar-first overview that is the page itself, as Mail and Notebooks render. Invented content. */
-const overviewWorkspace = () =>
-  createComponent(AppWorkspace, {
-    mobileSurface: "flush",
-    flat: true,
-    resizable: false,
-    get children() {
-      return [
-        createComponent(AppWorkspace.Sidebar, {
-          id: "overview-navigation",
-          label: "Mailboxes",
-          get children() {
-            return createComponent(AppWorkspace.SidebarDesktop, {
-              get children() {
-                return createComponent(AppWorkspace.SidebarBody, {
-                  get children() {
-                    return ["Personal", "Projects", "Support"].map((name) =>
-                      createComponent(AppWorkspace.SidebarItem, { href: `#${name.toLowerCase()}`, children: name }),
-                    );
-                  },
-                });
-              },
-            });
-          },
-        }),
-        createComponent(AppWorkspace.Content, {
-          get children() {
-            return createComponent(AppWorkspace.Main, {
-              get children() {
-                return Array.from({ length: 80 }, (_, index) =>
-                  createComponent(Button, { class: "overview-row", align: "start", children: `Message ${index + 1}` }),
-                );
-              },
-            });
-          },
-        }),
-      ];
-    },
-  });
-
-const server = new Hono()
-  .get(
-    "/app/mail/:folder",
-    async (c, next) => {
-      // `?name=` renames Mail, for a long app name in the phone header.
-      const name = c.req.query("name");
-      c.set("runtime" as never, { apps: name ? apps.map((app) => (app.id === "mail" ? { ...app, name } : app)) : apps } as never);
-      // A missing last name shows the profile notice above the app.
-      c.set("user" as never, (c.req.query("notice") ? { ...person, sn: "" } : person) as never);
-      await next();
-    },
-    ...probe.ssr((c) => {
-      const folder = c.req.param("folder") ?? "inbox";
-      const title = folder[0]!.toUpperCase() + folder.slice(1);
-      // `?overview=` keeps regular Layout props, including its page scroller's gutter.
-      if (c.req.query("overview"))
-        return () =>
-          createComponent(Layout, {
-            c: c as unknown as LayoutContextArg,
-            title: [{ title: "Home", href: "/" }, { title: "Mail" }],
-            get children() {
-              return overviewWorkspace();
-            },
-          });
-      // `?cards=` renders a page without a workspace that scrolls its content in a ScrollArea, as
-      // Capabilities and Weather do.
-      if (c.req.query("cards"))
-        return () =>
-          createComponent(Layout, {
-            c: c as unknown as LayoutContextArg,
-            fullWidth: true,
-            title: [{ title: "Home", href: "/" }, { title: "Capabilities" }],
-            get children() {
-              return createComponent(ScrollArea, {
-                class: "min-h-0 min-w-0 flex-1",
-                get children() {
-                  return Array.from({ length: 60 }, (_, index) =>
-                    createComponent(Button, { class: "card-row", align: "start", children: `App ${index + 1}` }),
-                  );
-                },
-              });
-            },
-          });
-      // `?list=` renders the task list: `scroll` in a page that grows with its content, `page` in a full page.
-      const list = c.req.query("list");
-      if (list)
-        return () =>
-          createComponent(Layout, {
-            c: c as unknown as LayoutContextArg,
-            fullWidth: true,
-            fullPage: list === "page",
-            title: [{ title: "Home", href: "/" }, { title: "Tasks" }],
-            get children() {
-              return listWorkspace();
-            },
-          });
-      return () =>
-        createComponent(Layout, {
-          c: c as unknown as LayoutContextArg,
-          fullWidth: true,
-          fullPage: true,
-          title: [{ title: "Home", href: "/" }, { title: "Mail", href: "/app/mail" }, { title }],
-          get children() {
-            return workspace(folder);
-          },
-        });
-    }),
-  )
-  .get(
-    "/public",
-    async (c, next) => {
-      c.set("runtime" as never, { apps } as never);
-      await next();
-    },
-    ...probe.ssr(
-      (c) => () =>
-        createComponent(Layout, {
-          c: c as unknown as LayoutContextArg,
-          title: [{ title: "Home", href: "/" }, { title: c.req.query("title") ?? "Public tools" }],
-          get children() {
-            return c.req.query("overview") ? overviewWorkspace() : "Public content";
-          },
-        }),
-    ),
-  );
-
-let browser: Browser;
-let css: string;
-let controller: string;
-const spies: { mockRestore(): void }[] = [];
-beforeAll(async () => {
-  spies.push(
-    spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
-    spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
-  );
-  const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
-  if (!build.success) throw new AggregateError(build.logs, "Could not compile the global stylesheet.");
-  css = await build.outputs[0]!.text();
-  // Cloud installs the shared workspace controller once for the document; the
-  // test installs the same export from the shipped browser build.
-  const entry = resolve(import.meta.dir, "compact-shell.controller.ts");
-  const bundle = await Bun.build({
-    entrypoints: [entry],
-    files: {
-      [entry]: `import { installAppWorkspaceController } from ${JSON.stringify(resolve(import.meta.dir, "../../../ui/dist/browser/index.js"))};
-window.installController = () => installAppWorkspaceController();`,
-    },
-    target: "browser",
-    format: "iife",
-  });
-  if (!bundle.success) throw new AggregateError(bundle.logs, "Could not bundle the workspace controller.");
-  controller = await bundle.outputs[0]!.text();
-  browser = await launchBrowser();
-}, 60_000);
-afterAll(async () => {
-  for (const spy of spies) spy.mockRestore();
-  await browser?.close();
-});
-
-type Device = { name: string; width: number; height: number; touch: boolean };
-const phone: Device = { name: "phone", width: 390, height: 844, touch: true };
-const ipadSplitView: Device = { name: "iPad Split View", width: 694, height: 834, touch: true };
-const ipadPortrait: Device = { name: "iPad portrait", width: 834, height: 1194, touch: true };
-const smallLaptop: Device = { name: "small laptop", width: 1024, height: 768, touch: false };
-const ipadLandscape: Device = { name: "iPad landscape", width: 1194, height: 834, touch: true };
-const laptop: Device = { name: "laptop", width: 1440, height: 900, touch: false };
-const desktop: Device = { name: "desktop", width: 1920, height: 1080, touch: false };
-const devices = [phone, ipadSplitView, ipadPortrait, smallLaptop, ipadLandscape, laptop, desktop];
-const flushBoundary: Device = { name: "flush boundary", width: 1023, height: 768, touch: false };
-
-// The signed-in card's spacing and radius in whole pixels: 4 and 10 px at 1024 px, 8 and 14 px from 1440 px.
-const cardInset = (width: number) => Math.round(Math.min(8, Math.max(4, 4 + (width - 1024) / 104)));
-const cardRadius = (width: number) => Math.round(Math.min(14, Math.max(10, 10 + (width - 1024) / 104)));
-
-type Options = { language?: "en" | "de"; theme?: "light" | "dark"; notice?: boolean; style?: string };
-const html = async (path: string, options: Options = {}) => {
-  const headers = {
-    "Accept-Language": options.language ?? "en",
-    Cookie: `theme=${options.theme ?? "light"}`,
-  };
-  const markup = await (await server.request(path, { headers })).text();
-  return markup.replace(
-    "</head>",
-    `<style>${css}</style><style>*,*::before,*::after{transition:none!important;animation:none!important}${options.style ?? ""}</style></head>`,
-  );
-};
-
-/** Attaches the controller as Cloud's island does after the first paint, and lets its first frame run. */
-const attach = async (page: Page) => {
-  await page.addScriptTag({ content: controller });
-  await page.evaluate(async () => {
-    (window as unknown as { installController: () => void }).installController();
-    await new Promise((settle) => requestAnimationFrame(() => requestAnimationFrame(settle)));
-  });
-};
-
-const open = async (
-  device: Device,
-  path: string,
-  options: Options & { attached?: boolean } = {},
-): Promise<{ context: BrowserContext; page: Page }> => {
-  // iPads and phones report a coarse pointer without hover, as Safari does. A page set from markup has
-  // no cookies in WebKit, so the theme script follows the system scheme; it matches the requested theme.
-  const context = await browser.newContext({
-    viewport: { width: device.width, height: device.height },
-    hasTouch: device.touch,
-    isMobile: device.touch,
-    colorScheme: options.theme ?? "light",
-  });
-  const page = await context.newPage();
-  await page.setContent(await html(path, options));
-  if (options.attached !== false) await attach(page);
-  return { context, page };
-};
+installCompactShellHarness(launchBrowser);
 
 type Box = { left: number; top: number; right: number; bottom: number; width: number; height: number };
 type Geometry = {
@@ -359,9 +33,9 @@ type Geometry = {
   workspace: { box: Box; borders: number[]; radius: string; shadow: string } | null;
   bar: { display: string; box: Box; borders: number[]; title: string } | null;
   sidebar: { visibility: string; display: string; box: Box; borders: number[] } | null;
-  pane: { box: Box; borders: number[] } | null;
+  pane: { box: Box; borders: number[]; edge: string; surface: string } | null;
   main: { box: Box; borders: number[] } | null;
-  detail: { box: Box; borders: number[] } | null;
+  detail: { box: Box; borders: number[]; background: string; shadow: string; surface: string } | null;
   avatar: { box: Box; visible: boolean } | null;
   hairlines: string[];
 };
@@ -385,6 +59,14 @@ const geometry = (page: Page, rounded = true): Promise<Geometry> =>
       return [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth].map((value) =>
         Number.parseFloat(value),
       );
+    };
+    // The first painted background at or above an element: the surface it lies on.
+    const surface = (element: Element | null): string => {
+      for (let current = element; current; current = current.parentElement) {
+        const color = getComputedStyle(current).backgroundColor;
+        if (color !== "rgba(0, 0, 0, 0)") return color;
+      }
+      return "none";
     };
     const find = (selector: string) => document.querySelector(selector);
     const header = find(".layout-header");
@@ -438,16 +120,24 @@ const geometry = (page: Page, rounded = true): Promise<Geometry> =>
             borders: borders(sidebar),
           }
         : null,
-      pane: pane ? { box: box(pane), borders: borders(pane) } : null,
+      pane: pane ? { box: box(pane), borders: borders(pane), edge: getComputedStyle(pane).borderRightColor, surface: surface(pane) } : null,
       main: main ? { box: box(main), borders: borders(main) } : null,
-      detail: detail ? { box: box(detail), borders: borders(detail) } : null,
+      detail: detail
+        ? {
+            box: box(detail),
+            borders: borders(detail),
+            background: getComputedStyle(detail).backgroundColor,
+            shadow: getComputedStyle(detail).boxShadow,
+            surface: surface(detail),
+          }
+        : null,
       avatar: avatar ? { box: box(avatar), visible: true } : null,
       hairlines,
     };
   }, rounded);
 
 const none = [0, 0, 0, 0];
-const flush = (device: Device) => device.width >= 768 && device.width < 1024;
+const tablet = (device: Device) => device.width >= 768 && device.width < 1024;
 const compact = (device: Device) => device.width >= 768 && device.width < 1024;
 
 describe("signed-in shell", () => {
@@ -458,21 +148,34 @@ describe("signed-in shell", () => {
         try {
           const shape = await geometry(page);
           if (device.width < 768) {
-            // Phones keep today's shell: the header, no rail, one pane at a time.
+            // Phones keep the title row above a soft content card and floating navigation.
             expect(shape.header).not.toBe("none");
             expect(shape.rail?.display).toBe("none");
             expect(shape.bar?.display).toBe("none");
             expect(shape.sidebar?.display).toBe("none");
             expect(shape.workspace?.borders).toEqual(none);
             expect(shape.workspace?.radius).toBe("0px");
-            expect(shape.workspace?.box).toMatchObject({ right: device.width, bottom: device.height });
+            const soft = await page.locator(".layout-content-main").evaluate((element) => {
+              const style = getComputedStyle(element);
+              return {
+                radii: [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius],
+                overflow: style.overflowY,
+              };
+            });
+            expect(soft.radii).toEqual(["28px", "28px", "0px", "0px"]);
+            expect(["auto", "scroll"]).toContain(soft.overflow);
+            expect(await page.locator(".layout-header").evaluate((element) => getComputedStyle(element).borderBottomWidth)).toBe("0px");
+            expect(await page.locator(".cloud-app-canvas").evaluate((element) => getComputedStyle(element).backgroundImage)).toContain(
+              "gradient",
+            );
+            expect(await page.locator(".cloud-tab-bar .k2b-tab-bar").isVisible()).toBe(true);
             return;
           }
           expect(shape.header).toBe("none");
           expect(shape.rail?.display).toBe("flex");
-          expect(shape.rail?.box.left).toBe(0);
-          expect(shape.rail?.box.width).toBe(56);
-          expect(shape.rail?.box.right).toBe(56);
+          expect(shape.rail?.box.left).toBe(tablet(device) ? 8 : 0);
+          expect(shape.rail?.box.width).toBe(tablet(device) ? 60 : 56);
+          expect(shape.rail?.box.right).toBe(tablet(device) ? 68 : 56);
           // Nothing draws the rail/app boundary: no border on either side and no divider element.
           expect(shape.rail?.borders).toEqual(none);
           expect(shape.shell?.borders).toEqual(none);
@@ -480,18 +183,21 @@ describe("signed-in shell", () => {
           // The avatar is the rail's last control.
           expect(shape.avatar).not.toBeNull();
           expect(shape.avatar!.box.left).toBeGreaterThanOrEqual(0);
-          expect(shape.avatar!.box.right).toBeLessThanOrEqual(56);
+          expect(shape.avatar!.box.right).toBeLessThanOrEqual(shape.rail!.box.right);
           expect(shape.rail!.box.bottom - shape.avatar!.box.bottom).toBeLessThanOrEqual(12);
-          if (flush(device)) {
-            // Flush: the app area meets the top, right, and bottom window edges and has no frame.
-            expect(shape.shell?.box).toMatchObject({ left: 56, top: 0, right: device.width, bottom: device.height });
-            expect(shape.rail?.box).toMatchObject({ top: 0, bottom: device.height });
-            expect(shape.workspace?.box).toMatchObject({ left: 56, top: 0, right: device.width, bottom: device.height });
-            expect(shape.workspace?.borders).toEqual(none);
-            expect(shape.workspace?.radius).toBe("0px");
-            expect(shape.workspace?.shadow).toBe("none");
-            // An opaque surface, so the app canvas shows only behind the rail.
-            expect(shape.shell?.background).toMatch(/^rgb\(/);
+          if (tablet(device)) {
+            expect(shape.shell?.box).toMatchObject({ left: 76, top: 8, right: device.width - 8, bottom: device.height - 8 });
+            expect(shape.rail?.box).toMatchObject({ top: 8, bottom: device.height - 8 });
+            expect(shape.workspace?.box).toMatchObject({ left: 76, top: 8, right: device.width - 8, bottom: device.height - 8 });
+            expect(shape.workspace?.radius).toBe("20px");
+            expect(shape.workspace?.borders).toEqual([1, 1, 1, 1]);
+            expect(shape.workspace?.shadow).not.toBe("none");
+            const rail = await page.locator(".layout-rail").evaluate((element) => ({
+              radius: getComputedStyle(element).borderRadius,
+              image: getComputedStyle(element).backgroundImage,
+            }));
+            expect(rail.radius).toBe("20px");
+            expect(rail.image).toContain("gradient");
           } else {
             // From 1024 px the card's spacing and radius grow until 1440 px.
             const precise = await geometry(page, false);
@@ -514,12 +220,18 @@ describe("signed-in shell", () => {
             }
             expect(shape.workspace?.shadow).not.toBe("none");
           }
-          // Sidebar and Main draw no lines. List/reader panes keep their
-          // separator; the raised detail floats without one.
+          // Sidebar, Main, and the detail draw no lines. List and reader
+          // panes are apart by 12 px of space: a transparent edge, not a line.
           expect(shape.sidebar?.borders).toEqual(none);
           expect(shape.main?.borders).toEqual(none);
-          expect(shape.pane?.borders).toEqual([0, 1, 0, 0]);
+          expect(shape.pane?.borders).toEqual([0, 12, 0, 0]);
+          expect(shape.pane?.edge).toBe("rgba(0, 0, 0, 0)");
           expect(shape.detail?.borders).toEqual([0, 0, 0, 0]);
+          // The detail column is part of the list's surface, also in dark mode: no
+          // fill, no shadow, so nothing between them reads as a seam.
+          expect(shape.detail?.background).toBe("rgba(0, 0, 0, 0)");
+          expect(shape.detail?.shadow).toBe("none");
+          expect(shape.detail?.surface).toBe(shape.pane?.surface);
           // List and reader stay side by side; the detail spans the workspace.
           expect(shape.pane!.box.right).toBeLessThanOrEqual(shape.detail!.box.left);
           expect(shape.detail!.box.top).toBe(shape.workspace!.box.top + shape.workspace!.borders[0]! + 8);
@@ -528,10 +240,10 @@ describe("signed-in shell", () => {
             expect(shape.bar?.borders).toEqual(none);
             // The 320 px detail and its 8 px right inset still reserve a 328 px track.
             expect(shape.detail!.box.width).toBe(320);
-            expect(shape.bar?.box).toMatchObject({ left: 56, top: 0, right: device.width - (320 + 8), height: 46 });
+            expect(shape.bar?.box).toMatchObject({ left: 77, top: 9, right: device.width - 8 - 1 - (320 + 8), height: 46 });
             expect(shape.bar?.title).toBe("Inbox");
             expect(shape.sidebar?.visibility).toBe("hidden");
-            expect(shape.pane!.box.top).toBe(46);
+            expect(shape.pane!.box.top).toBe(55);
           } else {
             expect(shape.bar?.display).toBe("none");
             expect(shape.sidebar?.visibility).toBe("visible");
@@ -544,8 +256,8 @@ describe("signed-in shell", () => {
     }
   }
 
-  test("a notice above the app is a flush strip in the flush range and a card from 1024 px", async () => {
-    for (const device of [ipadPortrait, flushBoundary, ipadLandscape]) {
+  test("a notice above the app is a card with shell spacing from 768 px", async () => {
+    for (const device of [ipadPortrait, tabletBoundary, ipadLandscape]) {
       const { context, page } = await open(device, "/app/mail/inbox?notice=1");
       try {
         const notice = await page.evaluate(() => {
@@ -560,9 +272,16 @@ describe("signed-in shell", () => {
             border: style.borderTopWidth,
           };
         });
-        expect(notice.left).toBe(56);
-        if (flush(device)) {
-          expect(notice).toEqual({ left: 56, right: device.width, top: 0, radius: "0px", border: "0px" });
+        expect(notice.left).toBe(tablet(device) ? 76 : 56);
+        if (tablet(device)) {
+          expect(notice).toMatchObject({ left: 76, right: device.width - 8, top: 8, border: "1px" });
+          expect(Number.parseFloat(notice.radius)).toBeGreaterThan(0);
+          const gap = await page.evaluate(
+            () =>
+              document.querySelector(".layout-content-main")!.getBoundingClientRect().top -
+              document.querySelector(".k2b-notice-card")!.getBoundingClientRect().bottom,
+          );
+          expect(gap).toBe(8);
         } else {
           expect(Math.abs(notice.top - cardInset(device.width))).toBeLessThanOrEqual(0.5);
           expect(Math.abs(device.width - notice.right - cardInset(device.width))).toBeLessThanOrEqual(0.5);
@@ -621,10 +340,10 @@ describe("signed-in shell", () => {
       try {
         const shape = await geometry(page, false);
         expect(shape.workspace).toBeNull();
-        expect(shape.shell!.box.left).toBe(56);
-        if (flush(device)) {
-          expect(shape.shell!.box).toMatchObject({ top: 0, right: device.width, bottom: device.height });
-          expect(shape.shell!.background).toMatch(/^rgb\(/);
+        expect(shape.shell!.box.left).toBe(tablet(device) ? 76 : 56);
+        if (tablet(device)) {
+          expect(shape.shell!.box).toMatchObject({ top: 8, right: device.width - 8, bottom: device.height - 8 });
+          expect(shape.shell!.background).toBe("rgba(0, 0, 0, 0)");
         } else {
           const box = shape.shell!.box;
           for (const gap of [box.top, device.width - box.right, device.height - box.bottom])
@@ -638,7 +357,7 @@ describe("signed-in shell", () => {
   }
 
   for (const device of [{ name: "rail boundary", width: 768, height: 1024, touch: true }, ipadPortrait, ipadLandscape, laptop, desktop]) {
-    test(`${device.width}×${device.height}: rail controls are 44 px targets inside the 56 px rail`, async () => {
+    test(`${device.width}×${device.height}: rail controls are 44 px targets inside the responsive rail`, async () => {
       const { context, page } = await open(device, "/app/mail/inbox");
       try {
         const controls = await page.evaluate(() => {
@@ -662,7 +381,7 @@ describe("signed-in shell", () => {
             avatarSize: avatar.querySelector(".k2b-avatar")!.getBoundingClientRect().width,
           };
         });
-        expect(controls.rail).toEqual({ left: 0, right: 56 });
+        expect(controls.rail).toEqual(tablet(device) ? { left: 8, right: 68 } : { left: 0, right: 56 });
         expect(controls.items.length).toBeGreaterThanOrEqual(4);
         expect(controls.icons).toEqual(controls.items.map(() => "20px"));
         expect(controls.avatarSize).toBe(32);
@@ -881,16 +600,16 @@ describe("the app card keeps its rounded corners", () => {
     });
   }
 
-  for (const device of [flushBoundary, ipadPortrait]) {
-    test(`${device.width}×${device.height}: flat and framed workspaces fill the flush app area without a frame`, async () => {
+  for (const device of [tabletBoundary, ipadPortrait]) {
+    test(`${device.width}×${device.height}: flat and framed workspaces share the rounded tablet card`, async () => {
       let framed: CardGeometry | undefined;
       for (const { path } of pages) {
         const { context, page } = await open(device, path);
         try {
           const shape = await cardGeometry(page);
-          expect(shape.radii).toEqual(Array(4).fill("0px"));
-          expect(shape.shadow).toBe("none");
-          expect(shape.box).toMatchObject({ left: shape.railRight, top: 0, right: device.width, bottom: device.height });
+          expect(shape.radii).toEqual(Array(4).fill("20px"));
+          expect(shape.shadow).not.toBe("none");
+          expect(shape.box).toMatchObject({ left: shape.railRight! + 8, top: 8, right: device.width - 8, bottom: device.height - 8 });
           if (framed) expect(shape.box).toEqual(framed.box);
           else framed = shape;
         } finally {
@@ -965,12 +684,41 @@ describe("a page that scrolls its content in a ScrollArea", () => {
       };
     });
 
-  test("600×900: the document scrolls, and the area reserves no second gutter", async () => {
+  test("600×900 signed in: the content area scrolls and the window stays still", async () => {
     const { context, page } = await open({ name: "narrow window", width: 600, height: 900, touch: false }, "/app/mail/inbox?cards=1", {
       style,
     });
     try {
+      expect(await scrolling(page)).toEqual({ areaGutter: 12, areaScrolls: true, documentScrolls: false });
+      // The soft card reserves no second gutter beside the area's.
+      expect(await page.locator("main.layout-content-main").evaluate((main: HTMLElement) => main.offsetWidth - main.clientWidth)).toBe(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("600×900 signed in: a regular page reserves the soft card's scrollbar gutter", async () => {
+    const { context, page } = await open({ name: "narrow window", width: 600, height: 900, touch: false }, "/app/mail/inbox?plain=1", {
+      style,
+    });
+    try {
+      const main = await page.evaluate(() => {
+        const main = document.querySelector<HTMLElement>("main.layout-content-main")!;
+        return { gutter: main.offsetWidth - main.clientWidth, rule: getComputedStyle(main).scrollbarGutter };
+      });
+      expect(main).toEqual({ gutter: 12, rule: "stable" });
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("600×900 anonymous: the document scrolls and reserves no second gutter", async () => {
+    const { context, page } = await open({ name: "anonymous narrow window", width: 600, height: 900, touch: false }, "/public?cards=1", {
+      style,
+    });
+    try {
       expect(await scrolling(page)).toEqual({ areaGutter: 0, areaScrolls: false, documentScrolls: true });
+      expect(await page.locator(".cloud-tab-bar").count()).toBe(0);
     } finally {
       await context.close();
     }
@@ -1018,7 +766,7 @@ describe("compact workspace navigation", () => {
         await page.locator("[data-app-workspace-sidebar-toggle]").tap();
         const opened = await state(page);
         expect(opened).toMatchObject({ open: true, expanded: "true", contentInert: true, focus: "Inbox", main: closed.main });
-        expect(opened.sidebar.left).toBe(56);
+        expect(opened.sidebar.left).toBe(77);
         expect(opened.sidebar.width).toBe(280);
         expect(opened.sidebar.borders).toBe("0px");
 
@@ -1136,7 +884,7 @@ describe("profile menu in the rail", () => {
         expect(avatar.width).toBe(44);
         expect(avatar.height).toBe(44);
         expect(avatar.left).toBeGreaterThanOrEqual(0);
-        expect(avatar.right).toBeLessThanOrEqual(56);
+        expect(avatar.right).toBeLessThanOrEqual(tablet(device) ? 68 : 56);
         expect(menu.left).toBeGreaterThanOrEqual(avatar.right);
         expect(menu.top + 220).toBeLessThanOrEqual(device.height - 8);
         expect(menu.top).toBeLessThan(avatar.top);
@@ -1181,15 +929,21 @@ describe("anonymous pages", () => {
 });
 
 describe("phone header", () => {
-  test("a long title does not squeeze the Home button", async () => {
+  test("a long title keeps Home in the signed-in bar and in the anonymous header", async () => {
     const long = encodeURIComponent("Kundenverwaltung und Abrechnung");
     for (const path of [`/app/mail/inbox?name=${long}`, `/public?title=${long}`]) {
       const { context, page } = await open(phone, path);
       try {
         const home = await page
-          .locator('.layout-header a[href="/"]:has(img)')
+          .locator(path.startsWith("/public") ? '.layout-header a[href="/"]:has(img)' : '.cloud-tab-bar a[href="/"]')
           .evaluate((link) => link.getBoundingClientRect().toJSON() as DOMRect);
-        expect({ path, width: Math.round(home.width), height: Math.round(home.height) }).toEqual({ path, width: 32, height: 32 });
+        if (path.startsWith("/public"))
+          expect({ width: Math.round(home.width), height: Math.round(home.height) }).toEqual({ width: 32, height: 32 });
+        else {
+          expect(home.height).toBe(50);
+          expect(home.width).toBeGreaterThanOrEqual(44);
+          expect(await page.locator('.layout-header a[href="/"]').count()).toBe(0);
+        }
       } finally {
         await context.close();
       }
@@ -1235,4 +989,373 @@ describe("workspace detail", () => {
       await context.close();
     }
   });
+});
+
+describe("workspace phone title menu before hydration", () => {
+  for (const device of [phone, ipadPortrait, laptop]) {
+    test(`${device.width}: only a page with workspace navigation turns the phone title into a menu`, async () => {
+      for (const navigation of [false, true]) {
+        const { context, page } = await open(device, `/app/mail/inbox?${navigation ? "navigation" : "overview"}=1`, { attached: false });
+        try {
+          const title = page.locator(".layout-header-title");
+          const menu = page.locator(".layout-header-title-menu");
+          expect(await page.locator("script[data-cloud-workspace-navigation]").count()).toBe(navigation ? 1 : 0);
+          expect(await title.isVisible()).toBe(device.width === 390 && !navigation);
+          expect(await menu.isVisible()).toBe(device.width === 390 && navigation);
+          expect(await menu.getAttribute("aria-haspopup")).toBe("dialog");
+          expect(await menu.textContent()).toContain("Mail");
+          expect(await title.textContent()).toBe("Mail");
+        } finally {
+          await context.close();
+        }
+      }
+    });
+  }
+});
+
+describe("soft tablet and phone shell", () => {
+  // Keyboard focus must paint a whole ring through every ancestor that clips it.
+  const focusRing = async (page: Page, selector: string) => {
+    await page.keyboard.press("Tab");
+    await page.locator(selector).first().focus();
+    const ring = await page
+      .locator(selector)
+      .first()
+      .evaluate((element) => {
+        const style = getComputedStyle(element);
+        const expansion = Number.parseFloat(style.outlineOffset) + Number.parseFloat(style.outlineWidth);
+        const rect = element.getBoundingClientRect();
+        const clipped: string[] = [];
+        for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+          const css = getComputedStyle(parent);
+          const box = parent.getBoundingClientRect();
+          if (css.overflowX !== "visible" && (rect.left - expansion < box.left - 0.01 || rect.right + expansion > box.right + 0.01))
+            clipped.push(`${parent.className}:x`);
+          if (css.overflowY !== "visible" && (rect.top - expansion < box.top - 0.01 || rect.bottom + expansion > box.bottom + 0.01))
+            clipped.push(`${parent.className}:y`);
+        }
+        return { visible: element.matches(":focus-visible"), width: Number.parseFloat(style.outlineWidth), clipped };
+      });
+    expect(ring.visible).toBe(true);
+    expect(ring.width).toBeGreaterThan(0);
+    expect(ring.clipped).toEqual([]);
+  };
+
+  for (const theme of ["light", "dark"] as const) {
+    for (const device of [ipadPortrait, { name: "tablet boundary", width: 768, height: 1024, touch: true }]) {
+      test(`${device.width} ${theme}: gradient rail and card keep 8 px spacing outside safe areas`, async () => {
+        for (const insets of [
+          { top: 0, right: 0, bottom: 0, left: 0 },
+          { top: 24, right: 12, bottom: 20, left: 16 },
+        ]) {
+          const { context, page } = await open(device, "/app/mail/inbox", { theme, insets });
+          try {
+            const shape = await geometry(page, false);
+            expect(shape.rail!.box).toMatchObject({
+              left: insets.left + 8,
+              top: insets.top + 8,
+              width: 60,
+              bottom: device.height - insets.bottom - 8,
+            });
+            expect(shape.workspace!.box).toMatchObject({
+              left: insets.left + 76,
+              top: insets.top + 8,
+              right: device.width - insets.right - 8,
+              bottom: device.height - insets.bottom - 8,
+            });
+            expect(shape.workspace!.box.left - shape.rail!.box.right).toBe(8);
+            expect(shape.workspace!.radius).toBe("20px");
+            expect(shape.workspace!.shadow).not.toBe("none");
+            const rail = await page.locator(".layout-rail").evaluate((element) => ({
+              radius: getComputedStyle(element).borderRadius,
+              background: getComputedStyle(element).backgroundImage,
+            }));
+            expect(rail.radius).toBe("20px");
+            expect(rail.background).toContain("gradient");
+            expect(await page.locator(".cloud-tab-bar").isVisible()).toBe(false);
+            if (device.width === 834) await focusRing(page, ".layout-rail [data-cloud-rail-apps] a");
+          } finally {
+            await context.close();
+          }
+        }
+      });
+    }
+
+    for (const device of [phone, ipadSplitView]) {
+      test(`${device.width} ${theme}: the soft card scrolls while the window stays put and rows clear the floating bar`, async () => {
+        // A regular page scrolls `main`, a workspace its Main, a page with a ScrollArea that area.
+        for (const [path, scroller, row] of [
+          ["/app/mail/inbox?plain=1", "main.layout-content-main", ".plain-row"],
+          ["/app/mail/inbox?overview=1", ".k2b-app-workspace__main", ".overview-row"],
+          ["/app/mail/inbox?cards=1", ".layout-content-main > .k2b-scroll-area", ".card-row"],
+        ] as const) {
+          for (const bottom of [0, 34]) {
+            const { context, page } = await open(device, path, { theme, insets: { bottom } });
+            try {
+              const styles = await page.evaluate(() => {
+                const header = getComputedStyle(document.querySelector(".layout-header")!);
+                const canvas = getComputedStyle(document.querySelector(".cloud-app-canvas")!);
+                const main = document.querySelector<HTMLElement>("main.layout-content-main")!;
+                const style = getComputedStyle(main);
+                const bar = document.querySelector(".cloud-tab-bar .k2b-tab-bar")!;
+                const barStyle = getComputedStyle(bar);
+                return {
+                  borders: [header.borderTopWidth, header.borderRightWidth, header.borderBottomWidth, header.borderLeftWidth],
+                  headerBackground: header.backgroundColor,
+                  headerShadow: header.boxShadow,
+                  gradient: canvas.backgroundImage,
+                  canvasHeight: Number.parseFloat(canvas.height),
+                  canvasOverflow: canvas.overflow,
+                  radii: [
+                    style.borderTopLeftRadius,
+                    style.borderTopRightRadius,
+                    style.borderBottomRightRadius,
+                    style.borderBottomLeftRadius,
+                  ],
+                  overflow: style.overflowY,
+                  padding: Number.parseFloat(style.paddingBottom),
+                  scrollPadding: Number.parseFloat(style.scrollPaddingBottom),
+                  position: getComputedStyle(document.querySelector(".cloud-tab-bar")!).position,
+                  radius: Number.parseFloat(barStyle.borderRadius),
+                  barHeight: bar.getBoundingClientRect().height,
+                  barBottom: bar.getBoundingClientRect().bottom,
+                };
+              });
+              expect(styles.borders).toEqual(["0px", "0px", "0px", "0px"]);
+              expect(styles.headerBackground).toBe("rgba(0, 0, 0, 0)");
+              expect(styles.headerShadow).toBe("none");
+              expect(styles.gradient).toContain("gradient");
+              expect(styles.canvasHeight).toBe(device.height);
+              expect(styles.canvasOverflow).toBe("hidden");
+              expect(styles.radii).toEqual(["28px", "28px", "0px", "0px"]);
+              expect(["auto", "scroll"]).toContain(styles.overflow);
+              expect(styles.padding).toBe(bottom + 8 + 62 + 12);
+              expect(styles.scrollPadding).toBe(styles.padding);
+              expect(await page.locator(".cloud-tab-bar .k2b-tab-bar").isVisible()).toBe(true);
+              expect(styles.position).toBe("fixed");
+              expect(styles.radius).toBeGreaterThan(20);
+              expect(styles.barHeight).toBe(62);
+              expect(styles.barBottom).toBe(device.height - bottom - 8);
+              const end = await page.evaluate(
+                ([scroller, row]) => {
+                  const area = document.querySelector<HTMLElement>(scroller)!;
+                  const overflowing = area.scrollHeight > area.clientHeight;
+                  area.scrollTop = area.scrollHeight;
+                  return {
+                    overflowing,
+                    scrolled: area.scrollTop,
+                    document: document.scrollingElement!.scrollTop,
+                    last: [...document.querySelectorAll(row)].at(-1)!.getBoundingClientRect().bottom,
+                    bar: document.querySelector(".cloud-tab-bar .k2b-tab-bar")!.getBoundingClientRect().top,
+                  };
+                },
+                [scroller, row] as const,
+              );
+              expect({ path, overflowing: end.overflowing }).toEqual({ path, overflowing: true });
+              expect(end.scrolled).toBeGreaterThan(0);
+              expect(end.document).toBe(0);
+              expect(end.last).toBeLessThanOrEqual(end.bar);
+              await page.locator(scroller).evaluate((area) => {
+                area.scrollTop = 0;
+              });
+              // Focus scrolls the control into view the way scrollIntoView's "nearest" does, which honours
+              // scroll padding; WebKit does not scroll for a programmatic focus(), so the test asks for it.
+              await page
+                .locator(row)
+                .last()
+                .evaluate((element: HTMLElement) => {
+                  element.focus();
+                  element.scrollIntoView({ block: "nearest" });
+                });
+              const focused = await page.evaluate(() => ({
+                bottom: document.activeElement!.getBoundingClientRect().bottom,
+                bar: document.querySelector(".cloud-tab-bar .k2b-tab-bar")!.getBoundingClientRect().top,
+                document: document.scrollingElement!.scrollTop,
+              }));
+              expect(focused.bottom).toBeLessThanOrEqual(focused.bar);
+              expect(focused.document).toBe(0);
+              if (device.width === 390 && bottom === 0 && path.includes("overview")) await focusRing(page, ".cloud-tab-bar a");
+            } finally {
+              await context.close();
+            }
+          }
+        }
+      });
+    }
+  }
+
+  for (const device of [phone, ipadSplitView]) {
+    test(`${device.width}: content wider than the soft card scrolls sideways in it while the window stays put`, async () => {
+      const { context, page } = await open(device, "/app/mail/inbox?plain=1", {
+        style: '.plain-row:first-child::before { content: ""; display: block; width: 900px; height: 1px; }',
+      });
+      try {
+        // A scroller that is not `hidden` takes the person's swipe or wheel; mobile WebKit has no wheel to send.
+        expect(
+          await page.evaluate(() => {
+            const main = document.querySelector<HTMLElement>("main.layout-content-main")!;
+            return {
+              overflowX: getComputedStyle(main).overflowX,
+              wider: main.scrollWidth > main.clientWidth,
+              window: window.scrollX,
+              documentWidth: document.scrollingElement!.scrollWidth,
+            };
+          }),
+        ).toEqual({ overflowX: "auto", wider: true, window: 0, documentWidth: device.width });
+      } finally {
+        await context.close();
+      }
+    });
+  }
+
+  test("bar links follow personal rail order, keep the later current app and allow native navigation", async () => {
+    // Without an open detail: its half sheet rises over the bar, as a sheet does.
+    const { context, page } = await open(phone, "/app/mail/inbox?catalog=1&overview=1");
+    try {
+      const links = await page
+        .locator(".cloud-tab-bar a")
+        .evaluateAll((links) => links.map((link) => ({ href: link.getAttribute("href"), current: link.getAttribute("aria-current") })));
+      expect(links).toEqual([
+        { href: "/", current: null },
+        { href: "/app/amber", current: null },
+        { href: "/app/birch", current: null },
+        { href: "/app/cedar", current: null },
+        { href: "/app/mail", current: "page" },
+      ]);
+      // Records whether anything prevented the link's own navigation, then stops it: the page is set from markup.
+      await page.evaluate(() =>
+        window.addEventListener(
+          "click",
+          (event) => {
+            document.body.dataset.clickPrevented = String(event.defaultPrevented);
+            event.preventDefault();
+          },
+          { once: true },
+        ),
+      );
+      await page.locator('.cloud-tab-bar a[href="/app/amber"]').click();
+      expect(await page.locator("body").getAttribute("data-click-prevented")).toBe("false");
+    } finally {
+      await context.close();
+    }
+  });
+
+  // The header and the rail switch with `md` (48rem); the bar must switch with them, so a larger default font size,
+  // which moves that switch above 768 px, leaves Home reachable. Chromium alone can set the default font size.
+  test.skipIf(browserName === "webkit")("a 20 px default font size keeps Home reachable up to the md switch", async () => {
+    const { context, page } = await open({ name: "large font", width: 800, height: 900, touch: false }, "/app/mail/inbox?overview=1");
+    try {
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Page.setFontSizes", { fontSizes: { standard: 20 } });
+      await page.setContent(await html("/app/mail/inbox?overview=1"));
+      const shell = await page.evaluate(() => ({
+        rail: getComputedStyle(document.querySelector(".layout-rail")!).display,
+        header: getComputedStyle(document.querySelector(".layout-header")!).display,
+        home: !!document.querySelector<HTMLElement>('.cloud-tab-bar a[href="/"]')?.checkVisibility(),
+        // The card keeps at least the room from the bar's top edge to the window's end.
+        roomForBar:
+          Number.parseFloat(getComputedStyle(document.querySelector(".layout-content-main")!).paddingBottom) >=
+          innerHeight - document.querySelector(".cloud-tab-bar .k2b-tab-bar")!.getBoundingClientRect().top,
+      }));
+      expect(shell).toEqual({ rail: "none", header: "flex", home: true, roomForBar: true });
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Start is current only at the root, independently of query parameters", async () => {
+    for (const path of ["/", "/?view=all", "/app/mail/inbox"]) {
+      const { context, page } = await open(phone, path);
+      try {
+        expect(await page.locator('.cloud-tab-bar a[href="/"]').getAttribute("aria-current")).toBe(
+          path.startsWith("/app/") ? null : "page",
+        );
+        expect(await page.locator('.cloud-tab-bar [aria-current="page"]').count()).toBe(1);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  test("the phone's home destination is labelled in the request locale", async () => {
+    for (const [language, label] of [
+      ["en", "Home"],
+      ["de", "Start"],
+    ] as const) {
+      const { context, page } = await open(phone, "/app/mail/inbox", { language });
+      try {
+        expect(await page.locator('.cloud-tab-bar a[href="/"]').textContent()).toBe(label);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+});
+
+// Nothing changes from 1024 px: the shell's rects at the card widths match origin/main's, recorded with
+// RECORD_SHELL_BASELINE=1 before the tablet and phone shells changed (both engines, light and dark).
+describe("from 1024 px the shell keeps origin/main's geometry", () => {
+  const baselinePath = resolve(import.meta.dir, "compact-shell.baseline.json");
+  const recording = process.env.RECORD_SHELL_BASELINE === "1";
+  const engine = process.env.TEST_BROWSER?.trim() || "chromium";
+  type Rects = Record<string, Box | null>;
+  type Baselines = Record<string, Record<string, Rects>>;
+  const expected: Baselines = existsSync(baselinePath) ? JSON.parse(readFileSync(baselinePath, "utf8")) : {};
+  const recorded: Record<string, Rects> = {};
+  const paths = ["/app/mail/inbox", "/app/mail/inbox?overview=1", "/app/mail/inbox?cards=1", "/app/mail/inbox?notice=1"];
+  const rects = (page: Page): Promise<Rects> =>
+    page.evaluate(() => {
+      const selectors = {
+        canvas: ".cloud-app-canvas",
+        rail: ".layout-rail",
+        railLogo: ".layout-rail-logo",
+        railItems: ".layout-rail [data-cloud-rail-apps]",
+        avatar: ".layout-rail .layout-profile-preferences",
+        shell: ".layout-shell-content",
+        notice: ".layout-shell-content .k2b-notice-card",
+        main: ".layout-content-main",
+        workspace: ".layout-content-main .k2b-app-workspace",
+        sidebar: ".k2b-app-workspace__sidebar",
+        pane: ".k2b-app-workspace__main-pane",
+        detail: ".k2b-app-workspace__detail",
+      };
+      return Object.fromEntries(
+        Object.entries(selectors).map(([key, selector]) => {
+          const element = document.querySelector(selector);
+          if (!element || !element.checkVisibility()) return [key, null];
+          const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+          return [key, { left, top, right, bottom, width, height }];
+        }),
+      );
+    });
+  afterAll(() => {
+    if (recording) writeFileSync(baselinePath, `${JSON.stringify({ ...expected, [engine]: recorded }, null, 2)}\n`);
+  });
+  for (const device of [smallLaptop, ipadLandscape, laptop, desktop]) {
+    for (const theme of ["light", "dark"] as const) {
+      test(`${device.width}×${device.height} ${theme}: rail, card, and workspace stay where they were`, async () => {
+        for (const path of paths) {
+          const { context, page } = await open(device, path, { theme });
+          try {
+            const actual = await rects(page);
+            const key = `${device.width}x${device.height} ${theme} ${path}`;
+            if (recording) {
+              recorded[key] = actual;
+              continue;
+            }
+            const before = expected[engine]?.[key];
+            expect(before, `Missing ${engine} baseline ${key}; record origin/main with RECORD_SHELL_BASELINE=1`).toBeDefined();
+            for (const [name, box] of Object.entries(before!)) {
+              expect({ key, name, present: !!actual[name] }).toEqual({ key, name, present: !!box });
+              if (!box || !actual[name]) continue;
+              for (const edge of ["left", "top", "right", "bottom", "width", "height"] as const)
+                expect(Math.abs(actual[name]![edge] - box[edge]), `${key} ${name}.${edge}`).toBeLessThanOrEqual(0.5);
+            }
+          } finally {
+            await context.close();
+          }
+        }
+      });
+    }
+  }
 });

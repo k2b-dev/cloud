@@ -471,24 +471,31 @@ test(`${browserName}: notebooks without links and filters that leave nothing sho
     expect(await page.getByRole("link", { name: "Back to note" }).isVisible()).toBe(true);
     expect(await page.getByRole("list", { name: "6 notes, not linked yet" }).locator("li").count()).toBe(6);
     expect(await page.getByRole("toolbar", { name: "Graph filters" }).count()).toBe(0);
-    // The search still finds a note there: Enter focuses the first matching note link.
-    // A filter saved in the address while there were links does not hide notes here.
-    await page.goto(new URL(graphPath("free01", "&links=linked"), server.url).href);
-    await page.waitForFunction(() => window.notebookGraphFixture?.mounted === true);
-    expect(await page.getByRole("list", { name: "6 notes, not linked yet" }).locator("li").count()).toBe(6);
-    await page.getByRole("searchbox", { name: "Find a note in the graph" }).fill("Kosten");
-    await page.keyboard.press("Enter");
-    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Kosten");
-
-    const hideAll = ["top", ...["wein", "komm", "vers", "inv", "sich", "onb"].map((id) => HANDBOOK_IDS[id])].join(",");
-    await page.goto(new URL(graphPath("hand01", `&hide=${hideAll}`), server.url).href);
-    await page.waitForFunction(() => window.notebookGraphFixture?.mounted === true);
-    expect(await page.getByText("No note matches the filters").isVisible()).toBe(true);
-    await page.getByRole("button", { name: "Reset filters" }).click();
-    await page.waitForFunction(() => document.querySelectorAll("[data-node]").length === 49);
-    expect(search(page).get("hide")).toBeNull();
   } finally {
     await close(page);
+  }
+  // Each URL state opens in its own page; an in-place goto on the loaded no-links page stalled before load in WebKit CI (#1367).
+  // The search still finds a note there: Enter focuses the first matching note link.
+  // A filter saved in the address while there were links does not hide notes here.
+  const linked = await open(graphPath("free01", "&links=linked"));
+  try {
+    expect(await linked.getByRole("list", { name: "6 notes, not linked yet" }).locator("li").count()).toBe(6);
+    await linked.getByRole("searchbox", { name: "Find a note in the graph" }).fill("Kosten");
+    await linked.keyboard.press("Enter");
+    expect(await linked.evaluate(() => document.activeElement?.textContent)).toBe("Kosten");
+  } finally {
+    await close(linked);
+  }
+
+  const hideAll = ["top", ...["wein", "komm", "vers", "inv", "sich", "onb"].map((id) => HANDBOOK_IDS[id])].join(",");
+  const hidden = await open(graphPath("hand01", `&hide=${hideAll}`));
+  try {
+    expect(await hidden.getByText("No note matches the filters").isVisible()).toBe(true);
+    await hidden.getByRole("button", { name: "Reset filters" }).click();
+    await hidden.waitForFunction(() => document.querySelectorAll("[data-node]").length === 49);
+    expect(search(hidden).get("hide")).toBeNull();
+  } finally {
+    await close(hidden);
   }
 }, 30_000);
 
@@ -801,17 +808,20 @@ test(`${browserName}: isolated and filter-hidden centres offer a way out`, async
     expect(search(page).get("display")).toBe("network");
     expect(await nodes(page).count()).toBe(49);
     await page.waitForFunction((id) => document.activeElement?.getAttribute("data-node") === id, HANDBOOK_IDS.rampe);
-    await page.goto(new URL(graphPath("hand01", "&display=neighborhood&links=unlinked"), server.url).href);
-    await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
-    expect(await page.getByText("No link of “Wareneingang” matches the filters", { exact: true }).isVisible()).toBe(true);
-    expect(await page.getByText("The current filters hide all links of this note.", { exact: true }).isVisible()).toBe(true);
-    await page.getByRole("button", { name: "Reset filters", exact: true }).focus();
-    await page.keyboard.press("Enter");
-    await settled(page);
-    expect(await page.locator('[data-ring="1"]').count()).toBeGreaterThan(0);
-    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label")?.endsWith(", current note"));
   } finally {
     await close(page);
+  }
+  const hidden = await open(graphPath("hand01", "&display=neighborhood&links=unlinked"));
+  try {
+    expect(await hidden.getByText("No link of “Wareneingang” matches the filters", { exact: true }).isVisible()).toBe(true);
+    expect(await hidden.getByText("The current filters hide all links of this note.", { exact: true }).isVisible()).toBe(true);
+    await hidden.getByRole("button", { name: "Reset filters", exact: true }).focus();
+    await hidden.keyboard.press("Enter");
+    await settled(hidden);
+    expect(await hidden.locator('[data-ring="1"]').count()).toBeGreaterThan(0);
+    await hidden.waitForFunction(() => document.activeElement?.getAttribute("aria-label")?.endsWith(", current note"));
+  } finally {
+    await close(hidden);
   }
 }, 30_000);
 

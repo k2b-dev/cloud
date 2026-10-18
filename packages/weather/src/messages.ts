@@ -112,6 +112,8 @@ export const weatherMessages = i18n.define({
       geoApiExample: "e.g. https://geocoding.example.com/search",
       saveFailedHttp: ({ status }: { status: number }) => `Save failed (HTTP ${status})`,
       settingsSaved: "Weather settings saved",
+      settingUnreadable:
+        "The saved value cannot be read by this application, usually because it was saved with a different APP_SECRET. The field shows the value in use here; saving replaces the saved value.",
       widgetUnavailable: "Weather unavailable",
       widgetLocationsFailed: "Saved locations could not be loaded.",
       widgetNoLocations: "No saved locations yet",
@@ -281,6 +283,8 @@ export const weatherMessages = i18n.define({
       geoApiExample: "z. B. https://geocoding.example.com/search",
       saveFailedHttp: ({ status }) => `Speichern fehlgeschlagen (HTTP ${status})`,
       settingsSaved: "Wetter-Einstellungen gespeichert",
+      settingUnreadable:
+        "Der gespeicherte Wert ist für diese Anwendung nicht lesbar, meist weil er mit einem anderen APP_SECRET gespeichert wurde. Das Feld zeigt den hier verwendeten Wert; Speichern ersetzt den gespeicherten Wert.",
       widgetUnavailable: "Wetter nicht verfügbar",
       widgetLocationsFailed: "Gespeicherte Orte konnten nicht geladen werden.",
       widgetNoLocations: "Noch keine Orte gespeichert",

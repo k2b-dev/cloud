@@ -287,7 +287,8 @@ test("W1 view examples compile, preserve CSV numbers and page the actual task ca
       specs.push(checked.view);
       return { path: `/views/w1-${specs.length}.view.json`, ...cloudAiViewSummary(checked.view) };
     },
-    { locale: "en-US", timeZone: "UTC" },
+    // West of UTC, an all-day deadline read as an instant would land on the day before.
+    { locale: "en-US", timeZone: "America/Los_Angeles" },
     true,
   );
   const item = {
@@ -298,6 +299,7 @@ test("W1 view examples compile, preserve CSV numbers and page the actual task ca
     columnId: "Colum1",
     columnName: "To do",
     deadline: "2026-01-02T15:00:00Z",
+    deadlineAllDay: false,
     overdue: true,
     priority: null,
     activeBlockerCount: 0,
@@ -307,7 +309,10 @@ test("W1 view examples compile, preserve CSV numbers and page the actual task ca
   const pages = [
     { data: [item], page: { hasMore: true, nextCursor: "page-2" } },
     { data: [], page: { hasMore: true, nextCursor: "page-3" } },
-    { data: [{ ...item, ref: { ...item.ref, id: "TaskB2" }, title: "Send reminder" }], page: { hasMore: false } },
+    {
+      data: [{ ...item, ref: { ...item.ref, id: "TaskB2" }, title: "Send reminder", deadline: "2026-01-03", deadlineAllDay: true }],
+      page: { hasMore: false },
+    },
   ].map((page) => pageSchema.parse(page));
   const calls: unknown[] = [];
   const csv = "status,price,date\nopen,10,2026-01-02\npaid,20,2026-01-03\nopen,30,2026-02-01";
@@ -355,7 +360,7 @@ test("W1 view examples compile, preserve CSV numbers and page the actual task ca
     ],
     rows: [
       { task: { type: "spaces.item", id: "TaskA1", title: "Check invoice" }, deadline: "2026-01-02" },
-      { task: { type: "spaces.item", id: "TaskB2", title: "Send reminder" } },
+      { task: { type: "spaces.item", id: "TaskB2", title: "Send reminder" }, deadline: "2026-01-03" },
     ],
   });
   expect(JSON.stringify(specs)).not.toContain("href");

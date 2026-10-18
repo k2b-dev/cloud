@@ -88,7 +88,7 @@ const stableClaims = (claims: JWTPayload) => {
   if (claims.token_use === "access") assert.equal(typeof jti, "string");
   return { fields: Object.keys(claims).sort(), values: stable };
 };
-// Exclude only the additive login-lifetime fields from upgrade snapshots.
+// Exclude only the additive login extension fields from upgrade snapshots.
 const tokenFields = (tokens: client.Tokens) =>
   Object.keys(tokens)
     .filter((field) => field !== "refresh_token_expires_in")
@@ -97,7 +97,9 @@ const discovery = async () => {
   const configuration = await client.json(await client.request("/.well-known/openid-configuration"));
   assert.deepEqual(await client.json(await client.request("/.well-known/oauth-authorization-server")), configuration);
   assert(configuration && typeof configuration === "object");
-  return Object.fromEntries(Object.entries(configuration).filter(([field]) => field !== "cloud_login_ttl_supported"));
+  return Object.fromEntries(
+    Object.entries(configuration).filter(([field]) => field !== "cloud_login_ttl_supported" && field !== "cloud_login_hint_supported"),
+  );
 };
 const actor = async (token: string, status = 200) =>
   client.json(

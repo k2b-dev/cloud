@@ -651,7 +651,12 @@ export default function MailDetailsPanel(props: {
           }
           actions={
             <Tooltip.Anchor content={t().closeDetails}>
-              <IconButton type="button" class="lg:hidden" label={t().closeConversationDetails} onClick={props.onClose}>
+              <IconButton
+                type="button"
+                class="@min-[64rem]/k2b-app-area:hidden"
+                label={t().closeConversationDetails}
+                onClick={props.onClose}
+              >
                 <i class="ti ti-x" aria-hidden="true" />
               </IconButton>
             </Tooltip.Anchor>

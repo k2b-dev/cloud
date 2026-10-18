@@ -39,6 +39,7 @@ import type {
   SpaceTaskDependency,
   SpaceTaskDependent,
 } from "./contracts";
+import { DeadlineInputSchema } from "./contracts";
 import type { EventInvitationContext, EventInvitationDraft } from "./integration";
 import { hasEscapedLineBreak } from "./lib/escaped-line-break";
 import { describeTemplateDateRule, formatTemplateDate, localNow, proposeTemplateDates } from "./presentation/item-templates";
@@ -47,8 +48,6 @@ import type { TaskWork } from "./work-contracts";
 const SHORT_ID = /^[0-9A-Za-z]{6}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-/** The time the web form's Today, Tomorrow, and End of week deadline presets use. */
-const DATE_ONLY_DEADLINE_TIME = "17:00";
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 const withDepsPermalinks = (ctx: CloudCliContext, deps: ItemDeps) => ({
@@ -126,10 +125,8 @@ function spacesCommands(locale?: string) {
   };
 
   /**
-   * ISO datetimes pass through. A YYYY-MM-DD date is a day in the CLI user's
-   * timezone, stored like the web interface does: a deadline at the presets'
-   * 17:00, a start at the beginning of the day, and an end at the beginning of
-   * the next day, so the end date is included.
+   * A YYYY-MM-DD deadline stays a calendar date. Event bounds use local midnight;
+   * the end date includes its whole day. Date-times retain their existing interpretation.
    */
   const dateTime = (value: string | undefined, label: string, dateOnly: "start" | "end" | "deadline" = "start"): string | undefined => {
     if (!value) return undefined;
@@ -141,11 +138,13 @@ function spacesCommands(locale?: string) {
         }),
       );
     if (DATE_ONLY.test(value)) {
+      if (!DeadlineInputSchema.safeParse(value).success) throw invalid();
+      if (dateOnly === "deadline") return value;
       const day = new Date(`${value}T00:00:00Z`);
       // Rejects impossible dates such as 2026-02-30, and years before 100, which stdlib's wall-clock conversion reads as 19xx.
       if (Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== value || day.getUTCFullYear() < 100) throw invalid();
       if (dateOnly === "end") day.setUTCDate(day.getUTCDate() + 1);
-      const wallClock = `${day.toISOString().slice(0, 10)}T${dateOnly === "deadline" ? DATE_ONLY_DEADLINE_TIME : "00:00"}`;
+      const wallClock = `${day.toISOString().slice(0, 10)}T00:00`;
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       return dates.zonedDateTimeToInstant(wallClock, timeZone, { disambiguation: "compatible" });
     }
@@ -347,8 +346,8 @@ function spacesCommands(locale?: string) {
     from: fromFlag,
     deadline: flag.string({
       description: t({
-        en: "Deadline as ISO datetime, or YYYY-MM-DD for 17:00 local time",
-        de: "Frist als ISO-Zeitpunkt oder YYYY-MM-DD für 17:00 Ortszeit",
+        en: "Deadline: YYYY-MM-DD (all day), or ISO datetime with a time",
+        de: "Frist: YYYY-MM-DD (ganztägig) oder ISO-Zeitpunkt mit Uhrzeit",
       }),
     }),
     estimateMinutes: flag.int({
@@ -764,7 +763,7 @@ function spacesCommands(locale?: string) {
           const draft = await readApi<ItemTemplateDraft>(
             ctx,
             withQuery(api(`/${space.id}/templates/${encodeURIComponent(template.id)}/draft`), {
-              date: flags.date ?? (at ? localNow(new Date(at), localTimeZone()).date : undefined),
+              date: flags.date ?? (at ? (DATE_ONLY.test(at) ? at : localNow(new Date(at), localTimeZone()).date) : undefined),
               noDate: flags.noDate ? "true" : undefined,
               timeZone: localTimeZone(),
             }),
@@ -1017,8 +1016,8 @@ function spacesCommands(locale?: string) {
           date: arg.required({
             valueLabel: "date|none",
             description: t({
-              en: "ISO datetime, YYYY-MM-DD (17:00 local time), or none",
-              de: "ISO-Zeitpunkt, YYYY-MM-DD (17:00 Ortszeit) oder none",
+              en: "YYYY-MM-DD (all day), ISO datetime with a time, or none",
+              de: "YYYY-MM-DD (ganztägig), ISO-Zeitpunkt mit Uhrzeit oder none",
             }),
           }),
         },

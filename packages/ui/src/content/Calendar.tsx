@@ -8,6 +8,7 @@ import { GestureMenu } from "../actions/GestureMenu";
 import SegmentedControl from "../actions/SegmentedControl";
 import { useDateConfigLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { isWeekendColumn, isWeekendKey } from "../intl/weekend";
 import { prefersReducedMotion } from "../motion";
 import { CalendarDayView } from "./CalendarDayView";
 import { CalendarWeekView } from "./CalendarWeekView";
@@ -28,7 +29,7 @@ import {
   monthVisibleRows,
   monthWeekKeys,
 } from "./calendar-month-scroll";
-import { calendarDayIndexAtPoint, calendarMinuteAtPoint, startCalendarPointerSession } from "./calendar-pointer";
+import { afterPointerRelease, calendarDayIndexAtPoint, calendarMinuteAtPoint, startCalendarPointerSession } from "./calendar-pointer";
 import {
   type CalendarOwner,
   EventChip,
@@ -532,6 +533,7 @@ type CalendarNavigationLinkProps = ParentProps<{
     "data-size"?: string;
     "data-today"?: string;
     "data-variant"?: string;
+    "data-weekend"?: string;
   };
 }>;
 
@@ -1077,7 +1079,16 @@ const MonthPickerView = (props: {
         <Show when={props.owner.withWeekNumbers}>
           <div class="k2b-calendar-month__weekday">{calendarMessages().weekShort}</div>
         </Show>
-        <For each={weekdays()}>{(day) => <div class="k2b-calendar-month__weekday">{day}</div>}</For>
+        <For each={weekdays()}>
+          {(day, index) => (
+            <div
+              class="k2b-calendar-month__weekday"
+              data-weekend={isWeekendColumn(index(), dateConfig().firstDayOfWeek ?? 1, dateConfig().locale) ? "true" : undefined}
+            >
+              {day}
+            </div>
+          )}
+        </For>
       </div>
       <For each={weeks()}>
         {(week) => (
@@ -1116,6 +1127,7 @@ const MonthPickerView = (props: {
                     class="k2b-calendar-month__day"
                     data-calendar-day-key={dayKey}
                     data-outside={!sameMonth ? "true" : undefined}
+                    data-weekend={isWeekendKey(dayKey, dateConfig().locale) ? "true" : undefined}
                     data-drop-preview={
                       movePreview()?.start && calendar.formatDateKey(movePreview()!.start, dateConfig()) === dayKey ? "true" : undefined
                     }
@@ -1368,6 +1380,7 @@ const MonthView = (props: {
     { equals: (previous, next) => previous.map((week) => week[0]?.key).join() === next.map((week) => week[0]?.key).join() },
   );
   const weekdays = createMemo(() => calendar.weekdays(dateConfig()));
+  const weekendColumn = (index: number) => isWeekendColumn(index, dateConfig().firstDayOfWeek ?? 1, dateConfig().locale);
   const todayKey = createMemo(() => calendar.formatDateKey(props.now, dateConfig()));
   const items = createMemo(() => monthItems(props.events));
   const [capacities, setCapacities] = createSignal<number[]>([]);
@@ -2263,7 +2276,7 @@ const MonthView = (props: {
         select(key, current);
         focusCell(current);
         const range = orderedSelection(key, current);
-        openCreate(range, { active: range.first !== range.last });
+        afterPointerRelease(() => openCreate(range, { active: range.first !== range.last }));
       },
       onCancel: () => select(key),
     });
@@ -2510,7 +2523,7 @@ const MonthView = (props: {
                 data-outside={!sameMonth() ? "true" : undefined}
                 data-month-first={continuous() && key.endsWith("-01") ? "true" : undefined}
                 data-month-top={continuous() && Number(key.slice(8)) <= 7 ? "true" : undefined}
-                data-weekend={column() > 4 ? "true" : undefined}
+                data-weekend={isWeekendKey(key, dateConfig().locale) ? "true" : undefined}
                 data-past={key < todayKey() ? "true" : undefined}
                 data-selected={selectionPart(key)}
                 data-drop-preview={within(dropRange(), key) ? "true" : undefined}
@@ -2660,7 +2673,7 @@ const MonthView = (props: {
       </Show>
       <For each={weekdays()}>
         {(day, index) => (
-          <div class="k2b-calendar-month__weekday" role="columnheader" data-weekend={index() > 4 ? "true" : undefined}>
+          <div class="k2b-calendar-month__weekday" role="columnheader" data-weekend={weekendColumn(index()) ? "true" : undefined}>
             {day}
           </div>
         )}
@@ -3096,7 +3109,10 @@ const TimeGridView = (props: {
               <CalendarNavigationLink
                 owner={props.owner}
                 href={props.owner.getDateHref?.(day, "day") ?? "#"}
-                anchorProps={{ class: "k2b-calendar-time-grid__day" }}
+                anchorProps={{
+                  class: "k2b-calendar-time-grid__day",
+                  "data-weekend": isWeekendKey(calendar.formatDateKey(day, dateConfig()), dateConfig().locale) ? "true" : undefined,
+                }}
               >
                 <span class="k2b-calendar-time-grid__day-label" data-today={today() ? "true" : undefined}>
                   {formatDay(day, dateConfig())}
@@ -3134,6 +3150,7 @@ const TimeGridView = (props: {
                 <div
                   class="k2b-calendar-time-grid__all-day-cell"
                   data-calendar-day-key={dayKey}
+                  data-weekend={isWeekendKey(dayKey, dateConfig().locale) ? "true" : undefined}
                   data-drop-preview={
                     timePreview()?.allDay && calendar.formatDateKey(timePreview()!.start, dateConfig()) === dayKey ? "true" : undefined
                   }
@@ -3204,6 +3221,7 @@ const TimeGridView = (props: {
               return (
                 <div
                   class="k2b-calendar-time-grid__column"
+                  data-weekend={isWeekendKey(dayKey, dateConfig().locale) ? "true" : undefined}
                   style={{
                     "grid-template-rows": `repeat(${hours().length}, minmax(4rem, 1fr))`,
                   }}

@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.29.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.28.0...npm-ui-v0.29.0) (2026-10-18)
+
+
+### Features
+
+* **ai:** say which routine stopped and why ([#1448](https://github.com/k2b-dev/cloud/issues/1448)) ([da8fc05](https://github.com/k2b-dev/cloud/commit/da8fc0511451965593d7e530e6c4569cdb764a50))
+* **cloud:** a panel beside every app that any app can offer with `panel` in defineApp ([#1439](https://github.com/k2b-dev/cloud/issues/1439)) ([53bf2e7](https://github.com/k2b-dev/cloud/commit/53bf2e77757ac8d3211ee4d54f312fb90d3665c1))
+* **cloud:** insert notes, contacts, tasks and other Cloud content from the slash menu ([#1370](https://github.com/k2b-dev/cloud/issues/1370)) ([d2514a7](https://github.com/k2b-dev/cloud/commit/d2514a7133277868624074cbbdf66812ed80a912))
+* **cloud:** soft shell on iPad and phone: rail in an app-gradient container and the app as a card (I5), a soft card on the gradient and a floating bottom bar (P5) ([#1419](https://github.com/k2b-dev/cloud/issues/1419)) ([99e9e3e](https://github.com/k2b-dev/cloud/commit/99e9e3e626967cf08ff4020bbe09b53d2f07b79a))
+* **spaces:** react to items with emoji through the API, capabilities and cld ([#1362](https://github.com/k2b-dev/cloud/issues/1362)) ([fc55f73](https://github.com/k2b-dev/cloud/commit/fc55f73496f2a838cbab908f733d249b804df53d))
+* **ui:** add chat questions with typed chips and an object preview ([#1412](https://github.com/k2b-dev/cloud/issues/1412)) ([899b7bf](https://github.com/k2b-dev/cloud/commit/899b7bfe5a8dd81b32ee698d6ff44ead7c7e27e7))
+* **ui:** app and file-type icons sit in a soft chip of their color ([#1451](https://github.com/k2b-dev/cloud/issues/1451)) ([4589907](https://github.com/k2b-dev/cloud/commit/45899070079ba3e5321d51c2b5956c7fe208f510))
+* **ui:** every Chart shows tooltips by default ([#1357](https://github.com/k2b-dev/cloud/issues/1357)) ([a2605a0](https://github.com/k2b-dev/cloud/commit/a2605a065473f9824463fc45cbe8129c9ff2e9b2))
+* **ui:** lay out workspaces by the width their host gives them and let a detail that does not fit wait ([#1380](https://github.com/k2b-dev/cloud/issues/1380)) ([a57ba45](https://github.com/k2b-dev/cloud/commit/a57ba45bac687e335b96d134e0ea2c848c33cd85))
+* **ui:** one drag and drop for rows, tasks, events and paragraphs, with a keyboard and menu path ([#1376](https://github.com/k2b-dev/cloud/issues/1376)) ([682e08b](https://github.com/k2b-dev/cloud/commit/682e08babc1500275b413e30336a9a7a9b474ffb)), closes [#1255](https://github.com/k2b-dev/cloud/issues/1255)
+* **ui:** show an overview's objects as chips on iPad and phone instead of the grey block, with an All sheet and a phone title menu ([#1441](https://github.com/k2b-dev/cloud/issues/1441)) ([6643a73](https://github.com/k2b-dev/cloud/commit/6643a73dbc14a864d1658a6ea6871254814529d1))
+* **ui:** stat trends name and format their values in tooltips ([#1420](https://github.com/k2b-dev/cloud/issues/1420)) ([7f42bb3](https://github.com/k2b-dev/cloud/commit/7f42bb35afadaf701bbf3c31617f2431dafae050))
+
+
+### Bug Fixes
+
+* **spaces:** keep kanban cards and columns in place while a refresh updates them ([#1396](https://github.com/k2b-dev/cloud/issues/1396)) ([0cd224d](https://github.com/k2b-dev/cloud/commit/0cd224d99cd9c952916a83d4a2eafdb0a9ea8085))
+* stop WebKit's network process from crashing on Back in browser tests ([#1431](https://github.com/k2b-dev/cloud/issues/1431)) ([#1447](https://github.com/k2b-dev/cloud/issues/1447)) ([4c5d68d](https://github.com/k2b-dev/cloud/commit/4c5d68d9e8a18fb960970e7cbf80815da29c9ff8))
+
 ## [0.28.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.27.0...npm-ui-v0.28.0) (2026-10-17)
 
 

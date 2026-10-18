@@ -8,6 +8,8 @@ import type { OAuthClient, OAuthScope } from "@/contracts";
 
 /** RFC 8628 §6.1: short enough to type, long enough that brute force stays bounded by the failure limit. */
 export const DEVICE_CODE_LIFETIME_SECONDS = 600;
+/** Core app-approval sign-ins expire after five minutes. */
+export const APP_APPROVAL_DEVICE_LIFETIME_SECONDS = 300;
 /** Minimum polling interval the token endpoint enforces with `slow_down`. */
 export const DEVICE_POLL_INTERVAL_SECONDS = 5;
 
@@ -69,12 +71,14 @@ export const create = async (params: {
   client: OAuthClient;
   scopes: OAuthScope[];
   loginLifetimeSeconds?: number | null;
-}): Promise<{ deviceCode: string; userCode: string; expiresIn: number; interval: number }> => {
+  appApproval?: boolean;
+}): Promise<{ id: string; deviceCode: string; userCode: string; expiresIn: number; interval: number }> => {
+  const expiresIn = params.appApproval ? APP_APPROVAL_DEVICE_LIFETIME_SECONDS : DEVICE_CODE_LIFETIME_SECONDS;
   const deviceCode = randomDeviceCode();
   for (let attempt = 0; attempt < INSERT_ATTEMPTS; attempt += 1) {
     const userCode = randomUserCode();
     const [row] = await sql<{ id: string }[]>`
-      INSERT INTO oauth.device_authorizations (device_code_hash, user_code_hash, client_id, scopes, audiences, expires_at, login_lifetime_seconds)
+      INSERT INTO oauth.device_authorizations (device_code_hash, user_code_hash, client_id, scopes, audiences, expires_at, login_lifetime_seconds, app_approval)
       SELECT
         ${sha256(deviceCode)},
         ${sha256(userCode)},
@@ -86,16 +90,22 @@ export const create = async (params: {
           GROUP BY audience
           ORDER BY min(position)
         ),
-        now() + make_interval(secs => ${DEVICE_CODE_LIFETIME_SECONDS}),
-        ${params.loginLifetimeSeconds ?? null}
+        now() + make_interval(secs => ${expiresIn}),
+        ${params.loginLifetimeSeconds ?? null},
+        ${params.appApproval ?? false}
       FROM oauth.clients client
       WHERE client.client_id = ${params.client.clientId}
       ON CONFLICT (user_code_hash) DO NOTHING
       RETURNING id
     `;
-    if (row) return { deviceCode, userCode, expiresIn: DEVICE_CODE_LIFETIME_SECONDS, interval: DEVICE_POLL_INTERVAL_SECONDS };
+    if (row) return { id: row.id, deviceCode, userCode, expiresIn, interval: DEVICE_POLL_INTERVAL_SECONDS };
   }
   throw new Error("Could not allocate a unique device user code");
+};
+
+/** Retract only the pending grant whose Core handoff failed. */
+export const deletePending = async (id: string): Promise<void> => {
+  await sql`DELETE FROM oauth.device_authorizations WHERE id = ${id}::uuid AND status = 'pending'`;
 };
 
 /** Find a still-pending authorization by the code the person typed. */
@@ -105,6 +115,7 @@ export const findPendingByUserCode = async (userCode: string): Promise<PendingDe
     FROM oauth.device_authorizations
     WHERE user_code_hash = ${sha256(userCode)}
       AND status = 'pending'
+      AND NOT app_approval
       AND expires_at > now()
   `;
   return row ? mapPending(row) : null;
@@ -116,6 +127,7 @@ export const getPending = async (id: string): Promise<PendingDeviceAuthorization
     FROM oauth.device_authorizations
     WHERE id = ${id}::uuid
       AND status = 'pending'
+      AND NOT app_approval
       AND expires_at > now()
   `;
   return row ? mapPending(row) : null;
@@ -138,6 +150,7 @@ export const decide = async (params: {
       WHERE id = ${params.id}::uuid
         AND client_id = ${params.client.clientId}
         AND status = 'pending'
+        AND NOT app_approval
         AND expires_at > now()
       RETURNING id, scopes
     `;

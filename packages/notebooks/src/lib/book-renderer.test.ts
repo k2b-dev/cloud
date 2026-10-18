@@ -31,10 +31,25 @@ describe("documented Book image forms", () => {
       // A height alone needs an explicit height, because Book's image style otherwise keeps `height: auto`.
       if (fixture.height !== null && fixture.width === null) expect(img).toContain(`style="height:${fixture.height}px"`);
       else expect(img).not.toContain("style=");
-      const print = renderNotebookBook({ markdown: fixture.markdown, notebookId: "ABC123", locale: "en", print: true }).html;
-      expect(print).toContain('class="notebook-book-image-label"');
-      expect(print).toContain(fixture.alt);
-      expect(print).not.toContain("<img");
+      for (const markdown of [fixture.markdown, `[${fixture.markdown}](https://example.test)`, `# ${fixture.markdown}`]) {
+        const print = renderNotebookBook({ markdown, notebookId: "ABC123", locale: "en", print: true });
+        // Content behind session URLs disappears in server-side exports: hand the service slots instead.
+        for (const unsafe of ['src="/', 'href="/', "/api/", "/app/", "attach://", "url(/"]) expect(print.html).not.toContain(unsafe);
+        expect(print.html).not.toContain("notebook-book-image-link");
+        expect(print.images).toHaveLength(1);
+        expect(print.images[0]).toMatchObject({
+          href: fixture.href,
+          alt: fixture.alt,
+          title: fixture.title,
+          width: fixture.width,
+          height: fixture.height,
+          omissionIndex: 0,
+        });
+        expect(print.html).toContain(print.images[0]!.token);
+        expect(print.omissions).toEqual([]);
+        if (markdown.startsWith("#")) expect(print.headings[0]).toMatchObject({ id: "heading-floor-plan", text: fixture.alt });
+      }
+      expect(render(fixture.markdown).images).toEqual([]);
     });
   }
 
@@ -857,13 +872,10 @@ describe("typed PDF omissions", () => {
       references: { attachments: new Map([["DEF456", { filename: "Floor plan.png", sizeBytes: 100 }]]) },
     };
     const document = renderNotebookBook({ ...input, print: true });
-    expect(document.omissions).toEqual([
-      { code: "not_rendered", kind: "image", label: "Map" },
-      { code: "not_rendered", kind: "image", label: "Floor plan.png" },
-      { code: "not_rendered", kind: "image", label: "https://example.test/path.png" },
-      { code: "not_rendered", kind: "diagram", label: "graph TD" },
-      ...Array.from({ length: 3 }, () => ({ code: "not_rendered" as const, kind: "image" as const, label: "" })),
-    ]);
+    expect(document.omissions).toEqual([{ code: "not_rendered", kind: "diagram", label: "graph TD" }]);
+    expect(document.images).toHaveLength(6);
+    expect(document.images.map((image) => image.omissionIndex)).toEqual([0, 0, 0, 1, 1, 1]);
+    expect(document.images.map((image) => image.alt)).toEqual(["Map", "", "", "", "", ""]);
     expect(document.html).not.toContain("OMISSION");
     expect(renderNotebookBook(input).omissions).toEqual([]);
   });
@@ -901,6 +913,6 @@ describe("typed PDF omissions", () => {
     // Invalid math in alt text is only a label; its KaTeX output never reaches the document.
     expect(
       renderNotebookBook({ markdown: "![ $\\frac{$ ](attach://ABC123)", notebookId: "ABC123", locale: "en", print: true }).omissions,
-    ).toEqual([{ code: "not_rendered", kind: "image", label: "\\frac{" }]);
+    ).toEqual([]);
   });
 });

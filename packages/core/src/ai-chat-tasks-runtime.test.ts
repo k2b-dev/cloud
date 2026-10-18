@@ -3,6 +3,11 @@ import type { AiChatTask } from "@k2b/cloud/ai";
 import { reconcileAiChatTaskSchedules, recoverAiChatTasks } from "./ai-chat-tasks-runtime";
 
 const task = (id: string): AiChatTask => ({
+  title: null,
+  name: "Release planning",
+  locale: null,
+  reasonCode: null,
+  reasonAt: null,
   id,
   shortId: id,
   chatId: "chat",
@@ -81,6 +86,10 @@ describe("scheduled chat recovery isolation", () => {
         calls.push("prune");
         throw new Error("prune failure");
       },
+      relabelRestoredArchivePauses: async () => {
+        calls.push("relabel");
+        throw new Error("relabel failure");
+      },
       listQueued: async () => [{ occurrence: { id: "bad" } }, { occurrence: { id: "good" } }],
       submit: async (id) => {
         calls.push(`submit:${id}`);
@@ -91,7 +100,17 @@ describe("scheduled chat recovery isolation", () => {
       },
     });
     expect(result).toEqual({ queued: 1 });
-    expect(calls).toEqual(["reconcile", "finalize:bad", "finalize:good", "prune", "materialize", "submit:bad", "submit:good", "messages"]);
+    expect(calls).toEqual([
+      "reconcile",
+      "finalize:bad",
+      "finalize:good",
+      "prune",
+      "relabel",
+      "materialize",
+      "submit:bad",
+      "submit:good",
+      "messages",
+    ]);
   });
 
   test("listing failures do not prevent independent recovery work or message delivery", async () => {
@@ -106,6 +125,9 @@ describe("scheduled chat recovery isolation", () => {
       },
       pruneExpiredRuns: async () => {
         calls.push("prune");
+      },
+      relabelRestoredArchivePauses: async () => {
+        calls.push("relabel");
       },
       materialize: async () => {
         calls.push("materialize");
@@ -122,6 +144,6 @@ describe("scheduled chat recovery isolation", () => {
       },
     });
     expect(result).toEqual({ queued: 0 });
-    expect(calls).toEqual(["prune", "materialize", "messages"]);
+    expect(calls).toEqual(["prune", "relabel", "materialize", "messages"]);
   });
 });

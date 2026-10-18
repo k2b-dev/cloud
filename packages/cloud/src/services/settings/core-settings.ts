@@ -385,15 +385,16 @@ export const CORE_SETTINGS = {
     default: 10000,
     min: 100,
     max: 120000,
-    description: "Maximum time in milliseconds for one Gotenberg render request.",
+    description:
+      "Maximum time in milliseconds for one Gotenberg render request. Gotenberg's own --api-timeout (default 30 s) also caps it.",
   },
   "gotenberg.max_html_bytes": {
     kind: "number",
-    label: "Max HTML Bytes",
+    label: "Max input bytes",
     default: 1048576,
     min: 1024,
     max: 10485760,
-    description: "Maximum HTML input size accepted before sending a render request.",
+    description: "Maximum size of one render request: HTML, header, footer, images and fonts together.",
   },
   "gotenberg.max_pdf_bytes": {
     kind: "number",

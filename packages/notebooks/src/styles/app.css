@@ -131,7 +131,6 @@
 .notebook-sidebar-chip > span {
   max-width: 8rem;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 .notebook-sidebar-chip__chevron {
   color: var(--k2b-text-muted);
@@ -160,7 +159,6 @@
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .notebook-sidebar-filter__label > small {
@@ -291,21 +289,32 @@
 }
 /* The personal "Full width" lifts the column: the text fills the reading
    surface. The server renders the attribute from the settings cookie. It
-   applies only from `lg`, where its switches and command exist, so a narrow
-   window never shows wide text that nothing there can switch back. */
-@media (min-width: 64rem) {
+   applies only from a 64 rem app host, where its switch, menu choice and command exist,
+   so a narrow app never shows wide text that nothing there can switch back.
+   The host decides, not the window, so the app beside Cloud's panel column
+   behaves like a window as wide as the app. */
+@container k2b-app-area (min-width: 64rem) {
   .notebook-document-surface[data-full-width] {
     --notebook-measure: 100%;
   }
 }
-/* Below `lg` the note is about as narrow as the column, so "Full width" would
-   change nothing; its switches do not show there. CSS decides, so the detail
-   panel arrives in its final layout. The query is the exact opposite of the
-   one above, so a zoomed window with a fractional width never shows a switch
-   that changes nothing. */
-@media not all and (min-width: 64rem) {
-  .k2b-ui .k2b-switch-field.notebooks-full-width-option {
-    display: none;
+/* The button that hides or shows the navigation sidebar beside the editor
+   and the graph: the sidebar is a column from a 64 rem app host. Below that
+   the workspace head's button opens it as an overlay, so this button only
+   brings a hidden navigation back (from 48 rem). Phones keep the header's
+   menu. */
+.notebooks-navigation-toggle {
+  display: none;
+  flex-shrink: 0;
+}
+@media (min-width: 48rem) {
+  .notebooks-navigation-toggle[data-navigation-hidden] {
+    display: flex;
+  }
+}
+@container k2b-app-area (min-width: 64rem) {
+  .notebooks-navigation-toggle {
+    display: flex;
   }
 }
 .notebook-book-content {

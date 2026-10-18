@@ -6,6 +6,7 @@ name: Mirror images
 # first; otherwise every image is present and the run only verifies that.
 # The weekly run restores a removed image and re-checks that every package is
 # still public before the nightly and release workflows depend on it.
+# It also keeps the DB-IP snapshot month pinned in the Dockerfile.
 
 on:
   workflow_call:
@@ -14,7 +15,7 @@ on:
     - cron: "41 4 * * 1"
   push:
     branches: [main]
-    paths: [.github/mirror-images.txt, .github/mirror-images.sh]
+    paths: [.github/mirror-images.txt, .github/mirror-images.sh, Dockerfile]
 
 permissions:
   contents: read

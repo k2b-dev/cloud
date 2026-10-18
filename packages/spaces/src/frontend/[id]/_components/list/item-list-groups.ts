@@ -1,5 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import type { ItemGroupBy, SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import { deadlineDayKey, isDateOnlyDeadline } from "@/presentation/deadline";
 import { spaceMessages } from "../../messages";
 
 export type ItemListGroup = {
@@ -24,7 +25,7 @@ const scheduleGroup = (item: SpaceItem, dateConfig?: DateContext): ItemListGroup
   const tomorrow = dates.addDays(today, 1, dateConfig);
   const todayKey = dates.formatDateKey(today, dateConfig);
   const tomorrowKey = dates.formatDateKey(tomorrow, dateConfig);
-  const scheduleKey = dates.formatDateKey(schedule, dateConfig);
+  const scheduleKey = deadlineDayKey(schedule, dateConfig);
 
   if (scheduleKey < todayKey && !item.completedAt) {
     if (item.startsAt && item.endsAt) {
@@ -33,18 +34,20 @@ const scheduleGroup = (item: SpaceItem, dateConfig?: DateContext): ItemListGroup
     return { key: "overdue", label: t.overdue, icon: "ti-alert-triangle", color: "#ef4444" };
   }
 
-  const date = new Date(schedule);
+  const [year = 1970, month = 1, day = 1] = scheduleKey.split("-").map(Number);
+  const date = isDateOnlyDeadline(schedule) ? new Date(Date.UTC(year, month - 1, day, 12)) : new Date(schedule);
+  const displayContext = isDateOnlyDeadline(schedule) ? { ...dateConfig, timeZone: "UTC" } : dateConfig;
   if (scheduleKey === todayKey) {
-    return { key: `date:${scheduleKey}`, label: t.today, icon: "ti-sun", meta: dates.formatDate(date, dateConfig) };
+    return { key: `date:${scheduleKey}`, label: t.today, icon: "ti-sun", meta: dates.formatDate(date, displayContext) };
   }
   if (scheduleKey === tomorrowKey) {
-    return { key: `date:${scheduleKey}`, label: t.tomorrow, icon: "ti-sunrise", meta: dates.formatDate(date, dateConfig) };
+    return { key: `date:${scheduleKey}`, label: t.tomorrow, icon: "ti-sunrise", meta: dates.formatDate(date, displayContext) };
   }
   return {
     key: `date:${scheduleKey}`,
-    label: dates.formatWeekdayLong(date, dateConfig),
+    label: dates.formatWeekdayLong(date, displayContext),
     icon: "ti-calendar",
-    meta: dates.formatDate(date, dateConfig),
+    meta: dates.formatDate(date, displayContext),
   };
 };
 

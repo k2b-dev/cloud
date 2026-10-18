@@ -106,17 +106,12 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
     <PanelDialog>
       <PanelDialog.Header title={t().reviewDuplicates} subtitle={t().reviewDuplicatesSubtitle} icon="ti ti-users-group" close={close} />
       <PanelDialog.Body>
-        <Show when={!matches.loading()} fallback={<Placeholder icon="ti ti-loader-2" title={t().checkingContacts} variant="panel" />}>
+        <Show when={!matches.loading()} fallback={<Placeholder state="loading" title={t().checkingContacts} variant="panel" />}>
           <Show
             when={!matches.error() || matches.data() !== undefined}
             fallback={
               <div class="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
-                <Placeholder
-                  icon="ti ti-alert-circle"
-                  title={t().couldNotCheckDuplicates}
-                  description={t().duplicatesErrorRecovery}
-                  variant="panel"
-                />
+                <Placeholder state="error" title={t().couldNotCheckDuplicates} description={t().duplicatesErrorRecovery} variant="panel" />
                 <Button variant="secondary" size="sm" onClick={() => void matches.refresh()}>
                   <i class="ti ti-refresh" /> {t().retry}
                 </Button>

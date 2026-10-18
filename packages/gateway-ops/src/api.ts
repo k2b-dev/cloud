@@ -33,7 +33,7 @@ import { getTelemetrySummary, listTelemetryApps, listTelemetryEvents } from "./t
 const GATEWAY_SETTING_GROUP = "gateway";
 const GATEWAY_SETTING_PREFIX = "gateway.";
 
-const UpdateSettingSchema = z.object({ value: z.unknown() });
+const UpdateSettingSchema = z.object({ value: z.unknown(), replaceUnreadable: z.boolean().optional() });
 const HealthWebhookIdParamSchema = z.object({ id: z.uuid() });
 const QueryBooleanSchema = z
   .string()
@@ -112,7 +112,7 @@ export const apiRoutes = new Hono<AuthContext>()
     const key = c.req.param("key") ?? "";
     if (!key.startsWith(GATEWAY_SETTING_PREFIX)) return respond(c, fail(err.badInput(`Setting "${key}" is not in the gateway namespace`)));
     const body = c.req.valid("json");
-    const result = await settingsService.entry.update({ key, value: body.value });
+    const result = await settingsService.entry.update({ key, value: body.value, replaceUnreadable: body.replaceUnreadable });
     if (!result.ok) return respond(c, result);
     if (key === "gateway.health_check_schedule" && typeof body.value === "string") await updateHealthSchedule(body.value);
     return respond(c, ok({ message: gatewayOpsMessages.resolve([getLocale(c)]).t.settingUpdated }));

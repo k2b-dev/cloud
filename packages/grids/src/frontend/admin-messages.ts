@@ -95,6 +95,8 @@ export const gridsAdminMessages = i18n.define({
       loadSettingsFailed: "Failed to load settings.",
       retrySettings: "Retry",
       updateSettingFailed: "Failed to update setting.",
+      settingUnreadable:
+        "The saved value cannot be read by this application, usually because it was saved with a different APP_SECRET. The field shows the value in use here; saving replaces the saved value.",
       settingsSaved: "Grids settings saved",
       gridsSettings: "Grids settings",
       settingsSubtitle: "App-level defaults used by Grids.",
@@ -222,6 +224,8 @@ export const gridsAdminMessages = i18n.define({
       loadSettingsFailed: "Einstellungen konnten nicht geladen werden.",
       retrySettings: "Erneut versuchen",
       updateSettingFailed: "Einstellung konnte nicht aktualisiert werden.",
+      settingUnreadable:
+        "Der gespeicherte Wert ist für diese Anwendung nicht lesbar, meist weil er mit einem anderen APP_SECRET gespeichert wurde. Das Feld zeigt den hier verwendeten Wert; Speichern ersetzt den gespeicherten Wert.",
       settingsSaved: "Grids-Einstellungen gespeichert",
       gridsSettings: "Grids-Einstellungen",
       settingsSubtitle: "Anwendungsweite Standardwerte für Grids.",

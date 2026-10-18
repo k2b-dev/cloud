@@ -127,6 +127,7 @@ const settle = async (page: Page) => {
     await Promise.all(
       head
         .getAnimations({ subtree: true })
+        .filter((animation) => animation.timeline === document.timeline)
         .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
         .map((animation) => animation.finished),
     );

@@ -425,7 +425,12 @@ export default function MailConversationList(props: {
               </Tooltip.Anchor>
               <Show when={props.selectedConversationId || props.selectedMessageId}>
                 <Tooltip.Anchor content={messages().hideList}>
-                  <IconButton type="button" class="hidden lg:inline-flex" label={messages().hideList} onClick={props.onCollapse}>
+                  <IconButton
+                    type="button"
+                    class="hidden @min-[64rem]/k2b-app-area:inline-flex"
+                    label={messages().hideList}
+                    onClick={props.onCollapse}
+                  >
                     <i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>

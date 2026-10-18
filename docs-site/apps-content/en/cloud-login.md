@@ -5,7 +5,7 @@ section: Companion apps
 order: 500
 description: Approve sign-ins and Actions for multiple Clouds from one installable app.
 tags: [authentication, pwa, devices]
-updated: 2026-10-11
+updated: 2026-10-18
 ---
 
 # Cloud Login
@@ -29,6 +29,17 @@ and choose the authenticator address. Use the app configured by your Cloud.
    the QR code or paste its link into Cloud Login, then compare and confirm the codes.
 4. When you start a sign-in, open Cloud Login or tap its notification. Compare
    the code shown in the request with the sign-in page, then approve or deny it.
+
+A terminal sign-in shows **Terminal sign-in** with the client name in the
+title, the Cloud host, the comparison code, how long the terminal stays signed
+in, and its permissions in plain words. Only approve a sign-in you started
+yourself with `cld login --user <name>`, where `<name>` is your username or
+email, and only when the code matches the one in your terminal. Otherwise,
+choose **Deny**.
+
+Approving signs the terminal in with exactly these permissions for the time
+shown. To grant fewer permissions, start the sign-in again with fewer scopes,
+using `cld login --scope ...`.
 
 Waiting Actions appear on the Cloud card with the app, what it wants to do and
 the chat it came from. Choose **Review**, read the request, then choose

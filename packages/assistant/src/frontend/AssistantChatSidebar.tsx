@@ -182,14 +182,14 @@ function Disclosure(props: {
           <i class={`ti ${open() ? "ti-chevron-down" : "ti-chevron-right"} assistant-sidebar-group__chevron`} aria-hidden="true" />
           <Show when={props.icon}>{(icon) => <i class={`${icon()} assistant-sidebar-group__icon`} aria-hidden="true" />}</Show>
           <span class="assistant-sidebar-group__copy">
-            <span class="assistant-sidebar-group__title">
+            <span class="assistant-sidebar-group__title k2b-truncate-fade">
               {props.title}
               <Show when={props.count !== undefined}>
                 <span class="assistant-sidebar-count"> · {props.count}</span>
               </Show>
             </span>
             <Show when={props.description}>
-              <span class="assistant-sidebar-group__description">{props.description}</span>
+              <span class="assistant-sidebar-group__description k2b-truncate-fade">{props.description}</span>
             </Show>
           </span>
         </Button>

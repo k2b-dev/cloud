@@ -3,8 +3,8 @@
  *
  * Resolution order: DB value -> env fallback -> code default.
  *
- * Custom DB values are encrypted at rest using APP_SECRET. All read/write
- * goes through the Redis cache-aside layer in `./store.ts` (5-minute TTL).
+ * Custom DB values are encrypted at rest using APP_SECRET. Value reads use
+ * Redis cache-aside in `./store.ts` (5-minute TTL); stored-state reads use DB.
  * `loadCache()` runs once at boot to normalize legacy rows and bootstrap
  * env-backed entries into Postgres. Startup never replaces an existing row;
  * env bootstrap only fills missing keys.
@@ -13,7 +13,7 @@
 import { redis, sql } from "bun";
 import { decryptValue, encryptValue, getAppSecret } from "./crypto";
 import { resolveSettingPresentation, SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
-import { bulkRead, deleteKey, readKey, writeKey } from "./store";
+import { deleteKey, readKey, readKeyState, readStates, type SettingRead, writeKey } from "./store";
 
 type SqlClient = typeof sql;
 
@@ -162,8 +162,8 @@ const bootstrapEnvBackedEntries = async (config: {
 
 /**
  * Boot-time normalization + env-bootstrap. Runs once at startup. Does NOT
- * populate any in-process cache — every read goes through Redis cache-aside
- * (`store.ts`) at request time.
+ * populate any in-process cache — value reads use Redis cache-aside
+ * (`store.ts`), and stored-state reads go directly to Postgres.
  */
 export async function loadCache(): Promise<void> {
   getAppSecret();
@@ -187,8 +187,12 @@ export async function get<T = unknown>(key: string): Promise<T> {
  * Write a setting. Pass `db` to run inside a caller's transaction — then the
  * caller must also call `invalidateSettingsCache` once it commits.
  */
-export async function set(key: string, value: unknown, db?: SqlClient): Promise<void> {
-  await writeKey(key, value, db);
+export async function set(key: string, value: unknown, db?: SqlClient, options?: { replaceUnreadable?: boolean }): Promise<void> {
+  await writeKey(key, value, db, options);
+}
+
+export async function read(key: string): Promise<SettingRead> {
+  return readKeyState(key);
 }
 
 export async function remove(key: string, db?: SqlClient): Promise<void> {
@@ -198,20 +202,17 @@ export async function remove(key: string, db?: SqlClient): Promise<void> {
 import type { SettingEntry } from "../../contracts/shared";
 
 export type { SettingEntry } from "../../contracts/shared";
-export { invalidateSettingsCache } from "./store";
+export type { SettingRead, StoredSettingState } from "./store";
+export { invalidateSettingsCache, readStates, SettingUnreadableError } from "./store";
 
 export async function getAll(locale?: string): Promise<SettingEntry[]> {
-  // Determine which keys have a custom row in Postgres (vs. falling back to
-  // env / code default). One indexed scan, then bulk-read all values.
-  const customRows = await sql<{ key: string }[]>`SELECT key FROM settings.entries`;
-  const customKeys = new Set(customRows.map((row) => row.key));
-
   const allKeys = SETTINGS.map((def) => def.key);
-  const values = await bulkRead(allKeys);
+  const values = await readStates(allKeys);
 
   return SETTINGS.map((def) => {
     const presentation = resolveSettingPresentation(def, locale);
-    const isCustom = customKeys.has(def.key);
+    const { value, stored } = values.get(def.key)!;
+    const isCustom = stored !== "none";
     const envFallback = resolveEnvValue(def, "fallback");
     const resetValue = envFallback ?? def.default;
 
@@ -222,12 +223,13 @@ export async function getAll(locale?: string): Promise<SettingEntry[]> {
       description: presentation.description ?? "",
       placeholder: presentation.placeholder,
       group: def.group,
-      value: values.get(def.key),
+      value,
       default: def.default,
       resetValue: def.kind === "secret" ? "" : resetValue,
-      valueSource: isCustom ? "custom" : envFallback === undefined ? "default" : "env",
+      valueSource: stored === "readable" ? "custom" : envFallback === undefined ? "default" : "env",
       resetValueSource: envFallback === undefined ? "default" : "env",
       isCustom,
+      unreadable: stored === "unreadable",
       templateVars: "templateVars" in def ? def.templateVars : undefined,
       options: presentation.options,
       min: "min" in def ? def.min : undefined,

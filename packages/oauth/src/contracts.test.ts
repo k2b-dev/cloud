@@ -36,10 +36,23 @@ describe("OAuth contracts", () => {
       content: {
         "application/x-www-form-urlencoded": {
           schema: {
-            properties: { ttl: { type: "string", maxLength: 15 } },
+            properties: { ttl: { type: "string", maxLength: 15 }, login_hint: { type: "string", minLength: 1, maxLength: 254 } },
           },
         },
       },
+    });
+    const deviceRoute = spec.paths["/oauth/device_authorization"]?.post;
+    expect(deviceRoute?.responses?.["503"]).toBeDefined();
+    const deviceResponse = deviceRoute?.responses?.["200"];
+    if (!deviceResponse || "$ref" in deviceResponse) throw new Error("Device response schema is missing");
+    expect(deviceResponse.content?.["application/json"]?.schema).toMatchObject({
+      anyOf: [
+        { required: ["device_code", "user_code", "verification_uri", "verification_uri_complete", "expires_in", "interval"] },
+        {
+          required: ["device_code", "comparison", "expires_in", "interval"],
+          properties: { comparison: { pattern: "^\\d{6}$" }, expires_in: { const: 300 }, interval: { const: 5 } },
+        },
+      ],
     });
     const response = tokenRoute?.responses?.["200"];
     if (!response || "$ref" in response) throw new Error("Token response schema is missing");

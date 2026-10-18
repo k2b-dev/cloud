@@ -208,6 +208,7 @@
   /* Portable UI components consume their own optional hook; Cloud alone maps
      it to the active app appearance. */
   --k2b-app-workspace-active: var(--ui-app-accent-text);
+  --k2b-app-workspace-selected: var(--ui-app-selected-nav);
   --k2b-detail-panel-accent: var(--ui-app-accent-text);
   --k2b-link-accent: var(--ui-app-accent-text);
 }
@@ -218,6 +219,7 @@
   --ui-app-selected-nav: var(--app-selected-nav-dark);
   --ui-app-accent-border: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
   --k2b-app-workspace-active: var(--ui-app-accent-text);
+  --k2b-app-workspace-selected: var(--ui-app-selected-nav);
   --k2b-detail-panel-accent: var(--ui-app-accent-text);
   --k2b-link-accent: var(--ui-app-accent-text);
 }
