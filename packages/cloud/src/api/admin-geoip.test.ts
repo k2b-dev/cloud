@@ -84,6 +84,22 @@ test("stable upload errors map to their HTTP status with limits only on 413", as
   }
 });
 
+test("an aborted upload request forwards its signal and returns 499", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const app = createAdminGeoIpRoutes(authenticate, {
+    ...unused,
+    upload: async (_actor, _body, config) => {
+      expect(config.signal?.aborted).toBe(true);
+      config.signal?.throwIfAborted();
+      throw new Error("Expected an aborted signal");
+    },
+  });
+  const response = await app.request("/", { method: "PUT", signal: controller.signal });
+  expect(response.status).toBe(499);
+  expect(await response.text()).toBe("");
+});
+
 test("the upload raises its request timeout and restores it after success or failure", async () => {
   for (const fail of [false, true]) {
     const timeouts: number[] = [];

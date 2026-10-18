@@ -137,9 +137,9 @@ export default function SignInLocations(props: {
 
   /**
    * A lost answer or a server error leaves the upload's outcome open. A changed checksum proves it landed; an
-   * unchanged one proves nothing, because the write may still commit, so the block then says the outcome is unclear.
+   * unchanged one leaves the outcome unclear unless the request was cancelled.
    */
-  const settleUpload = async (before: GeoIpAdminStatus | null) => {
+  const settleUpload = async (before: GeoIpAdminStatus | null, cancelled = false) => {
     const after = await reconcile();
     if (!after) return unknownOutcome();
     const changed = after.databases.find(
@@ -150,6 +150,8 @@ export default function SignInLocations(props: {
       announce(changed.kind === "city" ? t().uploadedCity : t().uploadedAsn);
       return;
     }
+    // After cancellation, an unchanged list is enough: the server does not commit after the abort.
+    if (cancelled) return void setPhase({ kind: "idle" });
     unknownOutcome();
   };
 
@@ -193,10 +195,11 @@ export default function SignInLocations(props: {
   };
 
   const cancel = () => {
+    const before = status();
     const current = request;
     request = undefined;
     current?.abort();
-    setPhase({ kind: "idle" });
+    void settleUpload(before, true);
   };
 
   const choose = () => {

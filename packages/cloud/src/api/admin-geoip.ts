@@ -18,6 +18,7 @@ export const createAdminGeoIpRoutes = (
           { code: error.code, ...(error.code === "geoip_too_large" ? { maxDatabaseBytes: GEOIP_MAX_DATABASE_BYTES } : {}) },
           error.status,
         );
+      if (c.req.raw.signal.aborted) return new Response(null, { status: 499 });
       throw error;
     })
     .get(
@@ -53,6 +54,7 @@ export const createAdminGeoIpRoutes = (
                 }),
               {
                 contentLength: length === undefined ? undefined : Number(length),
+                signal: c.req.raw.signal,
               },
             ),
           );

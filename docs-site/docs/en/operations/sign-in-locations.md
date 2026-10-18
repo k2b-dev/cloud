@@ -74,6 +74,7 @@ Use `reset asn --yes` to reset only ASN, or `reset --yes` to reset both types.
 Both the page and CLI use the same administrator API. One upload runs at a time
 per Core process; if another is running, wait briefly and retry. Invalid or
 oversized files leave the previous database active.
+Cancelling an upload in the page stops it before it is saved.
 
 Uploads are stored in Postgres, so database backups include them. Each type
 has one current upload, which replaces the bundled file until reset. Every

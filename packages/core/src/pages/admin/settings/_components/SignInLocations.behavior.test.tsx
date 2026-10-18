@@ -60,7 +60,7 @@ const mount = async (options: { initial?: GeoIpAdminStatus | null; locale?: stri
   Object.defineProperty(globalThis, "XMLHttpRequest", { configurable: true, writable: true, value: FakeXhr });
   const ui = await import("@k2b/ui");
   const confirm = spyOn(ui.prompts, "confirm").mockResolvedValue(true);
-  spyOn(ui, "announce").mockImplementation(() => {});
+  const announce = spyOn(ui, "announce").mockImplementation(() => {});
   const requests: { url: string; method: string }[] = [];
   let answer: (url: string, method: string) => Response = () => Response.json(bundledStatus);
   spyOn(globalThis, "fetch").mockImplementation(
@@ -111,6 +111,7 @@ const mount = async (options: { initial?: GeoIpAdminStatus | null; locale?: stri
     dom,
     root,
     confirm,
+    announce,
     requests,
     respondWith: (next: typeof answer) => {
       answer = next;
@@ -234,18 +235,63 @@ describe("sign-in locations block", () => {
     expect(view.statusLine()).toBe("City or ASN database in MMDB format, also as .mmdb.gz, up to 192 MiB unpacked.");
   });
 
-  test("cancel aborts the upload and returns to the starting hint", async () => {
-    const view = await mount();
+  test.each([bundledStatus, uploadedStatus])("cancel reads unchanged status and returns to the starting hint", async (initial) => {
+    const view = await mount({ initial });
+    view.respondWith(() => {
+      expect(FakeXhr.last!.aborted).toBe(true);
+      expect(view.statusLine()).toBe("Checking what is active now");
+      expect(view.uploadButton().disabled).toBe(true);
+      return Response.json(initial);
+    });
     await view.choose();
     const xhr = FakeXhr.last!;
     view.button("Cancel")!.click();
     await flush();
     expect(xhr.aborted).toBe(true);
+    expect(view.requests).toEqual([{ url: "/api/admin/core/geoip", method: "GET" }]);
     expect(view.statusLine()).toBe("City or ASN database in MMDB format, also as .mmdb.gz, up to 192 MiB unpacked.");
     // A late answer of the cancelled request changes nothing.
     xhr.respond(200, { ...uploadedStatus, kind: "city" });
     await flush();
-    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot");
+    expect(view.source("city")).toBe(initial.databases[0].source === "uploaded" ? "Uploaded file" : "Bundled DB-IP Lite snapshot");
+  });
+
+  test("cancel reports and announces a new uploaded checksum already saved", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    const after: GeoIpAdminStatus = {
+      ...uploadedStatus,
+      databases: [
+        { ...uploadedStatus.databases[0], upload: { ...uploadedStatus.databases[0].upload!, sha256: "cd".repeat(32) } },
+        uploadedStatus.databases[1],
+      ],
+    };
+    view.respondWith(() => Response.json(after));
+    await view.choose();
+    const xhr = FakeXhr.last!;
+    view.button("Cancel")!.click();
+    await flush();
+    expect(xhr.aborted).toBe(true);
+    expect(view.requests).toEqual([{ url: "/api/admin/core/geoip", method: "GET" }]);
+    expect(view.statusLine()).toBe("Uploaded. Sign-in requests now use this file for places.");
+    expect(view.announce).toHaveBeenCalledWith("Uploaded. Sign-in requests now use this file for places.");
+    xhr.respond(422, { code: "geoip_invalid" });
+    await flush();
+    expect(view.statusLine()).toBe("Uploaded. Sign-in requests now use this file for places.");
+  });
+
+  test("cancel leaves the outcome unknown when the status read fails", async () => {
+    const view = await mount();
+    view.respondWith(() => {
+      throw new TypeError("offline");
+    });
+    await view.choose();
+    const xhr = FakeXhr.last!;
+    view.button("Cancel")!.click();
+    await flush();
+    expect(xhr.aborted).toBe(true);
+    expect(view.requests).toEqual([{ url: "/api/admin/core/geoip", method: "GET" }]);
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+    expect(view.uploadButton().disabled).toBe(false);
   });
 
   test("offline disables upload and reset and says why in the status line", async () => {

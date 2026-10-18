@@ -84,7 +84,7 @@ export const createGeoIpService = (options: { db?: typeof sql; reader?: GeoIp; b
   };
   return {
     status,
-    async upload(actor: Actor, body: ReadableStream<Uint8Array>, config: { contentLength?: number }) {
+    async upload(actor: Actor, body: ReadableStream<Uint8Array>, config: { contentLength?: number; signal?: AbortSignal }) {
       requireAdmin(actor);
       if (uploading) throw new GeoIpError("geoip_upload_busy");
       uploading = true;
@@ -93,6 +93,7 @@ export const createGeoIpService = (options: { db?: typeof sql; reader?: GeoIp; b
         const { kind, database, metadata } = parseGeoIpUpload(bytes);
         const sha256 = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
         database.info.sha256 = sha256;
+        config.signal?.throwIfAborted();
         await db.begin(async (tx) => {
           await tx`
             INSERT INTO geoip.databases (kind, data, sha256, database_type, build_epoch, metadata, uploaded_by)
@@ -110,6 +111,7 @@ export const createGeoIpService = (options: { db?: typeof sql; reader?: GeoIp; b
             },
             tx,
           );
+          config.signal?.throwIfAborted();
         });
         reader().install(kind, database);
         return { ...(await status(actor)), kind };
