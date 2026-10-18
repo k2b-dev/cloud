@@ -90,7 +90,7 @@ export default function PulseQueryReferenceWindow(props: Props) {
   return (
     <div class="h-dvh">
       <AppWorkspace>
-        <div class="p-3 lg:hidden">
+        <div class="p-3 @min-[64rem]/k2b-app-area:hidden">
           <Select
             label={t().pulseReference}
             options={referenceTabs(props.includeDashboardDsl, {

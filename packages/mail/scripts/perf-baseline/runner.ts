@@ -333,6 +333,24 @@ export async function run(options: Options) {
           "Each invocation obtains page 1 as an untimed cursor prerequisite. Timings/bytes cover pages 2–5; database attribution also includes page 1.",
         ],
       );
+    add(
+      "list-paging-workspace",
+      "Lists",
+      async (s) => {
+        const first = await request(api, emptySample(), route());
+        const listSchema = workspaceSchema.pick({ nextListCursor: true, listItems: true });
+        let cursor = listSchema.parse(first).nextListCursor;
+        for (let p = 2; p <= 5; p++) {
+          if (!cursor) throw new Error(`Fixture has no cursor for page ${p}; use more conversations`);
+          const href = `${page}?cursor=${encodeURIComponent(cursor)}`;
+          const value = await request(api, s, `${base}/workspace-list?href=${encodeURIComponent(href)}`);
+          cursor = listSchema.parse(value).nextListCursor;
+        }
+      },
+      [
+        "Each invocation obtains page 1 as an untimed cursor prerequisite. Timings/bytes cover pages 2–5; database attribution also includes page 1.",
+      ],
+    );
     for (const [id, thread] of [
       ["detail-small", plan.shape.smallThreadId],
       ["detail-large", plan.shape.largestThreadId],

@@ -58,7 +58,7 @@ export function DashboardShortcuts(props: {
               class={props.editing ? "pointer-events-none" : undefined}
             >
               <i class={`${shortcut.icon} text-dimmed`} aria-hidden="true" />
-              <span class="max-w-36 truncate">{shortcut.title}</span>
+              <span class="max-w-36 k2b-truncate-fade">{shortcut.title}</span>
             </ButtonLink>
             <Show when={props.editing}>
               <button

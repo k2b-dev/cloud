@@ -291,7 +291,9 @@ and of the large thread, list pages 2–5 through `workspace-route` and the
 public conversation list, conversation detail for a small, the large, and an
 HTML-heavy thread, rare, common, and structured search, three folder switches,
 view counts, a message arriving live, and opening compose for a new message
-and a reply.
+and a reply. `list-paging-workspace` loads page 1 through `workspace-route`
+as an untimed cursor prerequisite, then measures list pages 2–5 through
+`workspace-list`.
 
 For each scenario the run records cold, median, and p95 times, response and
 island props bytes, Server-Timing phases, and the statement count and

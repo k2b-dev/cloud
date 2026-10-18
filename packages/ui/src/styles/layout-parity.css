@@ -207,6 +207,7 @@
   font-size: 1.0625rem;
   font-weight: 650;
   line-height: 1.3;
+  letter-spacing: -0.018em;
 }
 
 .k2b-ui .k2b-settings-page__heading p {
@@ -305,6 +306,7 @@
   font-size: 0.9375rem;
   font-weight: 600;
   line-height: 1.35;
+  letter-spacing: -0.018em;
 }
 
 .k2b-ui .k2b-settings-section__heading p {
@@ -405,15 +407,12 @@
   display: none;
   margin: 0;
   padding: 0 0.5rem 0.125rem;
-  overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   line-height: 1.3;
-  text-overflow: ellipsis;
   text-transform: uppercase;
-  white-space: nowrap;
 }
 
 /* Cloud's tab is `sidebar-item group shrink-0 text-xs md:w-full`, and
@@ -458,8 +457,8 @@
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
-/* Cloud's icon is `shrink-0 text-sm`; the label is `truncate whitespace-nowrap`,
-   which needs a shrinkable inline box, not a flex column. */
+/* Cloud's icon is `shrink-0 text-sm`; the label is one line that fades out at
+   its end (`k2b-truncate-fade`), which needs a shrinkable box, not a flex column. */
 .k2b-ui .k2b-settings__tabs button > i {
   flex-shrink: 0;
   font-size: 0.875rem;
@@ -467,9 +466,6 @@
 
 .k2b-ui .k2b-settings__tabs button > span {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* The close control comes first in the DOM but sits after the category row,
@@ -598,6 +594,7 @@
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.35;
+  letter-spacing: -0.018em;
 }
 
 .k2b-ui .k2b-settings-group__heading p,
@@ -745,11 +742,13 @@
 
 /* Scoped to the description. The bare `.k2b-settings-field p` selector this
    replaces outranked `__error` and also restyled any paragraph a consumer
-   passed as `children`. Cloud: `text-xs text-dimmed`, spacing from the gap. */
+   passed as `children`. Spacing comes from the gap; the line height keeps the
+   18px line whatever the host page inherits. */
 .k2b-ui .k2b-settings-field__copy > p {
   margin: 0;
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-secondary);
   font-size: 0.75rem;
+  line-height: 1.125rem;
 }
 
 /* Cloud: `text-xs text-red-600 flex items-center gap-1`. */
@@ -1714,7 +1713,9 @@ html {
   }
 }
 
-@media (min-width: 64rem) {
+/* An overview's aside joins its main column once the app's host is as wide as
+   the workspace sidebar column needs, as in a window that wide. */
+@container k2b-app-area (min-width: 64rem) {
   .k2b-ui .k2b-app-overview__columns {
     flex-direction: row;
     align-items: flex-start;
@@ -1907,7 +1908,7 @@ html {
   display: none;
 }
 
-.k2b-ui:has(.k2b-page-title:not([data-fallback])) .k2b-app-workspace__head > .k2b-page-title {
+.k2b-ui:has(.k2b-page-title:not([data-fallback])) .k2b-app-workspace__head > .k2b-app-workspace__head-lead > .k2b-page-title {
   display: none;
 }
 
@@ -1920,6 +1921,294 @@ html {
 .k2b-ui .k2b-app-workspace__head-heading {
   display: none;
   margin: 0;
+}
+
+/* The lead holds the head's way to the sidebar and its title; a head row
+   adds the views, the filters, and the result count to it. */
+.k2b-ui .k2b-app-workspace__head-lead {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* The head row (`AppWorkspace.Head`): views, filters, and actions in one
+   row while they fit. Otherwise the filters wrap to a second row; the
+   workspace's width decides, not the window's, and flex wrapping decides it
+   in the first frame. The row is there in every layout; only its title
+   follows the head's rules above and below: it shows only where the old head
+   showed it, and beside a sidebar that marks the page it is gone, with a
+   visually hidden `h1` when Main has none. The row draws no line. The
+   selector outweighs every rule that hides or clips the head. */
+.k2b-ui
+  .k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head[data-row][data-row][data-row]:is(
+    [data-trail],
+    :not([data-trail])
+  ) {
+  position: static;
+  display: flex;
+  width: auto;
+  height: auto;
+  min-height: 3.5rem;
+  margin: 0;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem var(--k2b-workspace-head-end, 0.75rem) 0.5rem 0.75rem;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+}
+
+/* Every part of the row stands in a line of the same height, so the
+   title, the views, the filters, and the actions share one centre in the
+   first row, also when the lead wraps below them. */
+.k2b-ui .k2b-app-workspace__head[data-row] {
+  --k2b-workspace-head-line: 2.5rem;
+}
+
+.k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  container: k2b-head-lead / inline-size;
+}
+
+.k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-page-title {
+  flex: 0 1 auto;
+  min-height: var(--k2b-workspace-head-line);
+}
+
+/* A page without its own `h1` keeps the head's heading for assistive
+   technology, whether or not the visible title shows. */
+.k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+  .k2b-app-workspace:not(:has(.k2b-app-workspace__main h1))
+  > .k2b-app-workspace__head[data-row]
+  > .k2b-app-workspace__head-lead
+  > .k2b-app-workspace__head-heading {
+  display: block;
+}
+
+.k2b-ui .k2b-app-workspace__head[data-row]:not([data-trail="up"]) > .k2b-app-workspace__head-lead > .k2b-page-title {
+  display: none;
+}
+
+.k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.k2b-ui :is(.k2b-app-workspace__head-views, .k2b-app-workspace__head-filters) {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--k2b-workspace-head-line, 2.5rem);
+  flex: 0 1 auto;
+  align-items: center;
+}
+
+/* The filters move as one group; on their own row they scroll sideways.
+   Both scrollers keep room for focus rings in a padding that a negative
+   margin returns, so no ring is cut and nothing moves. */
+.k2b-ui .k2b-app-workspace__head-filters {
+  gap: 0.375rem;
+  overflow: auto hidden;
+  scrollbar-width: none;
+}
+
+.k2b-ui .k2b-app-workspace__head-filters,
+.k2b-ui .k2b-app-workspace__head-views .k2b-view-tabs__list {
+  margin: -0.25rem;
+  padding: 0.25rem;
+  scroll-padding-inline: 0.25rem;
+}
+
+.k2b-ui .k2b-app-workspace__head-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.k2b-ui .k2b-app-workspace__head-filters > * {
+  flex: none;
+}
+
+.k2b-ui .k2b-app-workspace__head-filters .k2b-filter-chip {
+  min-height: 2rem;
+  padding-block: 0.375rem;
+}
+
+.k2b-ui .k2b-app-workspace__head-reset {
+  min-height: 2rem;
+  font-size: 0.75rem;
+}
+
+/* The quiet result count fills what the row leaves. When its text does not
+   fit, it wraps to a second line that the count's one-line box clips, so it
+   is the first thing to go and moves nothing else. */
+.k2b-ui .k2b-app-workspace__head-count {
+  display: flex;
+  min-width: 0;
+  height: var(--k2b-workspace-head-line, 2.5rem);
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: var(--k2b-workspace-head-line, 2.5rem);
+}
+
+.k2b-ui .k2b-app-workspace__head-count::before {
+  content: "";
+  width: 0;
+  height: var(--k2b-workspace-head-line, 2.5rem);
+}
+
+.k2b-ui .k2b-app-workspace__head-count > span {
+  padding-inline: 0.25rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-app-workspace__head-actions {
+  display: flex;
+  min-height: var(--k2b-workspace-head-line, 2.5rem);
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Narrow, the strip keeps fewer views and counts the rest in "More". */
+@container k2b-head-lead (width < 40rem) {
+  .k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__item[data-compact-hidden] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__more {
+    display: flex;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__more-count[data-level="wide"] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__more-count[data-level="compact"] {
+    display: inline;
+  }
+}
+
+/* Phone: the views are the card's top row and stay while Main scrolls below
+   them, with the actions at their end; the filters follow in their own row.
+   With a title (a page with a way up), the title and the actions share the
+   first row and the views take the second. Both strips run to the card's
+   edges, so a tab or chip is cut at the edge, never inside a word at the
+   padding. The lead's parts join the head's own rows here, so the strip keeps
+   its compact views by the viewport. The primary action is a round button; a
+   host with a bottom bar places it beside the bar (Cloud does). */
+@media not all and (min-width: 48rem) {
+  .k2b-ui
+    .k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head[data-row][data-row][data-row]:is(
+      [data-trail],
+      :not([data-trail])
+    ) {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.5rem;
+    padding: 0.5rem 1rem 0.25rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
+    display: contents;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-page-title {
+    flex: 1 1 0;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-views {
+    flex: 1 1 0;
+    margin-inline-start: -1rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-actions {
+    order: 1;
+    margin-inline-start: auto;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-filters {
+    order: 2;
+    flex: 1 1 100%;
+    margin-inline: -1rem;
+  }
+
+  /* A visible title takes the first row with the actions; the views move to
+     their own row. The title shows here only on a page with a way up that
+     does not render its own `PageTitle`. */
+  .k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+    .k2b-app-workspace__head[data-row][data-trail="up"]
+    > .k2b-app-workspace__head-lead
+    > .k2b-app-workspace__head-views {
+    order: 2;
+    flex: 1 1 100%;
+    margin-inline: -1rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-app-workspace__head-views > .k2b-view-tabs,
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__list {
+    width: 100%;
+    margin-inline: 0;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__list,
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-filters {
+    padding-inline: 1rem;
+    scroll-padding-inline: 1rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__item[data-compact-hidden] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__more {
+    display: flex;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__more-count[data-level="wide"] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__more-count[data-level="compact"] {
+    display: inline;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-count {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-primary {
+    width: 3rem;
+    min-width: 3rem;
+    height: 3rem;
+    min-height: 3rem;
+    padding: 0;
+    border-radius: 999px;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-primary > i {
+    font-size: 1.25rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-primary-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 @container k2b-app-area (min-width: 64rem) {
@@ -1950,6 +2239,7 @@ html {
       > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
     )
     > .k2b-app-workspace__head
+    > .k2b-app-workspace__head-lead
     > .k2b-page-title {
     display: none;
   }
@@ -1960,6 +2250,7 @@ html {
       > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
     ):not(:has(.k2b-app-workspace__main h1))
     > .k2b-app-workspace__head
+    > .k2b-app-workspace__head-lead
     > .k2b-app-workspace__head-heading {
     display: block;
   }
@@ -2038,8 +2329,22 @@ html {
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > .k2b-app-workspace__head
+      > .k2b-app-workspace__head-lead
       > .k2b-app-workspace__head-toggle {
       display: inline-flex;
+    }
+
+    /* A head row shows the title beside the overlay's button, as the head
+       does, unless the page shows its own. */
+    .k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head[data-row]
+      > .k2b-app-workspace__head-lead
+      > .k2b-page-title.k2b-page-title {
+      display: flex;
     }
 
     .k2b-ui .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]) {
@@ -2308,7 +2613,7 @@ html {
     flex: 0 1 auto;
   }
 
-  /* One line that ends with an ellipsis; the chip's width cap cuts long names. */
+  /* One line that fades out at its end; the chip's width cap cuts long names. */
   .k2b-ui
     .k2b-app-workspace__sidebar[data-mobile="stacked"]
     > .k2b-app-workspace__sidebar-desktop
@@ -2318,9 +2623,6 @@ html {
     )
     .k2b-app-workspace__sidebar-item-label {
     display: block;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
   }
 
   .k2b-ui
@@ -2342,7 +2644,7 @@ html {
       .k2b-app-workspace__sidebar-section-content > .k2b-app-workspace__sidebar-item
     )
     .k2b-app-workspace__sidebar-item-label-text {
-    display: inline;
+    --k2b-truncate-fade-lines: 1;
     font-size: inherit;
     font-weight: inherit;
     line-height: inherit;
@@ -2559,11 +2861,9 @@ html {
   flex: 1 1 auto;
 }
 
+/* Both lines fade out at their end (`k2b-truncate-fade`). */
 .k2b-ui .k2b-app-workspace__level-title > :is(h2, p) {
-  overflow: hidden;
   margin: 0;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .k2b-ui .k2b-app-workspace__level-title > h2 {
@@ -2571,6 +2871,11 @@ html {
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.25rem;
+  letter-spacing: -0.018em;
+}
+
+.k2b-ui .k2b-app-workspace__level-title > h2 > .k2b-truncate-fade {
+  display: block;
 }
 
 /* The title takes focus only when a level change hid the focused control. */
@@ -2767,6 +3072,21 @@ html {
   transform: translateY(-50%);
 }
 
+/* A head row can wrap to more lines; the Details button stays centred on
+   its first line, beside the actions: the row's top padding plus half of
+   its 2.5 rem line. */
+.k2b-ui
+  .k2b-app-workspace:has(> .k2b-app-workspace__head[data-row])
+  > .k2b-app-workspace__content
+  > .k2b-app-workspace__detail-toggle,
+.k2b-ui
+  .k2b-app-workspace:has(> .k2b-app-workspace__head[data-row])
+  > .k2b-app-workspace__content
+  > :is(solid-island, solid-client)
+  > .k2b-app-workspace__detail-toggle {
+  top: 1.75rem;
+}
+
 /* From 64 rem of host width, a sidebar whose column would leave `Main` less
    than its minimum is the overlay behind the head's button, as below 64 rem,
    and the head shows the page's title. The detail has started waiting
@@ -2823,6 +3143,7 @@ html {
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > .k2b-app-workspace__head
+      > .k2b-app-workspace__head-lead
       > .k2b-app-workspace__head-toggle {
       display: inline-flex;
     }
@@ -2834,6 +3155,7 @@ html {
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > .k2b-app-workspace__head
+      > .k2b-app-workspace__head-lead
       > .k2b-page-title.k2b-page-title {
       display: flex;
     }
@@ -2915,6 +3237,7 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
+    --k2b-workspace-head-end: 7rem;
     padding: 0.25rem 7rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
@@ -2976,6 +3299,7 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
+    --k2b-workspace-head-end: 7rem;
     padding: 0.25rem 7rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
@@ -3037,6 +3361,7 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
+    --k2b-workspace-head-end: 7rem;
     padding: 0.25rem 7rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
@@ -3098,6 +3423,7 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
+    --k2b-workspace-head-end: 7rem;
     padding: 0.25rem 7rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
@@ -3255,6 +3581,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   overflow: hidden;
   font-size: 1.125rem;
   font-weight: 600;
+  letter-spacing: -0.018em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3375,9 +3702,6 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 
 .k2b-ui .k2b-tab-bar a > span {
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .k2b-ui .k2b-tab-bar a[aria-current="page"] {
@@ -3720,6 +4044,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.25rem;
+  letter-spacing: -0.018em;
   white-space: nowrap;
 }
 
@@ -3832,14 +4157,10 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   align-content: center;
 }
 
-/* The name takes up to two balanced lines and ends with an ellipsis after them; beside a fact it takes one, so name
-   and fact share the reserved two lines. The full name stays in the button's title and accessible name. */
+/* The name takes up to two balanced lines and fades out at the end of the last (`k2b-truncate-fade-lines`); beside a
+   fact it takes one, so name and fact share the reserved two lines. The full name stays in the button's title and
+   accessible name. */
 .k2b-ui .k2b-sidebar-switcher__copy > span {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
   font-size: 0.8125rem;
   font-weight: 600;
   line-height: var(--k2b-sidebar-switcher-line);
@@ -3848,17 +4169,14 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 }
 
 .k2b-ui .k2b-sidebar-switcher[data-description] .k2b-sidebar-switcher__copy > span {
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
+  --k2b-truncate-fade-lines: 1;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-sidebar-switcher__copy > small {
-  overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
   line-height: 1rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .k2b-ui .k2b-sidebar-switcher__chevron {

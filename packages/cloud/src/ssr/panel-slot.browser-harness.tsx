@@ -103,7 +103,14 @@ export const server = new Hono<Environment>()
 
 /** Runs inline during parsing and again immediately after mounting the real runtime. */
 export function panelGeometry() {
-  return [".layout-shell-content", "#cloud-panel", ".k2b-app-workspace"].map((selector) => {
+  return [
+    ".layout-shell-content",
+    "#cloud-panel",
+    ".k2b-app-workspace",
+    ".k2b-app-workspace__main",
+    ".k2b-app-workspace__detail",
+    "[data-app-workspace-detail-toggle]",
+  ].map((selector) => {
     const rect = document.querySelector(selector)?.getBoundingClientRect();
     return rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   });

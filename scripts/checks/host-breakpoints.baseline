@@ -1,0 +1,15 @@
+# Known viewport findings: content layout (migration tracked in #1454) and app rules that follow the Cloud shell's window modes.
+# One occurrence per line: <file> | <media|query|display> | <detail>.
+# The rule never adds lines; `bun scripts/check.ts host-breakpoints --fix` removes resolved findings.
+packages/assistant/src/styles/app.css | media | @media (min-width: 1024px)
+packages/cloud/src/styles/utilities-layout.css | media | @media (min-width: 1024px)
+packages/cloud/src/styles/utilities-layout.css | media | @media (min-width: 1024px)
+packages/cloud/src/styles/utilities-navigation.css | media | @media (hover: none), (max-width: 1023px)
+packages/cloud/src/styles/utilities-navigation.css | media | @media (max-width: 1023px)
+packages/cloud/src/styles/utilities-navigation.css | media | @media (min-width: 1024px)
+packages/contacts/src/frontend/_components/ContactsList.tsx | display | xl:flex
+packages/core/src/pages/admin/outgoing-mail/OutgoingMail.island.tsx | display | lg:hidden
+packages/core/src/pages/admin/outgoing-mail/OutgoingMail.island.tsx | display | lg:hidden
+packages/core/src/pages/admin/outgoing-mail/SendLog.tsx | display | lg:hidden
+packages/notebooks/src/styles/app.css | media | @media (min-width: 64rem)
+packages/ui/src/styles/surfaces-widgets-parity.css | media | @media (min-width: 80rem)

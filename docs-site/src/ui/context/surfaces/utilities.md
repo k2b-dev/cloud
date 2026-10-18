@@ -58,6 +58,29 @@ The library does not read `prefers-color-scheme` itself; the host resolves light
 or dark (for example, from a Cloud Automatic preference) and sets the class or
 attribute.
 
+## Ink hierarchy
+
+- `--k2b-text`: content, titles, and values.
+- `--k2b-text-secondary`: labels, field and sidebar section titles, supporting lines, descriptions, and secondary buttons.
+- `--k2b-text-muted`: metadata, timestamps, and quiet hints.
+
+Secondary ink keeps at least 10:1 contrast and muted ink at least 7:1 on both
+`--k2b-surface` and `--k2b-surface-muted`, in light and dark themes. Placeholder
+color stays separate in `--k2b-placeholder-color`.
+
+Buttons and labels use 13px semibold type, sidebar rows 13px regular type;
+small buttons and sidebar section titles use 12px. Descriptions and supporting
+lines use secondary ink at 12px, sidebar row descriptions 13px. Each primitive
+sets its own line height, so its box keeps its height whatever the host page's
+line height. Buttons inside a `NoticeCard` take the card's line height instead,
+so its actions keep their height (32px for `sm`). Titles use `-0.018em`
+tracking.
+
+Three surfaces keep their own sizes: object sidebar rows keep a compact 11px
+subtitle, sidebar items shown as chips on narrow workspaces use 13px semibold
+labels, and the [mobile shell](../layout/mobile-shell) applies its touch type
+scale.
+
 ## Accessibility
 
 Keep contrast between semantic text and surfaces when overriding color stacks. Focus, danger, success, and warning treatments must remain distinguishable without relying on hue alone.

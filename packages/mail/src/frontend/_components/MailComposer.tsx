@@ -1383,7 +1383,8 @@ export default function MailComposer(props: {
         />
       </div>
 
-      <footer class="flex shrink-0 items-center gap-2 bg-[var(--ui-surface-subtle)] px-3 py-2">
+      {/* Phones set the tools closer, so the labelled send action and every tool keep one row in each language. */}
+      <footer class="flex shrink-0 items-center gap-1 sm:gap-2 bg-[var(--ui-surface-subtle)] px-3 py-2">
         <SplitButton
           class="mail-compose-action"
           size="sm"
