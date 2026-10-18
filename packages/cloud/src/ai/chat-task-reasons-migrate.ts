@@ -45,7 +45,7 @@ export const migrateChatTaskReasons = async (sql: SQL): Promise<void> => {
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_chat_tasks_reason_state_check') THEN
         UPDATE ai.chat_tasks SET reason_code = CASE
           WHEN state = 'paused' THEN 'paused'
-          WHEN last_error = 'Scheduled task mandate revision changed' THEN 'rights_changed'
+          WHEN last_error IN ('Scheduled task mandate revision changed', 'Scheduled task mandate or sponsor is unavailable') THEN 'rights_changed'
           ELSE 'failed' END, reason_at = updated_at
         WHERE reason_code IS NULL AND state IN ('paused', 'needs_attention');
         ALTER TABLE ai.chat_tasks ADD CONSTRAINT ai_chat_tasks_reason_state_check CHECK (

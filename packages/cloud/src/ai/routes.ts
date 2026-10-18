@@ -804,15 +804,21 @@ export const aiRoutes = (() => {
           conversationId: conversation.id,
           ownerUserId: ctx.ownerUserId,
         });
-        // The chat is restored either way; a routine this step could not resume stays paused and can be resumed by hand.
-        // The phone app may not resume background authority, so its restore leaves the routines for the web.
-        if (restored && !isAppSessionActor(c.get("actor")))
-          await aiChatTasks.resumeForRestoredChat({ conversationId: conversation.id, userId: ctx.ownerUserId }).catch((error) =>
-            logger("ai:chat-tasks").warn("Could not resume the routines of a restored chat", {
+        // A restored chat must not leave archive reasons on routines that stay paused.
+        // The phone app may restore the chat and relabel pauses, but may not resume background authority.
+        if (restored)
+          await aiChatTasks
+            .resumeForRestoredChat({
               conversationId: conversation.id,
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          );
+              userId: ctx.ownerUserId,
+              resume: !isAppSessionActor(c.get("actor")),
+            })
+            .catch((error) =>
+              logger("ai:chat-tasks").warn("Could not resume the routines of a restored chat", {
+                conversationId: conversation.id,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            );
         return restored ? respond(c, ok(await publicConversationFor(restored, c.get("accessSubject")))) : notFound(c);
       })
       .post("/conversations/:conversationId/viewed", async (c) => {

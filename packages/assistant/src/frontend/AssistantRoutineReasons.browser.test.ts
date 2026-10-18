@@ -67,7 +67,7 @@ const occurrence = (code: ChatTaskReasonCode): AiChatTaskOccurrenceView => ({
 
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
-let activeRoutines: AiChatTaskView[] = [];
+let activeRoutines: AiChatTaskView[] | null = [];
 const archivePosts: string[] = [];
 beforeAll(async () => {
   const build = Bun.spawn(
@@ -93,7 +93,10 @@ beforeAll(async () => {
       if (path === "/bundle.js") return new Response(bundle, { headers: { "content-type": "application/javascript" } });
       if (path === "/ui.css") return new Response(Bun.file(new URL("../../../ui/dist/styles.css", import.meta.url)));
       if (path === "/app.css") return new Response(appCss, { headers: { "content-type": "text/css" } });
-      if (path === "/api/ai/tasks") return Response.json(url.searchParams.get("state") === "active" ? activeRoutines : []);
+      if (path === "/api/ai/tasks") {
+        if (activeRoutines === null) return Response.json({ error: "Routines are unavailable" }, { status: 503 });
+        return Response.json(url.searchParams.get("state") === "active" ? activeRoutines : []);
+      }
       const detail = /^\/api\/ai\/tasks\/task-([a-z_]+)$/.exec(path);
       if (detail) {
         const code = detail[1] as ChatTaskReasonCode;
@@ -185,6 +188,26 @@ test("archiving a chat without running routines asks the plain question", async 
     await page.getByText('Archive "Rechnungen"?').waitFor();
     expect(await page.getByText("routine runs in this chat").count()).toBe(0);
   } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("archiving still asks, and says routines pause, when the routine list does not load", async () => {
+  activeRoutines = null;
+  archivePosts.length = 0;
+  const page = await open(390, "view=archive&lang=de");
+  try {
+    await page.getByText("Archivieren", { exact: true }).first().click();
+    await page.getByRole("button", { name: "Chat archivieren" }).click();
+    const dialog = page.getByRole("alertdialog").or(page.getByRole("dialog").last());
+    await dialog.getByText("Archivieren pausiert die Routinen in diesem Chat.").waitFor();
+    await Promise.all([
+      page.waitForResponse((response) => response.url().endsWith("/archive")),
+      dialog.getByRole("button", { name: "Archivieren", exact: true }).click(),
+    ]);
+    expect(archivePosts).toHaveLength(1);
+  } finally {
+    activeRoutines = [];
     await page.close();
   }
 }, 30_000);

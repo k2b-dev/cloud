@@ -406,7 +406,11 @@ archive, so a routine whose mandate was paused or changed keeps `paused` or
 `rights_changed` instead. Admission also pauses a routine whose chat was
 archived another way. Restoring the chat resumes only routines paused with
 `chat_archived`, and only when their mandate revision is still the one the
-archive paused. Otherwise they need attention with `rights_changed`.
+archive paused. Otherwise they need attention with `rights_changed`. A
+routine that stays paused after the restore, because it is a one-time routine
+past its time or because an app session restored the chat, changes to
+`paused`, so it no longer names an archive that has ended. App sessions never
+resume background authority.
 
 A one-time routine resumes only before its time. Once its time has passed, a
 run at that time already happened or was stopped, so it needs a new time

@@ -1231,7 +1231,7 @@ suite("AI chat tasks", () => {
       });
       expect((await mandates.get(task.mandateId!))?.state).toBe("paused");
       expect(await aiConversations.restoreConversation({ conversationId: conversation.id, ownerUserId: user!.id })).not.toBeNull();
-      await aiChatTasks.resumeForRestoredChat({ conversationId: conversation.id, userId: user!.id });
+      await aiChatTasks.resumeForRestoredChat({ conversationId: conversation.id, userId: user!.id, resume: true });
       expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({
         state: "active",
         reasonCode: null,
@@ -1264,11 +1264,61 @@ suite("AI chat tasks", () => {
         reason: "Test revocation",
       });
       await aiConversations.restoreConversation({ conversationId: conversation.id, ownerUserId: user!.id });
-      await aiChatTasks.resumeForRestoredChat({ conversationId: conversation.id, userId: user!.id });
+      await aiChatTasks.resumeForRestoredChat({ conversationId: conversation.id, userId: user!.id, resume: true });
       expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({
         state: "needs_attention",
         reasonCode: "rights_changed",
       });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
+  test("restore relabels archive pauses when a one-time run passed or automatic resume is disabled", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`routine-restore-paused-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id });
+    try {
+      const [time] = await sql<{ run_at: Date }[]>`SELECT now() + interval '1 day' AS run_at`;
+      const once = (await aiChatTasks.create({
+        userId: user!.id,
+        chatId: conversation.shortId,
+        prompt: "Send the summary",
+        schedule: { kind: "once", runAt: time!.run_at.toISOString() },
+        timezone: "UTC",
+      }))!;
+      const cron = (await aiChatTasks.create({
+        userId: user!.id,
+        chatId: conversation.shortId,
+        prompt: "Save invoices",
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      }))!;
+      await aiConversations.archiveConversation({ conversationId: conversation.id, ownerUserId: user!.id });
+      await aiChatTasks.pauseForArchivedChat({ conversationId: conversation.id, userId: user!.id });
+      const archived = (await aiChatTasks.get({ userId: user!.id, taskId: once.shortId }))!;
+      expect(archived.reasonCode).toBe("chat_archived");
+      await sql`UPDATE ai.chat_tasks SET run_at = now() - interval '1 day' WHERE id = ${once.id}::uuid`;
+      await aiConversations.restoreConversation({ conversationId: conversation.id, ownerUserId: user!.id });
+      await aiChatTasks.resumeForRestoredChat({ conversationId: conversation.id, userId: user!.id, resume: true });
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: once.shortId })).toMatchObject({
+        state: "paused",
+        reasonCode: "paused",
+        reasonAt: archived.reasonAt,
+        lastError: archived.lastError,
+      });
+      expect((await mandates.get(once.mandateId!))?.state).toBe("paused");
+      expect((await aiChatTasks.get({ userId: user!.id, taskId: cron.shortId }))?.state).toBe("active");
+      await aiConversations.archiveConversation({ conversationId: conversation.id, ownerUserId: user!.id });
+      await aiChatTasks.pauseForArchivedChat({ conversationId: conversation.id, userId: user!.id });
+      const pausedMandate = await mandates.get(cron.mandateId!);
+      expect(pausedMandate?.state).toBe("paused");
+      await aiConversations.restoreConversation({ conversationId: conversation.id, ownerUserId: user!.id });
+      await aiChatTasks.resumeForRestoredChat({ conversationId: conversation.id, userId: user!.id, resume: false });
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: cron.shortId })).toMatchObject({ state: "paused", reasonCode: "paused" });
+      expect(await mandates.get(cron.mandateId!)).toEqual(pausedMandate);
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
@@ -1304,7 +1354,7 @@ suite("AI chat tasks", () => {
       // What the routine may do changes while the chat is archived.
       await sql`UPDATE auth.mandates SET revision = revision + 1 WHERE id = ${changed.mandateId}::uuid`;
       expect(await aiConversations.restoreConversation({ conversationId: conversation.id, ownerUserId: user!.id })).not.toBeNull();
-      await aiChatTasks.resumeForRestoredChat({ conversationId: conversation.id, userId: user!.id });
+      await aiChatTasks.resumeForRestoredChat({ conversationId: conversation.id, userId: user!.id, resume: true });
       expect(await aiChatTasks.get({ userId: user!.id, taskId: stopped.shortId })).toMatchObject({ state: "paused", reasonCode: "paused" });
       expect((await mandates.get(stopped.mandateId!))?.state).toBe("paused");
       expect(await aiChatTasks.get({ userId: user!.id, taskId: changed.shortId })).toMatchObject({
@@ -1618,7 +1668,7 @@ suite("AI chat tasks", () => {
     const emptyConversation = await aiConversations.createConversation({ ownerUserId: user!.id });
     try {
       const tasks: Awaited<ReturnType<typeof aiChatTasks.create>>[] = [];
-      for (const prompt of ["paused", "changed", "failed", "fallback", "no_locale"])
+      for (const prompt of ["paused", "changed", "failed", "fallback", "no_locale", "unavailable"])
         tasks.push(
           await aiChatTasks.create({
             userId: user!.id,
@@ -1642,7 +1692,7 @@ suite("AI chat tasks", () => {
           for (const [i, task] of tasks.entries())
             await tx`UPDATE ai.chat_tasks
           SET state = ${i === 0 ? "paused" : "needs_attention"}, reason_code = NULL, reason_at = NULL,
-            last_error = ${i === 1 ? "Scheduled task mandate revision changed" : "Raw technical error"},
+            last_error = ${i === 1 ? "Scheduled task mandate revision changed" : i === 5 ? "Scheduled task mandate or sponsor is unavailable" : "Raw technical error"},
             created_at = ${i === 3 ? "1999-01-01T00:00:00.000Z" : "2001-01-01T00:00:00.000Z"}::timestamptz,
             updated_at = '2001-01-02T00:00:00.000Z'::timestamptz WHERE id = ${task!.id}::uuid`;
           for (const [locale, createdAt, background] of [
@@ -1659,7 +1709,7 @@ suite("AI chat tasks", () => {
               { reason_code: string; reason_at: Date; locale: string | null }[]
             >`SELECT reason_code, reason_at, locale FROM ai.chat_tasks WHERE id = ${task!.id}::uuid`;
             expect(row).toEqual({
-              reason_code: i === 0 ? "paused" : i === 1 ? "rights_changed" : "failed",
+              reason_code: i === 0 ? "paused" : i === 1 || i === 5 ? "rights_changed" : "failed",
               reason_at: new Date("2001-01-02T00:00:00.000Z"),
               locale: i === 4 ? null : i === 3 ? "fr" : "de-CH",
             });

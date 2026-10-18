@@ -928,17 +928,29 @@ export const aiChatTasks = {
     });
   },
 
-  resumeForRestoredChat: async (input: { conversationId: string; userId?: string }): Promise<void> => {
+  resumeForRestoredChat: async (input: { conversationId: string; userId?: string; resume: boolean }): Promise<void> => {
     const tasks = await sql<TaskRow[]>`${taskSelect()}
       WHERE task.conversation_id = ${input.conversationId}::uuid AND task.reason_code = 'chat_archived'
         AND (${input.userId ?? null}::uuid IS NULL OR task.sponsor_user_id = ${input.userId ?? null}::uuid)`;
     for (const task of tasks) {
       try {
-        await aiChatTasks.setState({
-          userId: task.sponsor_user_id,
-          taskId: task.short_id,
-          state: "active",
-          expectedReason: "chat_archived",
+        if (
+          input.resume &&
+          (await aiChatTasks.setState({
+            userId: task.sponsor_user_id,
+            taskId: task.short_id,
+            state: "active",
+            expectedReason: "chat_archived",
+          }))
+        )
+          continue;
+        await sql.begin(async (tx) => {
+          const [current] = await tx<TaskRow[]>`${taskSelect()} WHERE task.id = ${task.id}::uuid FOR UPDATE OF task`;
+          // Archived again meanwhile: the routine stays paused for that reason.
+          const [restored] = await tx`SELECT 1 FROM ai.conversations WHERE id = ${input.conversationId}::uuid
+            AND archived_at IS NULL FOR SHARE`;
+          if (current?.reason_code === "chat_archived" && restored)
+            await tx`UPDATE ai.chat_tasks SET reason_code = 'paused', updated_at = now() WHERE id = ${current.id}::uuid`;
         });
       } catch (error) {
         if (!(error instanceof AiChatTaskAuthorityError)) throw error;

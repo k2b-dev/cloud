@@ -79,7 +79,8 @@ suite("global AI conversation boundaries", () => {
       // The phone app may restore the chat, but resuming background authority stays on the web.
       const phone = { Authorization: `Bearer ${(await createTestAppSession(userId)).token}` };
       expect((await aiRoutes.request(`/conversations/${chat.shortId}/restore`, { method: "POST", headers: phone })).status).toBe(200);
-      expect(await aiChatTasks.get({ userId, taskId: task.shortId })).toMatchObject({ state: "paused", reasonCode: "chat_archived" });
+      expect(await aiChatTasks.get({ userId, taskId: task.shortId })).toMatchObject({ state: "paused", reasonCode: "paused" });
+      expect((await aiChatTasks.setState({ userId, taskId: task.shortId, state: "active" }))?.state).toBe("active");
       expect((await aiRoutes.request(`/conversations/${chat.shortId}/archive`, { method: "POST", headers })).status).toBe(200);
       expect((await aiRoutes.request(`/conversations/${chat.shortId}/restore`, { method: "POST", headers })).status).toBe(200);
       expect(await aiChatTasks.get({ userId, taskId: task.shortId })).toMatchObject({ state: "active", reasonCode: null, reasonAt: null });
