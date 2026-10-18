@@ -2085,11 +2085,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Soft segments: no tray, no separators, no ring. The selected option is a
-   fill in the app's selection tint with its ink. The padding keeps the
-   control's former outer box, so forms keep their rhythm. */
+   fill in the app's selection tint with its ink. Padding, option spacing,
+   and type keep the control's former box, so toolbars that fit before still
+   fit. */
 .k2b-ui .k2b-segmented-control {
   @apply inline-flex w-full items-stretch;
-  gap: 0.125rem;
   padding: calc(0.125rem + 1px);
   border: 0;
   border-radius: var(--k2b-radius-surface);
@@ -2106,7 +2106,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: transparent;
   font-size: 0.75rem;
-  font-weight: 500;
   line-height: 1rem;
   cursor: pointer;
   transition:
