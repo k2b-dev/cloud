@@ -163,10 +163,11 @@ export const renderNotePdf = async (
   };
   try {
     closed();
+    const requestedAttachmentIds = new Set(attachments.extractIds(params.markdown));
     const [queryResults, attachmentMetadata] = await Promise.all([
       resolveBookQueries({ ...params, signal }),
       list({
-        shortIds: attachments.extractIds(params.markdown),
+        shortIds: [...requestedAttachmentIds],
         notebookId: params.notebookId,
       }),
     ]);
@@ -188,9 +189,8 @@ export const renderNotePdf = async (
         ...options.imageDependencies,
         // The raw-text scan misses escaped forms such as `attach\://…` that Markdown still parses; load only those.
         list: async ({ shortIds, notebookId }) => {
-          const known = new Set(attachmentMetadata.map((row) => row.shortId));
-          const missing = shortIds.filter((id) => !known.has(id));
-          return missing.length ? [...attachmentMetadata, ...(await list({ shortIds: missing, notebookId }))] : attachmentMetadata;
+          const unrequested = shortIds.filter((id) => !requestedAttachmentIds.has(id));
+          return unrequested.length ? [...attachmentMetadata, ...(await list({ shortIds: unrequested, notebookId }))] : attachmentMetadata;
         },
       },
     );

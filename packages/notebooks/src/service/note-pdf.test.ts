@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as pdfModule from "@k2b/cloud/services/pdf";
 import { GotenbergRenderError, MarkdownPdfError, PDF_IMAGE_MAX_INPUT_BYTES, type PdfImageVariant } from "@k2b/cloud/services/pdf";
 import { renderNotebookBook } from "../lib/book-renderer";
 import { DOCUMENTED_IMAGE_FORMS } from "../lib/markdown-image.fixtures";
 import type { Attachment } from "./attachments";
-import { buildNotePdfHtml, notePdfPhaseMs } from "./note-pdf";
+import { buildNotePdfHtml, notePdfPhaseMs, renderNotePdf } from "./note-pdf";
 import { type NotePdfImageDependencies, notePdfImageBoxes, prepareNotePdfImages } from "./note-pdf-images";
 
 const NOTICES = ["note", "info", "success", "warning", "danger"] as const;
@@ -203,6 +204,48 @@ const imageDeps = (extra: Partial<NotePdfImageDependencies> = {}): NotePdfImageD
 });
 
 describe("PDF attachment packing", () => {
+  test("does not query missing scanned IDs again and loads only escaped IDs in the second query", async () => {
+    const calls: Parameters<NotePdfImageDependencies["list"]>[0][] = [];
+    const render = spyOn(pdfModule, "renderHtmlToPdfWithConfig").mockResolvedValue({
+      pdf: new Uint8Array(),
+      contentType: "application/pdf",
+    });
+    try {
+      const result = await renderNotePdf(
+        {
+          markdown: "![found](attach://ABC123) ![missing](attach://ZZZZZZ) ![escaped](attach\\://DEF456)",
+          notebookId: "notebook",
+          notebookShortId: "ABC123",
+          noteId: "note",
+          userId: null,
+          serviceAccountId: null,
+          boundNotebookId: null,
+          locale: "en",
+          title: "Attachment lookup",
+        },
+        {
+          config: { url: "", timeoutMs: 1000, maxHtmlBytes: 1024 * 1024, maxPdfBytes: 1024 * 1024 },
+          maxAttachmentBytes: 1000,
+          imageDependencies: imageDeps({
+            list: async (query) => {
+              calls.push(query);
+              return query.shortIds.filter((id) => id !== "ZZZZZZ").map((id) => fixtureAttachment(id));
+            },
+          }),
+        },
+      );
+      expect(calls.filter(({ shortIds }) => shortIds.includes("ZZZZZZ"))).toHaveLength(1);
+      expect(calls).toEqual([
+        { shortIds: ["ABC123", "ZZZZZZ"], notebookId: "notebook" },
+        { shortIds: ["DEF456"], notebookId: "notebook" },
+      ]);
+      expect(result.omissions).toEqual([{ code: "not_found", kind: "image", label: "missing" }]);
+      expect(render.mock.calls[0]![0].assets).toHaveLength(2);
+    } finally {
+      render.mockRestore();
+    }
+  });
+
   test("page geometry and largest repeated placement determine all three boxes", async () => {
     const input = imageInput("![small](attach://ABC123 =400x) ![large](attach://ABC123 =600x)");
     expect(notePdfImageBoxes([{ ...input.images[0]!, width: null }], "document")[0]!.width).toBe(2008);

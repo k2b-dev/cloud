@@ -1,7 +1,8 @@
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
-import { expect, test } from "bun:test";
-import { serviceAccountCredentials, settings } from "@k2b/cloud/services";
+import { expect, spyOn, test } from "bun:test";
+import { serviceAccountCredentials } from "@k2b/cloud/services";
+import * as pdfModule from "@k2b/cloud/services/pdf";
 import { sql } from "bun";
 import api from ".";
 
@@ -15,11 +16,7 @@ databaseSuite()("PDF route admission and idle timeout", () => {
       VALUES (${shortId()}, ${notebook!.id}::uuid, 'Timeout fixture', '# Timeout') RETURNING short_id`;
     const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
       VALUES (${`PDF route ${shortId()}`}, 'agent') RETURNING id`;
-    const keys = ["gotenberg.url", "gotenberg.timeout_ms"];
-    const saved = await sql<
-      { key: string; value: string }[]
-    >`SELECT key, value FROM settings.entries WHERE key IN ('gotenberg.url', 'gotenberg.timeout_ms')`;
-    const originalValues = new Map(await Promise.all(keys.map(async (key) => [key, await settings.get(key)] as const)));
+    const config = await pdfModule.getGotenbergConfig();
     const hanging = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Promise<Response>(() => {}) });
     // Record the idle timeouts the route sets on its socket. Bun 1.4 does not drop a pending POST at its idle
     // timeout (measured), so the raise is checked directly: both phases plus 10 s, then the default before answering.
@@ -36,6 +33,8 @@ databaseSuite()("PDF route admission and idle timeout", () => {
           },
         }),
     });
+    // Shared settings would send concurrent PDF tests in other processes to the hanging server.
+    const configSpy = spyOn(pdfModule, "getGotenbergConfig").mockResolvedValue({ ...config, url: hanging.url.origin, timeoutMs: 1000 });
     try {
       const token = await serviceAccountCredentials.createApiToken({ serviceAccountId: account!.id, name: "pdf", scopes: ["read"] });
       if (!token.ok) throw token.error;
@@ -48,8 +47,6 @@ databaseSuite()("PDF route admission and idle timeout", () => {
       const [access] = await sql<{ id: string }[]>`INSERT INTO auth.access (service_account_id, permission)
         VALUES (${account!.id}::uuid, 'read') RETURNING id`;
       await sql`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${notebook!.id}::uuid, ${access!.id}::uuid)`;
-      await settings.set("gotenberg.url", hanging.url.origin);
-      await settings.set("gotenberg.timeout_ms", 1000);
       // A streamed (chunked) body makes bodyLimit replace c.req.raw with a request Bun does not know.
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
@@ -65,14 +62,9 @@ databaseSuite()("PDF route admission and idle timeout", () => {
       ]);
       expect(await response.json()).toMatchObject({ message: "Der PDF-Renderer hat das Zeitlimit überschritten. Versuche es erneut." });
     } finally {
+      configSpy.mockRestore();
       await server.stop(true);
       await hanging.stop(true);
-      // Restore the original values, including absence; the public settings service invalidates its cache.
-      for (const key of keys) {
-        const row = saved.find((row) => row.key === key);
-        if (row) await settings.set(key, originalValues.get(key));
-        else await settings.remove(key);
-      }
       await sql`DELETE FROM notebooks.notebooks WHERE id = ${notebook!.id}::uuid`;
       await sql`DELETE FROM auth.service_accounts WHERE id = ${account!.id}::uuid`;
     }
