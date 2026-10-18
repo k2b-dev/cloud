@@ -292,6 +292,37 @@ suite("known browsers at the web session boundary", () => {
     expect(await countries(id)).toHaveLength(0);
   });
 
+  for (const table of ["known_browsers", "sign_in_countries"] as const)
+    test(`cleanup keeps a ${table} row that a concurrent sign-in refreshes while the delete waits`, async () => {
+      const id = await account();
+      const cookie = newBrowserCookie();
+      const expired = new Date(START.getTime() - 91 * DAY);
+      // Only the row under test is expired, so the cleanup blocks on exactly that table.
+      const seenAt = (name: typeof table) => (name === table ? expired : START);
+      await sql`INSERT INTO auth.known_browsers (user_id, browser_hash, browser, os, first_seen_at, last_seen_at)
+        VALUES (${id}::uuid, ${browserHash(id, cookie)}, 'other', 'other', ${seenAt("known_browsers")}, ${seenAt("known_browsers")})`;
+      await sql`INSERT INTO auth.sign_in_countries VALUES (${id}::uuid, 'AT', ${seenAt("sign_in_countries")})`;
+      let cleaning: ReturnType<typeof cleanup> | undefined;
+      await sql.begin(async (tx) => {
+        const [{ pid }] = (await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`) as [{ pid: number }];
+        await tx`SELECT id FROM auth.users WHERE id = ${id}::uuid FOR UPDATE`;
+        await rememberSignIn(tx, { userId: id, cookie, browser: "other", os: "other", country: "AT", city: null, now: START });
+        cleaning = cleanup(sql, { now: START });
+        // The clock is frozen, so the deadline uses the monotonic timer.
+        const deadline = performance.now() + 5_000;
+        while (true) {
+          const [waiting] = await sql<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM pg_stat_activity
+            WHERE wait_event_type = 'Lock' AND query LIKE ${`%DELETE FROM auth.${table}%`} AND ${pid} = ANY(pg_blocking_pids(pid))`;
+          if (waiting && waiting.count > 0) break;
+          if (performance.now() >= deadline) throw new Error(`Timed out waiting for the ${table} cleanup to block on the refreshed row`);
+          await Bun.sleep(25);
+        }
+      });
+      await cleaning;
+      expect(await rows(id)).toMatchObject([{ last_seen_at: START }]);
+      expect(await countries(id)).toEqual([{ country: "AT", last_seen_at: START }]);
+    });
+
   test("cleanup deletes at most one batch per table, keeps live rows and catches up later", async () => {
     const id = await account();
     await sql

@@ -138,9 +138,11 @@ export const cleanup = async (
     throw new Error("Known-browser cleanup requires a positive batch size and a non-negative batch count");
   const cutoff = cutoffAt(now);
   const counts = { browsers: 0, countries: 0 };
+  // The outer cutoff is re-checked on a row that a concurrent sign-in refreshed while the delete waited for it.
+  // A short batch can therefore mean such a skip; the next run continues the backlog.
   for (let batch = 0; batch < maxBatches && !signal?.aborted; batch++) {
     const rows = await db`
-      DELETE FROM auth.known_browsers WHERE id IN (
+      DELETE FROM auth.known_browsers WHERE last_seen_at <= ${cutoff} AND id IN (
         SELECT id FROM auth.known_browsers WHERE last_seen_at <= ${cutoff} ORDER BY last_seen_at LIMIT ${batchSize}
       ) RETURNING id
     `;
@@ -149,7 +151,7 @@ export const cleanup = async (
   }
   for (let batch = 0; batch < maxBatches && !signal?.aborted; batch++) {
     const rows = await db`
-      DELETE FROM auth.sign_in_countries WHERE (user_id, country) IN (
+      DELETE FROM auth.sign_in_countries WHERE last_seen_at <= ${cutoff} AND (user_id, country) IN (
         SELECT user_id, country FROM auth.sign_in_countries WHERE last_seen_at <= ${cutoff} ORDER BY last_seen_at LIMIT ${batchSize}
       ) RETURNING user_id
     `;
