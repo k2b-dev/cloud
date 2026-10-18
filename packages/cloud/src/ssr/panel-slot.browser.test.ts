@@ -20,6 +20,7 @@ const help = await import("./help");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
 const { server, panelGeometry } = await import("./panel-slot.browser-harness");
 let browser: Browser;
+let providerRequests = 0;
 let origin: string;
 let stop: () => void;
 const spies: { mockRestore(): void }[] = [];
@@ -95,6 +96,7 @@ document.documentElement.dataset.panelProviderMounted = "true";
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path.endsWith("/panel")) providerRequests++;
       if (path === "/panel-host.js" || path === "/panel-provider.js")
         return new Response(path === "/panel-host.js" ? host : provider, { headers: { "content-type": "text/javascript" } });
       const response = await server.fetch(request);
@@ -383,9 +385,13 @@ test("834px drawer overlays the app without narrowing it", async () => {
 
 // 10: A persisted desktop state cannot reopen a phone sheet after navigation.
 test("390px sheet grows and navigation, popstate and persisted pageshow close it without cookie writes", async () => {
+  const before = providerRequests;
   const { context, page } = await fixture(390, "1:fixture:24");
   try {
     expect(await page.locator(slot).isVisible()).toBe(false);
+    // The hidden server iframe does not load the provider.
+    await settle(page);
+    expect(providerRequests).toBe(before);
     await open(page);
     const sheet = await page.locator(slot).boundingBox();
     expect(sheet?.height).toBeCloseTo(900 * 0.58, 0);

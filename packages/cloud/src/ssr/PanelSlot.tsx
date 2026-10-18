@@ -72,8 +72,15 @@ export default function PanelSlot(props: { panel: NonNullable<ShellData["panel"]
             <span />
             <span />
           </div>
+          {/* Lazy: below 768 px the open cookie leaves the slot hidden, and a hidden iframe must not load its provider. */}
           {props.state.open && (
-            <iframe class="cloud-panel__frame" src={provider.href} title={provider.label} data-cloud-panel-frame={provider.id} />
+            <iframe
+              class="cloud-panel__frame"
+              src={provider.href}
+              title={provider.label}
+              loading="lazy"
+              data-cloud-panel-frame={provider.id}
+            />
           )}
           <div class="cloud-panel__fallback">
             <Placeholder
