@@ -1,4 +1,14 @@
-import { type Browser, type BrowserContext, chromium, type LaunchOptions, type Locator, type Page, type Request, webkit } from "playwright";
+import {
+  type Browser,
+  type BrowserContext,
+  chromium,
+  errors,
+  type LaunchOptions,
+  type Locator,
+  type Page,
+  type Request,
+  webkit,
+} from "playwright";
 
 /**
  * The engine that Playwright tests run in, chosen with `TEST_BROWSER`:
@@ -277,5 +287,62 @@ export const keptThrough = async (
     return { replaced: !after.same, heightChange: after.height - before };
   } finally {
     await original.dispose();
+  }
+};
+
+declare global {
+  interface Window {
+    [key: `__k2bMostAtOnce${number}`]: { most: number; observer: MutationObserver } | undefined;
+  }
+}
+
+let mostAtOnceId = 0;
+
+/**
+ * Counts the most elements matching `selector` during `change`, which must end with exactly one.
+ * Guards against a leaving entity showing beside its restored copy after Undo or a refresh (#1450).
+ */
+export const mostAtOnce = async (page: Page, selector: string, change: () => Promise<unknown>): Promise<number> => {
+  const key = `__k2bMostAtOnce${mostAtOnceId++}` as const;
+  try {
+    await page.evaluate(
+      ({ key, selector }) => {
+        const state = {
+          most: document.querySelectorAll(selector).length,
+          // A duplicate inserted and removed within one task is never painted and is not the subject of this guard.
+          observer: new MutationObserver(() => {
+            state.most = Math.max(state.most, document.querySelectorAll(selector).length);
+          }),
+        };
+        window[key] = state;
+        state.observer.observe(document, { subtree: true, childList: true, attributes: true });
+      },
+      { key, selector },
+    );
+    await change();
+    try {
+      await page.waitForFunction((selector) => document.querySelectorAll(selector).length === 1, selector, { timeout: 10_000 });
+    } catch (error) {
+      if (!(error instanceof errors.TimeoutError)) throw error;
+      const count = await page.evaluate((selector) => document.querySelectorAll(selector).length, selector);
+      throw new Error(`mostAtOnce timed out waiting for exactly one element matching '${selector}'; current count: ${count}.`);
+    }
+    return await page.evaluate(
+      async ({ key, selector }) => {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const state = window[key]!;
+        state.most = Math.max(state.most, document.querySelectorAll(selector).length);
+        return state.most;
+      },
+      { key, selector },
+    );
+  } finally {
+    // A page that closed took its observer along, and the step that closed it reports why.
+    await page
+      .evaluate((key) => {
+        window[key]?.observer.disconnect();
+        delete window[key];
+      }, key)
+      .catch(() => {});
   }
 };

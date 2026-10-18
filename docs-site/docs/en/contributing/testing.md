@@ -288,6 +288,14 @@ right after a change: it does not wait and returns `null` for an element that
 a refresh is replacing. See the claim test in
 `packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts`.
 
+Use `mostAtOnce(page, selector, change)` from `packages/ui/test/browser.ts` to
+check that Undo or a refresh never shows an entity twice and ends with exactly
+one. Scope a locator that reads the entity to its row, not to the page. Await
+Playwright calls and read their values: `expect(await box.isChecked())`.
+Never use `expect(promise).resolves`, which hides the reason for a rejection.
+See the tray Undo test in
+`packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
+
 ### Run WebKit locally
 
 Playwright's WebKit needs system libraries that most Linux machines do not
