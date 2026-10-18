@@ -1,8 +1,8 @@
 import {
   type Browser,
   type BrowserContext,
-  chromium,
   type Cookie,
+  chromium,
   errors,
   type LaunchOptions,
   type Locator,
