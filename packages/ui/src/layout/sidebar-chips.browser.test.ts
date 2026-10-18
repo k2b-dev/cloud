@@ -447,7 +447,10 @@ for (const [width, height] of [
           .nth(2)
           .evaluate((chip) => {
             const label = chip.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-item-label")!;
+            const icon = chip.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-item-icon")!;
             return {
+              // No chip inside the chip: the object row's icon tile is a plain glyph here.
+              icon: { height: icon.getBoundingClientRect().height, fill: getComputedStyle(icon).backgroundColor },
               width: chip.getBoundingClientRect().width,
               height: chip.getBoundingClientRect().height,
               cut: label.scrollWidth > label.clientWidth,
@@ -456,7 +459,13 @@ for (const [width, height] of [
             };
           });
         expect(size.width).toBeLessThanOrEqual(240);
-        expect(size).toMatchObject({ height: 36, cut: true, whiteSpace: "nowrap", overflow: "ellipsis" });
+        expect(size).toMatchObject({
+          height: 36,
+          cut: true,
+          whiteSpace: "nowrap",
+          overflow: "ellipsis",
+          icon: { height: 16, fill: "rgba(0, 0, 0, 0)" },
+        });
       } finally {
         await page.close();
       }

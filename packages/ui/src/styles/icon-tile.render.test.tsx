@@ -194,7 +194,7 @@ describe("shared icon tile contract", () => {
     }
   });
 
-  test("component rules never duplicate chip decoration, including state rules", () => {
+  test("component rules never duplicate chip decoration, including state rules; they may only clear the fill", () => {
     for (const token of [
       "k2b-placeholder__icon",
       "k2b-app-overview__icon",
@@ -208,8 +208,11 @@ describe("shared icon tile contract", () => {
         rule.selector.split(",").some((selector) => new RegExp(`\\.${token}(?![\\w-])[^ >+~]*$`).test(selector)),
       );
       expect(owned.length, token).toBeGreaterThan(0);
+      // A context where the surrounding box is already the chip, such as a phone's object chip, clears the fill.
       for (const rule of owned)
-        expect(rule.body, rule.selector).not.toMatch(/(?:^|;)\s*(?:background(?:-[\w-]+)?|box-shadow|border-radius):/);
+        expect(rule.body.replace(/(?:^|;)\s*background:(?:transparent|none|0 0)(?=;|$)/g, ""), rule.selector).not.toMatch(
+          /(?:^|;)\s*(?:background(?:-[\w-]+)?|box-shadow|border-radius):/,
+        );
     }
   });
 });

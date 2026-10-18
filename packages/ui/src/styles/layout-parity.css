@@ -2238,7 +2238,11 @@ html {
     )
     .k2b-app-workspace__sidebar-item-icon {
     width: 1rem;
+    /* The chip is the object's only box: an object row's icon tile drops its
+       own fill and 2rem height here. */
+    height: 1rem;
     color: var(--k2b-app-workspace-active);
+    background: transparent;
     font-size: 0.9375rem;
     line-height: 1;
   }
