@@ -26,7 +26,7 @@ else {
     beforeInstall?: (frame: HTMLIFrameElement) => void,
     navigationApi = false,
     href = (id: string) => `/app/${id}/panel?base=1`,
-    contextOptions: { context: PanelPageContext | null; consent: boolean; answer?: boolean | null; restored?: boolean; cookie?: string } = {
+    contextOptions: { context: PanelPageContext | null; consent: boolean; answer?: boolean | null; restored?: boolean } = {
       context: null,
       consent: false,
     },
@@ -60,7 +60,6 @@ else {
       value: () => ({ width: dom.window.innerWidth < 1280 ? 344 : 416 }),
     });
     if (contextOptions.restored) document.documentElement.setAttribute("data-cloud-page-restored", "");
-    if (contextOptions.cookie) document.cookie = contextOptions.cookie;
     const serverFrame = document.querySelector<HTMLIFrameElement>("iframe");
     if (serverFrame) beforeInstall?.(serverFrame);
     const dispose = installPanelSlot();
@@ -418,20 +417,8 @@ else {
     scope: { type: "mail.mailbox", id: "Box001" },
   };
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-  const setupContext = (
-    context: PanelPageContext | null = pageContext,
-    consent = true,
-    answer?: boolean | null,
-    restored = false,
-    cookie?: string,
-  ) =>
-    setup(1440, false, true, undefined, false, undefined, {
-      context,
-      consent,
-      restored,
-      cookie,
-      ...(answer !== undefined ? { answer } : {}),
-    });
+  const setupContext = (context: PanelPageContext | null = pageContext, consent = true, answer?: boolean | null, restored = false) =>
+    setup(1440, false, true, undefined, false, undefined, { context, consent, restored, ...(answer !== undefined ? { answer } : {}) });
   // A loaded provider document: its own location and the ready mark its PanelRuntime writes.
   const showDocument = (frame: HTMLIFrameElement, window: object, provider = frame.dataset.cloudPanelFrame) => {
     Object.defineProperty(frame, "contentWindow", { configurable: true, value: window });
@@ -901,34 +888,6 @@ else {
     await tick();
     expect(h.slot.dataset.contextAllowed).toBe("true");
     expect(document.activeElement).toBe(h.opener);
-  });
-
-  test("a save with an unknown outcome keeps the next document asking until an answer is saved", async () => {
-    fetchSpy = spyOn(globalThis, "fetch")
-      .mockRejectedValueOnce(new DOMException("The operation timed out.", "TimeoutError"))
-      .mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: true, revision: 3 })));
-    const h = setupContext(pageContext, true, true);
-    h.open();
-    loadedDocument(h, h.frame().src);
-    ready(h);
-    consent("fixture", false);
-    await tick();
-    expect(document.cookie).toContain("cloud_panel_unsure=fixture");
-    h.dispose();
-    h.dom.cleanup();
-    // The next document of this browser: the server still says yes, but the unknown save may yet land.
-    const fresh = setupContext(pageContext, true, true, false, "cloud_panel_unsure=fixture; Path=/");
-    fresh.open();
-    const { post } = loadedDocument(fresh, fresh.frame().src);
-    ready(fresh);
-    expect(fresh.slot.dataset.contextAllowed).toBe("false");
-    expect(fresh.slot.dataset.consent).toBe("ask");
-    expect(post).not.toHaveBeenCalled();
-    fresh.click('[data-cloud-panel-consent-answer="allow"]');
-    await tick();
-    await tick();
-    expect(document.cookie).not.toContain("cloud_panel_unsure=fixture");
-    expect(fresh.slot.dataset.contextAllowed).toBe("true");
   });
 
   test("an Allow response that arrives after a restore is checked against the server again", async () => {

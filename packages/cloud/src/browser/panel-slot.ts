@@ -1,14 +1,7 @@
 import { attachResizeSeparator, LocaleProvider, parkWorkspaceDetailDrawers } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
-import {
-  PANEL_MAX_WIDTH_REM,
-  PANEL_MIN_WIDTH_REM,
-  readPanelCookie,
-  readPanelUnsure,
-  serializePanelCookie,
-  serializePanelUnsure,
-} from "../_internal/panel-cookie";
+import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, readPanelCookie, serializePanelCookie } from "../_internal/panel-cookie";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
 import type { PanelPageContext } from "../contracts/panel-context";
 import { PANEL_CONTEXT_PARAM, withPanelContext } from "../contracts/panel-context-plain";
@@ -67,18 +60,6 @@ export function installPanelSlot(): () => void {
   }
   const saving = new Set<string>();
   const errors = new Set<string>();
-  const consentIds = panel.providers.filter((item) => item.consent).map((item) => item.id);
-  // Saves with an unknown outcome, from this or an earlier document: blocked and asked again until an answer is saved.
-  const markUnsure = (id: string, unsure: boolean) => {
-    const current = readPanelUnsure(document.cookie, consentIds);
-    const next = unsure ? [...current, id] : current.filter((item) => item !== id);
-    if (next.length !== current.length || unsure !== current.includes(id))
-      document.cookie = serializePanelUnsure(next, location.protocol === "https:");
-  };
-  for (const id of readPanelUnsure(document.cookie, consentIds)) {
-    errors.add(id);
-    answers.set(id, null);
-  }
   const requests = new AbortController();
   /*
    * Consent reads and writes run one at a time, in order, and sharing with a provider that needs consent is blocked
@@ -419,8 +400,6 @@ export function installPanelSlot(): () => void {
           signal: AbortSignal.any([requests.signal, AbortSignal.timeout(PANEL_READY_TIMEOUT_MS)]),
         });
         if (response.status === 409) {
-          // The server answered: the earlier unknown save, if any, is settled one way or the other.
-          markUnsure(item.id, false);
           await readAnswersNow();
           return;
         }
@@ -440,12 +419,10 @@ export function installPanelSlot(): () => void {
         )
           throw new Error("Invalid panel consent answer");
         answers.set(item.id, request.allowed);
-        markUnsure(item.id, false);
         revisions.set(item.id, saved.revision);
       } catch {
         answers.set(item.id, null);
         errors.add(item.id);
-        markUnsure(item.id, true);
       } finally {
         saving.delete(item.id);
       }

@@ -37,24 +37,3 @@ export function serializePanelCookie(state: PanelCookieState, secure: boolean): 
   const width = state.widthRem !== undefined && Number.isFinite(state.widthRem) ? Math.round(clampWidth(state.widthRem) * 100) / 100 : "";
   return `${PANEL_COOKIE}=${state.open && state.provider ? "1" : "0"}:${encodeURIComponent(state.provider ?? "")}:${width}; Path=/; Max-Age=31536000; SameSite=Lax${secure ? "; Secure" : ""}`;
 }
-
-/**
- * Providers whose last consent save ended without a known outcome (a timeout, a lost response). The server may still
- * commit it later, so every document of this browser keeps sharing off and asks again until an answer is saved.
- */
-export const PANEL_UNSURE_COOKIE = "cloud_panel_unsure";
-
-export function readPanelUnsure(cookieHeader: string | null | undefined, providers: readonly string[]): string[] {
-  const value = cookieHeader
-    ?.split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${PANEL_UNSURE_COOKIE}=`))
-    ?.slice(PANEL_UNSURE_COOKIE.length + 1);
-  // Unknown entries are ignored; the list can only name registered providers.
-  return value ? [...new Set(value.split(":"))].filter((id) => providers.includes(id)) : [];
-}
-
-export function serializePanelUnsure(providers: readonly string[], secure: boolean): string {
-  const ids = [...new Set(providers)].filter((id) => /^[a-z][a-z0-9-]*$/.test(id));
-  return `${PANEL_UNSURE_COOKIE}=${ids.join(":")}; Path=/; Max-Age=${ids.length ? 86400 : 0}; SameSite=Lax${secure ? "; Secure" : ""}`;
-}

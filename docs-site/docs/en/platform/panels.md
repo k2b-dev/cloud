@@ -212,11 +212,7 @@ The person chooses **Allow** or **Don't share** in the slot. They can later
 change **Share context** in the **⋯** menu, below **Panel from <App>**. The new
 answer applies from then on; it does not recall context already seen. Saving
 an answer can fail: the question stays open with a retry message, and nothing is
-shared until the person answers again. When the outcome of a save is unknown, for
-example after a timeout, the server may still store it later. The browser then
-keeps sharing off on every page and asks again until an answer is saved; the
-`cloud_panel_unsure` cookie (`Path=/`, `SameSite=Lax`, one day) lists only those
-provider IDs. Withdrawing
+shared until the person answers again. Withdrawing
 sharing stops further updates immediately and removes the context from the
 provider's current address, so reloading the provider page does not bring it
 back. Other open tabs follow on their next page load; a page restored from the
