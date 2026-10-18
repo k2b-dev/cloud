@@ -22,6 +22,9 @@ test.each([
   ["br;q=2", null],
   ["br;q=0.000, gzip;q=0.001", "gzip"],
   ["br;q=0.5;invalid, gzip;q=0.1", "gzip"],
+  ["identity;q=1, br;q=0.1, gzip;q=0", null],
+  ["identity;q=0.5, gzip;q=0.6", "gzip"],
+  ["br, identity", "br"],
 ] as const)("negotiates %s as %s", (header, expected) => expect(chooseEncoding(header)).toBe(expected));
 
 test("eligibility handles absent bodies, informational status, and exact directives", () => {
@@ -126,7 +129,7 @@ test.each([null, "identity", "br;q=0, gzip;q=0"])("eligible identity (%s) adds V
     headers,
   );
   expect(result).toBe(response.body);
-  expect(headers.get("Vary")).toBe("Cookie, Accept-Encoding");
+  expect(headers.get("Vary")).toBe("Cookie, Accept-Encoding, Sec-Fetch-Site");
   expect(headers.get("ETag")).toBe('"strong"');
   expect(headers.has("Content-Encoding")).toBe(false);
   expect(await new Response(result).text()).toBe("x".repeat(2048));

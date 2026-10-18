@@ -14,7 +14,10 @@ export const chooseEncoding = (acceptEncoding: string | null): Encoding | null =
   }
   const br = weights.get("br") ?? weights.get("*") ?? 0;
   const gzip = weights.get("gzip") ?? weights.get("*") ?? 0;
-  return br > 0 && br >= gzip ? "br" : gzip > 0 ? "gzip" : null;
+  const best = Math.max(br, gzip);
+  // A client that ranks identity above every coding we offer gets identity.
+  if (best <= 0 || best < (weights.get("identity") ?? 0)) return null;
+  return br >= gzip ? "br" : "gzip";
 };
 
 export const isCompressionEligible = (method: string, status: number, hasBody: boolean, headers: Headers): boolean => {
@@ -119,10 +122,13 @@ export const encodeStream = (
 export const compressBody = (req: Request, response: Response, headers: Headers): ReadableStream<Uint8Array> | null => {
   const body = response.body;
   if (!body || !isCompressionEligible(req.method, response.status, true, headers)) return body;
+  // The encoding depends on both request headers, so caches must key on both.
   const vary = headers.get("Vary");
   const tokens = vary?.split(",").map((token) => token.trim().toLowerCase()) ?? [];
-  if (!tokens.includes("*") && !tokens.includes("accept-encoding"))
-    headers.set("Vary", vary ? `${vary}, Accept-Encoding` : "Accept-Encoding");
+  if (!tokens.includes("*")) {
+    const missing = ["Accept-Encoding", "Sec-Fetch-Site"].filter((name) => !tokens.includes(name.toLowerCase()));
+    if (missing.length > 0) headers.set("Vary", [vary, ...missing].filter(Boolean).join(", "));
+  }
   // BREACH needs credentialed requests whose input the attacker chooses. Session
   // cookies are SameSite=Lax, so such requests are cross-site navigations; they
   // stay identity. Current browsers send Sec-Fetch-Site on HTTPS requests; a

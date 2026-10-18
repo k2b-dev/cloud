@@ -826,7 +826,7 @@ describe("dynamic response compression on the wire", () => {
           expect(response.headers.get("Content-Encoding")).toBe(encoding);
           expect(response.headers.has("Content-Length")).toBe(false);
           expect(response.headers.has("Accept-Ranges")).toBe(false);
-          expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding");
+          expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding, Sec-Fetch-Site");
           expect(response.headers.get("ETag")).toBe('W/"mail-v1"');
           const wire = Buffer.from(await response.arrayBuffer());
           expect((encoding === "br" ? brotliDecompressSync(wire) : gunzipSync(wire)).toString()).toBe(body);
@@ -845,19 +845,23 @@ describe("dynamic response compression on the wire", () => {
       async (url) => {
         const response = await fetch(url, { headers: { "Accept-Encoding": accept }, decompress: false });
         expect(response.headers.has("Content-Encoding")).toBe(false);
-        expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding");
+        expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding, Sec-Fetch-Site");
         expect(response.headers.get("ETag")).toBe('"mail-v1"');
         expect(await response.text()).toBe(mailboxHtml);
       },
     );
   });
 
-  test.each(["Cookie, accept-encoding", "*"])("preserves Vary %s and an already weak ETag", async (vary) => {
+  test.each([
+    { vary: "Cookie, accept-encoding", expected: "Cookie, accept-encoding, Sec-Fetch-Site" },
+    { vary: "sec-fetch-site, Accept-Encoding", expected: "sec-fetch-site, Accept-Encoding" },
+    { vary: "*", expected: "*" },
+  ])("merges Vary $vary once and keeps an already weak ETag", async ({ vary, expected }) => {
     await withCompressionGateway(
       () => new Response(mailboxHtml, { headers: { "Content-Type": "text/html", Vary: vary, ETag: 'W/"mail-v1"' } }),
       async (url) => {
         const response = await fetch(url, { headers: { "Accept-Encoding": "br" }, decompress: false });
-        expect(response.headers.get("Vary")).toBe(vary);
+        expect(response.headers.get("Vary")).toBe(expected);
         expect(response.headers.get("ETag")).toBe('W/"mail-v1"');
         expect(brotliDecompressSync(Buffer.from(await response.arrayBuffer())).toString()).toBe(mailboxHtml);
       },
@@ -1044,7 +1048,7 @@ describe("cross-site requests", () => {
       async (url) => {
         const response = await fetch(url, { headers: { "Accept-Encoding": "br, gzip", "Sec-Fetch-Site": site }, decompress: false });
         expect(response.headers.get("Content-Encoding")).toBe(encoding);
-        expect(response.headers.get("Vary")).toBe("Accept-Encoding");
+        expect(response.headers.get("Vary")).toBe("Accept-Encoding, Sec-Fetch-Site");
         const wire = Buffer.from(await response.arrayBuffer());
         expect((encoding ? brotliDecompressSync(wire) : wire).toString()).toBe(mailboxHtml);
       },
