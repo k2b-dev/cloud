@@ -218,6 +218,27 @@ class MailBrowser {
     return item;
   }
   /**
+   * The first Inbox conversation whose newest message has its body. Live arrivals from earlier
+   * scenarios sort above the fixture and are envelopes only, without a body to render.
+   */
+  private async hydratedConversation() {
+    const detailSchema = z.object({
+      detailMessages: z.array(
+        z.object({ id: z.string(), hydrationStatus: z.string(), plainText: z.string().nullable(), sanitizedHtml: z.string().nullable() }),
+      ),
+    });
+    for (const row of (await this.route(this.inbox)).listItems) {
+      if (!row.conversationId) continue;
+      const detail = detailSchema.parse(
+        await this.setup.api.request(`/api/mail/mailboxes/${this.setup.mailbox.shortId}/workspace-detail/${row.conversationId}`),
+      );
+      const newest = detail.detailMessages.at(-1);
+      if ((newest?.hydrationStatus === "complete" || newest?.hydrationStatus === "body") && (newest.plainText || newest.sanitizedHtml))
+        return { row, newest: newest.id };
+    }
+    throw new Error("No Inbox conversation on the first page has a message body");
+  }
+  /**
    * A fresh draft seed: the compose page reads it from the browser's localStorage, where
    * Compose stores it before navigating, so a measured load installs it the same way.
    */
@@ -287,13 +308,7 @@ class MailBrowser {
         };
       }
       case "conversation-open": {
-        const row = await this.first(this.inbox);
-        if (!row.conversationId) throw new Error("Inbox starts with a message row; expected conversations");
-        const detail = z
-          .object({ detailMessages: z.array(z.object({ id: z.string() })) })
-          .parse(await this.setup.api.request(`/api/mail/mailboxes/${this.setup.mailbox.shortId}/workspace-detail/${row.conversationId}`));
-        const newest = detail.detailMessages.at(-1);
-        if (!newest) throw new Error(`Conversation ${row.conversationId} has no messages`);
+        const { row, newest } = await this.hydratedConversation();
         return {
           startPath: this.inbox,
           act: async (page, profile) => {
@@ -305,7 +320,11 @@ class MailBrowser {
             await this.arm(page, {
               id,
               action: "pointerdown",
-              conditions: [{ selector: `[data-mail-message-id="${newest.id}"]`, visible: true }],
+              // The body itself, not the loading placeholder of a message without one.
+              conditions: [
+                { selector: `[data-mail-message-id="${newest}"] .mail-message-body`, visible: true },
+                { selector: `[data-mail-message-id="${newest}"] [data-mail-body-format]` },
+              ],
             });
             await this.press(profile, link);
             return null;

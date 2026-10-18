@@ -21,8 +21,8 @@ export const interactions = [
   {
     id: "conversation-open",
     start: "Inbox",
-    action: "Click the first conversation row",
-    end: "The reader shows the conversation's newest message in the viewport",
+    action: "Click the first Inbox conversation whose newest message has a body (live arrivals are envelopes only)",
+    end: "The reader shows the body of the conversation's newest message in the viewport",
   },
   {
     id: "list-scroll",
