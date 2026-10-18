@@ -288,8 +288,8 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
           <i class={iconClass(props.icon)} />
         </span>
         <span class="k2b-sidebar-switcher__copy" aria-hidden="true">
-          <span>{props.label}</span>
-          <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
+          <span class="k2b-truncate-fade-lines">{props.label}</span>
+          <Show when={props.description}>{(description) => <small class="k2b-truncate-fade">{description()}</small>}</Show>
         </span>
         <i class="ti ti-selector k2b-sidebar-switcher__chevron" aria-hidden="true" />
         <span id={`${id}-purpose`} class="k2b-sr-only">

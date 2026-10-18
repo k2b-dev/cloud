@@ -424,7 +424,7 @@ export type AppWorkspaceSidebarIconActionProps = {
 export type AppWorkspaceSidebarItemIconProps = { icon?: string; children?: JSX.Element };
 export type AppWorkspaceSidebarItemLabelProps = {
   children: JSX.Element;
-  /** False keeps one line with an ellipsis; rows wrap long labels onto a second line by default. */
+  /** False keeps one line that fades out; rows wrap long labels onto a second line by default. */
   marquee?: boolean;
 };
 export type AppWorkspaceSidebarItemMetaProps = {
@@ -559,9 +559,11 @@ function LevelHead(props: { label: string; description?: JSX.Element; actions?: 
     <header class="k2b-app-workspace__level-head">
       {props.children}
       <div class="k2b-app-workspace__level-title">
-        <h2 tabIndex={-1}>{props.label}</h2>
+        <h2 tabIndex={-1}>
+          <span class="k2b-truncate-fade">{props.label}</span>
+        </h2>
         <Show when={description()}>
-          <p>{description()}</p>
+          <p class="k2b-truncate-fade">{description()}</p>
         </Show>
       </div>
       <Show when={actions()}>
@@ -1495,7 +1497,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
       <span class="k2b-app-workspace__sidebar-item-copy">
         <Show when={props.context || props.contextMeta}>
           <span class="k2b-app-workspace__sidebar-item-context">
-            <span class="k2b-app-workspace__sidebar-item-context-label">{props.context}</span>
+            <span class="k2b-app-workspace__sidebar-item-context-label k2b-truncate-fade">{props.context}</span>
             <Show when={props.contextMeta}>
               <span class="k2b-app-workspace__sidebar-item-context-meta">{props.contextMeta}</span>
             </Show>
@@ -1506,10 +1508,10 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
           data-lines={oneLine() ? "1" : undefined}
           data-label={!oneLine() && typeof label() === "string" ? label() : undefined}
         >
-          <span class="k2b-app-workspace__sidebar-item-label-text">{label() as JSX.Element}</span>
+          <span class="k2b-app-workspace__sidebar-item-label-text k2b-truncate-fade-lines">{label() as JSX.Element}</span>
         </span>
         <Show when={props.description}>
-          <span class="k2b-app-workspace__sidebar-item-description">{props.description}</span>
+          <span class="k2b-app-workspace__sidebar-item-description k2b-truncate-fade">{props.description}</span>
         </Show>
       </span>
       <Show when={hasMeta()}>
@@ -1838,15 +1840,15 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
               when={item.description !== undefined}
               fallback={
                 <span class="k2b-app-workspace__sidebar-item-label" data-label={typeof item.label === "string" ? item.label : undefined}>
-                  <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
+                  <span class="k2b-app-workspace__sidebar-item-label-text k2b-truncate-fade-lines">{item.label}</span>
                 </span>
               }
             >
               <span class="k2b-app-workspace__sidebar-item-copy">
                 <span class="k2b-app-workspace__sidebar-item-label" data-label={typeof item.label === "string" ? item.label : undefined}>
-                  <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
+                  <span class="k2b-app-workspace__sidebar-item-label-text k2b-truncate-fade-lines">{item.label}</span>
                 </span>
-                <span class="k2b-app-workspace__sidebar-item-description">{item.description}</span>
+                <span class="k2b-app-workspace__sidebar-item-description k2b-truncate-fade">{item.description}</span>
               </span>
             </Show>
             <Show when={item.meta !== undefined}>

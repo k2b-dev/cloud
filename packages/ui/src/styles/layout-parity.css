@@ -405,15 +405,12 @@
   display: none;
   margin: 0;
   padding: 0 0.5rem 0.125rem;
-  overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   line-height: 1.3;
-  text-overflow: ellipsis;
   text-transform: uppercase;
-  white-space: nowrap;
 }
 
 /* Cloud's tab is `sidebar-item group shrink-0 text-xs md:w-full`, and
@@ -458,8 +455,8 @@
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
-/* Cloud's icon is `shrink-0 text-sm`; the label is `truncate whitespace-nowrap`,
-   which needs a shrinkable inline box, not a flex column. */
+/* Cloud's icon is `shrink-0 text-sm`; the label is one line that fades out at
+   its end (`k2b-truncate-fade`), which needs a shrinkable box, not a flex column. */
 .k2b-ui .k2b-settings__tabs button > i {
   flex-shrink: 0;
   font-size: 0.875rem;
@@ -467,9 +464,6 @@
 
 .k2b-ui .k2b-settings__tabs button > span {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* The close control comes first in the DOM but sits after the category row,
@@ -2308,7 +2302,7 @@ html {
     flex: 0 1 auto;
   }
 
-  /* One line that ends with an ellipsis; the chip's width cap cuts long names. */
+  /* One line that fades out at its end; the chip's width cap cuts long names. */
   .k2b-ui
     .k2b-app-workspace__sidebar[data-mobile="stacked"]
     > .k2b-app-workspace__sidebar-desktop
@@ -2318,9 +2312,6 @@ html {
     )
     .k2b-app-workspace__sidebar-item-label {
     display: block;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
   }
 
   .k2b-ui
@@ -2342,7 +2333,7 @@ html {
       .k2b-app-workspace__sidebar-section-content > .k2b-app-workspace__sidebar-item
     )
     .k2b-app-workspace__sidebar-item-label-text {
-    display: inline;
+    --k2b-truncate-fade-lines: 1;
     font-size: inherit;
     font-weight: inherit;
     line-height: inherit;
@@ -2559,11 +2550,9 @@ html {
   flex: 1 1 auto;
 }
 
+/* Both lines fade out at their end (`k2b-truncate-fade`). */
 .k2b-ui .k2b-app-workspace__level-title > :is(h2, p) {
-  overflow: hidden;
   margin: 0;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .k2b-ui .k2b-app-workspace__level-title > h2 {
@@ -2571,6 +2560,10 @@ html {
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-app-workspace__level-title > h2 > .k2b-truncate-fade {
+  display: block;
 }
 
 /* The title takes focus only when a level change hid the focused control. */
@@ -3375,9 +3368,6 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 
 .k2b-ui .k2b-tab-bar a > span {
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .k2b-ui .k2b-tab-bar a[aria-current="page"] {
@@ -3832,14 +3822,10 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   align-content: center;
 }
 
-/* The name takes up to two balanced lines and ends with an ellipsis after them; beside a fact it takes one, so name
-   and fact share the reserved two lines. The full name stays in the button's title and accessible name. */
+/* The name takes up to two balanced lines and fades out at the end of the last (`k2b-truncate-fade-lines`); beside a
+   fact it takes one, so name and fact share the reserved two lines. The full name stays in the button's title and
+   accessible name. */
 .k2b-ui .k2b-sidebar-switcher__copy > span {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
   font-size: 0.8125rem;
   font-weight: 600;
   line-height: var(--k2b-sidebar-switcher-line);
@@ -3848,17 +3834,14 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 }
 
 .k2b-ui .k2b-sidebar-switcher[data-description] .k2b-sidebar-switcher__copy > span {
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
+  --k2b-truncate-fade-lines: 1;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-sidebar-switcher__copy > small {
-  overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
   line-height: 1rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .k2b-ui .k2b-sidebar-switcher__chevron {

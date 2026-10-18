@@ -695,7 +695,7 @@ export default function MailSidebar(
               // Nothing here needs the whole mailbox: the slot says why the lists are short instead.
               <p class="mail-assigned-only flex min-h-8 min-w-0 flex-1 items-center gap-2 px-2 text-xs text-dimmed">
                 <i class="ti ti-user-check shrink-0" aria-hidden="true" />
-                <span class="min-w-0 truncate">{messages().assignedOnly}</span>
+                <span class="min-w-0 k2b-truncate-fade">{messages().assignedOnly}</span>
               </p>
             ) : props.canWrite ? (
               <>

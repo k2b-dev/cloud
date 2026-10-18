@@ -77,7 +77,12 @@ async function withPage(options: BrowserContextOptions, run: (page: Page) => Pro
   }
 }
 const settled = (page: Page) =>
-  page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+  page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .filter((animation) => animation.timeline === document.timeline)
+      .every((animation) => animation.playState !== "running"),
+  );
 const rect = (page: Page) =>
   page.locator("dialog[open]").evaluate((el) => {
     const { x, y, width, height, top, right, bottom, left } = el.getBoundingClientRect();

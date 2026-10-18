@@ -750,7 +750,7 @@ solid-island {
 .cloud-mobile-menu .k2b-panel-dialog__actions { flex: 1; min-width: 0; }
 .cloud-mobile-menu__switch { width: 100%; flex-wrap: nowrap; }
 .cloud-mobile-menu__switch button { flex: 1; min-width: 0; min-height: 3rem; white-space: nowrap; }
-.cloud-mobile-menu__switch button > span { overflow: hidden; text-overflow: ellipsis; }
+.cloud-mobile-menu__switch button > span { min-width: 0; overflow: hidden; }
 .cloud-mobile-menu .k2b-dialog__close { width: 2.75rem; height: 2.75rem; flex-shrink: 0; }
 
 .cloud-mobile-menu .k2b-panel-dialog__body { padding: .75rem 1rem 1rem; }

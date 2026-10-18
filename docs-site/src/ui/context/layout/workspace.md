@@ -598,7 +598,7 @@ The head always reserves two name lines and centres its text in them, so a
 short and a long name give it the same height from the server's first paint
 on. Switching containers, hover, opening, loading, and arriving options keep the
 trigger and the rows below it in place. The name takes up to two balanced lines
-and ends with an ellipsis when it overflows; beside the optional fact it takes
+and fades out when it overflows; beside the optional fact it takes
 one line, and the fact takes the second. The check on the current container
 uses the app's workspace accent, like the sidebar's active row. Hover and open
 use a neutral fill, and sidebar rows use the same neutral fill on hover.
@@ -936,7 +936,7 @@ type AppWorkspaceSidebarItemIconProps = { icon?: string; children?: JSX.Element 
 
 type AppWorkspaceSidebarItemLabelProps = {
   children: JSX.Element;
-  /** False keeps one line with an ellipsis; rows wrap long labels onto a second line by default. */
+  /** False keeps one line that fades out; rows wrap long labels onto a second line by default. */
   marquee?: boolean;
 };
 
@@ -1309,15 +1309,16 @@ needed to tell items apart. A plain row with a section heading is calmer and
 usually enough; Assistant lists its chats as rows under day headings with one
 status icon in `meta`. `context` holds a project or category; `contextMeta` holds a short time
 or secondary value. Both accept reactive JSX. Keep commands in actions or the
-preview. Rows wrap a long label onto up to two balanced lines ending in an
-ellipsis. A selected row keeps its line count when its label is plain text; a
+preview. Rows wrap a long label onto up to two balanced lines that fade out at
+the end, with the shared
+[fade utilities](/en/ui/layout/navigation#label-overflow). A selected row keeps its line count when its label is plain text; a
 label built from elements, such as `<strong>`, gets no such reservation.
 A row whose metadata holds a `SidebarItemStatus` keeps one line from its first
 paint, also while the status shows nothing, so a new count never re-wraps the
 label and moves the rows below. Any other metadata must keep its width while
 the row is shown: put unread counts in `SidebarItemStatus` and render it at
 zero too, and keep rows with other changing metadata on one line.
-`SidebarItemLabel marquee={false}` keeps one line with an ellipsis, as cards
+`SidebarItemLabel marquee={false}` keeps one line that fades out, as cards
 and object rows do by default.
 Completed work can retain `variant="row"` without context or description.
 
@@ -1341,7 +1342,7 @@ its menu open. Touch-only screens always show the actions. The counts stay in
 the accessibility tree while hidden. Omit the leading icon when every object would show the same
 one. A plain object-row icon sits in a soft chip of the app color; custom
 icon content, such as an avatar, keeps its own treatment in the same 2rem box.
-Object rows keep their title on one line with an ellipsis.
+Object rows keep their title on one line that fades out.
 
 ```tsx
 <AppWorkspace.SidebarItem variant="object" href="/app/mail/support" description="support@example.test">
@@ -1363,7 +1364,7 @@ sideways with fades at cut edges and keeps the current chip in view when the
 page loads. From 64 rem, it is the regular sidebar column. The sidebar is a
 `nav` landmark at every width; give it a `label` that names the objects.
 
-A chip shows the icon, a label on one line with an ellipsis, and metadata
+A chip shows the icon, a label on one line that fades out, and metadata
 such as a count or dot. Selection changes only its fill and color; its box
 and font weight stay the same. Section titles, descriptions, row actions,
 collapsible sections, the footer, and other content stay out of the row.

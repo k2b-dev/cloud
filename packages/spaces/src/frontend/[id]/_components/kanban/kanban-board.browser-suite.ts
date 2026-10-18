@@ -591,7 +591,15 @@ const cardControls = (page: Page, title: string) =>
       };
     });
 /** Hover and focus fade the controls in; wait until the fade has finished. */
-const settled = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));
+const settled = (page: Page) =>
+  page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.timeline === document.timeline)
+        .map((animation) => animation.finished),
+    ),
+  );
 const expectGripBox = (state: Awaited<ReturnType<typeof cardControls>>) => {
   expect([state.grip.box.width, state.grip.box.height]).toEqual([20, 20]);
   // Absolute offsets start inside the article's border.

@@ -79,7 +79,12 @@ afterAll(async () => {
 });
 
 const settled = (page: Page) =>
-  page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+  page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .filter((animation) => animation.timeline === document.timeline)
+      .every((animation) => animation.playState !== "running"),
+  );
 const box = (page: Page, selector: string) =>
   page.locator(selector).evaluate((el) => {
     const { top, height, width } = el.getBoundingClientRect();
