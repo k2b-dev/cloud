@@ -15,6 +15,8 @@ import {
 } from "../../../../scripts/perf-baseline/runtime";
 import { Api, waitForRoutes } from "../../../../scripts/perf-baseline/seed";
 import { anchor, digestPlan, planLargeMailbox, seedLargeMailbox } from "../../test/fixtures/large-mailbox";
+import { Arrival } from "./arrival";
+import { measureBrowsers } from "./browser";
 import {
   assertRunUrl,
   capturePlan,
@@ -115,58 +117,23 @@ async function liveArrival(
       await Bun.sleep(20);
     }
   };
-  let child: ReturnType<typeof Bun.spawn> | undefined;
+  let arrival: Arrival | undefined;
   try {
     await wait(() => ready, "Live subscribe");
-    const postgresPort = runtime.published.postgres,
-      valkeyPort = runtime.published.valkey;
-    const databaseUrl = assertRunUrl(
-      `postgresql://ipa:ipa@127.0.0.1:${postgresPort}/cloud_perf_test`,
-      postgresPort,
-      "postgresql:",
-      "cloud_perf_test",
-    );
-    const redisUrl = assertRunUrl(`redis://127.0.0.1:${valkeyPort}`, valkeyPort, "redis:");
-    let committed: { enqueuedAt: number; committedAt: number; conversationId: string } | undefined;
-    child = Bun.spawn([process.execPath, "--no-env-file", join(import.meta.dir, "ingest-worker.ts")], {
-      env: {
-        PATH: process.env.PATH,
-        DATABASE_URL: databaseUrl,
-        REDIS_URL: redisUrl,
-        APP_URL: api.origin,
-        APP_ID: "mail",
-        NODE_ENV: "production",
-      },
-      stdin: "pipe",
-      stdout: "ignore",
-      stderr: "pipe",
+    arrival = new Arrival({
       signal: api.signal,
-      timeout: 30_000,
-      ipc(message) {
-        const parsed = z.object({ enqueuedAt: z.number(), committedAt: z.number(), conversationId: z.string() }).safeParse(message);
-        if (parsed.success) committed = parsed.data;
-        else failure = "Malformed ingest worker response";
-      },
+      runtime,
+      origin: api.origin,
+      mailboxId,
+      remoteResourceId: fixture.remoteResourceId,
+      folderId: fixture.inboxId,
+      uid,
     });
-    if (!child.stdin || typeof child.stdin === "number") throw new Error("Missing ingest stdin");
-    child.stdin.write(
-      JSON.stringify({
-        mailboxId,
-        remoteResourceId: fixture.remoteResourceId,
-        folderId: fixture.inboxId,
-        uid,
-        anchor,
-        postgresPort,
-        valkeyPort,
-      }),
-    );
-    child.stdin.end();
-    if (!child.stderr || typeof child.stderr === "number") throw new Error("Missing ingest stderr");
-    const stderr = new Response(child.stderr).text();
+    const started = arrival;
     // Observe visibility concurrently with event delivery, not after the event arrives.
-    await wait(() => committed !== undefined || child?.exitCode !== null, "Ingest commit");
-    if (!committed) throw new Error(`Ingest failed (${await child.exited}): ${(await stderr).slice(-1000)}`);
-    const commit = committed;
+    await wait(() => started.committed !== undefined || started.failure !== null || started.exited, "Ingest commit");
+    if (started.failure) throw new Error(started.failure);
+    const commit = await started.requireCommit();
     let visibleAt: number | undefined;
     const visibility = async () => {
       const deadline = performance.now() + 30_000;
@@ -196,15 +163,12 @@ async function liveArrival(
     // commit acknowledgement was delivered for this commit before the ack; count it as 0.
     sample.liveMs = Math.max(0, firstAtOrAfter(deliveryTimes, commit.enqueuedAt)! - commit.committedAt);
     sample.visibleMs = Math.max(0, visibleAt! - commit.committedAt);
-    const code = await child.exited;
-    if (code !== 0) throw new Error(`Ingest worker exited ${code}: ${(await stderr).slice(-1000)}`);
-    await stderr;
+    await started.finish();
   } finally {
     try {
       socket.close();
     } finally {
-      if (child && child.exitCode === null) child.kill();
-      if (child) await child.exited;
+      await arrival?.dispose();
     }
   }
 }
@@ -244,6 +208,17 @@ export async function run(options: Options) {
     },
     idle: null,
     scenarios: [],
+    browser: options.browsers.length
+      ? {
+          engines: options.browsers,
+          versions: {},
+          playwrightVersion: "unknown",
+          runs: options.browserRuns,
+          pages: [],
+          interactions: [],
+          errors: [],
+        }
+      : null,
     notes: [
       "No provider connection or credentials. example.test provider rows are seeded through persistence; selected_for_sync=false and mailbox sync_enabled=false. No connector endpoint policy change.",
       "Fixture .txt attachments have the current extractor's terminal unsupported state, preventing an extraction recovery backlog.",
@@ -254,6 +229,12 @@ export async function run(options: Options) {
       "auto_explain is disabled for timed requests; one extra instrumented pass follows each scenario and is excluded from timings and attribution. Live passes add disposable messages; compose returns fresh seed IDs.",
       "Brotli bytes are a local body recompression, not network bytes. TTFB ends at response headers; total ends at consumed body, excluding compression and HTML inspection.",
       ...(options.skipBuild ? ["--skip-build reused bundles; recorded commit does not prove their provenance."] : []),
+      ...(options.browsers.length
+        ? [
+            "Browser part runs after the server scenarios on the same installation. Every load and interaction sample uses a fresh context: Chromium disables its cache, so loads are cold. Local emulation in the run-owned Playwright container, not real phones.",
+            "Interaction times are epoch milliseconds from the trusted input event (live: the ingest worker's commit acknowledgement on the host; the container shares the host clock) to the animation frame in which the end state first holds. A probe checks the end state once per frame.",
+          ]
+        : []),
     ],
     errors: [],
   };
@@ -473,6 +454,25 @@ export async function run(options: Options) {
       await writeFile(join(out, "result.json"), sortedJson(result));
       await writeFile(join(out, "summary.md"), renderSummary(result, previous));
     }
+    if (result.browser) {
+      console.log("Measuring browsers…");
+      await measureBrowsers(
+        {
+          signal: controller.signal,
+          runtime,
+          api,
+          plan,
+          fixture,
+          mailbox: { shortId: mailbox.id, uuid: mailboxRow.id },
+          nextUid: () => arrival++,
+        },
+        result.browser,
+        async () => {
+          await writeFile(join(out, "result.json"), sortedJson(result));
+          await writeFile(join(out, "summary.md"), renderSummary(result, previous));
+        },
+      );
+    }
   } catch (error) {
     result.errors.push(String(error));
     if (runtime?.containers.includes(runtime.name("postgres"))) {
@@ -517,6 +517,11 @@ export async function run(options: Options) {
     await writeFile(join(out, "summary.md"), renderSummary(result, previous));
     console.log(`Result: ${join(out, "result.json")}\nSummary: ${join(out, "summary.md")}`);
   }
-  if (controller.signal.aborted || result.errors.length || result.scenarios.some((s) => s.status === "failed"))
+  const browserFailed =
+    !!result.browser &&
+    (result.browser.errors.length > 0 ||
+      [...result.browser.pages, ...result.browser.interactions].some((entry) => entry.profiles.some((p) => p.status === "failed")) ||
+      result.browser.pages.some((page) => page.errors.length > 0));
+  if (controller.signal.aborted || result.errors.length || browserFailed || result.scenarios.some((s) => s.status === "failed"))
     process.exitCode = controller.signal.aborted ? 130 : 1;
 }

@@ -1,12 +1,15 @@
 import { z } from "zod";
 import { anchor } from "../../test/fixtures/large-mailbox";
+import { browserSectionSchema, type Engine, parseBrowsers, renderBrowserSummary } from "./browser-model";
 
 export { sortedJson } from "../../../../scripts/perf-baseline/model";
 
 export const help = `Usage: bun --no-env-file packages/mail/scripts/perf-baseline.ts [flags]
 
 Measure Mail server/API performance with isolated production core/mail/gateway
-and Caddy HTTPS. No browsers. Requires dependencies and Docker access.
+and Caddy HTTPS; with --browser also client cost and interaction times in
+Chromium and WebKit on the same seeded mailbox. Requires dependencies and
+Docker access.
 Allow roughly 5–15 minutes for builds/startup, about 2 minutes to seed
 20,000 messages and 2–5 minutes to measure; busy hosts take longer. Takes the machine-wide heavy lock.
 Only starts/removes run-owned labelled containers, networks and volumes.
@@ -25,7 +28,27 @@ Plain Postgres uses search fallback; BM25 availability is recorded.
   --compare <file>   Earlier Mail schemaVersion 1 result.json; median deltas
   --skip-build       Reuse .local/perf-baseline/build/<app>/dist (may be stale)
   --keep             Keep run-owned resources; print exact removal commands
+  --browser a,b      Also measure in chromium and/or webkit after the server
+                     scenarios (default: none). Starts the run-owned Playwright
+                     container (may pull about 3.5 GB). WebKit may skip with a
+                     recorded connect error.
+  --browser-runs N   1..20 cold loads per page, interaction, engine and
+                     profile (default 3). Adds roughly 10-30 minutes.
+  --rank <result.json> --bottlenecks <candidates.json>
+                     Print the top 5 bottlenecks as Markdown and exit: each
+                     candidate {title, location "path:line", metric, evidence,
+                     slice} is ranked by its metric's time in that result.
+                     Refuses a candidate without a real file:line or without
+                     a measured number. No lock, build or Docker.
   --help             Usage only: no lock, build or Docker
+
+Browser part: mailbox and compose page loads (eager/lazy JS brotli and
+modules, FCP, LCP, TTI, island mount end, island render time, long tasks,
+one extra traced Chromium load for main-thread shares), and six interactions
+timed from the input event (or ingest commit) to the painted DOM end state:
+folder-switch, conversation-open, list-scroll, search-submit, live-arrival,
+compose-open. Desktop 1440x900 and phone 390x844; Chromium phone has 4x CPU
+slowdown and a 1.6 Mbit/s, 150 ms network. Local emulation, not real phones.
 
 Cold means first scenario invocation, not flushed database/OS caches. Scenarios
 share a seeded installation; background noise is recorded in a 5-second idle
@@ -44,17 +67,38 @@ export function parseArgs(args: string[]) {
     compare: undefined as string | undefined,
     skipBuild: false,
     keep: false,
+    browsers: [] as Engine[],
+    browserRuns: 3,
+    rank: undefined as string | undefined,
+    bottlenecks: undefined as string | undefined,
   };
   for (let i = 0; i < args.length; i++) {
     const flag = args[i];
     if (flag === "--help") options.help = true;
     else if (flag === "--keep") options.keep = true;
     else if (flag === "--skip-build") options.skipBuild = true;
-    else if (["--messages", "--conversations", "--folders", "--runs", "--seed", "--out", "--compare"].includes(flag ?? "")) {
+    else if (
+      [
+        "--messages",
+        "--conversations",
+        "--folders",
+        "--runs",
+        "--seed",
+        "--out",
+        "--compare",
+        "--browser",
+        "--browser-runs",
+        "--rank",
+        "--bottlenecks",
+      ].includes(flag ?? "")
+    ) {
       const value = args[++i];
       if (!value || value.startsWith("--")) throw new Error(`Missing value for ${flag}`);
       if (flag === "--out") options.out = value;
       else if (flag === "--compare") options.compare = value;
+      else if (flag === "--browser") options.browsers = parseBrowsers(value);
+      else if (flag === "--rank") options.rank = value;
+      else if (flag === "--bottlenecks") options.bottlenecks = value;
       else {
         if (!/^\d+$/.test(value)) throw new Error(`${flag} expects an integer`);
         const n = Number(value);
@@ -74,6 +118,9 @@ export function parseArgs(args: string[]) {
           case "--seed":
             options.seed = n;
             break;
+          case "--browser-runs":
+            options.browserRuns = n;
+            break;
         }
       }
     } else throw new Error(`Unknown flag: ${flag}`);
@@ -83,10 +130,15 @@ export function parseArgs(args: string[]) {
     ["conversations", 1, options.messages],
     ["folders", 6, 1000],
     ["runs", 1, 50],
+    ["browserRuns", 1, 20],
     ["seed", 0, 4294967295],
   ] as const) {
-    if (!Number.isSafeInteger(options[key]) || options[key] < min || options[key] > max) throw new Error(`--${key} must be ${min}..${max}`);
+    if (!Number.isSafeInteger(options[key]) || options[key] < min || options[key] > max)
+      throw new Error(`--${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} must be ${min}..${max}`);
   }
+  if ((options.rank === undefined) !== (options.bottlenecks === undefined)) throw new Error("--rank and --bottlenecks go together");
+  if (options.rank && args.some((arg) => arg.startsWith("--") && !["--rank", "--bottlenecks", "--help"].includes(arg)))
+    throw new Error("--rank only takes --bottlenecks; it reads an existing result and starts nothing");
   return options;
 }
 export type Options = ReturnType<typeof parseArgs>;
@@ -183,6 +235,8 @@ export const resultSchema = z.object({
   }),
   idle: databaseSchema.nullable(),
   scenarios: z.array(scenarioSchema),
+  /** Present when the run used --browser; earlier schemaVersion 1 results have none. */
+  browser: browserSectionSchema.nullable().default(null),
   notes: z.array(z.string()),
   errors: z.array(z.string()),
 });
@@ -305,6 +359,7 @@ export function renderSummary(result: Result, previous?: Result) {
       "",
     );
   }
+  if (result.browser) lines.push(...renderBrowserSummary(result.browser));
   lines.push("## Notes and errors", "");
   for (const note of result.notes) lines.push(`- ${note}`);
   for (const error of result.errors) lines.push(`- Error: ${escape(error)}`);

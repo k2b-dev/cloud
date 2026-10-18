@@ -1,6 +1,6 @@
 // Playwright is an existing @k2b/ui devDependency in this isolated-linker workspace.
 import { createRequire } from "node:module";
-import type { Browser, CDPSession, Request } from "playwright";
+import type { Browser, BrowserContext, CDPSession, Page, Request } from "playwright";
 import { TIMEZONE_COOKIE } from "../../packages/cloud/src/shared/time";
 import {
   aggregateMetrics,
@@ -25,6 +25,8 @@ export const measurementTimeoutMs = 45_000;
 /** Fixed browser time zone, stored in Cloud's timezone cookie like on a returning user's device. */
 export const measuredTimeZone = "Europe/Berlin";
 export const measuredLocale = "en-US";
+export type Engine = "chromium" | "webkit";
+export type Profile = (typeof profiles)[number];
 type TransferType = "document" | "js" | "css" | "other";
 
 export function transferType(type: string): TransferType {
@@ -39,6 +41,8 @@ export function transferType(type: string): TransferType {
 
 type Probe = {
   initial: Element[] | null;
+  /** performance.now() when an island's clear-and-render started; the matching mounted time ends it. */
+  started: Map<Element, number>;
   mounted: Map<Element, number>;
   errors: string[];
   fcp: number | null;
@@ -59,6 +63,7 @@ declare global {
 export function installProbe(chromiumEngine: boolean) {
   const probe: Probe = {
     initial: null,
+    started: new Map(),
     mounted: new Map(),
     errors: [],
     fcp: null,
@@ -83,7 +88,10 @@ export function installProbe(chromiumEngine: boolean) {
     ...descriptor,
     set(this: Element, value: string) {
       const mount = value === "" && (this.localName === "solid-island" || this.localName === "solid-client");
-      if (mount) collect();
+      if (mount) {
+        collect();
+        if (!probe.started.has(this)) probe.started.set(this, performance.now());
+      }
       setter.call(this, value);
       // render() is synchronous and follows this setter in @k2b/ssr/src/mount.ts.
       // The microtask runs after that render stack; thrown/caught errors dispatch ssr:island-error.
@@ -131,15 +139,37 @@ export function installProbe(chromiumEngine: boolean) {
   };
 }
 
+/** Timing of one load at its TTI, in page milliseconds (performance.now()). */
+export type LoadTiming = {
+  fcp: number | null;
+  lcp: number | null;
+  tti: number;
+  /** Start and end of each initial island's clear-and-render, in initial-island order. */
+  mountStarts: number[];
+  mountTimes: number[];
+  longtasks: { start: number; duration: number }[];
+};
+/**
+ * Optional work around one measured load. beforeLoad runs after the context, probe and
+ * throttling exist and before navigation; afterLoad runs at TTI, after this load's
+ * transfers stopped counting, while the page is still open.
+ */
+export type LoadHooks<T> = {
+  timeoutMs?: number;
+  beforeLoad?: (page: Page, context: BrowserContext) => Promise<void>;
+  afterLoad?: (page: Page, timing: LoadTiming) => Promise<T>;
+};
+
 export class Browsers {
-  readonly engines = new Map<"chromium" | "webkit", Browser>();
+  readonly engines = new Map<Engine, Browser>();
   webkitSkip: string | null = null;
   constructor(readonly signal: AbortSignal) {}
 
-  async launch(endpoint: string) {
+  async launch(endpoint: string, engines: readonly Engine[] = ["chromium", "webkit"]) {
     this.signal.throwIfAborted();
     const options = { timeout: 30_000, headers: { "x-playwright-launch-options": JSON.stringify({ headless: true }) } };
-    this.engines.set("chromium", await chromium.connect(endpoint, options));
+    if (engines.includes("chromium")) this.engines.set("chromium", await chromium.connect(endpoint, options));
+    if (!engines.includes("webkit")) return;
     try {
       this.engines.set("webkit", await webkit.connect(endpoint, options));
     } catch (error) {
@@ -206,7 +236,9 @@ export class Browsers {
       }
   }
 
-  private async sample(browser: Browser, engine: "chromium" | "webkit", profile: "desktop" | "phone", url: string, cookie: string) {
+  /** One cold load in a fresh context; hooks may extend it while the page is still open. */
+  async sample<T = undefined>(browser: Browser, engine: Engine, profile: Profile, url: string, cookie: string, hooks: LoadHooks<T> = {}) {
+    const timeoutMs = hooks.timeoutMs ?? measurementTimeoutMs;
     const context = await browser.newContext({
       viewport: profile === "phone" ? { width: 390, height: 844 } : { width: 1440, height: 900 },
       deviceScaleFactor: profile === "phone" ? 3 : 1,
@@ -227,7 +259,7 @@ export class Browsers {
     const timeout = setTimeout(() => {
       timedOut = true;
       abort();
-    }, measurementTimeoutMs);
+    }, timeoutMs);
     try {
       await context.addCookies([
         { name: "session_token", value: cookie, url: new URL(url).origin, secure: true, httpOnly: true, sameSite: "Lax" },
@@ -325,28 +357,47 @@ export class Browsers {
             connectionType: "cellular4g",
           });
       }
+      await hooks.beforeLoad?.(page, context);
       const start = performance.now();
       const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: measurementTimeoutMs });
       if (!response) throw new Error("No document response");
       validatePage(response.status(), url, page.url(), await response.text());
-      let timing: (Pick<Probe, "fcp" | "lcp" | "shifts" | "resources" | "longtasks" | "errors"> & { mountTimes: number[] }) | null = null;
+      let timing:
+        | (Pick<Probe, "fcp" | "lcp" | "shifts" | "resources" | "longtasks" | "errors"> & { mountStarts: number[]; mountTimes: number[] })
+        | null = null;
+      let untimedScripts = 0;
+      // The scripts that were finished and timed when the observation decided to stop. An idle-time
+      // import can start more scripts while the final probe read is in flight; they are after the stop.
+      let observedScripts: string[] = [];
       while (performance.now() - start < measurementTimeoutMs) {
         this.signal.throwIfAborted();
-        const state = await page.evaluate(() => ({
-          initial: window.__cloudPerf.initial?.length ?? null,
-          mounted: window.__cloudPerf.initial?.filter((element) => window.__cloudPerf.mounted.has(element)).length ?? 0,
-          errors: window.__cloudPerf.errors,
-        }));
+        const urls = [...scriptUrls];
+        const state = await page.evaluate((urls) => {
+          const p = window.__cloudPerf;
+          // WebKit adds resource entries for runtime-injected modulepreload links well after the
+          // request finished; the observation waits for them instead of stopping without timing.
+          p.flush();
+          const timed = new Set(p.resources.map((entry) => entry.name));
+          return {
+            initial: p.initial?.length ?? null,
+            mounted: p.initial?.filter((element) => p.mounted.has(element)).length ?? 0,
+            untimedScripts: urls.filter((url) => !timed.has(url)).length,
+            errors: p.errors,
+          };
+        }, urls);
         if (state.errors.length || errors.length) throw new Error([...state.errors, ...errors].join("; "));
+        untimedScripts = state.untimedScripts;
         if (
           state.initial !== null &&
           interactive({
             initial: state.initial,
             mounted: state.mounted,
             pendingScripts: pendingScripts.size,
+            untimedScripts: state.untimedScripts,
             quietMs: performance.now() - lastScript,
           })
         ) {
+          observedScripts = urls;
           timing = await page.evaluate(() => {
             const p = window.__cloudPerf;
             p.flush();
@@ -356,7 +407,13 @@ export class Browsers {
               if (time === undefined) throw new Error("Initial island mount time missing at observation stop");
               return time;
             });
+            const mountStarts = (p.initial ?? []).map((element) => {
+              const time = p.started.get(element);
+              if (time === undefined) throw new Error("Initial island mount start missing at observation stop");
+              return time;
+            });
             return {
+              mountStarts,
               mountTimes,
               resources: p.resources,
               fcp: p.fcp,
@@ -371,11 +428,13 @@ export class Browsers {
         await Bun.sleep(50);
       }
       if (timing === null)
-        throw new Error(`TTI timed out after ${measurementTimeoutMs} ms (initial islands did not mount or scripts did not become quiet)`);
+        throw new Error(
+          `TTI timed out after ${measurementTimeoutMs} ms (initial islands did not mount, scripts did not become quiet, or script resource timings did not arrive; ${untimedScripts} scripts without timing)`,
+        );
       collecting = false;
       await Promise.all(sizeJobs);
       if (timing.errors.length || errors.length) throw new Error([...timing.errors, ...errors].join("; "));
-      const tti = timeToInteractive({ ...timing, scriptUrls: [...scriptUrls] });
+      const tti = timeToInteractive({ ...timing, scriptUrls: observedScripts });
       const cls = cumulativeLayoutShift(timing.shifts);
       const longtasks =
         engine === "chromium" ? longTaskMetrics(timing.longtasks, timing.fcp, tti) : { lastLongTaskEndMs: null, totalBlockingTimeMs: null };
@@ -396,10 +455,18 @@ export class Browsers {
         ttiMs: Math.round(tti),
         ...longtasks,
       });
+      const after = await hooks.afterLoad?.(page, {
+        fcp: timing.fcp,
+        lcp: timing.lcp,
+        tti,
+        mountStarts: timing.mountStarts,
+        mountTimes: timing.mountTimes,
+        longtasks: timing.longtasks,
+      });
       await cdp?.detach();
-      return { metrics, encodings: { js: [...encodings.js].sort(), css: [...encodings.css].sort() } };
+      return { metrics, encodings: { js: [...encodings.js].sort(), css: [...encodings.css].sort() }, after };
     } catch (error) {
-      if (timedOut) throw new Error(`Browser load timed out after ${measurementTimeoutMs} ms`);
+      if (timedOut) throw new Error(`Browser load timed out after ${timeoutMs} ms`);
       throw error;
     } finally {
       clearTimeout(timeout);
