@@ -265,9 +265,22 @@ describe("Notebook attachment preview layout", () => {
     }
   }, 30_000);
 
-  test("focus starts on the content, so Page Down scrolls a long document at once", async () => {
-    const page = await open(desktop, 0, ".k2b-content-markdown");
+  test("focus starts on the content as the preview opens, so Page Down scrolls a long document at once", async () => {
+    const page = await (await browser.newContext(desktop)).newPage();
     try {
+      await page.goto(server.url.href);
+      await page.evaluate((list) => window.mountAttachments(list, "en"), attachments);
+      // Read in the task that opens the preview, before any frame: a busy browser can hold the next frame back while
+      // keys already arrive, so focus must not wait for it (#1456).
+      expect(
+        await page.evaluate(() => {
+          document.querySelector<HTMLElement>(".notebooks-attachment-tile__open")!.click();
+          return document.activeElement?.classList.contains("notebooks-attachment-dialog__content");
+        }),
+      ).toBeTrue();
+      // The dialog's own focus pass in the next frame and the loaded document leave it there.
+      await page.locator(".k2b-dialog[open] .k2b-content-markdown").waitFor();
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
       expect(await page.evaluate(() => document.activeElement?.classList.contains("notebooks-attachment-dialog__content"))).toBeTrue();
       await page.keyboard.press("PageDown");
       await page.waitForFunction(() => document.querySelector(".k2b-dialog[open] .k2b-panel-dialog__body")!.scrollTop > 0);
