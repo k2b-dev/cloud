@@ -145,18 +145,21 @@ export default function SignInLocations(props: {
   };
 
   /**
-   * A lost answer or a server error leaves the upload's outcome open. A changed checksum proves it landed; an
-   * unchanged one leaves the outcome unclear unless the request was cancelled.
+   * A lost answer or a server error leaves the upload's outcome open. A new upload by this administrator proves
+   * it landed: every saved upload gets a new upload time, so a file with the same checksum counts too. Anything
+   * else leaves the outcome unclear unless the request was cancelled.
    */
   const settleUpload = async (before: GeoIpAdminStatus | null, cancelled = false) => {
     const after = await reconcile();
     if (!after) return unknownOutcome();
-    const changed = after.databases.find(
-      (database, index) =>
+    const changed = after.databases.find((database, index) => {
+      const previous = before?.databases[index]?.upload;
+      return (
         database.source === "uploaded" &&
-        database.upload?.sha256 !== before?.databases[index]?.upload?.sha256 &&
-        database.upload?.uploadedBy?.id === props.actorId,
-    );
+        (database.upload?.sha256 !== previous?.sha256 || database.upload?.uploadedAt !== previous?.uploadedAt) &&
+        database.upload?.uploadedBy?.id === props.actorId
+      );
+    });
     if (changed) {
       setPhase({ kind: "uploaded", type: changed.kind });
       announce(changed.kind === "city" ? t().uploadedCity : t().uploadedAsn);

@@ -234,6 +234,32 @@ describe("sign-in locations block", () => {
     expect(view.source("city")).toBe("Uploaded file");
   });
 
+  test("a lost answer after re-uploading the same file reports the upload by its new upload time", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    const city = uploadedStatus.databases[0];
+    view.respondWith(() =>
+      Response.json({
+        ...uploadedStatus,
+        databases: [{ ...city, upload: { ...city.upload!, uploadedAt: "2026-10-17T08:00:00.000Z" } }, uploadedStatus.databases[1]],
+      }),
+    );
+    await view.choose();
+    FakeXhr.last!.respond(502, "Bad Gateway");
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Uploaded. Sign-in requests now use this file for places.");
+  });
+
+  test("a lost answer with the same upload still listed stays unclear", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    view.respondWith(() => Response.json(uploadedStatus));
+    await view.choose();
+    FakeXhr.last!.respond(502, "Bad Gateway");
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+  });
+
   test("another administrator's upload during a lost answer does not count as this upload", async () => {
     const view = await mount();
     const other = { id: "22222222-2222-4222-8222-222222222222", name: "Ana Silva" };
