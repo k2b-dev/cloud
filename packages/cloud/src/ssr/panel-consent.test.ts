@@ -7,7 +7,7 @@ import type { AuthContext } from "../server";
 import { panelContextConsent } from "../services/panel-context-consent";
 import { preloadPanelConsent } from "./panel-consent";
 
-test("SSR reads exactly once for an open consent provider, with no reads for closed, Core, unknown or anonymous", async () => {
+test("SSR reads exactly once for an open consent provider, with no reads for closed, Core, unknown, anonymous or the panel page itself", async () => {
   const get = spyOn(panelContextConsent, "get").mockResolvedValue({ allowed: true, revision: 3 });
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime; panelConsent: PanelConsentSnapshot } }>()
     .use("*", async (c, next) => {
@@ -24,7 +24,7 @@ test("SSR reads exactly once for an open consent provider, with no reads for clo
       });
       await next();
     })
-    .get("/", async (c) => {
+    .get("*", async (c) => {
       await preloadPanelConsent(c);
       return c.json(c.get("panelConsent") ?? null);
     });
@@ -32,6 +32,9 @@ test("SSR reads exactly once for an open consent provider, with no reads for clo
     for (const cookie of ["", "cloud_panel=0:fixture:24", "cloud_panel=1:core:24", "cloud_panel=1:unknown:24"])
       expect(await (await app.request("/", { headers: { cookie } })).json()).toBeNull();
     expect(await (await app.request("/?anonymous=1", { headers: { cookie: "cloud_panel=1:fixture:24" } })).json()).toBeNull();
+    // The provider's own panel documents carry the same cookie but render no slot.
+    for (const path of ["/app/fixture/panel", "/app/fixture/panel/article"])
+      expect(await (await app.request(path, { headers: { cookie: "cloud_panel=1:fixture:24" } })).json()).toBeNull();
     expect(get).not.toHaveBeenCalled();
     expect(await (await app.request("/", { headers: { cookie: "cloud_panel=1:fixture:24" } })).json()).toEqual({
       provider: "fixture",

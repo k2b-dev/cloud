@@ -5,7 +5,7 @@ import { panelContextConsent } from "../services/panel-context-consent";
 import { visiblePanelProviders } from "./app-navigation";
 import { getRuntimeContext } from "./runtime";
 
-/** One read, only for the persisted open provider. Fail closed when the consent store is unavailable. */
+/** One read, only for a host page with the slot open on a consent provider. Fail closed when the store is unavailable. */
 export async function preloadPanelConsent(c: Context): Promise<void> {
   const user = c.get("user");
   if (!user || !c.get("runtime")) return;
@@ -16,6 +16,9 @@ export async function preloadPanelConsent(c: Context): Promise<void> {
   );
   const provider = state.open && providers.find((provider) => provider.id === state.provider);
   if (!provider || !provider.consent) return;
+  // The provider's own page below its panel path renders in PanelLayout, which has no slot and never asks.
+  const scope = new URL(provider.href, "https://panel.invalid").pathname.replace(/\/$/, "");
+  if (c.req.path === scope || c.req.path.startsWith(`${scope}/`)) return;
   let answer: { allowed: boolean; revision: number } | null = null;
   try {
     answer = await panelContextConsent.get(user.id, provider.id);
