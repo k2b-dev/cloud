@@ -839,10 +839,12 @@ describe(`Spaces month view in ${browserName}`, () => {
       ...sample,
       { ...base, id: "Label1", title: "Print the labels", deadline: "2026-10-21", deadlineAllDay: true, columnId: "Col001" },
     ];
-    const page = await open(desktop, { items });
-    try {
-      patched.length = 0;
-      const drag = async (itemId: string, to: string) => {
+    // Each move starts on a page of its own: the refresh after a move redraws the chips, and a drag that starts
+    // during that redraw grabs a chip that is being replaced.
+    const drag = async (itemId: string, to: string) => {
+      const page = await open(desktop, { items });
+      try {
+        patched.length = 0;
         await page.locator(`[data-space-item-id="${itemId}"]`).first().waitFor();
         const chip = await box(page, `[data-space-item-id="${itemId}"]`);
         // Within the same week row, away from the edges where the month scrolls while dragging.
@@ -852,22 +854,20 @@ describe(`Spaces month view in ${browserName}`, () => {
         await page.mouse.move(chip.x + chip.width / 2 + 12, chip.y + chip.height / 2, { steps: 2 });
         await page.mouse.move(end.x, end.y, { steps: 6 });
         await page.mouse.up();
-      };
-      await drag("Label1", "2026-10-22");
-      await waitFor(() => patched.length === 1, "the all-day move");
-      expect(patched[0]).toEqual({
-        itemId: "Label1",
-        body: { deadline: "2026-10-22", startsAt: null, endsAt: null, allDay: false },
-      });
-      await drag("Recap1", "2026-10-24");
-      await waitFor(() => patched.length === 2, "the timed move");
-      expect(patched[1]).toEqual({
-        itemId: "Recap1",
-        body: { deadline: at(10, 24, "17:00"), startsAt: null, endsAt: null, allDay: false },
-      });
-    } finally {
-      await page.context().close();
-    }
+        await waitFor(() => patched.length === 1, `the move of ${itemId}`);
+        return patched[0];
+      } finally {
+        await page.context().close();
+      }
+    };
+    expect(await drag("Label1", "2026-10-22")).toEqual({
+      itemId: "Label1",
+      body: { deadline: "2026-10-22", startsAt: null, endsAt: null, allDay: false },
+    });
+    expect(await drag("Recap1", "2026-10-24")).toEqual({
+      itemId: "Recap1",
+      body: { deadline: at(10, 24, "17:00"), startsAt: null, endsAt: null, allDay: false },
+    });
   }, 60_000);
 
   test("desktop: a right-click opens the day's menu; it keeps a selection it lands in, creates through the quick create, and opens the day", async () => {
