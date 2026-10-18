@@ -9,8 +9,8 @@ import sanitizeHtml from "sanitize-html";
 import {
   type ComposeFormattingWarning,
   composeTemplateVariables,
-  mailboxLogoDisplayHeight,
   MAX_COMPOSE_FORMATTING_WARNINGS,
+  mailboxLogoDisplayHeight,
 } from "../contracts";
 import { composeRenderFailure } from "./compose-render-errors";
 import { allowedEmailInlineStyles, allowedEmailInlineStyleValue, EMAIL_INLINE_STYLE_PROPERTY_SET } from "./email-inline-style-policy";
