@@ -12348,8 +12348,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
   cursor: pointer;
   transition:
-    background-color 150ms ease-out,
-    color 150ms ease-out;
+    background-color var(--k2b-motion-fast) var(--k2b-ease-out),
+    color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
 .k2b-ui .k2b-view-tabs__label {
@@ -12922,7 +12922,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 /* Pill tabs carry a close button: the item is the soft tab, so the selection
    fill and the hover fill cover the label and its close button together. */
-.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item { border-radius:.75rem; padding-right:.25rem; background:transparent; transition:background-color 150ms ease-out; }
+.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item { border-radius:.75rem; padding-right:.25rem; background:transparent; transition:background-color var(--k2b-motion-fast) var(--k2b-ease-out); }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:hover { background:var(--k2b-app-workspace-hover); }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"]) { background:var(--k2b-app-workspace-selected); }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__list button[role="tab"] { border:0; margin:0; border-radius:.75rem; max-width:16rem; background:transparent; }
