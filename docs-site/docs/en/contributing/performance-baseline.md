@@ -235,3 +235,63 @@ browser context makes each navigation cold, but does not flush server or OS
 caches. TTI covers initial mounting, script loading, and Chromium long tasks,
 not every later interaction or data request. Treat small differences within
 the reported range as inconclusive.
+
+## Measure Mail at mailbox scale
+
+The separate server/API harness seeds 20,000 messages in 3,000 conversations
+and 30 folders, then measures through the isolated Caddy HTTPS origin:
+
+```bash
+bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 5
+```
+
+It requires installed dependencies and Docker, takes the machine-wide heavy
+lock, and starts/removes only run-owned labelled resources on free loopback
+ports. It never uses port 3000 or the development database. Allow about
+5–15 minutes for builds/startup and 2–5 minutes for measurements; no browsers run.
+
+Use `--messages N` (1–100,000), `--conversations N` (1–messages), `--folders N`
+(6–1000), `--runs N` (1–50 warm runs after one cold run), and `--seed N`.
+`--folders 350` covers the folder scale reported in #1268. Small custom
+fixtures may lack a fifth list page or a thread over 100 messages.
+`--skip-build` reuses bundles, `--keep` prints cleanup commands, and `--help`
+prints usage without Docker or the lock.
+
+Scenarios cover mailbox/thread SSR, cursor pages 2–5 through both APIs,
+small/large/HTML details, rare/common/structured search, large/medium/sparse
+folders, counts, live arrival, and new/reply compose opening. Each scenario
+records cold, warm median and p95 timings, response sizes, island props,
+Server-Timing, statement counts, database time, and an untimed explain pass.
+
+At defaults, 70% of threads contain 1–3 messages. The others draw from a
+truncated power law (`k^-1.7`, 4–99), plus one designated 180-message thread
+for the detail limit. Seeded adjustments preserve the exact message count.
+Custom shapes that cannot fit the bounds lower thread minima to one when
+sparse or grow only the designated thread when dense. Histograms separate
+1–3, 4–9, 10–49, 50–100, and >100 messages.
+
+Conversation starts span roughly three years before the frozen anchor,
+skewed recent; the sparse folder stays roughly three years old. Messages
+advance by deterministic gaps of minutes to days, with long threads spanning
+weeks, and all precede the anchor minus one day.
+
+The output is `.local/mail-perf/<UTC timestamp>/result.json` and `summary.md`.
+`--out <dir>` must stay inside this worktree and use fresh filenames.
+Failures retain partial results. `--compare <earlier result.json>` adds median
+deltas per scenario and metric; page-baseline results are rejected.
+
+Explain selection prefers the slowest plan whose query matches a statement
+in that scenario's statistics window after normalizing whitespace and
+trailing semicolons. JSON records `matched: true`. Without a match, it keeps
+the slowest logged plan with `matched: false`, labelled "unmatched (may be
+background)" in the summary. Observer queries never log explain plans.
+JSON keeps full statement text; the summary shows the top 20 statements with
+text truncated for display.
+
+No provider connection is made. The persistence fixture uses example.test
+addresses and disables sync. BM25 is optional; plain Postgres uses fallback
+search and the report records availability. Background loops remain active,
+so inspect the five-second idle statement rate, scenario window, and host
+load. Live arrival includes the app dispatcher's polling delay. Cold does not
+flush shared database or OS caches. These local emulations support repeated
+comparisons on a quiet host, not production latency estimates.
