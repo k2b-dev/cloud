@@ -36,6 +36,7 @@ export const mmdbFixture = (
   options?: {
     databaseType?: string;
     ipVersion?: number;
+    nodeCount?: Value;
     corruptData?: boolean;
     buildEpoch?: number | string;
     description?: string;
@@ -108,7 +109,7 @@ export const mmdbFixture = (
   const descriptionPointer = pointer(0);
   const sharedPointer = pointer(0);
   const metadata = {
-    node_count: nodes.length,
+    node_count: options?.nodeCount ?? nodes.length,
     record_size: 24,
     ip_version: options?.ipVersion ?? 6,
     database_type: options?.databaseType ?? (kind === "city" ? "DBIP-City-Lite" : "DBIP-ASN-Lite (compat=GeoLite2-ASN)"),

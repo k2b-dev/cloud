@@ -140,6 +140,13 @@ export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "b
     // This Buffer is a view: Buffer.from(bytes) would copy the entire mmap.
     const reader = new Reader(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), { cache });
     const metadata = reader.metadata;
+    if (
+      !Number.isSafeInteger(metadata.nodeCount) ||
+      metadata.nodeCount <= 0 ||
+      !(metadata.searchTreeSize + 16 <= bytes.byteLength) ||
+      metadata.binaryFormatMajorVersion !== 2
+    )
+      return null;
     // An IPv4-only tree answers IPv6 lookups with unrelated IPv4 records, so only IPv6 databases qualify.
     if (metadata.ipVersion !== 6 || !metadata.databaseType.toLowerCase().includes(kind)) return null;
     const info: GeoIpDatabaseInfo = { databaseType: metadata.databaseType, buildDate: metadata.buildEpoch, source };

@@ -1,8 +1,10 @@
 import { expect, spyOn, test } from "bun:test";
+import { SQL, sql } from "bun";
 import { Reader } from "mmdb-lib";
 import { GEOIP_MAX_DATABASE_BYTES, GEOIP_MAX_REQUEST_BYTES } from "../../contracts/geoip";
-import { openGeoIpDatabase } from "../../server/request-context/geoip";
+import { createGeoIp, openGeoIpDatabase } from "../../server/request-context/geoip";
 import { FIXTURE_EPOCH, mmdbFixture } from "../../server/request-context/geoip.test-fixture";
+import { audit } from "../audit";
 import { createGeoIpService, type GeoIpUploadInfo, geoIpAdminStatus } from ".";
 import { parseGeoIpUpload, readGeoIpUpload } from "./upload";
 
@@ -173,6 +175,81 @@ test("readable metadata cannot hide corrupt or non-object records", () => {
     const dataOffset = new Reader(bytes).metadata.searchTreeSize + 16;
     bytes.set(header, dataOffset);
     expect(() => parseGeoIpUpload(bytes)).toThrow(expect.objectContaining({ code: "geoip_invalid" }));
+  }
+});
+
+test.each(["oops", 0, 1_000_000])("invalid node_count %s cannot replace a working database", (nodeCount) => {
+  const bytes = mmdbFixture("city", { nodeCount });
+  expect(() => parseGeoIpUpload(bytes)).toThrow(expect.objectContaining({ code: "geoip_invalid" }));
+  expect(openGeoIpDatabase("city", bytes)).toBeNull();
+});
+
+test("a normal fixture still opens with valid structural metadata", () => {
+  expect(openGeoIpDatabase("city", mmdbFixture("city"))).not.toBeNull();
+});
+
+test("an already cancelled upload never starts an INSERT transaction or installs a reader", async () => {
+  const reader = createGeoIp();
+  const install = spyOn(reader, "install");
+  const begin = spyOn(sql, "begin").mockRejectedValue(new Error("Unexpected transaction"));
+  const controller = new AbortController();
+  controller.abort();
+  try {
+    const service = createGeoIpService({ reader });
+    await expect(
+      service.upload({ id: "unused", roles: ["admin"] }, new Blob([mmdbFixture("city")]).stream(), { signal: controller.signal }),
+    ).rejects.toBe(controller.signal.reason);
+    expect(begin).not.toHaveBeenCalled();
+    expect(install).not.toHaveBeenCalled();
+  } finally {
+    begin.mockRestore();
+    install.mockRestore();
+  }
+});
+
+test("cancellation during the audit rejects the transaction without installing the reader", async () => {
+  const controller = new AbortController();
+  const aborted = new DOMException("Upload cancelled", "AbortError");
+  const reader = createGeoIp();
+  const install = spyOn(reader, "install").mockImplementation(() => {
+    throw new Error("Unexpected reader installation");
+  });
+  const client = Object.assign(new SQL("postgres://localhost/unused_test"), {
+    savepoint: () => {
+      throw new Error("Unexpected savepoint");
+    },
+  });
+  let inserts = 0;
+  let committed = false;
+  const tx = new Proxy(client, {
+    apply: (_target, _this, args) => {
+      expect(String(args[0])).toContain("INSERT INTO geoip.databases");
+      inserts++;
+      return Promise.resolve([]);
+    },
+  });
+  const begin = spyOn(client, "begin").mockImplementation(async (run) => {
+    if (typeof run !== "function") throw new Error("Expected transaction callback");
+    const result = await run(tx);
+    committed = true;
+    return result;
+  });
+  const record = spyOn(audit, "record").mockImplementation(async (_params, db) => {
+    expect(db).toBe(tx);
+    controller.abort(aborted);
+  });
+  try {
+    const service = createGeoIpService({ db: client, reader });
+    await expect(
+      service.upload({ id: "unused", roles: ["admin"] }, new Blob([mmdbFixture("city")]).stream(), { signal: controller.signal }),
+    ).rejects.toBe(aborted);
+    expect(inserts).toBe(1);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(committed).toBe(false);
+    expect(install).not.toHaveBeenCalled();
+  } finally {
+    for (const spy of [begin, record, install]) spy.mockRestore();
+    await client.close();
   }
 });
 
