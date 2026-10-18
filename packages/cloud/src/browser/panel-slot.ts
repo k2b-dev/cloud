@@ -398,7 +398,10 @@ export function installPanelSlot(): () => void {
       }
     }).then(() => {
       if (disposed) return;
-      if (provider.id === item.id && isOpen() && questionHadFocus && slot.dataset.consent !== "ask") frame?.focus();
+      // Move on into the provider only if the reader is still at the question (or nowhere), not after they moved on.
+      const active = document.activeElement;
+      const stillHere = active === document.body || !!slot.querySelector("[data-cloud-panel-consent]")?.contains(active);
+      if (provider.id === item.id && isOpen() && questionHadFocus && stillHere && slot.dataset.consent !== "ask") frame?.focus();
     });
   };
   const consentRequest = (event: CustomEvent<PanelConsentRequest>) => {

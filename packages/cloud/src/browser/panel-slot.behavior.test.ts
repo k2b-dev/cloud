@@ -768,6 +768,24 @@ else {
     ).toBe(true);
   });
 
+  test("a slow save does not pull focus back into the panel after the reader moved on", async () => {
+    const put = deferred();
+    fetchSpy = spyOn(globalThis, "fetch").mockReturnValueOnce(put.promise);
+    const h = setupContext(pageContext, true, null);
+    h.open();
+    loadedDocument(h, h.frame().src);
+    ready(h);
+    const allow = h.slot.querySelector<HTMLButtonElement>('[data-cloud-panel-consent-answer="allow"]')!;
+    allow.focus();
+    allow.click();
+    h.opener.focus();
+    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: true })));
+    await tick();
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("true");
+    expect(document.activeElement).toBe(h.opener);
+  });
+
   test("an Allow response that arrives after a restore is checked against the server again", async () => {
     const put = deferred();
     const fetch = spyOn(globalThis, "fetch")
