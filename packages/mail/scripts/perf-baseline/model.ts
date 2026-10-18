@@ -39,7 +39,8 @@ Plain Postgres uses search fallback; BM25 availability is recorded.
                      candidate {title, location "path:line", metric, evidence,
                      slice} is ranked by its metric's time in that result.
                      Refuses a candidate without a real file:line or without
-                     a measured number. No lock, build or Docker.
+                     a measured number, and a list that mixes server and
+                     browser metrics. No lock, build or Docker.
   --help             Usage only: no lock, build or Docker
 
 Browser part: mailbox and compose page loads (eager/lazy JS brotli and
