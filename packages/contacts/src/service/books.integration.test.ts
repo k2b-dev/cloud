@@ -34,7 +34,7 @@ suite("Contacts book ordering (SRV-09)", () => {
         }
         const [user] = await tx<{ id: string }[]>`
           INSERT INTO auth.users (uid, provider, profile, display_name, admin)
-          VALUES (${`contacts-book-order-${crypto.randomUUID()}`}, 'local', 'user', 'Book order test', false)
+          VALUES (${`contacts-book-order-${crypto.randomUUID()}`}, 'local', 'user', 'Book order test', true)
           RETURNING id
         `;
         userId = user!.id;
@@ -57,7 +57,13 @@ suite("Contacts book ordering (SRV-09)", () => {
       const adminIds: string[] = [];
       const readableIds: string[] = [];
       for (let page = 1; page <= bookCount; page++) {
-        const admin = await contactsService.book.admin.list({ pagination: { page, perPage: 1 }, filter: { query: marker } });
+        const adminResult = await contactsService.book.admin.list({
+          actor: { kind: "user", user: callerUser },
+          pagination: { page, perPage: 1 },
+          filter: { query: marker },
+        });
+        if (!adminResult.ok) throw new Error(adminResult.error.message);
+        const admin = adminResult.data;
         expect(admin.total).toBe(bookCount);
         adminIds.push(...admin.items.map((book) => book.id));
 
