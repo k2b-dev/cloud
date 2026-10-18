@@ -169,7 +169,7 @@ const numberData = (handle: HTMLElement, key: "workspaceDefaultSize" | "workspac
   return Number.isFinite(value) ? value : fallback;
 };
 
-const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceResizeKind) => {
+const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceResizeKind, reserveMainMinimum = true) => {
   const controlled = controlledPanel(root, handle);
   const main = kind === "pane" ? handle.closest<HTMLElement>(".k2b-app-workspace__main") : mainElement(root);
   const panes = main
@@ -237,7 +237,7 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
               ? root.getBoundingClientRect().width - 2 * root.clientLeft
               : root.getBoundingClientRect().width,
     reservedSize:
-      kind === "sidebar"
+      kind === "sidebar" && reserveMainMinimum
         ? Math.max(0, (Number.isFinite(mainMin) ? mainMin : APP_WORKSPACE_MAIN_MIN) - APP_WORKSPACE_MAIN_MIN)
         : kind === "detail"
           ? 8
@@ -279,9 +279,9 @@ const applyRegionSize = (
    * reconciliation want) quantises the width to either the collapsed rail or
    * the sidebar minimum, which during a live drag makes the handle jump.
    */
-  options: { snapSidebar?: boolean } = {},
+  options: { snapSidebar?: boolean; reserveMainMinimum?: boolean } = {},
 ) => {
-  const { min, max } = sizeLimits(root, handle, kind);
+  const { min, max } = sizeLimits(root, handle, kind, options.reserveMainMinimum);
   if (kind === "sidebar") {
     const collapsible = sidebarCollapsible(root);
     const sidebar =
@@ -293,7 +293,8 @@ const applyRegionSize = (
     // presence selector (`[data-sidebar-collapsed]`) means "collapsed".
     if (sidebar.collapsed) root.dataset.sidebarCollapsed = "true";
     else delete root.dataset.sidebarCollapsed;
-    updateHandleValue(root, handle, kind, sidebar.width, { min, max });
+    // A restored width may require an overlay; the handle still advertises interactive limits.
+    updateHandleValue(root, handle, kind, sidebar.width);
     return sidebar.width;
   }
   const size = clamp(requestedSize, min, max);
@@ -578,6 +579,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     return size;
   };
   const syncHostState = () => {
+    if (pendingDetail && !canOpenPendingDetail(pendingDetail.aside)) cancelPendingDetail();
     if (overlay && sidebarForm(overlay.root) !== "overlay") closeOverlay("none");
     for (const root of allRoots()) {
       // A drawer removed with its panel leaves no space behind in Content.
@@ -679,6 +681,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     };
     refreshItem(snapshot);
     remembered.set(root, snapshot);
+    // A pointer or Enter/Space on an item chooses something; focus alone and typing in a field do not.
+    if (event.type === "pointerdown" || (event instanceof KeyboardEvent && !target.closest(KEY_OWNER_SELECTOR))) {
+      const aside = openDetails(root).find((aside) => detailWaiting(aside) && !detailDrawer(aside));
+      if (aside) watchPendingDetail(root, aside, snapshot);
+    }
     // Enter in an editor or a field types; only an item that chooses something moves on to its title.
     if (event instanceof KeyboardEvent && !target.closest(KEY_OWNER_SELECTOR)) {
       const aside = openDetails(root).find(isVisible);
@@ -731,6 +738,13 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   // focus or a pointer goes elsewhere, so a quick second J still ends on the title.
   let panelStep: HTMLElement | null = null;
   const cancelTitleOnInteraction = (event: Event) => {
+    if (
+      pendingDetail &&
+      !(event.target instanceof Node && pendingDetail.aside.contains(event.target)) &&
+      // Native pointer focus on the chosen item continues the interaction that armed the watch.
+      !(event.type === "focusin" && event.target instanceof Node && pendingDetail.snapshot.item.contains(event.target))
+    )
+      cancelPendingDetail();
     if (event.type !== "keydown" && !(event.target instanceof Node && panelStep?.contains(event.target))) panelStep = null;
     if (event.type !== "focusin" || event.target !== focusingTitle) cancelTitle();
   };
@@ -867,6 +881,32 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       }),
     );
   };
+  let pendingDetail: { aside: HTMLElement; snapshot: RememberedItem; observer: MutationObserver } | null = null;
+  const canOpenPendingDetail = (aside: HTMLElement) =>
+    aside.isConnected && eventRoot.contains(aside) && !aside.hidden && detailWaiting(aside) && !detailDrawer(aside);
+  const cancelPendingDetail = () => {
+    pendingDetail?.observer.disconnect();
+    pendingDetail = null;
+  };
+  const watchPendingDetail = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem) => {
+    cancelPendingDetail();
+    const observer = new MutationObserver((records) => {
+      if (!canOpenPendingDetail(aside)) {
+        cancelPendingDetail();
+        return;
+      }
+      if (!records.some((record) => aside.contains(record.target))) return;
+      cancelPendingDetail();
+      snapshot.fresh = false;
+      openDetailDrawer(aside);
+      revealItem(root, aside, snapshot);
+      if (snapshot.interaction === "keyboard") requestTitle(aside);
+    });
+    pendingDetail = { aside, snapshot, observer };
+    observer.observe(aside, { childList: true, subtree: true, characterData: true });
+    // Also detect removal when this controller is scoped to the removed workspace itself.
+    observer.observe(ownerDocument, { childList: true, subtree: true });
+  };
   const detailTransition = (aside: HTMLElement, wasHidden: boolean) => {
     const root = aside.closest<HTMLElement>(ROOT_SELECTOR);
     detailHidden.set(aside, Boolean(aside.hidden));
@@ -881,6 +921,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const followedInteraction = snapshot?.fresh ?? false;
     if (snapshot) snapshot.fresh = false;
     if (aside.hidden) {
+      if (pendingDetail?.aside === aside) cancelPendingDetail();
       parkDetailDrawer(aside);
       if (pendingTitle?.aside === aside) cancelTitle();
       if (panelStep === aside) panelStep = null;
@@ -1499,7 +1540,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
               : kind === "detail"
                 ? layoutState.detailWidths?.[panelId(handle)]
                 : layoutState.drawerHeights?.[panelId(handle)];
-          if (persisted !== undefined) applySize(root, handle, kind, persisted);
+          if (persisted !== undefined) applySize(root, handle, kind, persisted, { reserveMainMinimum: false });
           else updateHandleValue(root, handle, kind, currentSize(root, handle, kind));
         });
       reconcilePanes(root, layoutState, active?.root === root ? active : null);
@@ -1632,6 +1673,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       : new MutationObserver((records) => {
           syncPhonePages();
           if (pendingTitle && (pendingTitle.aside.hidden || !pendingTitle.aside.isConnected)) cancelTitle();
+          if (pendingDetail && !canOpenPendingDetail(pendingDetail.aside)) cancelPendingDetail();
           // Hiding or removing the sidebar, or its button, ends the overlay.
           if (overlay && (overlay.sidebar.hidden || !overlay.sidebar.isConnected || !overlay.toggle.isConnected)) closeOverlay("kept");
           const details = new Set<HTMLElement>();
@@ -1705,6 +1747,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     phonePageInerted.clear();
     phone?.removeEventListener("change", syncPhonePages);
     cancelTitle();
+    cancelPendingDetail();
     pendingAnchors.forEach((cancel) => cancel());
     slides.forEach((end) => end());
     stopScrollFades();

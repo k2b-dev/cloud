@@ -1,8 +1,19 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
+import { createComponent, createSignal } from "solid-js";
+import { Dynamic, renderToString } from "solid-js/web";
 import { launchBrowser } from "../../test/browser";
-import { clientFixture, type FixtureOptions, workspaceCss, workspaceFrames } from "../../test/workspace-host-fixture";
+import { clientFixture, type FixtureOptions, workspaceCss, workspaceFrames, workspaceTree } from "../../test/workspace-host-fixture";
 
+const directory = mkdtempSync(resolve(tmpdir(), "k2b-workspace-one-surface-"));
+const { plugin } = createConfig({ dev: true, rootDir: directory });
+Bun.plugin(plugin());
+process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
+const { default: AppWorkspace } = await import("./AppWorkspace");
 const script = await clientFixture();
 const css = workspaceCss();
 let browser: Browser;
@@ -172,6 +183,67 @@ test("834 with a mouse: md Detail waits and Details opens a drawer", async () =>
     await toggle(page).click();
     expect(await detail(page).getAttribute("data-workspace-detail-drawer")).toBe("open");
     expect(await detail(page).isVisible()).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
+test("1194: selecting another item reopens a parked open Detail; live content alone leaves it parked", async () => {
+  const page = await load(1194, { mainMin: 760, detailWidth: "lg", scenario: "selection" });
+  try {
+    await waiting(page);
+    await toggle(page).click();
+    await page.keyboard.press("Escape");
+    await waiting(page);
+    await page.evaluate(() => {
+      const updateContact = (window as Window & { updateWorkspaceContact?: (title: string) => void }).updateWorkspaceContact;
+      if (!updateContact) throw new Error("Selection fixture did not expose its contact update hook");
+      updateContact("Live contact update");
+    });
+    await workspaceFrames(page);
+    await waiting(page);
+    const item = main(page).getByRole("button", { name: "Another message" });
+    await item.click();
+    await page.waitForFunction(() => document.querySelector('[data-workspace-detail-drawer="open"]'));
+    expect(await detail(page).locator("h2").innerText()).toBe("Another contact");
+    expect(await toggle(page).getAttribute("aria-expanded")).toBe("true");
+    expect(await item.evaluate((element) => document.activeElement === element)).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
+test("1194: a saved 360px sidebar stays an overlay from the server frame through hydration", async () => {
+  const options: FixtureOptions = { mainMin: 760, layoutState: { version: 2, sidebarWidth: 360 } };
+  const html = renderToString(() => workspaceTree({ AppWorkspace, createComponent, createSignal, Dynamic }, options));
+  const page = await browser.newPage({ viewport: { width: 1194, height: 900 }, reducedMotion: "reduce" });
+  try {
+    await page.setContent(`<!doctype html><html><head><style>${css}</style></head>
+      <body class="k2b-ui" style="margin:0"><div id="app" style="height:100vh;margin-inline:64px">${html}</div></body></html>`);
+    const sidebarFrame = () => {
+      const root = document.querySelector<HTMLElement>(".k2b-app-workspace")!;
+      const sidebar = root.querySelector(".k2b-app-workspace__sidebar")!;
+      const toggle = root.querySelector<HTMLElement>(".k2b-app-workspace__head [data-app-workspace-sidebar-toggle]")!;
+      return {
+        form: getComputedStyle(sidebar).getPropertyValue("--k2b-workspace-sidebar-form").trim(),
+        width: getComputedStyle(root).getPropertyValue("--k2b-workspace-sidebar-width").trim(),
+        toggleVisible: toggle.getClientRects().length > 0 && getComputedStyle(toggle).visibility === "visible",
+      };
+    };
+    const expected = { form: "overlay", width: "360px", toggleVisible: true };
+    expect(await page.evaluate(sidebarFrame)).toEqual(expected);
+    await page.evaluate((options) => {
+      document.body.dataset.options = JSON.stringify(options);
+    }, options);
+    // Match the island mount: replace SSR markup, then capture the first client frame synchronously.
+    await page.addScriptTag({
+      content: `document.getElementById("app").innerHTML = "";\n${script}\nwindow.workspaceFirstSidebarFrame = (${sidebarFrame.toString()})();`,
+    });
+    expect(await page.evaluate(() => (window as Window & { workspaceFirstSidebarFrame?: unknown }).workspaceFirstSidebarFrame)).toEqual(
+      expected,
+    );
+    await workspaceFrames(page);
+    expect(await page.evaluate(sidebarFrame)).toEqual(expected);
   } finally {
     await page.close();
   }

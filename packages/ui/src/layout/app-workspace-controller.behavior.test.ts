@@ -157,6 +157,23 @@ afterEach(() => {
 });
 
 describe("AppWorkspace resize controller behaviour", () => {
+  test("restoring a sidebar width preserves the server overlay despite Main's configured minimum", () => {
+    const { root, handle } = workspace({ width: 1064, sidebarWidth: 360 });
+    root.style.setProperty("--k2b-workspace-main-min", "760px");
+    const dispose = installAppWorkspaceController({ root, readState: () => ({ version: 2, sidebarWidth: 360 }) });
+    try {
+      flushFrames();
+      expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("360px");
+      expect(handle.getAttribute("aria-valuemax")).toBe("304");
+      flushFrames();
+      expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("360px");
+      dispatchKey(handle, "ArrowLeft");
+      expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("304px");
+    } finally {
+      dispose();
+    }
+  });
+
   test("sidebar resizing reserves Main's configured minimum and never sets max below min", () => {
     const { root, handle, sidebar } = workspace({ width: 1000.75, sidebarWidth: 208 });
     root.style.setProperty("--k2b-workspace-main-min", "760px");
@@ -2105,6 +2122,93 @@ describe("waiting detail drawers", () => {
     fixture.aside.style.setProperty("--k2b-workspace-detail-waiting", "1");
     return { ...fixture, toggle };
   };
+
+  for (const interaction of ["pointer", "Enter", " "] as const) {
+    test(`a parked open Detail reopens on content change after a fresh ${interaction} selection`, async () => {
+      const { root, aside, item, title, toggle } = waitingWorkspace();
+      let reveals = 0;
+      item.scrollIntoView = () => reveals++;
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        toggle.click();
+        detailKey(toggle, "Escape");
+        if (interaction === "pointer") {
+          rememberPointer(item);
+          item.focus(); // Native pointer focus follows pointerdown before the click updates content.
+        } else {
+          item.focus();
+          detailKey(item, interaction);
+        }
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        title.textContent = "Another contact";
+        await window.happyDOM.whenAsyncComplete();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+        expect(toggle.getAttribute("aria-expanded")).toBe("true");
+        expect(document.activeElement === (interaction === "pointer" ? item : title)).toBe(true);
+        expect(reveals).toBe(1);
+        parkWorkspaceDetailDrawers(root);
+        title.textContent = "Live update after the one-shot watch";
+        await window.happyDOM.whenAsyncComplete();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  for (const cancellation of ["none", "pointer", "key", "focus", "hidden", "removed", "not waiting", "dispose"] as const) {
+    test(`a content update does not open a parked Detail after ${cancellation}`, async () => {
+      const { root, aside, item, title } = waitingWorkspace();
+      const outside = document.createElement("button");
+      document.body.append(outside);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        if (cancellation !== "none") rememberPointer(item);
+        if (cancellation === "pointer") rememberPointer(outside);
+        if (cancellation === "key") detailKey(outside, "Tab");
+        if (cancellation === "focus") outside.focus();
+        if (cancellation === "hidden") aside.hidden = true;
+        if (cancellation === "removed") aside.remove();
+        if (cancellation === "not waiting") {
+          aside.style.removeProperty("--k2b-workspace-detail-waiting");
+          resizeObservers.forEach((observer) => observer.trigger());
+          flushFrames();
+        }
+        if (cancellation === "dispose") dispose();
+        await window.happyDOM.whenAsyncComplete();
+        // Reusing the same aside must not revive an abandoned interaction.
+        aside.hidden = false;
+        if (!aside.isConnected) root.append(aside);
+        aside.style.setProperty("--k2b-workspace-detail-waiting", "1");
+        title.textContent = "Live contact update";
+        await window.happyDOM.whenAsyncComplete();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+      } finally {
+        if (cancellation !== "dispose") dispose();
+      }
+    });
+  }
+
+  for (const source of ["Detail", "outside Main", "focus only", "editor Enter", "editor Space"] as const) {
+    test(`${source} does not arm a content watch`, async () => {
+      const { root, main, aside, item, title } = waitingWorkspace();
+      const input = document.createElement("input");
+      main.append(input);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        if (source === "Detail") rememberPointer(title);
+        else if (source === "outside Main") rememberPointer(root);
+        else if (source === "focus only") item.focus();
+        else detailKey(input, source === "editor Enter" ? "Enter" : " ");
+        title.textContent = "Live contact update";
+        await window.happyDOM.whenAsyncComplete();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+      } finally {
+        dispose();
+      }
+    });
+  }
 
   for (const interaction of ["pointer", "keyboard", "none"] as const) {
     test(`a waiting detail opened after ${interaction} interaction uses the drawer only for a fresh Main selection`, async () => {

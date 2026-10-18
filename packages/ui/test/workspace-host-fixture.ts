@@ -5,6 +5,7 @@ import type { createComponent, createSignal } from "solid-js";
 import type { Dynamic } from "solid-js/web";
 import type AppWorkspace from "../src/layout/AppWorkspace";
 import type { AppWorkspaceDetailWidth } from "../src/layout/AppWorkspace";
+import type { AppWorkspaceLayoutState } from "../src/layout/app-workspace-state";
 
 export const uiDirectory = resolve(import.meta.dir, "..");
 export const workspaceDist = process.env.K2B_UI_DIST ?? resolve(uiDirectory, "dist");
@@ -16,14 +17,24 @@ type Components = {
   createSignal: typeof createSignal;
   Dynamic: typeof Dynamic;
 };
-export type FixtureOptions = { scenario?: string; detailWidth?: AppWorkspaceDetailWidth; mainMin?: number; sidebar?: boolean };
+export type FixtureOptions = {
+  scenario?: string;
+  detailWidth?: AppWorkspaceDetailWidth;
+  mainMin?: number;
+  sidebar?: boolean;
+  layoutState?: AppWorkspaceLayoutState;
+};
 
 /** One tree for the baseline, narrowed hosts, and source SSR/dist hydration. */
 export function workspaceTree({ AppWorkspace, createComponent, createSignal, Dynamic }: Components, props: FixtureOptions = {}) {
   const [open, setOpen] = createSignal(props.scenario !== "closed");
+  const [contact, setContact] = createSignal("Contact");
+  if (props.scenario === "selection" && typeof window !== "undefined")
+    (window as Window & { updateWorkspaceContact?: (title: string) => void }).updateWorkspaceContact = setContact;
   const el = (component: string, children: string) => createComponent(Dynamic, { component, children });
   const levels = props.scenario === "levels";
   return createComponent(AppWorkspace, {
+    layoutState: () => props.layoutState,
     get children() {
       return [
         props.sidebar === false
@@ -64,6 +75,15 @@ export function workspaceTree({ AppWorkspace, createComponent, createSignal, Dyn
                           children: "Message groups",
                         }),
                         createComponent(Dynamic, { component: "button", children: "Selected message", onClick: () => setOpen(true) }),
+                        ...(props.scenario === "selection"
+                          ? [
+                              createComponent(Dynamic, {
+                                component: "button",
+                                children: "Another message",
+                                onClick: () => setContact("Another contact"),
+                              }),
+                            ]
+                          : []),
                       ];
                 },
               }),
@@ -80,7 +100,17 @@ export function workspaceTree({ AppWorkspace, createComponent, createSignal, Dyn
                         setOpen(false);
                       },
                       get children() {
-                        return [el("h2", "Contact"), el("button", "Contact action")];
+                        return [
+                          props.scenario === "selection"
+                            ? createComponent(Dynamic, {
+                                component: "h2",
+                                get children() {
+                                  return contact();
+                                },
+                              })
+                            : el("h2", "Contact"),
+                          el("button", "Contact action"),
+                        ];
                       },
                     }),
                   ]
