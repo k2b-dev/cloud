@@ -227,9 +227,9 @@ convention still needs a check or a test.
 ### A timed-out Mail sync kept running in the next test
 
 - **What happened:** The 650-message first-sync test without CONDSTORE timed out under load, then reported its envelope-count failure during the next test ([#1460](https://github.com/k2b-dev/cloud/issues/1460)).
-- **Root cause:** Full message ingestion took about 23 database round trips per message, about 15,000 for 650 messages. Lease and pacer work stayed constant per batch; CONDSTORE did not cause the cost. bun:test kept the timed-out body running while teardown restored its shared connector spies and the next test installed new ones. Later batches called the next test's spies.
+- **Root cause:** Full message ingestion took about 23 database round trips per message, about 15,000 for 650 messages. Lease and pacer work stayed constant per batch; CONDSTORE did not cause the cost ([#1487](https://github.com/k2b-dev/cloud/issues/1487) tracks the per-message cost). bun:test kept the timed-out body running while teardown restored its shared connector spies and the next test installed new ones. Later batches called the next test's spies.
 - **Error class:** Test work outlives its test.
-- **Guard:** `remote-changes-teardown.integration.test.ts` holds a sync's envelope fetch through a timeout and checks that only the hung test fails, its late rejection stays with it, and the next test sees only its own connector calls and rows. The suite fixture rejects ended accounts and cancels and awaits tracked work before restoring spies. The first-sync regression needs only 201 messages to cover two batches and reconciliation in the last batch.
+- **Guard:** `remote-changes-teardown.integration.test.ts` holds a sync's envelope fetch through a timeout and checks that only the hung test fails, its late rejection stays with it, and the next test sees only its own connector calls and rows. The suite fixture rejects ended accounts and cancels and awaits tracked work before restoring spies. The first-sync regression needs only 201 messages to cover two batches and reconciliation in the last batch. Other Mail suites still restore per-test connector spies in the test body ([#1488](https://github.com/k2b-dev/cloud/issues/1488)).
 
 ### A chart test waited for a tooltip that a late scroll closed
 
