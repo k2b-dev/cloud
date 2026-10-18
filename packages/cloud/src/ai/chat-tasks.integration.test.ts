@@ -1271,6 +1271,99 @@ suite("AI chat tasks", () => {
     }
   });
 
+  test("archive and restore never undo a stop or accept changed authority", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`routine-archive-authority-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Invoices" });
+    const create = (prompt: string) =>
+      aiChatTasks.create({
+        userId: user!.id,
+        chatId: conversation.shortId,
+        prompt,
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      });
+    try {
+      // Paused through its mandate before reconciliation saw it: archiving must not relabel it as an archive pause.
+      const stopped = (await create("Stopped elsewhere"))!;
+      await sql`UPDATE auth.mandates SET state = 'paused', revision = revision + 1 WHERE id = ${stopped.mandateId}::uuid`;
+      const changed = (await create("Changed while archived"))!;
+      expect(await aiConversations.archiveConversation({ conversationId: conversation.id, ownerUserId: user!.id })).toBe(true);
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: stopped.shortId })).toMatchObject({ state: "paused", reasonCode: "paused" });
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: changed.shortId })).toMatchObject({
+        state: "paused",
+        reasonCode: "chat_archived",
+      });
+      // What the routine may do changes while the chat is archived.
+      await sql`UPDATE auth.mandates SET revision = revision + 1 WHERE id = ${changed.mandateId}::uuid`;
+      expect(await aiConversations.restoreConversation({ conversationId: conversation.id, ownerUserId: user!.id })).not.toBeNull();
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: stopped.shortId })).toMatchObject({ state: "paused", reasonCode: "paused" });
+      expect((await mandates.get(stopped.mandateId!))?.state).toBe("paused");
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: changed.shortId })).toMatchObject({
+        state: "needs_attention",
+        reasonCode: "rights_changed",
+      });
+      expect((await mandates.get(changed.mandateId!))?.state).toBe("paused");
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
+  test("a paused run whose routine is deleted before its line went out still gets its line once", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`routine-paused-orphan-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id });
+    try {
+      const task = (await aiChatTasks.create({
+        userId: user!.id,
+        chatId: conversation.shortId,
+        prompt: "Save invoices",
+        locale: "en",
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      }))!;
+      const occurrence = (await aiChatTasks.createOccurrence({
+        taskId: task.id,
+        scheduledFor: "2026-04-07T09:00:00Z",
+        trigger: "manual",
+        requestKey: suffix,
+      }))!;
+      const turn = await aiChatTasks.deliverOccurrence({
+        occurrenceId: occurrence.id,
+        modelProfileId: "test",
+        runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
+        userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
+        expectedRevision: task.revision,
+      });
+      if (!turn.delivered) throw new Error("Expected run admission");
+      await sql`UPDATE ai.turns SET status = 'running', lease_owner = 'crashing-worker', lease_expires_at = now() + interval '1 hour'
+        WHERE id = ${turn.turnId}::uuid`;
+      await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "paused" });
+      // The worker ends the turn and crashes before it finalizes the run; then the routine is deleted.
+      await aiConversations.completeTurn({
+        conversationId: conversation.id,
+        turnId: turn.turnId,
+        leaseOwner: "crashing-worker",
+        status: "aborted",
+        error: null,
+      });
+      expect(await aiChatTasks.delete({ userId: user!.id, taskId: task.shortId })).toBe(true);
+      expect(await aiChatTasks.listTerminalRunningTurns()).toContainEqual({ turnId: turn.turnId, status: "aborted" });
+      await aiChatTasks.finalizeTurn({ turnId: turn.turnId, status: "aborted" });
+      await aiChatTasks.finalizeTurn({ turnId: turn.turnId, status: "aborted" });
+      const messages = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(messages).toHaveLength(1);
+      expect(messages[0]?.meta?.scheduledTask?.stop).toEqual({ cause: "paused", done: [] });
+      expect(await aiChatTasks.listTerminalRunningTurns()).not.toContainEqual({ turnId: turn.turnId, status: "aborted" });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
   for (const cause of ["paused", "deleted"] as const)
     test(`${cause} aborts a running turn and recovers one factual stop line`, async () => {
       const suffix = crypto.randomUUID();

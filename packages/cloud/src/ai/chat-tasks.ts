@@ -299,14 +299,13 @@ const prepareTaskForExecution = async (input: TaskRow, db: SQL): Promise<TaskRow
     SELECT archived_at, created_by_user_id FROM ai.conversations WHERE id = ${task.conversation_id}::uuid FOR UPDATE`;
   if (!sponsor)
     return stopTaskAdmission(task, "owner_inactive", "Scheduled task sponsor is unavailable", db, await pauseTerminalTaskMandate(task, db));
-  if (!conversation || conversation.archived_at)
-    return stopTaskAdmission(
-      task,
-      "chat_archived",
-      "Scheduled task chat is archived or unavailable",
-      db,
-      await pauseTerminalTaskMandate(task, db),
+  const archived = () =>
+    pauseTerminalTaskMandate(task, db).then((revision) =>
+      stopTaskAdmission(task, "chat_archived", "Scheduled task chat is archived or unavailable", db, revision),
     );
+  if (!conversation) return archived();
+  // Authority comes before the archive: a stop or change of what the routine may do must not turn into an archive
+  // pause that restoring the chat would quietly undo.
   if (
     conversation.created_by_user_id !== task.sponsor_user_id ||
     !mandate ||
@@ -323,6 +322,7 @@ const prepareTaskForExecution = async (input: TaskRow, db: SQL): Promise<TaskRow
   if (task.mandate_revision === null || Number(task.mandate_revision) !== Number(mandate.revision)) {
     return stopTaskAdmission(task, "rights_changed", "Scheduled task mandate revision changed", db);
   }
+  if (conversation.archived_at) return archived();
   return task;
 };
 /** Terminal accounting may narrow existing authority, but must never create or resume it. */
@@ -919,16 +919,10 @@ export const aiChatTasks = {
       // Locks in admission order (tasks, then chat). A restore that committed first leaves its routines running;
       // one that comes later waits for this pause and then resumes them.
       const [archived] = await tx`SELECT 1 FROM ai.conversations WHERE id = ${input.conversationId}::uuid
-        AND archived_at IS NOT NULL FOR SHARE`;
+        AND archived_at IS NOT NULL FOR UPDATE`;
       if (!archived) return;
-      for (const task of tasks) {
-        const mandate = await loadTaskMandate(task, tx);
-        const revision =
-          mandate && taskMandateMatches(task, mandate)
-            ? await mandateRevision({ mandate_id: mandate.id, mandate_revision: mandate.revision }, "paused", task.sponsor_user_id, tx)
-            : task.mandate_revision;
-        await stopTaskAdmission(task, "chat_archived", "Scheduled task chat is archived", tx, revision === null ? null : Number(revision));
-      }
+      // Admission decides the reason: an archive pause only for a routine whose authority is still intact.
+      for (const task of tasks) await prepareTaskForExecution(task, tx);
     });
   },
 
@@ -972,6 +966,12 @@ export const aiChatTasks = {
       let current = rows[0];
       if (!current) return null;
       if (input.expectedReason && current.reason_code !== input.expectedReason) return null;
+      // An automatic resume continues only the authority it paused; any change since then needs a confirmation.
+      if (input.expectedReason) {
+        const paused = await loadTaskMandate(current, tx);
+        if (!paused || current.mandate_revision === null || Number(paused.revision) !== Number(current.mandate_revision))
+          throw new AiChatTaskAuthorityError("Scheduled task mandate changed while the routine was paused");
+      }
       requireTaskMandate(current);
       const allowed =
         current.state === input.state ||
@@ -1527,8 +1527,10 @@ export const aiChatTasks = {
           ORDER BY turn.completed_at, occurrence.turn_id LIMIT ${Math.min(Math.max(limit, 1), 500)})
         UNION
         (SELECT turn.id AS turn_id, turn.status, turn.completed_at FROM ai.turns turn
-          WHERE turn.cancellation_reason = 'routine_deleted' AND turn.run_config ? 'background'
+          -- A paused run whose routine was deleted before its line went out has no occurrence left either.
+          WHERE turn.cancellation_reason IN ('routine_deleted', 'routine_paused') AND turn.run_config ? 'background'
             AND turn.status IN ('completed', 'failed', 'aborted')
+            AND NOT EXISTS (SELECT 1 FROM ai.chat_task_occurrences occurrence WHERE occurrence.turn_id = turn.id)
             AND turn.completed_at >= now() - interval '1 day'
             AND turn.run_config #>> '{background,stopDeliveredAt}' IS NULL
           ORDER BY turn.completed_at, turn.id LIMIT ${Math.min(Math.max(limit, 1), 500)})
