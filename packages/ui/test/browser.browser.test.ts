@@ -127,7 +127,7 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
 
         const lines: string[] = [];
         const originalError = console.error;
-        const closing = Date.now();
+        const closing = performance.now();
         try {
           console.error = (...args: unknown[]) => {
             lines.push(args.map(String).join(" "));
@@ -136,7 +136,7 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
         } finally {
           console.error = originalError;
         }
-        const closeMs = Date.now() - closing;
+        const closeMs = performance.now() - closing;
         // It waited the 2 s graceful budget, then killed, all inside Bun's 5 s hook timeout.
         expect(closeMs).toBeGreaterThanOrEqual(1990);
         expect(closeMs).toBeLessThan(5000);
@@ -149,9 +149,9 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
         );
         pid = undefined;
 
-        const launching = Date.now();
+        const launching = performance.now();
         next = await launchBrowser();
-        expect(Date.now() - launching).toBeLessThan(4000);
+        expect(performance.now() - launching).toBeLessThan(4000);
         const nextPage = await next.newPage();
         await nextPage.setContent("<p>ready after the kill</p>");
         expect(await nextPage.locator("p").textContent()).toBe("ready after the kill");
