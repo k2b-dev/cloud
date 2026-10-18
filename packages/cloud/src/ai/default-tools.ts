@@ -59,7 +59,7 @@ import {
 import { createCloudAiMarkdownToPdfTool } from "./markdown-pdf-tool";
 import { createAiTodoTool } from "./todo-tool";
 import { defineAiTool } from "./tools";
-import type { AiDataBoundary, AiRuntimeTool } from "./types";
+import type { AiChatTurnRunConfig, AiDataBoundary, AiRuntimeTool } from "./types";
 import { createCloudAiViewImageTool } from "./vision-tool";
 
 export {
@@ -275,6 +275,14 @@ export const createCloudAiCodeTools = () => [
     approval: "never",
   }).server(runManagedCodeTool("code_export")),
 ];
+
+/** Server-run Code Mode and declared client tools, excluding app opening and secret entry under a mandate. */
+export const createAiTurnCodeAndClientTools = (config: Pick<AiChatTurnRunConfig, "clientToolIds" | "mandate">) =>
+  [createCloudAiLocalBashTool(), ...createCloudAiLocalTools(), ...createCloudAiCodeTools()].filter(
+    (tool) =>
+      (tool.location === "server" || config.clientToolIds?.some((name) => name === tool.def.name)) &&
+      !(config.mandate && ["code_open", "code_secret"].includes(tool.def.name)),
+  );
 
 export const createDefaultCloudAiTools = () => [
   createAiTodoTool(),
