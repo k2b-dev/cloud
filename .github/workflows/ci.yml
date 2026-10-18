@@ -236,6 +236,7 @@ jobs:
       - name: Start WebKit in the Playwright image
         run: |
           set -euo pipefail
+          "$GITHUB_WORKSPACE/.github/process-crashes.sh" install
           version=$(jq -r '.workspaces.catalog.playwright' package.json)
           "$GITHUB_WORKSPACE/.github/pull-images.sh" "mcr.microsoft.com/playwright:v$version-noble"
           docker run --detach --name playwright --network host --init --ipc=host --user pwuser --workdir /home/pwuser \
@@ -250,6 +251,7 @@ jobs:
       - run: bun run test --browser --shard ${{ matrix.shard }}/3
       - if: always()
         run: |
+          "$GITHUB_WORKSPACE/.github/process-crashes.sh" report
           docker logs playwright 2>&1 | tail -50
           docker rm --force playwright
 

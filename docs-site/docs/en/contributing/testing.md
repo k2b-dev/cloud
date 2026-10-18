@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Testing
@@ -211,7 +211,7 @@ times out, the error appends a navigation diagnosis. It names the call and how l
 waited, the URL before the call and at failure, and up to five recent responses
 with their status, method, and URL. It also reports whether a document
 committed, the navigation response status, DOMContentLoaded and load events,
-open and failed requests, and a main-thread probe. A navigation cut off when
+open requests, failed requests with their error, and a main-thread probe. A navigation cut off when
 Bun's test timeout closes the browser carries the same evidence instead of a
 cleanup error; the probe reports that the page or browser is closed. Do not
 call Playwright between catching an error and reporting it: after the browser
@@ -223,9 +223,12 @@ thread after a commit points to a blocked page; see
 [When a WebKit page stops answering](#when-a-webkit-page-stops-answering).
 Before a commit, Chromium holds the probe until the navigation ends, so there
 silence alone proves nothing.
+A failed request with `WebKit encountered an internal error` adds a hint; see
+[When WebKit reports an internal error](#when-webkit-reports-an-internal-error).
 `packages/ui/test/browser.browser.test.ts` guards the diagnosis for an
-uncommitted navigation, a committed navigation whose load never fires, and a
-navigation cut off by Bun's test timeout.
+uncommitted navigation, a committed navigation whose load never fires, a
+navigation that fails with request errors, and a navigation cut off by Bun's
+test timeout.
 
 A step that scrolls the page, such as `focus()` on an element below the fold,
 dispatches its `scroll` event on the next frame. Chart inspection, popovers,
@@ -362,6 +365,52 @@ until the next reboot:
 ```bash
 sudo sysctl -w net.ipv4.tcp_rmem="4096 8388608 33554432"
 ```
+
+### When WebKit reports an internal error
+
+`WebKit encountered an internal error` is the error that WebKit gives every
+load still open when its network process ends. The navigation in progress and
+the requests of the old page then fail together, the next test gets a new
+network process, and it passes. Offline emulation with
+`context.setOffline(true)` gives the same error without a crash. The webkit
+job in CI records every process that crashes on the runner, also in the
+Playwright container, with `.github/process-crashes.sh`. At the end of the job
+it lists each crash as an error with its time, process name, and signal. A
+`WPENetworkProce` crash at the time of the failed test confirms the cause.
+
+For a backtrace, let the kernel write core files to a directory that the
+Playwright container mounts. Start the container with `--ulimit core=-1 -v
+/tmp/cores:/tmp/cores` after this setup:
+
+```bash
+sudo mkdir -m 1777 -p /tmp/cores
+sudo sysctl -w kernel.core_pattern=/tmp/cores/core.%e.%p
+```
+
+Then read a core in the same image. Copy its libraries before installing gdb,
+because the install can update the C library, and gdb then reads the wrong
+symbols:
+
+```bash
+docker run --rm -v /tmp/cores:/cores:ro "mcr.microsoft.com/playwright:v$version-noble" bash -c '
+  mkdir -p /orig/usr && cp -a /usr/lib /orig/usr/lib && ln -s usr/lib /orig/lib
+  cp -a /lib64 /orig/lib64 && ln -s /ms-playwright /orig/ms-playwright
+  apt-get update -qq && apt-get install -y -qq gdb > /dev/null
+  for core in /cores/core.WPENetworkProce.*; do
+    gdb -q -batch -ex "set sysroot /orig" -ex "bt 30" \
+      /ms-playwright/webkit-*/minibrowser-wpe/bin/WPENetworkProcess "$core"
+  done'
+```
+
+In [#1431](https://github.com/k2b-dev/cloud/issues/1431), WebKit 26.6 of
+Playwright 1.63.0 crashed its network process in about one of seven runs of
+the Notebooks graph test file in CI. Each crash came in a Back from a note page
+that cancelled the page's font load. The process aborted after it used an
+object that was already released, mostly in `g_object_ref` under
+`soup_session_send_async`. That is the libsoup
+3.6.5 double release of
+[microsoft/playwright#42803](https://github.com/microsoft/playwright/issues/42803).
+Playwright 1.64.1 bundles libsoup 3.6.6 with the fix.
 
 ### Engine differences
 
@@ -845,7 +894,9 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 them again in WebKit in three shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
-or `scripts/` changed.
+or `scripts/` changed. At its end, it lists every process that crashed on the
+runner; see
+[When WebKit reports an internal error](#when-webkit-reports-an-internal-error).
 
 The nightly workflow repeats the integration suites against PostgreSQL 15, the
 oldest supported version, and runs the longer acceptance checks that are too

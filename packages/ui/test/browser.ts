@@ -60,6 +60,11 @@ const probeMainThread = async (page: Page): Promise<string> => {
   }
 };
 
+const webkitInternalError = "WebKit encountered an internal error";
+const webkitInternalErrorHint =
+  "WebKit internal error: WebKit fails every open load this way when its network process ends, for example in a crash, " +
+  "or when the context is offline. In CI, the webkit job lists crashed processes at its end.";
+
 type NavigationRecord = {
   open: Map<Request, string>;
   failed: string[];
@@ -84,7 +89,7 @@ const explainNavigations = (page: Page): Page => {
   });
   page.on("requestfailed", (request) => {
     for (const record of records) {
-      record.failed.push(`${request.method()} ${request.url()}`);
+      record.failed.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText ?? "no error text"}`);
       record.open.delete(request);
     }
   });
@@ -149,6 +154,7 @@ const explainNavigations = (page: Page): Page => {
         ...(failed.length > 0
           ? ["Requests failed:", ...failed.slice(0, 10), ...(failed.length > 10 ? [`and ${failed.length - 10} more`] : [])]
           : []),
+        ...(failed.some((line) => line.endsWith(`: ${webkitInternalError}`)) ? [webkitInternalErrorHint] : []),
         closed ? "Main thread: page or browser is closed" : await probeMainThread(page),
       ];
       const diagnosis = lines.join("\n");
@@ -188,6 +194,7 @@ const wrapContext = (context: BrowserContext): BrowserContext => {
  * Closing a page or context of a killed browser succeeds, so the late error of
  * a timed-out test names the step that hung, not its cleanup (#1355).
  * Navigation timeouts and navigations cut off by a closed browser carry document, request, load, and main-thread evidence (#1367).
+ * Failed requests carry their error, and WebKit's internal error names a crashed network process as one cause (#1431).
  */
 export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browser> => {
   let current = await start(options);
