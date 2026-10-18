@@ -11,12 +11,12 @@ import { publicInboxPage, publicSharePage } from "./public-pages";
 import { filesUrl } from "./urls";
 
 export default new Hono<AuthContext>()
-  .use("/app/filesv2", (c, next) => {
+  .use("/app/filesv2/*", (c, next) => {
     // Editor launches embed a private WOPI token or download lease beside the stored filename.
     if (c.req.query("view") === "edit" && c.req.query("file")) return middleware.noTransform()(c, next);
     return next();
   })
-  .use("/admin/filesv2", (c, next) => {
+  .use("/admin/filesv2/*", (c, next) => {
     // Share owners cannot read other owners' private notes in the administrative share list.
     if (c.req.query("view") === "shares") return middleware.noTransform()(c, next);
     return next();

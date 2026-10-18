@@ -1,4 +1,4 @@
-import { getLocale, rateLimit } from "@k2b/cloud/server";
+import { getLocale, middleware, rateLimit } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import accountRequestsRoutes from "./account-requests";
 import actionNoticeRoutes from "./action-notice";
@@ -44,6 +44,12 @@ const localizeApiError = async (c: Context, next: () => Promise<void>) => {
 //   /api/accounts/widget/*  — dashboard widget endpoints (own auth)
 //   /api/accounts/users/*, /groups/*, /account-requests/*  — admin api
 const app = new Hono()
+  .use("/service-accounts", middleware.noTransform())
+  .use("/service-accounts/*", middleware.noTransform())
+  .use("/users", middleware.noTransform())
+  .use("/users/*", middleware.noTransform())
+  .use("/audit", middleware.noTransform())
+  .use("/audit/*", middleware.noTransform())
   .use(localizeApiError)
   .route("/widget", widgetRoutes)
   .use(rateLimit())

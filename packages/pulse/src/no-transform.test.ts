@@ -15,14 +15,23 @@ const { default: pages } = await import("./frontend/index");
 
 describe("compression boundaries", () => {
   for (const path of [
+    "/bases",
     "/query/metric-text",
+    "/query/metric-text/__new_route__",
     "/bases/base/inventory",
+    "/bases/base/inventory/__new_route__",
     "/bases/base/resource-events",
+    "/bases/base/resource-events/__new_route__",
     "/bases/base/resource-states",
+    "/bases/base/resource-states/__new_route__",
     "/bases/base/recent-events",
+    "/bases/base/recent-events/__new_route__",
     "/bases/base/states",
+    "/bases/base/states/__new_route__",
     "/dashboards/dashboard/snapshot",
+    "/dashboards/dashboard/snapshot/__new_route__",
     "/public-dashboard/token",
+    "/public-dashboard/token/__new_route__",
   ]) {
     test(`api ${path} opts out`, async () => {
       const response = await api.request(path);
@@ -31,13 +40,11 @@ describe("compression boundaries", () => {
     });
   }
   for (const path of [
-    "/bases",
     "/bases/base/metrics",
     "/bases/base/series",
     "/bases/base/sources",
     "/bases/base/sources/source/api-keys",
     "/query/metric",
-    "/query/event-map",
     "/query/compile-text",
   ]) {
     test(`api ${path} stays eligible for compression`, async () => {
@@ -47,6 +54,7 @@ describe("compression boundaries", () => {
     });
   }
   for (const path of [
+    "/",
     "/base",
     "/base/__new_route__",
     "/base/sources",
@@ -54,6 +62,7 @@ describe("compression boundaries", () => {
     "/base/explorer",
     "/base/dashboards/dashboard",
     "/display/token",
+    "/display/token/__new_route__",
   ]) {
     test(`pages ${path} opts out`, async () => {
       const response = await pages.request(path);
@@ -61,7 +70,7 @@ describe("compression boundaries", () => {
       expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }
-  for (const path of ["/", "/base/query-reference"]) {
+  for (const path of ["/base/query-reference"]) {
     test(`pages ${path} stays eligible for compression`, async () => {
       const response = await pages.request(path);
       expect(response.status).toBeLessThan(500);
@@ -94,3 +103,11 @@ test("every existing workspace address still reaches its authentication guard", 
     expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
   }
 });
+
+for (const path of ["/query/event-map", "/query/event-map/__new_route__"]) {
+  test(`POST ${path} opts out`, async () => {
+    const response = await api.request(path, { method: "POST" });
+    expect(response.status).toBeLessThan(500);
+    expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
+  });
+}

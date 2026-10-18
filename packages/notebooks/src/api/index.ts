@@ -997,7 +997,11 @@ const notePdfAdmissions = new WeakMap<
 >();
 
 const app = new Hono<AuthContext>()
+  .use("/", middleware.noTransform())
   .use("/search", middleware.noTransform())
+  .use("/search/*", middleware.noTransform())
+  .use("/:id/route-state", middleware.noTransform())
+  .use("/:id/route-state/*", middleware.noTransform())
   .route("/widget", widgetRoutes)
   .route("/ws", wsRoutes)
   .use(rateLimit())

@@ -9,7 +9,20 @@ const { aiChatTaskRoutes } = await import("./ai-chat-task-routes");
 const pages = new Hono<AuthContext>().use("*", middleware.runtime()).use("*", middleware.settings()).route("/", createPagesRouter());
 
 describe("Core compression boundaries", () => {
-  for (const path of ["/me/notifications/history", "/me/notifications/history/__new_route__", "/me/approvals", "/admin/outgoing-mail"]) {
+  for (const path of [
+    "/me/notifications/history",
+    "/me/notifications/history/__new_route__",
+    "/me/approvals",
+    "/me/approvals/__new_route__",
+    "/admin/outgoing-mail",
+    "/admin/outgoing-mail/__new_route__",
+    "/admin/settings?tab=ai-usage",
+    "/admin/settings?tab=ai-projects",
+    "/admin/settings?tab=ai-skills",
+    "/admin/settings/__new_route__?tab=ai-usage",
+    "/admin/settings/__new_route__?tab=ai-projects",
+    "/admin/settings/__new_route__?tab=ai-skills",
+  ]) {
     test(`${path} opts out before authentication`, async () => {
       const response = await pages.request(path);
       expect(response.status).toBeLessThan(500);
@@ -26,7 +39,15 @@ describe("Core compression boundaries", () => {
 });
 
 test("profile, access and other settings pages stay eligible for compression", async () => {
-  for (const path of ["/me", "/me/access", "/me/security", "/me/notifications"]) {
+  for (const path of [
+    "/me",
+    "/me/access",
+    "/me/security",
+    "/me/notifications",
+    "/admin/settings",
+    "/admin/settings?tab=ai-providers",
+    "/admin/settings/__new_route__?tab=ai-providers",
+  ]) {
     const response = await pages.request(path);
     expect(response.status).toBeLessThan(500);
     expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");

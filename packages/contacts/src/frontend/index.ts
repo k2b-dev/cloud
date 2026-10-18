@@ -9,9 +9,13 @@ import page from "./page";
 
 export default new Hono<AuthContext>()
   .use("/", middleware.noTransform())
+  .use("/:bookId", middleware.noTransform())
+  .use("/:bookId/*", middleware.noTransform())
   .get("/", auth.requireRole("user", ssr.access), ...page)
   .get("/:bookId/e/:contactId", auth.requireRole("user", ssr.access), ...contactUpsertPage)
   .get("/:bookId/e", auth.requireRole("user", ssr.access), ...contactCreatePage)
   .get("/:bookId", auth.requireRole("user", ssr.access), ...bookPage);
 
-export const adminPages = new Hono<AuthContext>().get("/", auth.requireRole("admin", ssr.access), ...adminPage);
+export const adminPages = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
+  .get("/", auth.requireRole("admin", ssr.access), ...adminPage);

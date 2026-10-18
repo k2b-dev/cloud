@@ -98,9 +98,10 @@ out with `middleware.noTransform()` only when **both** conditions hold:
 
 This includes same-origin refetches triggered by live events. One shared
 container stays compressed when every writer can read the entire response.
-Names, titles, labels, IDs, flags, favorites, preferences, counts, numeric
-metrics and profile fields such as display names or group names are not
-secrets worth guessing; mixing those alone does not create an oracle.
+Names, titles and display names are not secrets worth guessing, but any text
+another party controls counts as chosen text in the first condition, including
+other containers’ names, backlink titles and profile names. Metadata alone
+without a secret from the second condition does not create an oracle.
 
 Mount the marker first on the dedicated router that owns the affected group:
 

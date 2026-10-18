@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import { prepareNoTransformRouterTest } from "../../../../scripts/fixtures/no-transform";
 
@@ -13,8 +13,14 @@ const { createWidgetRoutes } = await import("./widgets");
 const { default: meRoutes } = await import("./me");
 const { approvalRoutes } = await import("./approvals");
 const { default: outgoingMail } = await import("./admin-outgoing-mail");
+const { default: aiUsage } = await import("./admin-ai-usage");
+const { default: aiProjects } = await import("./admin-ai-projects");
+const { default: aiSkills } = await import("./admin-ai-skills");
+const { createAppApprovalRoutes } = await import("./app-approval");
+const { appApproval, AppApprovalError } = await import("../services/app-approval");
 
 const groups = [
+  { name: "scoped personal-data directory", router: createAccountsEntitiesRoutes(), paths: ["/entities", "/entities/__new_route__"] },
   { name: "Sync previews", router: createSyncOpsProxyRoutes(), paths: ["/", "/app/dead-letters/queue/store"] },
   { name: "AI conversations", router: aiRoutes, paths: ["/conversations", "/conversations/id/messages", "/__new_route__"] },
   { name: "search", router: createSearchRoutes(), paths: ["/search", "/search/__new_route__"] },
@@ -28,6 +34,9 @@ const groups = [
   { name: "notifications", router: meRoutes, paths: ["/notifications/history", "/notifications/history/__new_route__"] },
   { name: "approvals", router: approvalRoutes, paths: ["/", "/__new_route__"] },
   { name: "outgoing mail", router: outgoingMail, paths: ["/", "/__new_route__"] },
+  { name: "AI usage", router: aiUsage, paths: ["/report", "/report/__new_route__", "/__new_route__"] },
+  { name: "AI project descriptions", router: aiProjects, paths: ["/", "/__new_route__"] },
+  { name: "AI skill descriptions", router: aiSkills, paths: ["/", "/__new_route__"] },
 ];
 
 describe("platform compression boundaries", () => {
@@ -51,14 +60,28 @@ describe("platform compression boundaries", () => {
   });
 });
 
-test("profile and directory metadata stay eligible for compression", async () => {
+test("authenticator device commands opt out even when protocol access fails", async () => {
+  const config = spyOn(appApproval, "config").mockRejectedValue(new AppApprovalError("FORBIDDEN", 403));
+  try {
+    const router = createAppApprovalRoutes();
+    for (const path of ["/device", "/device/__new_route__", "/info"]) {
+      const response = await router.request(path, { method: path === "/info" ? "GET" : "POST" });
+      expect(response.status).toBe(403);
+      expect(response.headers.get("Cache-Control")).toContain("no-store");
+      expect(response.headers.get("Cache-Control")?.includes("no-transform")).toBe(path !== "/info");
+    }
+  } finally {
+    config.mockRestore();
+  }
+});
+
+test("profile and notification preferences stay eligible for compression", async () => {
   for (const [router, path] of [
     [meRoutes, "/"],
     [meRoutes, "/access"],
     [meRoutes, "/notifications/preferences"],
     [meRoutes, "/notifications/quiet"],
     [meRoutes, "/notifications/browser/configuration"],
-    [createAccountsEntitiesRoutes(), "/entities"],
   ] as const) {
     const response = await router.request(path);
     expect(response.status).toBeLessThan(500);

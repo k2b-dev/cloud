@@ -43,7 +43,13 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
   const pages = new Hono<AuthContext>()
     .use("/me/notifications/history/*", middleware.noTransform())
     .use("/admin/outgoing-mail", middleware.noTransform())
+    .use("/admin/outgoing-mail/*", middleware.noTransform())
     .use("/me/approvals", middleware.noTransform())
+    .use("/me/approvals/*", middleware.noTransform())
+    .use("/admin/settings/*", (c, next) => {
+      if (["ai-usage", "ai-projects", "ai-skills"].includes(c.req.query("tab") ?? "")) return middleware.noTransform()(c, next);
+      return next();
+    })
     // Prevent browser from caching SSR pages (user state changes on login/logout)
     // Skip for branding assets — they set their own cache headers
     .use("*", async (c, next) => {

@@ -8,7 +8,7 @@ const { default: pages } = await import("./frontend/index");
 const { adminPages } = await import("./frontend/index");
 
 describe("compression boundaries", () => {
-  for (const path of ["/search"]) {
+  for (const path of ["/books", "/search", "/search/__new_route__"]) {
     test(`api ${path} opts out`, async () => {
       const response = await api.request(path);
       expect(response.status).toBeLessThan(500);
@@ -16,7 +16,6 @@ describe("compression boundaries", () => {
     });
   }
   for (const path of [
-    "/books",
     "/favorites",
     "/resolve",
     "/books/book/settings-context",
@@ -30,25 +29,18 @@ describe("compression boundaries", () => {
       expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");
     });
   }
-  for (const path of ["/"]) {
+  for (const path of ["/", "/book", "/book/__new_route__", "/book/e", "/book/e/contact"]) {
     test(`pages ${path} opts out`, async () => {
       const response = await pages.request(path);
       expect(response.status).toBeLessThan(500);
       expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }
-  for (const path of ["/book", "/book/e/contact"]) {
-    test(`pages ${path} stays eligible for compression`, async () => {
-      const response = await pages.request(path);
-      expect(response.status).toBeLessThan(500);
-      expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");
-    });
-  }
-  for (const path of ["/"]) {
-    test(`adminPages ${path} stays eligible for compression`, async () => {
+  for (const path of ["/", "/__new_route__"]) {
+    test(`adminPages ${path} opts out`, async () => {
       const response = await adminPages.request(path);
       expect(response.status).toBeLessThan(500);
-      expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");
+      expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }
 });

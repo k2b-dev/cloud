@@ -15,6 +15,7 @@ import {
   AppPairingStartSchema,
 } from "../contracts/app-approval";
 import { type AuthContext, auth, rateLimit, v } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import {
   type AppApprovalActor,
   AppApprovalError,
@@ -42,6 +43,8 @@ export const createAppApprovalRoutes = (service: Service = appApproval, actions 
     return { userId: session.user.id, sid: session.data.sid, admin: session.user.roles.includes("admin") };
   };
   return new Hono<AuthContext>()
+    .use("/device", noTransform())
+    .use("/device/*", noTransform())
     .onError((error, c) => {
       if (error instanceof AppApprovalError) return c.json({ code: error.code, message: error.code }, error.status);
       if (error instanceof HTTPException && error.status < 500) return c.json({ code: "INVALID_REQUEST" }, error.status);

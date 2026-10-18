@@ -7,6 +7,7 @@ import publicVenueFeedbackPage from "./public/[slug]/feedback/page";
 import publicVenuePage from "./public/[slug]/page";
 
 export default new Hono<AuthContext>()
+  .use("/", middleware.noTransform())
   .get("/public/:id/feedback", ...publicVenueFeedbackPage)
   .get("/public/:id", ...publicVenuePage)
   .use("/:id/*", middleware.noTransform())

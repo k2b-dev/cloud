@@ -67,8 +67,11 @@ import { wopiApi } from "./wopi";
 const log = logger("filesv2:api");
 const api = new Hono<AuthContext>()
   .use("/admin/shares", middleware.noTransform())
+  .use("/admin/shares/*", middleware.noTransform())
   .use("/bases/:baseId/editor", middleware.noTransform())
+  .use("/bases/:baseId/editor/*", middleware.noTransform())
   .use("/bases/:baseId/shares", middleware.noTransform())
+  .use("/bases/:baseId/shares/*", middleware.noTransform())
   // Collabora reaches these routes with an editor token instead of a session; they must answer before the role check.
   .route("/wopi", wopiApi)
   .use(rateLimit())

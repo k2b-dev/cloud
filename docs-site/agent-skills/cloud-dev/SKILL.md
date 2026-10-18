@@ -114,7 +114,7 @@ SolidJS library remains independent of Cloud and application domains.
 
 ## Keep server and browser behavior coherent
 
-- Mount `middleware.noTransform()` on routes where another party can repeatedly write text next to content they cannot read that is worth guessing (messages, submissions, secrets); see **Response compression** (`/en/docs/build/routing`).
+- Mount `middleware.noTransform()` where another party can repeatedly write chosen text (including container names, backlink titles and display names) next to content they cannot read that is worth guessing (messages, submissions, secrets); names alone are not secrets; see **Response compression** (`/en/docs/build/routing`).
 - SSR owns the authorized initial snapshot; Solid islands own only browser interaction. Islands, dialogs, and
   floating windows that cannot render fail alone behind a notice (add no wrappers). Prefer typed Hono clients over raw transport calls.
 - Invalidate the canonical read after writes instead of keeping a second client-side domain model. Every action

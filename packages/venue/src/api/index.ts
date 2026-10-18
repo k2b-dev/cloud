@@ -354,7 +354,9 @@ const publicRoutes = new Hono<AuthContext>()
   );
 
 const venueRoutes = new Hono<AuthContext>()
+  .use("/", middleware.noTransform())
   .use("/:id/dashboard", middleware.noTransform())
+  .use("/:id/dashboard/*", middleware.noTransform())
   .use("*", auth.requireRole("authenticated"))
   .get(
     "/",

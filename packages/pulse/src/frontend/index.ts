@@ -25,7 +25,10 @@ const workspacePages = new Hono<AuthContext>()
   .get("/", auth.requireRole("user", ssr.access), ...basePage);
 
 export default new Hono<AuthContext>()
-  .get("/display/:token", middleware.noTransform(), ...publicPage)
+  .use("/", middleware.noTransform())
+  .use("/display/:token", middleware.noTransform())
+  .use("/display/:token/*", middleware.noTransform())
+  .get("/display/:token", ...publicPage)
   .get("/:baseId/query-reference", auth.requireRole("user", ssr.access), ...queryReferencePage)
   .get("/", auth.requireRole("user", ssr.access), ...page)
   .route("/:baseId", workspacePages);

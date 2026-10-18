@@ -743,7 +743,9 @@ const resolveApi = new Hono<AuthContext>().use(auth.requireRole("authenticated")
 
 /** Contacts API routes for authenticated users and scoped resource credentials. */
 const app = new Hono<AuthContext>()
+  .use("/books", middleware.noTransform())
   .use("/search", middleware.noTransform())
+  .use("/search/*", middleware.noTransform())
   .route("/live", contactsLive.routes(contactsLiveChannels))
   .route("/ws", legacyLiveRoutes)
   .use(rateLimit())

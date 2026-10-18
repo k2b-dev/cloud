@@ -7,7 +7,14 @@ const { default: api } = await import("./api/index");
 const { default: pages } = await import("./frontend/index");
 
 describe("compression boundaries", () => {
-  for (const path of ["/bases/base/editor", "/bases/base/shares", "/admin/shares"]) {
+  for (const path of [
+    "/bases/base/editor",
+    "/bases/base/editor/__new_route__",
+    "/bases/base/shares",
+    "/bases/base/shares/__new_route__",
+    "/admin/shares",
+    "/admin/shares/__new_route__",
+  ]) {
     test(`api ${path} opts out`, async () => {
       const response = await api.request(path);
       expect(response.status).toBeLessThan(500);
@@ -21,7 +28,12 @@ describe("compression boundaries", () => {
       expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");
     });
   }
-  for (const path of ["/app/filesv2?view=edit&file=outside.docx", "/admin/filesv2?view=shares"]) {
+  for (const path of [
+    "/app/filesv2?view=edit&file=outside.docx",
+    "/app/filesv2/__new_route__?view=edit&file=outside.docx",
+    "/admin/filesv2?view=shares",
+    "/admin/filesv2/__new_route__?view=shares",
+  ]) {
     test(`pages ${path} opts out`, async () => {
       const response = await pages.request(path);
       expect(response.status).toBeLessThan(500);
