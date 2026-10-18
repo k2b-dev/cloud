@@ -28,7 +28,7 @@ import {
   monthVisibleRows,
   monthWeekKeys,
 } from "./calendar-month-scroll";
-import { calendarDayIndexAtPoint, calendarMinuteAtPoint, startCalendarPointerSession } from "./calendar-pointer";
+import { afterPointerRelease, calendarDayIndexAtPoint, calendarMinuteAtPoint, startCalendarPointerSession } from "./calendar-pointer";
 import {
   type CalendarOwner,
   EventChip,
@@ -2263,7 +2263,7 @@ const MonthView = (props: {
         select(key, current);
         focusCell(current);
         const range = orderedSelection(key, current);
-        openCreate(range, { active: range.first !== range.last });
+        afterPointerRelease(() => openCreate(range, { active: range.first !== range.last }));
       },
       onCancel: () => select(key),
     });
