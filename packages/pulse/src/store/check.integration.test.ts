@@ -49,7 +49,7 @@ suite("Pulse ClickHouse store", () => {
       .replace(/^--.*$/gm, "")
       .split(";")
       .map((query) => query.trim())
-      .find((query) => query.startsWith(`CREATE SETTINGS PROFILE OR REPLACE ${q(prefix + "read_normal")}`));
+      .find((query) => query.startsWith(`ALTER SETTINGS PROFILE ${q(prefix + "read_normal")}`));
     if (!normal) throw new Error("Missing normal profile fixture");
     try {
       await admin(normal.replace("max_result_rows = 10000 READONLY", "max_result_rows = 1000000 READONLY"));
@@ -70,6 +70,23 @@ suite("Pulse ClickHouse store", () => {
     } finally {
       await admin(`DROP DATABASE IF EXISTS ${q(inside)}`);
       await admin(`DROP DATABASE IF EXISTS ${q(outside)}`);
+    }
+  });
+  test("re-running setup preserves an existing reader's profile and readonly constraints", async () => {
+    await install(user);
+    const reader = `${prefix}rerun_reader`,
+      hash = await hashServicePassword(password);
+    const run = (query: string) => clickhouseQuery({ url: clickhouseTestAdmin().url, user: reader, password, query, timeoutMs: 5000 });
+    try {
+      await admin(
+        `CREATE USER ${q(reader)} IDENTIFIED WITH sha256_hash BY '${hash.sha256Hex}' SALT '${hash.saltHex}' SETTINGS PROFILE '${prefix}read_normal'`,
+      );
+      await install(user);
+      const [settings] = await run("SELECT getSetting('readonly') AS readonly");
+      expect(Number(settings?.readonly)).toBe(1);
+      await expect(run("SELECT 1 SETTINGS max_memory_usage = 1")).rejects.toMatchObject({ code: 164 });
+    } finally {
+      await admin(`DROP USER IF EXISTS ${q(reader)}`);
     }
   });
   test("read_normal forbids SET, SETTINGS clause and HTTP overrides", async () => {

@@ -1,10 +1,13 @@
 import { type AuthContext, auth, jsonResponse, REQUEST_IDLE_TIMEOUT_SECONDS, requiresAdmin, setRequestTimeout } from "@k2b/cloud/server";
+import { logger } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { z } from "zod";
 import { StoreCheckSchema, StoreStatusSchema } from "../../store/contracts";
 import { StoreAdminError, storeAdmin } from "../../store/service";
 import { StoreSaveInput, StoreSetupInput } from "../../store/validation";
+
+const log = logger("pulse:admin-store");
 
 const metadata = (summary: string, schema: z.ZodType, input?: z.ZodType) =>
   describeRoute({
@@ -36,6 +39,11 @@ const routes = new Hono<AuthContext>()
   .onError((error, c) => {
     if (error instanceof StoreAdminError) return c.json({ code: error.code }, error.status);
     // Do not serialize setting, transport, SQL, or validation errors with input values.
+    log.error("Store request failed", {
+      errorClass: error.name || error.constructor.name,
+      method: c.req.method,
+      path: c.req.routePath || c.req.path,
+    });
     return c.json({ code: "STORE_REQUEST_FAILED" }, 500);
   })
   .get("/", auth.requireRole("admin"), metadata("Read Pulse store status", StoreStatusSchema), async (c) =>

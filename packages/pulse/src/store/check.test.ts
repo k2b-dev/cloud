@@ -19,7 +19,13 @@ const reply = (data: Record<string, unknown>[] = [], code?: number) =>
     ? new Response("REMOTE_BODY_MUST_NEVER_LEAK", { status: 403, headers: { "X-ClickHouse-Exception-Code": String(code) } })
     : Response.json({ data }, { headers: { "X-ClickHouse-Query-Id": "fixture" } });
 let transport: Mock<NonNullable<QueryOptions["transport"]>>;
-const stub = (version = "26.9.19.9") => {
+const normalGrants = [
+  "GRANT SELECT ON fixture_*.* TO fixture_service WITH GRANT OPTION",
+  "GRANT SELECT ON system.parts TO fixture_service",
+  "GRANT SELECT ON system.disks TO fixture_service",
+  "GRANT KILL QUERY ON * TO fixture_service",
+];
+const stub = (version = "26.9.19.9", grants = normalGrants) => {
   queries.length = 0;
   profile = "read_normal";
   transport = mock(async (_input: string, init: RequestInit) => {
@@ -30,7 +36,7 @@ const stub = (version = "26.9.19.9") => {
     if (query === "SELECT version() AS version") return reply([{ version }]);
     if (query.startsWith("CREATE SETTINGS PROFILE") || /^CREATE DATABASE `fixturex_/.test(query) || query.includes("system.query_log"))
       return reply([], 497);
-    if (query === "SHOW GRANTS FINAL") return reply([{ grant: "GRANT KILL QUERY ON * TO fixture_service" }]);
+    if (query === "SHOW GRANTS FINAL") return reply(grants.map((grant) => ({ "GRANTS FOR fixture_service": grant })));
     if (query.startsWith("ALTER USER")) {
       const selected = Object.keys(READ_PROFILES).find((key) => query.includes(key));
       if (selected && selected in READ_PROFILES) profile = selected as keyof typeof READ_PROFILES;
@@ -78,6 +84,29 @@ test("full check validates every profile limit and all three normal override pat
     expect(queries.some((query) => query.startsWith(`SELECT 1 SETTINGS ${setting} =`))).toBe(true);
   expect(queries).toContain("SET max_memory_usage = 1");
   expect(queries.at(-1)).toMatch(/^DROP SETTINGS PROFILE IF EXISTS `fixture_check_[a-f0-9]{8}`$/);
+});
+test("an absent optional query_log table is inconclusive", async () => {
+  stub();
+  reject = (query) => (query.includes("system.query_log") ? 60 : undefined);
+  expect(await checkStore({ ...options, transport, mode: "full" })).toMatchObject({ ok: true });
+});
+test.each(["*.*", "*", "system.*", "`system`.*"])("SELECT on %s is refused even when query_log is absent", async (target) => {
+  stub("26.9.19.9", [...normalGrants, `GRANT SELECT ON ${target} TO fixture_service`]);
+  reject = (query) => (query.includes("system.query_log") ? 60 : undefined);
+  expect(await checkStore({ ...options, transport, mode: "full" })).toMatchObject({
+    ok: false,
+    code: "TOO_MANY_RIGHTS",
+    steps: { rights: "failed" },
+  });
+});
+test("prefix SELECT with delegation, explicit system tables and global KILL QUERY stay allowed", async () => {
+  stub();
+  expect(await checkStore({ ...options, transport, mode: "full" })).toMatchObject({ ok: true });
+});
+test("query_log failures other than access denial or a missing table still fail", async () => {
+  stub();
+  reject = (query) => (query.includes("system.query_log") ? 241 : undefined);
+  expect(await checkStore({ ...options, transport, mode: "full" })).toMatchObject({ ok: false, code: "CLICKHOUSE_ERROR:241" });
 });
 test("missing CREATE USER maps to a stable right and still attempts bounded cleanup", async () => {
   stub();

@@ -6,9 +6,11 @@ const input = { user: "pulse_fixture", passwordSha256Hex: "a".repeat(64), saltHe
 test("setup contains exactly the allowed grants and READONLY constraints on every limit", () => {
   const sql = buildSetupSql(input);
   for (const [name, limits] of Object.entries(READ_PROFILES)) {
-    const statement = sql.split(";").find((part) => part.includes(`OR REPLACE \`pulse_${name}\``))!;
-    for (const [key, value] of Object.entries({ ...limits, ...READ_LIMITS })) {
-      expect(statement).toContain(`${key} = ${typeof value === "string" ? `'${value}'` : value} READONLY`);
+    for (const verb of ["CREATE SETTINGS PROFILE IF NOT EXISTS", "ALTER SETTINGS PROFILE"]) {
+      const statement = sql.split(";").find((part) => part.includes(`${verb} \`pulse_${name}\``))!;
+      for (const [key, value] of Object.entries({ ...limits, ...READ_LIMITS })) {
+        expect(statement).toContain(`${key} = ${typeof value === "string" ? `'${value}'` : value} READONLY`);
+      }
     }
   }
   const grants = sql.split("\n").filter((line) => line.startsWith("GRANT "));
@@ -25,6 +27,20 @@ test("setup contains exactly the allowed grants and READONLY constraints on ever
   expect(sql).toContain("CREATE USER IF NOT EXISTS");
   expect(sql).toContain(`sha256_hash BY '${input.passwordSha256Hex}' SALT '${input.saltHex}'`);
   expect(sql).not.toMatch(/ACCESS MANAGEMENT|ROLE ADMIN|SOURCES|GRANT ALL/);
+});
+test("setup updates all four profiles in place with the same settings, preserving attached users", () => {
+  const sql = buildSetupSql(input);
+  const statements = sql
+    .replace(/^--.*$/gm, "")
+    .split(";")
+    .map((part) => part.trim());
+  for (const name of [...Object.keys(READ_PROFILES), "maintenance"]) {
+    const create = statements.find((part) => part.startsWith(`CREATE SETTINGS PROFILE IF NOT EXISTS \`pulse_${name}\` SETTINGS`));
+    const alter = statements.find((part) => part.startsWith(`ALTER SETTINGS PROFILE \`pulse_${name}\` SETTINGS`));
+    expect(create).toBeDefined();
+    expect(alter).toBe(create?.replace("CREATE SETTINGS PROFILE IF NOT EXISTS", "ALTER SETTINGS PROFILE"));
+  }
+  expect(sql).not.toContain("OR REPLACE");
 });
 test("hash uses a new 16-byte salt and SHA256(password + salt), without plaintext in SQL", async () => {
   const password = "obviously-fake-fixture-password";
