@@ -139,6 +139,7 @@ describe("Mail workspace conversation open", () => {
   let routeRequests: string[];
   let listRequests: string[];
   let detailRequests: { id: string; folder: string | null }[];
+  let detailSignals: (AbortSignal | undefined)[];
   let actionRequests: { conversationId: string; body: unknown }[];
   /** Conversations still unread on the server. */
   let unread: Set<string>;
@@ -277,6 +278,7 @@ describe("Mail workspace conversation open", () => {
     routeRequests = [];
     listRequests = [];
     detailRequests = [];
+    detailSignals = [];
     actionRequests = [];
     unread = new Set();
     replies = new Map();
@@ -304,6 +306,7 @@ describe("Mail workspace conversation open", () => {
         if (detail) {
           const id = detail[1]!;
           detailRequests.push({ id, folder: url.searchParams.get("folder") });
+          detailSignals.push(input instanceof Request ? input.signal : (init?.signal ?? undefined));
           // The server reads the detail when the request arrives; a held response arrives later with that data.
           const body = detailFor(id);
           await detailGate.get(id);
@@ -615,6 +618,17 @@ describe("Mail workspace conversation open", () => {
     expect(actionRequests[0]!.conversationId).toBe(rowId(5));
     expect(actionRequests[0]!.body).toMatchObject({ kind: "change_state", change: { addFlags: ["seen"] }, sourceFolderId: FOLDER });
     await until(() => inboxLink() === "Inbox1, 1 unread", "the lowered unread count");
+  });
+
+  test("leaving the workspace cancels a conversation that is still loading", async () => {
+    mount();
+    detailGate.set(rowId(10), new Promise<void>(() => {}));
+    open(rowId(10));
+    await until(() => detailSignals.length === 1, "the held detail");
+    expect(detailSignals[0]?.aborted).toBe(false);
+    dispose();
+    dispose = () => {};
+    expect(detailSignals[0]?.aborted).toBe(true);
   });
 
   test("Enter on a row focuses the reader heading", async () => {
