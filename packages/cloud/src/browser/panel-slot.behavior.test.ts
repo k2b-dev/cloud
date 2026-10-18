@@ -657,6 +657,76 @@ else {
     expect(h.frame().src).not.toContain("cloud_panel_context");
   });
 
+  const deferred = () => {
+    let resolve: (response: Response) => void = () => {};
+    const promise = new Promise<Response>((done) => (resolve = done));
+    return { promise, resolve };
+  };
+  const contexts = (post: ReturnType<typeof mock>) =>
+    post.mock.calls.map(([data]) => (data as { context: PanelPageContext | null }).context);
+
+  test("live context also moves into the provider's address, so a reload renders the same place", async () => {
+    const { publishPageContext } = await import("./panel");
+    const h = setupContext(pageContext, false);
+    h.open();
+    const { shown } = loadedDocument(h, h.frame().src);
+    ready(h);
+    const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    expect(JSON.parse(shown.searchParams.get("cloud_panel_context")!).scope).toEqual({ type: "spaces.space", id: "Space1" });
+    dispose();
+  });
+
+  test("a restore while a withdrawal is saving never shares again, and the saved denial clears once more", async () => {
+    const put = deferred();
+    fetchSpy = spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(put.promise)
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: true } })));
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { shown, post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    consent("fixture", false);
+    restore();
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    await tick();
+    expect(
+      contexts(post)
+        .slice(1)
+        .every((context) => context === null),
+    ).toBe(true);
+    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
+    await tick();
+    await tick();
+    expect(contexts(post).at(-1)).toBeNull();
+    expect(
+      contexts(post)
+        .slice(1)
+        .every((context) => context === null),
+    ).toBe(true);
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+  });
+
+  test("an Allow response that arrives after a restore is checked against the server again", async () => {
+    const put = deferred();
+    const fetch = spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(put.promise)
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: false } })));
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, null);
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    restore();
+    await tick();
+    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: true })));
+    await tick();
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(contexts(post).every((context) => context === null)).toBe(true);
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+  });
+
   test("context that arrived live does not make the same provider reload on the next open", async () => {
     const { publishPageContext } = await import("./panel");
     const h = setupContext(pageContext, false);

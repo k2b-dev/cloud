@@ -3,6 +3,7 @@ import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, readPanelCookie, serializePanelCookie } from "../_internal/panel-cookie";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
+import type { PanelPageContext } from "../contracts/panel-context";
 import { PANEL_CONTEXT_PARAM, withPanelContext } from "../contracts/panel-context-url";
 import { platformMessages } from "../ssr/platform-messages";
 import { readShellData } from "../ssr/shell-data";
@@ -57,7 +58,9 @@ export function installPanelSlot(): () => void {
   const errors = new Set<string>();
   const requests = new AbortController();
   let answersRequest: Promise<void> | undefined;
-  const allowed = () => !provider.consent || answers.get(provider.id) === true;
+  // A withdrawal blocks sharing from the click until its save settles, whatever a read meanwhile returns.
+  const withdrawing = new Set<string>();
+  const allowed = () => !provider.consent || (!withdrawing.has(provider.id) && answers.get(provider.id) === true);
   // Whether the current frame has seen a context, in its URL or by message; only such a frame needs a clearing null.
   let disclosed = !!frame && new URL(frame.src, location.origin).searchParams.has(PANEL_CONTEXT_PARAM);
   // The frame may have navigated on its own; only the selected provider's page below its panel path may receive context.
@@ -78,22 +81,31 @@ export function installPanelSlot(): () => void {
     if (!isOpen() || !allowed() || !context || slot.dataset.state !== "ready" || !frame?.contentWindow || !showsProvider()) return;
     frame.contentWindow.postMessage({ type: "cloud.panel.context", v: 1, context }, location.origin);
     disclosed = true;
+    // A reload of the provider page renders from its address, so the address follows the live context.
+    syncUrlContext(context);
   };
   const postNull = () => frame?.contentWindow?.postMessage({ type: "cloud.panel.context", v: 1, context: null }, location.origin);
   const clearContext = () => {
     if (allowed() && panel.context) postNull();
   };
-  // A withdrawn answer must not come back when the provider reloads its own document: the URL snapshot goes too.
-  const forgetUrlContext = () => {
+  // The provider's address carries the snapshot its server renders on reload: it follows sharing in both directions.
+  function syncUrlContext(next: PanelPageContext | null) {
     try {
       const shown = frame?.contentWindow;
-      if (!shown) return;
-      const path = withPanelContext(`${shown.location.pathname}${shown.location.search}${shown.location.hash}`, null);
-      if (path !== `${shown.location.pathname}${shown.location.search}${shown.location.hash}`)
-        shown.history.replaceState(shown.history.state, "", path);
+      if (!shown || (next && !showsProvider())) return;
+      const current = `${shown.location.pathname}${shown.location.search}${shown.location.hash}`;
+      const path = withPanelContext(current, next);
+      if (path !== current) shown.history.replaceState(shown.history.state, "", path);
     } catch {
       // Not yet a same-origin document; its ready handshake clears it below.
     }
+  }
+  // A withdrawn answer must not come back when the provider reloads its own document: the URL snapshot goes too.
+  const forgetUrlContext = () => syncUrlContext(null);
+  const stopSharing = () => {
+    if (!disclosed) return;
+    postNull();
+    forgetUrlContext();
   };
   const collectContext = () => {
     if (!context) return;
@@ -314,13 +326,11 @@ export function installPanelSlot(): () => void {
     if (!item || typeof request.allowed !== "boolean" || saving.has(item.id)) return;
     saving.add(item.id);
     errors.delete(item.id);
+    const generation = answersGeneration;
     // Withdrawal stops disclosure immediately, including while the idempotent save is in flight.
     if (!request.allowed) {
-      if (provider.id === item.id) {
-        clearContext();
-        forgetUrlContext();
-      }
-      answers.set(item.id, false);
+      if (provider.id === item.id) stopSharing();
+      withdrawing.add(item.id);
     }
     update();
     try {
@@ -342,14 +352,30 @@ export function installPanelSlot(): () => void {
       )
         throw new Error("Invalid panel consent answer");
       if (disposed) return;
+      withdrawing.delete(item.id);
+      if (generation !== answersGeneration) {
+        // A restore happened while saving: its read may predate this write, so ask the server once more.
+        answers.delete(item.id);
+        answersRequest = undefined;
+        void readAnswers().then(() => {
+          if (disposed) return;
+          update();
+          if (allowed()) sendContext();
+          else if (provider.id === item.id) stopSharing();
+        });
+        return;
+      }
       answers.set(item.id, request.allowed);
+      // Anything shared while the withdrawal was in flight is cleared once more.
+      if (!request.allowed && provider.id === item.id) stopSharing();
       const questionHadFocus = slot.querySelector("[data-cloud-panel-consent]")?.contains(document.activeElement);
       update();
       if (provider.id === item.id && isOpen() && questionHadFocus) frame?.focus();
       if (provider.id === item.id && request.allowed) sendContext();
     } catch {
       if (disposed) return;
-      if (provider.id === item.id) clearContext();
+      if (provider.id === item.id) stopSharing();
+      withdrawing.delete(item.id);
       answers.set(item.id, null);
       errors.add(item.id);
     } finally {
@@ -488,7 +514,7 @@ export function installPanelSlot(): () => void {
     closeSheet();
     // A restored page may hold answers changed elsewhere meanwhile: stop sharing and read them again.
     if (!panel.providers.some((item) => item.consent)) return;
-    if (provider.consent && disclosed) postNull();
+    if (provider.consent) stopSharing();
     answersGeneration += 1;
     answersRequest = undefined;
     for (const item of panel.providers) if (item.consent) answers.delete(item.id);
@@ -497,7 +523,6 @@ export function installPanelSlot(): () => void {
       if (disposed || (provider.consent && !answers.has(provider.id))) return;
       update();
       if (allowed()) sendContext();
-      else if (provider.consent && disclosed) forgetUrlContext();
     });
   };
   const entryChange = (event: NavigationCurrentEntryChangeEvent) => {
