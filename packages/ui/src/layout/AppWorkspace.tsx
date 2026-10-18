@@ -967,9 +967,7 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
    * The complete sidebar for a chip row: a second rendering of the same
    * children in a sheet. It shares the application's state through its
    * signals, inherits this sidebar's context and accent, and is disposed with
-   * the sheet. A chosen link closes it first and then is followed through the
-   * same link in the row, so the link's own handlers, such as an enhanced
-   * navigation, run once the sheet is gone.
+   * the sheet. A chosen link runs its own handlers in the sheet and closes it.
    */
   const openAll = (button: HTMLButtonElement) => {
     if (sheetOpen() || !aside) return;
@@ -986,38 +984,20 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
       if (button.getClientRects().length === 0) leave.abort();
     });
     watch.observe(button);
-    let follow: (() => void) | undefined;
-    const choose = (event: MouseEvent, sheet: HTMLElement, close: () => void) => {
-      const link = (event.target as Element | null)?.closest?.("a[href]");
-      if (!(link instanceof HTMLAnchorElement) || !sheet.contains(link)) return;
-      // A tree branch's disclosure inside its link only expands the branch.
-      if ((event.target as Element).closest("[data-k2b-nav-tree-toggle]")) return;
+    /** A chosen link closes the sheet once its own handlers ran, an enhanced navigation's included. */
+    const choose = (event: MouseEvent, close: () => void) => {
+      const target = event.target as Element | null;
+      if (!target?.closest?.("a[href]")) return;
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      if (link.target && link.target !== "_self") return;
-      event.preventDefault();
-      event.stopPropagation();
-      const href = link.getAttribute("href") ?? "";
-      // Both renderings come from the same children, so their links pair up in document order.
-      const index = Array.from(sheet.querySelectorAll("a[href]")).indexOf(link);
-      const twin = aside?.querySelectorAll<HTMLAnchorElement>(".k2b-app-workspace__sidebar-desktop a[href]")[index];
-      follow = () => {
-        if (twin?.isConnected && twin.getAttribute("href") === href) twin.click();
-        else {
-          const plain = document.createElement("a");
-          plain.href = href;
-          plain.hidden = true;
-          document.body.append(plain);
-          plain.click();
-          plain.remove();
-        }
-      };
-      close();
+      // A tree branch's disclosure inside its link only expands the branch.
+      if (target.closest("[data-k2b-nav-tree-toggle]")) return;
+      // A task, not a microtask: the document's delegated handlers run later in this dispatch.
+      setTimeout(close);
     };
     void dialogCore
       .open<void>(
         (close, context) => {
           let dispose: (() => void) | undefined;
-          let sheet: HTMLElement | undefined;
           const view = createRoot((disposeRoot) => {
             dispose = disposeRoot;
             return (
@@ -1029,11 +1009,10 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
                     onClose={() => void context.requestDismiss()}
                     content={() => (
                       <nav
-                        ref={sheet}
                         class="k2b-app-workspace__sidebar-sheet"
                         aria-label={props.label}
                         style={accent}
-                        on:click={{ capture: true, handleEvent: (event: MouseEvent) => sheet && choose(event, sheet, () => close()) }}
+                        on:click={(event) => choose(event, () => close())}
                       >
                         {
                           flatten(props.hidden ? undefined : props.children)
@@ -1057,10 +1036,7 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
       .finally(() => {
         watch.disconnect();
         setSheetOpen(false);
-        const next = follow;
-        follow = undefined;
-        if (next) next();
-        else if (button.isConnected && !aside?.contains(document.activeElement)) button.focus({ preventScroll: true });
+        if (button.isConnected && !aside?.contains(document.activeElement)) button.focus({ preventScroll: true });
       });
   };
   return (

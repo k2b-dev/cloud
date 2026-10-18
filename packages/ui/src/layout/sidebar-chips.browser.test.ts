@@ -96,7 +96,12 @@ function tree(
                                   label: "Branch",
                                   href: "#branch",
                                   get children() {
-                                    return createComponent(AppWorkspace.NavTree.Item, { id: "leaf", label: "Leaf", href: "#leaf" });
+                                    return createComponent(AppWorkspace.NavTree.Item, {
+                                      id: "leaf",
+                                      label: "Leaf",
+                                      href: "#leaf",
+                                      onSelect: () => setClicks((value) => value + 1),
+                                    });
                                   },
                                 });
                               },
@@ -341,7 +346,7 @@ for (const [width, height] of [
       }
     });
 
-    test("a tree branch's disclosure in the sheet expands it instead of following its link", async () => {
+    test("a tree branch's disclosure in the sheet expands it, and its new link runs its own handler", async () => {
       const page = await load(width, height, { tree: true });
       try {
         await all(page).click();
@@ -352,6 +357,10 @@ for (const [width, height] of [
         await dialog.getByText("Leaf", { exact: true }).waitFor();
         expect(await dialog.isVisible()).toBe(true);
         expect(new URL(page.url()).hash).toBe("");
+        // A link that exists only in the sheet runs its own handler, then the sheet closes.
+        await dialog.getByText("Leaf", { exact: true }).click();
+        await dialog.waitFor({ state: "detached" });
+        expect(await page.evaluate(() => window.chipClicks())).toBe(1);
       } finally {
         await page.close();
       }
