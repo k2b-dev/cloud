@@ -26,8 +26,58 @@ await new Promise<void>((resolve) => { setTimeout(() => resolve(), 2_000); });
 await new Promise((resolve) => window.setTimeout(resolve, 1_000));
 await new Promise(resolve => dom.window.setTimeout(() => { log(1, nested(2)); resolve(); }, 3_000));
 await new Promise(resolve => setTimeout(resolve, 1000, extra));
+await new Promise(function (resolve) { setTimeout(function () { resolve(); }, 1_000); });
+await new Promise((r) => setTimeout(r, 1500));
 `),
-  ).toEqual([1, 2, 3, 4, 5]);
+  ).toEqual([1, 2, 3, 4, 5, 6, 7]);
+});
+
+test("ignores an event wait with a rejecting watchdog", () => {
+  expect(
+    check(`await new Promise<void>((resolve, reject) => {
+  const timer = setTimeout(() => {
+    socket.close();
+    reject(new Error("Chat socket did not open"));
+  }, 3_000);
+  socket.onopen = () => {
+    clearTimeout(timer);
+    resolve();
+  };
+  socket.onerror = () => {
+    clearTimeout(timer);
+    socket.close();
+    reject(new Error("Chat socket failed"));
+  };
+});`),
+  ).toEqual([]);
+});
+
+test("ignores timers whose callbacks do not reference the resolve parameter", () => {
+  expect(
+    check(`await new Promise((resolve, reject) => setTimeout(reject, 3_000));
+await new Promise((resolve, reject) => setTimeout(() => reject(new Error("Timeout")), 3_000));
+await new Promise(r => setTimeout(() => other(), 3_000));
+await new Promise(resolve => setTimeout(() => resolveLater(), 3_000));`),
+  ).toEqual([]);
+});
+
+test("ignores a fallback timer when an event also resolves the promise", () => {
+  expect(
+    check(`await new Promise(resolve => {
+  const timer = setTimeout(() => resolve(null), 3_000);
+  socket.onmessage = event => {
+    clearTimeout(timer);
+    resolve(event.data);
+  };
+});`),
+  ).toEqual([]);
+});
+
+test("ignores promises without a named first executor parameter", () => {
+  expect(
+    check(`await new Promise(() => setTimeout(callback, 3_000));
+await new Promise(function () { setTimeout(() => done(), 3_000); });`),
+  ).toEqual([]);
 });
 
 test("ignores comments and string or template contents, including child-process scripts", () => {

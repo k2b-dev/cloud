@@ -31,6 +31,29 @@ const fixedDuration = (arg: string | undefined): boolean =>
   /^\s*(?:0[xX][\da-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.[\d_]*)?(?:[eE][+-]?\d[\d_]*)?)\s*$/.test(arg) &&
   Number(arg.replaceAll("_", "")) >= 1_000;
 
+const isTimerOnlyPromise = (executor: string): boolean => {
+  const parameter = /^\s*(?:function(?:\s+[\w$]+)?\s*\(\s*|\(\s*)?([A-Za-z_$][\w$]*)\s*(?=[,)]|=>)/.exec(executor);
+  if (!parameter) return false;
+  const resolve = parameter[1]!;
+  const referencesResolve = new RegExp(`(?<![\\w$])${resolve.replaceAll("$", "\\$")}(?![\\w$])`);
+  // Skip the parameter binding; only uses outside timer callbacks disqualify a sleep.
+  const body = executor.slice(parameter[0].length);
+  let outsideCallbacks = body;
+  let timerResolves = false;
+  for (const timer of body.matchAll(/\bsetTimeout\s*\(/g)) {
+    const opening = timer.index + timer[0].lastIndexOf("(");
+    const { args } = callArguments(body, opening);
+    if (!fixedDuration(args[1])) continue;
+    const callback = args[0] ?? "";
+    const functionBody = /^\s*(?:function(?:\s+[\w$]+)?\s*\([^)]*\)|(?:\([^)]*\)|[\w$]+)\s*=>)([\s\S]*)$/.exec(callback)?.[1];
+    if (callback.trim() !== resolve && !(functionBody && referencesResolve.test(functionBody))) continue;
+    timerResolves = true;
+    const start = opening + 1;
+    outsideCallbacks = outsideCallbacks.slice(0, start) + " ".repeat(callback.length) + outsideCallbacks.slice(start + callback.length);
+  }
+  return timerResolves && !referencesResolve.test(outsideCallbacks);
+};
+
 /** Blank comments and strings without changing positions or line numbers. */
 export const checkTestWaitsSource = (file: string, source: string): Finding[] => {
   const optOuts = new Set<number>();
@@ -47,10 +70,7 @@ export const checkTestWaitsSource = (file: string, source: string): Finding[] =>
     const call = callArguments(code, opening);
     let fixed = fixedDuration(call.args[0]);
     if (/\bnew\s+Promise\b/.test(match[0])) {
-      const body = code.slice(opening + 1, call.end);
-      fixed = [...body.matchAll(/\bsetTimeout\s*\(/g)].some((timer) =>
-        fixedDuration(callArguments(body, timer.index + timer[0].lastIndexOf("(")).args[1]),
-      );
+      fixed = isTimerOnlyPromise(call.args[0] ?? "");
     }
     const line = code.slice(0, match.index).split("\n").length;
     if (fixed && !optOuts.has(line) && !optOuts.has(line - 1)) findings.push({ file, line, message });
