@@ -1,7 +1,7 @@
 import type { SQL } from "bun";
 import { canonicalLocale } from "../shared/locale";
 
-/** Called in a transaction; the new column and its one-time backfill commit together. */
+/** Called in a transaction; new columns and reason repairs commit together. */
 export const migrateChatTaskReasons = async (sql: SQL): Promise<void> => {
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS reason_code TEXT`.simple();
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS reason_at TIMESTAMPTZ`.simple();
@@ -43,11 +43,19 @@ export const migrateChatTaskReasons = async (sql: SQL): Promise<void> => {
         ALTER TABLE ai.chat_tasks ADD CONSTRAINT ai_chat_tasks_title_check CHECK (char_length(btrim(title)) BETWEEN 1 AND 80);
       END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_chat_tasks_reason_state_check') THEN
+        -- Repair legacy and rollback writes, preserving valid reasons and their timestamps.
         UPDATE ai.chat_tasks SET reason_code = CASE
+          WHEN state NOT IN ('paused', 'needs_attention') THEN NULL
           WHEN state = 'paused' THEN 'paused'
           WHEN last_error IN ('Scheduled task mandate revision changed', 'Scheduled task mandate or sponsor is unavailable') THEN 'rights_changed'
-          ELSE 'failed' END, reason_at = updated_at
-        WHERE reason_code IS NULL AND state IN ('paused', 'needs_attention');
+          ELSE 'failed' END,
+          reason_at = CASE WHEN state IN ('paused', 'needs_attention') THEN updated_at ELSE NULL END
+        WHERE NOT (
+          (state IN ('paused', 'needs_attention')) = (reason_code IS NOT NULL)
+          AND (reason_code IS NULL OR
+            (state = 'paused' AND reason_code IN ('paused', 'chat_archived', 'owner_inactive')) OR
+            (state = 'needs_attention' AND reason_code IN ('failed', 'rights_changed', 'needs_approval')))
+        );
         ALTER TABLE ai.chat_tasks ADD CONSTRAINT ai_chat_tasks_reason_state_check CHECK (
           (state IN ('paused', 'needs_attention')) = (reason_code IS NOT NULL)
           AND (reason_code IS NULL OR

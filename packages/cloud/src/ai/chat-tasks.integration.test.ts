@@ -1689,6 +1689,15 @@ suite("AI chat tasks", () => {
         sql.begin(async (tx) => {
           await tx`ALTER TABLE ai.chat_tasks DROP CONSTRAINT ai_chat_tasks_reason_state_check`.simple();
           await tx`ALTER TABLE ai.chat_tasks DROP COLUMN locale`.simple();
+          // An older Core changes state without clearing or replacing the stored reason.
+          for (const state of ["active", "needs_attention", "paused"])
+            await tx`INSERT INTO ai.chat_tasks
+              (short_id, conversation_id, sponsor_user_id, prompt, schedule_kind, cron, timezone,
+                state, reason_code, reason_at, created_at, updated_at)
+              VALUES (${createAiShortId()}, ${conversation.id}::uuid, ${user!.id}::uuid,
+                'Rollback fixture', 'cron', '0 9 * * *', 'UTC', ${state},
+                ${state === "paused" ? "chat_archived" : "paused"}, '2000-01-03T00:00:00.000Z'::timestamptz,
+                '2001-01-01T00:00:00.000Z'::timestamptz, '2001-01-02T00:00:00.000Z'::timestamptz)`;
           for (const [i, task] of tasks.entries())
             await tx`UPDATE ai.chat_tasks
           SET state = ${i === 0 ? "paused" : "needs_attention"}, reason_code = NULL, reason_at = NULL,
@@ -1704,6 +1713,16 @@ suite("AI chat tasks", () => {
             VALUES (${createAiShortId()}, ${conversation.id}::uuid, 'completed', ${createdAt}::timestamptz,
               ${JSON.stringify({ kind: "chat", locale, ...(background ? { background: {} } : {}) })}::text::jsonb)`;
           await migrateChatTaskReasons(tx);
+          expect(
+            await tx<
+              { state: string; reason_code: string | null; reason_at: Date | null }[]
+            >`SELECT state, reason_code, reason_at FROM ai.chat_tasks
+              WHERE conversation_id = ${conversation.id}::uuid AND prompt = 'Rollback fixture' ORDER BY state`,
+          ).toEqual([
+            { state: "active", reason_code: null, reason_at: null },
+            { state: "needs_attention", reason_code: "failed", reason_at: new Date("2001-01-02T00:00:00.000Z") },
+            { state: "paused", reason_code: "chat_archived", reason_at: new Date("2000-01-03T00:00:00.000Z") },
+          ]);
           for (const [i, task] of tasks.entries()) {
             const [row] = await tx<
               { reason_code: string; reason_at: Date; locale: string | null }[]
