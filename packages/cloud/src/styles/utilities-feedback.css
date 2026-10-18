@@ -88,11 +88,11 @@
 }
 
 @utility menu-label {
-  @apply px-4 pt-3 pb-1 text-xs font-medium uppercase tracking-wider text-zinc-500;
+  @apply px-4 pt-3 pb-1 text-xs font-medium uppercase tracking-wider text-dimmed;
 }
 
 @utility state-placeholder-icon {
-  @apply flex shrink-0 items-center justify-center text-zinc-400 dark:text-zinc-500;
+  @apply flex shrink-0 items-center justify-center text-dimmed;
 }
 
 @utility state-placeholder-icon-panel {

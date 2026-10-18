@@ -160,6 +160,49 @@ const waitForRows = (page: Page, count: number) =>
 const waitForText = (page: Page, text: string) => page.locator("dialog").getByText(text, { exact: false }).first().waitFor();
 
 describe("streamed search in a browser", () => {
+  test("a picked resource uses the opener app's fill without moving, while keyboard activity keeps the platform fill", async () => {
+    answer = async (_url, write) => {
+      write({ type: "start", query: "plan", apps, providers: ["files"] });
+      write(line("files", [result("files", "Plan 2027.pdf", "Planning"), result("files", "Project plan.docx", "Drafts")]));
+    };
+    const { page, close } = await open(views[0]!, "/?picker&accent=%230f766e");
+    try {
+      await page.keyboard.type("plan");
+      await waitForRows(page, 2);
+      const firstRow = page.locator(".cloud-resource-search__result").first();
+      const before = await firstRow.boundingBox();
+      expect(before).not.toBeNull();
+      await page.keyboard.press("Enter");
+      const picked = page.locator(".cloud-resource-search__result.is-selected");
+      await picked.waitFor();
+      expect(await picked.boundingBox()).toEqual(before);
+      await page.keyboard.press("ArrowDown");
+      const active = page.locator(".cloud-resource-search__result.is-active:not(.is-selected)");
+      await active.waitFor();
+      const colors = await picked.evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.cssText = "position:absolute;visibility:hidden;background:var(--ui-app-selected)";
+        document.body.append(probe);
+        const appFill = getComputedStyle(probe).backgroundColor;
+        // Outside the body scope, the probe reads the `:root` default.
+        document.documentElement.append(probe);
+        const defaultFill = getComputedStyle(probe).backgroundColor;
+        document.body.append(probe);
+        probe.style.background = "var(--k2b-selected)";
+        const platformFill = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { pickedFill: getComputedStyle(element).backgroundColor, appFill, defaultFill, platformFill };
+      });
+      expect(colors.pickedFill).toBe(colors.appFill);
+      expect(colors.pickedFill).not.toBe(colors.defaultFill);
+      expect(colors.pickedFill).not.toBe(colors.platformFill);
+      expect(await active.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(colors.platformFill);
+      expect(await picked.boundingBox()).toEqual(before);
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
   test("a phone shows the picker as a full-screen sheet and keeps global search floating", async () => {
     for (const [path, sheet] of [
       ["/?picker", true],

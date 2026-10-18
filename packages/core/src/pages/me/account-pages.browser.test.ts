@@ -9,6 +9,7 @@ import * as server from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { railPreferences } from "@k2b/cloud/services/rail-preferences";
 import * as cloudSsr from "@k2b/cloud/ssr";
+import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
 import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
@@ -27,8 +28,10 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 // Core's canvas paint. The tests render the pages in a stand-in for the page shell without
 // the rail and header, which have tests of their own, and measure what the pages put into it.
-const CORE_CANVAS =
-  "--app-accent:#0284c7;--app-canvas-from:#38bdf8;--app-canvas-via:#ffffff;--app-canvas-to:#60a5fa;--app-canvas-angle:135deg;--app-canvas-strength:20%;--app-canvas-dark-strength:10%";
+const CORE_CANVAS = appAppearanceStyle({
+  accent: "#0284c7",
+  background: { from: "#38bdf8", via: "#ffffff", to: "#60a5fa", angle: 135, strength: 20 },
+});
 
 const pages = {
   "/me": (await import("./page")).default,
@@ -351,6 +354,47 @@ const measure = async (view: View, path: Path, locale: "en" | "de", dark = false
 };
 
 describe("account pages in a browser", () => {
+  test("mark the current account section with Core's navigation fill and ink, in light and dark", async () => {
+    for (const dark of [false, true])
+      for (const path of tabs) {
+        const tab = await open(desktop, path, "en", dark);
+        try {
+          const colors = await tab.evaluate(() => {
+            const canvas = document.querySelector(".cloud-app-canvas")!;
+            const probe = document.createElement("span");
+            probe.style.cssText =
+              "position:absolute;visibility:hidden;background:var(--ui-app-selected-nav);color:var(--ui-app-accent-text)";
+            canvas.append(probe);
+            const appFill = getComputedStyle(probe).backgroundColor;
+            const appInk = getComputedStyle(probe).color;
+            probe.style.background = "var(--ui-selected)";
+            const platformFill = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            const current = canvas.querySelector('.account-tabs [aria-current="page"]')!;
+            return {
+              href: current.getAttribute("href"),
+              fill: getComputedStyle(current).backgroundColor,
+              ink: getComputedStyle(current).color,
+              appFill,
+              appInk,
+              platformFill,
+              otherFills: Array.from(canvas.querySelectorAll('.account-tabs a:not([aria-current="page"])')).map(
+                (link) => getComputedStyle(link).backgroundColor,
+              ),
+            };
+          });
+          expect(colors.href).toBe(path);
+          expect(colors.fill).toBe(colors.appFill);
+          expect(colors.ink).toBe(colors.appInk);
+          expect(colors.fill).not.toBe(colors.platformFill);
+          expect(colors.otherFills.length).toBeGreaterThan(0);
+          expect(colors.otherFills.every((fill) => fill === "rgba(0, 0, 0, 0)")).toBe(true);
+        } finally {
+          await tab.close();
+        }
+      }
+  }, 60_000);
+
   test("draw one frame: the identity and tabs sit on the canvas, the sections inside it are flat", async () => {
     for (const view of [desktop, phone])
       for (const dark of [false, true])

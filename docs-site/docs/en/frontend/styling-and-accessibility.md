@@ -116,6 +116,15 @@ Do not use one color for unrelated meanings.
 An app accent must not recolor every primary button. A red app must not make
 normal navigation look destructive. Status color must not identify an app.
 
+A selected navigation row or a row for an opened or picked object or place
+uses the app's selection fill and ink. Tabs, view tabs, segmented controls, and
+active filter chips share the navigation fill. Other controls and options keep
+the platform selection color: select options, keyboard-active options, pressed
+toolbar buttons, and checked cards. Status keeps its status colors. In the
+Cloud repository, the `selection-tokens` check rejects new platform fills and
+raw `--app-accent` color mixes. Control and status uses belong in its
+allowlist with a reason.
+
 ## Use shared components first
 
 Import `@k2b/ui/global.css` once through the application build and render shared
