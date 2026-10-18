@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Rate-limit scope and budget mismatch | Multi-request uploads exhaust the public page budget; per-link keys let clients bypass the upload cap by spraying tokens. | Tests: Files `public-rate-limit.integration.test.ts` checks the per-client (IPv6 /64) upload budget, token spraying and page isolation; `public-inbox.behavior.test.tsx` checks automatic waits and the terminal rate-limit message ([#1168](https://github.com/k2b-dev/cloud/issues/1168)). |
 | Remote content in mail | A sent message or its preview loads an image from a remote address, so opening it tells the sender's server who read it and when. Mail images come only from stored bytes, sent as an inline `cid:` part and previewed as a `data:` URL. | Test: Mail `outbound-mime.test.ts` (the logo is a `multipart/related` inline part whose `Content-ID` matches the HTML, no `http(s)` image source) and `compose-renderer.test.ts` (Markdown images, `<img>`, and CSS `url()` or `image-set()` stay rejected). |
 | Derived theme text color without a contrast guarantee | A fixed CSS mix derives text from an app accent, so a light accent such as yellow falls below 4.5:1 on the surfaces it sits on. | Test: `packages/cloud/src/ssr/app-color.test.ts` checks the computed ink of every declared app accent and edge accents against each listed background in both themes, and pins the background constant and the `:root` defaults to `tokens.css` and `@k2b/ui` ([#1205](https://github.com/k2b-dev/cloud/issues/1205)). No check covers other text colors derived in CSS yet. |
 | A mutation’s refresh re-creates a rendered entity’s element | Refetched objects replace retained elements, losing focus and hover and leaving box reads detached. | Tests: Spaces kanban and detail claim tests use `keptThrough()` from `packages/ui/test/browser.ts` to check element identity and height; the held-card test distinguishes a retained card from one leaving its column ([#1391](https://github.com/k2b-dev/cloud/issues/1391)). |
@@ -440,6 +441,13 @@ convention still needs a check or a test.
 - **Root cause:** Emission had no byte limit, and finished events had no payload retention.
 - **Error class:** Unbounded storage growth.
 - **Guard:** Event integration cases cover UTF-8 size limits before SQL, retained dedupe rows, dispatch age, resumable runs, repeated retention batches, and concurrently built retention indexes. Observability integration cases distinguish expired payloads from missing events. Mail integration cases emit an oversized message without its body through sync and backfill, and retry failed runs after event expiry while excluding succeeded runs. Convention: emitters keep large content out of events and let runs read it by reference; history queries use retained run context when event context and deliveries expire.
+
+### Public inbox uploads exhaust the page request budget
+
+- **What happened:** A 15-file inbox upload hit rate limits after only a few files ([#1168](https://github.com/k2b-dev/cloud/issues/1168)).
+- **Root cause:** Upload control requests shared the public page limit of 10 requests per minute per IP. The initial per-link upload key let one client bypass the cap by spraying tokens.
+- **Error class:** Rate-limit scope and budget mismatch.
+- **Guard:** `public-rate-limit.integration.test.ts` checks the separate 120-request per-client (IPv6 /64) upload budget, token spraying, mounted routes, similar paths, page isolation and secret-free Valkey keys. `public-upload-rate-limit.test.ts` checks address bucketing without Valkey. `public-inbox.behavior.test.tsx` checks automatic waits during a 15-file batch and the terminal rate-limit message.
 
 ### Activity keys leaked into note labels
 
