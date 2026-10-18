@@ -420,6 +420,49 @@ describe("Mail workspace conversation open", () => {
     expect(routeRequests).toEqual([]);
   });
 
+  test("loading another page keeps a detail that is newer than page 1", async () => {
+    mount(`${folderPath}&conversation=${A}`);
+    // A live refresh stores a page 1 that carries A as it was then.
+    const socket = FakeWebSocket.instances.at(-1)!;
+    socket.open();
+    socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+    socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: A } });
+    await until(() => routeRequests.length === 1, "the live refresh");
+    await settle();
+    expect(shows(A)).toBe(true);
+    replies.set(A, "A newer reply");
+    open(rowId(10));
+    await until(() => shows(rowId(10)), "the other conversation");
+    open(A);
+    await until(() => dom.document.body.textContent?.includes("A newer reply") === true, "the newer detail");
+    await loadSecondPage();
+    expect(shows(A)).toBe(true);
+    expect(dom.document.body.textContent).toContain("A newer reply");
+    expect(routeRequests).toHaveLength(1);
+  });
+
+  test("an opening conversation shows the pending state, and a later navigation to the shown view wins", async () => {
+    mount();
+    let release = () => {};
+    detailGate.set(
+      rowId(10),
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const busy = () => dom.root.querySelector("[aria-busy]")?.getAttribute("aria-busy");
+    expect(busy()).toBe("false");
+    open(rowId(10));
+    await until(() => busy() === "true", "the pending state");
+    dom.root.querySelector<HTMLAnchorElement>(`a[href="${folderPath}"]`)!.click();
+    await until(() => routeRequests.length === 1, "the view reload");
+    release();
+    await until(() => busy() === "false", "the end of the pending state");
+    await settle();
+    expect(heading()).toBeNull();
+    expect(selected()).toBeNull();
+  });
+
   test("a live refresh after a detail open reloads page 1 with the open conversation", async () => {
     mount();
     const socket = FakeWebSocket.instances.at(-1)!;

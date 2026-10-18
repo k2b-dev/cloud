@@ -382,10 +382,18 @@ function MailWorkspaceView(props: {
   /** Counts selection changes, so a reload for an earlier selection in the same list reports itself as stale. */
   let routeGeneration = 0;
   let conversationDetailRequest: AbortController | null = null;
+  /** A conversation opening in the shown list shows the same pending state as a view that loads. */
+  const [conversationOpening, setConversationOpening] = createSignal(false);
   const cancelConversationDetail = () => {
     conversationDetailRequest?.abort();
-    conversationDetailRequest = null;
+    finishConversationDetail();
   };
+  const finishConversationDetail = () => {
+    conversationDetailRequest = null;
+    setConversationOpening(false);
+  };
+  /** The page 1 whose selection a detail open replaced; reapplying it with later pages must keep the newer detail. */
+  let supersededSelectionPage: WorkspaceRouteResult | undefined;
 
   type ConversationActivityResult = { conversationId: string; items: MailActivityEvent[] };
   const activityQuery = query.create<string | null, ConversationActivityResult>({
@@ -437,7 +445,7 @@ function MailWorkspaceView(props: {
     },
     getNextCursor: (page) => pageNextCursor(pageList(page)),
   });
-  routeLoading = () => workspaceQuery.loading() || workspaceQuery.refreshing() || workspaceQuery.loadingMore();
+  routeLoading = () => workspaceQuery.loading() || workspaceQuery.refreshing() || workspaceQuery.loadingMore() || conversationOpening();
 
   const preserveCurrentDetail = (next: MailboxPageData): MailboxPageData =>
     next.selectedConversationId && next.selectedConversationId === data.selectedConversationId
@@ -496,7 +504,7 @@ function MailWorkspaceView(props: {
       const target = decodeRouteSource(source);
       // Page 1 was loaded for another conversation of this list: its list, folders and counts are current, its
       // selection is not. Keep the open one, unless the shown list itself is still on its way.
-      const otherSelection = first.source !== source;
+      const otherSelection = first.source !== source || first === supersededSelectionPage;
       if (otherSelection && routeListKey(committedRouteSource) !== key) return;
       const scopeChanged = mailListScope(requestPath()) !== mailListScope(target.href);
       let next = applyPendingListState(
@@ -569,6 +577,8 @@ function MailWorkspaceView(props: {
   });
 
   const navigateWorkspace = async (nav: LinkNavigateEvent) => {
+    // A later navigation wins over a conversation still opening, also when it reloads the shown view.
+    cancelConversationDetail();
     captureSearchStart(nav.href);
     const result = await replaceWorkspaceRoute(nav.href);
     if (result === "applied") {
@@ -589,6 +599,7 @@ function MailWorkspaceView(props: {
   };
 
   const transitionWorkspaceHref = async (href: string, replace = false): Promise<MailWorkspaceRefreshResult> => {
+    cancelConversationDetail();
     captureSearchStart(href);
     const result = await replaceWorkspaceRoute(href);
     if (result === "applied") {
@@ -1044,6 +1055,7 @@ function MailWorkspaceView(props: {
     const path = `${target.pathname}${target.search}`;
     const source = encodeRouteSource(path, data.listMode);
     routeGeneration++;
+    supersededSelectionPage = untrack(workspaceQuery.pages)[0];
     batch(() => {
       setData(selection);
       committedRouteSource = source;
@@ -1066,6 +1078,7 @@ function MailWorkspaceView(props: {
     cancelConversationDetail();
     const request = new AbortController();
     conversationDetailRequest = request;
+    setConversationOpening(true);
     let detail: MailConversationDetailData;
     try {
       const response = await apiClient.mailboxes[":mailboxId"]["workspace-detail"][":conversationId"].$get(
@@ -1074,17 +1087,17 @@ function MailWorkspaceView(props: {
       );
       if (conversationDetailRequest !== request || disposed) return "stale";
       if (!response.ok) {
-        conversationDetailRequest = null;
+        finishConversationDetail();
         return response.status === 404 ? "missing" : "failed";
       }
       detail = await response.json();
     } catch {
       if (conversationDetailRequest !== request || disposed) return "stale";
-      conversationDetailRequest = null;
+      finishConversationDetail();
       return "failed";
     }
     if (conversationDetailRequest !== request || disposed) return "stale";
-    conversationDetailRequest = null;
+    finishConversationDetail();
     if (!inCurrentList(href)) return "stale";
     const { conversationId: _, localTags, selectedSubject, ...incoming } = detail;
     const selection = data.selectedConversationId === conversationId ? preserveUnavailableMailDetail(data, incoming) : incoming;
