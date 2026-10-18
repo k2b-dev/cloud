@@ -18,17 +18,25 @@ export type FileTypeIconProps = {
   class?: string;
 };
 
-const SHEET = new Set(["xls", "xlsx", "ods", "csv"]);
-const SLIDES = new Set(["ppt", "pptx", "odp"]);
+// Known extensions decide first: a generic media type such as `text/plain` or `text/csv` must not hide a sheet,
+// a slide deck, a document, or an archive behind the neutral family.
+const BY_EXTENSION = new Map<string, FileType>(
+  (
+    [
+      ["sheet", ["xls", "xlsx", "ods", "csv"]],
+      ["slides", ["ppt", "pptx", "odp"]],
+      ["document", ["doc", "docx", "odt", "rtf"]],
+      ["archive", ["zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar"]],
+    ] as const
+  ).flatMap(([type, extensions]) => extensions.map((extension) => [extension, type] as const)),
+);
 
 /** Resolve the colour family for a file or folder from its name and media type. */
 export const fileTypeOf = (file: { name: string; mediaType?: string; folder?: boolean }): FileType => {
   if (file.folder) return "folder";
+  const known = BY_EXTENSION.get(file.name.split(".").pop()?.toLowerCase() ?? "");
+  if (known) return known;
   const category = fileIcons.getFileCategory({ name: file.name, type: "file", mimeType: file.mediaType });
-  if (category === "document") {
-    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-    return SHEET.has(extension) ? "sheet" : SLIDES.has(extension) ? "slides" : "document";
-  }
   return category === "pdf" || category === "image" || category === "video" || category === "audio" || category === "archive"
     ? category
     : "other";

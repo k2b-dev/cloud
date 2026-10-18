@@ -134,9 +134,22 @@ describe("shared icon tile contract", () => {
       "ti-folder-open",
     );
     expect(fileTypeOf({ name: "download", mediaType: "application/pdf" })).toBe("pdf");
-    const tree = render(() => createComponent(FileTree, { entries: [{ path: "/report.pdf" }, { path: "/Projects", kind: "folder" }] }));
+    // A generic text media type, as FileTree passes for entries without one, must not hide a known extension.
+    for (const [name, mediaType, type] of [
+      ["budget.xlsx", "text/plain", "sheet"],
+      ["deck.pptx", "text/plain", "slides"],
+      ["letter.docx", "text/plain", "document"],
+      ["backup.zip", "text/plain", "archive"],
+      ["export.csv", "text/csv", "sheet"],
+      ["notes.constructor", undefined, "other"],
+    ] as const)
+      expect(fileTypeOf({ name, mediaType }), name).toBe(type);
+    const tree = render(() =>
+      createComponent(FileTree, { entries: [{ path: "/report.pdf" }, { path: "/budget.xlsx" }, { path: "/Projects", kind: "folder" }] }),
+    );
     tile(tree, "k2b-content-file-tree__icon");
     expect(tree).toMatch(/<span[^>]*class="[^"]*k2b-content-file-tree__icon[^>]*data-file-type="pdf"[^>]*data-size="sm"/);
+    expect(tree).toMatch(/<span[^>]*class="[^"]*k2b-content-file-tree__icon[^>]*data-file-type="sheet"[^>]*data-size="sm"/);
   });
 
   test("status icons and avatars never acquire the icon tile class", () => {
