@@ -207,6 +207,11 @@ need no consent. Every other provider asks once per provider app. Cloud stores
 the answer server-side per person and provider app ID. Unanswered, denied, or
 unreadable answers send no context, in either the URL or a message.
 
+Consent controls what the platform delivers to cooperating providers. It is not
+an isolation boundary: all applications share one origin and one session, so an
+installed application could read another page directly. The operator's decision
+to install an application is what protects against a hostile one.
+
 The person chooses **Allow** or **Don't share** in the slot. They can later
 change **Share context** in the **⋯** menu, below **Panel from <App>**. A new
 answer applies from the moment Cloud has saved it; it does not recall context
@@ -218,7 +223,9 @@ already seen.
 - **Saves are ordered.** Each answer carries a revision, and a save based on an
   older revision is refused. After such a conflict, Cloud reads the current
   answer and saves the person's choice once more. A save that the browser gives
-  up on after 10 seconds is rolled back on the server, so it cannot land later.
+  up on after 10 seconds is rolled back if the server notices the cancellation
+  before it commits. A save that still lands later cannot override a newer
+  answer, but it applies from the next page load.
 - **A failed save** keeps the question open with **Not saved. Try again.**, and
   nothing is shared until the person answers again.
 - **Other pages and tabs** that are already open follow the new answer on their
