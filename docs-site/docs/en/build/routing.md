@@ -79,8 +79,8 @@ These responses stay unchanged:
 - answers to cross-site and same-site browser requests (`Sec-Fetch-Site`
   other than `same-origin` or `none`).
 
-An eligible response gets `Vary: Accept-Encoding, Sec-Fetch-Site`, also when it stays
-uncompressed. A compressed response loses `Content-Length` and
+An eligible response gets `Vary: Accept-Encoding, Sec-Fetch-Site`, also when
+it stays uncompressed. A compressed response loses `Content-Length` and
 `Accept-Ranges`, and a strong `ETag` becomes weak. Compare `If-None-Match`
 weakly: `W/"x"` matches `"x"`, a list matches when one tag matches, and `*`
 matches any current representation.
