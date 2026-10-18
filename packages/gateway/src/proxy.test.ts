@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { brotliCompressSync, brotliDecompressSync, constants, gunzipSync } from "node:zlib";
+import { middleware } from "@k2b/cloud/server";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "@k2b/cloud/server/request-timeout.ts";
 import * as services from "@k2b/cloud/services";
 import { Hono } from "hono";
@@ -805,6 +806,30 @@ const withCompressionGateway = async (handler: (req: Request) => Response | Prom
 };
 
 describe("dynamic response compression on the wire", () => {
+  test("app noTransform preserves same-origin HTML and JSON on the wire", async () => {
+    const html = `<html><body>${"external subject and private content ".repeat(80)}</body></html>`;
+    const data = { external: "sender text ".repeat(150), private: "private content" };
+    const json = JSON.stringify(data);
+    const app = new Hono()
+      .use("*", middleware.noTransform())
+      .get("/html", (c) => c.html(html))
+      .get("/json", (c) => c.json(data));
+    await withCompressionGateway(app.fetch, async (url) => {
+      for (const [path, body] of [
+        ["/html", html],
+        ["/json", json],
+      ] as const) {
+        const response = await fetch(new URL(path, url), {
+          headers: { "Accept-Encoding": "br, gzip", "Sec-Fetch-Site": "same-origin" },
+          decompress: false,
+        });
+        expect(response.headers.has("Content-Encoding")).toBe(false);
+        expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from(body));
+        expect(response.headers.get("Cache-Control")).toContain("no-transform");
+      }
+    });
+  });
+
   test.each(compressionFixtures)(
     "$name decodes identically within its transfer budget",
     async ({ body, type, accept, encoding, budget }) => {

@@ -1,4 +1,4 @@
-import { type AuthContext, auth } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { ssr } from "../config";
 import contactUpsertPage from "./[bookId]/e/[contactId]/page";
@@ -8,6 +8,7 @@ import adminPage from "./admin";
 import page from "./page";
 
 export default new Hono<AuthContext>()
+  .use("/", middleware.noTransform())
   .get("/", auth.requireRole("user", ssr.access), ...page)
   .get("/:bookId/e/:contactId", auth.requireRole("user", ssr.access), ...contactUpsertPage)
   .get("/:bookId/e", auth.requireRole("user", ssr.access), ...contactCreatePage)

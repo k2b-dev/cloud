@@ -20,6 +20,7 @@ import {
   widgetKey,
 } from "../contracts/widgets";
 import { type AuthContext, auth, preferredLocale, rejectReservedWorkloadCredential } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import { WIDGET_SETTINGS_PARAM, WIDGET_SETTINGS_PARAM_MAX_LENGTH, WIDGET_SIZE_PARAM } from "../server/widget-request";
 import { CLOUD_INVOCATION_TOKEN_TTL_SECONDS } from "../services/identity/constants";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
@@ -299,6 +300,8 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
 
   return (
     new Hono<AuthContext>()
+      .use("/widgets/v1", noTransform())
+      .use("/widgets/v1/*", noTransform())
       .use(dependencies.authenticate ?? auth.requireRole("authenticated"))
       .use(rejectReservedWorkloadCredential)
       .use(auth.requireOAuthScope("read", "admin"))

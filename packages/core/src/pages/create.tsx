@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { cliPluginListRoutes } from "@k2b/cloud/api";
-import { type AuthContext, auth } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { authFlows, coreSettings, legalConsent } from "@k2b/cloud/services";
 import { resolveHomePath } from "@k2b/cloud/shared";
 import { getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
@@ -41,6 +41,9 @@ import { createResourceOpenRoutes } from "./open";
 export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hono<AuthContext> => {
   const brandingPublicDir = options?.brandingPublicDir ?? "public";
   const pages = new Hono<AuthContext>()
+    .use("/me/notifications/history/*", middleware.noTransform())
+    .use("/admin/outgoing-mail", middleware.noTransform())
+    .use("/me/approvals", middleware.noTransform())
     // Prevent browser from caching SSR pages (user state changes on login/logout)
     // Skip for branding assets — they set their own cache headers
     .use("*", async (c, next) => {

@@ -14,7 +14,7 @@ import {
   toAiChatTaskView,
 } from "@k2b/cloud/ai";
 import { CapabilityIdempotencyKeySchema, capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, err, fail, getLocale, ok, rateLimit, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, err, fail, getLocale, middleware, ok, rateLimit, respond, v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { aiChatTaskRuntime, nextChatTaskRuns, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
@@ -60,6 +60,7 @@ const reconcileSoon = (): void => {
 };
 
 export const aiChatTaskRoutes = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .use(rateLimit())
   .use("*", auth.requireRole("authenticated"))
   .use("*", auth.requireUser())

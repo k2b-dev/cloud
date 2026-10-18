@@ -108,6 +108,9 @@ never overwritten.
 
 ## Read the measurements
 
+Mail, Chat, and Assistant responses stay uncompressed by design. They mix
+repeatedly writable outside text with private message content; see [Response compression](/en/docs/build/routing#response-compression).
+
 Static metrics use the served HTML and the production build files:
 
 - HTML sizes are raw UTF-8 bytes, gzip at level 9, and Brotli at maximum quality.
@@ -414,5 +417,6 @@ no lock.
 - The browser part opens a short conversation, not the 180-message thread,
   so the client cost of a large thread is not measured.
 - The gateway compresses dynamic HTML and JSON according to `Accept-Encoding`.
-  Document and API transfer times reflect Brotli when the browser accepts it.
+  Eligible document and API transfer times reflect Brotli when the browser accepts it;
+  the opt-outs above remain uncompressed.
   The run's Caddy does not compress responses.

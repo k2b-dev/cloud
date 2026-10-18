@@ -42,6 +42,7 @@ import {
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestAuthority, rateLimit, rejectReservedWorkloadCredential, resolveLocale } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import { createHelpReader, type HelpArticle, type HelpMetadata, type HelpReader, type HelpReaderFactory } from "../services/help";
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { logger } from "../services/logging";
@@ -750,6 +751,8 @@ export const createMcpProtectedResourceRoutes = (dependencies: Pick<McpRouteDepe
 /** One authenticated, stateless MCP endpoint projected from live capabilities. */
 export const createMcpRoutes = (dependencies: McpRouteDependencies = {}) =>
   new Hono<AuthContext>()
+    .use("/mcp/v1", noTransform())
+    .use("/mcp/v1/*", noTransform())
     .use("/mcp/v1", validateMcpOrigin(dependencies.getAppUrl ?? defaultAppUrl))
     .use("/mcp/v1", dependencies.authenticate ?? mcpAuthentication(dependencies.getAppUrl ?? defaultAppUrl))
     .use("/mcp/v1", rejectReservedWorkloadCredential)

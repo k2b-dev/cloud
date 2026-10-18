@@ -86,15 +86,39 @@ it stays uncompressed. A compressed response loses `Content-Length` and
 weakly: `W/"x"` matches `"x"`, a list matches when one tag matches, and `*`
 matches any current representation.
 
-Compression can reveal a secret through the response length (BREACH) when one
-response holds the secret together with text that another party can
-influence. That text can come from the URL or from stored content, such as an
-incoming mail, a chat message, a comment, or imported data. The gateway sends
-answers to cross-site and same-site browser requests uncompressed. This covers
-only requests that an attacker starts from another site. It does not cover
-requests that your own pages send, such as a refresh after a live event. If a
-response holds a credential or private content next to text from another
-party, set `Cache-Control: no-transform` on that response.
+Compression can reveal private content through response length (BREACH). Opt
+out with `middleware.noTransform()` only when **both** conditions hold:
+
+- Another party can repeatedly put text of their choice into the response,
+  with each write serving as a guess: mail senders, public submitters, webhook
+  senders, fetched outside content, or other users' messages, notes or records.
+- The same response contains something that party cannot read and that is
+  worth guessing: message, note, comment or record text; other submitters'
+  personal data; or credentials and tokens, including secret request headers.
+
+This includes same-origin refetches triggered by live events. One shared
+container stays compressed when every writer can read the entire response.
+Names, titles, labels, IDs, flags, favorites, preferences, counts, numeric
+metrics and profile fields such as display names or group names are not
+secrets worth guessing; mixing those alone does not create an oracle.
+
+Mount the marker first on the dedicated router that owns the affected group:
+
+```ts
+import { middleware } from "@k2b/cloud/server";
+
+const router = new Hono().use("*", middleware.noTransform());
+```
+
+It adds `no-transform` to `Cache-Control`, preserves existing directives and
+works for every application. Use per-route middleware when siblings must stay
+compressed. Guard every marked path, including failures, and a representative
+compressed sibling with router tests. For a whole application, guard each
+declared prefix and a descendant.
+
+Mail, Chat and Assistant stay uncompressed. Shared fan-out protocols and views
+that combine outside text with private records or tokens also opt out; ordinary
+metadata and shared-container responses stay eligible for compression.
 
 ## Internal service address
 

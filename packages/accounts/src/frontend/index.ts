@@ -1,4 +1,4 @@
-import { type AuthContext, auth } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { ssr } from "../config";
 import auditPage from "./audit/page";
@@ -17,6 +17,8 @@ import usersNewPage from "./users/new/page";
 import usersPage from "./users/page";
 
 export default new Hono<AuthContext>()
+  .use("/requests", middleware.noTransform())
+  .use("/notifications/*", middleware.noTransform())
   .get("/", auth.requireRole("user", ssr.access), ...landingPage)
   .get("/duplicate-emails", auth.requireRole("admin", ssr.access), ...duplicateEmailsPage)
   .get("/users", auth.requireRole("admin", ssr.access), ...usersPage)

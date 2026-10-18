@@ -8,6 +8,7 @@ import {
   getTimeZone,
   hasPermission,
   jsonResponse,
+  middleware,
   rateLimit,
   requiresAuth,
   respond,
@@ -562,6 +563,11 @@ const resolveItemFilter = async <T extends { tagIds?: string[]; columnIds?: stri
 import widgetRoutes from "./widgets";
 
 const app = new Hono<AuthContext>()
+  .use("/", middleware.noTransform())
+  .use("/overview/search", middleware.noTransform())
+  .use("/:id/items/:itemId/detail", middleware.noTransform())
+  .use("/:id/items/:itemId/links", middleware.noTransform())
+  .use("/:id/items/:itemId/links/*", middleware.noTransform())
   .route("/widget", widgetRoutes)
   .route("/live", spacesLive.routes(spacesLiveChannels))
   .route("/ws", legacyLiveRoutes)
@@ -3241,6 +3247,7 @@ const CalendarItemListSchema = z.array(CalendarItemSchema);
 const OverlapItemListSchema = z.array(OverlapItemSchema);
 
 const calendarApp = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .use(auth.requireRole("authenticated"))
 
   .get(

@@ -18,6 +18,7 @@ import { ErrorResponseSchema } from "../contracts/shared";
 import { rateLimit } from "../server";
 import { respond } from "../server/api";
 import { type AuthContext, auth } from "../server/middleware/auth";
+import { noTransform } from "../server/middleware/no-transform";
 import { jsonResponse, requiresAuth } from "../server/middleware/openapi";
 import { v } from "../server/middleware/validator";
 import { ok } from "../server/services";
@@ -26,6 +27,7 @@ import { decodeApprovalCursor } from "../services/approvals/cursor";
 import { loadPendingApprovals } from "./approvals-loader";
 
 export const approvalRoutes = new Hono<AuthContext>()
+  .use("*", noTransform())
   .use(rateLimit())
   .use(auth.requireRole("authenticated"))
   .get(

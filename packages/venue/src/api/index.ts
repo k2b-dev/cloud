@@ -16,6 +16,7 @@ import {
   getLocale,
   getWidgetRequest,
   jsonResponse,
+  middleware,
   ok,
   type Result,
   rateLimit,
@@ -353,6 +354,7 @@ const publicRoutes = new Hono<AuthContext>()
   );
 
 const venueRoutes = new Hono<AuthContext>()
+  .use("/:id/dashboard", middleware.noTransform())
   .use("*", auth.requireRole("authenticated"))
   .get(
     "/",

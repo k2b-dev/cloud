@@ -12,7 +12,18 @@ import {
   ServiceAccountCredentialSchema,
   UpdateAccessSchema,
 } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, respondMessage, v } from "@k2b/cloud/server";
+import {
+  type AuthContext,
+  auth,
+  getLocale,
+  jsonResponse,
+  middleware,
+  rateLimit,
+  requiresAuth,
+  respond,
+  respondMessage,
+  v,
+} from "@k2b/cloud/server";
 import { err, fail, ok, type ServiceError } from "@k2b/stdlib";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
@@ -732,6 +743,7 @@ const resolveApi = new Hono<AuthContext>().use(auth.requireRole("authenticated")
 
 /** Contacts API routes for authenticated users and scoped resource credentials. */
 const app = new Hono<AuthContext>()
+  .use("/search", middleware.noTransform())
   .route("/live", contactsLive.routes(contactsLiveChannels))
   .route("/ws", legacyLiveRoutes)
   .use(rateLimit())

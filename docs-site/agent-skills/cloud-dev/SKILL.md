@@ -114,15 +114,15 @@ SolidJS library remains independent of Cloud and application domains.
 
 ## Keep server and browser behavior coherent
 
+- Mount `middleware.noTransform()` on routes where another party can repeatedly write text next to content they cannot read that is worth guessing (messages, submissions, secrets); see **Response compression** (`/en/docs/build/routing`).
 - SSR owns the authorized initial snapshot; Solid islands own only browser interaction. Islands, dialogs, and
   floating windows that cannot render fail alone behind a notice (add no wrappers). Prefer typed Hono clients over raw transport calls.
 - Invalidate the canonical read after writes instead of keeping a second client-side domain model. Every action
   answers at once, optimistically or pending; Undo only if the server can reverse it (**Forms, prompts, and feedback**).
 - Keep reloadable state in the URL; automatic reloads use `reloadOnce()`, and code only an action needs loads
   in it through `importOnDemand()`. Live updates use `defineLive()` and `liveConnection()`; acknowledge after a covering snapshot.
-- Hand islands the route as a path (`requestPath(c)` from `@k2b/cloud/ssr`),
-  never the absolute request URL: behind the gateway its origin is the
-  internal upstream, not the browser's.
+- Hand islands the route as a path (`requestPath(c)` from `@k2b/cloud/ssr`), never the absolute request URL:
+  behind the gateway its origin is the internal upstream, not the browser's.
 - Resolve the request locale once. Use `getLocale(c)` on the server and the inherited `@k2b/ui` locale in
   Solid; never keep a process-global locale or thread it through ordinary component props. Format dates and
   numbers with `Format.*`; a formatter without a locale renders English. Applications own localized human
