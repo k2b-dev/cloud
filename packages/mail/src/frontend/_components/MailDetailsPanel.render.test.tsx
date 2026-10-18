@@ -254,7 +254,7 @@ describe("Mail conversation detail panel", () => {
     expect(header).toContain('class="k2b-detail-panel__meta"');
     expect(header).toContain("Needs action");
     expect(header).toContain('aria-label="Close conversation details"');
-    expect(header).toContain("lg:hidden");
+    expect(header).toContain("@min-[64rem]/k2b-app-area:hidden");
     expect(html).toContain('class="k2b-detail-panel__group" role="group" aria-label="Workflow"');
     // People here sit in the header as one avatar stack beside the status; it opens the list.
     expect(header).toContain('class="k2b-avatar-stack__trigger" aria-label="Active collaborators: Mara Klein"');

@@ -100,6 +100,20 @@ therefore follows the same rule without a host marker
 and phone sheet still follow the viewport. CSS decides the first frame;
 no browser measurement chooses the initial layout.
 
+App stylesheets query `k2b-app-area` for workspace chrome tied to the sidebar
+or levels. Use `@container k2b-app-area (min-width: 64rem)` in CSS,
+`@min-[64rem]/k2b-app-area:` in Tailwind classes, and
+`watchAppHostWidth(element, 64, update)` from `@k2b/ui` in script; call its
+returned stop function on cleanup. Levels use the 80 rem threshold.
+In app stylesheets, avoid `max-width` and `@max-` container variants:
+fractional widths can fall between ranges. Hide below a threshold with base
+`hidden` plus a minimum display class, or use
+`@container k2b-app-area not (min-width: 64rem)` to preserve a component's own
+display. Dialogs, floating windows, and toasts mount outside the app's host,
+so their CSS follows the window; decide such chrome in script with
+`watchAppHostWidth` on an element inside the app. Keep viewport rules for the
+48 rem phone split and for pointer capabilities.
+
 Because the document root is a container, an unnamed `@container` query in
 application CSS without a nearer container now follows the window. Name the
 container a query belongs to, as in `@container my-form (min-width: 54rem)`.
@@ -1032,6 +1046,7 @@ declare function parseAppWorkspaceLayoutState(value: string | null | undefined):
 declare function serializeAppWorkspaceLayoutState(state: AppWorkspaceLayoutState): string;
 declare function appWorkspaceLayoutStyle(state: AppWorkspaceLayoutState | null | undefined): string | undefined;
 declare function installAppWorkspaceController(options?: AppWorkspaceControllerOptions): () => void;
+declare function watchAppHostWidth(element: Element, minRem: number, update: (matches: boolean) => void): () => void;
 declare function safeAppWorkspacePanelId(panelId: string): string;
 declare function appWorkspacePanelVariable(kind: "pane" | "detail" | "drawer", panelId: string): string;
 declare function appWorkspaceResizeLimits(options: { kind: "sidebar" | "pane" | "detail" | "drawer"; workspaceSize: number; reservedSize: number; min?: number; max?: number; sidebarCollapsible?: boolean }): { min: number; max: number };

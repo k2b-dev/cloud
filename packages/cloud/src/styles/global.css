@@ -644,9 +644,10 @@ solid-island {
    Phones ignore it. The app area takes the app bar's place and starts at the
    card spacing. The button that
    shows them again floats at the app area's bottom start corner; on touch
-   screens a drag from the 18 px strip at the left edge does the same. From
-   768 to 1023 px the navigation is already an overlay behind the
-   workspace head's button, so there only the app bar hides. */
+   screens a drag from the 18 px strip at the left edge does the same. In an
+   app host below 64 rem (a window from 768 to 1023 px, or the app beside the
+   panel column) the navigation is already an overlay behind the workspace
+   head's button, so there only the app bar hides. */
 .cloud-shell-show,
 .cloud-shell-reveal {
   display: none;
@@ -698,10 +699,15 @@ solid-island {
     left: calc(max(var(--cloud-card-inset), env(safe-area-inset-left, 0px)) + 0.75rem);
     bottom: calc(var(--cloud-card-inset) + var(--cloud-card-inset-bottom) + 0.75rem);
   }
-  /* The navigation leaves like a hidden sidebar: its track, its resize
-     handle, and navigation panes go, and the work area rounds its start
-     corners with the card. An island may wrap the sidebar or Main, as in
-     Grids. */
+}
+
+/* The navigation leaves like a hidden sidebar: its track, its resize handle,
+   and navigation panes go, and the work area rounds its start corners with
+   the card. An island may wrap the sidebar or Main, as in Grids. This follows
+   the app's host, as the sidebar column does: in a host below 64 rem, such as
+   the app beside the panel column, the navigation is an overlay behind the
+   workspace head's button and stays there. */
+@container k2b-app-area (min-width: 64rem) {
   .cloud-app-canvas[data-shell-focus] .k2b-app-workspace:not(.k2b-app-workspace *) {
     --k2b-workspace-start-radius: var(--k2b-workspace-inner-radius);
     --k2b-workspace-sidebar-space: 0px;
