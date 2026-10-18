@@ -1318,6 +1318,7 @@ suite("AI chat tasks", () => {
               { type: "tool_call", id: "read", name: "read", args: {} },
               { type: "tool_call", id: "web-read", name: "web_extract", args: { url: "https://example.test" } },
               { type: "tool_call", id: "file-write", name: "write_file", args: { path: "invoices.csv" } },
+              { type: "tool_call", id: "untitled", name: "update_draft", args: { draftId: "d1" } },
               { type: "tool_call", id: "failed", name: "save", args: { number: "43" } },
               { type: "tool_call", id: "rejected", name: "save", args: { number: "44" } },
               { type: "tool_call", id: "not-run", name: "save", args: { number: "45" } },
@@ -1327,6 +1328,7 @@ suite("AI chat tasks", () => {
           { role: "tool_result", callId: "read", name: "read", result: { ok: true, data: {} } },
           { role: "tool_result", callId: "web-read", name: "web_extract", result: { content: "Read only" } },
           { role: "tool_result", callId: "file-write", name: "write_file", result: { path: "invoices.csv" } },
+          { role: "tool_result", callId: "untitled", name: "update_draft", result: { ok: true, data: {} } },
           { role: "tool_result", callId: "failed", name: "save", isError: true, result: { ok: false } },
           { role: "tool_result", callId: "rejected", name: "save", result: { ok: false } },
         ];
@@ -1334,7 +1336,7 @@ suite("AI chat tasks", () => {
           await sql`
         INSERT INTO ai.task_messages(short_id, conversation_id, seq, kind, role, message, loop_id, meta)
         VALUES (${createAiShortId()}, ${conversation.id}::uuid, ${i + 2}, 'message', ${message.role}, ${JSON.stringify(message)}::text::jsonb,
-          ${delivered.turnId}, ${JSON.stringify({ toolPresentations: { write: presentation, read: { ...presentation, capabilityKind: "query" }, failed: presentation, rejected: presentation, "not-run": presentation } })}::text::jsonb)`;
+          ${delivered.turnId}, ${JSON.stringify({ toolPresentations: { write: presentation, untitled: { ...presentation, title: "Entwurf aktualisieren", sentences: undefined }, read: { ...presentation, capabilityKind: "query" }, failed: presentation, rejected: presentation, "not-run": presentation } })}::text::jsonb)`;
         if (cause === "paused") await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "paused" });
         else expect(await aiChatTasks.delete({ userId: user!.id, taskId: task.shortId })).toBe(true);
         const [turn] = await sql<{ cancel_requested_at: Date | null; cancellation_reason: string }[]>`
@@ -1356,13 +1358,20 @@ suite("AI chat tasks", () => {
         expect(await aiChatTasks.listTerminalRunningTurns()).not.toContainEqual({ turnId: delivered.turnId, status: "aborted" });
         const lines = await aiConversations.listMessages({ conversationId: conversation.id });
         expect(lines).toHaveLength(1);
-        expect(lines[0]?.meta?.scheduledTask?.stop).toEqual({ cause, done: ["Rechnung 42 gespeichert", "invoices.csv geschrieben"] });
+        // An Action without a done sentence still counts; its title names it.
+        expect(lines[0]?.meta?.scheduledTask?.stop).toEqual({
+          cause,
+          done: ["Rechnung 42 gespeichert", "invoices.csv geschrieben", "Entwurf aktualisieren"],
+        });
         expect(JSON.stringify(lines[0]?.message)).toContain(
-          "Schon erledigt: Rechnung 42 gespeichert; invoices.csv geschrieben. Nichts wurde rückgängig gemacht.",
+          "Schon erledigt: Rechnung 42 gespeichert; invoices.csv geschrieben; Entwurf aktualisieren. Nichts wurde rückgängig gemacht.",
         );
         expect(JSON.stringify(lines[0]?.message)).not.toContain("MODEL CLAIM");
         if (cause === "paused") {
-          expect((await aiChatTasks.listOccurrences({ userId: user!.id, taskId: task.shortId }))?.[0]?.state).toBe("stopped");
+          const [stoppedRun] = (await aiChatTasks.listOccurrences({ userId: user!.id, taskId: task.shortId })) ?? [];
+          expect(stoppedRun?.state).toBe("stopped");
+          // The routine's own result shows the same line as the chat.
+          expect(stoppedRun?.resultText).toContain("Angehalten, während die Routine lief.");
           expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({
             state: "paused",
             reasonCode: "paused",
@@ -1425,6 +1434,45 @@ suite("AI chat tasks", () => {
       }
     });
 
+  test("renaming a routine that needs you changes only its name", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`routine-rename-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Invoices" });
+    try {
+      const task = (await aiChatTasks.create({
+        userId: user!.id,
+        chatId: conversation.shortId,
+        prompt: "Record new invoices",
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      }))!;
+      // Without a title the routine is called after its chat.
+      expect(task.name).toBe("Invoices");
+      const occurrence = (await aiChatTasks.createOccurrence({
+        taskId: task.id,
+        scheduledFor: "2026-04-07T09:00:00Z",
+        trigger: "manual",
+        requestKey: suffix,
+      }))!;
+      expect(await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Delivery failed", code: "failed" })).toBe("failed");
+      const failed = (await aiChatTasks.get({ userId: user!.id, taskId: task.shortId }))!;
+      const renamed = await aiChatTasks.update({ userId: user!.id, taskId: task.shortId, title: "Neue Rechnungen eintragen" });
+      expect(renamed).toMatchObject({
+        name: "Neue Rechnungen eintragen",
+        state: "needs_attention",
+        reasonCode: "failed",
+        reasonAt: failed.reasonAt,
+        lastError: "Delivery failed",
+        revision: failed.revision,
+        mandateRevision: failed.mandateRevision,
+      });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
   test("reason checks and one-time locale migration are idempotent", async () => {
     const { migrateChatTaskReasons } = await import("./chat-task-reasons-migrate");
     const suffix = crypto.randomUUID();
@@ -1433,18 +1481,21 @@ suite("AI chat tasks", () => {
     const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Migration" });
     const emptyConversation = await aiConversations.createConversation({ ownerUserId: user!.id });
     try {
-      const tasks = await Promise.all(
-        ["paused", "changed", "failed", "fallback", "no_locale"].map((prompt) =>
-          aiChatTasks.create({
+      const tasks: Awaited<ReturnType<typeof aiChatTasks.create>>[] = [];
+      for (const prompt of ["paused", "changed", "failed", "fallback", "no_locale"])
+        tasks.push(
+          await aiChatTasks.create({
             userId: user!.id,
             chatId: prompt === "no_locale" ? emptyConversation.shortId : conversation.shortId,
             prompt,
             schedule: { kind: "cron", cron: "0 9 * * *" },
             timezone: "UTC",
           }),
-        ),
-      );
-      await expect(sql`UPDATE ai.chat_tasks SET state = 'needs_attention' WHERE id = ${tasks[0]!.id}::uuid`).rejects.toMatchObject({
+        );
+      // A lazy query runs only when awaited; `.execute()` starts it for the matcher.
+      await expect(
+        sql`UPDATE ai.chat_tasks SET state = 'needs_attention' WHERE id = ${tasks[0]!.id}::uuid`.execute(),
+      ).rejects.toMatchObject({
         constraint: "ai_chat_tasks_reason_state_check",
       });
       const rollback = new Error("Rollback migration fixture");
