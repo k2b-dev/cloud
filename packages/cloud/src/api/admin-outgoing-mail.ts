@@ -131,8 +131,10 @@ export const createAdminOutgoingMailRoutes = (authenticate: MiddlewareHandler<Au
         const next = c.req.valid("json");
         const old = await readMailRetention();
         await sql.begin(async (tx) => {
-          await settings.set(MAIL_RETENTION_KEYS[0], next.contentDays, tx);
-          await settings.set(MAIL_RETENTION_KEYS[1], next.recordDays, tx);
+          // complete value from explicit admin input; nothing is merged over a read (#1303)
+          await settings.set(MAIL_RETENTION_KEYS[0], next.contentDays, tx, { replaceUnreadable: true });
+          // complete value from explicit admin input; nothing is merged over a read (#1303)
+          await settings.set(MAIL_RETENTION_KEYS[1], next.recordDays, tx, { replaceUnreadable: true });
           await audit.record(
             {
               ...context(c),

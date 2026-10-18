@@ -1,6 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
 import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi } from "@k2b/cloud/ai";
 import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
+import { notifications } from "@k2b/cloud/services";
 import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
 import { sql } from "bun";
@@ -227,12 +228,14 @@ suite("Core AI completion notifications", () => {
     const service = createAiNotificationService(app.notifications);
 
     try {
-      const runAt = new Date(Date.now() + 60_000).toISOString();
+      const runAt = "2099-04-07T13:45:00.000Z";
       const task = await aiChatTasks.create({
         userId: user!.id,
         chatId: conversation.shortId,
+        title: "Release report",
+        locale: "en",
         prompt: "Check the release.",
-        schedule: { kind: "once", runAt },
+        schedule: { kind: "cron", cron: "0 9 * * *" },
         timezone: "Europe/Berlin",
       });
       const occurrence = await aiChatTasks.createOccurrence({
@@ -241,8 +244,9 @@ suite("Core AI completion notifications", () => {
         trigger: "scheduled",
         requestKey: `test:${suffix}`,
       });
-      await aiChatTasks.failOccurrence({ occurrenceId: occurrence!.id, error: "Model profile unavailable" });
+      await aiChatTasks.failOccurrence({ code: "failed", occurrenceId: occurrence!.id, error: "Model profile unavailable" });
 
+      await sql`UPDATE ai.chat_tasks SET reason_at = '2001-01-01T00:00:00.000Z'::timestamptz WHERE id = ${task!.id}::uuid`;
       const first = await service.notifyTaskNeedsAttention(occurrence!.id);
       expect(first.failed).toBe(0);
       expect(first.scanned).toBe(first.sent);
@@ -257,12 +261,67 @@ suite("Core AI completion notifications", () => {
       `;
       expect(events).toEqual([
         {
-          title: `Routine ${task!.shortId} needs attention`,
+          title: "“Release report” needs you",
           target_href: `/app/assistant?conversation=${conversation.shortId}`,
-          idempotency_key: `occurrence:${occurrence!.id}`,
+          idempotency_key: `routine:${task!.id}:failed:${new Date((await aiChatTasks.get({ userId: user!.id, taskId: task!.shortId }))!.reasonAt!).getTime()}`,
         },
       ]);
+      // A second failed occurrence in the same state must not create another notice.
+      const [second] = await sql<{ id: string }[]>`INSERT INTO ai.chat_task_occurrences
+        (short_id, task_id, scheduled_for, trigger, request_key, state, error, completed_at)
+        VALUES (${createAiShortId()}, ${task!.id}::uuid, '2099-04-08T13:45:00Z', 'scheduled', ${`second:${suffix}`}, 'failed',
+          'Another raw English error', now() + interval '1 millisecond') RETURNING id`;
+      expect(await service.notifyTaskNeedsAttention(second!.id)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      expect(await service.notifyTaskNeedsAttention(second!.id)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      await aiChatTasks.setState({ userId: user!.id, taskId: task!.shortId, state: "active" });
+      const next = (await aiChatTasks.createOccurrence({
+        taskId: task!.id,
+        scheduledFor: "2099-04-09T13:45:00Z",
+        trigger: "scheduled",
+        requestKey: `next:${suffix}`,
+      }))!;
+      await aiChatTasks.failOccurrence({ occurrenceId: next.id, code: "failed", error: "New failure" });
+      await sql`UPDATE ai.chat_tasks SET reason_at = '2001-01-02T00:00:00Z'::timestamptz WHERE id = ${task!.id}::uuid`;
+      await sql`UPDATE ai.chat_task_occurrences SET completed_at = now() + interval '1 second' WHERE id = ${next.id}::uuid`;
+      expect((await service.notifyTaskNeedsAttention(next.id)).sent).toBe(1);
+      expect(
+        await sql`SELECT id FROM notifications.events WHERE definition_id = ${app.notifications.taskNeedsAttention.id}
+        AND recipient_user_id = ${user!.id}::uuid`,
+      ).toHaveLength(2);
+      await aiChatTasks.setState({ userId: user!.id, taskId: task!.shortId, state: "active" });
+      const legacy = (await aiChatTasks.createOccurrence({
+        taskId: task!.id,
+        scheduledFor: "2099-04-09T14:45:00Z",
+        trigger: "scheduled",
+        requestKey: `legacy:${suffix}`,
+      }))!;
+      await aiChatTasks.failOccurrence({ occurrenceId: legacy.id, code: "failed", error: "Already notified before upgrade" });
+      await sql`UPDATE ai.chat_tasks SET reason_at = '2001-01-03T00:00:00Z'::timestamptz WHERE id = ${task!.id}::uuid`;
+      await sql`UPDATE ai.chat_task_occurrences SET completed_at = now() + interval '2 seconds' WHERE id = ${legacy.id}::uuid`;
+      await notifications.send(app.notifications.taskNeedsAttention, {
+        recipient: { userId: user!.id },
+        locale: "en",
+        idempotencyKey: `occurrence:${legacy.id}`,
+        data: {
+          conversationId: conversation.shortId,
+          name: task!.name,
+          code: "failed",
+          at: "2001-01-03T00:00:00Z",
+          timeZone: task!.timezone,
+        },
+      });
+      expect(await service.notifyTaskNeedsAttention(legacy.id)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      await aiChatTasks.setState({ userId: user!.id, taskId: task!.shortId, state: "active" });
+      const paused = (await aiChatTasks.createOccurrence({
+        taskId: task!.id,
+        scheduledFor: "2099-04-10T13:45:00Z",
+        trigger: "scheduled",
+        requestKey: `paused:${suffix}`,
+      }))!;
+      await aiChatTasks.failOccurrence({ occurrenceId: paused.id, code: "owner_inactive", error: "Sponsor inactive" });
+      expect(await service.notifyTaskNeedsAttention(paused.id)).toEqual({ scanned: 0, sent: 0, failed: 0 });
     } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
     }
   });

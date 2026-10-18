@@ -1,4 +1,5 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
+import { accounts } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -33,7 +34,7 @@ suite("Contacts book ordering (SRV-09)", () => {
         }
         const [user] = await tx<{ id: string }[]>`
           INSERT INTO auth.users (uid, provider, profile, display_name, admin)
-          VALUES (${`contacts-book-order-${crypto.randomUUID()}`}, 'local', 'user', 'Book order test', false)
+          VALUES (${`contacts-book-order-${crypto.randomUUID()}`}, 'local', 'user', 'Book order test', true)
           RETURNING id
         `;
         userId = user!.id;
@@ -51,19 +52,30 @@ suite("Contacts book ordering (SRV-09)", () => {
       expect(books).toHaveLength(bookCount);
       expect(new Set(books.map((book) => book.created_at.getTime())).size).toBe(1);
 
+      const callerUser = await accounts.users.get({ id: userId! });
+      if (!callerUser) throw new Error("Missing fixture user");
       const adminIds: string[] = [];
       const readableIds: string[] = [];
       for (let page = 1; page <= bookCount; page++) {
-        const admin = await contactsService.book.admin.list({ pagination: { page, perPage: 1 }, filter: { query: marker } });
+        const adminResult = await contactsService.book.admin.list({
+          actor: { kind: "user", user: callerUser },
+          pagination: { page, perPage: 1 },
+          filter: { query: marker },
+        });
+        if (!adminResult.ok) throw new Error(adminResult.error.message);
+        const admin = adminResult.data;
         expect(admin.total).toBe(bookCount);
         adminIds.push(...admin.items.map((book) => book.id));
 
-        const readable = await contactsService.book.list({
-          subject: { type: "user", userId: userId! },
+        const result = await contactsService.book.list({
+          actor: { kind: "user", user: callerUser },
+          accessSubject: { type: "user", userId: userId! },
           pagination: { page, perPage: 1 },
           // Books shared with every signed-in person elsewhere in the test database stay out of the count.
           filter: { query: marker },
         });
+        if (!result.ok) throw new Error(result.error.message);
+        const readable = result.data;
         expect(readable.total).toBe(bookCount);
         readableIds.push(...readable.items.map((book) => book.id));
       }

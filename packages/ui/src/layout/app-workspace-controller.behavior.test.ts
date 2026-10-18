@@ -717,6 +717,57 @@ describe("phone page workspace isolation", () => {
     };
   };
 
+  test("Tab leaves visible host surfaces above a phone page operable and redirects only covered focus or body", () => {
+    viewport();
+    const { root, aside, close } = detailWorkspace();
+    aside.dataset.workspaceDetailPhone = "page";
+    const hostControl = document.createElement("button");
+    const icon = document.createElement("span");
+    hostControl.append(icon);
+    document.body.append(hostControl);
+    setRect(hostControl, { width: 80, height: 40 });
+    let hit: Element | null = hostControl;
+    const points: number[][] = [];
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: (x: number, y: number) => {
+        points.push([x, y]);
+        return hit;
+      },
+    });
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      for (const visibleHit of [hostControl, icon]) {
+        hit = visibleHit;
+        hostControl.focus();
+        for (const shiftKey of [false, true]) {
+          const event = new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true });
+          hostControl.dispatchEvent(event);
+          expect(event.defaultPrevented).toBe(false);
+          expect(document.activeElement === hostControl).toBe(true);
+        }
+      }
+      expect(points).toEqual([
+        [40, 20],
+        [40, 20],
+        [40, 20],
+        [40, 20],
+      ]);
+      // The same control underneath the page must enter the page instead.
+      hit = aside;
+      expect(detailKey(hostControl, "Tab").defaultPrevented).toBe(true);
+      expect(document.activeElement === close).toBe(true);
+      // Body focus after a load still enters the page, regardless of hit-testing.
+      hit = document.body;
+      close.blur();
+      expect(document.activeElement === document.body).toBe(true);
+      expect(detailKey(document.body, "Tab").defaultPrevented).toBe(true);
+      expect(document.activeElement === close).toBe(true);
+    } finally {
+      dispose();
+    }
+  });
+
   test("isolates only the workspace path, preserves application inert, and restores focus on close", async () => {
     viewport();
     const { root, content, main, aside, sidebar, item, close, handle } = detailWorkspace({ open: false });

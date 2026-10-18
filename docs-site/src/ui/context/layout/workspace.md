@@ -76,6 +76,10 @@ The component stylesheet declares `html { container: k2b-app-area / inline-size;
 by default. Standalone pages therefore follow the window. A classic document
 scrollbar reduces the root's content width; overlay scrollbars do not.
 
+Cloud provides this host from 1024 px when its panel column is open: the app
+area beside the panel becomes the nearest `k2b-app-area` container from the
+first server frame. Drawer and phone sheet modes keep the app's width.
+
 A host that puts another column beside the app declares the same container
 around the app area:
 
@@ -102,9 +106,10 @@ do. A `body` that alone sets `overflow: hidden` clips its own box and leaves
 the document scrollable.
 
 Declare a host's container name in its stylesheet or markup from the first
-paint and keep it there. Change the host's width, not its name: the
-controller finds each workspace's host once and follows that element's
-resizes.
+paint. Keep it stable while the workspace's width stays the same. The name
+may change together with the workspace's own width, as Cloud's panel does:
+the controller follows both the initial host and the workspace's own resizes.
+Changing only the name without a resize does not trigger that update.
 
 ## Levels
 
@@ -211,7 +216,8 @@ as a chat’s info. Below 48 rem it covers the window with the page surface and
 safe-area padding, without a grabber, detents, drag gestures, or extra space in
 Main; Escape and focus handling stay the same. From 48 rem it remains the
 normal floating Detail. While the page is open on a phone, the rest of the
-workspace is inert.
+workspace is inert. Tab from the body or chrome covered by the page enters the
+page, while controls visible above it keep their own Tab order.
 
 Pass `onClose` when the application can close or deselect the detail. Escape,
 a downward phone drag, and a rightward touch-tablet swipe call the same action
@@ -1348,7 +1354,9 @@ trackpad, including a tablet with a mouse, instead of pushing it toward the
 title. It appears when the row is hovered, keyboard-focused, current, or has
 its menu open. Touch-only screens always show the actions. The counts stay in
 the accessibility tree while hidden. Omit the leading icon when every object would show the same
-one. Object rows keep their title on one line with an ellipsis.
+one. A plain object-row icon sits in a soft chip of the app color; custom
+icon content, such as an avatar, keeps its own treatment in the same 2rem box.
+Object rows keep their title on one line with an ellipsis.
 
 ```tsx
 <AppWorkspace.SidebarItem variant="object" href="/app/mail/support" description="support@example.test">
@@ -1365,7 +1373,64 @@ one. Object rows keep their title on one line with an ellipsis.
 
 Set `mobile="stacked"` on `Sidebar` when the sidebar is the primary object
 list of an overview and the host's mobile navigation does not carry it. Below
-64 rem the sidebar then stays visible as a block above the content, capped at
-half the viewport height with its own scrolling body, and the footer wraps
-its items into a row; the head shows no button for it. Leave the default `"hidden"` for workspaces whose
-sidebar is view navigation inside one resource.
+64 rem, its items become one row of chips above the content. The row scrolls
+sideways with fades at cut edges and keeps the current chip in view when the
+page loads. From 64 rem, it is the regular sidebar column. The sidebar is a
+`nav` landmark at every width; give it a `label` that names the objects.
+
+A chip shows the icon, a label on one line with an ellipsis, and metadata
+such as a count or dot. Selection changes only its fill and color; its box
+and font weight stay the same. Section titles, descriptions, row actions,
+collapsible sections, the footer, and other content stay out of the row.
+
+**All** at the end of the row opens the complete sidebar, including everything
+the chips leave out. Below 48 rem it opens a bottom sheet; from 48 rem it
+opens a centered dialog. Links close it. Escape and Close return focus to
+All. Write the sidebar's children as JSX inside `AppWorkspace.Sidebar`:
+
+```tsx
+<AppWorkspace.Sidebar label="Notebooks" mobile="stacked">
+  <AppWorkspace.SidebarDesktop>
+    <AppWorkspace.SidebarBody>
+      <AppWorkspace.SidebarItem variant="object" href="/app/notebooks/team" active>
+        <AppWorkspace.SidebarItemLabel>Team</AppWorkspace.SidebarItemLabel>
+        <AppWorkspace.SidebarItemMeta>4</AppWorkspace.SidebarItemMeta>
+      </AppWorkspace.SidebarItem>
+    </AppWorkspace.SidebarBody>
+  </AppWorkspace.SidebarDesktop>
+</AppWorkspace.Sidebar>
+```
+
+The children render a second time in the sheet and share the application's
+signals. Markup built ahead of time and passed as a value cannot render a
+second time: the sheet leaves it in the row, stays without it, and logs an
+error. While the sheet is open, the row and the sheet both hold each row, so
+code that looks a row up, for example to restore focus, searches the copy
+that has focus (`.k2b-app-workspace__sidebar-sheet`) before the document.
+For the same reason, sidebar children must not use fixed `id` values; use
+`createUniqueId()` so labels and ARIA references resolve inside each copy.
+A chosen link runs its own handlers in the sheet, then the sheet closes; a
+tree branch's disclosure only expands the branch. When the workspace widens
+into the sidebar column, the sheet closes and focus moves to the current
+item in the column.
+
+The sheet adds no history entry, so Back leaves the page while it is open.
+Other phone sheets close on Back, but a sidebar may replace the URL while
+the sheet is open, such as a search, and the sheet's entry would then stay
+behind as a stale step in the history.
+
+Hosts can set `--k2b-workspace-chip-inset` for the row's content inset
+(default `clamp(1rem, 3vw, 2.5rem)`, `1rem` below a 40 rem viewport),
+`--k2b-workspace-chip-background` for chip fill (default
+`--k2b-surface-muted`), and `--k2b-app-workspace-selected` for selected fill
+(default `--k2b-selected`). Cloud maps selected fill to `--ui-app-selected-nav`.
+
+Leave the default `mobile="hidden"` for workspaces whose sidebar is view
+navigation inside one resource.
+
+### Cloud phone title menu
+
+On Cloud pages with `WorkspaceNavigation`, the phone header shows **Name ⌄**
+in place of the plain title. It opens the same app menu sheet as the app-menu
+button, so a hidden sidebar's navigation stays reachable. Pages without
+workspace navigation keep the plain title. Nothing changes from 48 rem.

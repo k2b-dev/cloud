@@ -1531,6 +1531,78 @@ describe("scheduled result presentation", () => {
     expect(html).toContain("ti-calendar-time");
     expect(html).not.toContain("Scheduled task task");
   });
+
+  const routineLine = (text: string, scheduledTask: NonNullable<NonNullable<AiStoredMessage["meta"]>["scheduledTask"]>, locale: string) => {
+    const entry: AiStoredMessage = {
+      id: "routine-line",
+      shortId: "rtline",
+      conversationId: "chat",
+      seq: 1,
+      kind: "message",
+      message: { role: "assistant", content: [{ type: "text", text }] },
+      loopId: null,
+      modelProfileId: null,
+      providerModel: null,
+      usage: null,
+      stopReason: null,
+      loopAggregate: null,
+      loopDoneReason: null,
+      compactedAt: null,
+      meta: { scheduledTask },
+      createdAt: "2026-10-16T14:31:00Z",
+    };
+    return renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(AiChatActionsProvider, {
+            actions: { onOpenScheduledTaskRun: () => undefined },
+            get children() {
+              return createAiChatTimeline({ messages: () => [entry], activeTurn: () => null })().map((item) => item.content);
+            },
+          });
+        },
+      }),
+    );
+  };
+  const run = { taskId: "tSk234", occurrenceId: "rUn234", scheduledFor: "2026-10-16T14:30:00Z", trigger: "scheduled" as const };
+
+  test("a stopped run shows one system line in the reader's language with what was already done", () => {
+    const html = routineLine(
+      "Stopped while the routine was running. Already done: Created note Weekly; Nothing was undone.",
+      { ...run, stop: { cause: "paused", done: ["Notiz „Woche“ angelegt"] } },
+      "de",
+    );
+    expect(html).toContain(
+      "Angehalten, während die Routine lief. Schon erledigt: Notiz „Woche“ angelegt. Nichts wurde rückgängig gemacht.",
+    );
+    expect(html).toContain("ti-player-stop");
+    // The stored English text is not shown a second time.
+    expect(html).not.toContain("Stopped while the routine was running");
+    expect(html).not.toContain("tSk234");
+  });
+
+  test("a stop before any change says so", () => {
+    const html = routineLine("x", { ...run, stop: { cause: "deleted", done: [] } }, "en");
+    expect(html).toContain("Stopped while the routine was running. Nothing was undone.");
+  });
+
+  test("a run that needs the person shows the reason sentence, not the raw error", () => {
+    const reasonOnly = routineLine(
+      "Der letzte Lauf ist fehlgeschlagen.",
+      { ...run, reason: { code: "rights_changed", at: "2026-10-16T14:30:00Z" }, reasonOnly: true },
+      "en",
+    );
+    expect(reasonOnly).toContain("What it may do changed. Please confirm again.");
+    expect(reasonOnly).not.toContain("Der letzte Lauf ist fehlgeschlagen.");
+    const withAnswer = routineLine(
+      "I updated two of three invoices.",
+      { ...run, reason: { code: "failed", at: "2026-10-16T14:30:00Z" } },
+      "en",
+    );
+    expect(withAnswer).toContain("I updated two of three invoices.");
+    expect(withAnswer).toContain("The last run failed.");
+  });
 });
 
 describe("assistant activity width", () => {

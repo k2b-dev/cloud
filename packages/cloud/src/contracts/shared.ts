@@ -401,6 +401,8 @@ export type SettingEntry = {
   valueSource: SettingValueSource;
   resetValueSource: Exclude<SettingValueSource, "custom">;
   isCustom: boolean;
+  /** A stored row exists but this application cannot decrypt or validate it; `value` is the fallback in use. */
+  unreadable: boolean;
   templateVars?: string[];
   options?: SettingOption[];
   min?: number;

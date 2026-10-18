@@ -1443,7 +1443,7 @@ const FilesDemo = () => {
         { kind: "component", name: "FileTree", from: "@k2b/ui" },
         { kind: "component", name: "FileView", from: "@k2b/ui" },
       ]}
-      description="A fully interactive, path-first browser over an application-owned in-memory source. Create, upload, rename, move, delete, edit, save, and download without a backend. The preview dialog shows a plain FileView whose Markdown heading becomes the dialog title."
+      description="A fully interactive, path-first browser over an application-owned in-memory source. Create, upload, rename, move, delete, edit, save, and download without a backend. Tree icons sit in soft chips of their file-type color; folders use the app accent. The preview dialog shows a plain FileView whose Markdown heading becomes the dialog title."
       code={`const source: FileSource = {
   list: async () => entries,
   read: async (path) => content[path],

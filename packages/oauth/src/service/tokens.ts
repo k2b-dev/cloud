@@ -204,6 +204,7 @@ export const getOpenIdConfiguration = (issuer: string) => ({
   grant_types_supported: ["authorization_code", "refresh_token", "client_credentials", "urn:ietf:params:oauth:grant-type:device_code"],
   resource_parameter_supported: true,
   cloud_login_ttl_supported: true,
+  cloud_login_hint_supported: true,
   // Authorization responses include RFC 9207 `iss`; keep its optional support
   // flag unadvertised until current loopback MCP clients preserve the value.
 });

@@ -59,6 +59,7 @@ stays empty. One- and two-column grids remain fixed.
 | `valueClass` | `string` | Overrides the value color. |
 | `title` | `string` | Adds a native title to a truncated value. |
 | `trend` | `readonly number[]` | Adds a compact sparkline from oldest to newest, with tooltips and keyboard inspection. |
+| `trendTooltip` | `ChartTooltipFormatter` | Customizes the trend tooltip, for example with a period title or a unit. |
 | `size` | `"md" \| "sm"` | Overrides the inherited size for one cell. |
 | `wrap` | `boolean` | Wraps label, value, `sub` and accent instead of truncating them; the accent moves below `sub` when both do not fit. |
 
@@ -68,7 +69,10 @@ one figure on its own.
 
 An accent has a `tone`, Tabler `icon`, and optional `text`. Text creates a pill. Without text, only the icon is shown. Use the cell `href` when the measurement needs a link.
 
-A trend sparkline uses the cell's label as its accessible name. Keep `href` and
+A trend sparkline uses the cell's label as its accessible name. Its tooltip
+names each value after the cell label and formats it in the inherited locale.
+`trendTooltip` replaces that tooltip and runs in browser code;
+`selection.datum.index` is the source index into `trend`. Keep `href` and
 `trend` on separate cells: a linked cell should not contain an inspectable
 sparkline, which would nest interactive content. That combination is not yet
 supported.
@@ -99,7 +103,7 @@ through `title`.
 
 ## Runtime
 
-`StatGrid` and `StatCell` render on the server. Static links work without browser code. Trend sparklines are rendered by the shared `Chart` component within the cell.
+`StatGrid` and `StatCell` render on the server. Static links work without browser code. Trend sparklines are rendered by the shared `Chart` component within the cell. Render a cell with `trend` inside an island.
 
 ## Example
 

@@ -5,7 +5,7 @@ section: Frontend
 order: 830
 description: Choose the shared shell that matches an application's information structure.
 tags: [shells, workspace, ui]
-updated: 2026-10-11
+updated: 2026-10-17
 ---
 
 # Application shells
@@ -89,6 +89,16 @@ Keep geometry IDs stable. Do not add another grid or resize handle.
 From 768 px, signed-in layouts expose Help and Search through the app bar.
 Their header controls exist only on phones.
 
+## Offer a page beside other apps
+
+Declare `panel: { href, label, icon, requiresRoles? }` in `defineApp()` to offer
+one application page in Cloud's panel slot. Render that route with
+`PanelLayout` from `@k2b/cloud/ssr`. From 1024 px, the open column narrows the
+app area, which Cloud supplies as the workspace's `k2b-app-area` host. At
+smaller widths it overlays the app as a drawer or phone sheet.
+See [Offer a panel](/en/docs/platform/panels) for authorization, opening,
+keyboard controls, loading, and persistence.
+
 ## Add contextual detail
 
 Below 768 px, Detail is a sheet over the lower 55% of the window, also on pages
@@ -153,6 +163,8 @@ Inspect current examples in the [UI catalog](/ui).
 
 Cloud owns one mobile menu below 768 px. The header launcher opens the current
 workspace menu by default; **All apps** switches to the application grid.
+On pages with `WorkspaceNavigation`, the phone title becomes **Name ⌄** and
+opens that same menu. Pages without workspace navigation keep a plain title.
 The sheet header combines the workspace name and **All apps** in one segmented
 control. An application without its own navigation gets no header row: the
 sheet shows only the application grid, and the handle, backdrop, Escape, and
@@ -165,7 +177,9 @@ list panes side by side, and its sidebar is an overlay: the head at the
 top of the workspace holds the button that opens it and the page title.
 The overlay closes with Escape, a tap beside it, or a choice in the
 navigation, and focus returns to the button. A `mobile="stacked"` overview
-list stays above the content instead. From 1024 px the sidebar sits beside the
+list becomes one horizontally scrolling row of object chips above the content
+instead. **All** at its end opens the complete sidebar: a bottom sheet below
+48 rem and a centered dialog from 48 rem. From 1024 px the sidebar sits beside the
 work area. Applications need no code for the tablet range.
 
 For SSR link navigation, render the public island once alongside the outer

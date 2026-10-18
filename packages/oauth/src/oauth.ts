@@ -19,7 +19,7 @@ import {
 import type { DevicePollResult } from "./service/device";
 import { oauth } from "./service/oauth";
 import { DEFAULT_LOGIN_LIFETIME_SECONDS } from "./service/refresh-tokens";
-import type { OAuthUserGrantReference } from "./service/token-authority";
+import { OAuthDeviceApprovalUnavailableError, type OAuthUserGrantReference, startOAuthDeviceApproval } from "./service/token-authority";
 
 const log = logger("oauth");
 
@@ -176,20 +176,35 @@ const TokenBodySchema = z.discriminatedUnion("grant_type", [
 ]);
 
 const DeviceAuthorizationBodySchema = z.object({
+  login_hint: z
+    .string()
+    .trim()
+    .min(1)
+    .max(254)
+    .optional()
+    .describe("First-party clients only; sends the request to the person's Cloud Login."),
   ttl: LoginLifetimeSchema.optional(),
   client_id: z.string().min(1).optional(),
   client_secret: z.string().optional(),
   scope: z.string().optional(),
 });
 
-const DeviceAuthorizationResponseSchema = z.object({
-  device_code: z.string(),
-  user_code: z.string(),
-  verification_uri: z.string(),
-  verification_uri_complete: z.string(),
-  expires_in: z.number(),
-  interval: z.number(),
-});
+const DeviceAuthorizationResponseSchema = z.union([
+  z.object({
+    device_code: z.string(),
+    user_code: z.string(),
+    verification_uri: z.string(),
+    verification_uri_complete: z.string(),
+    expires_in: z.number(),
+    interval: z.number(),
+  }),
+  z.object({
+    device_code: z.string(),
+    comparison: z.string().regex(/^\d{6}$/),
+    expires_in: z.literal(300),
+    interval: z.literal(5),
+  }),
+]);
 
 const DEVICE_POLL_ERROR_DESCRIPTIONS = {
   invalid_grant: "Device code is invalid, expired, or already used",
@@ -214,7 +229,7 @@ const TokenErrorResponseSchema = z.object({
   error_description: z.string().optional(),
 });
 
-const tokenError = (c: Context<AuthContext>, error: string, description: string, status: 400 | 401 | 403 | 500 = 400) =>
+const tokenError = (c: Context<AuthContext>, error: string, description: string, status: 400 | 401 | 403 | 500 | 503 = 400) =>
   c.json({ error, error_description: description }, status);
 
 const invalidClient = (c: Context<AuthContext>, description = "Invalid client credentials") => {
@@ -603,11 +618,12 @@ const app = new Hono<AuthContext>()
       tags: ["OAuth"],
       summary: "Device authorization endpoint",
       description:
-        "Starts an RFC 8628 device authorization for a public client that is enabled for the device grant. The user approves the returned user code at the verification URI.",
+        "Starts an RFC 8628 device authorization for a public client that is enabled for the device grant. The user approves the returned user code at the verification URI, or compares six digits in Cloud Login when a first-party client sends login_hint.",
       responses: {
         200: jsonResponse(DeviceAuthorizationResponseSchema, "Device authorization"),
         400: jsonResponse(TokenErrorResponseSchema, "Invalid request"),
         401: jsonResponse(TokenErrorResponseSchema, "Invalid client"),
+        503: jsonResponse(TokenErrorResponseSchema, "Core cannot accept the Cloud Login request"),
         413: jsonResponse(TokenErrorResponseSchema, "Request body too large"),
       },
     }),
@@ -635,8 +651,46 @@ const app = new Hono<AuthContext>()
       if (!oauth.clients.canUseDeviceGrant(client)) {
         return tokenError(c, "unauthorized_client", "Client is not allowed to use the device authorization grant");
       }
+      if (body.login_hint !== undefined && client.registrationKind !== "first_party") {
+        return tokenError(c, "invalid_request", "login_hint is only accepted for first-party clients");
+      }
       const scopes = resolveRequestedScopes(client.scopes, body.scope);
-      if (!scopes) return tokenError(c, "invalid_scope", "Requested scope is not allowed for this client");
+      if (!scopes || (body.login_hint !== undefined && (scopes.length === 0 || scopes.includes("admin")))) {
+        return tokenError(c, "invalid_scope", "Requested scope is not allowed for this client");
+      }
+
+      if (body.login_hint !== undefined) {
+        if ((await settings.get<boolean>("user.app_approval.enabled")) !== true) {
+          return tokenError(c, "invalid_request", "Cloud Login approval is turned off on this Cloud; start the sign-in without login_hint");
+        }
+        const lifetime = await capLoginLifetime(body.ttl === undefined ? DEFAULT_LOGIN_LIFETIME_SECONDS : Number(body.ttl));
+        const started = await oauth.device.create({ client, scopes, loginLifetimeSeconds: lifetime, appApproval: true });
+        try {
+          const approval = await startOAuthDeviceApproval({
+            deviceAuthorizationId: started.id,
+            identifier: body.login_hint,
+            clientId: client.clientId,
+            scopes,
+            lifetimeSeconds: lifetime,
+          });
+          return c.json({
+            device_code: started.deviceCode,
+            comparison: approval.comparison,
+            expires_in: started.expiresIn,
+            interval: started.interval,
+          });
+        } catch (error) {
+          log.warn("Core OAuth device approval unavailable", {
+            status: error instanceof OAuthDeviceApprovalUnavailableError ? error.status : null,
+          });
+          try {
+            await oauth.device.deletePending(started.id);
+          } catch {
+            log.warn("Failed to delete pending OAuth device approval", { status: 503 });
+          }
+          return tokenError(c, "temporarily_unavailable", "Cloud Login cannot accept the sign-in right now; try again later", 503);
+        }
+      }
 
       const issuer = await getIssuer();
       const started = await oauth.device.create({

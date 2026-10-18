@@ -68,6 +68,7 @@ and durable data.
   Use NATS-backed Sync for distributed coordination and Valkey for caches
   and Cloud rate limits. Commit state before retryable effects with stable keys; an effect
   that must survive a crash is an outbox row in the same transaction (`defineLive`, `createPgOutbox`).
+  A settings write over an unreadable stored value fails with `setting_unreadable`; merge only over `settings.read()` with `stored !== "unreadable"`.
 
 ## Reuse public building blocks
 

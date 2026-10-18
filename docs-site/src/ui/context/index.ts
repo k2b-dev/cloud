@@ -77,6 +77,7 @@ import layoutPanes from "./layout/panes.md" with { type: "text" };
 import layoutPermissions from "./layout/permissions.md" with { type: "text" };
 import layoutPrint from "./layout/print.md" with { type: "text" };
 import layoutPullToRefresh from "./layout/pull-to-refresh.md" with { type: "text" };
+import layoutResizeSeparator from "./layout/resize-separator.md" with { type: "text" };
 import layoutScrollArea from "./layout/scroll-area.md" with { type: "text" };
 import layoutSettingsModal from "./layout/settings-modal.md" with { type: "text" };
 import layoutTabBar from "./layout/tab-bar.md" with { type: "text" };
@@ -143,6 +144,7 @@ const catalogContextSources = {
   "layout/discussion": { file: "layout/discussion.md", content: layoutDiscussion },
   "layout/page-title": { file: "layout/page-title.md", content: layoutPageTitle },
   "layout/panes": { file: "layout/panes.md", content: layoutPanes },
+  "layout/resize-separator": { file: "layout/resize-separator.md", content: layoutResizeSeparator },
   "layout/scroll-area": { file: "layout/scroll-area.md", content: layoutScrollArea },
   "layout/pull-to-refresh": { file: "layout/pull-to-refresh.md", content: layoutPullToRefresh },
   "layout/overview": { file: "layout/overview.md", content: layoutOverview },

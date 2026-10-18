@@ -4,9 +4,11 @@
 export { default as AdminLayout } from "./AdminLayout";
 export {
   hasDedicatedRuntimeRoute,
+  type PanelProvider,
   resolveRuntimeRoute,
   type VisiblePwaPart,
   visibleNavigationApps,
+  visiblePanelProviders,
   visiblePwaParts,
 } from "./app-navigation";
 export { default as Layout } from "./Layout";
@@ -15,6 +17,7 @@ export {
   type MinimalLayoutPreferencePosition,
   type MinimalLayoutProps,
 } from "./MinimalLayout";
+export { default as PanelLayout, type PanelLayoutProps } from "./PanelLayout";
 export { default as PwaLayout, type PwaLayoutProps } from "./PwaLayout";
 export { requestPath } from "./request-path";
 export { getLocalizedRuntimeContext, getRuntimeContext, type RuntimeContext } from "./runtime";

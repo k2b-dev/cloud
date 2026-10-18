@@ -5,21 +5,15 @@ import { contactsService } from "../../../service";
 import { projectBooks, resolvePublicId } from "../../../service/public-resources";
 
 export default ssr<AuthContext>(async (c) => {
-  const user = expectUserBackedActor(c);
+  expectUserBackedActor(c);
   const publicBookId = c.req.param("bookId") ?? "";
   const bookId = await resolvePublicId("books", publicBookId);
   if (!bookId) return ssr.error(c, 404);
 
-  const book = await contactsService.book.get({ id: bookId });
-  if (!book) return ssr.error(c, 404);
-
-  const hasReadAccess = await contactsService.book.permission.canAccess({
-    bookId,
-    subject: { type: "user", userId: user.id },
-    requiredLevel: "read",
-  });
+  const bookResult = await contactsService.book.get({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), id: bookId });
+  if (!bookResult.ok) return ssr.error(c, bookResult.error.code === "NOT_FOUND" ? 404 : 403);
+  const { book } = bookResult.data;
 
   const publicBook = (await projectBooks([book]))[0]!;
-  if (!hasReadAccess) return ssr.error(c, 403);
   return c.redirect(`/app/contacts/${publicBook.id}`, 302);
 });

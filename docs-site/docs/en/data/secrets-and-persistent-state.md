@@ -180,8 +180,10 @@ Every application instance must use the same stable `APP_SECRET`. Cloud has no
 built-in rotation or previous-key fallback.
 
 After a key change, `secrets.decrypt` throws for existing encrypted application
-values. Settings reads silently ignore rows they cannot decrypt and use
-`envFallback` or the default instead.
+values. Settings reads use `envFallback` or the default when a stored row cannot
+be decrypted or fails validation. Administration shows that row as unreadable.
+Writes over it fail with HTTP 409 `setting_unreadable` unless the caller
+explicitly replaces it. Reset deletes the stored row.
 
 At startup, Cloud leaves a setting row it cannot decrypt unchanged. It logs
 the key, never the value. Environment bootstrap, such as `app.url` from

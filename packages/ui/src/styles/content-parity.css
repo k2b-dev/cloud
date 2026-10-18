@@ -4208,8 +4208,10 @@
   background: color-mix(in srgb, var(--k2b-action) 8%, var(--k2b-surface));
 }
 
+/* The 1.25rem file-type tile and 2px block padding keep the row at the 1.5rem
+   it had with a bare glyph. */
 .k2b-ui .k2b-content-file-tree__select {
-  @apply flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1 text-left text-xs;
+  @apply flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-0.5 text-left text-xs;
   border: 0;
   color: inherit;
   background: transparent;
@@ -4230,9 +4232,9 @@
   outline-offset: min(var(--k2b-focus-offset), 0px);
 }
 
+/* A `FileTypeIcon` tile; its type colour comes from the shared rule. */
 .k2b-ui .k2b-content-file-tree__icon {
-  @apply shrink-0 text-sm;
-  color: var(--k2b-text-muted);
+  @apply shrink-0;
 }
 
 .k2b-ui .k2b-content-file-tree__name {

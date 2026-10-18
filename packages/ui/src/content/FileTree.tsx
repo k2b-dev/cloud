@@ -5,26 +5,15 @@
  * pure read-only browser. Context menus render through the platform
  * ContextMenu. Minimal look: text rows, bevel on selection, no hover motion.
  */
-import { fileIcons } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import ContextMenu from "../actions/ContextMenu";
 import Dropdown, { type DropdownItem } from "../actions/Dropdown";
 import { useUiMessages } from "../intl/messages";
+import { FileTypeIcon } from "./FileTypeIcon";
 import { useFileBrowserMessages } from "./file-browser-messages";
 import { allFolderPaths, buildTree, type FileTreeEntry, flattenVisible, parentOf, type TreeNode } from "./file-tree";
 
 export type { FileTreeEntry } from "./file-tree";
-
-/**
- * `fileIcons` (and app-supplied entry icons) may carry Tailwind colour classes.
- * @k2b/ui ships no Tailwind utilities, so only the `ti-*` glyph is kept — the
- * row owns the icon colour.
- */
-const glyphOnly = (icon: string): string =>
-  icon
-    .split(/\s+/)
-    .filter((token) => token.startsWith("ti-"))
-    .join(" ");
 
 /** Presence of a callback enables the matching UI affordance. */
 export type FileTreeActions = {
@@ -275,19 +264,6 @@ export default function FileTree(props: FileTreeProps) {
             };
             const isSelected = () => props.selectedPath === currentNode().entry.path;
             const isDropTarget = () => currentNode().isFolder && dropTarget() === currentNode().entry.path;
-            const icon = () =>
-              currentNode().isFolder
-                ? expanded().has(currentNode().entry.path)
-                  ? "ti-folder-open"
-                  : "ti-folder"
-                : glyphOnly(
-                    currentNode().entry.icon ??
-                      fileIcons.getFileIcon({
-                        name: currentNode().name,
-                        type: "file",
-                        mimeType: currentNode().entry.mediaType ?? "text/plain",
-                      }),
-                  );
             const hasItems = () => menuItems(node).length > 0;
             return (
               <li
@@ -340,7 +316,15 @@ export default function FileTree(props: FileTreeProps) {
                           select(node);
                         }}
                       >
-                        <i class={`ti ${icon()} k2b-content-file-tree__icon`} aria-hidden="true" />
+                        <FileTypeIcon
+                          size="sm"
+                          class="k2b-content-file-tree__icon"
+                          name={currentNode().name}
+                          folder={currentNode().isFolder}
+                          open={currentNode().isFolder && expanded().has(currentNode().entry.path)}
+                          icon={currentNode().isFolder ? undefined : currentNode().entry.icon}
+                          mediaType={currentNode().entry.mediaType ?? "text/plain"}
+                        />
                         <span class="k2b-content-file-tree__name">{currentNode().entry.displayName ?? currentNode().name}</span>
                         <Show when={currentNode().entry.badge}>
                           <span class="k2b-content-file-tree__badge">{currentNode().entry.badge}</span>

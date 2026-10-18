@@ -969,6 +969,28 @@ describe("workspace detail", () => {
   });
 });
 
+describe("workspace phone title menu before hydration", () => {
+  for (const device of [phone, ipadPortrait, laptop]) {
+    test(`${device.width}: only a page with workspace navigation turns the phone title into a menu`, async () => {
+      for (const navigation of [false, true]) {
+        const { context, page } = await open(device, `/app/mail/inbox?${navigation ? "navigation" : "overview"}=1`, { attached: false });
+        try {
+          const title = page.locator(".layout-header-title");
+          const menu = page.locator(".layout-header-title-menu");
+          expect(await page.locator("script[data-cloud-workspace-navigation]").count()).toBe(navigation ? 1 : 0);
+          expect(await title.isVisible()).toBe(device.width === 390 && !navigation);
+          expect(await menu.isVisible()).toBe(device.width === 390 && navigation);
+          expect(await menu.getAttribute("aria-haspopup")).toBe("dialog");
+          expect(await menu.textContent()).toContain("Mail");
+          expect(await title.textContent()).toBe("Mail");
+        } finally {
+          await context.close();
+        }
+      }
+    });
+  }
+});
+
 describe("soft tablet and phone shell", () => {
   // Keyboard focus must paint a whole ring through every ancestor that clips it.
   const focusRing = async (page: Page, selector: string) => {

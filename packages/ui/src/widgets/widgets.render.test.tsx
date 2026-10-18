@@ -123,7 +123,8 @@ describe("@k2b/ui Cloud-faithful widget composition", () => {
   });
 
   test("keeps the widget chrome Cloud actually paints", () => {
-    expect(parityCss).toMatch(/\.k2b-widget__icon \{[^}]*background: transparent/);
+    expect(parityCss).toMatch(/\.k2b-widget__icon \{[^}]*color: var\(--k2b-app-workspace-active\)/);
+    expect(parityCss).not.toMatch(/\.k2b-widget__icon \{[^}]*background:/);
     expect(parityCss).toContain(".k2b-ui a.k2b-widget__header:hover { background: transparent; }");
     // WidgetStatus is a full-bleed banner; `error` is the one untinted tone.
     expect(parityCss).toContain('.k2b-widget-status[data-tone="danger"] { color: #991b1b; background: transparent; }');

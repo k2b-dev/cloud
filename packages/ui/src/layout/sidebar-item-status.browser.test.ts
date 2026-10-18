@@ -221,7 +221,7 @@ const script = await build.outputs[0]!.text();
 
 const viewports = {
   desktop: { viewport: { width: 1280, height: 900 } },
-  // A stacked sidebar keeps the rows on a phone, where hover actions stay visible.
+  // On phones the full rows live in All; the workspace itself shows chips.
   phone: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true },
 } satisfies Record<string, BrowserContextOptions>;
 
@@ -279,8 +279,9 @@ type Measured = {
   marks: Box[];
 };
 
-const measure = (page: Page) =>
-  page.evaluate(() => {
+const measure = (page: Page, sheet = false) =>
+  page.evaluate((sheet) => {
+    const scope = sheet ? document.querySelector(".k2b-app-workspace__sidebar-sheet")! : document;
     // Layout works in 1/64 px; snapping to it drops float noise that WebKit
     // reports at a device scale of 3, such as 31.999998 for 32.
     const px = (value: number) => Math.round(value * 64) / 64;
@@ -290,12 +291,12 @@ const measure = (page: Page) =>
       return { left: px(left), right: px(right), width: px(width), height: px(height) };
     };
     const rows = [
-      ...Array.from(document.querySelectorAll<HTMLElement>(".k2b-app-workspace__sidebar-item[data-state]")).map((row) => ({
+      ...Array.from(scope.querySelectorAll<HTMLElement>(".k2b-app-workspace__sidebar-item[data-state]")).map((row) => ({
         row,
         group: row.dataset.group!,
         state: row.dataset.state!,
       })),
-      ...Array.from(document.querySelectorAll<HTMLElement>(".k2b-app-workspace__nav-tree-row")).map((row) => ({
+      ...Array.from(scope.querySelectorAll<HTMLElement>(".k2b-app-workspace__nav-tree-row")).map((row) => ({
         row,
         group: "tree",
         state: /status-tree-(\w+)/.exec(row.className)![1]!,
@@ -323,7 +324,7 @@ const measure = (page: Page) =>
         ),
       };
     });
-  });
+  }, sheet);
 
 const center = (box: Box) => box.left + box.width / 2;
 
@@ -353,7 +354,11 @@ describe("@k2b/ui sidebar item status", () => {
     test(`${theme} ${viewport}: every state keeps the row height, the label start, and fixed mark places`, async () => {
       const page = await load(theme, viewport);
       try {
-        const rows = await measure(page);
+        if (viewport === "phone") {
+          await page.locator(".k2b-app-workspace__sidebar-all").click();
+          await page.getByRole("dialog").waitFor();
+        }
+        const rows = await measure(page, viewport === "phone");
         expectStableRows(rows);
 
         // Every status reserves one unread slot of one width, which a count

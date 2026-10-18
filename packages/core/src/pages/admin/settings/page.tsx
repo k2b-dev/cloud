@@ -185,6 +185,7 @@ const buildEntries = async (group: string, locale: string): Promise<SettingField
     valueSource: item.valueSource,
     resetValueSource: item.resetValueSource,
     isCustom: item.isCustom,
+    unreadable: item.unreadable,
     group: item.group,
     options: item.options,
     min: item.min,

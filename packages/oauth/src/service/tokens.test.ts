@@ -829,6 +829,7 @@ suite("OAuth resource access tokens", () => {
     expect(configuration.code_challenge_methods_supported).toEqual(["S256"]);
     expect(configuration.resource_parameter_supported).toBe(true);
     expect(configuration.cloud_login_ttl_supported).toBe(true);
+    expect(configuration.cloud_login_hint_supported).toBe(true);
     const response = await oauthRoutes.request("/.well-known/oauth-authorization-server");
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
@@ -836,6 +837,7 @@ suite("OAuth resource access tokens", () => {
       registration_endpoint: "http://localhost:3000/oauth/register",
       resource_parameter_supported: true,
       cloud_login_ttl_supported: true,
+      cloud_login_hint_supported: true,
     });
     const jwks = await oauthRoutes.request("/.well-known/jwks.json");
     expect(jwks.status).toBe(200);

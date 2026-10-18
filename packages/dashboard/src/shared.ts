@@ -49,6 +49,8 @@ export type DashboardCatalogWidget = {
   appId: string;
   appName: string;
   appIcon: string;
+  /** The app's declared accent (`#rrggbb`), so the widget's header icon sits in that app's colour, not the dashboard's. */
+  appAccent?: string;
   /** The app's own page, the header link until the widget answers with its own. */
   appHref?: string;
   title: string;

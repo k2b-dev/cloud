@@ -50,6 +50,7 @@ import {
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { BottomSheetDemo, MobileShellDemo, NavigationDemo, TabBarDemo } from "./mobile-navigation";
+import { ResizeSeparatorDemo } from "./resize-separator";
 import { DemoGrid, type DemoSection } from "./types";
 import { LiveWorkspaceDemo } from "./workspace-live";
 
@@ -390,7 +391,7 @@ const WorkspaceDemo = () => {
     <DemoCard
       id="workspace"
       chip={{ kind: "component", name: "AppWorkspace", from: "@k2b/ui" }}
-      description="A portable application frame with responsive, collapsible, and hideable navigation, peer panes, contextual detail, a bottom drawer, and pointer and keyboard resizing."
+      description="A portable application frame with responsive, collapsible, and hideable navigation, peer panes, contextual detail, a bottom drawer, and pointer and keyboard resizing. Object-row icons sit in soft chips of the app color."
       code={`const [layout, setLayout] = createSignal<AppWorkspaceLayoutState>({ version: 2, sidebarWidth: 208 });
 const [active, setActive] = createSignal("available");
 const [expanded, setExpanded] = createSignal(["items"]);
@@ -438,6 +439,103 @@ const [navigationHidden, setNavigationHidden] = createSignal(false);
         <Show when={sidebarCollapsed()} fallback={workspace(false)}>
           {workspace(true)}
         </Show>
+      </div>
+    </DemoCard>
+  );
+};
+
+const StackedOverviewDemo = () => {
+  const [active, setActive] = createSignal(0);
+  const [newRequests, setNewRequests] = createSignal(0);
+  const names = [
+    "Team",
+    "Personal",
+    "A notebook with a very long name for research and reference",
+    "Projects",
+    "Customers",
+    "Suppliers",
+    "Ideas",
+    "Operations",
+  ];
+  return (
+    <DemoCard
+      id="workspace-stacked-overview"
+      chip={{ kind: "component", name: "AppWorkspace", from: "@k2b/ui" }}
+      description="An overview's objects become scrolling chips below 64 rem. All opens the complete sidebar, including Archive and footer actions. Select a notebook to change the current chip."
+      code={`<AppWorkspace flat resizable={false} mobileSurface="flush">
+  <AppWorkspace.Sidebar label="Notebooks" mobile="stacked">
+    <AppWorkspace.SidebarDesktop>
+      <AppWorkspace.SidebarBody>
+        <AppWorkspace.SidebarSection title="Your notebooks">
+          <AppWorkspace.SidebarItem variant="object" icon="ti ti-notebook" active>
+            <AppWorkspace.SidebarItemLabel>Team</AppWorkspace.SidebarItemLabel>
+            <AppWorkspace.SidebarItemMeta>4</AppWorkspace.SidebarItemMeta>
+          </AppWorkspace.SidebarItem>
+        </AppWorkspace.SidebarSection>
+        <AppWorkspace.SidebarSection title="Archive" collapsible defaultOpen={false}>
+          <AppWorkspace.SidebarItem href="#archived">Archived notebook</AppWorkspace.SidebarItem>
+        </AppWorkspace.SidebarSection>
+      </AppWorkspace.SidebarBody>
+      <AppWorkspace.SidebarFooter>
+        <AppWorkspace.SidebarItem onClick={createNotebook}>New notebook</AppWorkspace.SidebarItem>
+        <AppWorkspace.SidebarItem href="#deleted">Recently deleted</AppWorkspace.SidebarItem>
+      </AppWorkspace.SidebarFooter>
+    </AppWorkspace.SidebarDesktop>
+  </AppWorkspace.Sidebar>
+  <AppWorkspace.Content><AppWorkspace.Main>…</AppWorkspace.Main></AppWorkspace.Content>
+</AppWorkspace>`}
+    >
+      <div class="ui-workspace-demo">
+        <AppWorkspace flat resizable={false} mobileSurface="flush">
+          <AppWorkspace.Sidebar label="Notebooks" mobile="stacked">
+            <AppWorkspace.SidebarDesktop>
+              <AppWorkspace.SidebarBody>
+                <AppWorkspace.SidebarSection title="Your notebooks">
+                  <For each={names}>
+                    {(name, index) => (
+                      <AppWorkspace.SidebarItem
+                        variant="object"
+                        href={`#demo-notebook-${index()}`}
+                        icon="ti ti-notebook"
+                        active={active() === index()}
+                        onClick={() => setActive(index())}
+                      >
+                        <AppWorkspace.SidebarItemLabel>{name}</AppWorkspace.SidebarItemLabel>
+                        <AppWorkspace.SidebarItemMeta>{index() + 4}</AppWorkspace.SidebarItemMeta>
+                      </AppWorkspace.SidebarItem>
+                    )}
+                  </For>
+                </AppWorkspace.SidebarSection>
+                <AppWorkspace.SidebarSection title="Archive" collapsible defaultOpen={false}>
+                  <AppWorkspace.SidebarItem href="#demo-archived" onClick={() => setActive(-1)}>
+                    Archived notebook
+                  </AppWorkspace.SidebarItem>
+                </AppWorkspace.SidebarSection>
+              </AppWorkspace.SidebarBody>
+              <AppWorkspace.SidebarFooter>
+                <AppWorkspace.SidebarItem icon="ti ti-plus" onClick={() => setNewRequests((count) => count + 1)}>
+                  New notebook
+                </AppWorkspace.SidebarItem>
+                <AppWorkspace.SidebarItem icon="ti ti-trash" href="#demo-deleted" onClick={() => setActive(-2)}>
+                  Recently deleted
+                </AppWorkspace.SidebarItem>
+              </AppWorkspace.SidebarFooter>
+            </AppWorkspace.SidebarDesktop>
+          </AppWorkspace.Sidebar>
+          <AppWorkspace.Content>
+            <AppWorkspace.Main>
+              <div class="ui-workspace-demo__body">
+                <h3>{active() === -1 ? "Archived notebook" : active() === -2 ? "Recently deleted" : names[active()]}</h3>
+                <p>Choose a notebook from the sidebar or chip row.</p>
+                <p role="status">
+                  {newRequests()
+                    ? `New notebook action used ${newRequests()} times in this demo.`
+                    : "Choose New notebook in All to try the footer action."}
+                </p>
+              </div>
+            </AppWorkspace.Main>
+          </AppWorkspace.Content>
+        </AppWorkspace>
       </div>
     </DemoCard>
   );
@@ -572,7 +670,7 @@ const OverviewDemo = () => (
       { kind: "component", name: "AppOverview", from: "@k2b/ui" },
       { kind: "component", name: "LinkCard", from: "@k2b/ui" },
     ]}
-    description="An application landing page with one primary action in the page header, objects as calm cards, and a quieter supporting panel."
+    description="An application landing page with one primary action, soft app-color icon chips in the header and cards, and a quieter supporting panel."
     code={`<AppOverview title="Projects" subtitle="3 projects" icon="ti ti-folders" actions={<Button>New project</Button>}>
   <AppOverview.Main title="Your projects">
     <AppOverview.Cards>
@@ -998,7 +1096,7 @@ const PanelDemo = () => {
     <DemoCard
       id="panel-dialog"
       chip={{ kind: "component", name: "PanelDialog", from: "@k2b/ui" }}
-      description="Each section is a title above one tinted group; fields and muted fills such as segmented tracks inside it turn white. Scroll the bounded body: header and footer stay in view. Toggle the optional sections: their titles stay in place and edited values stay intact."
+      description="The header icon sits in a soft chip of the app color. Each section is a title above one tinted group; fields and muted fills such as segmented tracks inside it turn white. Scroll the bounded body: header and footer stay in view. Toggle the optional sections: their titles stay in place and edited values stay intact."
       code={`const [shared, setShared] = createSignal(true);
 const [baseUrl, setBaseUrl] = createSignal("");
 const [auth, setAuth] = createSignal("token");
@@ -1906,8 +2004,10 @@ const items = [
       <WorkspaceLevelsDemo />
       <WorkspaceHostDemo />
       <WorkspaceDemo />
+      <StackedOverviewDemo />
     </DemoGrid>
   ),
+  "resize-separator": () => <ResizeSeparatorDemo />,
   panes: () => (
     <DemoGrid columns="one">
       <PanesDemo />
