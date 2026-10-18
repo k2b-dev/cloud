@@ -21,13 +21,14 @@ else {
     storedWidth = true,
     beforeInstall?: (frame: HTMLIFrameElement) => void,
     navigationApi = false,
+    href = (id: string) => `/app/${id}/panel?base=1`,
   ) {
     const dom = createDomTestHarness();
     const navigation = new dom.window.EventTarget();
     if (navigationApi) Object.defineProperty(dom.window, "navigation", { value: navigation });
     dom.window.innerWidth = viewport;
     document.documentElement.style.fontSize = "16px";
-    const providers = ["fixture", "second"].map((id) => ({ id, label: `${id} panel`, icon: "ti ti-box", href: `/app/${id}/panel?base=1` }));
+    const providers = ["fixture", "second"].map((id) => ({ id, label: `${id} panel`, icon: "ti ti-box", href: href(id) }));
     dom.root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({ panel: { providers, provider: "fixture" } })}</script>
     <button id="opener" data-cloud-panel-toggle>Panel</button>
     <div class="cloud-app-canvas" ${initialOpen ? 'data-panel="open"' : ""} style="${storedWidth ? "--cloud-panel-width-set:24rem" : ""}">
@@ -71,6 +72,12 @@ else {
     return { dom, canvas, slot, opener, frame, open, message, click, resize, dispose, serverFrame, navigation };
   }
 
+  for (const href of ["//elsewhere.test/panel", "https://elsewhere.test/panel", "javascript:alert(1)"])
+    test(`never points the iframe off this origin: ${href}`, () => {
+      const h = setup(1440, false, true, undefined, false, () => href);
+      h.open();
+      expect(h.slot.querySelector("iframe")).toBeNull();
+    });
   test("accepts only the current iframe, same origin and exact message schema", () => {
     const h = setup();
     h.open();
@@ -188,11 +195,11 @@ else {
     expect(h.slot.querySelector("iframe")).toBeNull();
     h.open("fixture", "?q=hello");
     const old = h.frame();
-    expect(old.getAttribute("src")).toBe("/app/fixture/panel?q=hello");
+    expect(old.getAttribute("src")).toBe(`${location.origin}/app/fixture/panel?q=hello`);
     h.open("second");
     expect(old.isConnected).toBe(false);
     expect(h.slot.querySelectorAll("iframe")).toHaveLength(1);
-    expect(h.frame().getAttribute("src")).toBe("/app/second/panel?base=1");
+    expect(h.frame().getAttribute("src")).toBe(`${location.origin}/app/second/panel?base=1`);
     expect(h.slot.querySelector(".k2b-placeholder__description")?.textContent).toContain("second panel");
   });
 

@@ -109,11 +109,18 @@ export function installPanelSlot(): () => void {
     if (search !== undefined) url.search = search;
     if (!replace && frame?.src === url.href) return;
     frame?.remove();
+    // The server validates every provider path; the iframe still never leaves this origin.
+    if (url.origin !== location.origin) {
+      frame = null;
+      clearTimer();
+      slot.dataset.state = "failed";
+      return;
+    }
     frame = document.createElement("iframe");
     frame.className = "cloud-panel__frame";
     frame.title = provider.label;
     frame.dataset.cloudPanelFrame = provider.id;
-    frame.src = `${url.pathname}${url.search}${url.hash}`;
+    frame.src = url.href;
     loading();
     body.append(frame);
   };
