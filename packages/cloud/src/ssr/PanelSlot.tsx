@@ -1,7 +1,6 @@
 import { Button, IconButton, type KeyboardPlatform, NoticeCard, Placeholder, ResizeSeparator, useLocale } from "@k2b/ui";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, type PanelCookieState } from "../_internal/panel-cookie";
 import { withPanelContext } from "../contracts/panel-context";
-import PanelMenu from "./PanelMenu.island";
 import { platformMessages } from "./platform-messages";
 import type { ShellData } from "./shell-data";
 
@@ -68,8 +67,18 @@ export default function PanelSlot(props: { panel: NonNullable<ShellData["panel"]
               <span>{provider.label}</span>
             </h2>
           )}
+          {/* The controller mounts the ⋯ menu over this button; the place stays reserved for Core providers. */}
           {hasConsent && (
-            <PanelMenu initial={{ provider: provider.id, appName: provider.appName, consent: provider.consent, allowed, saving: true }} />
+            <span
+              class="cloud-panel__menu"
+              data-cloud-panel-menu=""
+              style={{ visibility: provider.consent ? "visible" : "hidden" }}
+              inert={!provider.consent}
+            >
+              <IconButton label={t.panelMenu} title={t.panelMenu} aria-haspopup="menu" aria-expanded="false">
+                <i class="ti ti-dots" aria-hidden="true" />
+              </IconButton>
+            </span>
           )}
           <IconButton
             label={t.closePanel}

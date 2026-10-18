@@ -73,17 +73,10 @@ import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import ShellRuntime from "./ShellRuntime.island";
 import { openPanel, publishPageContext } from "../browser/panel";
-import PanelMenu from "./PanelMenu.island";
 render(() => createComponent(ShellRuntime, { panel: true, workspace: { appId: "fixture" }, commands: { searchResources: false } }), document.createElement("div"));
 for (const button of document.querySelectorAll("[data-cloud-panel-toggle]")) button.addEventListener("click", () => window.dispatchEvent(new CustomEvent("cloud.panel.request", { detail: { action: "toggle" } })));
 document.getElementById("open-panel").addEventListener("click", () => openPanel("fixture"));
 document.getElementById("open-silent-panel").addEventListener("click", () => openPanel("fixture", { search: "mode=silent" }));
-const slot = document.getElementById("cloud-panel");
-const menu = document.querySelector("[data-cloud-panel-menu]")?.closest("solid-island");
-if (menu) {
-  menu.replaceChildren();
-  render(() => createComponent(PanelMenu, { initial: { provider: slot.dataset.provider, appName: slot.dataset.appName, consent: slot.dataset.providerConsent === "true", allowed: slot.dataset.contextAllowed === "true", saving: false } }), menu);
-}
 let disposeContext = () => {};
 document.getElementById("change-context")?.addEventListener("click", () => {
   const previous = disposeContext;

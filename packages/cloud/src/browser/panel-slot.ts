@@ -1,4 +1,6 @@
-import { attachResizeSeparator, parkWorkspaceDetailDrawers } from "@k2b/ui";
+import { attachResizeSeparator, LocaleProvider, parkWorkspaceDetailDrawers } from "@k2b/ui";
+import { createComponent } from "solid-js";
+import { render } from "solid-js/web";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, readPanelCookie, serializePanelCookie } from "../_internal/panel-cookie";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
 import { PANEL_CONTEXT_PARAM, withPanelContext } from "../contracts/panel-context";
@@ -12,6 +14,7 @@ import {
   type PanelConsentRequest,
   type PanelState,
 } from "./panel-context-bridge";
+import PanelMenu from "./panel-menu";
 import { isPanelCloseMessage, isPanelReadyMessage } from "./panel-messages";
 
 export const PANEL_READY_TIMEOUT_MS = 10_000;
@@ -29,7 +32,9 @@ export function installPanelSlot(): () => void {
   const body = slot?.querySelector<HTMLElement>(".cloud-panel__body");
   const panel = readShellData()?.panel;
   if (!canvas || !slot || !body || !panel?.providers.length) return () => {};
-  const t = platformMessages.resolve([document.documentElement.lang || "en"]).t;
+  const lang = document.documentElement.lang || "en";
+  const t = platformMessages.resolve([lang]).t;
+  const menuHost = slot.querySelector<HTMLElement>("[data-cloud-panel-menu]");
   // The mode uses the same px breakpoint as panel.css and the shell, read fresh, so CSS and the controller always
   // agree; `phoneChange` only tells when to look again.
   const isPhone = () => !window.matchMedia("(min-width: 768px)").matches;
@@ -102,7 +107,10 @@ export function installPanelSlot(): () => void {
     context = { ...base, seq: context.seq + 1, ...(scope ? { scope } : {}) };
     sendContext();
   };
+  // A back/forward restore starts a new generation; a read from before it must not fill in answers afterwards.
+  let answersGeneration = 0;
   const readAnswers = () => {
+    const generation = answersGeneration;
     answersRequest ??= (async () => {
       try {
         const response = await fetch("/api/me/panel-consent", {
@@ -111,6 +119,7 @@ export function installPanelSlot(): () => void {
         });
         if (!response.ok) throw new Error("Panel consent unavailable");
         const data: unknown = await response.json();
+        if (generation !== answersGeneration) return;
         if (data && typeof data === "object" && "answers" in data && data.answers && typeof data.answers === "object") {
           for (const item of panel.providers) {
             const value: unknown = Reflect.get(data.answers, item.id);
@@ -120,6 +129,7 @@ export function installPanelSlot(): () => void {
       } catch {
         // No answer is fail closed, including an unavailable store or an aborted request.
       }
+      if (generation !== answersGeneration) return;
       for (const item of panel.providers) if (!answers.has(item.id)) answers.set(item.id, null);
     })();
     return answersRequest;
@@ -182,6 +192,10 @@ export function installPanelSlot(): () => void {
     if (error) error.textContent = errors.has(provider.id) ? t.panelConsentSaveError : "";
     for (const button of slot.querySelectorAll<HTMLButtonElement>("[data-cloud-panel-consent-answer]"))
       button.disabled = saving.has(provider.id);
+    if (menuHost) {
+      menuHost.style.visibility = provider.consent ? "visible" : "hidden";
+      menuHost.inert = !provider.consent;
+    }
     window.dispatchEvent(
       new CustomEvent<PanelState>("cloud.panel.state", {
         detail: {
@@ -215,7 +229,11 @@ export function installPanelSlot(): () => void {
     if (status) status.textContent = "";
     // A provider without consent may still carry an older snapshot (a reload after withdrawal); clear it.
     if (allowed()) sendContext();
-    else if (disclosed) postNull();
+    else if (disclosed) {
+      postNull();
+      // Withdrawn while this document was still loading: its address still carries the snapshot.
+      forgetUrlContext();
+    }
   };
   const unload = () => {
     ++loadVersion;
@@ -280,6 +298,8 @@ export function installPanelSlot(): () => void {
       clearTimer(); // The consent read has its own bounded timeout; provider readiness starts with its load.
       void readAnswers().then(() => {
         if (disposed || !isOpen() || version !== loadVersion) return;
+        // The read belonged to an earlier generation (a restore happened meanwhile): wait for the current one.
+        if (!answers.has(provider.id)) return load(replace);
         loadNow(replace);
         update();
         // open() could not move focus while nothing was there; do it now unless the reader moved on meanwhile.
@@ -469,13 +489,15 @@ export function installPanelSlot(): () => void {
     // A restored page may hold answers changed elsewhere meanwhile: stop sharing and read them again.
     if (!panel.providers.some((item) => item.consent)) return;
     if (provider.consent && disclosed) postNull();
+    answersGeneration += 1;
     answersRequest = undefined;
     for (const item of panel.providers) if (item.consent) answers.delete(item.id);
     update();
     void readAnswers().then(() => {
-      if (disposed) return;
+      if (disposed || (provider.consent && !answers.has(provider.id))) return;
       update();
-      sendContext();
+      if (allowed()) sendContext();
+      else if (provider.consent && disclosed) forgetUrlContext();
     });
   };
   const entryChange = (event: NavigationCurrentEntryChangeEvent) => {
@@ -561,9 +583,32 @@ export function installPanelSlot(): () => void {
   } else if (isOpen()) load();
   else unload();
   update();
+  // Mounted only now, after update() wrote the state it starts from; a click before this has nothing to change.
+  let disposeMenu = () => {};
+  if (menuHost) {
+    menuHost.replaceChildren();
+    const initial: PanelState = {
+      provider: provider.id,
+      appName: provider.appName,
+      consent: provider.consent,
+      allowed: allowed(),
+      saving: saving.has(provider.id),
+    };
+    disposeMenu = render(
+      () =>
+        createComponent(LocaleProvider, {
+          locale: lang,
+          get children() {
+            return createComponent(PanelMenu, { initial, locale: lang });
+          },
+        }),
+      menuHost,
+    );
+  }
   const dispose = () => {
     if (disposed) return;
     disposed = true;
+    disposeMenu();
     requests.abort();
     ++loadVersion;
     clearContext();

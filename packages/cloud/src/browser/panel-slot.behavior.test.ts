@@ -48,7 +48,7 @@ else {
       <aside id="cloud-panel" data-provider="fixture" data-state="closed">
         <div class="cloud-panel__resize" aria-orientation="vertical" tabindex="0"></div>
         <button data-cloud-panel-close>Close</button><button data-cloud-panel-grow>Grow</button>
-        <button data-cloud-panel-provider="fixture">Fixture</button><button data-cloud-panel-provider="second">Second</button>
+        <button data-cloud-panel-provider="fixture">Fixture</button><button data-cloud-panel-provider="second">Second</button><span data-cloud-panel-menu><button>Placeholder</button></span>
         <div class="cloud-panel__body"><div data-cloud-panel-consent tabindex="-1"><h3 data-cloud-panel-consent-title></h3><p data-cloud-panel-consent-body></p><button data-cloud-panel-consent-answer="allow">Allow</button><button data-cloud-panel-consent-answer="deny">Deny</button><p data-cloud-panel-consent-error></p></div>${initialOpen ? '<iframe src="/app/fixture/panel?base=1" data-cloud-panel-frame="fixture"></iframe>' : ""}<button data-cloud-panel-retry>Try again</button><div class="k2b-placeholder__description"></div></div>
         <div data-cloud-panel-status></div>
       </aside>
@@ -578,6 +578,83 @@ else {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledTimes(1);
     dispose();
+  });
+
+  test("the controller mounts the panel menu over the server placeholder, hidden for providers without consent", () => {
+    const h = setupContext(pageContext, true, true);
+    const host = h.slot.querySelector<HTMLElement>("[data-cloud-panel-menu]")!;
+    expect(host.textContent).not.toContain("Placeholder");
+    expect(host.querySelector('[aria-label="Panel menu"]')).not.toBeNull();
+    expect(host.style.visibility).toBe("visible");
+    h.dispose();
+    h.dom.cleanup();
+    const core = setupContext(pageContext, false);
+    const coreHost = core.slot.querySelector<HTMLElement>("[data-cloud-panel-menu]")!;
+    expect(coreHost.style.visibility).toBe("hidden");
+    expect(coreHost.inert).toBe(true);
+  });
+
+  const restore = () => {
+    const restored = new Event("pageshow");
+    Object.defineProperty(restored, "persisted", { value: true });
+    window.dispatchEvent(restored);
+  };
+  // A provider document whose address and history the controller may rewrite.
+  const loadedDocument = (h: ReturnType<typeof setup>, address: string) => {
+    const shown = new URL(address, location.origin);
+    const post = mock((_data: unknown, _origin: string) => {});
+    const history = {
+      state: null,
+      replaceState: (_state: unknown, _title: string, path: string) => {
+        shown.search = new URL(path, location.origin).search;
+      },
+    };
+    showDocument(h.frame(), { postMessage: post, location: shown, history });
+    return { shown, post };
+  };
+
+  test("withdrawn while the provider was still loading, its address loses the snapshot once it is ready", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const src = h.frame().src;
+    expect(src).toContain("cloud_panel_context");
+    loadedDocument(h, "about:blank");
+    consent("fixture", false);
+    await tick();
+    const { shown, post } = loadedDocument(h, src);
+    ready(h);
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    expect(post.mock.calls).toEqual([[{ type: "cloud.panel.context", v: 1, context: null }, location.origin]]);
+  });
+
+  test("a restore that reads a withdrawn answer also removes the snapshot from the provider's address", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: false } })));
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { shown } = loadedDocument(h, h.frame().src);
+    ready(h);
+    restore();
+    await tick();
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+  });
+
+  test("a consent read from before a restore cannot fill in the answer afterwards", async () => {
+    let answerOld: (response: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => (answerOld = resolve));
+    const fetch = spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(pending)
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: false } })));
+    fetchSpy = fetch;
+    const h = setupContext();
+    h.open();
+    restore();
+    answerOld(new Response(JSON.stringify({ answers: { fixture: true } })));
+    await tick();
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(h.frame().src).not.toContain("cloud_panel_context");
   });
 
   test("context that arrived live does not make the same provider reload on the next open", async () => {
