@@ -37,6 +37,8 @@ export default new Hono<AuthContext>()
   // Each open streams a stored file, bounded like the Files API.
   .use("/app/filesv2/pdf/*", rateLimit())
   .route("/", pdfPage)
+  // A share's public note sits next to file names that writers of the shared folder choose without holding the link.
+  .use("/share/filesv2/*", middleware.noTransform())
   .get("/share/filesv2/s/:token", auth.requireRole("*"), ...publicSharePage)
   .get("/share/filesv2/inbox/:token", auth.requireRole("*"), ...publicInboxPage)
   .get("/admin/filesv2", auth.requireRole("admin", ssr.access), ...adminPage)

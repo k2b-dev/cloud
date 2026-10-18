@@ -16,12 +16,13 @@ describe("Core compression boundaries", () => {
     "/me/approvals/__new_route__",
     "/admin/outgoing-mail",
     "/admin/outgoing-mail/__new_route__",
+    "/admin/settings",
     "/admin/settings?tab=ai-usage",
     "/admin/settings?tab=ai-projects",
     "/admin/settings?tab=ai-skills",
-    "/admin/settings/__new_route__?tab=ai-usage",
-    "/admin/settings/__new_route__?tab=ai-projects",
-    "/admin/settings/__new_route__?tab=ai-skills",
+    "/admin/settings?tab=ai-jobs",
+    "/admin/settings?tab=ai-providers",
+    "/admin/settings/__new_route__",
   ]) {
     test(`${path} opts out before authentication`, async () => {
       const response = await pages.request(path);
@@ -38,16 +39,8 @@ describe("Core compression boundaries", () => {
   });
 });
 
-test("profile, access and other settings pages stay eligible for compression", async () => {
-  for (const path of [
-    "/me",
-    "/me/access",
-    "/me/security",
-    "/me/notifications",
-    "/admin/settings",
-    "/admin/settings?tab=ai-providers",
-    "/admin/settings/__new_route__?tab=ai-providers",
-  ]) {
+test("profile, access and notification settings pages stay eligible for compression", async () => {
+  for (const path of ["/me", "/me/access", "/me/security", "/me/notifications"]) {
     const response = await pages.request(path);
     expect(response.status).toBeLessThan(500);
     expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");

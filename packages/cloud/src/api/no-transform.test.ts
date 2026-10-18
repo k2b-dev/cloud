@@ -14,6 +14,7 @@ const { default: meRoutes } = await import("./me");
 const { approvalRoutes } = await import("./approvals");
 const { default: outgoingMail } = await import("./admin-outgoing-mail");
 const { default: aiUsage } = await import("./admin-ai-usage");
+const { default: lifecycle } = await import("./admin-lifecycle");
 const { default: aiProjects } = await import("./admin-ai-projects");
 const { default: aiSkills } = await import("./admin-ai-skills");
 const { createAppApprovalRoutes } = await import("./app-approval");
@@ -34,6 +35,7 @@ const groups = [
   { name: "notifications", router: meRoutes, paths: ["/notifications/history", "/notifications/history/__new_route__"] },
   { name: "approvals", router: approvalRoutes, paths: ["/", "/__new_route__"] },
   { name: "outgoing mail", router: outgoingMail, paths: ["/", "/__new_route__"] },
+  { name: "account lifecycle reports", router: lifecycle, paths: ["/deleted-accounts", "/reminders", "/__new_route__"] },
   { name: "AI usage", router: aiUsage, paths: ["/report", "/report/__new_route__", "/__new_route__"] },
   { name: "AI project descriptions", router: aiProjects, paths: ["/", "/__new_route__"] },
   { name: "AI skill descriptions", router: aiSkills, paths: ["/", "/__new_route__"] },

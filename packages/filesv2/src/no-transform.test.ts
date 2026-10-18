@@ -5,6 +5,7 @@ prepareNoTransformRouterTest();
 
 const { default: api } = await import("./api/index");
 const { default: pages } = await import("./frontend/index");
+const { publicApi } = await import("./public");
 
 describe("compression boundaries", () => {
   for (const path of [
@@ -33,6 +34,9 @@ describe("compression boundaries", () => {
     "/app/filesv2/__new_route__?view=edit&file=outside.docx",
     "/admin/filesv2?view=shares",
     "/admin/filesv2/__new_route__?view=shares",
+    "/share/filesv2/s/token",
+    "/share/filesv2/inbox/token",
+    "/share/filesv2/__new_route__",
   ]) {
     test(`pages ${path} opts out`, async () => {
       const response = await pages.request(path);
@@ -45,6 +49,13 @@ describe("compression boundaries", () => {
       const response = await pages.request(path);
       expect(response.status).toBeLessThan(500);
       expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");
+    });
+  }
+  for (const path of ["/s/token/api", "/inbox/token/api", "/__new_route__"]) {
+    test(`public API ${path} opts out`, async () => {
+      const response = await publicApi.request(path);
+      expect(response.status).toBeLessThan(500);
+      expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }
 });
