@@ -967,9 +967,9 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
    * The complete sidebar for a chip row: a second rendering of the same
    * children in a sheet. It shares the application's state through its
    * signals, inherits this sidebar's context and accent, and is disposed with
-   * the sheet. Back closes it. A chosen link closes it first and then is
-   * followed through the same link in the row, so the link's own handlers,
-   * such as an enhanced navigation, run once the sheet has left the history.
+   * the sheet. A chosen link closes it first and then is followed through the
+   * same link in the row, so the link's own handlers, such as an enhanced
+   * navigation, run once the sheet is gone.
    */
   const openAll = (button: HTMLButtonElement) => {
     if (sheetOpen() || !aside) return;
@@ -990,6 +990,8 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
     const choose = (event: MouseEvent, sheet: HTMLElement, close: () => void) => {
       const link = (event.target as Element | null)?.closest?.("a[href]");
       if (!(link instanceof HTMLAnchorElement) || !sheet.contains(link)) return;
+      // A tree branch's disclosure inside its link only expands the branch.
+      if ((event.target as Element).closest("[data-k2b-nav-tree-toggle]")) return;
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       if (link.target && link.target !== "_self") return;
       event.preventDefault();
@@ -1048,7 +1050,9 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
           onCleanup(() => dispose?.());
           return view;
         },
-        { ...bottomSheetAdaptiveOptions, ariaLabel: props.label, history: true, signal: leave.signal },
+        // No history entry: an application may replace the URL from inside the sidebar, such as a search, and an
+        // entry of the sheet would then outlive it. Back leaves the page, as for other dialogs.
+        { ...bottomSheetAdaptiveOptions, ariaLabel: props.label, signal: leave.signal },
       )
       .finally(() => {
         watch.disconnect();

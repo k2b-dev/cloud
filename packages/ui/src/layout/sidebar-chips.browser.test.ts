@@ -18,7 +18,7 @@ const { IconButton } = await import("../actions/Button");
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 
-type Options = { count?: number; active?: number; dark?: boolean; stacked?: boolean };
+type Options = { count?: number; active?: number; dark?: boolean; stacked?: boolean; tree?: boolean };
 type Components = {
   AppWorkspace: typeof AppWorkspace;
   IconButton: typeof IconButton;
@@ -87,6 +87,21 @@ function tree(
                             return Array.from({ length: options.count ?? 5 }, (_, index) => item(index));
                           },
                         }),
+                        options.tree
+                          ? createComponent(AppWorkspace.NavTree, {
+                              ariaLabel: "Folders",
+                              get children() {
+                                return createComponent(AppWorkspace.NavTree.Item, {
+                                  id: "branch",
+                                  label: "Branch",
+                                  href: "#branch",
+                                  get children() {
+                                    return createComponent(AppWorkspace.NavTree.Item, { id: "leaf", label: "Leaf", href: "#leaf" });
+                                  },
+                                });
+                              },
+                            })
+                          : null,
                         createComponent(AppWorkspace.SidebarSection, {
                           title: "Archive",
                           collapsible: true,
@@ -317,15 +332,25 @@ for (const [width, height] of [
         await dialog.getByRole("link", { name: "Recently deleted", exact: true }).click();
         await dialog.waitFor({ state: "detached" });
         expect(new URL(page.url()).hash).toBe("#deleted");
-        // The link was followed after the sheet left the history: one Back returns to the overview.
+        // The sheet adds no history entry: one Back returns from the chosen link to the overview.
         await page.goBack();
         await page.waitForFunction(() => location.hash === "");
-        // Back closes an open sheet and stays on the page, as the other phone sheets do.
-        await all(page).click();
-        await dialog.waitFor();
-        await page.goBack();
-        await dialog.waitFor({ state: "detached" });
         expect(new URL(page.url()).pathname).toBe("/overview");
+      } finally {
+        await page.close();
+      }
+    });
+
+    test("a tree branch's disclosure in the sheet expands it instead of following its link", async () => {
+      const page = await load(width, height, { tree: true });
+      try {
+        await all(page).click();
+        const dialog = page.getByRole("dialog", { name: "Notebooks", exact: true });
+        await dialog.waitFor();
+        expect(await dialog.getByText("Leaf", { exact: true }).isVisible()).toBe(false);
+        await dialog.locator('.k2b-app-workspace__nav-tree-node:has-text("Branch") [data-k2b-nav-tree-toggle]').first().click();
+        await dialog.getByText("Leaf", { exact: true }).waitFor();
+        expect(await dialog.isVisible()).toBe(true);
         expect(new URL(page.url()).hash).toBe("");
       } finally {
         await page.close();
