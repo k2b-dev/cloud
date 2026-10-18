@@ -402,7 +402,7 @@ in the routine's locale. Dialogs, chat lines, and notifications include it in
 the sentence; without an action, only the second sentence appears. English
 lowercases an initial title-case word ("Create task" becomes "Tried to create
 task."); German titles and acronym starts stay unchanged. Other reason codes
-clear `reason_action`. The pause time uses `reason_at`, the reader's locale and
+clear `reason_action`, and readers ignore it beside any other code. The pause time uses `reason_at`, the reader's locale and
 the routine's timezone. `chatTaskReasonSentence` from `@k2b/cloud/ai` renders
 these sentences in English and German. Browser code imports it from
 `@k2b/cloud/ai/browser`.

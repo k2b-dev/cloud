@@ -40,9 +40,10 @@ export const migrateChatTaskReasons = async (sql: SQL): Promise<void> => {
         ALTER TABLE ai.chat_tasks ADD CONSTRAINT ai_chat_tasks_reason_code_check
           CHECK (reason_code IN ('paused', 'chat_archived', 'owner_inactive', 'failed', 'rights_changed', 'needs_approval'));
       END IF;
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_chat_tasks_reason_action_check') THEN
-        ALTER TABLE ai.chat_tasks ADD CONSTRAINT ai_chat_tasks_reason_action_check
-          CHECK (reason_action IS NULL OR (reason_code IS NOT NULL AND reason_code = 'needs_approval'));
+      -- Bounded only: an older Core clears reason_code without knowing reason_action, so readers pair the two.
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_chat_tasks_reason_action_length_check') THEN
+        ALTER TABLE ai.chat_tasks ADD CONSTRAINT ai_chat_tasks_reason_action_length_check
+          CHECK (reason_action IS NULL OR char_length(reason_action) BETWEEN 1 AND 200);
       END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_chat_tasks_title_check') THEN
         ALTER TABLE ai.chat_tasks ADD CONSTRAINT ai_chat_tasks_title_check CHECK (char_length(btrim(title)) BETWEEN 1 AND 80);

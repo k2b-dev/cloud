@@ -240,7 +240,8 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
              conversation.short_id AS conversation_id,
              task.id AS task_id,
              task.sponsor_user_id AS user_id,
-             task.title, conversation.title AS chat_title, task.prompt, task.locale, task.timezone, task.reason_code, task.reason_at, task.reason_action
+             task.title, conversation.title AS chat_title, task.prompt, task.locale, task.timezone, task.reason_code, task.reason_at,
+             CASE WHEN task.reason_code = 'needs_approval' THEN task.reason_action END AS reason_action
       FROM ai.chat_task_occurrences occurrence
       JOIN ai.chat_tasks task ON task.id = occurrence.task_id
       JOIN ai.conversations conversation ON conversation.id = task.conversation_id

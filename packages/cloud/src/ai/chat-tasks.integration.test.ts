@@ -723,10 +723,10 @@ suite("AI chat tasks", () => {
             schedule: { kind: "once", runAt: "2099-04-08T09:00:00.000Z" },
           }),
         ).toMatchObject({ state: "active", reasonCode: null, reasonAction: null });
-        // A second failure must keep the new column clear and satisfy the database CHECK.
+        // A second failure must keep the new column clear. The new time is a new slot; the refused slot stays used.
         const next = (await aiChatTasks.createOccurrence({
           taskId: task.id,
-          scheduledFor: runAt,
+          scheduledFor: "2099-04-08T09:00:00.000Z",
           trigger: "manual",
           requestKey: `${suffix}:${status}:next`,
         }))!;
@@ -748,9 +748,13 @@ suite("AI chat tasks", () => {
       const [bounded] =
         await sql`SELECT run_config #>> '{background,needsApproval,action}' AS action FROM ai.turns WHERE id = ${background!.id}::uuid`;
       expect(bounded!.action).toBe("A".repeat(200));
-      // SQL NULL must not evade the action/reason invariant.
-      await expect(sql`UPDATE ai.chat_tasks SET state = 'active', reason_code = NULL, reason_at = NULL,
-        reason_action = ${action} WHERE conversation_id = ${conversation.id}::uuid`).rejects.toThrow();
+      // An older Core changes the reason without knowing reason_action: the write succeeds, and the stale action never shows.
+      const [older] = await sql<{ short_id: string }[]>`UPDATE ai.chat_tasks SET state = 'needs_attention', reason_code = 'failed',
+        reason_at = now(), reason_action = ${action} WHERE conversation_id = ${conversation.id}::uuid RETURNING short_id`;
+      const stale = (await aiChatTasks.get({ userId: user!.id, taskId: older!.short_id }))!;
+      expect(stale).toMatchObject({ reasonCode: "failed", reasonAction: null });
+      expect(toAiChatTaskView(stale).reason).toEqual({ code: "failed", at: stale.reasonAt! });
+      await expect(sql`UPDATE ai.chat_tasks SET reason_action = ${"A".repeat(201)} WHERE short_id = ${older!.short_id}`).rejects.toThrow();
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;

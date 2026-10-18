@@ -257,7 +257,7 @@ const stopTaskAdmission = async (
   const state = chatTaskReasonState(code);
   const [stopped] = await db<TaskRow[]>`
     UPDATE ai.chat_tasks
-    SET state = ${state}, last_error = ${reason}, reason_code = ${code}, reason_action = CASE WHEN ${code} = 'needs_approval' THEN reason_action ELSE NULL END, reason_at = now(),
+    SET state = ${state}, last_error = ${reason}, reason_code = ${code}, reason_action = NULL, reason_at = now(),
         mandate_revision = COALESCE(${pausedMandateRevision ?? null}::bigint, mandate_revision),
         revision = revision + 1, updated_at = now()
     WHERE id = ${task.id}::uuid AND state = ${task.state} RETURNING *
@@ -281,7 +281,7 @@ const stopTaskAdmission = async (
       occurrences.push(...failed);
     }
     for (const occurrence of occurrences) {
-      const taskReason = { code, at: iso(stopped!.reason_at!), ...(stopped!.reason_action ? { action: stopped!.reason_action } : {}) };
+      const taskReason = { code, at: iso(stopped!.reason_at!) };
       await deliverOccurrenceResult(db, task, occurrence.id, reasonSentence(task, taskReason, appLocale), {
         reason: taskReason,
         reasonOnly: true,
@@ -389,7 +389,8 @@ const toTask = (row: TaskRow): AiChatTask => ({
   locale: row.locale,
   reasonCode: row.reason_code,
   reasonAt: nullableIso(row.reason_at),
-  reasonAction: row.reason_action,
+  // An older Core may leave a stale action beside another code; the action belongs only to needs_approval.
+  reasonAction: row.reason_code === "needs_approval" ? row.reason_action : null,
   id: row.id,
   shortId: row.short_id,
   chatId: row.conversation_short_id,
@@ -1359,16 +1360,12 @@ export const aiChatTasks = {
         const revision = await pauseTerminalTaskMandate(task, tx);
         await tx`
           UPDATE ai.chat_tasks
-          SET state = ${chatTaskReasonState(input.code)}, reason_code = ${input.code}, reason_action = CASE WHEN ${input.code} = 'needs_approval' THEN reason_action ELSE NULL END, reason_at = CASE WHEN reason_code = ${input.code} THEN COALESCE(reason_at, now()) ELSE now() END, last_error = ${input.error}, mandate_revision = ${revision},
+          SET state = ${chatTaskReasonState(input.code)}, reason_code = ${input.code}, reason_action = NULL, reason_at = CASE WHEN reason_code = ${input.code} THEN COALESCE(reason_at, now()) ELSE now() END, last_error = ${input.error}, mandate_revision = ${revision},
               revision = revision + 1, updated_at = now()
           WHERE id = ${rows[0].task_id}::uuid AND revision = ${rows[0].task_revision}::bigint
         `;
         const [stopped] = await tx<TaskRow[]>`SELECT * FROM ai.chat_tasks WHERE id = ${task.id}::uuid`;
-        const reason = {
-          code: input.code,
-          at: iso(stopped!.reason_at!),
-          ...(stopped!.reason_action ? { action: stopped!.reason_action } : {}),
-        };
+        const reason = { code: input.code, at: iso(stopped!.reason_at!) };
         await deliverOccurrenceResult(tx, task, input.occurrenceId, reasonSentence(task, reason, appLocale), { reason, reasonOnly: true });
         return "failed" as const;
       }
