@@ -33,7 +33,12 @@ const storedContent = (logo: Logo): string => logo.dataUrl.slice(logo.dataUrl.in
  * The mailbox logo that `{{ mailbox.logo }}` places in signatures. Mailbox admins upload, replace, adjust, and remove it;
  * people with write access see the same values with every control disabled. The server checks the file and the right.
  */
-export default function MailboxLogoSettings(props: { mailboxId: string; canManage: boolean }) {
+export default function MailboxLogoSettings(props: {
+  mailboxId: string;
+  canManage: boolean;
+  /** Reports unsaved width or alt text, so closing the settings asks before discarding them. */
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const locale = useLocale();
   const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const id = createUniqueId();
@@ -118,7 +123,11 @@ export default function MailboxLogoSettings(props: { mailboxId: string; canManag
     },
     onError: (error) => prompts.error(error.message),
   });
+  // A file read that finishes after the settings closed must not start an upload.
+  let disposed = false;
   onCleanup(() => {
+    disposed = true;
+    props.onDirtyChange?.(false);
     upload.abort();
     saveDetails.abort();
     remove.abort();
@@ -134,6 +143,8 @@ export default function MailboxLogoSettings(props: { mailboxId: string; canManag
     return Boolean(current) && (displayWidth() !== current?.displayWidth || trimmedAlt() !== current?.altText);
   };
 
+  createEffect(() => props.onDirtyChange?.(detailsDirty()));
+
   const chooseFile = async (file: File | undefined) => {
     if (!file) return;
     setUploadError();
@@ -148,6 +159,7 @@ export default function MailboxLogoSettings(props: { mailboxId: string; canManag
       setUploadError(messages().logoReadFailed);
       return;
     }
+    if (disposed) return;
     // A replacement keeps the stored width and alt text; a first upload takes the server's defaults.
     const current = logo();
     await upload.mutate(current ? { content, displayWidth: current.displayWidth, altText: current.altText } : { content });

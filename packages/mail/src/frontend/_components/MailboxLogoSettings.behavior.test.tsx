@@ -95,13 +95,15 @@ describe("Mailbox logo settings", () => {
     }
   });
 
+  let dirtyReports: boolean[] = [];
   const mount = (locale: "en" | "de" = "en", canManage = true) => {
+    dirtyReports = [];
     // Prompts have their own Solid root and inherit the document's locale.
     dom.document.documentElement.lang = locale;
     dispose = render(
       () => (
         <LocaleProvider locale={locale}>
-          <MailboxLogoSettings mailboxId="Box001" canManage={canManage} />
+          <MailboxLogoSettings mailboxId="Box001" canManage={canManage} onDirtyChange={(dirty) => dirtyReports.push(dirty)} />
         </LocaleProvider>
       ),
       dom.root,
@@ -183,6 +185,48 @@ describe("Mailbox logo settings", () => {
     } finally {
       success.mockRestore();
     }
+  });
+
+  test("starts no upload when the settings close while the file is still being read", async () => {
+    let finishRead = () => {};
+    const bytes = Buffer.from(content, "base64");
+    const slowFile = {
+      name: "logo.png",
+      type: "image/png",
+      size: bytes.byteLength,
+      arrayBuffer: () =>
+        new Promise<ArrayBuffer>((resolve) => {
+          finishRead = () => resolve(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+        }),
+    };
+    mount();
+    await waitFor(() => text().includes("No logo yet"));
+    const input = group().querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", { configurable: true, value: [slowFile] });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    dispose();
+    dispose = () => {};
+    finishRead();
+    await Bun.sleep(20);
+    expect(writes()).toEqual([]);
+  });
+
+  test("reports unsaved width and alt text to the settings until they are saved", async () => {
+    initialLogo = storedLogo;
+    putResponse = () => Response.json({ logo: { ...storedLogo, altText: "Team logo" } });
+    mount();
+    await waitFor(() => image() !== null);
+    expect(dirtyReports.at(-1)).toBe(false);
+    edit(altInput(), "Team logo");
+    expect(dirtyReports.at(-1)).toBe(true);
+    button("Save").click();
+    await waitFor(() => button("Save").disabled && image()?.getAttribute("alt") === "Team logo");
+    expect(dirtyReports.at(-1)).toBe(false);
+    edit(widthInput(), "300");
+    expect(dirtyReports.at(-1)).toBe(true);
+    dispose();
+    dispose = () => {};
+    expect(dirtyReports.at(-1)).toBe(false);
   });
 
   test("shows the German server validation message in the dropzone field and keeps the empty state", async () => {

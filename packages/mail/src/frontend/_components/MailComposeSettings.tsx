@@ -359,6 +359,7 @@ export default function MailComposeSettings(props: {
   initialStyle: MailboxComposeStyle;
   identities: SenderIdentity[];
   onTemplatesChange?: (templates: ComposeTemplate[]) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
@@ -582,7 +583,11 @@ export default function MailComposeSettings(props: {
         </SettingsGroup>
       </Show>
 
-      <MailboxLogoSettings mailboxId={props.mailboxId} canManage={props.permission === "admin"} />
+      <MailboxLogoSettings
+        mailboxId={props.mailboxId}
+        canManage={props.permission === "admin"}
+        onDirtyChange={(dirty) => props.onDirtyChange?.(dirty)}
+      />
     </div>
   );
 }
