@@ -34,6 +34,42 @@ As an agent on a headless box, run the command, show the user the URL and code, 
 
 In an SSH session, or when `--no-open` is used, the normal `cld login` prints a hint to use `--device`.
 
+## Sign in with Cloud Login
+
+When the user has paired Cloud Login on a phone, `--user` sends the sign-in to that phone. Nobody opens a URL or types a code:
+
+```bash
+cld login --server https://cloud.example --user alice
+```
+
+```text
+Compare this code in Cloud Login: 123 456
+Waiting for approval… (Ctrl+C cancels)
+✓ Signed in as Alice Example (profile "default")
+Login expires: 2026-10-19T08:00:00.000Z
+```
+
+Pass the user's username or email. The user compares the six digits with the code in Cloud Login, checks the listed rights and lifetime, and approves with a single tap. `cld` stores the login like any other. `--user` cannot be combined with `--device` or `--no-open`.
+
+The request expires after 5 minutes. Ctrl+C stops waiting and exits with status 130. `cld` cannot tell whether the account exists or has a paired phone. When nobody approves in time, it prints `No confirmation received` and the matching `--device` command; sign in with that command or in the browser. A denied request exits with status 1 and stores nothing. Cloud Login does not approve the `admin` scope; use the browser or `--device` for it.
+
+An older Cloud refuses `--user` with `This Cloud cannot send sign-ins to Cloud Login yet` and the matching `--device` command.
+
+## Limit a login with --ttl
+
+`--ttl` ends a login after a fixed time. It works with the browser, `--device`, and `--user`:
+
+```bash
+cld login --server https://cloud.example --user alice --ttl 8h
+cld login --server https://cloud.example --device --ttl 30m
+```
+
+Use `30m`, `8h`, `2d`, or a whole number of seconds. `--ttl` can only shorten a login: the Cloud caps it at its session length. `cld` prints the actual end as `Login expires: <time>`, and `cld auth status` shows `Login expires` or `Login expired`. Refreshes never extend the end. After it, commands that need the login fail before they send a request and print the exact `cld login` command to sign in again. An older Cloud refuses `--ttl`; sign in without it.
+
+Without `--ttl`, a `--user` login lasts the Cloud's session length. Browser and `--device` logins last 90 days.
+
+As an agent on a headless box, prefer `--user <the user's username or email>` when the user has paired Cloud Login, otherwise `--device`. Tell the user to approve only the code shown in your terminal. Pass a `--ttl` that fits the task, such as `--ttl 2h` for one session of work. Never ask for a password or token. To sign in with fewer rights, pass `--scope`.
+
 ## Profiles
 
 ```bash

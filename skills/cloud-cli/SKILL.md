@@ -12,7 +12,7 @@ Use `cld` to work with the user's Cloud content from a terminal. It handles sign
 ## Start
 
 1. Install the app modules first: `cld plugins install --all`, or `cld plugins install apps <module>` for the one the task needs, with `apps` for step 3. Until then `cld` has no app commands and the [Installed modules](#installed-modules) table below is empty. `cld plugins list` shows what the Cloud serves and what needs an update.
-2. If that reports no configured server or no sign-in, sign in with `cld login --server <Cloud URL>`, or with `--device` on a machine without a browser, such as a server reached over SSH, then install. Inspect or switch profiles with `cld profile list` and `cld profile use <name>`. Read [Sign-in and profiles](references/sign-in.md) for details.
+2. If that reports no configured server or no sign-in, sign in with `cld login --server <Cloud URL>`. On a machine without a browser, such as a server reached over SSH, add `--user <username or email>` when the user has paired Cloud Login, otherwise `--device`, then install. Inspect or switch profiles with `cld profile list` and `cld profile use <name>`. Read [Sign-in and profiles](references/sign-in.md) for details.
 3. Run `cld apps list --json` before choosing an app command. It shows the live Cloud apps available to the current user; use `--search <text>` to narrow the list.
 4. Run `cld <app> reference`, then `cld <app> help` or `cld <app> <command> --help` for an unfamiliar operation. Help never runs a command, so `cld logout --help` or `cld profile set --help` is safe too. Every installed module carries references, whether served by a Cloud or installed as a package; a missing one says `run cld plugins install <name>`.
 5. Use the default profile unless the task names another instance; pass `--profile <name>` only when needed.
@@ -49,7 +49,7 @@ Start with the reference named here; it holds the exact syntax and the safe work
 ## Agent workflow
 
 - Stay on the user's selected profile unless they name another Cloud instance.
-- When you operate a headless box (SSH, container, CI runner) and `cld` is not signed in, run `cld login --server <Cloud URL> --device` and relay the printed URL and code to the user; they approve it in their own browser. Never ask the user for a password or token instead.
+- When you operate a headless box (SSH, container, CI runner) and `cld` is not signed in, run `cld login --server <Cloud URL> --user <the user's username or email>` when the user has paired Cloud Login, otherwise `--device`, and relay the printed code (and URL) to the user; they approve it on their own phone or in their own browser, and only if it matches. Pass a `--ttl` that fits the task. Never ask the user for a password or token instead. See [Sign-in and profiles](references/sign-in.md).
 - When a profile was written by `cld admin agents create`, you act as that agent account, not as the user: `cld auth status` shows `client-credentials`. You see only what the agent was granted; ask the user to grant access instead of switching to their profile.
 - Read before changing content. Use IDs returned by list or get commands when a name is not unique.
 - Use `--json` whenever the next action depends on one complete response. Use `--jsonl` for supported list commands when processing items as a stream. Keep normal output for simple inspection.
@@ -65,7 +65,7 @@ Start with the reference named here; it holds the exact syntax and the safe work
 
 Every module ships its own reference with the plugin. Run `cld <module> reference` for the module of the current task and read it before the first command; it links further files, which `cld <module> reference <file>` prints. Follow those links only when the operation needs the deeper API; do not preload every file.
 
-- Read [Sign-in and profiles](references/sign-in.md) to sign in with a browser or a device code, keep several Cloud instances in profiles or remove one, store refresh tokens in fd0, and run as an agent account whose profile holds OAuth client credentials.
+- Read [Sign-in and profiles](references/sign-in.md) to sign in with a browser, a device code, or Cloud Login, limit a login with `--ttl`, keep several Cloud instances in profiles or remove one, store refresh tokens in fd0, and run as an agent account whose profile holds OAuth client credentials.
 - Read [CLI plugins](references/plugins.md) to list, install, update, or remove `cld` plugins and to print their references.
 - Run `cld apps reference` and `cld account reference` for the two modules every Cloud serves, `cld capabilities reference` for generic typed Queries and Actions, and `cld api-docs reference` for the live HTTP APIs.
 - Administrators run `cld admin reference`, `cld accounts reference`, `cld oauth reference`, and `cld ipa-hosts reference` for the matching task.
