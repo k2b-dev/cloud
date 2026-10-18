@@ -415,6 +415,16 @@ describe("Mail workspace conversation open", () => {
     expect(detailRequests.map((request) => request.id)).toEqual([A, B, A, B]);
   });
 
+  test("Back to a list that starts at a cursor loads that list again", async () => {
+    mount(`${folderPath}&cursor=c2`);
+    expect(rows()[0]?.dataset.conversationId).toBe(rowId(51));
+    dom.root.querySelector<HTMLAnchorElement>(`a[href="${folderPath}"]`)!.click();
+    await until(() => rows()[0]?.dataset.conversationId === rowId(1), "the folder's first page");
+    dom.window.history.back();
+    await until(() => rows()[0]?.dataset.conversationId === rowId(51), "the list from the cursor");
+    expect(routeRequests).toEqual([folderPath, `${folderPath}&cursor=c2`]);
+  });
+
   test("a slower earlier response never replaces a later selection", async () => {
     mount();
     let releaseA = () => {};

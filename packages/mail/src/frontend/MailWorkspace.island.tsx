@@ -370,9 +370,10 @@ function MailWorkspaceView(props: {
     const { href, listMode } = decodeRouteSource(source);
     const url = mailRouteUrl(href);
     if (url.searchParams.has("message")) return source;
-    // The mailing list parameter only opens the subscription dialog; the list is the same with and without it.
+    // A starting cursor is part of the list; the mailing list parameter only opens the subscription dialog.
+    url.searchParams.delete("conversation");
     url.searchParams.delete("mailingList");
-    return JSON.stringify({ scope: mailListScope(`${url.pathname}${url.search}`), listMode });
+    return JSON.stringify({ list: `${url.pathname}${url.search}`, listMode });
   };
   const sameRouteList = (left: string, right: string) => left === right || routeListKey(left) === routeListKey(right);
   const initialRouteSource = encodeRouteSource(props.requestPath, props.data.listMode);
