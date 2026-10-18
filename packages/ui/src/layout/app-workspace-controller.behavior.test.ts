@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { Window as HappyWindow } from "happy-dom";
 import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
@@ -2191,6 +2191,104 @@ describe("waiting detail drawers", () => {
     });
   }
 
+  for (const interaction of ["pointer", "Enter", " ", "assistive"] as const) {
+    test(`a parked Detail waits for a later mark after a ${interaction} choice`, async () => {
+      const { root, aside, item, title, toggle } = waitingWorkspace();
+      const row = mainRow(item);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        toggle.click();
+        detailKey(toggle, "Escape");
+        item.focus();
+        if (interaction === "pointer") {
+          rememberPointer(item);
+          item.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+        } else if (interaction === "assistive") item.click();
+        else {
+          detailKey(item, interaction);
+          if (interaction === " ") item.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+        }
+        flushFrames();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        expect(toggle.getAttribute("aria-expanded")).toBe("false");
+        await Promise.resolve(); // The application's load finishes after the initial check.
+        (interaction === "Enter" ? row : item).setAttribute("aria-current", "page");
+        await window.happyDOM.whenAsyncComplete();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+        expect(toggle.getAttribute("aria-expanded")).toBe("true");
+        expect(document.activeElement === (interaction === "pointer" ? item : title)).toBe(true);
+        if (interaction !== "pointer") {
+          title.textContent = "Loaded contact";
+          await window.happyDOM.whenAsyncComplete();
+          expect(document.activeElement === title).toBe(true);
+        }
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  for (const cancellation of ["pointer", "focus", "item removed", "dispose"] as const) {
+    test(`a later mark does not reopen after ${cancellation} ends the wait`, async () => {
+      const { root, main, aside, item } = waitingWorkspace();
+      const other = document.createElement("button");
+      document.body.append(other);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        item.focus();
+        detailKey(item, "Enter");
+        flushFrames();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        if (cancellation === "pointer") rememberPointer(other);
+        if (cancellation === "focus") other.focus();
+        if (cancellation === "item removed") item.remove();
+        if (cancellation === "dispose") dispose();
+        await window.happyDOM.whenAsyncComplete();
+        if (cancellation === "item removed") main.append(item);
+        item.setAttribute("aria-current", "page");
+        await window.happyDOM.whenAsyncComplete();
+        flushFrames();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+      } finally {
+        if (cancellation !== "dispose") dispose();
+        other.remove();
+      }
+    });
+  }
+
+  test("a later mark on a disclosure button's row ends the wait without reopening", async () => {
+    const { root, aside, item } = waitingWorkspace();
+    const row = mainRow(item);
+    item.setAttribute("aria-expanded", "false");
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      rememberPointer(item);
+      item.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+      flushFrames();
+      flushFrames();
+      await Promise.resolve();
+      row.setAttribute("aria-current", "page");
+      await window.happyDOM.whenAsyncComplete();
+      flushFrames();
+      flushFrames();
+      expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+      // Rejecting the row is final, even if the control itself gains a mark later.
+      item.setAttribute("aria-selected", "true");
+      await window.happyDOM.whenAsyncComplete();
+      flushFrames();
+      flushFrames();
+      expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+    } finally {
+      dispose();
+    }
+  });
+
   for (const gesture of [
     "click",
     "unmarked click",
@@ -2310,24 +2408,47 @@ describe("waiting detail drawers", () => {
 
   for (const key of ["Enter", " "]) {
     test(`the native click after ${key} does not create a second choice`, async () => {
-      const { root, aside, item } = waitingWorkspace();
+      const { root, aside, item, title, toggle } = waitingWorkspace();
       const dispose = installAppWorkspaceController({ root });
+      const expanded = spyOn(toggle, "setAttribute");
+      const focused = spyOn(title, "focus");
+      const openings = () => expanded.mock.calls.filter(([name, value]) => name === "aria-expanded" && value === "true").length;
       try {
+        item.focus();
         detailKey(item, key);
         flushFrames();
-        item.click();
-        flushFrames(); // The key's unmarked check ends here; the click must not restart it.
-        item.setAttribute("aria-current", "page");
-        // A second native click must not have left another check behind.
+        if (key === " ") {
+          item.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key }));
+          item.click(); // Space's native click follows keyup in the same task.
+          flushFrames();
+        } else item.click();
+        // The native click must not restart the key's two-frame check. Its first
+        // choice now keeps waiting and may reopen once when the mark arrives.
         flushFrames();
         expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
-        item.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key }));
+        expect(frames.size).toBe(0);
+        item.setAttribute("aria-current", "page");
+        await window.happyDOM.whenAsyncComplete();
         flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+        await window.happyDOM.whenAsyncComplete();
+        flushFrames();
+        flushFrames();
+        expect(openings()).toBe(1);
+        expect(focused).toHaveBeenCalledTimes(1);
+        expect(document.activeElement === title).toBe(true);
+        parkWorkspaceDetailDrawers(root);
         item.click(); // A subsequent assistive click is its own activation.
         flushFrames();
         flushFrames();
         expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+        expect(openings()).toBe(2);
+        expect(focused).toHaveBeenCalledTimes(2);
       } finally {
+        expanded.mockRestore();
+        focused.mockRestore();
         dispose();
       }
     });

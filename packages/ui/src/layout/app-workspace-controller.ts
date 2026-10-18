@@ -937,33 +937,49 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     pendingDetail?.stop();
     pendingDetail = null;
   };
+  // Check a completed choice after two frames. If its selection mark arrives
+  // later, keep waiting until another interaction replaces the choice.
   const checkPendingDetail = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem, space = false) => {
     cancelPendingDetail();
     let frame: number | null = null;
+    let observer: MutationObserver | null = null;
     const settle = () => {
+      ownerDocument.removeEventListener("click", onClick, true);
+      ownerDocument.removeEventListener("keyup", onKeyUp, true);
       if (frame !== null) cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         frame = requestAnimationFrame(() => {
           frame = null;
           const main = mainElement(root);
+          if (
+            !canOpenPendingDetail(aside) ||
+            !snapshot.chosen ||
+            !snapshot.item.isConnected ||
+            !main?.contains(snapshot.item) ||
+            snapshot.item.closest(ROOT_SELECTOR) !== root
+          ) {
+            cancelPendingDetail();
+            return;
+          }
           // ARIA marks, and `data-selected` as DataTable and Calendar mark their selection.
           const selected = snapshot.item.closest(
             '[aria-selected="true"], [aria-current]:not([aria-current="false"]), [data-selected="true"]',
           );
-          const opens =
-            canOpenPendingDetail(aside) &&
-            snapshot.chosen &&
-            snapshot.item.isConnected &&
-            main?.contains(snapshot.item) &&
-            snapshot.item.closest(ROOT_SELECTOR) === root &&
-            selected &&
-            selected !== main &&
-            main.contains(selected) &&
-            // A control inside a selected row that discloses, toggles, or opens
-            // a menu does its own job and selects nothing.
-            (selected === snapshot.item || !snapshot.item.matches(NESTED_CONTROL_SELECTOR));
+          if (!selected || selected === main || !main.contains(selected)) {
+            if (!observer) {
+              observer = new MutationObserver(settle);
+              observer.observe(main, {
+                subtree: true,
+                attributes: true,
+                attributeFilter: ["aria-selected", "aria-current", "data-selected"],
+              });
+            }
+            return;
+          }
           cancelPendingDetail();
-          if (!opens) return;
+          // A control inside a selected row that discloses, toggles, or opens
+          // a menu does its own job and selects nothing.
+          if (selected !== snapshot.item && snapshot.item.matches(NESTED_CONTROL_SELECTOR)) return;
           snapshot.fresh = false;
           openDetailDrawer(aside);
           revealItem(root, aside, snapshot);
@@ -986,6 +1002,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     };
     const stop = () => {
       if (frame !== null) cancelAnimationFrame(frame);
+      observer?.disconnect();
       ownerDocument.removeEventListener("click", onClick, true);
       ownerDocument.removeEventListener("keyup", onKeyUp, true);
       ownerDocument.removeEventListener("pointercancel", cancelPendingDetail, true);
@@ -1763,7 +1780,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       : new MutationObserver((records) => {
           syncPhonePages();
           if (pendingTitle && (pendingTitle.aside.hidden || !pendingTitle.aside.isConnected)) cancelTitle();
-          if (pendingDetail && !canOpenPendingDetail(pendingDetail.aside)) cancelPendingDetail();
+          if (
+            pendingDetail &&
+            (!canOpenPendingDetail(pendingDetail.aside) || !pendingDetail.snapshot.chosen || !pendingDetail.snapshot.item.isConnected)
+          )
+            cancelPendingDetail();
           // Hiding or removing the sidebar, or its button, ends the overlay.
           if (overlay && (overlay.sidebar.hidden || !overlay.sidebar.isConnected || !overlay.toggle.isConnected)) closeOverlay("kept");
           const details = new Set<HTMLElement>();

@@ -19,6 +19,7 @@ type Components = {
 };
 export type FixtureOptions = {
   scenario?: string;
+  selectionDelay?: boolean;
   detailWidth?: AppWorkspaceDetailWidth;
   mainMin?: number;
   sidebar?: boolean;
@@ -81,7 +82,13 @@ export function workspaceTree({ AppWorkspace, createComponent, createSignal, Dyn
                                 component: "button",
                                 children: "Another message",
                                 onClick: (event: MouseEvent) => {
-                                  if (event.currentTarget instanceof HTMLElement) event.currentTarget.setAttribute("aria-current", "true");
+                                  const item = event.currentTarget;
+                                  if (item instanceof HTMLElement) {
+                                    const mark = () => item.setAttribute("aria-current", "true");
+                                    if (props.selectionDelay)
+                                      (window as Window & { markWorkspaceSelection?: () => void }).markWorkspaceSelection = mark;
+                                    else mark();
+                                  }
                                   setContact("Another contact");
                                 },
                               }),

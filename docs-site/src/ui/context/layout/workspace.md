@@ -265,6 +265,8 @@ opens with that choice. While the Detail stays open, a choice reopens it only
 when the application marks the chosen item or an ancestor inside Main with
 `aria-selected="true"`, `aria-current` other than `"false"`, or
 `data-selected="true"` (as DataTable's `selectedRowId` does) after activation.
+The mark may arrive later, for example after a load; the choice waits for it
+until another interaction replaces it.
 A control inside the selected row that discloses, toggles, opens a menu, or
 takes input does not count as a choice.
 Enter, Space, and assistive-technology clicks count as keyboard choices and

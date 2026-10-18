@@ -214,6 +214,29 @@ test("1194: marking a chosen item current reopens a parked Detail; live content 
   }
 });
 
+test("1194: a mark that arrives after a load reopens a parked Detail", async () => {
+  const page = await load(1194, { mainMin: 760, detailWidth: "lg", scenario: "selection", selectionDelay: true });
+  try {
+    await waiting(page);
+    await toggle(page).click();
+    await page.keyboard.press("Escape");
+    await main(page).getByRole("button", { name: "Another message" }).click();
+    await workspaceFrames(page);
+    await waiting(page);
+    expect(await page.locator('[data-workspace-detail-drawer="open"]').count()).toBe(0);
+    await page.evaluate(() => {
+      const markSelection = (window as Window & { markWorkspaceSelection?: () => void }).markWorkspaceSelection;
+      if (!markSelection) throw new Error("Selection fixture did not expose its delayed mark hook");
+      markSelection();
+    });
+    await page.waitForFunction(() => document.querySelector('[data-workspace-detail-drawer="open"]'));
+    expect(await detail(page).locator("h2").innerText()).toBe("Another contact");
+    expect(await toggle(page).getAttribute("aria-expanded")).toBe("true");
+  } finally {
+    await page.close();
+  }
+});
+
 for (const host of [500, 1100]) {
   test(`a ${host}px host narrower than the sidebar and Main's 900px minimum keeps the workspace inside it`, async () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
