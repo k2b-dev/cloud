@@ -1,10 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
+import type { AuthContext } from "../server";
+import { type createGeoIpService, GeoIpError, geoIpAdminStatus } from "../services/geoip";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
-import type { AuthContext } from "../server";
-import { createGeoIpService, GeoIpError } from "../services/geoip";
-import { geoIpAdminStatus } from "../services/geoip";
 import { createAdminGeoIpRoutes } from "./admin-geoip";
 
 const status = geoIpAdminStatus([], { city: null, asn: null }, 0);

@@ -14,6 +14,7 @@ import { GeoIpError, parseGeoIpUpload, readGeoIpUpload } from "./upload";
 
 export { GEOIP_MAX_DATABASE_BYTES, GEOIP_MAX_REQUEST_BYTES } from "../../contracts/geoip";
 export { GeoIpError } from "./upload";
+
 type Actor = { id: string; roles: readonly string[]; uid?: string; provider?: string };
 export type GeoIpUploadInfo = {
   kind: GeoIpKind;

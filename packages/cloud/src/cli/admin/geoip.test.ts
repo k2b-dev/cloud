@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DBIP_ATTRIBUTION, type GeoIpAdminStatus } from "../../contracts/geoip";
 import { mmdbFixture } from "../../server/request-context/geoip.test-fixture";
-import admin from ".";
 import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "../index";
+import admin from ".";
 
 const status: GeoIpAdminStatus = {
   databases: [

@@ -3,7 +3,7 @@ import { Reader } from "mmdb-lib";
 import { GEOIP_MAX_DATABASE_BYTES, GEOIP_MAX_REQUEST_BYTES } from "../../contracts/geoip";
 import { openGeoIpDatabase } from "../../server/request-context/geoip";
 import { FIXTURE_EPOCH, mmdbFixture } from "../../server/request-context/geoip.test-fixture";
-import { createGeoIpService, geoIpAdminStatus, type GeoIpUploadInfo } from ".";
+import { createGeoIpService, type GeoIpUploadInfo, geoIpAdminStatus } from ".";
 import { parseGeoIpUpload, readGeoIpUpload } from "./upload";
 
 const buildDate = new Date(FIXTURE_EPOCH * 1000);
