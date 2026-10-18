@@ -92,7 +92,7 @@ const AppOverviewEmptyState = (props: AppOverviewEmptyStateProps): JSX.Element =
 const AppOverview = ((props: AppOverviewProps): JSX.Element => (
   <div class={`k2b-app-overview ${props.class ?? ""}`}>
     <header class="k2b-app-overview__header">
-      <span class="k2b-app-overview__icon" aria-hidden="true">
+      <span class="k2b-app-overview__icon k2b-icon-tile" aria-hidden="true">
         <i class={tablerIconClass(props.icon, "ti-apps")} />
       </span>
       <PanelHeader as="h1" size="lg" title={props.title} subtitle={props.subtitle} actions={props.actions} />

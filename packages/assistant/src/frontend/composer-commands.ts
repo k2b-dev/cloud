@@ -621,7 +621,9 @@ export async function assistantComposerCommands(input: {
                           ? copy.commandTaskAlreadyRan({ title })
                           : state === "failed"
                             ? copy.commandTaskAlreadyFailed({ title })
-                            : copy.commandTaskRunning({ title }),
+                            : state === "stopped"
+                              ? copy.commandTaskAlreadyStopped({ title })
+                              : copy.commandTaskRunning({ title }),
                     };
                   } catch (error) {
                     const status = error instanceof AssistantTaskRunError ? error.status : undefined;

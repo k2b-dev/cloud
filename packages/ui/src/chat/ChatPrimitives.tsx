@@ -39,6 +39,8 @@ export type ChatActivityProps = {
   tone?: ChatActivityTone;
   /** Marks the activity as running with the shared accent sweep. */
   busy?: boolean;
+  /** Lets label and description wrap instead of ending in an ellipsis, for a system line whose whole sentence matters. */
+  wrap?: boolean;
   trailing?: JSX.Element;
   /** Controlled disclosure state. Omit to keep native details behavior. */
   open?: boolean;
@@ -340,6 +342,7 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
           data-tone={tone()}
           data-accent={props.accent ? "true" : undefined}
           data-busy={props.busy ? "true" : undefined}
+          data-wrap={props.wrap ? "true" : undefined}
           data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
           style={style()}
           aria-busy={props.busy ? "true" : undefined}
@@ -355,6 +358,7 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
         data-tone={tone()}
         data-accent={props.accent ? "true" : undefined}
         data-busy={props.busy ? "true" : undefined}
+        data-wrap={props.wrap ? "true" : undefined}
         data-body-inset={props.bodyInset === false ? "false" : undefined}
         data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
         style={style()}

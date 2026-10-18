@@ -389,7 +389,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 145;
+export const portableUiComponentCount = 146;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -479,6 +479,7 @@ export const documentedOnlyUiCatalogExports = {
   createPanesLayout: "Documented Panes initial-layout helper.",
   createTemplateEditorPanesLayout: "Documented TemplateEditor layout helper.",
   fitFloatingWindowRect: "Documented FloatingWindow geometry helper.",
+  fileTypeOf: "Documented FileTypeIcon color-family resolver in the file browser guide.",
   formatFileViewSize: "Documented FileView metadata formatter.",
   getFileViewPreviewKind: "Documented FileView preview classifier.",
   isStructuredDataValue: "Documented StructuredDataPreview boundary validator.",

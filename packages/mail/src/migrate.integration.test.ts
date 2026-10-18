@@ -116,6 +116,26 @@ suite("mail baseline schema", () => {
     });
   });
 
+  test("installs immutable mailbox logos on an older baseline and preserves the FK/index contract on rerun", async () => {
+    await migrate();
+    await sql`ALTER TABLE mail.mailboxes DROP COLUMN logo_version_id`;
+    await sql`ALTER TABLE mail.outbox_submissions DROP COLUMN inline_logo_version_id`;
+    await sql`DROP TABLE mail.mailbox_logo_versions`;
+    await migrate();
+    await migrate();
+    const [shape] = await sql<
+      { table_exists: boolean; mailbox_fk: boolean; outbox_fk: boolean; mailbox_index: boolean; outbox_index: boolean; checks: number }[]
+    >`
+      SELECT to_regclass('mail.mailbox_logo_versions') IS NOT NULL AS table_exists,
+        EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.mailboxes'::regclass AND confrelid = 'mail.mailbox_logo_versions'::regclass AND confdeltype = 'a') AS mailbox_fk,
+        EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.outbox_submissions'::regclass AND confrelid = 'mail.mailbox_logo_versions'::regclass AND confdeltype = 'n') AS outbox_fk,
+        to_regclass('mail.mailbox_logo_versions_mailbox_idx') IS NOT NULL AS mailbox_index,
+        EXISTS (SELECT 1 FROM pg_index WHERE indexrelid = 'mail.outbox_inline_logo_version_idx'::regclass AND indpred IS NOT NULL) AS outbox_index,
+        (SELECT count(*)::int FROM pg_constraint WHERE conrelid = 'mail.mailbox_logo_versions'::regclass AND contype = 'c') AS checks
+    `;
+    expect(shape).toEqual({ table_exists: true, mailbox_fk: true, outbox_fk: true, mailbox_index: true, outbox_index: true, checks: 8 });
+  });
+
   test("backfills assignees once when upgrading an older database and preserves later changes", async () => {
     await migrate();
     const suffix = crypto.randomUUID();

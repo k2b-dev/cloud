@@ -20,7 +20,7 @@ export type LinkCardProps = {
 export function LinkCard(props: LinkCardProps): JSX.Element {
   const content = (
     <>
-      <div class="k2b-link-card__icon">
+      <div class="k2b-link-card__icon k2b-icon-tile">
         <i class={`${props.icon} k2b-link-card__glyph`} aria-hidden="true" />
       </div>
       <div class="k2b-link-card__copy">
