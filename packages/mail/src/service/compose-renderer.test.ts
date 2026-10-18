@@ -1370,6 +1370,64 @@ describe("mailbox signature logos", () => {
       expect(renderComposeTemplateSource(signature, context, "markdown")).toMatchObject({ ok: false });
     }
   });
+  test("rejects oversized unterminated Liquid output before scanning URL contexts", () => {
+    const source = "{{".repeat(40_000);
+    const start = performance.now();
+    const result = validateComposeTemplateSource(source);
+    const elapsed = performance.now() - start;
+    expect(result.ok).toBe(false);
+    expect(elapsed).toBeLessThan(500);
+  });
+  test("rejects any capture tag alongside an exact logo tag", () => {
+    for (const capture of [
+      "{% capture sig %}{{ mailbox.logo }}{% endcapture %}{{ sig | downcase }}",
+      "{%- capture sig -%}{{- mailbox.logo -}}{%- endcapture -%}{{ sig | downcase }}",
+      "{% liquid\n capture sig\n echo 'other text'\n endcapture\n%}{{ mailbox.logo }}",
+      "{%- liquid\n\tcapture sig\n echo 'other text'\n endcapture\n-%}{{ mailbox.logo }}",
+      "{% capture other %}Unrelated{% endcapture %}{{ mailbox.logo }}",
+    ]) {
+      expect(validateComposeTemplateSource(capture)).toMatchObject({
+        ok: false,
+        error: { message: "{{ mailbox.logo }} cannot be used together with capture" },
+      });
+      expect(render({ signature: capture })).toMatchObject({
+        ok: false,
+        error: { composeRender: { reason: "signatureFailed" } },
+      });
+    }
+    expect(validateComposeTemplateSource("{% capture sig %}Regards{% endcapture %}{{ sig | downcase }}").ok).toBe(true);
+    expect(validateComposeTemplateSource("{{ mailbox.logo }} capture {% assign capture = 'text' %}{{ capture }}").ok).toBe(true);
+  });
+  test("fails closed when a rendered logo marker is transformed or loses its prefix", () => {
+    const randomPart = "ABCDEF01234546789ABCDEF012345678";
+    const token = `MAILLOGO${randomPart}`;
+    const uuid = spyOn(crypto, "randomUUID").mockReturnValue("abcdef01-2345-4678-9abc-def012345678");
+    try {
+      for (const format of ["plain", "markdown"] as const) {
+        for (const marker of [
+          token.toLowerCase(),
+          `MAILLOGO${randomPart.toLowerCase()}`,
+          randomPart,
+          `changed${randomPart.toLowerCase()}`,
+        ]) {
+          const result = render({
+            format,
+            signature: "{{ mailbox.logo }} {{ actor.display_name }}",
+            context: { ...context, actor: { ...context.actor, display_name: marker } },
+          });
+          expect(result).toMatchObject({ ok: false, error: { composeRender: { reason: "signatureFailed" } } });
+          expect(render({ format, signature: null, body: marker })).toMatchObject({
+            ok: false,
+            error: { composeRender: { reason: "signatureFailed" } },
+          });
+        }
+        expect(render({ format, signature: "{{ mailbox.logo }} {{ mailbox.logo }}" })).toMatchObject({ ok: true });
+        expect(render({ format, body: "MAILLOGO11111111222243338444555555555555" })).toMatchObject({ ok: true });
+      }
+    } finally {
+      uuid.mockRestore();
+    }
+  });
   test("removes an unavailable logo and reports its formatting warning", () => {
     for (const format of ["plain", "markdown"] as const) {
       const result = render({ logo: null, format });

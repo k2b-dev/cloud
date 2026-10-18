@@ -566,9 +566,12 @@ A rollback has the same limitation for messages queued with logos.
 
 Logos count toward the Mail database share, at most 100 KiB per immutable
 version. Unused versions are removed hourly; current logos and versions still
-needed by queued messages or Sent-copy retries are retained. After upgrading,
+needed by queued messages or Sent-copy retries are retained. Local sent copies
+retain their inline images in the deduplicated Mail blob store, independently
+of logo versions. After upgrading,
 upload a test logo, preview a signature containing `{{ mailbox.logo }}`, and
-send it. Check that it arrives as an inline image without a remote image link.
+schedule it. Check that the local copy shows the logo before provider sync,
+then send it and check that it arrives as an inline image without a remote image link.
 
 ### Mail storage for kept conversations
 

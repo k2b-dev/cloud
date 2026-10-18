@@ -39,6 +39,7 @@ import { pauseDeletedMailboxExecution } from "./mailbox-lifecycle";
 import { deleteUnusedMailboxLogoVersions, loadInlineLogoContent } from "./mailbox-logos";
 import { createMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
+import { createBlobReadable } from "./message-blobs";
 import { listConversations, listFolders } from "./messages";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { outboundDraftSnapshotSchema } from "./outbound-mime";
@@ -1208,6 +1209,46 @@ suite("mail sent message projection", () => {
         expect(snapshot.renderedHtml).not.toContain('src="http');
         expect(snapshot.renderedHtml).not.toContain("data:image");
         expect(snapshot.renderedText).toContain("Frozen logo");
+        const projectedAttachments = await sql<
+          {
+            content_id: string;
+            disposition: string;
+            content_type: string;
+            checksum: string;
+            size_bytes: string | number;
+            blob_id: string;
+            part_content_id: string;
+            part_disposition: string;
+            part_blob_id: string;
+            part_size_bytes: string | number;
+            hydration_status: string;
+          }[]
+        >`
+          SELECT attachment.content_id, attachment.disposition, attachment.content_type,
+            attachment.checksum, attachment.size_bytes, attachment.blob_id,
+            part.content_id AS part_content_id, part.disposition AS part_disposition,
+            part.blob_id AS part_blob_id, part.size_bytes AS part_size_bytes, part.hydration_status
+          FROM mail.outbox_submissions outbox
+          JOIN mail.attachments attachment ON attachment.message_id = outbox.message_id
+          JOIN mail.message_parts part ON part.id = attachment.part_id
+          WHERE outbox.id = ${outbox.id}::uuid
+        `;
+        expect(projectedAttachments).toHaveLength(1);
+        const projectedLogo = projectedAttachments[0];
+        if (!projectedLogo) throw new Error("Projected inline logo missing");
+        expect(projectedLogo).toMatchObject({
+          content_id: `<${logo.contentId}>`,
+          disposition: "inline",
+          content_type: logo.contentType,
+          checksum: logo.sha256,
+          part_content_id: `<${logo.contentId}>`,
+          part_disposition: "inline",
+          part_blob_id: projectedLogo.blob_id,
+          hydration_status: "complete",
+        });
+        expect(Number(projectedLogo.size_bytes)).toBe(original.byteLength);
+        expect(Number(projectedLogo.part_size_bytes)).toBe(original.byteLength);
+        expect(await readAll(createBlobReadable(projectedLogo.blob_id))).toEqual(original);
         expect(
           await updateMailboxComposeLogo({
             context,
@@ -1257,6 +1298,7 @@ suite("mail sent message projection", () => {
         >`SELECT inline_logo_version_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
         expect(cleared?.inline_logo_version_id).toBeNull();
         await expect(loadInlineLogoContent(logo)).rejects.toMatchObject({ code: "INLINE_LOGO_UNAVAILABLE" });
+        expect(await readAll(createBlobReadable(projectedLogo.blob_id))).toEqual(original);
       }
     } finally {
       provider.restore();

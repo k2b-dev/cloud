@@ -643,12 +643,13 @@ const createSendOutbox = async (params: {
     throw Object.assign(new Error(message), err.badInput(message));
   }
   const mimeDate = new Date();
+  const inlineLogoContent = await loadInlineLogoContent(snapshot.data.inlineLogo, params.db);
   const byteLength = await measureMimeStream({
     snapshot: snapshot.data,
     messageId: stableMessageId,
     date: mimeDate,
     openAttachment: createBlobReadable,
-    inlineLogoContent: await loadInlineLogoContent(snapshot.data.inlineLogo, params.db),
+    inlineLogoContent,
   });
   const providerLimits = await loadBindingProviderLimits(params.db, params.selectedBindingId);
   const rawIdentityTransportCapabilities =
@@ -743,6 +744,7 @@ const createSendOutbox = async (params: {
     stableMessageId,
     conversationId: draft.conversation_id,
     snapshot: snapshot.data,
+    inlineLogoContent,
     internalDate: effectiveScheduledAt,
     byteLength,
   });

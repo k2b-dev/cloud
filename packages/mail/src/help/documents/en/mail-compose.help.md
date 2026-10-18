@@ -112,6 +112,8 @@ Signatures stay separate from the editable text. Preview and the sent message sh
 
 Put `{{ mailbox.logo }}` in a signature to show the mailbox logo in new messages, replies, and forwards. Preview shows it too. Mail sends it as an inline image, never a remote link. Plain text uses its alt text; snippets leave it empty. If no logo is uploaded, the placeholder stays empty and preview warns you. A queued or scheduled message keeps its original logo even after it is replaced or removed. The provider's Drafts copy has no signature or logo.
 
+Use `{{ mailbox.logo }}` on its own, without filters. A template containing it cannot use Liquid `capture` tags, even to capture unrelated text.
+
 A mailbox admin uploads a PNG or JPEG with `cld mail compose logo set --file logo.png`. It can be at most 100 KiB and 1200×400 pixels. Display width defaults to 200 px and accepts 1–600 px with `--width`. Alt text defaults to the trimmed mailbox name; `--alt` accepts 1–200 characters without control characters. Browser logo settings come later.
 
 Type `/` in the body to search snippets only. Mail inserts the chosen snippet into the text, where you can edit or remove it.

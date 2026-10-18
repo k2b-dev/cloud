@@ -118,6 +118,8 @@ Tippe im Text `/`, um ausschließlich Textbausteine zu suchen. Mail fügt den ge
 
 Setze `{{ mailbox.logo }}` in eine Signatur, um das Postfachlogo in neuen Nachrichten, Antworten und Weiterleitungen anzuzeigen. Die Vorschau zeigt es ebenfalls. Mail sendet es als eingebettetes Bild, nie als entfernten Link. Im Klartext steht der Alternativtext; in Textbausteinen bleibt der Platzhalter leer. Ohne hochgeladenes Logo bleibt er leer und die Vorschau warnt dich. Eingereihte und geplante Nachrichten behalten ihr ursprüngliches Logo auch nach dem Ersetzen oder Entfernen. Die Entwurfskopie beim Anbieter hat keine Signatur und kein Logo.
 
+Verwende `{{ mailbox.logo }}` allein, ohne Filter. Eine Vorlage mit diesem Platzhalter darf keine Liquid-`capture`-Tags enthalten, auch nicht für anderen Text.
+
 Ein Postfachadmin lädt ein PNG oder JPEG mit `cld mail compose logo set --file logo.png` hoch: höchstens 100 KiB und 1200×400 Pixel. Die Anzeigebreite beträgt standardmäßig 200 px; `--width` erlaubt 1–600 px. Der Alternativtext ist standardmäßig der getrimmte Postfachname. `--alt` erlaubt 1–200 Zeichen ohne Steuerzeichen. Logo-Einstellungen im Browser folgen später.
 
 Nutze diese Liquid-Variablen in deiner Vorlage:

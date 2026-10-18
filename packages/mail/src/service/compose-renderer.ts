@@ -299,6 +299,30 @@ export const validateComposeTemplateSource = (source: string): Result<void> => {
   if (source.includes(COMPOSE_SEGMENT_START) || source.includes(COMPOSE_SEGMENT_END)) {
     return fail(err.badInput("Email template contains reserved control characters"));
   }
+  // Liquid validation bounds and parses the source before the URL-context scan.
+  const valid = validateMailLiquidTemplate(replaceLogoTags(source, ""), {
+    allowedVariables: LIQUID_COMPOSE_VARIABLES,
+    output: "markdown",
+  });
+  if (source.match(COMPOSE_LOGO_TAG)) {
+    // Capture turns output into a filterable value, including inside a Liquid block.
+    // Scan linearly even when Liquid rejected malformed input or the liquid tag itself.
+    for (let start = source.indexOf("{%"); start !== -1; ) {
+      const end = source.indexOf("%}", start + 2);
+      if (end === -1) break;
+      const tag = source.slice(start + 2, end).replace(/^-/, "");
+      if (/^\s*capture\b/.test(tag) || (/^\s*liquid\b/.test(tag) && /^\s*capture\b/m.test(tag.replace(/^\s*liquid\b/, "")))) {
+        return fail(err.badInput("{{ mailbox.logo }} cannot be used together with capture"));
+      }
+      start = source.indexOf("{%", end + 2);
+    }
+  }
+  if (!valid.ok) {
+    if (valid.error.message.includes('"mailbox.logo" is not available')) {
+      return fail(err.badInput(`${valid.error.message} Use {{ mailbox.logo }} alone, without filters or Liquid tags.`));
+    }
+    return valid;
+  }
   for (const match of source.matchAll(/{{[\s\S]*?}}/g)) {
     const offset = match.index;
     if (
@@ -308,14 +332,7 @@ export const validateComposeTemplateSource = (source: string): Result<void> => {
       return fail(err.badInput("Liquid output in Markdown link destinations is not supported"));
     }
   }
-  const valid = validateMailLiquidTemplate(replaceLogoTags(source, ""), {
-    allowedVariables: LIQUID_COMPOSE_VARIABLES,
-    output: "markdown",
-  });
-  if (!valid.ok && valid.error.message.includes('"mailbox.logo" is not available')) {
-    return fail(err.badInput(`${valid.error.message} Use {{ mailbox.logo }} alone, without filters or Liquid tags.`));
-  }
-  return valid;
+  return ok();
 };
 
 // The separator line that forwardMessageBody writes, in each composer locale.
@@ -550,7 +567,8 @@ export const renderComposeContent = (params: {
   signature?: string | null;
   logo?: { src: string; altText: string; displayWidth: number; byteLength: number } | null;
 }): Result<RenderedComposeContent> => {
-  const token = `MAILLOGO${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;
+  const logoRandomPart = crypto.randomUUID().replaceAll("-", "").toUpperCase();
+  const token = `MAILLOGO${logoRandomPart}`;
   const context = params.context;
   const budget = { remainingMs: MAX_COMPOSE_RENDER_MS };
   const renderedSource = params.renderLiquid
@@ -570,6 +588,10 @@ export const renderComposeContent = (params: {
     source = [parts.reply, parts.signature, parts.history].filter(Boolean).join("\n\n");
   }
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
+  // Only intact tokens may reach replacement; transformed or truncated markers must never be sent.
+  if (source.replaceAll(token, "").toUpperCase().includes(logoRandomPart)) {
+    return fail(composeRenderFailure("signatureFailed"));
+  }
   const requestedLogo = source.includes(token);
   const logoWarnings: ComposeFormattingWarning[] = requestedLogo && !params.logo ? [{ code: "missing_mailbox_logo" }] : [];
   if (params.format === "plain") {
