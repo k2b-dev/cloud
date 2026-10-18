@@ -1353,7 +1353,16 @@ html {
      width at which the waiting blocks below stop hiding the panel. A panel
      resized wider than its token narrows down to it before `Main` gives way. */
   .k2b-ui .k2b-app-workspace {
-    --k2b-workspace-main-extra: max(0px, var(--k2b-workspace-main-min) - 20rem);
+    /* Main's minimum above 20 rem, bounded by the host (the nearest ancestor
+       container, so padding and tracks resolve it alike): where the host
+       cannot hold the sidebar and Main's minimum, the content box ends just
+       below 20 rem, so the sidebar is the overlay and the Detail waits, and
+       the padding never outgrows the workspace. */
+    --k2b-workspace-main-extra: clamp(
+      0px,
+      var(--k2b-workspace-main-min) - 20rem,
+      100cqi - var(--k2b-workspace-sidebar-space) - 20rem + 1px
+    );
     --k2b-workspace-detail-column: clamp(
       0px,
       (100% - var(--k2b-workspace-detail-fit) + 0.0078125px) * 1000000,

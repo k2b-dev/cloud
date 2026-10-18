@@ -955,7 +955,12 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           snapshot.fresh = false;
           openDetailDrawer(aside);
           revealItem(root, aside, snapshot);
-          if (snapshot.interaction === "keyboard") requestTitle(aside);
+          // The same item keeps its title; another one may still be loading,
+          // so focus follows the title that replaces the current one.
+          if (snapshot.interaction === "keyboard") {
+            focusTitle(aside);
+            requestTitle(aside, true);
+          }
         });
       });
     };

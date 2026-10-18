@@ -214,6 +214,49 @@ test("1194: marking a chosen item current reopens a parked Detail; live content 
   }
 });
 
+for (const host of [500, 1100]) {
+  test(`a ${host}px host narrower than the sidebar and Main's 900px minimum keeps the workspace inside it`, async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+    try {
+      await page.setContent(`<!doctype html><html><head><style>${css}</style></head>
+        <body class="k2b-ui" style="margin:0;display:flex">
+          <div style="container:k2b-app-area / inline-size;width:${host}px;flex:none"><div id="app" style="height:100vh;margin-inline:16px"></div></div>
+          <div style="flex:1">Host panel</div>
+        </body></html>`);
+      await page.evaluate(() => {
+        document.body.dataset.options = JSON.stringify({ mainMin: 900, detailWidth: "md" });
+      });
+      await page.addScriptTag({ content: script });
+      await workspaceFrames(page);
+      const shape = await root(page).evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const main = element.querySelector(".k2b-app-workspace__main")!.getBoundingClientRect();
+        const toggle = element.querySelector("[data-app-workspace-detail-toggle]")!.getBoundingClientRect();
+        const sidebar = element.querySelector(".k2b-app-workspace__sidebar")!;
+        return {
+          rootRight: box.right,
+          rootWidth: box.width,
+          mainLeft: main.left - box.left,
+          mainRight: main.right,
+          toggleRight: toggle.right,
+          toggleWidth: toggle.width,
+          form: getComputedStyle(sidebar).getPropertyValue("--k2b-workspace-sidebar-form").trim(),
+        };
+      });
+      // The padding that measures Main's minimum never outgrows the host's workspace.
+      expect(shape.rootWidth).toBeCloseTo(host - 32, 0);
+      expect(shape.mainLeft).toBeLessThanOrEqual(1.5);
+      expect(shape.mainRight).toBeLessThanOrEqual(shape.rootRight + 0.5);
+      expect(shape.toggleWidth).toBeGreaterThan(0);
+      expect(shape.toggleRight).toBeLessThanOrEqual(shape.rootRight);
+      expect(shape.form).toBe("overlay");
+      await waiting(page);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
 test("1194: a saved 360px sidebar stays an overlay from the server frame through hydration", async () => {
   const options: FixtureOptions = { mainMin: 760, layoutState: { version: 2, sidebarWidth: 360 } };
   const html = renderToString(() => workspaceTree({ AppWorkspace, createComponent, createSignal, Dynamic }, options));

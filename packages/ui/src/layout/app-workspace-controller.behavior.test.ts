@@ -2220,6 +2220,30 @@ describe("waiting detail drawers", () => {
     });
   }
 
+  test("a keyboard reopen moves focus to the title that replaces the previous one", async () => {
+    const { root, aside, item, title, toggle } = waitingWorkspace();
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      toggle.click();
+      detailKey(toggle, "Escape");
+      item.focus();
+      detailKey(item, "Enter");
+      item.setAttribute("aria-selected", "true");
+      flushFrames();
+      flushFrames();
+      expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+      expect(document.activeElement === title).toBe(true);
+      // The new selection's content arrives later and replaces the heading.
+      const next = document.createElement("h2");
+      next.textContent = "Loaded contact";
+      title.replaceWith(next);
+      await window.happyDOM.whenAsyncComplete();
+      expect(document.activeElement === next).toBe(true);
+    } finally {
+      dispose();
+    }
+  });
+
   test("an unmarked toolbar click and a later live update keep an open Detail parked", async () => {
     const { root, main, aside, title } = waitingWorkspace();
     const toolbar = document.createElement("button");
