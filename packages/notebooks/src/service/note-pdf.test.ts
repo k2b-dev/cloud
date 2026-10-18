@@ -224,7 +224,7 @@ describe("PDF attachment packing", () => {
           title: "Attachment lookup",
         },
         {
-          config: { url: "", timeoutMs: 1000, maxHtmlBytes: 1024 * 1024, maxPdfBytes: 1024 * 1024 },
+          config: { url: "http://gotenberg.invalid", timeoutMs: 1000, maxHtmlBytes: 1024 * 1024, maxPdfBytes: 1024 * 1024 },
           maxAttachmentBytes: 1000,
           imageDependencies: imageDeps({
             list: async (query) => {
@@ -244,6 +244,39 @@ describe("PDF attachment packing", () => {
     } finally {
       render.mockRestore();
     }
+  });
+
+  test("an unconfigured renderer fails before any attachment is listed or prepared", async () => {
+    const used: string[] = [];
+    const rejected = renderNotePdf(
+      {
+        markdown: "![photo](attach://ABC123)",
+        notebookId: "notebook",
+        notebookShortId: "ABC123",
+        noteId: "note",
+        userId: null,
+        serviceAccountId: null,
+        boundNotebookId: null,
+        locale: "en",
+        title: "No renderer",
+      },
+      {
+        config: { url: " ", timeoutMs: 1000, maxHtmlBytes: 1024 * 1024, maxPdfBytes: 1024 * 1024 },
+        maxAttachmentBytes: 1000,
+        imageDependencies: imageDeps({
+          list: async () => {
+            used.push("list");
+            return [];
+          },
+          prepare: async () => {
+            used.push("prepare");
+            return { ok: false, code: "unreadable" };
+          },
+        }),
+      },
+    );
+    await expect(rejected).rejects.toMatchObject({ code: "not_configured" });
+    expect(used).toEqual([]);
   });
 
   test("page geometry and largest repeated placement determine all three boxes", async () => {

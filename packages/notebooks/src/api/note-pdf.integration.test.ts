@@ -48,14 +48,22 @@ databaseSuite()("PDF route admission and idle timeout", () => {
         VALUES (${account!.id}::uuid, 'read') RETURNING id`;
       await sql`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${notebook!.id}::uuid, ${access!.id}::uuid)`;
       // A streamed (chunked) body makes bodyLimit replace c.req.raw with a request Bun does not know.
+      // The body stalls after admission: the route must not raise the idle timeout while it is still read.
+      const encoder = new TextEncoder();
+      let timeoutsWhileReading: number | undefined;
       const body = new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(JSON.stringify({ markdown: "# Timeout" })));
+        async start(controller) {
+          controller.enqueue(encoder.encode('{"markdown":'));
+          while (configSpy.mock.calls.length === 0) await Bun.sleep(10);
+          await Bun.sleep(200);
+          timeoutsWhileReading = timeouts.length;
+          controller.enqueue(encoder.encode('"# Timeout"}'));
           controller.close();
         },
       });
       const response = await fetch(url, { method: "POST", headers, body, signal: AbortSignal.timeout(10000) });
       expect(response.status).toBe(504);
+      expect(timeoutsWhileReading).toBe(0);
       expect(timeouts).toEqual([
         [true, 12],
         [true, 10],

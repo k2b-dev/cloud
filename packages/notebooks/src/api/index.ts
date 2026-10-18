@@ -992,7 +992,7 @@ import widgetRoutes from "./widgets";
 // Keyed by the Hono context: bodyLimit replaces c.req.raw before the handler runs.
 const notePdfAdmissions = new WeakMap<
   Context,
-  { notebook: Notebook; note: Note; signal: AbortSignal; config: GotenbergConfig; maxAttachmentBytes: number }
+  { notebook: Notebook; note: Note; raw: Request; config: GotenbergConfig; maxAttachmentBytes: number }
 >();
 
 const app = new Hono<AuthContext>()
@@ -2024,17 +2024,12 @@ const app = new Hono<AuthContext>()
       if (!note.ok) return respond(c, note);
       const [config, maxAttachmentBytes] = await Promise.all([getGotenbergConfig(), getMaxAttachmentSizeBytes()]);
       // bodyLimit replaces c.req.raw for a chunked body. Bun's idle timer and the client's abort signal
-      // belong to the original, socket-backed request, so both use it.
-      const raw = c.req.raw;
-      notePdfAdmissions.set(c, { notebook: notebook!, note: note.data, signal: raw.signal, config, maxAttachmentBytes });
-      // Preparation and rendering each get one phase, plus 10 s for parsing, assembly and cleanup.
-      setRequestTimeout(c, Math.min(REQUEST_IDLE_TIMEOUT_MAX_SECONDS, Math.ceil((2 * notePdfPhaseMs(config) + 10_000) / 1000)));
+      // belong to the original, socket-backed request, so the handler uses it for both.
+      notePdfAdmissions.set(c, { notebook: notebook!, note: note.data, raw: c.req.raw, config, maxAttachmentBytes });
       try {
         await next();
       } finally {
         notePdfAdmissions.delete(c);
-        c.req.raw = raw;
-        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
       }
     },
     bodyLimit({
@@ -2043,7 +2038,7 @@ const app = new Hono<AuthContext>()
     }),
     v("json", NotePdfRequestSchema),
     async (c) => {
-      const { notebook, note, signal, config, maxAttachmentBytes } = notePdfAdmissions.get(c)!;
+      const { notebook, note, raw, config, maxAttachmentBytes } = notePdfAdmissions.get(c)!;
       const notebookId = notebook.id;
       const input = c.req.valid("json");
 
@@ -2058,7 +2053,11 @@ const app = new Hono<AuthContext>()
       }
 
       activeNotePdfConversions += 1;
+      // The body was read under the default idle timeout, so a slow upload cannot keep the socket open longer.
+      // Preparation and rendering each get one phase, plus 10 s for assembly and cleanup.
+      c.req.raw = raw;
       try {
+        setRequestTimeout(c, Math.min(REQUEST_IDLE_TIMEOUT_MAX_SECONDS, Math.ceil((2 * notePdfPhaseMs(config) + 10_000) / 1000)));
         const filename = notePdfFilename(note.title);
         // Query blocks resolve for the same access subject checkNotebookAccess authorized.
         const subject = getNotebookAccessSubject(c);
@@ -2079,7 +2078,7 @@ const app = new Hono<AuthContext>()
             bypassAccess: subject.user ? hasRole(subject.user, "admin") : false,
             locale: getLocale(c),
           },
-          { config, maxAttachmentBytes, signal },
+          { config, maxAttachmentBytes, signal: raw.signal },
         );
         const omissionsHeader = encodeNotePdfOmissions(rendered.omissions);
         const buffer = new Uint8Array(rendered.pdf);
@@ -2097,6 +2096,7 @@ const app = new Hono<AuthContext>()
         return respond(c, { ok: false, error: projected.message, status: projected.status });
       } finally {
         activeNotePdfConversions -= 1;
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
       }
     },
   )

@@ -151,6 +151,8 @@ export const renderNotePdf = async (
   },
 ): Promise<RenderHtmlToPdfResult & { omissions: NotePdfOmission[] }> => {
   const { config, maxAttachmentBytes } = options;
+  // Without a renderer, loading attachments and running image workers would only hold their slots.
+  if (!config.url.trim()) throw new GotenbergRenderError("not_configured", "Gotenberg URL is not configured.");
   const phaseMs = notePdfPhaseMs(config);
   const deadline = Date.now() + phaseMs;
   const preparation = new AbortController();
