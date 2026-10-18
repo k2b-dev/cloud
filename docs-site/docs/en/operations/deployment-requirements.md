@@ -514,7 +514,9 @@ in a CLI flag value or URL.
 The Cloud admin owns this internal target. Pulse allows exactly the host in
 the saved or submitted ClickHouse address, without environment configuration.
 Requests connect directly to checked addresses and never follow redirects.
-Remote response bodies are never echoed in errors.
+Remote response bodies are never echoed in errors. The answer time can still
+tell a closed port from an open one, so the Cloud admin role carries reach into
+the internal network that Cloud can connect to.
 
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
