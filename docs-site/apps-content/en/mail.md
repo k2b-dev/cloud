@@ -414,7 +414,7 @@ Use Markdown and Liquid in signatures and snippets. Type `/` to insert snippets
 only. Mail fills in snippet values when you insert them; signatures keep their
 variables until preview and send.
 
-Each mailbox can have one logo. A mailbox admin uploads it with
+Each mailbox can have one logo. A mailbox administrator uploads it with
 `cld mail compose logo set --file logo.png`; logo settings in the browser come
 later. Use `{{ mailbox.logo }}` in any signature to place it in new messages,
 replies, forwards, and older signatures still marked in the body. Mail sends
@@ -436,7 +436,7 @@ the current logo; `cld mail compose logo remove --yes` removes it. Without a
 logo, the placeholder stays empty and preview warns that the logo is missing.
 The provider's Drafts copy has no signature and therefore no logo. A message
 keeps the logo it had when it was queued for sending, including scheduled
-messages and retries, even if an admin later replaces or removes the logo.
+messages and retries, even if an administrator later replaces or removes the logo.
 
 API and Assistant clients choose the signature with `signatureTemplateId` on
 draft create, update, or patch. Pass a template ID for that signature or `null`
