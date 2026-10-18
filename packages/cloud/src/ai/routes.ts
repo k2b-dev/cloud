@@ -17,6 +17,7 @@ import {
   respond,
   v,
 } from "../server";
+import { isAppSessionActor } from "../server/actor";
 import { isRequestCredentialCurrent } from "../server/middleware/auth";
 import { approvalDecisionChannel } from "../services/approvals";
 import { ImageMetadataError } from "../services/image-metadata";
@@ -804,7 +805,8 @@ export const aiRoutes = (() => {
           ownerUserId: ctx.ownerUserId,
         });
         // The chat is restored either way; a routine this step could not resume stays paused and can be resumed by hand.
-        if (restored)
+        // The phone app may not resume background authority, so its restore leaves the routines for the web.
+        if (restored && !isAppSessionActor(c.get("actor")))
           await aiChatTasks.resumeForRestoredChat({ conversationId: conversation.id, userId: ctx.ownerUserId }).catch((error) =>
             logger("ai:chat-tasks").warn("Could not resume the routines of a restored chat", {
               conversationId: conversation.id,
