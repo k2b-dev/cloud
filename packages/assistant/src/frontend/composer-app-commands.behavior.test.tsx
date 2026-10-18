@@ -11,6 +11,7 @@ const commandsModule = await import("@k2b/cloud/browser/commands");
 const events: string[] = [];
 const openCommand = mock(async (_id: string, _input: unknown, _options: { returnTo?: string }, _signal?: AbortSignal) => {
   events.push("open");
+  return true;
 });
 mock.module("@k2b/cloud/browser/commands", () => ({ ...commandsModule, openCommand }));
 const { default: Workspace } = await import("./AssistantWorkspace.island");
@@ -71,6 +72,7 @@ afterEach(() => {
   openCommand.mockReset();
   openCommand.mockImplementation(async () => {
     events.push("open");
+    return true;
   });
   events.length = 0;
   setSystemTime();
@@ -315,6 +317,21 @@ test("an unreachable app leaves the row, slash list, and original value availabl
   await waitFor(() => openCommand.mock.calls.length === 2);
 });
 
+test("a Command whose code cannot load keeps the slash and saves the live draft again", async () => {
+  openCommand.mockResolvedValueOnce(false);
+  const h = await mount();
+  h.choose();
+  await waitFor(() => h.saves.length === 2);
+  expect(h.saves).toEqual([
+    { expectedRevision: 4, content: [{ type: "text", text: "Plan" }] },
+    { expectedRevision: 5, content: [{ type: "text", text: "Plan /" }] },
+  ]);
+  expect(h.input.value).toBe("Plan /");
+  expect(h.row()).toBeDefined();
+  expect(h.root.querySelector('[role="listbox"]')).not.toBeNull();
+  expect(openCommand.mock.calls[0]?.[3]?.aborted).toBe(true);
+});
+
 test("a project composer creates a chat without navigating, saves there, and returns to it", async () => {
   const h = await mount({ project: true });
   h.choose();
@@ -497,8 +514,8 @@ test("opening Approvals while an app Command creates a plain chat keeps Approval
 test("Escape while the app link resolves saves the live draft again, so a reload keeps its slash", async () => {
   openCommand.mockImplementation(
     (_id, _input, _options, signal) =>
-      new Promise<void>((resolve) => {
-        signal?.addEventListener("abort", () => resolve(), { once: true });
+      new Promise<boolean>((resolve) => {
+        signal?.addEventListener("abort", () => resolve(false), { once: true });
       }),
   );
   const h = await mount();

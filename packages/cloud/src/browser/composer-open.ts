@@ -13,7 +13,10 @@ export type OpenComposerCommandOptions = {
   locale: string;
 };
 
-/** Save first, then resolve and open. Save errors reach the status line; resolution errors stay on the retryable row. */
+/**
+ * Save first, then resolve and open. If nothing opens, cancel so the composer keeps its token and restores the live draft.
+ * Save errors reach the status line; resolution errors stay on the retryable row.
+ */
 export const openComposerCommand = async (
   command: CloudComposerCommand,
   options: OpenComposerCommandOptions,
@@ -24,7 +27,7 @@ export const openComposerCommand = async (
   const returnTo = options.returnTo();
   if (returnTo !== undefined && !isCommandPath(returnTo)) throw new Error("Invalid Command return path");
   try {
-    await openCommand(command.id, command.input, { returnTo }, signal);
+    if (!(await openCommand(command.id, command.input, { returnTo }, signal))) return "cancelled";
   } catch (error) {
     if (signal?.aborted) return "cancelled";
     const cause = error instanceof Error ? error.cause : undefined;

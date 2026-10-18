@@ -5,6 +5,7 @@ import type { CloudComposerCommand } from "./composer-catalog";
 const events: string[] = [];
 const openCommand = mock(async (_id: string, _input: unknown, _options: { returnTo?: string }, _signal?: AbortSignal) => {
   events.push("open");
+  return true;
 });
 mock.module("./commands", () => ({ openCommand }));
 const { openComposerCommand, cloudCommandMenu } = await import("./composer-open");
@@ -38,6 +39,11 @@ test("saves before reading the return path and opening the Command", async () =>
   expect(await openComposerCommand(command, options())).toBeUndefined();
   expect(events).toEqual(["save", "returnTo", "open"]);
   expect(openCommand).toHaveBeenCalledWith(command.id, {}, { returnTo: "/app/assistant?conversation=chat01" }, undefined);
+});
+
+test.each([false, true])("an opening result of %s cancels only when nothing opened", async (opened) => {
+  openCommand.mockResolvedValueOnce(opened);
+  expect(await openComposerCommand(command, options())).toBe(opened ? undefined : "cancelled");
 });
 
 test("propagates the exact save rejection without resolving or opening", async () => {
@@ -157,6 +163,7 @@ test("an aborted opening opens nothing and ends quietly, also when it aborts whi
   openCommand.mockImplementationOnce(async (_id, _input, _options, signal) => {
     during.abort();
     expect(signal).toBe(during.signal);
+    return true;
   });
   expect(await openComposerCommand(command, { ...options(), signal: () => during.signal })).toBe("cancelled");
 });

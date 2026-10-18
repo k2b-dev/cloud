@@ -528,10 +528,11 @@ the same save-then-open behavior for a custom row. A rejected `before()` reaches
 the composer status line and opens nothing. An invalid return path throws. If
 Command resolution fails, the row shows the app's unavailability only when the
 app cannot be reached; otherwise it shows the resolver's message. It stays open
-in either case. `signal()` is read after saving: once it aborts, for example
-because the person left the chat, the row ends without opening anything. After
-navigation, the target app owns error feedback and chooses whether to use
-`returnTo`.
+in either case. If the Command code cannot load, the row keeps the token and
+the reload notice offers a reload. `signal()` is read after saving: once it
+aborts, for example because the person left the chat, the row ends without
+opening anything. After navigation, the target app owns error feedback and
+chooses whether to use `returnTo`.
 
 ```tsx
 import { cloudCommandMenu, cloudInsertMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";

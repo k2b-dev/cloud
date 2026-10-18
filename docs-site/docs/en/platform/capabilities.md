@@ -1590,8 +1590,12 @@ onMount(() => {
 
 Pass an `AbortSignal` as the fourth argument when the request may outlive its
 reason, for example `openCommand(id, input, { returnTo }, signal)` from a view
-the person can leave: once the signal aborts, nothing opens, also when it aborts
-while the link resolves.
+the person can leave. `openCommand` resolves `true` after a mounted handler
+accepted the request and its promise resolved, or navigation started. It
+resolves `false` when nothing opened because the signal aborted or its code
+could not load; Cloud shows a reload notice when code cannot load.
+The signal covers loading the code and resolving the link; an accepting mounted
+handler takes over at once and runs its own interaction without receiving the signal.
 
 `openCommand` offers the request to mounted handlers synchronously. Exactly one
 accepting handler owns it; with no owner Cloud resolves the link and navigates.
