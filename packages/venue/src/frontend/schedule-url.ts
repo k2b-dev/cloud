@@ -12,8 +12,6 @@ export const CALENDAR_VIEW_COOKIE = "venue_calendar_view";
 
 /** Below this width a first visit without a remembered view switches once to the phone month view. */
 export const PHONE_VIEWPORT_QUERY = "(max-width: 39.99rem)";
-/** From this width the shift detail sits next to the calendar; below it opens as a bottom sheet. */
-export const WIDE_VIEWPORT_QUERY = "(min-width: 64rem)";
 
 export const parseCalendarView = (value: string | null | undefined): VenueCalendarView | null =>
   VENUE_CALENDAR_VIEWS.find((view) => view === value) ?? null;

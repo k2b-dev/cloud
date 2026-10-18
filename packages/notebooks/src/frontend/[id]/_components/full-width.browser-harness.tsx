@@ -14,6 +14,7 @@ import { keepBookReadingPosition } from "./book/book-reading-position";
 import { ViewMenu } from "./detail/ViewMenu";
 import { keepReadingPosition } from "./editor/reading-position";
 import { followFullWidth } from "./full-width";
+import { FeaturesSection } from "./settings/FeaturesSection";
 import { parseFullWidth, readFullWidth } from "./settings/NotebookSettingsStore";
 
 const book = new URLSearchParams(location.search).get("mode") === "book";
@@ -191,6 +192,36 @@ const harness = {
   },
   stored: readFullWidth,
   setPanelOpen: (open: boolean) => setPanelOpen(open),
+  /** Renders the settings' personal preferences outside the app host, where Cloud's dialogs mount. */
+  preferences: () => {
+    const portal = document.body.appendChild(document.createElement("div"));
+    portal.className = "k2b-ui-portal";
+    render(
+      () => (
+        <LocaleProvider locale="de">
+          <FeaturesSection
+            notebook={{
+              id: "book01",
+              name: "Notizbuch",
+              description: "",
+              icon: "ti ti-notebook",
+              homepageNoteId: null,
+              defaultPresentationMode: "write",
+              noteDeletePermission: "write",
+              defaultNoteTitleTemplate: "",
+              createdBy: "user01",
+              createdAt: "2026-08-10T10:00:00.000Z",
+              updatedAt: "2026-08-10T10:00:00.000Z",
+            }}
+            isAdmin={false}
+            onNotebookChange={() => {}}
+            host={() => document.getElementById("root")!}
+          />
+        </LocaleProvider>
+      ),
+      portal,
+    );
+  },
 };
 export type FullWidthHarness = typeof harness;
 Object.assign(window, { harness });

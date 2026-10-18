@@ -318,7 +318,7 @@ function ReferenceSidebar(props: { activeTab: GqlReferenceTab; baseId: string; b
 
   return (
     <>
-      <div class="p-3 lg:hidden">
+      <div class="p-3 @min-[64rem]/k2b-app-area:hidden">
         <Select
           label={t.gridsReference}
           options={referenceTabs(t).map((tab) => ({ id: tab.value, label: tab.label }))}

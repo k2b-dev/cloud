@@ -35,6 +35,7 @@ export type {
   AppWorkspaceSidebarVisibility,
 } from "./AppWorkspace";
 export { default as AppWorkspace } from "./AppWorkspace";
+export { watchAppHostWidth } from "./app-host-width";
 export type { AppWorkspaceControllerOptions } from "./app-workspace-controller";
 export { installAppWorkspaceController, parkWorkspaceDetailDrawers } from "./app-workspace-controller";
 export type {

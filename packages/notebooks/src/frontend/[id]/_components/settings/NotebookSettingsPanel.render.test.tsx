@@ -30,27 +30,35 @@ const renderSettings = (isAdmin: boolean) =>
       isAdmin={isAdmin}
       canWrite={isAdmin}
       dateConfig={{ locale: "en", timeZone: "Europe/Berlin" }}
+      host={() => document.documentElement}
       close={() => undefined}
     />
   ));
 
 describe("Notebook settings", () => {
   test("view preferences no longer offer executable scripting", () => {
-    const html = renderToString(() => <FeaturesSection notebook={notebook} isAdmin onNotebookChange={() => undefined} />);
+    const html = renderToString(() => (
+      <FeaturesSection notebook={notebook} isAdmin onNotebookChange={() => undefined} host={() => document.documentElement} />
+    ));
     expect(html).toContain("Default view");
     expect(html).not.toContain("Enable script blocks");
     expect(html).not.toContain("Enable scripting");
   });
   test("no longer offers a choice of sidebar layout", () => {
-    const html = renderToString(() => <FeaturesSection notebook={notebook} isAdmin onNotebookChange={() => undefined} />);
+    const html = renderToString(() => (
+      <FeaturesSection notebook={notebook} isAdmin onNotebookChange={() => undefined} host={() => document.documentElement} />
+    ));
     expect(html).not.toContain("Sidebar mode");
     expect(html).not.toContain("Navigator");
     expect(html).not.toContain('role="radiogroup"');
   });
   test("offers the personal Tab key preference, off by default, with the keyboard escape", () => {
-    const html = renderToString(() => <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} />);
+    const html = renderToString(() => (
+      <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} host={() => document.documentElement} />
+    ));
     expect(html).toContain("Only for you");
-    expect(html).toContain("Full width");
+    // The browser decides "Full width" from the app host (FeaturesSection.behavior.test.tsx).
+    expect(html).not.toContain("Full width");
     expect(html).toContain('role="switch"');
     expect(html).toContain("Tab moves focus instead of indenting");
     expect(html).toContain("Press Esc, then Tab to leave the editor.");
@@ -58,7 +66,7 @@ describe("Notebook settings", () => {
 
     const german = renderToString(() => (
       <LocaleProvider locale="de">
-        <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} />
+        <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} host={() => document.documentElement} />
       </LocaleProvider>
     ));
     expect(german).toContain("Tab-Taste bewegt den Fokus statt einzurücken");

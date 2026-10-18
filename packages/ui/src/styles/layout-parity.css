@@ -1714,7 +1714,9 @@ html {
   }
 }
 
-@media (min-width: 64rem) {
+/* An overview's aside joins its main column once the app's host is as wide as
+   the workspace sidebar column needs, as in a window that wide. */
+@container k2b-app-area (min-width: 64rem) {
   .k2b-ui .k2b-app-overview__columns {
     flex-direction: row;
     align-items: flex-start;

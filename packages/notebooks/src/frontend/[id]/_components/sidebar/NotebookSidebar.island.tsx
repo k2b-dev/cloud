@@ -107,6 +107,7 @@ export default function NotebookSidebar(props: Props) {
       isAdmin: props.ctx.permission === "admin",
       canWrite,
       dateConfig: props.ctx.dateConfig,
+      host: () => document.getElementById(NOTEBOOK_NAVIGATION_ID) ?? document.documentElement,
     });
   const navigationHidden = createNavigationHidden(props.ctx.navigationHidden);
   followStoredNavigationHidden(navigationHidden);

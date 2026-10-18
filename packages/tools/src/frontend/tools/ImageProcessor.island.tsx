@@ -18,6 +18,7 @@ import {
   suppressTextSelection,
   Tooltip,
   useLocale,
+  watchAppHostWidth,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { IMAGE_ACCEPT } from "./image-intake/formats";
@@ -227,8 +228,9 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   // ====================================
 
   // Below the desktop width the inspector covers the canvas, where the failure notice lives; step aside to show it.
+  let wideAppHost = false;
   const revealLoadFailures = () => {
-    if (!window.matchMedia("(min-width: 1024px)").matches) setInspectorOpen(false);
+    if (!wideAppHost) setInspectorOpen(false);
   };
 
   let loadingFiles: File[] = [];
@@ -950,13 +952,16 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     if (props.initialImages?.length) void rebuildBasePreview();
     measurePreviewViewport();
     const previewObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measurePreviewViewport);
-    const desktopMedia = window.matchMedia("(min-width: 1024px)");
-    const reopenInspectorOnDesktop = () => {
-      if (desktopMedia.matches) setInspectorOpen(true);
-    };
+    if (previewViewportRef) {
+      onCleanup(
+        watchAppHostWidth(previewViewportRef, 64, (wide) => {
+          wideAppHost = wide;
+          if (wide) setInspectorOpen(true);
+        }),
+      );
+    }
     if (previewViewportRef) previewObserver?.observe(previewViewportRef);
     if (!previewObserver) window.addEventListener("resize", measurePreviewViewport);
-    desktopMedia.addEventListener("change", reopenInspectorOnDesktop);
     document.addEventListener("keydown", handleKeyDown);
     document.addEventListener("pointermove", onCropPointerMove, { passive: false });
     document.addEventListener("pointerup", onCropPointerUp);
@@ -965,7 +970,6 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     onCleanup(() => {
       previewObserver?.disconnect();
       if (!previewObserver) window.removeEventListener("resize", measurePreviewViewport);
-      desktopMedia.removeEventListener("change", reopenInspectorOnDesktop);
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("pointermove", onCropPointerMove);
       document.removeEventListener("pointerup", onCropPointerUp);
@@ -1049,7 +1053,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                 <Tooltip.Anchor content={t().openImageControls}>
                   <IconButton
                     label={t().openImageControls}
-                    class="absolute right-[var(--ui-space-shell)] top-[var(--ui-space-shell)] z-10 lg:hidden"
+                    class="absolute right-[var(--ui-space-shell)] top-[var(--ui-space-shell)] z-10 @min-[64rem]/k2b-app-area:hidden"
                     onClick={() => setInspectorOpen(true)}
                   >
                     <i class="ti ti-adjustments-horizontal" />
@@ -1304,7 +1308,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                 <IconButton
                   label={t().showImageCanvas}
                   size="sm"
-                  class="h-8 w-8 shrink-0 lg:hidden"
+                  class="h-8 w-8 shrink-0 @min-[64rem]/k2b-app-area:hidden"
                   onClick={() => setInspectorOpen(false)}
                 >
                   <i class="ti ti-x" aria-hidden="true" />

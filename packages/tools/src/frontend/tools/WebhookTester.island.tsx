@@ -490,7 +490,7 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
   return (
     <div class="flex min-h-0 min-w-0 flex-1">
       <AppWorkspace class="min-h-0 flex-1">
-        <div class="flex flex-col gap-2 p-3 lg:hidden">
+        <div class="flex flex-col gap-2 p-3 @min-[64rem]/k2b-app-area:hidden">
           <Select
             label={t().sidebarRequests}
             options={[

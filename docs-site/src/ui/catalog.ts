@@ -485,6 +485,7 @@ export const documentedOnlyUiCatalogExports = {
   isStructuredDataValue: "Documented StructuredDataPreview boundary validator.",
   parkWorkspaceDetailDrawers: "Documented host helper for parking AppWorkspace detail drawers.",
   installAppWorkspaceController: "Documented AppWorkspace resize-controller installer.",
+  watchAppHostWidth: "Documented AppWorkspace host-width watcher for workspace chrome that script decides.",
   installationPlatform: "Documented InstallGuide platform classifier.",
   isPointInsideToast: "Documented toast interaction helper.",
   markdownInfoBlocks: "Documented MarkdownView info-block extension for renderers with their own marked instance.",

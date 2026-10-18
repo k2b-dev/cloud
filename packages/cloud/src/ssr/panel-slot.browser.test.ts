@@ -135,11 +135,18 @@ const settle = (page: Page) => page.evaluate(() => new Promise((done) => request
 const panelCookie = async (context: BrowserContext) => (await context.cookies()).find((cookie) => cookie.name === "cloud_panel")?.value;
 const modJ = async (page: Page) =>
   (await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent))) ? "Meta+j" : "Control+j";
-async function fixture(width = 1440, cookie?: string) {
-  const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC", reducedMotion: "reduce" });
+async function fixture(width = 1440, cookie?: string, options: { focus?: boolean; hasTouch?: boolean } = {}) {
+  const context = await browser.newContext({
+    viewport: { width, height: 900 },
+    locale: "en",
+    timezoneId: "UTC",
+    reducedMotion: "reduce",
+    hasTouch: options.hasTouch,
+  });
   try {
     await context.addCookies([
       { name: "cloud.timezone", value: "UTC", url: origin },
+      ...(options.focus ? [{ name: "cloud_shell_focus", value: "1", url: origin }] : []),
       ...(cookie ? [{ name: "cloud_panel", value: cookie, url: origin }] : []),
     ]);
     const page = await context.newPage();
@@ -522,6 +529,75 @@ test("two provider tabs switch and unload, with one iframe in the DOM", async ()
     expect(await second.getAttribute("aria-selected")).toBe("true");
     expect(await first.getAttribute("aria-selected")).toBe("false");
     expect(await panelCookie(context)).toBe("1:second:");
+  } finally {
+    await context.close();
+  }
+});
+
+const workspaceDetail = "#k2b-workspace-detail-panel-fixture-detail";
+const mainArea = ".k2b-app-workspace__main";
+
+// Pins shell focus to the host: the 1440px narrow app must retain reachable overlay navigation.
+test("shell focus follows app host width beside the panel and when the panel closes", async () => {
+  for (const [width, cookie, overlay] of [
+    [1440, "1:fixture:26", true],
+    [1680, "1:fixture:26", false],
+    [1440, "0:fixture:26", false],
+  ] as const) {
+    const { context, page } = await fixture(width, cookie, { focus: true });
+    try {
+      await settle(page);
+      expect(await page.locator(".cloud-app-canvas").getAttribute("data-shell-focus")).toBe("true");
+      const navigation = page.locator(".k2b-app-workspace__sidebar");
+      const button = page.getByRole("button", { name: "Show navigation", exact: true });
+      expect(await button.isVisible()).toBe(overlay);
+      if (overlay) {
+        await button.click();
+        expect(await navigation.isVisible()).toBe(true);
+        expect(await page.locator(".k2b-app-workspace").getAttribute("data-sidebar-overlay")).toBe("open");
+      } else {
+        expect(await navigation.isVisible()).toBe(false);
+        expect(await page.locator('[data-app-workspace-resize="sidebar"]').isVisible()).toBe(false);
+        const root = (await page.locator(".k2b-app-workspace").boundingBox())!;
+        expect((await page.locator(mainArea).boundingBox())!.x).toBe(root.x + 1);
+        expect(await page.locator(".k2b-app-workspace").evaluate((element) => getComputedStyle(element).paddingInlineStart)).toBe("0px");
+      }
+    } finally {
+      await context.close();
+    }
+  }
+});
+
+// Pins the 1194px touch tablet beside the open panel: waiting follows the host width, not the pointer,
+// from the server frame on, and the Details drawer opens flush with the card edge without moving Main.
+test("1194px touch tablet waits for Details beside the open panel and opens an edge drawer", async () => {
+  const { context, page } = await fixture(1194, "1:fixture:", { hasTouch: true });
+  try {
+    await ready(page);
+    await settle(page);
+    expect(await page.evaluate(() => matchMedia("(any-pointer: coarse)").matches)).toBe(true);
+    const server = await page.evaluate(() => document.documentElement.dataset.panelServerFrame ?? "");
+    expect(await page.evaluate(() => document.documentElement.dataset.panelFirstFrame)).toBe(server);
+    expect(JSON.stringify(await page.evaluate(panelGeometry))).toBe(server);
+    expect(
+      await page
+        .locator(workspaceDetail)
+        .evaluate((element) => getComputedStyle(element).getPropertyValue("--k2b-workspace-detail-waiting").trim()),
+    ).toBe("1");
+    expect(await page.locator(workspaceDetail).isVisible()).toBe(false);
+    const before = (await page.locator(mainArea).boundingBox())!;
+    expect(before.width).toBeGreaterThanOrEqual(320);
+    await page.locator("[data-app-workspace-detail-toggle]").tap();
+    expect(await page.locator(workspaceDetail).isVisible()).toBe(true);
+    const drawer = (await page.locator(workspaceDetail).boundingBox())!;
+    const root = (await page.locator(".k2b-app-workspace").boundingBox())!;
+    const head = (await page.locator(".k2b-app-workspace__head").boundingBox())!;
+    expect(drawer.x + drawer.width).toBeCloseTo(root.x + root.width - 1, 1);
+    expect(drawer.y + drawer.height).toBeCloseTo(root.y + root.height - 1, 1);
+    expect(drawer.y).toBeCloseTo(head.y + head.height, 1);
+    expect(await page.locator(mainArea).boundingBox()).toEqual(before);
+    expect(await page.locator(slot).getAttribute("data-state")).toBe("ready");
+    expect(await page.locator(".cloud-app-canvas").getAttribute("data-panel")).toBe("open");
   } finally {
     await context.close();
   }
