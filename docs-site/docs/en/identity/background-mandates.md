@@ -5,7 +5,7 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-10-07
+updated: 2026-10-18
 ---
 
 # Background authority mandates
@@ -158,23 +158,32 @@ If the mandate cannot be read, has changed, or its policy is invalid, the run
 stops before the model starts and the routine needs attention.
 
 Core checks the current mandate revision, grant pair, fixed values, and live
-capability approval mode before every invocation. The target application still
-checks the user's current resource permissions. Only actions with `approval:
-"none"` or `approval: "rememberable"` can run unattended; actions requiring an
-approval every time remain unavailable even when listed in a grant. Remembered
-interactive approvals do not authorize background work.
+capability approval mode before every invocation. Only actions with `approval:
+"none"` or `approval: "rememberable"` can pass the routine mandate policy.
+Remembered interactive approvals do not authorize background work. The target
+application still checks the user's current resource permissions.
+
+Before each change, a routine run checks the mandate first, then calls the
+app's review for every Action whose `approval` is not `"none"`. It runs the
+Action only when the review returns an `approvalScope`. A missing review, a
+review error, or a result without that scope refuses the call; the app's `run`
+is never invoked. The review only narrows the mandate and never grants access.
+The same rule applies to background Code Mode.
+
+The model receives a short `NEEDS_APPROVAL` error telling it to stop and say
+what was missing. Even if the model completes its reply, the routine becomes
+`needs_attention` with reason `needs_approval` and the action name in the
+routine's locale. A one-time routine needs a new time before it can run again.
 
 Changing grants updates the mandate revision, invalidating older runs' authority.
 The agent can inspect a failed run and propose revised grants in the normal chat;
 expanding the scope requires a new reviewed routine update. A worker cannot grant
 itself more authority. A capability call rejected by the grants or fixed inputs
 returns a tool error so the model can continue with granted tools or explain
-what is missing. The routine needs attention when its mandate is unavailable, paused, revoked, expired, or changed,
-when the target app rejects the sponsor with HTTP 401 or 403, when an action's
-outcome is unknown, or when approval or a browser is required. Scheduled
-turns also run the server-run Code Mode tools under the same routine-scoped
-authority. Inside that code, a missing grant, revoked authority, or a call that
-needs an approval returns an error to the agent instead of failing the run; see
+what is missing. The routine also needs attention when its mandate is unavailable,
+paused, revoked, expired, or changed, when the target app rejects the sponsor
+with HTTP 401 or 403, or when an action's outcome is unknown. Scheduled turns
+run server Code Mode tools under the same routine-scoped authority; see
 [Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode).
 
 ## Invoke from a worker

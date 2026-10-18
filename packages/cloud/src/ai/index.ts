@@ -59,6 +59,7 @@ export {
   type AiChatTaskState,
   aiChatTasks,
 } from "./chat-tasks";
+export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
 export { parseAiSse } from "./client/transport";
 // Framework-owned managed execution host transport.
 export { CODE_CAPABILITY_TOKEN_HEADER, createCodeCapabilityTransport } from "./code-capability-transport";

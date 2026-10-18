@@ -3,6 +3,8 @@ import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { mandates } from "../services/mandates";
 import { AiChatTaskIdempotencyConflictError, type AiChatTaskSchedule, aiChatTasks } from "./chat-tasks";
+import { toAiChatTaskView } from "./chat-task-contracts";
+import { chatTaskReasonSentence } from "./chat-task-reasons";
 import { authorizeCodeExecution } from "./code-execution";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { migrateCloudAi } from "./migrate";
@@ -644,6 +646,157 @@ suite("AI chat tasks", () => {
         await sql`UPDATE auth.users SET account_expires = NULL WHERE id = ${user!.id}::uuid`;
       }
       expect(await aiChatTasks.listActiveCron()).toEqual([]);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
+  test("approval refusal survives a completed model turn, keeps the first action, and clears on resume", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`approval-refusal-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id });
+    const action = "Aufgabe zuweisen";
+    const sentence = `Wollte ${action}. Das macht der Assistant nur mit dir, und Routinen fragen nie.`;
+    try {
+      for (const status of ["completed", "failed"] as const) {
+        const runAt = "2099-04-07T09:00:00.000Z";
+        const task = (await aiChatTasks.create({
+          userId: user!.id,
+          chatId: conversation.shortId,
+          title: "Aufgaben prüfen",
+          locale: "de",
+          prompt: "Check tasks",
+          schedule: { kind: "once", runAt },
+          timezone: "UTC",
+        }))!;
+        const occurrence = (await aiChatTasks.createOccurrence({
+          taskId: task.id,
+          scheduledFor: runAt,
+          trigger: "scheduled",
+          requestKey: `${suffix}:${status}`,
+        }))!;
+        const delivered = await aiChatTasks.deliverOccurrence({
+          occurrenceId: occurrence.id,
+          modelProfileId: "test",
+          runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
+          userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
+          expectedRevision: task.revision,
+        });
+        if (!delivered.delivered) throw new Error("Expected routine delivery");
+        await aiChatTasks.markNeedsApproval({ turnId: delivered.turnId, action });
+        await aiChatTasks.markNeedsApproval({ turnId: delivered.turnId, action: "Second action" });
+        await sql`INSERT INTO ai.task_messages(short_id, conversation_id, seq, kind, role, message, loop_id)
+          VALUES (${createAiShortId()}, ${conversation.id}::uuid, 2, 'message', 'assistant',
+            ${JSON.stringify({ role: "assistant", content: [{ type: "text", text: "Dafür brauche ich deine Bestätigung." }] })}::text::jsonb,
+            ${delivered.turnId})`;
+        expect(await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status })).toEqual({ occurrenceId: occurrence.id, failed: true });
+        expect(await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status })).toBeNull();
+        const stopped = (await aiChatTasks.get({ userId: user!.id, taskId: task.shortId }))!;
+        expect(stopped).toMatchObject({
+          state: "needs_attention",
+          reasonCode: "needs_approval",
+          reasonAction: action,
+          reasonAt: expect.any(String),
+          lastError: expect.stringContaining(action),
+        });
+        const reason = toAiChatTaskView(stopped).reason!;
+        expect(reason).toEqual({ code: "needs_approval", at: stopped.reasonAt!, action });
+        expect(chatTaskReasonSentence(reason, { locale: "de", timeZone: "UTC" })).toBe(sentence);
+        const [stored] = await sql`SELECT state, error, result_text FROM ai.chat_task_occurrences WHERE id = ${occurrence.id}::uuid`;
+        expect(stored).toMatchObject({
+          state: "failed",
+          error: expect.stringContaining(action),
+          result_text: "Dafür brauche ich deine Bestätigung.",
+        });
+        const [mandate] = await sql`SELECT state FROM auth.mandates WHERE id = ${task.mandateId}::uuid`;
+        expect(mandate!.state).toBe("paused");
+        const messages = await aiConversations.listMessages({ conversationId: conversation.id });
+        expect(
+          messages.find((message) => message.meta?.scheduledTask?.occurrenceId === occurrence.shortId)?.meta?.scheduledTask?.reason,
+        ).toEqual(reason);
+        expect(
+          await aiChatTasks.update({
+            userId: user!.id,
+            taskId: task.shortId,
+            schedule: { kind: "once", runAt: "2099-04-08T09:00:00.000Z" },
+          }),
+        ).toMatchObject({ state: "active", reasonCode: null, reasonAction: null });
+        // A second failure must keep the new column clear and satisfy the database CHECK.
+        const next = (await aiChatTasks.createOccurrence({
+          taskId: task.id,
+          scheduledFor: runAt,
+          trigger: "manual",
+          requestKey: `${suffix}:${status}:next`,
+        }))!;
+        await aiChatTasks.failOccurrence({ occurrenceId: next.id, code: "failed", error: "Later failure" });
+        expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({
+          reasonCode: "failed",
+          reasonAction: null,
+        });
+      }
+      // Marker writes do not change interactive turns; stored titles stay bounded.
+      const [interactive] = await sql`INSERT INTO ai.turns(short_id, conversation_id, status, run_config)
+        VALUES (${createAiShortId()}, ${conversation.id}::uuid, 'running', '{"kind":"chat"}'::jsonb) RETURNING id`;
+      await aiChatTasks.markNeedsApproval({ turnId: interactive!.id, action });
+      const [plain] = await sql`SELECT run_config FROM ai.turns WHERE id = ${interactive!.id}::uuid`;
+      expect(plain!.run_config).toEqual({ kind: "chat" });
+      const [background] = await sql`INSERT INTO ai.turns(short_id, conversation_id, status, run_config)
+        VALUES (${createAiShortId()}, ${conversation.id}::uuid, 'running', '{"kind":"chat","background":{}}'::jsonb) RETURNING id`;
+      await aiChatTasks.markNeedsApproval({ turnId: background!.id, action: "A".repeat(300) });
+      const [bounded] =
+        await sql`SELECT run_config #>> '{background,needsApproval,action}' AS action FROM ai.turns WHERE id = ${background!.id}::uuid`;
+      expect(bounded!.action).toBe("A".repeat(200));
+      // SQL NULL must not evade the action/reason invariant.
+      await expect(sql`UPDATE ai.chat_tasks SET state = 'active', reason_code = NULL, reason_at = NULL,
+        reason_action = ${action} WHERE conversation_id = ${conversation.id}::uuid`).rejects.toThrow();
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
+  test("a stale or explicitly stopped routine keeps its existing finalization despite an approval marker", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`approval-precedence-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id });
+    try {
+      for (const condition of ["stale", "routine_paused", "routine_deleted"] as const) {
+        const runAt = "2099-04-07T09:00:00.000Z";
+        const task = (await aiChatTasks.create({
+          userId: user!.id,
+          chatId: conversation.shortId,
+          prompt: condition,
+          schedule: { kind: "once", runAt },
+          timezone: "UTC",
+        }))!;
+        const occurrence = (await aiChatTasks.createOccurrence({
+          taskId: task.id,
+          scheduledFor: runAt,
+          trigger: "scheduled",
+          requestKey: `${suffix}:${condition}`,
+        }))!;
+        const delivered = await aiChatTasks.deliverOccurrence({
+          occurrenceId: occurrence.id,
+          modelProfileId: "test",
+          runConfig: { kind: "chat", input: condition, toolSource: { kind: "none" } },
+          userMessage: { role: "user", content: [{ type: "text", text: condition }] },
+          expectedRevision: task.revision,
+        });
+        if (!delivered.delivered) throw new Error("Expected routine delivery");
+        await aiChatTasks.markNeedsApproval({ turnId: delivered.turnId, action: "Create task" });
+        if (condition === "stale") await sql`UPDATE ai.chat_tasks SET revision = revision + 1 WHERE id = ${task.id}::uuid`;
+        else await sql`UPDATE ai.turns SET cancellation_reason = ${condition} WHERE id = ${delivered.turnId}::uuid`;
+        expect(await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "completed" })).toEqual({
+          occurrenceId: occurrence.id,
+          failed: false,
+        });
+        const [row] = await sql`SELECT state, error FROM ai.chat_task_occurrences WHERE id = ${occurrence.id}::uuid`;
+        expect(row).toEqual({ state: condition === "stale" ? "completed" : "stopped", error: null });
+        expect((await aiChatTasks.get({ userId: user!.id, taskId: task.shortId }))!.reasonCode).not.toBe("needs_approval");
+      }
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;

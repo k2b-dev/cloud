@@ -136,7 +136,7 @@ export const AI_NOTIFICATIONS = {
       name: z.string(),
       code: z.enum(CHAT_TASK_REASON_CODES),
       at: z.string(),
-      action: z.string().optional(),
+      action: z.string().max(200).optional(),
       timeZone: z.string(),
     }),
     render: ({ conversationId, name, code, at, action, timeZone }, { locale }) => ({
@@ -167,6 +167,7 @@ type TaskAttentionCandidate = {
   timezone: string;
   reason_code: ChatTaskReasonCode;
   reason_at: Date;
+  reason_action: string | null;
 };
 
 type AiNotificationRecoverySummary = {
@@ -239,7 +240,7 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
              conversation.short_id AS conversation_id,
              task.id AS task_id,
              task.sponsor_user_id AS user_id,
-             task.title, conversation.title AS chat_title, task.prompt, task.locale, task.timezone, task.reason_code, task.reason_at
+             task.title, conversation.title AS chat_title, task.prompt, task.locale, task.timezone, task.reason_code, task.reason_at, task.reason_action
       FROM ai.chat_task_occurrences occurrence
       JOIN ai.chat_tasks task ON task.id = occurrence.task_id
       JOIN ai.conversations conversation ON conversation.id = task.conversation_id
@@ -280,6 +281,7 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
             name: chatTaskName({ title: candidate.title, chatTitle: candidate.chat_title, prompt: candidate.prompt }),
             code: candidate.reason_code,
             at: new Date(candidate.reason_at).toISOString(),
+            action: candidate.reason_action ?? undefined,
             timeZone: candidate.timezone,
           },
           idempotencyKey: `routine:${candidate.task_id}:${candidate.reason_code}:${new Date(candidate.reason_at).getTime()}`,

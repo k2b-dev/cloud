@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from "bun:test";
+import { beforeAll, expect, spyOn, test } from "bun:test";
 import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi } from "@k2b/cloud/ai";
 import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
 import { notifications } from "@k2b/cloud/services";
@@ -214,6 +214,71 @@ suite("Core AI completion notifications", () => {
     } finally {
       await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
+  test("a completed routine turn refused by review sends the action reason in the routine locale", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`approval-notification-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id });
+    const service = createAiNotificationService(app.notifications);
+    const action = "Aufgabe zuweisen";
+    const originalRender = app.notifications.taskNeedsAttention.render;
+    const rendered: Array<{ locale: string; body?: string }> = [];
+    const render = spyOn(app.notifications.taskNeedsAttention, "render").mockImplementation(async (data, context) => {
+      const presentation = await originalRender(data, context);
+      rendered.push({ locale: context.locale, body: presentation.body });
+      return presentation;
+    });
+    try {
+      const runAt = "2099-04-07T09:00:00.000Z";
+      const task = (await aiChatTasks.create({
+        userId: user!.id,
+        chatId: conversation.shortId,
+        title: "Aufgaben prüfen",
+        locale: "de",
+        prompt: "Check tasks",
+        schedule: { kind: "once", runAt },
+        timezone: "Europe/Berlin",
+      }))!;
+      const occurrence = (await aiChatTasks.createOccurrence({
+        taskId: task.id,
+        scheduledFor: runAt,
+        trigger: "scheduled",
+        requestKey: suffix,
+      }))!;
+      const delivered = await aiChatTasks.deliverOccurrence({
+        occurrenceId: occurrence.id,
+        modelProfileId: "test",
+        runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
+        userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
+        expectedRevision: task.revision,
+      });
+      if (!delivered.delivered) throw new Error("Expected routine delivery");
+      await aiChatTasks.markNeedsApproval({ turnId: delivered.turnId, action });
+      expect(await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "completed" })).toEqual({
+        occurrenceId: occurrence.id,
+        failed: true,
+      });
+      const result = await service.notifyTaskNeedsAttention(occurrence.id);
+      expect(result.failed).toBe(0);
+      expect(rendered).toContainEqual({
+        locale: "de",
+        body: `Wollte ${action}. Das macht der Assistant nur mit dir, und Routinen fragen nie.`,
+      });
+      expect(
+        await sql`SELECT id FROM notifications.events WHERE definition_id = ${app.notifications.taskNeedsAttention.id}
+        AND recipient_user_id = ${user!.id}::uuid`,
+      ).toHaveLength(1);
+      expect(await service.notifyTaskNeedsAttention(occurrence.id)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      expect(
+        await aiChatTasks.update({ userId: user!.id, taskId: task.shortId, schedule: { kind: "once", runAt: "2099-04-08T09:00:00.000Z" } }),
+      ).toMatchObject({ state: "active", reasonCode: null, reasonAction: null });
+    } finally {
+      render.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
     }
   });
 

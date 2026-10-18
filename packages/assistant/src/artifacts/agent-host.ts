@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
+  AiBackgroundApprovalRequiredError,
   type AiApprovalTarget,
   aiChatTasks,
   aiConversations,
@@ -233,7 +234,15 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
     }
   }
   const router = new Hono<AuthContext>()
-    .onError((error) => Response.json({ code: "CODE_HOST_REQUEST_FAILED", message: error.message }, { status: 403 }))
+    .onError((error) =>
+      Response.json(
+        {
+          code: error instanceof AiBackgroundApprovalRequiredError ? error.code : "CODE_HOST_REQUEST_FAILED",
+          message: error.message,
+        },
+        { status: 403 },
+      ),
+    )
     .use("*", async (c, next) => {
       c.set("credentialKind", "invocation");
       c.set("actor", context.actor);
@@ -242,6 +251,7 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
     })
     .post("/api/assistant/artifacts/runtime/capabilities", async (c, next) => {
       if (!config.background) return next();
+      if (!config.mandate) throw new Error("Background capability mandate is missing");
       const input = RuntimeCapabilityRequest.parse(await c.req.json());
       if (input.conversationId !== context.conversationId) throw new Error("Code capability conversation mismatch");
       return c.json(
@@ -254,7 +264,7 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
             locale: context.locale,
             signal: c.req.raw.signal,
           },
-          true,
+          { turnId: session.turnId, mandate: config.mandate },
         ),
       );
     })

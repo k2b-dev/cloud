@@ -1105,6 +1105,64 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect(await aiToolAudit.capabilityConversation(requestId, owner.user.id)).toBeNull();
   });
 
+  test("background script capabilities reuse one scoped review and never invoke or save refused calls", async () => {
+    const applet = await artifacts.create({ title: "Routine capability", source }, owner);
+    const manifest = compileCapabilityManifest(
+      "demo",
+      defineCapabilities({
+        protocolVersion: 2,
+        actions: {
+          write: {
+            title: "Write item",
+            description: "Write a test item",
+            input: z.object({}).strict(),
+            data: z.unknown(),
+            approval: "rememberable",
+            idempotency: "required",
+            destructive: false,
+            openWorld: false,
+            review: async () => ok({ message: "Write item?", approvalScope: "items:one" }),
+            run: async () => ok({ data: {} }),
+          },
+        },
+      }),
+    );
+    const catalog = spyOn(capabilityClient, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: { appId: "demo", appName: "Demo", appDescription: "", appIcon: "ti ti-app-window", manifest },
+    });
+    const authorize = spyOn(aiChatTasks, "authorizeCapability").mockResolvedValue();
+    const marker = spyOn(aiChatTasks, "markNeedsApproval").mockResolvedValue();
+    const review = spyOn(capabilityClient, "reviewCapabilityAction").mockResolvedValue({ ok: true, data: { message: "Write item?" } });
+    const invoke = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: { written: true } } });
+    const task = { turnId: crypto.randomUUID(), mandate: { id: crypto.randomUUID(), revision: 1 } };
+    const request = () => ({ id: crypto.randomUUID(), name: "demo.write", input: {}, artifactId: applet.id });
+    try {
+      const refused = request();
+      await expect(runtimeCapabilities.prepare(refused, owner, { locale: "en" }, task)).rejects.toMatchObject({ code: "NEEDS_APPROVAL" });
+      expect(invoke).not.toHaveBeenCalled();
+      expect(await sql`SELECT id FROM assistant.capability_calls WHERE id = ${refused.id}::uuid`).toHaveLength(0);
+      review.mockClear();
+      review.mockResolvedValue({ ok: true, data: { message: "Write item?", approvalScope: "items:one" } });
+      expect(await runtimeCapabilities.prepare(request(), owner, { locale: "en" }, task)).toMatchObject({ status: "completed" });
+      expect(review).toHaveBeenCalledTimes(1);
+      expect(invoke).toHaveBeenCalledTimes(1);
+      review.mockClear();
+      invoke.mockClear();
+      manifest.actions[0]!.approval = "none";
+      expect(await runtimeCapabilities.prepare(request(), owner, { locale: "en" }, task)).toMatchObject({ status: "completed" });
+      expect(review).not.toHaveBeenCalled();
+      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(marker).toHaveBeenCalledTimes(1);
+    } finally {
+      catalog.mockRestore();
+      authorize.mockRestore();
+      marker.mockRestore();
+      review.mockRestore();
+      invoke.mockRestore();
+    }
+  });
+
   test("script capabilities require real approval, remember scopes and never execute twice", async () => {
     const applet = await artifacts.create({ title: "Capability app", source }, owner);
     const definitions = defineCapabilities({

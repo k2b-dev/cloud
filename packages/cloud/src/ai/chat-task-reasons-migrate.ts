@@ -4,6 +4,7 @@ import { canonicalLocale } from "../shared/locale";
 /** Called in a transaction; new columns and reason repairs commit together. */
 export const migrateChatTaskReasons = async (sql: SQL): Promise<void> => {
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS reason_code TEXT`.simple();
+  await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS reason_action TEXT`.simple();
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS reason_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS title TEXT`.simple();
   const [column] = await sql`SELECT 1 FROM information_schema.columns
@@ -39,6 +40,10 @@ export const migrateChatTaskReasons = async (sql: SQL): Promise<void> => {
         ALTER TABLE ai.chat_tasks ADD CONSTRAINT ai_chat_tasks_reason_code_check
           CHECK (reason_code IN ('paused', 'chat_archived', 'owner_inactive', 'failed', 'rights_changed', 'needs_approval'));
       END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_chat_tasks_reason_action_check') THEN
+        ALTER TABLE ai.chat_tasks ADD CONSTRAINT ai_chat_tasks_reason_action_check
+          CHECK (reason_action IS NULL OR (reason_code IS NOT NULL AND reason_code = 'needs_approval'));
+      END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_chat_tasks_title_check') THEN
         ALTER TABLE ai.chat_tasks ADD CONSTRAINT ai_chat_tasks_title_check CHECK (char_length(btrim(title)) BETWEEN 1 AND 80);
       END IF;
@@ -49,6 +54,7 @@ export const migrateChatTaskReasons = async (sql: SQL): Promise<void> => {
           WHEN state = 'paused' THEN 'paused'
           WHEN last_error IN ('Scheduled task mandate revision changed', 'Scheduled task mandate or sponsor is unavailable') THEN 'rights_changed'
           ELSE 'failed' END,
+          reason_action = NULL,
           reason_at = CASE WHEN state IN ('paused', 'needs_attention') THEN updated_at ELSE NULL END
         WHERE NOT (
           (state IN ('paused', 'needs_attention')) = (reason_code IS NOT NULL)

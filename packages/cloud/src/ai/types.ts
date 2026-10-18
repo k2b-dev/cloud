@@ -621,6 +621,7 @@ export type AiBackgroundRunContext = {
   trigger?: "scheduled" | "manual";
   timezone?: string;
   stopDeliveredAt?: string;
+  needsApproval?: { action: string };
   taskId: string;
   occurrenceId: string;
   context: Array<{ seq: number; kind: "message" | "summary"; message: Message }>;
