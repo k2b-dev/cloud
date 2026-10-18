@@ -149,6 +149,8 @@ describe("Mail workspace conversation open", () => {
   let revisions: Map<string, number>;
   /** Conversations with a flagged message on the server. */
   let flagged: Set<string>;
+  /** Conversations whose message also lies unread and flagged in Archive, which the detail names as its folder. */
+  let elsewhere: Set<string>;
   /** Holds a detail response until the test releases it. */
   let detailGate: Map<string, Promise<void>>;
   let detailStatus: (id: string) => number;
@@ -201,7 +203,10 @@ describe("Mail workspace conversation open", () => {
       detailMessages: [
         {
           ...message(`m-${conversationId}`, `Subject ${conversationId}`, `Body of ${conversationId}`),
-          flags: [...(unread.has(conversationId) ? [] : ["\\Seen"]), ...(flagged.has(conversationId) ? ["\\Flagged"] : [])],
+          flags: elsewhere.has(conversationId)
+            ? ["\\Flagged"]
+            : [...(unread.has(conversationId) ? [] : ["\\Seen"]), ...(flagged.has(conversationId) ? ["\\Flagged"] : [])],
+          folderId: elsewhere.has(conversationId) ? "Archive1" : FOLDER,
         },
         ...(reply ? [message(`r-${conversationId}`, `Subject ${conversationId}`, reply)] : []),
       ],
@@ -290,6 +295,7 @@ describe("Mail workspace conversation open", () => {
     replies = new Map();
     revisions = new Map();
     flagged = new Set();
+    elsewhere = new Set();
     detailGate = new Map();
     detailStatus = () => 200;
     routeGate = undefined;
@@ -678,6 +684,39 @@ describe("Mail workspace conversation open", () => {
     expect(actionRequests[0]!.body).toMatchObject({ kind: "change_state", change: { addFlags: ["seen"] }, sourceFolderId: FOLDER });
     // The row was older than the detail: page 1 reloaded it before auto mark-read decided.
     expect(routeRequests[0]).toBe(`${folderPath}&conversation=${rowId(12)}`);
+  });
+
+  test("a message in another folder does not make the folder's row look older", async () => {
+    mount();
+    // The detail names Archive for this message, which is unread and flagged there; the Inbox list states read and
+    // flag for the Inbox only.
+    elsewhere.add(rowId(17));
+    open(rowId(17));
+    await until(() => shows(rowId(17)), "the opened conversation");
+    await settle();
+    expect(routeRequests).toEqual([]);
+  });
+
+  test("auto mark-read waits for the last of overlapping row refreshes", async () => {
+    mount();
+    const held: Array<(status: number) => void> = [];
+    routeStatus = () => new Promise<number>((resolve) => held.push(resolve));
+    unread.add(rowId(18));
+    open(rowId(18));
+    await until(() => held.length === 1, "the first row refresh");
+    // B's message arrives after the first refresh read the list, so that refresh still shows B read.
+    unread.add(rowId(19));
+    open(rowId(19));
+    await until(() => shows(rowId(19)), "the second conversation");
+    held[0]!(200);
+    await until(() => held.length === 2, "the second row refresh");
+    await settle();
+    expect(actionRequests).toEqual([]);
+    held[1]!(200);
+    await until(() => actionRequests.length === 1, "the mark read request");
+    expect(actionRequests[0]!.conversationId).toBe(rowId(19));
+    routeStatus = () => 200;
+    for (const settleNext of held.slice(2)) settleNext(200);
   });
 
   test("a row older than its detail is refreshed with the list instead of taking the newer revision alone", async () => {
