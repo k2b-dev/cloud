@@ -154,6 +154,13 @@ Playwright's `clock` for this: even `setSystemTime` replaces timers,
 animation frames, and `performance`, and the Chat read-state tests then
 failed in WebKit. Use `performance.now()` for durations and deadlines.
 
+Measure browser timing on the browser's clock. Playwright events such as
+`request` reach the test process late under load, so tests that assert a browser
+throttle or delay record `performance.now()` in the page, as the Chat read-state
+tests do with `chatReadStarts` in an init script that wraps fetch. Wait for
+browser-side windows with a timer inside the page. The `test-clock` check also
+rejects clock reads inside Playwright event listeners.
+
 The `test-clock` check rejects new `new Date()` and `Date.now()` reads in UI
 tests, fixtures, harnesses, and suites. A line comment
 `// real clock: <reason>` on the same line or directly above allows a read

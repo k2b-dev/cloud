@@ -8,6 +8,9 @@ const testClockFiles = /\.(?:browser|behavior|render)\.test\.tsx?$|[.-]browser-(
 const message =
   "Use a fixed date (a fixture constant, bun:test setSystemTime, or a page init script that pins Date), performance.now() for durations, or // real clock: <reason>.";
 
+const listenerMessage =
+  "Playwright events reach the test process late under load; measure browser timing in the page (performance.now() in a page or init script) and assert on those times.";
+
 /** Keep strings, including page scripts, but blank comments without changing positions or line numbers. */
 export const checkTestClockSource = (file: string, source: string): Finding[] => {
   const optOuts = new Set<number>();
@@ -19,9 +22,26 @@ export const checkTestClockSource = (file: string, source: string): Finding[] =>
       return token.replace(/[^\r\n]/g, " ");
     },
   );
-  return [...code.matchAll(/\bnew\s+Date\s*\(\s*\)|\bDate\s*\.\s*now\s*\(\s*\)/g)].flatMap((match) => {
+  const listeners = [
+    ...code.matchAll(
+      /\.\s*(?:on|once|addListener)\s*\(\s*(["'])(?:request|requestfinished|requestfailed|response|console|websocket|framenavigated|frameattached|framedetached|load|domcontentloaded|dialog|popup|pageerror|download|filechooser|worker|close|crash|page|serviceworker)\1\s*,/g,
+    ),
+  ].map((match) => {
+    const start = match.index + match[0].length;
+    const tokens = /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|[()]/g;
+    tokens.lastIndex = start;
+    let depth = 1;
+    for (let token; (token = tokens.exec(code)); ) {
+      if (token[0] === "(") depth++;
+      else if (token[0] === ")" && --depth === 0) return { start, end: token.index };
+    }
+    return { start, end: code.length };
+  });
+  return [...code.matchAll(/\bnew\s+Date\s*\(\s*\)|\b(?:Date|performance)\s*\.\s*now\s*\(\s*\)/g)].flatMap((match) => {
+    const listener = listeners.some(({ start, end }) => match.index >= start && match.index < end);
+    if (!listener && match[0].startsWith("performance")) return [];
     const line = code.slice(0, match.index).split("\n").length;
-    return optOuts.has(line) || optOuts.has(line - 1) ? [] : [{ file, line, message }];
+    return optOuts.has(line) || optOuts.has(line - 1) ? [] : [{ file, line, message: listener ? listenerMessage : message }];
   });
 };
 
@@ -53,7 +73,7 @@ const readBaseline = (path: string): Map<string, number> => {
 
 export const rule: Rule = {
   name: "test-clock",
-  description: "UI tests pin the clock instead of reading today's date",
+  description: "UI tests pin the clock and measure browser timing in the browser",
   run: async ({ workspaceRoot, fix }) => {
     const baselinePath = join(workspaceRoot, BASELINE);
     const baseline = readBaseline(baselinePath);
