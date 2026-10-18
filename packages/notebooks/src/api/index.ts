@@ -30,6 +30,7 @@ import {
 import { isStandaloneServiceAccountKind, settings, settingsService } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import {
+  type GotenbergConfig,
   GotenbergRenderError,
   getGotenbergConfig,
   MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES,
@@ -989,7 +990,10 @@ import templatesRoutes from "./templates";
 import widgetRoutes from "./widgets";
 
 // Keyed by the Hono context: bodyLimit replaces c.req.raw before the handler runs.
-const notePdfAdmissions = new WeakMap<Context, { notebook: Notebook; note: Note; signal: AbortSignal }>();
+const notePdfAdmissions = new WeakMap<
+  Context,
+  { notebook: Notebook; note: Note; signal: AbortSignal; config: GotenbergConfig; maxAttachmentBytes: number }
+>();
 
 const app = new Hono<AuthContext>()
   .route("/widget", widgetRoutes)
@@ -2018,12 +2022,19 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       const note = await requireNoteInNotebook(notebook!.id, c.req.param("noteId")!, getLocale(c));
       if (!note.ok) return respond(c, note);
-      // bodyLimit replaces c.req.raw; keep the signal of the client's connection.
-      notePdfAdmissions.set(c, { notebook: notebook!, note: note.data, signal: c.req.raw.signal });
+      const [config, maxAttachmentBytes] = await Promise.all([getGotenbergConfig(), getMaxAttachmentSizeBytes()]);
+      // bodyLimit replaces c.req.raw for a chunked body. Bun's idle timer and the client's abort signal
+      // belong to the original, socket-backed request, so both use it.
+      const raw = c.req.raw;
+      notePdfAdmissions.set(c, { notebook: notebook!, note: note.data, signal: raw.signal, config, maxAttachmentBytes });
+      // Preparation and rendering each get one phase, plus 10 s for parsing, assembly and cleanup.
+      setRequestTimeout(c, Math.min(REQUEST_IDLE_TIMEOUT_MAX_SECONDS, Math.ceil((2 * notePdfPhaseMs(config) + 10_000) / 1000)));
       try {
         await next();
       } finally {
         notePdfAdmissions.delete(c);
+        c.req.raw = raw;
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
       }
     },
     bodyLimit({
@@ -2032,7 +2043,7 @@ const app = new Hono<AuthContext>()
     }),
     v("json", NotePdfRequestSchema),
     async (c) => {
-      const { notebook, note, signal } = notePdfAdmissions.get(c)!;
+      const { notebook, note, signal, config, maxAttachmentBytes } = notePdfAdmissions.get(c)!;
       const notebookId = notebook.id;
       const input = c.req.valid("json");
 
@@ -2048,8 +2059,6 @@ const app = new Hono<AuthContext>()
 
       activeNotePdfConversions += 1;
       try {
-        const [config, maxAttachmentBytes] = await Promise.all([getGotenbergConfig(), getMaxAttachmentSizeBytes()]);
-        setRequestTimeout(c, Math.min(REQUEST_IDLE_TIMEOUT_MAX_SECONDS, Math.ceil((2 * notePdfPhaseMs(config) + 10_000) / 1000)));
         const filename = notePdfFilename(note.title);
         // Query blocks resolve for the same access subject checkNotebookAccess authorized.
         const subject = getNotebookAccessSubject(c);
@@ -2088,7 +2097,6 @@ const app = new Hono<AuthContext>()
         return respond(c, { ok: false, error: projected.message, status: projected.status });
       } finally {
         activeNotePdfConversions -= 1;
-        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
       }
     },
   )

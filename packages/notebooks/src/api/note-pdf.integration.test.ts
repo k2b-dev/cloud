@@ -23,14 +23,15 @@ databaseSuite()("PDF route admission and idle timeout", () => {
     const hanging = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Promise<Response>(() => {}) });
     // Record the idle timeouts the route sets on its socket. Bun 1.4 does not drop a pending POST at its idle
     // timeout (measured), so the raise is checked directly: both phases plus 10 s, then the default before answering.
-    const timeouts: number[] = [];
+    // Bun's timer only applies to the socket-backed request it passed in, so record that identity too.
+    const timeouts: [boolean, number][] = [];
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
       fetch: (request, bunServer) =>
         api.fetch(request, {
           timeout: (raw: Request, seconds: number) => {
-            timeouts.push(seconds);
+            timeouts.push([raw === request, seconds]);
             bunServer.timeout(raw, seconds);
           },
         }),
@@ -49,14 +50,19 @@ databaseSuite()("PDF route admission and idle timeout", () => {
       await sql`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${notebook!.id}::uuid, ${access!.id}::uuid)`;
       await settings.set("gotenberg.url", hanging.url.origin);
       await settings.set("gotenberg.timeout_ms", 1000);
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ markdown: "# Timeout" }),
-        signal: AbortSignal.timeout(10000),
+      // A streamed (chunked) body makes bodyLimit replace c.req.raw with a request Bun does not know.
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(JSON.stringify({ markdown: "# Timeout" })));
+          controller.close();
+        },
       });
+      const response = await fetch(url, { method: "POST", headers, body, signal: AbortSignal.timeout(10000) });
       expect(response.status).toBe(504);
-      expect(timeouts).toEqual([12, 10]);
+      expect(timeouts).toEqual([
+        [true, 12],
+        [true, 10],
+      ]);
       expect(await response.json()).toMatchObject({ message: "Der PDF-Renderer hat das Zeitlimit überschritten. Versuche es erneut." });
     } finally {
       await server.stop(true);
