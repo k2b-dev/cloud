@@ -17,10 +17,10 @@ import app from ".";
 
 const suite = suiteFor("database", "nats", "valkey");
 const anchor = new Date("2026-10-01T12:00:00.000Z");
-// TODO BUDGET: after=<unmeasured: test infrastructure unavailable> before=<owner>
-// Replace these provisional ceilings with each measured after + 10%, then compare with origin/main.
-const WORKSPACE_DETAIL_MAX_BYTES = 80_000;
-const WORKSPACE_ROUTE_MAX_BYTES = 90_000;
+// Budgets between the measured sizes of this fixture: workspace-detail 45,244 B after the forwardText trim and
+// 61,906 B on origin/main before it; workspace-route 48,661 B after and 65,323 B before.
+const WORKSPACE_DETAIL_MAX_BYTES = 50_000;
+const WORKSPACE_ROUTE_MAX_BYTES = 54_000;
 const contextFor = (user: User): MailRequestContext => ({
   actor: { kind: "user", user },
   accessSubject: { type: "user", userId: user.id },
