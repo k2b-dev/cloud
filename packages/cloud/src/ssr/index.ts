@@ -4,11 +4,11 @@
 export { default as AdminLayout } from "./AdminLayout";
 export {
   hasDedicatedRuntimeRoute,
-  resolveRuntimeRoute,
   type PanelProvider,
-  visiblePanelProviders,
+  resolveRuntimeRoute,
   type VisiblePwaPart,
   visibleNavigationApps,
+  visiblePanelProviders,
   visiblePwaParts,
 } from "./app-navigation";
 export { default as Layout } from "./Layout";

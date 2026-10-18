@@ -3,8 +3,8 @@ import { createContext, type JSX, useContext } from "solid-js";
 import type { AppSearchLink } from "../contracts/app";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { CloudThemePreference } from "../shared/theme";
-import type { PanelProvider } from "./app-navigation";
 import type { AppLaunchpadLegalLink } from "./app-launchpad";
+import type { PanelProvider } from "./app-navigation";
 import type { RailApp } from "./rail-navigation";
 
 export type ShellData = {

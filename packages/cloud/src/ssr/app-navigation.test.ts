@@ -5,8 +5,8 @@ import {
   hasDedicatedRuntimeRoute,
   resolveRuntimeRoute,
   visibleNavigationApps,
-  visiblePwaParts,
   visiblePanelProviders,
+  visiblePwaParts,
 } from "./app-navigation";
 
 const user = {

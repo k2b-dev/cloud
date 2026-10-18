@@ -1,7 +1,7 @@
-import { isOwnAppPath, SAME_ORIGIN_PATH } from "./app-path";
 import { CLOUD_CLI_MODULE_NAME } from "../cli/plugin";
 import { PlatformPermissionSchema } from "../contracts/outgoing-mail";
 import type { AppRegistryEntry } from "../contracts/registry";
+import { isOwnAppPath, SAME_ORIGIN_PATH } from "./app-path";
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const isString = (value: unknown): value is string => typeof value === "string";

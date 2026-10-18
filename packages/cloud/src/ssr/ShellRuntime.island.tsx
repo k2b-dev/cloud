@@ -1,10 +1,10 @@
 import type { HelpDocumentManifest } from "@k2b/cloud/shared";
 import {
   followPageTrail,
-  keyboardPlatform,
   installAppWorkspaceController,
   installInputModeController,
   installPageTitleController,
+  keyboardPlatform,
   serializeAppWorkspaceLayoutState,
   useLocale,
 } from "@k2b/ui";
@@ -12,8 +12,8 @@ import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { appWorkspaceCookieName, readAppWorkspaceLayoutCookie } from "../_internal/app-workspace-state";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
-import type { PanelRequest } from "../browser/panel";
 import { navigationSearchItems } from "../browser/navigation-search";
+import type { PanelRequest } from "../browser/panel";
 import { importOnDemand } from "../browser/reload";
 import { registerGlobalSearchHost } from "../browser/search-bridge";
 import { attachShellFocusControls, readShellFocus, SHELL_FOCUS_CHANGE_EVENT, toggleShellFocus } from "../browser/shell-focus";
