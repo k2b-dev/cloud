@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { SQL } from "bun";
 import type { Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
@@ -36,7 +35,7 @@ export const setBrowserCookie = (c: Context, value: string, development = env.IS
 
 /** SHA-256 over canonical UUID text followed immediately by the cookie text; stored as raw bytea. */
 export const browserHash = (userId: string, cookie: string): Buffer =>
-  createHash("sha256").update(userId.toLowerCase(), "utf8").update(cookie, "utf8").digest();
+  new Bun.CryptoHasher("sha256").update(userId.toLowerCase()).update(cookie).digest();
 
 type SignIn = {
   userId: string;
