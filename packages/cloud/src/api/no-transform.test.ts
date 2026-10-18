@@ -18,6 +18,8 @@ const { default: lifecycle } = await import("./admin-lifecycle");
 const { createAdminIdentityRoutes } = await import("./admin-identity");
 const { default: aiProjects } = await import("./admin-ai-projects");
 const { default: aiSkills } = await import("./admin-ai-skills");
+const { aiProjectsRoutes } = await import("../ai/projects-routes");
+const { aiSkillsRoutes } = await import("../ai/skills-routes");
 const { createAppApprovalRoutes } = await import("./app-approval");
 const { appApproval, AppApprovalError } = await import("../services/app-approval");
 
@@ -45,6 +47,8 @@ const groups = [
   { name: "AI usage", router: aiUsage, paths: ["/report", "/report/__new_route__", "/__new_route__"] },
   { name: "AI project descriptions", router: aiProjects, paths: ["/", "/__new_route__"] },
   { name: "AI skill descriptions", router: aiSkills, paths: ["/", "/__new_route__"] },
+  { name: "AI projects across grants", router: aiProjectsRoutes, paths: ["/", "/__new_route__"] },
+  { name: "AI skills across grants", router: aiSkillsRoutes, paths: ["/", "/__new_route__"] },
 ];
 
 describe("platform compression boundaries", () => {
