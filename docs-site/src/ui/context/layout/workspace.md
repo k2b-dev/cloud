@@ -263,10 +263,11 @@ focuses the Detail title; pointer activation keeps focus on the button.
 Choosing an item in Main opens a waiting Detail as the drawer when the Detail
 opens with that choice. While the Detail stays open, a choice reopens it only
 when the application marks the chosen item or an ancestor inside Main with
-`aria-selected="true"`, `aria-current` other than `"false"`, or
-`data-selected="true"` (as DataTable's `selectedRowId` does) after activation.
+`aria-selected="true"`, `aria-current` other than `"false"`, `"date"`, or
+`"time"`, or `data-selected="true"` (as DataTable's `selectedRowId` does) after activation.
 The mark may arrive later, for example after a load; the choice waits for it
-until another interaction replaces it.
+until another interaction replaces it. Tabs and date selections on calendar
+day cells do not count as a choice.
 A control inside the selected row that discloses, toggles, opens a menu, or
 takes input does not count as a choice.
 Enter, Space (except on links, which it does not activate), and
@@ -274,6 +275,10 @@ assistive-technology clicks count as keyboard choices and focus the Detail
 title; a completed primary pointer click keeps focus on the
 item. Live content updates alone leave it waiting. An initially open Detail,
 or one opened without a fresh Main choice, keeps waiting. The drawer is not modal.
+
+Set `openOnChoice={false}` when Main shows the chosen item, as in Mail's reader
+beside a list. The waiting drawer then opens only from **Details** or a toggle
+in Main with `aria-pressed`, `aria-expanded`, or `aria-controls`.
 
 Escape parks the drawer and returns focus to **Details**, without calling
 `onClose`. The button also parks it. A rightward touch swipe parks an open

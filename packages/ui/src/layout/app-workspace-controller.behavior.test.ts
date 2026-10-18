@@ -2437,6 +2437,181 @@ describe("waiting detail drawers", () => {
     }
   });
 
+  for (const selected of [false, true]) {
+    for (const tabKind of ["tab", "tablist child"] as const) {
+      test(`a ${tabKind} leaves a parked Detail and keyboard focus alone (already selected: ${selected})`, async () => {
+        const { root, aside, item, toggle } = waitingWorkspace();
+        if (tabKind === "tab") item.setAttribute("role", "tab");
+        else mainRow(item).setAttribute("role", "tablist");
+        item.setAttribute("aria-selected", String(selected));
+        const dispose = installAppWorkspaceController({ root });
+        try {
+          toggle.click();
+          detailKey(toggle, "Escape");
+          rememberPointer(item);
+          item.focus();
+          item.setAttribute("aria-selected", "true");
+          item.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+          await window.happyDOM.whenAsyncComplete();
+          flushFrames();
+          flushFrames();
+          expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+          detailKey(item, "Enter");
+          item.click(); // A native keyboard click continues the same activation.
+          await window.happyDOM.whenAsyncComplete();
+          flushFrames();
+          flushFrames();
+          expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+          expect(toggle.getAttribute("aria-expanded")).toBe("false");
+          expect(document.activeElement === item).toBe(true);
+        } finally {
+          dispose();
+        }
+      });
+    }
+  }
+
+  test("a Detail turning visible after a tab click keeps waiting", async () => {
+    const { root, aside, item } = waitingWorkspace();
+    aside.hidden = true;
+    mainRow(item).setAttribute("role", "tablist");
+    item.setAttribute("role", "tab");
+    item.setAttribute("aria-selected", "true");
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      rememberPointer(item);
+      item.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+      aside.hidden = false;
+      await window.happyDOM.whenAsyncComplete();
+      flushFrames();
+      flushFrames();
+      expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+    } finally {
+      dispose();
+    }
+  });
+
+  for (const mark of ["date", "time", "today", "selected day", "late selected day"] as const) {
+    test(`${mark} is not a choice that reopens a parked Detail`, async () => {
+      const { root, aside, item } = waitingWorkspace();
+      if (mark !== "date" && mark !== "time") {
+        item.setAttribute("role", "gridcell");
+        item.dataset.calendarDayKey = "2026-10-18";
+      }
+      if (mark === "date" || mark === "time") item.setAttribute("aria-current", mark);
+      if (mark === "today") item.setAttribute("aria-current", "date");
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        rememberPointer(item);
+        item.focus();
+        if (mark === "selected day") item.setAttribute("aria-selected", "true");
+        item.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+        flushFrames();
+        flushFrames();
+        if (mark === "late selected day") {
+          await Promise.resolve();
+          item.setAttribute("aria-selected", "true");
+        }
+        await window.happyDOM.whenAsyncComplete();
+        flushFrames();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        expect(document.activeElement === item).toBe(true);
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  for (const mark of ["event", "ancestor"] as const) {
+    test(`a selected calendar day does not hide a later ${mark} selection mark`, async () => {
+      const { root, aside, item } = waitingWorkspace();
+      const cell = mainRow(item);
+      cell.setAttribute("role", "gridcell");
+      cell.dataset.calendarDayKey = "2026-10-18";
+      cell.setAttribute("aria-selected", "true");
+      cell.setAttribute("aria-current", "date");
+      const row = mainRow(cell);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        rememberPointer(item);
+        item.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+        flushFrames();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        (mark === "event" ? item : row).dataset.selected = "true";
+        await window.happyDOM.whenAsyncComplete();
+        flushFrames();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  for (const delayed of [false, true]) {
+    test(`a request-only Detail ignores a link selection (delayed: ${delayed})`, async () => {
+      const { root, aside, item, toggle } = waitingWorkspace();
+      aside.dataset.workspaceDetailChoice = "request";
+      const link = document.createElement("a");
+      link.href = "#message";
+      item.replaceWith(link);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        toggle.click();
+        detailKey(toggle, "Escape");
+        rememberPointer(link);
+        link.focus();
+        if (!delayed) link.setAttribute("aria-current", "page");
+        link.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+        flushFrames();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        if (delayed) link.setAttribute("aria-current", "page");
+        await window.happyDOM.whenAsyncComplete();
+        flushFrames();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        expect(document.activeElement === link).toBe(true);
+        // Explicit Details requests still work after a selection.
+        toggle.click();
+        expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  for (const control of ["row", "link", "aria-pressed", "aria-expanded", "aria-controls"] as const) {
+    test(`a request-only Detail turning visible after a ${control} click`, async () => {
+      const { root, aside, item } = waitingWorkspace();
+      aside.dataset.workspaceDetailChoice = "request";
+      aside.hidden = true;
+      const target = document.createElement(control === "link" ? "a" : control === "row" ? "div" : "button");
+      if (control === "link") target.setAttribute("href", "#message");
+      else if (control === "row") {
+        target.tabIndex = 0;
+        target.setAttribute("role", "row");
+      } else target.setAttribute(control, control === "aria-controls" ? aside.id : "false");
+      item.replaceWith(target);
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        rememberPointer(target);
+        target.focus();
+        target.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+        aside.hidden = false;
+        await window.happyDOM.whenAsyncComplete();
+        flushFrames();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBe(control === "row" || control === "link" ? undefined : "open");
+        expect(document.activeElement === target).toBe(true);
+      } finally {
+        dispose();
+      }
+    });
+  }
+
   for (const key of ["Enter", " "]) {
     test(`the native click after ${key} does not create a second choice`, async () => {
       const { root, aside, item, title, toggle } = waitingWorkspace();

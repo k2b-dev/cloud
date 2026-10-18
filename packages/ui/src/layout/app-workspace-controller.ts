@@ -101,6 +101,11 @@ const ITEM_SELECTOR = ".k2b-app-workspace__sidebar-item";
 /** Controls inside a selected row that act on their own instead of choosing the row. */
 const NESTED_CONTROL_SELECTOR =
   "[aria-expanded], [aria-haspopup]:not([aria-haspopup='false']), [aria-pressed], [role='checkbox'], [role='switch'], [role='menuitem'], input, select, textarea, summary";
+const DETAIL_REQUEST_CONTROL_SELECTOR = "[aria-pressed], [aria-expanded], [aria-controls]";
+const SELECTION_MARK_SELECTOR =
+  '[aria-selected="true"], [aria-current]:not([aria-current="false"]):not([aria-current="date"]):not([aria-current="time"]), [data-selected="true"]';
+// Calendar day marks select a date range, not the Detail's subject.
+const IGNORED_SELECTION_MARK_SELECTOR = "[data-calendar-day-key]";
 const clamp = (value: number, min: number, max: number) => Math.round(Math.min(max, Math.max(min, value)));
 const eventElement = (event: Event) => (event.target instanceof Element ? event.target : null);
 const resizeHandle = (event: Event) => eventElement(event)?.closest<HTMLElement>(HANDLE_SELECTOR) ?? null;
@@ -734,13 +739,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           item.matches("a[href], area[href]") &&
           (!item.hasAttribute("role") || item.getAttribute("role") === "link")
         ) &&
-        !target.closest(KEY_OWNER_SELECTOR),
+        !target.closest(KEY_OWNER_SELECTOR) &&
+        !item.closest("[role='tab'], [role='tablist']"),
     };
     refreshItem(snapshot);
     remembered.set(root, snapshot);
     if (snapshot.chosen) lastChosen = snapshot;
     if (snapshot.chosen) {
-      const aside = openDetails(root).find((aside) => detailWaiting(aside) && !detailDrawer(aside));
+      const aside = openDetails(root).find(canOpenPendingDetail);
       if (aside) checkPendingDetail(root, aside, snapshot, event instanceof KeyboardEvent && event.key === " ");
     }
     // Enter in an editor or a field types; only an item that chooses something moves on to its title.
@@ -947,7 +953,12 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   };
   let pendingDetail: { aside: HTMLElement; snapshot: RememberedItem; stop: () => void } | null = null;
   const canOpenPendingDetail = (aside: HTMLElement) =>
-    aside.isConnected && eventRoot.contains(aside) && !aside.hidden && detailWaiting(aside) && !detailDrawer(aside);
+    aside.isConnected &&
+    eventRoot.contains(aside) &&
+    !aside.hidden &&
+    detailWaiting(aside) &&
+    !detailDrawer(aside) &&
+    aside.dataset.workspaceDetailChoice !== "request";
   const cancelPendingDetail = () => {
     pendingDetail?.stop();
     pendingDetail = null;
@@ -977,9 +988,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
             return;
           }
           // ARIA marks, and `data-selected` as DataTable and Calendar mark their selection.
-          const selected = snapshot.item.closest(
-            '[aria-selected="true"], [aria-current]:not([aria-current="false"]), [data-selected="true"]',
-          );
+          let selected = snapshot.item.closest(SELECTION_MARK_SELECTOR);
+          while (selected?.matches(IGNORED_SELECTION_MARK_SELECTOR))
+            selected = selected.parentElement?.closest(SELECTION_MARK_SELECTOR) ?? null;
           if (!selected || selected === main || !main.contains(selected)) {
             if (!observer) {
               observer = new MutationObserver(settle);
@@ -1076,6 +1087,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     }
     if (detailWaiting(aside) && !detailDrawer(aside)) {
       if (!followedInteraction || !snapshot?.chosen) return;
+      if (aside.dataset.workspaceDetailChoice === "request" && !snapshot.item.matches(DETAIL_REQUEST_CONTROL_SELECTOR)) return;
       openDetailDrawer(aside);
     }
     anchorItem(root, aside, snapshot);

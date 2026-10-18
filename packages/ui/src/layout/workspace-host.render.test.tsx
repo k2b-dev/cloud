@@ -35,6 +35,16 @@ for (const locale of ["en", "de"] as const) {
   });
 }
 
+for (const openOnChoice of [undefined, true, false]) {
+  test(`Detail renders request-only choice metadata only when opted out (${openOnChoice})`, () => {
+    const html = renderToString(() =>
+      createComponent(AppWorkspace.Detail, { id: "reader", open: true, openOnChoice, children: "Context" }),
+    );
+    if (openOnChoice === false) expect(html).toMatch(/<aside[^>]*data-workspace-detail-choice="request"/);
+    else expect(html).not.toContain("data-workspace-detail-choice");
+  });
+}
+
 for (const minWidth of [760, 320, 0, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
   test(`Main emits its scoped minimum rule only for finite widths above 320 (${minWidth})`, () => {
     const html = renderToString(() => createComponent(AppWorkspace.Main, { minWidth, children: "Main" }));

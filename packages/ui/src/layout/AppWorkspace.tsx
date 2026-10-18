@@ -253,6 +253,12 @@ export type AppWorkspaceDetailWidth = "sm" | "md" | "lg" | "xl";
 export type AppWorkspaceDetailProps = {
   children: JSX.Element;
   open: boolean;
+  /**
+   * Whether choosing an item in Main opens this Detail as the drawer while it waits.
+   * Set false when Main itself shows the chosen item, such as a reader beside a list:
+   * the drawer then opens only from Details or from a toggle in Main.
+   */
+  openOnChoice?: boolean;
   id: string;
   class?: string;
   width?: AppWorkspaceDetailWidth;
@@ -886,6 +892,7 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
         class={`k2b-app-workspace__detail ${props.class ?? ""}`}
         data-width={props.width ?? "md"}
         data-workspace-detail-phone={props.phone === "page" ? "page" : undefined}
+        data-workspace-detail-choice={props.openOnChoice === false ? "request" : undefined}
         data-workspace-panel-id={panelId()}
         data-workspace-resizable={resizable() ? "true" : "false"}
         data-workspace-detail-closable={props.onClose ? "true" : undefined}
