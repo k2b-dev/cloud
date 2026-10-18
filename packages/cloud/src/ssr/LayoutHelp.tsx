@@ -101,7 +101,7 @@ const StartShortcuts = (props: { appName?: string }) => {
   const locale = useLocale();
   const t = () => helpMessages.resolve([locale()]).t;
   const shell = useShellData();
-  const seed: HelpShortcutCommand[] = shell ? shellShortcuts(platformMessages.resolve([locale()]).t) : [];
+  const seed: HelpShortcutCommand[] = shell ? shellShortcuts(platformMessages.resolve([locale()]).t, { panel: !!shell.panel }) : [];
   const read = (): HelpShortcutCommand[] => {
     const commands = contextCommandsWithShortcuts();
     return [...seed.filter((command) => !commands.some((other) => other.id === command.id)), ...commands];

@@ -5,7 +5,7 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code, device authorization, or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # OAuth clients and flows
@@ -27,8 +27,9 @@ Cloud has three client origins:
 
 The first-party `cld` command uses Cloud's protected `cloud-cli` registration
 for login, refresh, and logout. `cld login --device` uses the same
-registration through the device authorization grant. It does not dynamically
-register or accept an alternate OAuth client ID. Dynamic registration is for clients without a prior
+registration through the device authorization grant. `cld login --user`
+starts that grant with `login_hint`, and `cld login --ttl` sends `ttl`. `cld`
+does not dynamically register or accept an alternate OAuth client ID. Dynamic registration is for clients without a prior
 relationship with the Cloud instance.
 
 ## Authorization-code flow
@@ -164,6 +165,9 @@ family expiry.
 Both discovery documents, `/.well-known/openid-configuration` and
 `/.well-known/oauth-authorization-server`, advertise
 `cloud_login_ttl_supported: true`. Clients can check it before sending `ttl`.
+
+`cld login --ttl 8h` checks this marker, sends `ttl`, and prints the end from
+`refresh_token_expires_in`.
 
 ## Device authorization flow
 
@@ -307,6 +311,9 @@ Without `ttl`, the login lasts `user.session.expiry_hours`, up to 90 days.
 A shorter `ttl` reduces that lifetime. The lifetime is absolute; refreshing
 never extends it. Clients without `login_hint` keep the existing device flow
 and 90-day default.
+
+`cld login --user alice` checks `cloud_login_hint_supported`, uses this flow,
+and prints the six digits to compare.
 
 Start errors:
 

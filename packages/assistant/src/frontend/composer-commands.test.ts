@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AiChatTaskView, AiProject, AiSkillSummary } from "@k2b/cloud/ai";
+import type { CloudResourcePickerItem } from "@k2b/cloud/browser/resource-picker";
 import { createConfig } from "@k2b/ssr";
 
 const root = mkdtempSync(join(tmpdir(), "assistant-slash-"));
@@ -11,6 +12,8 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { assistantCopyFor } = await import("./ui-copy");
 const { assistantApi } = await import("../api/client");
 const {
+  assistantInsertCommands,
+  assistantResourceMention,
   assistantBuiltInCommands: builtInCommands,
   assistantComposerCommands: searchCommands,
   assistantCommandScopes,
@@ -306,20 +309,18 @@ test("sections and bilingual scope words agree, with each locale's narrowing wor
   for (const locale of ["en", "de"]) {
     const copy = assistantCopyFor(locale);
     const scopes = assistantCommandScopes(copy, locale);
-    expect(assistantCommandSections(copy).map((section) => section.id)).toEqual(["skills", "files", "apps", "chat", "tasks"]);
-    expect(assistantCommandSections(copy).map((section) => Boolean(section.searched))).toEqual([true, true, true, false, true]);
+    expect(assistantCommandSections(copy).map((section) => section.id)).toEqual(["insert", "skills", "files", "chat", "tasks"]);
+    expect(assistantCommandSections(copy).map((section) => Boolean(section.searched))).toEqual([false, true, true, false, true]);
     for (const [word, id] of [
       ["project", "project"],
       ["projekt", "project"],
       ["file", "file"],
       ["dateien", "file"],
-      ["app", "app"],
-      ["studio", "app"],
       ["skills", "skill"],
     ])
       expect(resolveChatCommandScope(word!, scopes)?.id).toBe(id);
     expect(scopes.map((scope) => scope.words[0])).toEqual(
-      locale === "de" ? ["skill", "datei", "projekt", "app", "modell", "routine"] : ["skill", "file", "project", "app", "model", "routine"],
+      locale === "de" ? ["skill", "datei", "projekt", "modell", "routine"] : ["skill", "file", "project", "model", "routine"],
     );
     const commands = assistantBuiltInCommands({
       copy,
@@ -346,28 +347,8 @@ test("sections and bilingual scope words agree, with each locale's narrowing wor
   }
 });
 
-test("files stay out of overview and return through file scope or a search; app scope and legacy one-word prefixes work", async () => {
-  const { artifactClient } = await import("../artifacts/client");
+test("files stay out of overview and return through file scope or a search; legacy one-word prefixes work", async () => {
   const listSkills = spyOn(assistantApi, "listSkills").mockResolvedValue([]);
-  const apps = spyOn(artifactClient, "list").mockResolvedValue({
-    items: [
-      {
-        id: "app-1",
-        title: "Invoices",
-        description: "Match",
-        kind: "app",
-        icon: "",
-        revision: 1,
-        permission: "read",
-        updatedAt: "",
-        publishedRevision: 1,
-        forkedFromId: null,
-        forkedFromRevision: null,
-      },
-    ],
-    page: 1,
-    hasNext: false,
-  });
   const listFiles = spyOn(assistantApi, "listChatFiles").mockResolvedValue([
     { path: "/report.md", version: 1, size: 3, mediaType: "text/markdown", origin: "assistant", updatedAt: "" },
   ]);
@@ -389,9 +370,6 @@ test("files stay out of overview and return through file scope or a search; app 
   }
   expect((await assistantComposerCommands({ ...input, scope: "file" }))[0]?.section).toBe("files");
   expect((await assistantComposerCommands({ ...input, query: "report" })).some((row) => row.section === "files")).toBe(true);
-  expect((await assistantComposerCommands({ ...input, scope: "app" }))[0]?.section).toBe("apps");
-  expect((await assistantComposerCommands({ ...input, query: "app" }))[0]?.section).toBe("apps");
-  expect(apps).toHaveBeenCalled();
   await assistantComposerCommands({ ...input, query: "skill" });
   expect(listSkills).toHaveBeenLastCalledWith(expect.any(AbortSignal));
 });
@@ -901,25 +879,7 @@ test.each(["en", "de"])("empty Skill scope offers retry when the full catalog fa
   expect(listSkills.mock.calls[0]).toHaveLength(1);
 });
 
-test("Skills retry stays ahead of the reference limit and preserves task rows", async () => {
-  const { artifactClient } = await import("../artifacts/client");
-  spyOn(artifactClient, "list").mockResolvedValue({
-    items: Array.from({ length: 40 }, (_, i) => ({
-      id: `app-${i}`,
-      title: `App ${i}`,
-      description: "",
-      kind: "app",
-      icon: "",
-      revision: 1,
-      permission: "read",
-      updatedAt: "",
-      publishedRevision: 1,
-      forkedFromId: null,
-      forkedFromRevision: null,
-    })),
-    page: 1,
-    hasNext: false,
-  });
+test("Skills retry preserves task rows", async () => {
   spyOn(assistantApi, "listSkills").mockRejectedValue(new Error("Skills offline"));
   spyOn(assistantApi, "findSkillsByName").mockResolvedValue([
     { ...skillFixture(0), name: "scheduled-tasks", source: { appId: "assistant", appName: "Assistant" } },
@@ -945,7 +905,7 @@ test("Skills retry stays ahead of the reference limit and preserves task rows", 
       searchAgain: true,
     },
   ]);
-  expect(rows.filter((row) => row.section === "apps")).toHaveLength(29);
+  expect(rows.some((row) => row.section === "apps")).toBe(false);
   expect(rows.filter((row) => row.section === "tasks").map((row) => row.id)).toEqual(["task-new", "task:task-0"]);
   expect(rows.find((row) => row.id === "task-new")?.mention).toBeDefined();
 });
@@ -993,7 +953,7 @@ test("model scope shares forgiving matching and runs the injected setter", async
   }
 });
 
-test.each(["model", "project", "skill", "file", "app"])("%s scope does not await session discovery for search", async (scope) => {
+test.each(["model", "project", "skill", "file"])("%s scope does not await session discovery for search", async (scope) => {
   const { artifactClient } = await import("../artifacts/client");
   spyOn(artifactClient, "list").mockResolvedValue({ items: [], page: 1, hasNext: false });
   spyOn(assistantApi, "listChatFiles").mockResolvedValue([]);
@@ -1071,3 +1031,104 @@ test("the empty Skill scope shows the full list while task discovery is still pe
   });
   expect(rows.map((row) => row.label)).toEqual([skill.name]);
 });
+
+test("a Cloud insert mention preserves its identity through send and draft hydration", async () => {
+  const { aiComposerDraft, aiComposerSendInput } = await import("@k2b/cloud/ai/ui");
+  const ref = { type: "notebooks.note", id: "Q3note" };
+  const result = {
+    mention: assistantResourceMention({
+      ref,
+      title: "Q3 plan",
+      appId: "notebooks",
+      appName: "Notebooks",
+      appIcon: "ti ti-notebook",
+      readable: true,
+      href: "/notebooks/Q3note",
+    }),
+  };
+  const sent = aiComposerSendInput({
+    text: "Q3 plan",
+    attachments: [],
+    mentions: [{ start: 0, end: 7, attachment: result.mention }],
+    intent: "send",
+  });
+  const draft = aiComposerDraft(sent.draftContent!);
+  expect(draft.text).toBe("Q3 plan");
+  expect(draft.mentions[0]!.attachment).toMatchObject({ id: result.mention.id, name: result.mention.name, data: { ref } });
+  expect(result.mention.id).toBe("resource:notebooks.note:Q3note");
+});
+
+test("references in the text count toward the limit for inserting and attaching alike; files also wait for the response", () => {
+  const input = {
+    copy: assistantCopyFor("de"),
+    locale: "de",
+    tags: [],
+    partCount: () => 16,
+    excludeRefs: () => [],
+    fileSelectionDisabled: false,
+  };
+  const rows = assistantInsertCommands(input);
+  expect(rows.commands[0]!.reason).toBe("Eine Nachricht kann höchstens 16 Elemente enthalten.");
+  // The server counts attachments and inline references together (AiConversationDraftInputSchema).
+  expect(rows.commands[1]!.reason).toBe(rows.commands[0]!.reason);
+  expect(rows.commands[2]!.reason).toBe(rows.commands[0]!.reason);
+  expect(rows.fallback({ query: "q3" })?.reason).toBe(rows.commands[0]!.reason);
+  const running = assistantInsertCommands({ ...input, partCount: () => 0, fileSelectionDisabled: true });
+  expect(running.commands[0]!.reason).toBeUndefined();
+  expect(running.commands[1]!.reason).toBe(input.copy.commandNeedsIdle);
+  expect(running.scopes.find((scope) => scope.words.includes("app"))?.title).toBe("Studio-Apps aus Assistent");
+});
+
+for (const withTrack of [false, true]) {
+  for (const rowKind of ["insert", "tag", "scoped fallback"] as const) {
+    test.each([
+      { count: 16, cancelled: false },
+      { count: 15, cancelled: false },
+      { count: 16, cancelled: true },
+    ])(`${rowKind} rechecks a delayed picker result (track: ${withTrack}): %j`, async ({ count, cancelled }) => {
+      const picker = await import("@k2b/cloud/browser/resource-picker");
+      const picking = Promise.withResolvers<CloudResourcePickerItem | undefined>();
+      spyOn(picker, "openCloudResourcePicker").mockReturnValueOnce(picking.promise);
+      const item: CloudResourcePickerItem = {
+        ref: { type: "assistant.app", id: "App1" },
+        title: "Plan",
+        appId: "assistant",
+        appName: "Assistant",
+        appIcon: "ti ti-sparkles",
+        href: "/assistant/apps/App1",
+        readable: true,
+      };
+      let partCount = 14;
+      const tracked: Promise<unknown>[] = [];
+      const rows = assistantInsertCommands({
+        copy: assistantCopyFor("de"),
+        locale: "de",
+        tags: [],
+        partCount: () => partCount,
+        excludeRefs: () => [],
+        fileSelectionDisabled: false,
+        track: withTrack
+          ? (promise) => {
+              tracked.push(promise);
+              return promise;
+            }
+          : undefined,
+      });
+      const row =
+        rowKind === "insert"
+          ? rows.commands[0]!
+          : rowKind === "tag"
+            ? rows.commands[2]!
+            : rows.fallback({ query: "plan", scope: rows.scopes[0]!.id })!;
+      expect(row.reason).toBeUndefined();
+      const result = row.action!(context);
+      expect(tracked).toHaveLength(withTrack ? 1 : 0);
+      if (withTrack) expect(result === tracked[0]).toBe(true);
+      partCount = count;
+      picking.resolve(cancelled ? undefined : item);
+      if (cancelled) expect(await result).toBe("cancelled");
+      else if (count === 16) await expect(result).rejects.toThrow("Eine Nachricht kann höchstens 16 Elemente enthalten.");
+      else expect(await result).toEqual({ mention: assistantResourceMention(item) });
+    });
+  }
+}

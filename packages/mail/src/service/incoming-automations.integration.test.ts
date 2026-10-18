@@ -641,24 +641,30 @@ suite("incoming automations", () => {
     }
   });
 
-  for (const emissionPath of ["backfill", "sync"] as const) {
-    test(`accepts an oversized hydrated message through ${emissionPath} without dropping later candidates`, async () => {
-      const sender = `oversized-${emissionPath}-${suffix}@external.test`;
+  for (const { emissionPath, oversizedField } of (["backfill", "sync"] as const).flatMap((emissionPath) =>
+    (["body", "subject"] as const).map((oversizedField) => ({ emissionPath, oversizedField })),
+  )) {
+    test(`handles an oversized ${oversizedField} through ${emissionPath} without storing message bodies`, async () => {
+      const sender = `oversized-${emissionPath}-${oversizedField}-${suffix}@external.test`;
       const bodyBytes = WORKFLOW_EVENT_MAX_PAYLOAD_BYTES / 2 + 1024 * 1024;
-      const normalBody = "Normal inline message body";
+      const normalBody = "PRIVATE_NORMAL_BODY_MARKER";
+      const largeBodyMarker = "PRIVATE_LARGE_BODY_MARKER";
       const envelopes: ConnectorEnvelope[] = [0, 1].map((index) => ({
         remoteRef: {
           folderStableKey: `incoming-automation-inbox-${suffix}`,
           uidValidity: "1",
-          uid: String((emissionPath === "backfill" ? 21_000 : 21_010) + index),
+          uid: String((emissionPath === "backfill" ? 21_000 : 21_010) + (oversizedField === "subject" ? 100 : 0) + index),
           modseq: "1",
         },
-        providerMessageId: `oversized-${emissionPath}-${suffix}-${index}`,
+        providerMessageId: `oversized-${emissionPath}-${oversizedField}-${suffix}-${index}`,
         providerThreadId: null,
-        messageId: `<oversized-${emissionPath}-${suffix}-${index}@external.test>`,
+        messageId: `<oversized-${emissionPath}-${oversizedField}-${suffix}-${index}@external.test>`,
         inReplyTo: null,
         references: [],
-        subject: `Oversized ${emissionPath} ${index}`,
+        subject:
+          index === 1 && oversizedField === "subject"
+            ? "s".repeat(WORKFLOW_EVENT_MAX_PAYLOAD_BYTES + 1)
+            : `Oversized ${emissionPath} ${index}`,
         sentAt: new Date(`2026-10-01T08:0${index}:00.000Z`),
         internalDate: new Date(`2026-10-01T08:0${index}:00.000Z`),
         sizeBytes: index === 1 ? bodyBytes : normalBody.length,
@@ -678,10 +684,10 @@ suite("incoming automations", () => {
           captureWorkflowTriggers: false,
         });
         messageIds.push(messageId);
-        // Only one large body; body and bodyText together exceed the event limit.
+        // Bodies never enter events, even when a single body exceeds the old inline limit.
         await sql`
           UPDATE mail.message_contents
-          SET plain_text = ${index === 1 ? sql`repeat('a', ${bodyBytes}::integer)` : sql`${normalBody}`},
+          SET plain_text = ${index === 1 ? sql`${largeBodyMarker} || repeat('a', ${bodyBytes}::integer)` : sql`${normalBody}`},
               hydration_status = 'complete'
           WHERE id = ${messageId}::uuid
         `;
@@ -698,20 +704,25 @@ suite("incoming automations", () => {
       });
       if (!created.ok) throw new Error(created.error.message);
       const operationId = crypto.randomUUID();
+      const warning = spyOn(console, "warn").mockImplementation(() => {});
       try {
         if (emissionPath === "backfill") {
           await startIncomingAutomationBackfillRuntime();
-          expect(
-            await runBackfillUntilSettled(
-              {
-                context: ownerContext,
-                mailboxId,
-                automationId: created.data.id,
-                input: { operationId, expectedRevision: created.data.revision },
-              },
-              20_000,
-            ),
-          ).toMatchObject({ state: "completed", candidateCount: 2, newlyAcceptedCount: 2, remainingCount: 0 });
+          const backfill = await runBackfillUntilSettled(
+            {
+              context: ownerContext,
+              mailboxId,
+              automationId: created.data.id,
+              input: { operationId, expectedRevision: created.data.revision },
+            },
+            20_000,
+          );
+          if (oversizedField === "subject") {
+            expect(backfill.state).toBe("failed");
+            expect(backfill.lastError).toContain("16 MiB");
+          } else {
+            expect(backfill).toMatchObject({ state: "completed", candidateCount: 2, newlyAcceptedCount: 2, remainingCount: 0 });
+          }
         } else {
           // Model hydrated messages awaiting their first non-All-Mail receipt.
           await sql`UPDATE mail.message_contents SET receipt_pending = true WHERE id = ANY(${toPgUuidArray(messageIds)}::uuid[])`;
@@ -729,15 +740,19 @@ suite("incoming automations", () => {
             });
           }
         }
+        await dispatchPendingWorkflowEvents(100, { appId: "mail", scopeId: mailboxId });
         const events = await sql<
           {
+            id: string;
+            data: Record<string, unknown>;
+            context: Record<string, unknown>;
             message_id: string;
             message: Record<string, unknown>;
             context_message: Record<string, unknown>;
             matched_count: number;
           }[]
         >`
-          SELECT context #>> '{preconditions,message,id}' AS message_id,
+          SELECT id, data, context, context #>> '{preconditions,message,id}' AS message_id,
             data -> 'message' AS message,
             context #> '{source,message}' AS context_message,
             matched_count
@@ -745,20 +760,48 @@ suite("incoming automations", () => {
           WHERE app_id = 'mail' AND scope_id = ${mailboxId}
             AND target_workflow_id = ${created.data.workflowId}::uuid
         `;
-        expect(events).toHaveLength(2);
-        for (const [index, messageId] of messageIds.entries()) {
-          const event = events.find((event) => event.message_id === messageId);
-          expect(event?.matched_count).toBe(1);
-          const expected = {
-            bodyAvailable: index !== 1,
-            body: index === 1 ? "" : normalBody,
-            bodyText: index === 1 ? "" : normalBody,
-            bodyHtml: "",
-          };
-          expect(event?.message).toMatchObject(expected);
-          expect(event?.context_message).toMatchObject(expected);
+        if (oversizedField === "body") {
+          expect(events).toHaveLength(2);
+        } else {
+          expect(events.some((event) => event.message_id === messageIds[1])).toBe(false);
+          if (emissionPath === "sync") {
+            expect(events).toHaveLength(1);
+            expect(events[0]?.message_id).toBe(messageIds[0]);
+            expect(warning).toHaveBeenCalledWith(
+              "[mail:sync]",
+              "Skipped oversized message workflow event",
+              expect.objectContaining({
+                mailboxId,
+                workflowId: created.data.workflowId,
+                field: expect.any(String),
+                bytes: expect.any(Number),
+              }),
+            );
+          }
+        }
+        for (const event of events) {
+          expect(event.matched_count).toBe(1);
+          const expected = { bodyAvailable: false, body: "", bodyText: "", bodyHtml: "" };
+          expect(event.message).toMatchObject(expected);
+          expect(event.context_message).toMatchObject(expected);
+          expect(JSON.stringify(event.data)).not.toContain(normalBody);
+          expect(JSON.stringify(event.context)).not.toContain(normalBody);
+          expect(JSON.stringify(event.data)).not.toContain(largeBodyMarker);
+          expect(JSON.stringify(event.context)).not.toContain(largeBodyMarker);
+        }
+        const runs = await sql<{ inputs: Record<string, unknown> }[]>`
+          SELECT run.inputs FROM workflows.run run
+          JOIN workflows.event event ON event.id = run.event_id
+          WHERE event.target_workflow_id = ${created.data.workflowId}::uuid
+        `;
+        expect(runs).toHaveLength(events.length);
+        for (const run of runs) {
+          expect(JSON.stringify(run.inputs)).not.toContain(normalBody);
+          expect(JSON.stringify(run.inputs)).not.toContain(largeBodyMarker);
+          expect(run.inputs.message).toMatchObject({ bodyAvailable: false, body: "", bodyText: "", bodyHtml: "" });
         }
       } finally {
+        warning.mockRestore();
         if (emissionPath === "backfill") {
           await cancelIncomingAutomationBackfill({ context: ownerContext, mailboxId, automationId: created.data.id, operationId });
           await stopIncomingAutomationBackfillRuntime();
@@ -770,8 +813,12 @@ suite("incoming automations", () => {
             AND context #>> '{preconditions,message,id}' = ANY(${toPgTextArray(messageIds)}::text[])
         `;
         await sql`
-          UPDATE mail.message_contents SET plain_text = NULL
+          UPDATE mail.message_contents SET plain_text = NULL, subject = 'Oversized fixture cleaned'
           WHERE id = ANY(${toPgUuidArray(messageIds)}::uuid[])
+        `;
+        await sql`
+          UPDATE mail.conversations SET subject = 'Oversized fixture cleaned'
+          WHERE id IN (SELECT conversation_id FROM mail.conversation_messages WHERE message_id = ANY(${toPgUuidArray(messageIds)}::uuid[]))
         `;
         await sql`
           UPDATE mail.remote_message_refs SET stale_at = now()

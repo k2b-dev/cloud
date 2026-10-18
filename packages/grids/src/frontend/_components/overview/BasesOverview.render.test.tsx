@@ -83,7 +83,8 @@ describe("Grids bases overview", () => {
     const html = renderOverview();
     expect(html).toContain('class="k2b-app-workspace grids-overview-workspace"');
     expect(html).toMatch(/class="k2b-app-workspace grids-overview-workspace"[^>]*data-flat="true"/);
-    expect(html).toMatch(/<aside[^>]*aria-label="Bases"[^>]*data-mobile="stacked"/);
+    expect(html).toMatch(/<nav[^>]*aria-label="Bases"[^>]*data-mobile="stacked"/);
+    expect(html).toContain('class="k2b-app-workspace__sidebar-all" aria-haspopup="dialog" aria-expanded="false"');
     expect(html).not.toContain("k2b-app-workspace__nav-tree");
     expect(html).toContain("--k2b-workspace-sidebar-width:304px");
     expect(html.match(/data-variant="object"/g)).toHaveLength(1);

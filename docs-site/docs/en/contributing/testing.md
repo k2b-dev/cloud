@@ -162,6 +162,21 @@ in `scripts/checks/test-clock.baseline`. Its counts can only decrease;
 `bun scripts/check.ts test-clock --fix` lowers counts and removes entries
 when findings are gone.
 
+## Wait for conditions, not time
+
+A test waits for the state it needs: poll with a deadline, await an event,
+a recorded close, or a log. A fixed sleep assumes the state arrived and is
+still there. The live-routes slow-client test waits for the server's `1013`
+close before it resumes the client.
+
+The `test-waits` check rejects new awaited fixed waits of at least 1,000 ms
+with a numeric literal in `*.test.ts` and `*.test.tsx` files. A line comment
+`// fixed wait: <reason>` on the same line or directly above allows a wait
+whose duration is the subject of the test. The reason must be non-empty.
+Known findings live in `scripts/checks/test-waits.baseline`. Its counts can
+only decrease; `bun scripts/check.ts test-waits --fix` lowers counts and
+removes entries when findings are gone.
+
 ## Test in Chromium and WebKit
 
 Layout, focus, touch, and paint need a real engine, so these tests drive one

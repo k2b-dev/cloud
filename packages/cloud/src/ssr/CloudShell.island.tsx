@@ -7,6 +7,7 @@ import LayoutBreadcrumbs from "./LayoutBreadcrumbs";
 import LayoutHelpTrigger from "./LayoutHelpTrigger";
 import LayoutPreferences from "./LayoutPreferences";
 import type { LayoutBreadcrumb } from "./layout-runtime";
+import PanelTrigger from "./PanelTrigger";
 import ProfilePreferences from "./ProfilePreferences";
 import { platformMessages } from "./platform-messages";
 import RailApps from "./RailApps";
@@ -16,15 +17,19 @@ import ShellFocusToggle from "./ShellFocusToggle";
 import { useShellData } from "./shell-data";
 
 type CloudShellProps =
-  | { slot: "rail"; currentPath: string }
-  | { slot: "header"; authenticated: boolean; title?: string; launchpad: boolean; breadcrumbs?: LayoutBreadcrumb[] };
+  | { slot: "rail"; currentPath: string; panelOpen?: boolean }
+  | { slot: "header"; authenticated: boolean; title?: string; launchpad: boolean; breadcrumbs?: LayoutBreadcrumb[]; panelOpen?: boolean };
 
 /**
  * The interactive part of the shell chrome. `LayoutRail` and `LayoutHeader`
  * own the frame and the plain links around it as server markup.
  */
 export default function CloudShell(props: CloudShellProps) {
-  return props.slot === "rail" ? <RailNavigation currentPath={props.currentPath} /> : <HeaderControls {...props} />;
+  return props.slot === "rail" ? (
+    <RailNavigation currentPath={props.currentPath} panelOpen={props.panelOpen} />
+  ) : (
+    <HeaderControls {...props} />
+  );
 }
 
 /**
@@ -74,7 +79,7 @@ function BarNavigation(props: { currentPath: string }) {
   );
 }
 
-function RailNavigation(props: { currentPath: string }) {
+function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
   const data = useShellData();
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
@@ -88,6 +93,7 @@ function RailNavigation(props: { currentPath: string }) {
       <AppLaunchpadButton profile={profile} apps={data.apps} legalLinks={data.legalLinks} variant="rail" label={t().openApps} />
       <BarNavigation currentPath={props.currentPath} />
       <div class="mt-auto shrink-0 flex flex-col items-center gap-1">
+        {(data.panel?.providers.length ?? 0) > 1 && <PanelTrigger variant="rail" open={props.panelOpen} />}
         <GlobalSearchTrigger variant="rail" />
         <LayoutHelpTrigger variant="rail" />
         <ProfilePreferences
@@ -102,7 +108,13 @@ function RailNavigation(props: { currentPath: string }) {
 }
 
 /** The header's title and controls, between the server-rendered Home and Sign in. */
-function HeaderControls(props: { authenticated: boolean; title?: string; launchpad: boolean; breadcrumbs?: LayoutBreadcrumb[] }) {
+function HeaderControls(props: {
+  authenticated: boolean;
+  title?: string;
+  launchpad: boolean;
+  breadcrumbs?: LayoutBreadcrumb[];
+  panelOpen?: boolean;
+}) {
   const data = useShellData();
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
@@ -116,11 +128,25 @@ function HeaderControls(props: { authenticated: boolean; title?: string; launchp
           </div>
         )}
         <div class="flex min-w-0 items-center lg:hidden">
-          <span class="truncate font-semibold">{props.title}</span>
+          <span class="layout-header-title truncate font-semibold">{props.title}</span>
+          {props.launchpad && (
+            <AppLaunchpadButton
+              profile={
+                data.profile
+                  ? { name: data.profile.name, theme: data.theme, ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}) }
+                  : undefined
+              }
+              apps={data.apps}
+              legalLinks={data.legalLinks}
+              variant="title"
+              label={props.title}
+            />
+          )}
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">
         <div class="flex items-center gap-1 lg:hidden">
+          {(data.panel?.providers.length ?? 0) > 1 && <PanelTrigger variant="header" open={props.panelOpen} />}
           {props.authenticated && <GlobalSearchTrigger variant="header" />}
           <LayoutHelpTrigger variant="header" />
           {props.launchpad && (

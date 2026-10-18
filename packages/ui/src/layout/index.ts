@@ -164,6 +164,8 @@ export {
   removePanesItem,
   resizePanesSplit,
 } from "./panes-layout";
+export { default as ResizeSeparator, type ResizeSeparatorProps } from "./ResizeSeparator";
+export { attachResizeSeparator, type ResizeSeparatorOptions } from "./resize-separator";
 export type { ScrollAreaProps } from "./ScrollArea";
 export { default as ScrollArea } from "./ScrollArea";
 export type {
@@ -211,6 +213,5 @@ export {
 } from "./SidebarSwitcher";
 export type { TabBarItem, TabBarProps } from "./TabBar";
 export { default as TabBar } from "./TabBar";
-
 export type { TableOfContentsItem, TableOfContentsProps } from "./TableOfContents";
 export { TableOfContents } from "./TableOfContents";

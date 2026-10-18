@@ -31,6 +31,7 @@ import {
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
@@ -44,6 +45,7 @@ import {
   Button,
   Chat,
   type ChatMention,
+  dialogCore,
   IconButton,
   LocaleProvider,
   openSpotlightSearch,
@@ -115,9 +117,12 @@ import {
   assistantCommandScopes,
   assistantCommandSections,
   assistantComposerCommands,
+  assistantExcludedRefs,
+  assistantInsertCommands,
   createAssistantCommandSession,
   createAssistantTaskRunKeys,
 } from "./composer-commands";
+import { releaseWhenPageReturns } from "./composer-file-choice";
 import {
   confirmComposerSave,
   editComposerSession,
@@ -386,6 +391,30 @@ export default function AssistantWorkspace(props: Props) {
   });
   const [sendingQueuedId, setSendingQueuedId] = createSignal<string | null>(null);
   const [composerSubmitting, setComposerSubmitting] = createSignal(false);
+  // A picker or file selection inserts into, or gives back the `/…` of, the draft it came from; saving a new chat
+  // meanwhile would move that draft to another key and lose the choice.
+  const [composerPicking, setComposerPicking] = createSignal(0);
+  /** Holds saving until `until` settles or the returned release runs, whichever comes first. */
+  const holdComposerSave = (until: Promise<unknown>) => {
+    let held = true;
+    setComposerPicking((count) => count + 1);
+    const release = () => {
+      if (!held) return;
+      held = false;
+      setComposerPicking((count) => count - 1);
+    };
+    void until.then(release, release);
+    return release;
+  };
+  const trackComposerPicking = <T,>(picking: Promise<T>): Promise<T> => {
+    holdComposerSave(picking);
+    return picking;
+  };
+  const trackComposerFileChoice = (choosing: Promise<readonly File[]>): Promise<readonly File[]> => {
+    const release = holdComposerSave(choosing);
+    releaseWhenPageReturns(choosing, release, { target: window, dialogOpen: dialogCore.isOpen });
+    return choosing;
+  };
   const [pendingProjectChats, setPendingProjectChats] = createSignal<Record<string, AiConversation>>({});
   const [filesDialogOpen, setFilesDialogOpen] = createSignal(false);
   const [timelineViewport, setTimelineViewport] = createSignal<HTMLDivElement>();
@@ -595,7 +624,7 @@ export default function AssistantWorkspace(props: Props) {
     return newConversation.data();
   };
   createEffect(() => {
-    if (activeProject() || composerSubmitting()) return;
+    if (activeProject() || composerSubmitting() || composerPicking()) return;
     const key = composerSessionKey();
     const text = composerDraft(key);
     const files = composerAttachmentsFor(key);
@@ -1137,11 +1166,13 @@ export default function AssistantWorkspace(props: Props) {
         chat.setError(t().attachResourceFailed);
       }
   };
+  /** The server counts every non-text part of a draft: attachments and references in the text alike. */
+  const composerPartCount = (key: string) => composerAttachmentsFor(key).length + mentionsFor(key).length;
   const addComposerFiles = async (sessionKey: string, files: readonly File[]) => {
     const current = composerAttachmentsFor(sessionKey);
     const result = await readAiComposerFiles(files, {
       acceptsImages: acceptsImages(),
-      currentCount: current.length,
+      currentCount: composerPartCount(sessionKey),
       currentImageBytes: current.reduce((total, attachment) => total + (attachment.kind === "image" ? attachment.size : 0), 0),
     });
     const attachmentErrors = [...result.errors];
@@ -1155,7 +1186,7 @@ export default function AssistantWorkspace(props: Props) {
 
   /** From this device or from a Cloud app, within what the draft can still take; a full draft says so at once. */
   const chooseComposerFiles = (sessionKey: string): Promise<readonly File[]> => {
-    const maxBytes = aiComposerChooseMaxBytes(composerAttachmentsFor(sessionKey).length);
+    const maxBytes = aiComposerChooseMaxBytes(composerPartCount(sessionKey));
     if (maxBytes === 0) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return Promise.resolve([]);
@@ -1178,7 +1209,7 @@ export default function AssistantWorkspace(props: Props) {
       chat.setError(t().resourceAlreadyAttached);
       return;
     }
-    if (current.length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+    if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return;
     }
@@ -1188,7 +1219,7 @@ export default function AssistantWorkspace(props: Props) {
       chat.setError(t().resourceAlreadyAttached);
       return;
     }
-    if (latest.length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+    if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return;
     }
@@ -1210,7 +1241,7 @@ export default function AssistantWorkspace(props: Props) {
     const key = task.chatId;
     const attachments = composerAttachmentsFor(key);
     const attached = attachments.some((item) => item.kind === "resource" && item.ref.type === "core.ai.task" && item.ref.id === task.id);
-    if (!attached && attachments.length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+    if (!attached && composerPartCount(key) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return;
     }
@@ -1281,7 +1312,7 @@ export default function AssistantWorkspace(props: Props) {
 
   const addComposerResource = async (sessionKey: string) => {
     if (!requireComposerAttachmentsAvailable(sessionKey)) return;
-    if (composerAttachmentsFor(sessionKey).length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+    if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return;
     }
@@ -1376,6 +1407,20 @@ export default function AssistantWorkspace(props: Props) {
     const projectComposer = () => Boolean(composerProps.projectId);
     // A Project composer starts new chats; a response still running in the previous chat does not block it.
     const composerRunning = () => !projectComposer() && chat.running();
+    const catalog = createCloudComposerCatalog();
+    const attachmentCount = createMemo(() => composerAttachmentsFor(sessionKey()).length);
+    const mentionCount = createMemo(() => mentionsFor(sessionKey()).length);
+    const insert = createMemo(() =>
+      assistantInsertCommands({
+        copy: commandCopy(),
+        locale: locale(),
+        tags: catalog.tags(),
+        partCount: () => attachmentCount() + mentionCount(),
+        excludeRefs: () => assistantExcludedRefs(composerAttachmentsFor(sessionKey()), mentionsFor(sessionKey())),
+        fileSelectionDisabled: composerRunning(),
+        track: trackComposerPicking,
+      }),
+    );
     const commandSession = createAssistantCommandSession();
     onCleanup(() => commandSession.dispose());
     const searchChat = () => {
@@ -1471,106 +1516,115 @@ export default function AssistantWorkspace(props: Props) {
           mentions={mentionsFor(sessionKey())}
           onMentionsChange={(mentions) => setMentionsFor(sessionKey(), mentions)}
           commandSections={assistantCommandSections(commandCopy())}
-          commandScopes={assistantCommandScopes(commandCopy(), locale())}
-          commands={assistantBuiltInCommands({
-            copy: commandCopy(),
-            projectComposer: projectComposer(),
-            // A chat in a project counts as assigned even before the project list has its name.
-            projectName:
-              composerProps.projectName ??
-              (chat.conversation()?.projectId
-                ? (projects().find((project) => project.id === chat.conversation()?.projectId)?.name ?? "")
-                : undefined),
-            running: composerRunning(),
-            recording: dictation.recording(),
-            models: aiChatModelOptions(props.models),
-            selectedModelId: selectedModelId(),
-            searchChat,
-            hasMessages: chat.messages().length > 0,
-            hasAssistantMessage: chat.messages().some((message) => message.message.role === "assistant"),
-            compact: async () => {
-              const key = sessionKey();
-              if (!(await chat.compactConversation({ modelProfileId: selectedModelId() || undefined })))
-                throw commandFailure(key, commandCopy().compactFailed);
-              // The request queues a compaction turn; the chat shows its progress and result, so this only says it started.
-              return { done: commandCopy().compactDone };
-            },
-            fork: async () => {
-              const key = sessionKey();
-              const fail = () => commandFailure(key, commandCopy().forkFailed);
-              const target = [...chat.messages()].reverse().find((message) => message.message.role === "assistant");
-              if (!target) return "cancelled";
-              const saved = await saveComposer(key, key);
-              if (!saved) throw fail();
-              if (sessionKey() !== key) return "cancelled";
-              const fork = await chat.forkMessage(target.id, {});
-              if (!fork) throw fail();
-              hydrateComposer(fork.id, { ...fork.draft, content: saved.content });
-              editComposerSession(session(fork.id));
-              // The fork exists and is open now; only saving the copied draft there failed.
-              if (!(await saveComposer(fork.id, fork.id))) throw commandFailure(fork.id, commandCopy().forkDraftNotSaved, false);
-              if (chat.activeConversationId() === fork.id) focusComposer();
-              return { done: commandCopy().forkDone };
-            },
-            newChat: async () => {
-              const key = sessionKey();
-              const title = projectComposer() ? undefined : chat.conversation()?.title;
-              const hasRemainingDraft = Boolean(composerDraft(key).trim());
-              if (chat.activeConversationId() && !projectComposer() && !(await saveComposer(key, key)))
-                throw commandFailure(key, commandCopy().newChatFailed);
-              if (sessionKey() !== key) return "cancelled";
-              // A failed creation resolves to null; report it instead of a success line.
-              if (!(await createAndFocusConversation())) throw commandFailure(key, commandCopy().newChatFailed);
-              if (title && hasRemainingDraft) return { done: commandCopy().newChatDraftKept({ title }) };
-            },
-          })}
-          searchCommands={(query, signal, search) =>
-            assistantComposerCommands({
-              query,
-              scope: search.scope,
-              session: search.opening,
-              sessionLoader: commandSession,
-              runKeys,
+          commandScopes={[...assistantCommandScopes(commandCopy(), locale()), ...insert().scopes]}
+          commandFallback={insert().fallback}
+          commands={[
+            ...insert().commands,
+            ...assistantBuiltInCommands({
+              copy: commandCopy(),
+              projectComposer: projectComposer(),
+              // A chat in a project counts as assigned even before the project list has its name.
+              projectName:
+                composerProps.projectName ??
+                (chat.conversation()?.projectId
+                  ? (projects().find((project) => project.id === chat.conversation()?.projectId)?.name ?? "")
+                  : undefined),
+              running: composerRunning(),
+              recording: dictation.recording(),
               models: aiChatModelOptions(props.models),
               selectedModelId: selectedModelId(),
-              chooseModel: setSelectedModelId,
-              isRunning: () => composerRunning(),
-              signal,
-              locale: locale(),
-              conversationId: projectComposer() ? undefined : (chat.activeConversationId() ?? undefined),
-              projectId: composerProps.projectId ?? chat.conversation()?.projectId,
-              projects: projects(),
-              running: composerRunning(),
-              assignProject: async (projectId) => {
+              searchChat,
+              hasMessages: chat.messages().length > 0,
+              hasAssistantMessage: chat.messages().some((message) => message.message.role === "assistant"),
+              compact: async () => {
                 const key = sessionKey();
-                const text = composerDraft(key),
-                  attachments = composerAttachmentsFor(key),
-                  mentions = mentionsFor(key);
-                const existing = chat.activeConversationId();
-                const created = existing ? null : await createConversation(false);
-                const conversationId = existing ?? created?.id;
-                if (!conversationId) throw new Error(t().chatActionFailed);
-                if (created) {
-                  setComposerDraft(conversationId, text);
-                  setComposerAttachmentsFor(conversationId, attachments);
-                  setMentionsFor(conversationId, mentions);
-                  session(conversationId).baseRevision = created.draft.revision;
-                }
-                if (!(await saveComposer(conversationId, conversationId))) throw new Error(t().chatActionFailed);
-                if (chat.activeConversationId() !== conversationId) return;
-                const updated = await assistantApi.assignProject(conversationId, projectId);
-                if (chat.activeConversationId() === conversationId) setEmptyProjectId(updated.projectId);
-                await Promise.all([
-                  chat.refreshActiveConversation(),
-                  sidebar.invalidate({
-                    domains: new Set(["conversation-list"]),
-                    conversationIds: new Set([updated.id]),
-                    projectIds: null,
-                  }),
-                ]);
+                if (!(await chat.compactConversation({ modelProfileId: selectedModelId() || undefined })))
+                  throw commandFailure(key, commandCopy().compactFailed);
+                // The request queues a compaction turn; the chat shows its progress and result, so this only says it started.
+                return { done: commandCopy().compactDone };
               },
-            })
-          }
+              fork: async () => {
+                const key = sessionKey();
+                const fail = () => commandFailure(key, commandCopy().forkFailed);
+                const target = [...chat.messages()].reverse().find((message) => message.message.role === "assistant");
+                if (!target) return "cancelled";
+                const saved = await saveComposer(key, key);
+                if (!saved) throw fail();
+                if (sessionKey() !== key) return "cancelled";
+                const fork = await chat.forkMessage(target.id, {});
+                if (!fork) throw fail();
+                hydrateComposer(fork.id, { ...fork.draft, content: saved.content });
+                editComposerSession(session(fork.id));
+                // The fork exists and is open now; only saving the copied draft there failed.
+                if (!(await saveComposer(fork.id, fork.id))) throw commandFailure(fork.id, commandCopy().forkDraftNotSaved, false);
+                if (chat.activeConversationId() === fork.id) focusComposer();
+                return { done: commandCopy().forkDone };
+              },
+              newChat: async () => {
+                const key = sessionKey();
+                const title = projectComposer() ? undefined : chat.conversation()?.title;
+                const hasRemainingDraft = Boolean(composerDraft(key).trim());
+                if (chat.activeConversationId() && !projectComposer() && !(await saveComposer(key, key)))
+                  throw commandFailure(key, commandCopy().newChatFailed);
+                if (sessionKey() !== key) return "cancelled";
+                // A failed creation resolves to null; report it instead of a success line.
+                if (!(await createAndFocusConversation())) throw commandFailure(key, commandCopy().newChatFailed);
+                if (title && hasRemainingDraft) return { done: commandCopy().newChatDraftKept({ title }) };
+              },
+            }),
+          ]}
+          searchCommands={async (query, signal, search) => {
+            const [rows] = await Promise.all([
+              assistantComposerCommands({
+                query,
+                scope: search.scope,
+                session: search.opening,
+                sessionLoader: commandSession,
+                runKeys,
+                models: aiChatModelOptions(props.models),
+                selectedModelId: selectedModelId(),
+                chooseModel: setSelectedModelId,
+                isRunning: () => composerRunning(),
+                signal,
+                locale: locale(),
+                conversationId: projectComposer() ? undefined : (chat.activeConversationId() ?? undefined),
+                projectId: composerProps.projectId ?? chat.conversation()?.projectId,
+                projects: projects(),
+                running: composerRunning(),
+                assignProject: async (projectId) => {
+                  const key = sessionKey();
+                  const text = composerDraft(key),
+                    attachments = composerAttachmentsFor(key),
+                    mentions = mentionsFor(key);
+                  const existing = chat.activeConversationId();
+                  const created = existing ? null : await createConversation(false);
+                  const conversationId = existing ?? created?.id;
+                  if (!conversationId) throw new Error(t().chatActionFailed);
+                  if (created) {
+                    setComposerDraft(conversationId, text);
+                    setComposerAttachmentsFor(conversationId, attachments);
+                    setMentionsFor(conversationId, mentions);
+                    session(conversationId).baseRevision = created.draft.revision;
+                  }
+                  if (!(await saveComposer(conversationId, conversationId))) throw new Error(t().chatActionFailed);
+                  if (chat.activeConversationId() !== conversationId) return;
+                  const updated = await assistantApi.assignProject(conversationId, projectId);
+                  if (chat.activeConversationId() === conversationId) setEmptyProjectId(updated.projectId);
+                  await Promise.all([
+                    chat.refreshActiveConversation(),
+                    sidebar.invalidate({
+                      domains: new Set(["conversation-list"]),
+                      conversationIds: new Set([updated.id]),
+                      projectIds: null,
+                    }),
+                  ]);
+                },
+              }),
+              // Starts this opening's catalog load; only typed text outside a scope waits for it.
+              catalog.ready(query, search, locale()),
+            ]);
+            return rows;
+          }}
           submitTools={<dictation.Control />}
           footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}
           value={composerDraft(sessionKey())}
@@ -1582,7 +1636,8 @@ export default function AssistantWorkspace(props: Props) {
           onPaste={(event) => pasteComposerContent(sessionKey(), event)}
           fileSelection={{
             onSelect: (files) => addComposerFiles(sessionKey(), files),
-            choose: () => chooseComposerFiles(sessionKey()),
+            // Called within the activation, as the device's file dialog needs; only its answer is tracked.
+            choose: () => trackComposerFileChoice(chooseComposerFiles(sessionKey())),
             accept: aiComposerFileAccept,
             disabled: !projectComposer() && chat.running(),
             label: t().attachFiles,

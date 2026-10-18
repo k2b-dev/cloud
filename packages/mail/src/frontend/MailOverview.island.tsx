@@ -190,10 +190,15 @@ function MailOverviewView(props: {
   const visibleMailboxItems = createMemo(() => orderedMailboxOverviewItems().filter((mailbox) => !mailboxIsHidden(mailbox.id)));
   const hiddenMailboxItems = createMemo(() => orderedMailboxOverviewItems().filter((mailbox) => mailboxIsHidden(mailbox.id)));
   const mailboxIsPinned = (mailboxId: string) => pinnedMailboxIds().includes(mailboxId);
-  const mailboxRowElement = (mailboxId: string | undefined) =>
-    mailboxId ? document.querySelector<HTMLElement>(`.mail-overview-mailbox[data-mailbox="${mailboxId}"]`) : null;
-  const mailboxLink = (mailboxId: string | undefined) => mailboxRowElement(mailboxId)?.querySelector<HTMLElement>("a") ?? null;
-  const mailboxHasFocus = (mailboxId: string) => mailboxRowElement(mailboxId)?.contains(document.activeElement) ?? false;
+  // Below 64 rem the sidebar renders twice, as chips and in the All sheet: rows are looked up in the copy that has
+  // focus, read before a change moves the row.
+  const mailboxScope = (): ParentNode => document.activeElement?.closest(".k2b-app-workspace__sidebar-sheet") ?? document;
+  const mailboxRowElement = (mailboxId: string | undefined, scope: ParentNode = mailboxScope()) =>
+    mailboxId ? scope.querySelector<HTMLElement>(`.mail-overview-mailbox[data-mailbox="${mailboxId}"]`) : null;
+  const mailboxLink = (mailboxId: string | undefined, scope?: ParentNode) =>
+    mailboxRowElement(mailboxId, scope)?.querySelector<HTMLElement>("a") ?? null;
+  const mailboxHasFocus = (mailboxId: string, scope?: ParentNode) =>
+    mailboxRowElement(mailboxId, scope)?.contains(document.activeElement) ?? false;
   // Pinning, hiding, and showing move a row or recreate it in the other section, and the
   // browser then drops keyboard focus on the page body. Put it on the given target instead.
   const restoreMailboxFocus = (hadFocus: boolean, target: HTMLElement | null) => {
@@ -241,14 +246,16 @@ function MailOverviewView(props: {
   };
   const toggleMailboxPin = (mailbox: MailboxOverviewItem) => {
     const pin = !mailboxIsPinned(mailbox.id);
-    const hadFocus = mailboxHasFocus(mailbox.id);
+    const scope = mailboxScope();
+    const hadFocus = mailboxHasFocus(mailbox.id, scope);
     if (!changeMailboxPreference(mailbox.id, "pinned", pin)) return;
     setMailboxAnnouncement(pin ? messages().pinned({ name: mailbox.name }) : messages().unpinned({ name: mailbox.name }));
-    restoreMailboxFocus(hadFocus, mailboxLink(mailbox.id));
+    restoreMailboxFocus(hadFocus, mailboxLink(mailbox.id, scope));
   };
   const toggleMailboxHidden = (mailbox: MailboxOverviewItem) => {
     const hide = !mailboxIsHidden(mailbox.id);
-    const hadFocus = mailboxHasFocus(mailbox.id);
+    const scope = mailboxScope();
+    const hadFocus = mailboxHasFocus(mailbox.id, scope);
     const visible = visibleMailboxItems();
     const position = visible.findIndex((item) => item.id === mailbox.id);
     const neighborId = (visible[position + 1] ?? visible[position - 1])?.id;
@@ -263,8 +270,8 @@ function MailOverviewView(props: {
     restoreMailboxFocus(
       hadFocus,
       hide
-        ? (mailboxLink(neighborId) ?? document.querySelector<HTMLElement>(".mail-overview-hidden-mailboxes button[aria-expanded]"))
-        : mailboxLink(mailbox.id),
+        ? (mailboxLink(neighborId, scope) ?? scope.querySelector<HTMLElement>(".mail-overview-hidden-mailboxes button[aria-expanded]"))
+        : mailboxLink(mailbox.id, scope),
     );
   };
   const canWriteMailbox = (mailboxId: string) => {

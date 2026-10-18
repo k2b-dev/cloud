@@ -350,6 +350,80 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
   }
 });
 
+test.skipIf(isServer)("hiding a mailbox in the All sheet keeps focus in the sheet", async () => {
+  const dom = createDomTestHarness();
+  dom.window.happyDOM.setURL("http://localhost/app/mail");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), "http://localhost");
+      if (init?.method === "PATCH" && url.pathname.endsWith("/preference")) {
+        const body = JSON.parse(String(init.body)) as { hidden?: boolean; pinned?: boolean };
+        return Response.json({ pinned: body.pinned ?? false, hidden: body.hidden ?? false });
+      }
+      if (url.pathname.endsWith("/overview/conversations"))
+        return Response.json({ items: [], counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 }, mailboxCounts: [], nextCursor: null });
+      return Response.json({ code: "APP_UNAVAILABLE", message: "Down" }, { status: 503 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const { default: MailOverview } = await import("./MailOverview.island");
+  delegateEvents(["click"], dom.document);
+  const mailbox = (id: string, name: string) => ({
+    id,
+    name,
+    description: null,
+    health: "active" as const,
+    healthReason: null,
+    syncEnabled: true,
+    searchBackend: "auto" as const,
+    automaticReplyManagementPermission: "admin" as const,
+    accessScope: "mailbox" as const,
+    composeSafety: { internalDomains: ["example.test"], largeRecipientThreshold: 20 },
+    createdAt: "2026-08-19T10:00:00.000Z",
+    updatedAt: "2026-08-19T10:00:00.000Z",
+    permission: "admin" as const,
+    receivingAddress: `${name.toLowerCase()}@example.test`,
+  });
+  const dispose = render(
+    () =>
+      createComponent(MailOverview, {
+        mailboxes: [mailbox("Mail01", "Support"), mailbox("Mail02", "Notifications")],
+        initialView: "unassigned",
+        initialSelection: null,
+        initialDetail: null,
+        initialPinnedMailboxIds: [],
+        initialHiddenMailboxIds: [],
+        currentUserEmail: null,
+        contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+        dateConfig: { locale: "en", timeZone: "UTC" },
+        initialFocusError: null,
+        initialFocus: emptyFocus,
+      }),
+    dom.root,
+  );
+  try {
+    // Below 64 rem the sidebar renders a second time in the sheet; the row copy stays in the page.
+    dom.root.querySelector<HTMLButtonElement>(".k2b-app-workspace__sidebar-all")!.click();
+    await Bun.sleep(30);
+    const sheet = dom.document.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-sheet");
+    expect(sheet).not.toBeNull();
+    const hide = sheet!.querySelector<HTMLButtonElement>('button[aria-label="Hide Notifications"]')!;
+    hide.focus();
+    hide.click();
+    // Focus moves to the row that took its place in the sheet, not to the hidden copy in the chip row.
+    expect(document.activeElement).toBe(sheet!.querySelector('.mail-overview-mailbox[data-mailbox="Mail01"] a'));
+    // Let the save and the refreshed Focus land, then close the sheet before the page goes away.
+    await Bun.sleep(30);
+    dom.document.querySelector<HTMLButtonElement>("dialog .k2b-dialog__close")!.click();
+    await Bun.sleep(30);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
 test.skipIf(isServer)("a full hidden list keeps the mailbox in place and says why", async () => {
   const dom = createDomTestHarness();
   dom.window.happyDOM.setURL("http://localhost/app/mail");

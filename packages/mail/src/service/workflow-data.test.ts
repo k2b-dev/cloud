@@ -51,7 +51,7 @@ describe("Mail workflow event context", () => {
 });
 
 // Test the row-to-context boundary for both point reads and batch reads, without a database.
-test("snapshot readers preserve the view's own xid and link order with its revision", async () => {
+test("hydrated snapshot contexts omit bodies and preserve the view's own xid and link order with its revision", async () => {
   for (const xid of [null, "9007199254740993"]) {
     const row = {
       remote_message_ref_id: "remote",
@@ -61,9 +61,9 @@ test("snapshot readers preserve the view's own xid and link order with its revis
       conversation_short_id: "conv001",
       mailbox_short_id: "mail01",
       subject: "Snapshot",
-      plain_text: null,
-      sanitized_html: null,
-      hydration_status: "envelope",
+      plain_text: "PRIVATE_BODY_MARKER",
+      sanitized_html: "<p>PRIVATE_BODY_MARKER</p>",
+      hydration_status: "complete",
       sender: [],
       recipients: [],
       attachments: [],
@@ -91,6 +91,16 @@ test("snapshot readers preserve the view's own xid and link order with its revis
     const point = await getWorkflowSnapshot({ db, mailboxId: "mailbox", remoteMessageRefId: "remote" });
     const batch = await getWorkflowSnapshots({ db, mailboxId: "mailbox", remoteMessageRefIds: ["remote"] });
     for (const snapshot of [point, batch.get("remote")]) {
+      if (!snapshot) throw new Error("Missing snapshot");
+      const context = mailWorkflowEventContext(snapshot);
+      expect(JSON.stringify(context)).not.toContain("PRIVATE_BODY_MARKER");
+      expect(snapshot.source.message).toMatchObject({
+        body: "",
+        bodyText: "",
+        bodyHtml: "",
+        bodyAvailable: false,
+        attachmentsAvailable: true,
+      });
       expect(snapshot?.preconditions.conversation).toEqual({
         id: "conversation",
         revision: 3,
