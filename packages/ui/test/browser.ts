@@ -93,8 +93,14 @@ const processGroupAlive = (pid: number): boolean => {
 const killProcessGroup = async (browserProcess: BrowserProcess, gracefulMs: number): Promise<number> => {
   const { pid } = browserProcess;
   const started = Date.now();
-  // Playwright sends SIGKILL to the group and waits for the exit; poll even when that wait never settles.
+  // Playwright's kill() also removes the profile, but it signals nothing once the leader has exited, so signal the
+  // group directly too. A live group keeps its id from being reused, so the signal reaches only this browser.
   const killing = browserProcess.kill().catch(() => {});
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+  }
   while (processGroupAlive(pid) && Date.now() - started < killWaitMs) await Bun.sleep(processPollMs);
   if (processGroupAlive(pid)) {
     throw new Error(
@@ -106,29 +112,30 @@ const killProcessGroup = async (browserProcess: BrowserProcess, gracefulMs: numb
 };
 
 /** Closes one started browser within the hook budget; concurrent callers share one close (#1473). */
-const closeStarted = (started: StartedBrowser, options?: Parameters<Browser["close"]>[0]): Promise<void> => {
+const closeStarted = (started: StartedBrowser, options: Parameters<Browser["close"]>[0] | undefined, gracefulMs: number): Promise<void> => {
   started.closing ??= (async () => {
     const began = Date.now();
     let killed = false;
     let failure: { error: unknown } | undefined;
     try {
-      const finished = await within(started.browser.close(options), gracefulCloseMs).catch((error: unknown) => {
+      const finished = await within(started.browser.close(options), gracefulMs).catch((error: unknown) => {
         failure = { error };
         return false;
       });
-      const gracefulMs = Date.now() - began;
+      const waitedMs = Date.now() - began;
       const browserProcess = started.process;
       if (browserProcess && (!finished || processGroupAlive(browserProcess.pid))) {
         killed = true;
-        const killMs = await killProcessGroup(browserProcess, gracefulMs);
-        const reason = failure
-          ? `failed after ${gracefulMs} ms`
-          : finished
-            ? "left a live process group"
-            : `did not finish within ${gracefulCloseMs} ms`;
-        console.error(`launchBrowser: ${browserName} close ${reason}; killed process group ${browserProcess.pid}, gone after ${killMs} ms`);
+        const killMs = await killProcessGroup(browserProcess, waitedMs);
+        // Children that outlive a finished close by a few milliseconds are routine; only a hung or failed close is news.
+        if (!finished) {
+          const reason = failure ? `failed after ${waitedMs} ms` : `did not finish within ${gracefulMs} ms`;
+          console.error(
+            `launchBrowser: ${browserName} close ${reason}; killed process group ${browserProcess.pid}, gone after ${killMs} ms`,
+          );
+        }
       } else if (!finished && !failure) {
-        console.error(`launchBrowser: ${browserName} remote close did not finish within ${gracefulCloseMs} ms`);
+        console.error(`launchBrowser: ${browserName} remote close did not finish within ${gracefulMs} ms`);
       }
       if (failure) throw failure.error;
     } finally {
@@ -364,8 +371,11 @@ export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browse
   let replacement: Promise<StartedBrowser> | undefined;
   // Closes of replaced browsers run beside the tests; close() waits for them, so no browser outlives the file (#1473).
   const closes = new Set<Promise<void>>();
+  // From close() on, waiting for a replacement and every graceful close share one budget.
+  let gracefulDeadline: number | undefined;
   const retire = (started: StartedBrowser, closeOptions?: Parameters<Browser["close"]>[0]): void => {
-    const closing = closeStarted(started, closeOptions);
+    const gracefulMs = gracefulDeadline === undefined ? gracefulCloseMs : Math.max(0, gracefulDeadline - Date.now());
+    const closing = closeStarted(started, closeOptions, gracefulMs);
     if (closes.has(closing)) return;
     closes.add(closing);
     closing.catch(() => {});
@@ -413,8 +423,9 @@ export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browse
 
   const close: Browser["close"] = async (closeOptions) => {
     closed = true;
-    // A replacement still starting retires itself once it is up; give it the graceful budget to get there.
-    if (replacement) await within(replacement, gracefulCloseMs).catch(() => false);
+    gracefulDeadline ??= Date.now() + gracefulCloseMs;
+    // A replacement still starting retires itself once it is up, with what is left of the budget.
+    if (replacement) await within(replacement, gracefulDeadline - Date.now()).catch(() => false);
     retire(current, closeOptions);
     await Promise.all(closes);
   };

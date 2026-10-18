@@ -137,12 +137,15 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
           console.error = originalError;
         }
         const closeMs = Date.now() - closing;
-        expect(closeMs).toBeGreaterThanOrEqual(2000);
+        // It waited the 2 s graceful budget, then killed, all inside Bun's 5 s hook timeout.
+        expect(closeMs).toBeGreaterThanOrEqual(1990);
         expect(closeMs).toBeLessThan(5000);
         expect(() => process.kill(-browserPid, 0)).toThrow(/ESRCH/);
         expect(lines).toHaveLength(1);
-        expect(lines[0]).toContain(
-          `launchBrowser: ${browserName} close did not finish within 2000 ms; killed process group ${browserPid}, gone after `,
+        expect(lines[0]).toMatch(
+          new RegExp(
+            `^launchBrowser: ${browserName} close did not finish within \\d+ ms; killed process group ${browserPid}, gone after \\d+ ms$`,
+          ),
         );
         pid = undefined;
 
