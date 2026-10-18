@@ -179,8 +179,6 @@ const insertFamily = async (
   signer: PreparedIdentitySigner,
   options: SessionIssueOptions,
 ): Promise<PreparedFamily> => {
-  const issuedAt = new Date();
-  const expiresAt = new Date(issuedAt.getTime() + options.ttlSeconds * 1_000);
   const sid = options.sid ?? crypto.randomUUID();
   const requestId = c.req.header("x-request-id")?.slice(0, 64) ?? null;
   const userAgent = c.req.header("user-agent")?.slice(0, 256) ?? null;
@@ -188,6 +186,8 @@ const insertFamily = async (
     SELECT auth_epoch, provider, profile FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE
   `;
   if (!user) throw new Error("Cannot create a session for an unknown user");
+  const issuedAt = new Date();
+  const expiresAt = new Date(issuedAt.getTime() + options.ttlSeconds * 1_000);
   if (!(await isAccountCategoryAllowed(user, tx)))
     throw new HTTPException(403, { message: "This account category is disabled. Contact an administrator." });
   const epoch = Number(user.auth_epoch);
