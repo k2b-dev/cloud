@@ -1,10 +1,11 @@
 import { brotliCompressSync } from "node:zlib";
 import type { SQL } from "bun";
+import { fromJSON } from "seroval";
 import { z } from "zod";
 import { decodeAttribute, validatePage } from "../../../../scripts/perf-baseline/model";
 import { command, type Runtime, waitFor } from "../../../../scripts/perf-baseline/runtime";
 import type { Api } from "../../../../scripts/perf-baseline/seed";
-import { type DatabaseMeasurement, planSchema, type Sample, type Scenario } from "./model";
+import { type DatabaseMeasurement, planSchema, type RequestMeasurement, type Sample, type Scenario } from "./model";
 
 export const postgresLog = "/var/lib/postgresql/data/perf-logs/mail-perf.json";
 const observerRole = "mail_perf_observer";
@@ -29,6 +30,7 @@ export const postgresArgs = [
   "track_io_timing=on",
 ].flatMap((value) => ["-c", value]);
 export const emptySample = (): Sample => ({ totalMs: 0, ttfbMs: 0, rawBytes: 0, brotliBytes: 0, propsBytes: 0, requests: [] });
+const retainedBodies = new WeakMap<RequestMeasurement, { body: Buffer; ssr: boolean }>();
 // Epoch-based performance time is comparable across host processes, unlike Bun's process-relative hrtime.
 export const monotonicMs = () => performance.timeOrigin + performance.now();
 export function assertRunUrl(url: string, port: number | undefined, protocol: string, database?: string) {
@@ -44,17 +46,43 @@ export function assertRunUrl(url: string, port: number | undefined, protocol: st
     throw new Error("Refusing host service URL outside this run's published loopback port/database");
   return url;
 }
-export async function propsBytes(html: string) {
+export async function propsBytes(html: string, checkFailures = false) {
   let bytes = 0;
   await new HTMLRewriter()
     .on("solid-island, solid-client", {
       element(e) {
-        bytes += Buffer.byteLength(decodeAttribute(e.getAttribute("data-props") ?? ""));
+        const serialized = decodeAttribute(e.getAttribute("data-props") ?? "");
+        bytes += Buffer.byteLength(serialized);
+        if (checkFailures) {
+          // MailWorkspace.data and MailOverview.initialDetail carry workspace reads.
+          // Inspect every island; entry IDs are build-generated, not stable names.
+          const props: unknown = fromJSON(JSON.parse(serialized));
+          const workspace = z.object({ data: z.unknown().optional(), initialDetail: z.unknown().optional() }).parse(props);
+          for (const data of [workspace.data, workspace.initialDetail]) if (data != null) assertNoPartialFailure(data);
+        }
       },
     })
     .transform(new Response(html))
     .text();
   return bytes;
+}
+/** Run only after the action and its database window have ended (including live timestamps). */
+export async function finalizeSample(sample: Sample) {
+  try {
+    for (const measurement of sample.requests) {
+      const retained = retainedBodies.get(measurement);
+      if (!retained) continue;
+      measurement.brotliBytes = brotliCompressSync(retained.body).length;
+      sample.brotliBytes += measurement.brotliBytes;
+      if (retained.ssr) {
+        measurement.propsBytes = await propsBytes(retained.body.toString("utf8"), true);
+        sample.propsBytes += measurement.propsBytes;
+      }
+      retainedBodies.delete(measurement);
+    }
+  } finally {
+    for (const measurement of sample.requests) retainedBodies.delete(measurement);
+  }
 }
 export function parseServerTiming(header: string | null) {
   const phases: Record<string, number> = {};
@@ -78,10 +106,11 @@ export async function request(api: Api, sample: Sample, path: string, input?: un
     totalMs,
     ttfbMs,
     rawBytes: body.length,
-    brotliBytes: brotliCompressSync(body).length,
-    propsBytes: ssr ? await propsBytes(text) : 0,
+    brotliBytes: 0,
+    propsBytes: 0,
     serverTiming: parseServerTiming(response.headers.get("server-timing")),
   };
+  retainedBodies.set(measurement, { body, ssr });
   sample.requests.push(measurement);
   for (const key of ["totalMs", "ttfbMs", "rawBytes", "brotliBytes", "propsBytes"] as const) sample[key] += measurement[key];
   if (response.status !== 200)
@@ -92,6 +121,10 @@ export async function request(api: Api, sample: Sample, path: string, input?: un
     return undefined;
   }
   const json: unknown = JSON.parse(text);
+  assertNoPartialFailure(json);
+  return json;
+}
+function assertNoPartialFailure(data: unknown) {
   // Workspace aggregates deliberately carry visible partial failures in a 200 response.
   const errors = z
     .object({
@@ -102,11 +135,35 @@ export async function request(api: Api, sample: Sample, path: string, input?: un
       collaborationError: z.string().nullable().optional(),
       detailErrors: z.record(z.string(), z.string().nullable()).optional(),
     })
-    .parse(json);
+    .parse(data);
   const { detailErrors, ...topLevelErrors } = errors;
   if ([...Object.values(topLevelErrors), ...Object.values(detailErrors ?? {})].some((error) => error != null))
     throw new Error(`Workspace returned a partial read failure: ${JSON.stringify(errors)}`);
-  return json;
+}
+/** Combine disjoint action windows; finalization and observer work lie between them. */
+export function combineDatabase(windows: DatabaseMeasurement[], runs: number): DatabaseMeasurement {
+  const statements = new Map<string, DatabaseMeasurement["statements"][number]>();
+  for (const window of windows) {
+    for (const statement of window.statements) {
+      const key = JSON.stringify([statement.queryid, statement.query]);
+      const combined = statements.get(key);
+      if (!combined) statements.set(key, { ...statement });
+      else {
+        for (const key of ["calls", "totalMs", "rows", "hits", "reads"] as const) combined[key] += statement[key];
+        combined.meanMs = combined.totalMs / combined.calls;
+      }
+    }
+  }
+  const calls = windows.reduce((sum, window) => sum + window.calls, 0);
+  const totalMs = windows.reduce((sum, window) => sum + window.totalMs, 0);
+  return {
+    windowMs: windows.reduce((sum, window) => sum + window.windowMs, 0),
+    calls,
+    totalMs,
+    callsPerRun: calls / runs,
+    msPerRun: totalMs / runs,
+    statements: [...statements.values()].sort((a, b) => b.totalMs - a.totalMs),
+  };
 }
 export async function reset(db: SQL) {
   await db`SELECT pg_stat_statements_reset()`;

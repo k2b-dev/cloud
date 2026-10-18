@@ -18,8 +18,10 @@ import { anchor, digestPlan, planLargeMailbox, seedLargeMailbox } from "../../te
 import {
   assertRunUrl,
   capturePlan,
+  combineDatabase,
   emptySample,
   explain,
+  finalizeSample,
   monotonicMs,
   postgresArgs,
   readDatabase,
@@ -27,9 +29,20 @@ import {
   reset,
   setExplainDuration,
 } from "./measure";
-import { type Options, parsePrevious, type Result, renderSummary, resultSchema, type Sample, sortedJson, summarizeSamples } from "./model";
+import {
+  type DatabaseMeasurement,
+  type Options,
+  parsePrevious,
+  type Result,
+  renderSummary,
+  resultSchema,
+  type Sample,
+  sortedJson,
+  summarizeSamples,
+} from "./model";
 
 import { draftSeedBodies, mailboxBody, searchBodies } from "./requests";
+import { seedWithAbort } from "./seed";
 
 const resourceSchema = z.object({ id: z.string().min(1) });
 const workspaceSchema = z.object({
@@ -283,7 +296,10 @@ export async function run(options: Options) {
     const [mailboxRow] = await db<{ id: string }[]>`SELECT id FROM mail.mailboxes WHERE short_id = ${mailbox.id}`;
     if (!mailboxRow) throw new Error("Created mailbox not found by short_id");
     const start = performance.now();
-    const fixture = await seedLargeMailbox(db, plan, { mailboxId: mailboxRow.id, userIds: [userId] });
+    const seedDb = db;
+    const fixture = await seedWithAbort(seedDb, controller.signal, () =>
+      seedLargeMailbox(seedDb, plan, { mailboxId: mailboxRow.id, userIds: [userId] }),
+    );
     result.metadata.seedDurationMs = performance.now() - start;
     const [pg] = await db<
       { version: string; bm25: boolean; pg_textsearch: boolean }[]
@@ -408,26 +424,38 @@ export async function run(options: Options) {
         // If a previous explain pass could not disable instrumentation, do not
         // measure another request until the disabled setting is restored.
         await setExplainDuration(explainControl, -1);
-        await reset(db);
-        const started = performance.now();
+        const windows: DatabaseMeasurement[] = [];
         try {
           for (let n = 0; n <= options.runs; n++) {
+            await reset(db);
             const sample = emptySample();
             scenario.samples.push(sample);
-            await definition.action(sample);
+            const started = performance.now();
+            try {
+              await definition.action(sample);
+            } finally {
+              try {
+                windows.push(await readDatabase(db, started, 1));
+              } finally {
+                await finalizeSample(sample);
+              }
+            }
           }
         } finally {
-          scenario.database = await readDatabase(db, started, scenario.samples.length || 1);
+          scenario.database = combineDatabase(windows, scenario.samples.length || 1);
         }
         scenario.status = "ok";
         scenario.metrics = summarizeSamples(scenario.samples);
         const control = explainControl,
           statements = scenario.database.statements;
-        await capturePlan(scenario, () =>
-          explain(control, activeRuntime, statements, async () => {
-            await definition.action(emptySample());
-          }),
-        );
+        const explainSample = emptySample();
+        await capturePlan(scenario, async () => {
+          try {
+            return await explain(control, activeRuntime, statements, () => definition.action(explainSample));
+          } finally {
+            await finalizeSample(explainSample);
+          }
+        });
         controller.signal.throwIfAborted();
       } catch (error) {
         scenario.errors.push(String(error));

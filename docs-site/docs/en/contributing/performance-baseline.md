@@ -298,7 +298,13 @@ text truncated for display.
 Draft-seed and search bodies come from pure builders tested against the public
 request schemas. Replies use a compose origin with reply intent and the medium
 thread's source message and conversation IDs. HTTP 200 workspace responses
-with list or detail errors fail the scenario. Live commit and arrival times
+with list or detail errors fail the scenario, including SSR island props at
+`MailWorkspace.data` and `MailOverview.initialDetail`. The harness decodes these
+as seroval JSON data without evaluating scripts. Brotli compression and props
+inspection run after each action and its database snapshot, outside request
+and live timing windows. Database attribution sums these action windows and
+excludes finalization between runs. Retained response bodies are then released.
+Live commit and arrival times
 use `performance.timeOrigin + performance.now()` in both host processes.
 Fixture bodies use seeded offsets into a deterministic 256 KiB word corpus,
 with sentence and paragraph structure, instead of repeating a short phrase.
@@ -307,6 +313,9 @@ body expansion stays in PostgreSQL. Planned byte sizes, HTML wrapping, and
 rare/common search prefixes are preserved. Fixture seeding stores each part's
 SHA-256 once and reuses it for blob joins; HTML bodies reuse the expanded
 plain text.
+
+SIGINT or SIGTERM during seeding closes the run-owned observer connection
+immediately to interrupt the transaction and continue cleanup.
 
 No provider connection is made. The persistence fixture uses example.test
 addresses and disables sync. BM25 is optional; plain Postgres uses fallback

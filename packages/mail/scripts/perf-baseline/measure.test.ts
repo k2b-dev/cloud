@@ -1,10 +1,14 @@
 import { expect, spyOn, test } from "bun:test";
+import * as zlib from "node:zlib";
+import { toJSON } from "seroval";
 import { Api } from "../../../../scripts/perf-baseline/seed";
 import type { MailDetailErrors } from "../../src/service/workspace";
 import {
   assertRunUrl,
   capturePlan,
+  combineDatabase,
   emptySample,
+  finalizeSample,
   monotonicMs,
   parseServerTiming,
   postgresArgs,
@@ -13,7 +17,127 @@ import {
   request,
   slowestPlan,
 } from "./measure";
-import { scenarioSchema } from "./model";
+import { type DatabaseMeasurement, scenarioSchema } from "./model";
+
+const island = (props: unknown, tag = "solid-island") =>
+  `<${tag} data-id="built-entry" data-props="${Bun.escapeHTML(JSON.stringify(toJSON(props)))}"></${tag}>`;
+function pageResponse(html: string) {
+  const response = new Response(`<html><body>${html}</body></html>`, { headers: { "server-timing": "ssr_data;dur=3.5" } });
+  Object.defineProperty(response, "url", { value: "https://localhost:4100/app/mail/mailbox" });
+  return response;
+}
+
+test("request records timings and raw bytes; finalization alone compresses and inspects props, once", async () => {
+  const api = new Api("https://localhost:4100", new AbortController().signal);
+  const props = { data: { listError: null, detailErrors: { comments: null } }, text: "ä & <text>" };
+  const html = `<html><body>${island(props)}</body></html>`;
+  const json = '{"listError":null}';
+  const expectedBrotli = [html, json].map((body) => zlib.brotliCompressSync(body).length);
+  const response = spyOn(api, "response")
+    .mockResolvedValueOnce(pageResponse(island(props)))
+    .mockResolvedValueOnce(new Response(json));
+  const compression = spyOn(zlib, "brotliCompressSync");
+  const inspection = spyOn(HTMLRewriter.prototype, "transform");
+  const clock = spyOn(performance, "now");
+  for (const time of [10, 15, 30, 40, 47, 60]) clock.mockReturnValueOnce(time);
+  const sample = emptySample();
+  try {
+    await request(api, sample, "/app/mail/mailbox", undefined, true);
+    await request(api, sample, "/workspace");
+    expect(compression).not.toHaveBeenCalled();
+    expect(inspection).not.toHaveBeenCalled();
+    expect(sample.requests).toMatchObject([
+      {
+        status: 200,
+        totalMs: 20,
+        ttfbMs: 5,
+        rawBytes: Buffer.byteLength(html),
+        brotliBytes: 0,
+        propsBytes: 0,
+        serverTiming: { ssr_data: 3.5 },
+      },
+      { status: 200, totalMs: 20, ttfbMs: 7, rawBytes: Buffer.byteLength(json), brotliBytes: 0, propsBytes: 0 },
+    ]);
+    await finalizeSample(sample);
+    expect(compression).toHaveBeenCalledTimes(2);
+    expect(inspection).toHaveBeenCalledTimes(1);
+    expect(sample.requests.map((r) => r.brotliBytes)).toEqual(expectedBrotli);
+    expect(sample.requests.map((r) => r.propsBytes)).toEqual([Buffer.byteLength(JSON.stringify(toJSON(props))), 0]);
+    for (const key of ["totalMs", "ttfbMs", "rawBytes", "brotliBytes", "propsBytes"] as const)
+      expect(sample[key]).toBe(sample.requests.reduce((sum, r) => sum + r[key], 0));
+    await finalizeSample(sample);
+    expect(compression).toHaveBeenCalledTimes(2);
+    expect(inspection).toHaveBeenCalledTimes(1);
+  } finally {
+    clock.mockRestore();
+    inspection.mockRestore();
+    compression.mockRestore();
+    response.mockRestore();
+  }
+});
+
+test("SSR finalization rejects partial failures in MailWorkspace.data and MailOverview.initialDetail on every island", async () => {
+  const api = new Api("https://localhost:4100", new AbortController().signal);
+  let html = "";
+  const response = spyOn(api, "response").mockImplementation(async () => pageResponse(html));
+  try {
+    for (const tag of ["solid-island", "solid-client"]) {
+      for (const prop of ["data", "initialDetail"]) {
+        for (const error of [
+          { listError: "List unavailable" },
+          { detailError: "Detail unavailable" },
+          { collaborationError: "Collaboration unavailable" },
+          { detailErrors: { comments: null, summary: "Summary unavailable" } },
+          { detailErrors: { comments: "" } },
+        ]) {
+          // A healthy first island must not hide the next one's failure.
+          html = island({ unrelated: true }) + island({ [prop]: error }, tag);
+          const sample = emptySample();
+          await request(api, sample, "/app/mail/mailbox", undefined, true);
+          await expect(finalizeSample(sample)).rejects.toThrow("partial read failure");
+          // Even a failed inspection releases its retained body.
+          const before = structuredClone(sample);
+          await finalizeSample(sample);
+          expect(sample).toEqual(before);
+        }
+      }
+    }
+    html = island({ data: { listError: null, detailErrors: { summary: null } } }) + island({ initialDetail: null });
+    const sample = emptySample();
+    await request(api, sample, "/app/mail/mailbox", undefined, true);
+    await finalizeSample(sample);
+    expect(sample.propsBytes).toBeGreaterThan(0);
+    html = '<solid-island data-props="globalThis.mailPerfEvaluated=true"></solid-island>';
+    const malformed = emptySample();
+    await request(api, malformed, "/app/mail/mailbox", undefined, true);
+    await expect(finalizeSample(malformed)).rejects.toThrow();
+    expect(Reflect.get(globalThis, "mailPerfEvaluated")).toBeUndefined();
+  } finally {
+    response.mockRestore();
+  }
+});
+
+test("database attribution sums action windows and weights statement means across cold and warm runs", () => {
+  const window = (calls: number, totalMs: number, windowMs: number): DatabaseMeasurement => ({
+    windowMs,
+    calls,
+    totalMs,
+    callsPerRun: calls,
+    msPerRun: totalMs,
+    statements: [{ query: "SELECT 1", queryid: "1", calls, totalMs, meanMs: totalMs / calls, rows: calls, hits: calls, reads: 0 }],
+  });
+  const windows = [window(1, 10, 20), window(3, 60, 80)];
+  const before = structuredClone(windows);
+  expect(combineDatabase(windows, 2)).toEqual({
+    windowMs: 100,
+    calls: 4,
+    totalMs: 70,
+    callsPerRun: 2,
+    msPerRun: 35,
+    statements: [{ query: "SELECT 1", queryid: "1", calls: 4, totalMs: 70, meanMs: 17.5, rows: 4, hits: 4, reads: 0 }],
+  });
+  expect(windows).toEqual(before);
+});
 
 test("host clients refuse other ports, hosts and databases", () => {
   expect(assertRunUrl("postgresql://ipa:ipa@127.0.0.1:4211/cloud_perf_test", 4211, "postgresql:", "cloud_perf_test")).toContain(":4211/");
