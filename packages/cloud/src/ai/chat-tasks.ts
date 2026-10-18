@@ -534,6 +534,9 @@ type StoppedTurn = { id: string; conversation_id: string; cancellation_reason: s
 const deliverStoppedTurn = async (db: SQL, turn: StoppedTurn, cause: StopCause, task: TaskRow | null): Promise<string | null> => {
   const config = turn.run_config;
   if (!config.background) return null;
+  // Chat before turn, the order archiving locks them in, so the two never wait on each other.
+  const [conversation] = await db<{ archived_at: Date | null }[]>`
+    SELECT archived_at FROM ai.conversations WHERE id = ${turn.conversation_id}::uuid FOR UPDATE`;
   const [claimed] = await db`UPDATE ai.turns SET run_config = jsonb_set(run_config, '{background,stopDeliveredAt}', to_jsonb(now()::text))
     WHERE id = ${turn.id}::uuid AND run_config #>> '{background,stopDeliveredAt}' IS NULL RETURNING id`;
   if (!claimed) return null;
@@ -551,9 +554,7 @@ const deliverStoppedTurn = async (db: SQL, turn: StoppedTurn, cause: StopCause, 
     return [toolOutcome(block, "done", locale, config.background?.timezone ?? task?.timezone ?? "UTC") ?? wording.title];
   });
   const text = chatTaskStopSentence(done, locale);
-  const [conversation] =
-    await db`SELECT id FROM ai.conversations WHERE id = ${turn.conversation_id}::uuid AND archived_at IS NULL FOR UPDATE`;
-  if (!conversation) return text;
+  if (!conversation || conversation.archived_at) return text;
   const scheduledTask = {
     taskId: config.background.taskId,
     occurrenceId: config.background.occurrenceId,
@@ -1424,8 +1425,9 @@ export const aiChatTasks = {
   }): Promise<{ occurrenceId: string; failed: boolean } | null> =>
     sql.begin(async (tx) => {
       const task = await loadTurnTask(input.turnId, tx);
+      // A plain read: the stop line claims the turn itself, after it locked the chat as archiving does.
       const [turn] = await tx<StoppedTurn[]>`SELECT id, conversation_id, cancellation_reason, run_config FROM ai.turns
-        WHERE id = ${input.turnId}::uuid FOR UPDATE`;
+        WHERE id = ${input.turnId}::uuid`;
       if (!turn) return null;
       if (turn.cancellation_reason === "routine_paused" || turn.cancellation_reason === "routine_deleted") {
         const text = await deliverStoppedTurn(tx, turn, turn.cancellation_reason === "routine_paused" ? "paused" : "deleted", task);
