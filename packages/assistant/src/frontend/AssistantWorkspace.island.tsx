@@ -45,6 +45,7 @@ import {
   Button,
   Chat,
   type ChatMention,
+  dialogCore,
   IconButton,
   LocaleProvider,
   openSpotlightSearch,
@@ -121,6 +122,7 @@ import {
   createAssistantCommandSession,
   createAssistantTaskRunKeys,
 } from "./composer-commands";
+import { releaseWhenPageReturns } from "./composer-file-choice";
 import {
   confirmComposerSave,
   editComposerSession,
@@ -408,18 +410,9 @@ export default function AssistantWorkspace(props: Props) {
     holdComposerSave(picking);
     return picking;
   };
-  /**
-   * Some browsers never report that the device's file dialog was dismissed, so its promise may never settle; the page
-   * getting focus back ends the hold too, and saving resumes instead of staying off until a reload.
-   */
   const trackComposerFileChoice = (choosing: Promise<readonly File[]>): Promise<readonly File[]> => {
     const release = holdComposerSave(choosing);
-    const returned = new AbortController();
-    window.addEventListener("focus", release, { once: true, signal: returned.signal });
-    void choosing.then(
-      () => returned.abort(),
-      () => returned.abort(),
-    );
+    releaseWhenPageReturns(choosing, release, { target: window, dialogOpen: dialogCore.isOpen });
     return choosing;
   };
   const [pendingProjectChats, setPendingProjectChats] = createSignal<Record<string, AiConversation>>({});
