@@ -1061,8 +1061,10 @@ describe("workspace head navigation", () => {
     expect([...html.matchAll(/data-view-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(["1", "2", "3", "4", "7"]);
     expect(html.match(/data-compact-hidden=""/g)).toHaveLength(2);
     expect(html).toContain('data-wide=""');
-    expect(html).toMatch(/data-level="wide">(?:<!--.*?-->)*\+3/);
-    expect(html).toMatch(/data-level="compact">(?:<!--.*?-->)*\+5/);
+    // Hydration markers carry no dash inside, so one linear pass removes them.
+    const text = html.replace(/<!--[^-]*-->/g, "");
+    expect(text).toContain('data-level="wide">+3');
+    expect(text).toContain('data-level="compact">+5');
     expect(html).toMatch(/href="\?view=7" aria-current="page"/);
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
     expect(html.match(/<a /g)).toHaveLength(5);
