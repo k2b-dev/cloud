@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import * as pdfModule from "@k2b/cloud/services/pdf";
 import { type GotenbergConfig, preparePdfImage } from "@k2b/cloud/services/pdf";
 import { sql } from "bun";
 import sharp from "sharp";
@@ -78,27 +79,42 @@ suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
   });
 
   test("JPEG, alpha PNG and WebP are uploaded once each, with every Book size placement", async () => {
-    // All placements fit on one page, so Poppler lists each shared image object once.
     const markdown = [
       `![jpeg](attach://${ids[0]} =100x60)`,
       `![alpha](attach://${ids[1]} =100x60)`,
       ...["", " =100x", " =x60", " =100x60"].map((size) => `![webp](attach://${ids[2]}${size})`),
     ].join(" ");
     let metadataLoads = 0;
-    const result = await render(markdown, {
-      imageDependencies: {
-        list: async (params) => {
-          metadataLoads++;
-          return attachments.listByShortIds(params);
+    const upload = spyOn(pdfModule, "renderHtmlToPdfWithConfig");
+    try {
+      const result = await render(markdown, {
+        imageDependencies: {
+          list: async (params) => {
+            metadataLoads++;
+            return attachments.listByShortIds(params);
+          },
         },
-      },
-    });
-    expect(metadataLoads).toBe(1);
-    expect(result.omissions).toEqual([]);
-    const images = await pdfImages(result.pdf);
-    // The JPEG keeps its DCT stream, opaque WebP becomes JPEG, and only the PNG carries a soft mask.
-    expect(images.filter(({ type }) => type === "image").map(({ enc }) => enc)).toEqual(["jpeg", "image", "jpeg"]);
-    expect(images.filter(({ type }) => type === "smask")).toHaveLength(1);
+      });
+      // Chromium may write one uploaded asset as several XObjects, so PDF object count is not asserted.
+      // The upload count is the contract; the PDF must contain only the expected dimensions and encodings.
+      expect(metadataLoads).toBe(1);
+      expect(result.omissions).toEqual([]);
+      expect(upload).toHaveBeenCalledTimes(1);
+      const input = upload.mock.calls[0]![0];
+      expect(input.assets?.map(({ name }) => name)).toEqual(["img-1.jpg", "img-2.png", "img-3.jpg"]);
+      expect(input.html.match(/src="img-3\.jpg"/g)).toHaveLength(4);
+      const images = await pdfImages(result.pdf);
+      const expectedImages = [
+        { type: "image", width: 313, height: 209, enc: "jpeg" },
+        { type: "image", width: 313, height: 209, enc: "image" },
+        { type: "smask", width: 313, height: 209, enc: "image" },
+        { type: "image", width: 480, height: 320, enc: "jpeg" },
+      ];
+      for (const expected of expectedImages) expect(images).toContainEqual(expect.objectContaining(expected));
+      for (const { type, width, height, enc } of images) expect(expectedImages).toContainEqual({ type, width, height, enc });
+    } finally {
+      upload.mockRestore();
+    }
   }, 60000);
 
   test("an escaped attachment address that Book shows also prints", async () => {
