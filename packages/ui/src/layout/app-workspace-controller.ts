@@ -679,6 +679,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (activationFrame !== null) cancelAnimationFrame(activationFrame);
     activationFrame = requestAnimationFrame(clearActivation);
   };
+  const cancelActivation = () => {
+    // A cancelled gesture must not open a Detail that appears later.
+    if (lastChosen?.interaction === "pointer" && lastChosen.item === activationItem) {
+      lastChosen.chosen = false;
+      lastChosen = null;
+    }
+    clearActivation();
+  };
   const onChoiceClick = (event: MouseEvent) => {
     const preceded = event.target instanceof Node && Boolean(activationItem?.contains(event.target));
     clearActivation();
@@ -719,6 +727,13 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         !(event instanceof MouseEvent || event instanceof KeyboardEvent
           ? event.ctrlKey || event.metaKey || event.shiftKey || event.altKey
           : false) &&
+        // Space scrolls on native links; it does not activate them.
+        !(
+          event instanceof KeyboardEvent &&
+          event.key === " " &&
+          item.matches("a[href], area[href]") &&
+          (!item.hasAttribute("role") || item.getAttribute("role") === "link")
+        ) &&
         !target.closest(KEY_OWNER_SELECTOR),
     };
     refreshItem(snapshot);
@@ -1828,7 +1843,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   ownerDocument.addEventListener("click", onChoiceClick, true);
   ownerDocument.addEventListener("keyup", endActivation, true);
   ownerDocument.addEventListener("pointerup", endActivation, true);
-  ownerDocument.addEventListener("pointercancel", clearActivation, true);
+  ownerDocument.addEventListener("pointercancel", cancelActivation, true);
   eventRoot.addEventListener("pointerdown", rememberInteraction, true);
   eventRoot.addEventListener("keydown", rememberInteraction, true);
   eventRoot.addEventListener("focusin", onDetailFocusIn);
@@ -1885,7 +1900,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     ownerDocument.removeEventListener("click", onChoiceClick, true);
     ownerDocument.removeEventListener("keyup", endActivation, true);
     ownerDocument.removeEventListener("pointerup", endActivation, true);
-    ownerDocument.removeEventListener("pointercancel", clearActivation, true);
+    ownerDocument.removeEventListener("pointercancel", cancelActivation, true);
     eventRoot.removeEventListener("pointerdown", rememberInteraction, true);
     eventRoot.removeEventListener("keydown", rememberInteraction, true);
     eventRoot.removeEventListener("focusin", onDetailFocusIn);

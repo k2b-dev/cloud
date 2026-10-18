@@ -2406,6 +2406,37 @@ describe("waiting detail drawers", () => {
     }
   });
 
+  test("Space on a selected native link leaves the Detail parked, while Enter reopens it", async () => {
+    const { root, aside, item, title, toggle } = waitingWorkspace();
+    const link = document.createElement("a");
+    link.href = "#c";
+    link.setAttribute("aria-current", "true");
+    link.textContent = "Contact";
+    item.replaceWith(link);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      toggle.click();
+      detailKey(toggle, "Escape");
+      link.focus();
+      detailKey(link, " ");
+      link.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+      await window.happyDOM.whenAsyncComplete();
+      flushFrames();
+      flushFrames();
+      expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement === link).toBe(true);
+      detailKey(link, "Enter");
+      flushFrames();
+      flushFrames();
+      expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(document.activeElement === title).toBe(true);
+    } finally {
+      dispose();
+    }
+  });
+
   for (const key of ["Enter", " "]) {
     test(`the native click after ${key} does not create a second choice`, async () => {
       const { root, aside, item, title, toggle } = waitingWorkspace();
@@ -2547,7 +2578,7 @@ describe("waiting detail drawers", () => {
     });
   }
 
-  for (const interaction of ["pointer", "keyboard", "assistive", "none", "focus only"] as const) {
+  for (const interaction of ["pointer", "cancelled pointer", "keyboard", "assistive", "none", "focus only"] as const) {
     test(`a waiting detail opened after ${interaction} interaction uses the drawer only for a fresh Main selection`, async () => {
       const { root, aside, item, title, toggle, content } = waitingWorkspace();
       aside.hidden = true;
@@ -2556,8 +2587,11 @@ describe("waiting detail drawers", () => {
         const chosen = interaction === "pointer" || interaction === "keyboard" || interaction === "assistive";
         if (interaction !== "none") {
           item.focus();
-          if (interaction === "pointer") rememberPointer(item);
-          else if (interaction === "keyboard") detailKey(item, "Enter");
+          if (interaction === "pointer" || interaction === "cancelled pointer") {
+            rememberPointer(item);
+            if (interaction === "cancelled pointer") item.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
+            else item.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+          } else if (interaction === "keyboard") detailKey(item, "Enter");
           else if (interaction === "assistive") item.click();
         }
         aside.hidden = false;

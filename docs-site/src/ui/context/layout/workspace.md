@@ -269,8 +269,9 @@ The mark may arrive later, for example after a load; the choice waits for it
 until another interaction replaces it.
 A control inside the selected row that discloses, toggles, opens a menu, or
 takes input does not count as a choice.
-Enter, Space, and assistive-technology clicks count as keyboard choices and
-focus the Detail title; a completed primary pointer click keeps focus on the
+Enter, Space (except on links, which it does not activate), and
+assistive-technology clicks count as keyboard choices and focus the Detail
+title; a completed primary pointer click keeps focus on the
 item. Live content updates alone leave it waiting. An initially open Detail,
 or one opened without a fresh Main choice, keeps waiting. The drawer is not modal.
 
