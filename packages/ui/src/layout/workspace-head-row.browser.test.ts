@@ -230,6 +230,44 @@ test("a narrow head opens More for views that fit the wide strip, at a narrow ho
   }
 });
 
+test("the current view stays inside the strip's scrollport when long labels do not fit", async () => {
+  for (const [viewport, host] of [
+    [1440, 640],
+    [390, 390],
+  ] as const) {
+    const page = await load({ head: { items: 8, current: "3", longLabels: true } }, viewport, host);
+    try {
+      const clip = await page.locator('.k2b-view-tabs__item > a[aria-current="page"]').evaluate((link) => {
+        const list = link.closest(".k2b-view-tabs__list")!;
+        const tab = link.getBoundingClientRect();
+        const port = list.getBoundingClientRect();
+        return { left: tab.left - port.left, right: port.right - tab.right, width: tab.width };
+      });
+      expect(clip.left).toBeGreaterThanOrEqual(-0.5);
+      expect(clip.right).toBeGreaterThanOrEqual(-0.5);
+      expect(clip.width).toBeGreaterThan(0);
+    } finally {
+      await page.close();
+    }
+  }
+});
+
+test("a page at the app's root keeps its title beside the overlay sidebar's button", async () => {
+  const page = await load({ head: { root: true } }, 1440, 834);
+  try {
+    expect(await page.locator(".k2b-app-workspace__head-toggle").isVisible()).toBe(true);
+    expect(await page.locator(".k2b-app-workspace__head .k2b-page-title").isVisible()).toBe(true);
+  } finally {
+    await page.close();
+  }
+  const wide = await load({ head: { root: true } }, 1440, 1440);
+  try {
+    expect(await wide.locator(".k2b-app-workspace__head .k2b-page-title").isVisible()).toBe(false);
+  } finally {
+    await wide.close();
+  }
+});
+
 test("view, classic tab, and segment selection and hover never move neighbouring controls", async () => {
   const page = await load({ head: { items: 3, current: "1" } });
   const other = await load({ head: { items: 3, current: "2" } });

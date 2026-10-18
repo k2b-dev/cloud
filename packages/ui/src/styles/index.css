@@ -12313,13 +12313,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: none;
 }
 
-.k2b-ui :is(.k2b-view-tabs__item, .k2b-view-tabs__more) {
+/* Views shrink before the strip scrolls: a long label ends in an ellipsis, so
+   the current view, which always has a place, stays on screen. "More" keeps
+   its size. */
+.k2b-ui .k2b-view-tabs__item {
+  display: flex;
+  min-width: 2.75rem;
+  flex: 0 1 auto;
+}
+
+.k2b-ui .k2b-view-tabs__more {
   display: flex;
   flex: none;
 }
 
 .k2b-ui .k2b-view-tabs__tab {
   display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
   min-height: 2rem;
   align-items: center;
   gap: 0.375rem;
@@ -12343,6 +12354,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-view-tabs__label {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .k2b-ui .k2b-view-tabs__tab > i {

@@ -29,7 +29,16 @@ export type FixtureOptions = {
   mainMin?: number;
   sidebar?: boolean;
   sidebarActive?: boolean;
-  head?: { items?: number; current?: string; filtered?: boolean; reset?: "link" | "callback"; mainHeading?: boolean };
+  head?: {
+    items?: number;
+    current?: string;
+    filtered?: boolean;
+    reset?: "link" | "callback";
+    mainHeading?: boolean;
+    /** A page at the app's root: the trail has no page above it. */
+    root?: boolean;
+    longLabels?: boolean;
+  };
   layoutState?: AppWorkspaceLayoutState;
 };
 
@@ -55,7 +64,10 @@ export function workspaceTree(
           current: props.head?.current ?? "1",
           items: Array.from({ length: props.head?.items ?? 4 }, (_, index) => ({
             id: String(index + 1),
-            label: ["List", "Board", "Calendar", "Timeline", "Files", "Activity", "Overview", "Archive"][index] ?? `View ${index + 1}`,
+            label:
+              (props.head?.longLabels
+                ? ["Needs action", "Assigned to me", "Waiting for a reply", "Not assigned", "Snoozed", "Done", "Recent activity", "Kept"]
+                : ["List", "Board", "Calendar", "Timeline", "Files", "Activity", "Overview", "Archive"])[index] ?? `View ${index + 1}`,
             href: `?view=${index + 1}`,
             count: index === 0 ? 12 : index === 7 ? 3 : undefined,
           })),
@@ -235,7 +247,7 @@ export function workspaceTree(
   if (props.head) {
     if (!PageTrailProvider) throw new Error("Head fixture needs PageTrailProvider");
     return createComponent(PageTrailProvider, {
-      trail: { title: "Inbox", ancestors: [{ title: "Mailboxes", href: "/mail" }] },
+      trail: { title: "Inbox", ancestors: props.head?.root ? [] : [{ title: "Mailboxes", href: "/mail" }] },
       get children() {
         return tree();
       },

@@ -2329,6 +2329,19 @@ html {
       display: inline-flex;
     }
 
+    /* A head row shows the title beside the overlay's button, as the head
+       does, unless the page shows its own. */
+    .k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head[data-row]
+      > .k2b-app-workspace__head-lead
+      > .k2b-page-title.k2b-page-title {
+      display: flex;
+    }
+
     .k2b-ui .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]) {
       position: absolute;
       z-index: 30;
