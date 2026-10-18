@@ -5,7 +5,8 @@ const isCheckCode = (value: unknown): value is StoreCheckCode =>
   typeof value === "string" &&
   (["UNREACHABLE", "AUTH_FAILED", "VERSION_TOO_OLD", "TOO_MANY_RIGHTS"].includes(value) ||
     REQUIRED_RIGHTS.some((right) => value === `MISSING_RIGHT:${right}`) ||
-    /^PROFILE_MISSING:[a-z][a-z0-9_]*_(?:read_small|read_normal|read_large|maintenance)$/.test(value));
+    /^PROFILE_MISSING:[a-z][a-z0-9_]*_(?:read_small|read_normal|read_large|maintenance)$/.test(value) ||
+    /^CLICKHOUSE_ERROR:\d{1,6}$/.test(value));
 const step = z.enum(["ok", "failed", "skipped"]);
 export const StoreCheckSchema = z.object({
   ok: z.boolean(),

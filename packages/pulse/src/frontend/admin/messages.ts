@@ -62,6 +62,7 @@ export const storeMessages = i18n.define({
       failTooManyRights: "The service user has too many rights",
       failRight: "A right is missing",
       failProfile: "A query limit is missing",
+      failClickhouse: "ClickHouse refused the check",
       stepOk: "passed",
       stepFailed: "failed",
       stepSkipped: "not checked",
@@ -86,6 +87,8 @@ export const storeMessages = i18n.define({
       fixRight: (params: { right: string }) =>
         `The service user lacks ${params.right}. Run the setup script again as the ClickHouse admin.`,
       fixPasswordRequired: "Enter the password.",
+      fixClickhouse: (params: { code: string }) =>
+        `ClickHouse answered with error ${params.code}. Check its log and free resources, then check again.`,
       fixBusy: "Another admin is saving the connection right now. Try again in a moment.",
       fixInvalidInput: "Check the address and the service user.",
       fixNotConfigured: "Enter address and service user first.",
@@ -153,6 +156,7 @@ export const storeMessages = i18n.define({
       failTooManyRights: "Der Dienst-Zugang hat zu viele Rechte",
       failRight: "Ein Recht fehlt",
       failProfile: "Eine Grenze je Abfrage fehlt",
+      failClickhouse: "ClickHouse hat die Prüfung abgelehnt",
       stepOk: "geprüft",
       stepFailed: "fehlgeschlagen",
       stepSkipped: "nicht geprüft",
@@ -178,6 +182,8 @@ export const storeMessages = i18n.define({
       fixRight: (params: { right: string }) =>
         `Dem Dienst-Zugang fehlt ${params.right}. Führe das Einrichtungs-Skript erneut als ClickHouse-Admin aus.`,
       fixPasswordRequired: "Gib das Passwort ein.",
+      fixClickhouse: (params: { code: string }) =>
+        `ClickHouse hat mit Fehler ${params.code} geantwortet. Prüfe sein Log und freie Ressourcen, dann prüfe erneut.`,
       fixBusy: "Gerade speichert jemand anderes die Verbindung. Versuche es gleich noch einmal.",
       fixInvalidInput: "Prüfe Adresse und Dienst-Zugang.",
       fixNotConfigured: "Trage zuerst Adresse und Dienst-Zugang ein.",
@@ -202,5 +208,6 @@ export const storeFixHint = (code: StoreCheckCode | string, locale = "en"): stri
   for (const right of REQUIRED_RIGHTS) fixed[`MISSING_RIGHT:${right}`] = t.fixRight({ right });
   if (fixed[code]) return fixed[code];
   if (code.startsWith("PROFILE_MISSING:")) return t.fixProfile({ profile: code.slice("PROFILE_MISSING:".length) });
+  if (code.startsWith("CLICKHOUSE_ERROR:")) return t.fixClickhouse({ code: code.slice("CLICKHOUSE_ERROR:".length) });
   return t.fixRequest;
 };

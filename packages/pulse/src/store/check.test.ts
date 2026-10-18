@@ -132,3 +132,27 @@ test("a read profile with a changed limit counts as missing", async () => {
     code: "PROFILE_MISSING:fixture_read_small",
   });
 });
+
+test("a grant that could lift the limits counts as too many rights", async () => {
+  stub();
+  const implementation = transport.getMockImplementation()!;
+  transport.mockImplementation(async (input, init) =>
+    String(init.body) === "SHOW GRANTS FINAL"
+      ? reply([{ grant: "GRANT KILL QUERY ON * TO fixture_service" }, { grant: "GRANT ALTER SETTINGS PROFILE ON * TO fixture_service" }])
+      : implementation(input, init),
+  );
+  expect(await checkStore({ ...options, transport, mode: "full" })).toMatchObject({ ok: false, code: "TOO_MANY_RIGHTS" });
+});
+
+test("a ClickHouse failure that is not a permission is reported by its code, not as a missing right", async () => {
+  stub();
+  const implementation = transport.getMockImplementation()!;
+  transport.mockImplementation(async (input, init) =>
+    String(init.body).startsWith("INSERT INTO") ? reply([], 241) : implementation(input, init),
+  );
+  expect(await checkStore({ ...options, transport, mode: "full" })).toMatchObject({
+    ok: false,
+    code: "CLICKHOUSE_ERROR:241",
+    steps: { rights: "failed" },
+  });
+});

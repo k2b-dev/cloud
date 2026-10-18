@@ -26,7 +26,9 @@ export type StoreCheckCode =
   | "VERSION_TOO_OLD"
   | "TOO_MANY_RIGHTS"
   | `MISSING_RIGHT:${(typeof REQUIRED_RIGHTS)[number]}`
-  | `PROFILE_MISSING:${string}`;
+  | `PROFILE_MISSING:${string}`
+  /** Any other ClickHouse refusal, by its numeric error code only. */
+  | `CLICKHOUSE_ERROR:${number}`;
 export const CHECK_STEPS = ["reach", "auth", "version", "rights", "profiles"] as const;
 export type StoreCheckResult = {
   ok: boolean;

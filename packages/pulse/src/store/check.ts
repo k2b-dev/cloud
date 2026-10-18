@@ -6,6 +6,12 @@ import { quoteIdentifier as q, StorePassword, StorePrefix, StoreUrl, StoreUser }
 
 export { CHECK_STEPS, REQUIRED_RIGHTS, type StoreCheckCode, type StoreCheckResult };
 
+const ACCESS_DENIED = 497;
+const AUTHENTICATION_FAILED = 516;
+const NO_PROFILE = 180;
+const ADMIN_GRANT =
+  /^GRANT\b.*\b(?:ALL(?: PRIVILEGES)?|ACCESS MANAGEMENT|ROLE ADMIN|(?:CREATE|ALTER|DROP) (?:SETTINGS )?PROFILE|(?:CREATE|ALTER|DROP) (?:ROLE|QUOTA|ROW POLICY|POLICY))\b/i;
+
 export const supportedVersion = (version: string): boolean => {
   const match = /^(\d+)\.(\d+)(?:\.\d+)*$/.exec(version);
   return Boolean(match && (Number(match[1]) > 26 || (Number(match[1]) === 26 && Number(match[2]) >= 9)));
@@ -45,7 +51,7 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
     try {
       return await run(query, extra);
     } catch (error) {
-      if (error instanceof StoreQueryError && error.kind === "clickhouse" && error.code !== 516) fail(`MISSING_RIGHT:${name}`);
+      if (error instanceof StoreQueryError && error.code === ACCESS_DENIED) fail(`MISSING_RIGHT:${name}`);
       throw error;
     }
   };
@@ -53,7 +59,7 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
     try {
       await run(query);
     } catch (error) {
-      if (error instanceof StoreQueryError && error.code === 497) return;
+      if (error instanceof StoreQueryError && error.code === ACCESS_DENIED) return;
       throw error;
     }
     if (cleanup) await run(cleanup).catch(() => {});
@@ -98,8 +104,8 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
     await mustDeny(`CREATE DATABASE ${q(outside)}`, `DROP DATABASE IF EXISTS ${q(outside)}`);
     await mustDeny("SELECT 1 FROM system.query_log LIMIT 0");
     const grants = (await run("SHOW GRANTS FINAL")).flatMap((row) => Object.values(row)).filter((v): v is string => typeof v === "string");
-    if (grants.some((grant) => /\b(?:ALL(?: PRIVILEGES)?|ACCESS MANAGEMENT|ROLE ADMIN)\b.*\bON\s+\*(?:\.\*)?(?:\s|$)/i.test(grant)))
-      fail("TOO_MANY_RIGHTS");
+    // Rights that would let the service user lift the limits or act as an admin, on any target.
+    if (grants.some((grant) => ADMIN_GRANT.test(grant))) fail("TOO_MANY_RIGHTS");
     await right("CREATE DATABASE", `CREATE DATABASE ${q(database)}`);
     await right("CREATE TABLE", `CREATE TABLE ${table} (value UInt8) ENGINE = MergeTree ORDER BY tuple()`);
     await right("ALTER TABLE", `ALTER TABLE ${table} ADD COLUMN extra UInt8 DEFAULT 0`);
@@ -111,9 +117,8 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
         `CREATE USER ${q(reader)} IDENTIFIED WITH sha256_hash BY '${hash.sha256Hex}' SALT '${hash.saltHex}' SETTINGS PROFILE '${prefix}read_normal'`,
       );
     } catch (error) {
-      if (error instanceof StoreQueryError && error.code === 497) fail("MISSING_RIGHT:CREATE USER");
-      if (error instanceof StoreQueryError && error.kind === "clickhouse" && error.code !== 516)
-        fail(`PROFILE_MISSING:${prefix}read_normal`);
+      if (error instanceof StoreQueryError && error.code === ACCESS_DENIED) fail("MISSING_RIGHT:CREATE USER");
+      if (error instanceof StoreQueryError && error.code === NO_PROFILE) fail(`PROFILE_MISSING:${prefix}read_normal`);
       throw error;
     }
     await right("GRANT SELECT", `GRANT SELECT ON ${table} TO ${q(reader)}`);
@@ -133,7 +138,8 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
         // 164 READONLY for read users (readonly=1); 452 SETTING_CONSTRAINT_VIOLATION for the service user,
         // whose maintenance limit is a READONLY constraint without readonly mode.
         if (error instanceof StoreQueryError && (error.code === 164 || error.code === 452)) return;
-        if (!(error instanceof StoreQueryError) || error.kind !== "clickhouse" || error.code === 516) throw error;
+        // Any other refusal is not proof that the limit holds; report it by its code.
+        throw error;
       }
       fail(`PROFILE_MISSING:${profile}`);
     };
@@ -142,8 +148,8 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
       try {
         await run(`ALTER USER ${q(reader)} SETTINGS PROFILE '${profile}'`);
       } catch (error) {
-        if (error instanceof StoreQueryError && error.code === 497) fail("MISSING_RIGHT:ALTER USER");
-        if (error instanceof StoreQueryError && error.kind === "clickhouse" && error.code !== 516) fail(`PROFILE_MISSING:${profile}`);
+        if (error instanceof StoreQueryError && error.code === ACCESS_DENIED) fail("MISSING_RIGHT:ALTER USER");
+        if (error instanceof StoreQueryError && error.code === NO_PROFILE) fail(`PROFILE_MISSING:${profile}`);
         throw error;
       }
       const expected = { ...limits, ...READ_LIMITS };
@@ -175,7 +181,13 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
     result.ok = true;
   } catch (error) {
     result.code =
-      error instanceof CheckFailure ? error.code : error instanceof StoreQueryError && error.code === 516 ? "AUTH_FAILED" : "UNREACHABLE";
+      error instanceof CheckFailure
+        ? error.code
+        : error instanceof StoreQueryError && error.code === AUTHENTICATION_FAILED
+          ? "AUTH_FAILED"
+          : error instanceof StoreQueryError && error.kind === "clickhouse" && error.code !== undefined
+            ? `CLICKHOUSE_ERROR:${error.code}`
+            : "UNREACHABLE";
     if (step === "reach" && error instanceof StoreQueryError && error.kind === "clickhouse") {
       result.steps.reach = "ok";
       step = "auth";

@@ -37,6 +37,7 @@ const failureTitle = (t: Messages, code: string) => {
   if (code === "TOO_MANY_RIGHTS") return t.failTooManyRights;
   if (code.startsWith("MISSING_RIGHT:")) return t.failRight;
   if (code.startsWith("PROFILE_MISSING:")) return t.failProfile;
+  if (code.startsWith("CLICKHOUSE_ERROR:")) return t.failClickhouse;
   return t.failUnreachable;
 };
 
