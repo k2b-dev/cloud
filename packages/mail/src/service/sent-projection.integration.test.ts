@@ -1027,6 +1027,22 @@ suite("mail sent message projection", () => {
     }
   });
 
+  test("a send whose pre-dispatch Sent lookup is throttled is sent at once with exactly one Sent copy", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "IMAP throttled");
+      provider.failNextSearches(1, "ETHROTTLE");
+      const outbox = await send(mailbox, draft.id, draft.revision, "imap-throttled");
+      expect(provider.submissions()).toBe(1);
+      expect(await delivery(outbox.id)).toMatchObject({ state: "sent", last_error_code: null, command_state: "confirmed" });
+      expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(1);
+      expect((await sentProjection(mailbox, outbox.stable_message_id)).placements).toEqual(["Sent"]);
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("an unproven Gmail send is checked again and proven by the copy the Sent folder sync finds", async () => {
     const provider = createProvider("gmail");
     try {
