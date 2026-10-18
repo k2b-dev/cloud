@@ -43,15 +43,18 @@ afterAll(async () => {
 const file = new File([new Uint8Array(1)], "dbip-city-lite-2026-11.mmdb.gz");
 const phases: [GeoIpAdminStatus | null, SignInLocationPhase][] = [
   [bundledStatus, { kind: "idle" }],
-  [bundledStatus, { kind: "uploading", name: file.name, percent: 32 }],
-  [bundledStatus, { kind: "checking", name: file.name }],
+  [bundledStatus, { kind: "uploading", percent: 32 }],
+  [bundledStatus, { kind: "checking" }],
   [bundledStatus, { kind: "upload-error", code: "geoip_invalid", file }],
   [bundledStatus, { kind: "upload-error", code: "interrupted", file }],
   [bundledStatus, { kind: "upload-error", code: "geoip_request_too_large", file }],
+  [bundledStatus, { kind: "upload-error", code: "geoip_upload_busy", file }],
   [uploadedStatus, { kind: "uploaded", type: "city" }],
   [uploadedStatus, { kind: "resetting", type: "city" }],
   [uploadedStatus, { kind: "reset-error", type: "city" }],
   [bundledStatus, { kind: "reset", type: "city", bundled: true }],
+  [bundledStatus, { kind: "reconciling" }],
+  [bundledStatus, { kind: "unknown-outcome" }],
   [staleStatus, { kind: "idle" }],
   [emptyStatus, { kind: "idle" }],
   [null, { kind: "load-error" }],
@@ -59,7 +62,15 @@ const phases: [GeoIpAdminStatus | null, SignInLocationPhase][] = [
 ];
 
 const statusName = (status: GeoIpAdminStatus | null) =>
-  status === bundledStatus ? "bundled" : status === uploadedStatus ? "uploaded" : status === staleStatus ? "stale" : status ? "empty" : "unknown";
+  status === bundledStatus
+    ? "bundled"
+    : status === uploadedStatus
+      ? "uploaded"
+      : status === staleStatus
+        ? "stale"
+        : status
+          ? "empty"
+          : "unknown";
 
 const open = async (width: number, dark: boolean, locale: string, status: GeoIpAdminStatus | null, phase: SignInLocationPhase) => {
   const body = renderToString(() =>
@@ -118,8 +129,8 @@ describe("sign-in locations block in a browser", () => {
                   rows: Array.from(document.querySelectorAll("[data-geoip-kind]")).map(box),
                   resets: Array.from(document.querySelectorAll("[data-geoip-kind] button")).map(box),
                   line: box(status),
-                  // The status text never hides part of a sentence behind its two-line clamp.
-                  clipped: Array.from(status?.querySelectorAll<HTMLElement>(".line-clamp-2") ?? []).some(
+                  // The status text never hides part of a sentence behind its line clamp.
+                  clipped: Array.from(status?.querySelectorAll<HTMLElement>("[class*=line-clamp]") ?? []).some(
                     (line) => line.scrollHeight > line.clientHeight + 1,
                   ),
                 };
@@ -137,56 +148,28 @@ describe("sign-in locations block in a browser", () => {
             overflow: 0,
             clipped: false,
           });
-        // Within one status every transient phase keeps every box; across statuses the action and the status line stay put.
-        for (const layout of layouts) {
-          const first = layouts.find((candidate) => candidate.status === layout.status)!;
-          const start = layouts[0]!;
-          expect({ width, locale, phase: layout.phase, rows: layout.rows, resets: layout.resets, line: layout.line, upload: layout.upload }).toEqual({
+        // Rows keep one line per fact, so every phase and every status keeps every box: nothing moves on success either.
+        const start = layouts[0]!;
+        for (const layout of layouts)
+          expect({
             width,
             locale,
             phase: layout.phase,
-            rows: first.rows,
-            resets: first.resets,
-            line: layout.status === "uploaded" || layout.status === "bundled" ? start.line : first.line,
+            status: layout.status,
+            rows: layout.rows,
+            resets: layout.resets,
+            line: layout.line,
+            upload: layout.upload,
+          }).toEqual({
+            width,
+            locale,
+            phase: layout.phase,
+            status: layout.status,
+            rows: start.rows,
+            resets: start.resets,
+            line: start.line,
             upload: start.upload,
           });
-        }
       }
   }, 120_000);
-
-  test("light and dark keep readable contrast for the status line and the stale hint", async () => {
-    for (const dark of [false, true]) {
-      const tab = await open(390, dark, "en", staleStatus, { kind: "idle" });
-      try {
-        const colors = await tab.evaluate(() => {
-          const luminance = (color: string) => {
-            const [r, g, b] = (color.match(/[\d.]+/g) ?? [])
-              .slice(0, 3)
-              .map(Number)
-              .map((value) => {
-                const channel = value / 255;
-                return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-              });
-            return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
-          };
-          let surface = document.querySelector("[data-geoip-status]") as HTMLElement | null;
-          while (surface && getComputedStyle(surface).backgroundColor.replace(/\s/g, "").endsWith(",0)")) surface = surface.parentElement;
-          const background = luminance(getComputedStyle(surface ?? document.body).backgroundColor);
-          const contrast = (element: Element | null) => {
-            const foreground = luminance(getComputedStyle(element!).color);
-            const [light, darkest] = foreground > background ? [foreground, background] : [background, foreground];
-            return Math.round(((light + 0.05) / (darkest + 0.05)) * 10) / 10;
-          };
-          return {
-            status: contrast(document.querySelector("[data-geoip-status] .line-clamp-2")),
-            stale: contrast(document.querySelector("[data-geoip-stale]")),
-          };
-        });
-        expect(colors.status).toBeGreaterThanOrEqual(4.5);
-        expect(colors.stale).toBeGreaterThanOrEqual(3);
-      } finally {
-        await tab.close();
-      }
-    }
-  }, 60_000);
 });

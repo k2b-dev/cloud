@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
+import { Reader } from "mmdb-lib";
 import { GEOIP_MAX_DATABASE_BYTES, GEOIP_MAX_REQUEST_BYTES } from "../../contracts/geoip";
 import { openGeoIpDatabase } from "../../server/request-context/geoip";
 import { FIXTURE_EPOCH, mmdbFixture } from "../../server/request-context/geoip.test-fixture";
@@ -162,6 +163,29 @@ test("metadata determines the kind; IPv4 trees and unsupported types are rejecte
   expect(
     Buffer.byteLength(parseGeoIpUpload(mmdbFixture("city", { description: "界".repeat(200) })).metadata.description.en),
   ).toBeLessThanOrEqual(256);
+});
+
+test("readable metadata cannot hide corrupt or non-object records", () => {
+  expect(() => parseGeoIpUpload(mmdbFixture("city", { corruptData: true }))).toThrow(expect.objectContaining({ code: "geoip_invalid" }));
+  // Replace the first data map with a valid MMDB string, number or array.
+  for (const header of [[0x40], [0xc0], [0x00, 0x04]]) {
+    const bytes = mmdbFixture("city");
+    const dataOffset = new Reader(bytes).metadata.searchTreeSize + 16;
+    bytes.set(header, dataOffset);
+    expect(() => parseGeoIpUpload(bytes)).toThrow(expect.objectContaining({ code: "geoip_invalid" }));
+  }
+});
+
+test("valid uploads use a fixed, bounded probe across IPv4 and IPv6", () => {
+  const get = spyOn(Reader.prototype, "get");
+  try {
+    expect(parseGeoIpUpload(mmdbFixture("city")).kind).toBe("city");
+    expect(get).toHaveBeenCalledTimes(1030);
+    for (const address of ["0.0.0.0", "255.128.0.0", "2000::", "3ff0::", "8.8.8.8", "2001:4860:4860::8888"])
+      expect(get).toHaveBeenCalledWith(address);
+  } finally {
+    get.mockRestore();
+  }
 });
 
 test("a concurrent upload fails immediately and the flag clears after failure", async () => {

@@ -83,6 +83,7 @@ suite("GeoIP Postgres replacement, audit and multi-instance reload", () => {
     const sha256 = first.databases[0].upload!.sha256;
     for (const invalid of [
       new Uint8Array([1, 2, 3]),
+      mmdbFixture("city", { corruptData: true }),
       mmdbFixture("city", { ipVersion: 4 }),
       mmdbFixture("city", { databaseType: "Country" }),
     ])

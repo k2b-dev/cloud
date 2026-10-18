@@ -30,26 +30,26 @@ const text = (markup: string) => markup.replace(/<[^>]+>/g, " ").replace(/\s+/g,
 describe("sign-in locations block", () => {
   test("shows source, database type and build date per type with the DB-IP attribution link", () => {
     const markup = html(bundledStatus);
-    expect(text(markup)).toContain("Places Bundled DB-IP Lite snapshot · DBIP-City-Lite As of Oct 1, 2026");
-    expect(text(markup)).toContain("Network operators Bundled DB-IP Lite snapshot · DBIP-ASN-Lite (compat=GeoLite2-ASN) As of Oct 1, 2026");
+    expect(text(markup)).toContain("Places Bundled DB-IP Lite snapshot As of Oct 1, 2026 · DBIP-City-Lite");
+    expect(text(markup)).toContain("Network operators Bundled DB-IP Lite snapshot As of Oct 1, 2026 · DBIP-ASN-Lite (compat=GeoLite2-ASN)");
     expect(markup).toContain('href="https://db-ip.com"');
     expect(text(markup)).toContain("IP Geolocation by DB-IP");
     expect(markup).not.toContain("data-geoip-stale");
   });
 
   test("names the uploaded file and drops the attribution once no DB-IP data is active", () => {
-    expect(text(html(uploadedStatus))).toContain("Places Uploaded file · GeoLite2-City As of Oct 14, 2026");
+    expect(text(html(uploadedStatus))).toContain("Places Uploaded file As of Oct 14, 2026 · GeoLite2-City");
     // The ASN type still uses the bundled DB-IP data, so the attribution stays.
     expect(html(uploadedStatus)).toContain('href="https://db-ip.com"');
     const maxmind = html(maxmindStatus, "de");
-    expect(text(maxmind)).toContain("Netzbetreiber Hochgeladene Datei · GeoLite2-ASN Stand 14.10.2026");
+    expect(text(maxmind)).toContain("Netzbetreiber Hochgeladene Datei Stand 14.10.2026 · GeoLite2-ASN");
     expect(maxmind).not.toContain("db-ip.com");
   });
 
   test("a stale snapshot carries a calm hint in its row and in the status line", () => {
     const markup = html(staleStatus);
     expect(markup.match(/data-geoip-stale/g)).toHaveLength(2);
-    expect(text(markup)).toContain("As of Mar 1, 2026 · older than 6 months");
+    expect(text(markup)).toContain("As of Mar 1, 2026 · older than 6 months · DBIP-City-Lite");
     expect(text(markup)).toContain("Some data is older than 6 months. Update Cloud or upload a newer file.");
     expect(text(html(staleStatus, "de"))).toContain("Stand 01.03.2026 · älter als 6 Monate");
   });

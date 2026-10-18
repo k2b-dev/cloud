@@ -95,6 +95,7 @@ const mount = async (options: { initial?: GeoIpAdminStatus | null; locale?: stri
   const statusLine = () =>
     [...(root.querySelector("[data-geoip-status]")?.children ?? [])].map((node) => node.textContent?.replace(/\s+/g, " ").trim()).join(" ");
   const source = (kind: "city" | "asn") => root.querySelector(`[data-geoip-kind="${kind}"] [data-geoip-source]`)?.textContent ?? "";
+  const detail = (kind: "city" | "asn") => root.querySelector(`[data-geoip-kind="${kind}"] [data-geoip-date]`)?.textContent ?? "";
   const button = (label: string) => [...root.querySelectorAll("button")].find((node) => node.textContent?.trim().endsWith(label));
   const uploadButton = () => root.querySelector<HTMLButtonElement>("[data-geoip-upload]")!;
   const resetButton = (kind: "city" | "asn") => root.querySelector<HTMLButtonElement>(`[data-geoip-kind="${kind}"] button`)!;
@@ -116,6 +117,7 @@ const mount = async (options: { initial?: GeoIpAdminStatus | null; locale?: stri
     },
     statusLine,
     source,
+    detail,
     button,
     uploadButton,
     resetButton,
@@ -126,7 +128,7 @@ const mount = async (options: { initial?: GeoIpAdminStatus | null; locale?: stri
 describe("sign-in locations block", () => {
   test("an upload shows progress, then the check, then the new source in its row", async () => {
     const view = await mount();
-    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot · DBIP-City-Lite");
+    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot");
     expect(view.resetButton("city").disabled).toBe(true);
     const file = await view.choose();
     const xhr = FakeXhr.last!;
@@ -135,14 +137,15 @@ describe("sign-in locations block", () => {
     expect(view.uploadButton().disabled).toBe(true);
     xhr.progress(32, 100);
     await flush();
-    expect(view.statusLine()).toBe("Uploading dbip-city-lite-2026-11.mmdb.gz · 32 % Cancel");
+    expect(view.statusLine()).toBe("Uploading · 32 % Cancel");
     xhr.progress(100, 100);
     await flush();
-    expect(view.statusLine()).toBe("Checking dbip-city-lite-2026-11.mmdb.gz");
+    expect(view.statusLine()).toBe("Checking the file");
     xhr.respond(200, { ...uploadedStatus, kind: "city" });
     await flush();
     expect(view.statusLine()).toBe("Uploaded. Sign-in requests now use this file for places.");
-    expect(view.source("city")).toBe("Uploaded file · GeoLite2-City");
+    expect(view.source("city")).toBe("Uploaded file");
+    expect(view.detail("city")).toBe("As of Oct 14, 2026 · GeoLite2-City");
     expect(view.resetButton("city").disabled).toBe(false);
     expect(view.uploadButton().disabled).toBe(false);
   });
@@ -152,8 +155,8 @@ describe("sign-in locations block", () => {
     await view.choose("notes.txt");
     FakeXhr.last!.respond(422, { code: "geoip_invalid" });
     await flush();
-    expect(view.statusLine()).toBe("This is not a readable MMDB database. Nothing was changed. Choose another file");
-    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot · DBIP-City-Lite");
+    expect(view.statusLine()).toBe("This is not a readable MMDB database. Nothing was changed.");
+    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot");
     expect(FakeXhr.sent).toHaveLength(1);
   });
 
@@ -162,19 +165,50 @@ describe("sign-in locations block", () => {
     await view.choose("dbip-city-lite.mmdb");
     FakeXhr.last!.respond(413, "Payload Too Large");
     await flush();
-    expect(view.statusLine()).toBe("The file is too large to send. Upload it as .mmdb.gz. Nothing was changed. Choose another file");
+    expect(view.statusLine()).toBe("The file is too large to send. Upload it as .mmdb.gz.");
   });
 
-  test("an interrupted upload retries the same file", async () => {
+  test("an interrupted upload reads what is active, then retries the same file", async () => {
     const view = await mount();
     const file = await view.choose();
     FakeXhr.last!.onerror?.();
     await flush();
-    expect(view.statusLine()).toBe("The upload was interrupted. Try again. Try again");
+    await flush();
+    expect(view.requests).toEqual([{ url: "/api/admin/core/geoip", method: "GET" }]);
+    expect(view.statusLine()).toBe("The upload was interrupted. Nothing was changed. Try again");
     view.button("Try again")!.click();
     await flush();
     expect(FakeXhr.sent).toEqual([file, file]);
-    expect(view.statusLine()).toStartWith("Uploading dbip-city-lite-2026-11.mmdb.gz · 0 %");
+    expect(view.statusLine()).toStartWith("Uploading · 0 %");
+  });
+
+  test("a lost answer after a committed upload reports the upload, not a failure", async () => {
+    const view = await mount();
+    view.respondWith(() => Response.json(uploadedStatus));
+    await view.choose();
+    FakeXhr.last!.respond(502, "Bad Gateway");
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Uploaded. Sign-in requests now use this file for places.");
+    expect(view.source("city")).toBe("Uploaded file");
+  });
+
+  test("when Cloud cannot say what is active, the block says so and offers to load the status", async () => {
+    const view = await mount();
+    view.respondWith(() => {
+      throw new TypeError("offline");
+    });
+    await view.choose();
+    FakeXhr.last!.onerror?.();
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+    expect(view.uploadButton().disabled).toBe(false);
+    view.respondWith(() => Response.json(bundledStatus));
+    view.button("Load status")!.click();
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("City or ASN database in MMDB format, also as .mmdb.gz, up to 192 MiB unpacked.");
   });
 
   test("cancel aborts the upload and returns to the starting hint", async () => {
@@ -188,7 +222,7 @@ describe("sign-in locations block", () => {
     // A late answer of the cancelled request changes nothing.
     xhr.respond(200, { ...uploadedStatus, kind: "city" });
     await flush();
-    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot · DBIP-City-Lite");
+    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot");
   });
 
   test("offline disables upload and reset and says why in the status line", async () => {
@@ -208,13 +242,13 @@ describe("sign-in locations block", () => {
 
   test("a status the server could not read shows an error with a retry that loads it", async () => {
     const view = await mount({ initial: null });
-    expect(view.statusLine()).toBe("Could not load the sign-in location status. Try again");
+    expect(view.statusLine()).toBe("Could not load the status. Try again");
     expect(view.uploadButton().disabled).toBe(true);
     view.button("Try again")!.click();
     await flush();
     await flush();
     expect(view.requests).toEqual([{ url: "/api/admin/core/geoip", method: "GET" }]);
-    expect(view.source("asn")).toBe("Bundled DB-IP Lite snapshot · DBIP-ASN-Lite (compat=GeoLite2-ASN)");
+    expect(view.source("asn")).toBe("Bundled DB-IP Lite snapshot");
     expect(view.uploadButton().disabled).toBe(false);
   });
 
@@ -227,16 +261,33 @@ describe("sign-in locations block", () => {
     expect(view.confirm).toHaveBeenCalledTimes(1);
     expect(view.requests).toEqual([{ url: "/api/admin/core/geoip/city", method: "DELETE" }]);
     expect(view.statusLine()).toBe("Reset. Places use the bundled snapshot again.");
-    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot · DBIP-City-Lite");
+    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot");
   });
 
-  test("a failed reset keeps the uploaded file and offers a retry", async () => {
+  test("a failed reset reads what is active, keeps the uploaded file and offers a retry", async () => {
     const view = await mount({ initial: uploadedStatus, locale: "de" });
-    view.respondWith(() => Response.json({ code: "INTERNAL" }, { status: 500 }));
+    view.respondWith((_url, method) =>
+      method === "DELETE" ? Response.json({ code: "INTERNAL" }, { status: 500 }) : Response.json(uploadedStatus),
+    );
     view.resetButton("city").click();
     await flush();
     await flush();
+    await flush();
+    expect(view.requests.map((request) => request.method)).toEqual(["DELETE", "GET"]);
     expect(view.statusLine()).toBe("Zurücksetzen hat nicht geklappt. Nichts wurde geändert. Erneut versuchen");
-    expect(view.source("city")).toBe("Hochgeladene Datei · GeoLite2-City");
+    expect(view.source("city")).toBe("Hochgeladene Datei");
+  });
+
+  test("a reset whose answer was lost after the commit reports the reset", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    view.respondWith((_url, method) => {
+      if (method === "DELETE") throw new TypeError("connection reset");
+      return Response.json(bundledStatus);
+    });
+    view.resetButton("city").click();
+    await flush();
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Reset. Places use the bundled snapshot again.");
   });
 });

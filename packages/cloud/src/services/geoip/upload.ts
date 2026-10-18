@@ -4,6 +4,16 @@ import { Reader } from "mmdb-lib";
 import { GEOIP_MAX_DATABASE_BYTES, GEOIP_MAX_REQUEST_BYTES, type GeoIpErrorCode, type GeoIpKind } from "../../contracts/geoip";
 import { openGeoIpDatabase, truncateUtf8 } from "../../server/request-context/geoip";
 
+const probeAddresses = [
+  ...Array.from({ length: 512 }, (_, i) => [`${i >> 1}.${(i % 2) * 128}.0.0`, `${(0x2000 + i * 16).toString(16)}::`]).flat(),
+  "1.1.1.1",
+  "8.8.8.8",
+  "9.9.9.9",
+  "2001:4860:4860::8888",
+  "2606:4700:4700::1111",
+  "2a01:4f8::1",
+];
+
 const errors = {
   geoip_too_large: { status: 413, message: "The GeoIP database or request exceeds the upload limit." },
   geoip_empty: { status: 400, message: "The GeoIP upload is empty." },
@@ -117,6 +127,11 @@ export const parseGeoIpUpload = (bytes: Uint8Array) => {
       throw new GeoIpError("geoip_invalid");
     // Pretty JSON is larger than PostgreSQL jsonb text, including its separator spaces.
     if (Buffer.byteLength(JSON.stringify(subset, null, 1)) > 4096) throw new GeoIpError("geoip_invalid");
+    // A bounded probe catches gross corruption, not every bad record; request lookups still fail closed.
+    for (const address of probeAddresses) {
+      const record: unknown = database.reader.get(address);
+      if (record !== null && (typeof record !== "object" || Array.isArray(record))) throw new GeoIpError("geoip_invalid");
+    }
     return { kind, database, metadata: subset };
   } catch (error) {
     if (error instanceof GeoIpError) throw error;

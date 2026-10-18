@@ -1,5 +1,5 @@
 import type { GeoIpAdminDatabase, GeoIpAdminStatus, GeoIpKind } from "@k2b/cloud/contracts";
-import { announce, Button, prompts, SettingsSection, Tooltip, useLocale } from "@k2b/ui";
+import { announce, Button, InlineGuidance, prompts, SettingsSection, Tooltip, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { signInLocationMessages } from "./sign-in-location-messages";
 
@@ -20,13 +20,16 @@ export type SignInLocationPhase =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "load-error" }
-  | { kind: "uploading"; name: string; percent: number }
-  | { kind: "checking"; name: string }
+  | { kind: "uploading"; percent: number }
+  | { kind: "checking" }
   | { kind: "upload-error"; code: ErrorCode; file: File }
   | { kind: "uploaded"; type: GeoIpKind }
   | { kind: "resetting"; type: GeoIpKind }
   | { kind: "reset-error"; type: GeoIpKind }
-  | { kind: "reset"; type: GeoIpKind; bundled: boolean };
+  | { kind: "reset"; type: GeoIpKind; bundled: boolean }
+  /** After a write without a clear answer, the block reads what is active before it allows another change. */
+  | { kind: "reconciling" }
+  | { kind: "unknown-outcome" };
 
 type Phase<K extends SignInLocationPhase["kind"]> = Extract<SignInLocationPhase, { kind: K }>;
 const isPhase = <K extends SignInLocationPhase["kind"]>(value: SignInLocationPhase, kind: K): value is Phase<K> => value.kind === kind;
@@ -91,7 +94,7 @@ export default function SignInLocations(props: {
     const value = phase();
     return isPhase(value, kind) ? value : false;
   };
-  const busy = () => ["loading", "uploading", "checking", "resetting"].includes(phase().kind);
+  const busy = () => ["loading", "uploading", "checking", "resetting", "reconciling"].includes(phase().kind);
   const actionsDisabled = () => busy() || !online() || !status();
   const anyStale = () => status()?.databases.some((database) => database.stale) ?? false;
   const maxBytes = () => formatBytes(status()?.limits.maxDatabaseBytes ?? 192 * 1024 * 1024, locale());
@@ -109,8 +112,44 @@ export default function SignInLocations(props: {
     }
   };
 
+  /** Reads the active databases after a write whose outcome is unknown; null when Cloud cannot be reached. */
+  const reconcile = async (): Promise<GeoIpAdminStatus | null> => {
+    setPhase({ kind: "reconciling" });
+    try {
+      const response = await fetch(API, { credentials: "same-origin", headers: { accept: "application/json" } });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok || !isStatus(body)) return null;
+      setStatus(body);
+      return body;
+    } catch {
+      return null;
+    }
+  };
+
+  const unknownOutcome = () => {
+    setPhase({ kind: "unknown-outcome" });
+    announce(t().unknownOutcome, { politeness: "assertive" });
+  };
+
+  /** A lost answer or a server error leaves the upload's outcome open; the active databases decide it. */
+  const settleUpload = async (code: "interrupted" | "failed", file: File, before: GeoIpAdminStatus | null) => {
+    const after = await reconcile();
+    if (!after) return unknownOutcome();
+    const changed = after.databases.find(
+      (database, index) => database.upload?.sha256 !== before?.databases[index]?.upload?.sha256 && database.source === "uploaded",
+    );
+    if (changed) {
+      setPhase({ kind: "uploaded", type: changed.kind });
+      announce(changed.kind === "city" ? t().uploadedCity : t().uploadedAsn);
+      return;
+    }
+    setPhase({ kind: "upload-error", code, file });
+    announce(errorText(code), { politeness: "assertive" });
+  };
+
   const upload = (file: File) => {
-    setPhase({ kind: "uploading", name: file.name, percent: 0 });
+    const before = status();
+    setPhase({ kind: "uploading", percent: 0 });
     const xhr = new XMLHttpRequest();
     request = xhr;
     xhr.open("PUT", API);
@@ -119,10 +158,10 @@ export default function SignInLocations(props: {
     xhr.upload.onprogress = (event) => {
       if (request !== xhr || !event.lengthComputable) return;
       const percent = Math.min(100, Math.floor((event.loaded / Math.max(1, event.total)) * 100));
-      setPhase(percent >= 100 ? { kind: "checking", name: file.name } : { kind: "uploading", name: file.name, percent });
+      setPhase(percent >= 100 ? { kind: "checking" } : { kind: "uploading", percent });
     };
     xhr.upload.onload = () => {
-      if (request === xhr) setPhase({ kind: "checking", name: file.name });
+      if (request === xhr) setPhase({ kind: "checking" });
     };
     xhr.onload = () => {
       if (request !== xhr) return;
@@ -135,14 +174,14 @@ export default function SignInLocations(props: {
         return;
       }
       const code = errorCode(xhr.status, body);
+      if (code === "interrupted" || code === "failed") return void settleUpload(code, file, before);
       setPhase({ kind: "upload-error", code, file });
       announce(errorText(code), { politeness: "assertive" });
     };
     xhr.onerror = () => {
       if (request !== xhr) return;
       request = undefined;
-      setPhase({ kind: "upload-error", code: "interrupted", file });
-      announce(t().interrupted, { politeness: "assertive" });
+      void settleUpload("interrupted", file, before);
     };
     xhr.send(file);
   };
@@ -183,6 +222,16 @@ export default function SignInLocations(props: {
       setPhase({ kind: "reset", type: database.kind, bundled });
       announce(bundled ? t().resetDoneBundled({ type }) : t().resetDoneEmpty({ type }));
     } catch {
+      // The delete may have committed before the answer was lost: read what is active before offering a retry.
+      const after = await reconcile();
+      if (!after) return unknownOutcome();
+      const entry = after.databases.find((item) => item.kind === database.kind);
+      if (entry?.source !== "uploaded") {
+        const bundled = entry?.source === "bundled";
+        setPhase({ kind: "reset", type: database.kind, bundled });
+        announce(bundled ? t().resetDoneBundled({ type }) : t().resetDoneEmpty({ type }));
+        return;
+      }
       setPhase({ kind: "reset-error", type: database.kind });
       announce(t().resetFailed, { politeness: "assertive" });
     }
@@ -209,25 +258,32 @@ export default function SignInLocations(props: {
     code === "geoip_empty";
 
   const sourceLine = (database: GeoIpAdminDatabase) => {
+    if (!status()) return phase().kind === "loading" ? t().loadingStatus : t().unknown;
     if (!database.source) return t().none;
-    const source = database.source === "uploaded" ? t().uploaded : t().bundled;
-    return database.databaseType ? `${source} · ${database.databaseType}` : source;
+    return database.source === "uploaded" ? t().uploaded : t().bundled;
   };
 
-  const dateLine = (database: GeoIpAdminDatabase): JSX.Element => {
+  /** Date first, then the stale hint, then the database type: on a phone the line cuts the type, never the date. */
+  const detailLine = (database: GeoIpAdminDatabase): JSX.Element => {
+    if (!status()) return "\u00a0";
     if (!database.source || !database.buildDate) return database.kind === "city" ? t().noneCity : t().noneAsn;
     return (
       <>
         {t().asOf({ date: date(database.buildDate) })}
         <Show when={database.stale}>
           {" · "}
-          <span class="text-warning" data-geoip-stale="">
+          <span class="text-[var(--k2b-warning-text)]" data-geoip-stale="">
             <i class="ti ti-clock-exclamation" aria-hidden="true" /> {t().stale}
           </span>
         </Show>
+        <Show when={database.databaseType}>{(type) => ` · ${type()}`}</Show>
       </>
     );
   };
+  const detailTitle = (database: GeoIpAdminDatabase) =>
+    status() && database.source && database.buildDate
+      ? [t().asOf({ date: date(database.buildDate) }), database.stale ? t().stale : null, database.databaseType].filter(Boolean).join(" · ")
+      : undefined;
 
   const placeholderDatabase = (kind: GeoIpKind): GeoIpAdminDatabase => ({
     kind,
@@ -283,11 +339,11 @@ export default function SignInLocations(props: {
               />
               <div class="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span class="text-sm font-medium text-primary">{typeName(database.kind)}</span>
-                <span class="text-sm break-words text-secondary" data-geoip-source="">
-                  {status() ? sourceLine(database) : phase().kind === "loading" ? t().loadingStatus : t().unknown}
+                <span class="truncate text-sm text-secondary" data-geoip-source="">
+                  {sourceLine(database)}
                 </span>
-                <span class="text-xs text-dimmed" data-geoip-date="">
-                  {phase().kind === "loading" && !status() ? " " : dateLine(database)}
+                <span class="truncate text-xs text-dimmed" data-geoip-date="" title={detailTitle(database)}>
+                  {detailLine(database)}
                 </span>
               </div>
               <Tooltip.Anchor
@@ -311,20 +367,17 @@ export default function SignInLocations(props: {
         </For>
       </ul>
 
-      <div class="flex min-h-10 min-w-0 items-center gap-3 text-sm" data-geoip-status="" role="status">
+      {/* Reserved for the longest message: two lines beside an action, three on a phone. */}
+      <div class="flex min-h-10 min-w-0 items-center gap-3 max-sm:min-h-15" data-geoip-status="" role="status">
         <Switch>
           <Match when={!online()}>
-            <StatusText icon="ti ti-wifi-off" tone="text-secondary">
-              {t().offline}
-            </StatusText>
+            <StatusText icon="ti ti-wifi-off">{t().offline}</StatusText>
           </Match>
-          <Match when={phase().kind === "loading"}>
-            <StatusText icon="ti ti-loader-2 animate-spin" tone="text-secondary">
-              {t().loadingStatus}
-            </StatusText>
+          <Match when={current("loading")}>
+            <StatusText loading>{t().loadingStatus}</StatusText>
           </Match>
-          <Match when={phase().kind === "load-error"}>
-            <StatusText icon="ti ti-alert-triangle" tone="text-danger">
+          <Match when={current("load-error")}>
+            <StatusText tone="danger" icon="ti ti-alert-triangle">
               {t().loadFailed}
             </StatusText>
             <Button type="button" variant="secondary" size="sm" onClick={() => void load()}>
@@ -332,10 +385,10 @@ export default function SignInLocations(props: {
             </Button>
           </Match>
           <Match when={current("uploading")}>
-            {(current) => (
+            {(upload) => (
               <>
-                <StatusText icon="ti ti-upload" tone="text-primary">
-                  <span class="tabular-nums">{t().progress({ name: current().name, percent: String(current().percent) })}</span>
+                <StatusText tone="info" icon="ti ti-upload">
+                  <span class="tabular-nums">{t().progress({ percent: String(upload().percent) })}</span>
                 </StatusText>
                 <Button type="button" variant="ghost" size="sm" onClick={cancel}>
                   {t().cancel}
@@ -344,49 +397,50 @@ export default function SignInLocations(props: {
             )}
           </Match>
           <Match when={current("checking")}>
-            {(current) => (
-              <StatusText icon="ti ti-loader-2 animate-spin" tone="text-primary">
-                {t().checking({ name: current().name })}
-              </StatusText>
-            )}
+            <StatusText tone="info" loading>
+              {t().checking}
+            </StatusText>
           </Match>
           <Match when={current("upload-error")}>
-            {(current) => (
+            {(failure) => (
               <>
-                <StatusText icon="ti ti-alert-triangle" tone="text-danger">
-                  {errorText(current().code)}
+                <StatusText tone="danger" icon="ti ti-alert-triangle">
+                  {errorText(failure().code)}
                 </StatusText>
-                <Show
-                  when={fileProblem(current().code)}
-                  fallback={
-                    <Button type="button" variant="secondary" size="sm" onClick={() => upload(current().file)}>
-                      {t().retry}
-                    </Button>
-                  }
-                >
-                  <Button type="button" variant="secondary" size="sm" onClick={choose}>
-                    {t().chooseAnother}
+                {/* A file problem is fixed with another file, through the Upload action above. */}
+                <Show when={!fileProblem(failure().code)}>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => upload(failure().file)}>
+                    {t().retry}
                   </Button>
                 </Show>
               </>
             )}
           </Match>
           <Match when={current("uploaded")}>
-            {(current) => (
-              <StatusText icon="ti ti-circle-check" tone="text-success">
-                {current().type === "city" ? t().uploadedCity : t().uploadedAsn}
+            {(done) => (
+              <StatusText tone="success" icon="ti ti-circle-check">
+                {done().type === "city" ? t().uploadedCity : t().uploadedAsn}
               </StatusText>
             )}
           </Match>
-          <Match when={phase().kind === "resetting"}>
-            <StatusText icon="ti ti-loader-2 animate-spin" tone="text-secondary">
-              {t().resetting}
+          <Match when={current("reconciling")}>
+            <StatusText loading>{t().reconciling}</StatusText>
+          </Match>
+          <Match when={current("unknown-outcome")}>
+            <StatusText tone="danger" icon="ti ti-alert-triangle">
+              {t().unknownOutcome}
             </StatusText>
+            <Button type="button" variant="secondary" size="sm" onClick={() => void load()}>
+              {t().loadStatus}
+            </Button>
+          </Match>
+          <Match when={current("resetting")}>
+            <StatusText loading>{t().resetting}</StatusText>
           </Match>
           <Match when={current("reset-error")}>
-            {(current) => (
+            {(failure) => (
               <>
-                <StatusText icon="ti ti-alert-triangle" tone="text-danger">
+                <StatusText tone="danger" icon="ti ti-alert-triangle">
                   {t().resetFailed}
                 </StatusText>
                 <Button
@@ -394,7 +448,7 @@ export default function SignInLocations(props: {
                   variant="secondary"
                   size="sm"
                   onClick={() => {
-                    const database = status()?.databases.find((entry) => entry.kind === current().type);
+                    const database = status()?.databases.find((entry) => entry.kind === failure().type);
                     if (database) void reset(database);
                   }}
                 >
@@ -404,16 +458,16 @@ export default function SignInLocations(props: {
             )}
           </Match>
           <Match when={current("reset")}>
-            {(current) => (
-              <StatusText icon="ti ti-circle-check" tone="text-success">
-                {current().bundled
-                  ? t().resetDoneBundled({ type: typeName(current().type) })
-                  : t().resetDoneEmpty({ type: typeName(current().type) })}
+            {(done) => (
+              <StatusText tone="success" icon="ti ti-circle-check">
+                {done().bundled
+                  ? t().resetDoneBundled({ type: typeName(done().type) })
+                  : t().resetDoneEmpty({ type: typeName(done().type) })}
               </StatusText>
             )}
           </Match>
           <Match when={true}>
-            <StatusText icon={anyStale() ? "ti ti-clock-exclamation" : "ti ti-info-circle"} tone="text-dimmed">
+            <StatusText icon={anyStale() ? "ti ti-clock-exclamation" : "ti ti-info-circle"}>
               {anyStale() ? t().staleAdvice : t().formatHint({ size: maxBytes() })}
             </StatusText>
           </Match>
@@ -439,11 +493,10 @@ export default function SignInLocations(props: {
   );
 }
 
-function StatusText(props: { icon: string; tone: string; children: JSX.Element }) {
+function StatusText(props: { icon?: string; tone?: "info" | "success" | "danger"; loading?: boolean; children: JSX.Element }) {
   return (
-    <span class={`flex min-w-0 flex-1 items-start gap-2 ${props.tone}`}>
-      <i class={`${props.icon} mt-0.5 shrink-0`} aria-hidden="true" />
-      <span class="min-w-0 line-clamp-2">{props.children}</span>
-    </span>
+    <InlineGuidance class="flex-1" tone={props.tone} icon={props.icon} loading={props.loading}>
+      <span class="line-clamp-2 max-sm:line-clamp-3">{props.children}</span>
+    </InlineGuidance>
   );
 }
