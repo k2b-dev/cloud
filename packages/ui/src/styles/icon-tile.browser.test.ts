@@ -45,6 +45,12 @@ const fixtures = [
     size: 40,
     markup: `<a href="#" class="k2b-paper k2b-link-card" data-interactive="true" data-parent><div class="k2b-link-card__icon k2b-icon-tile"><i class="ti ti-file k2b-link-card__glyph"></i></div><div class="k2b-link-card__copy">Notes</div></a>`,
   },
+  // Every card colour keeps its glyph readable on its own chip.
+  ...(["blue", "emerald", "violet", "orange", "red", "amber", "zinc", "cyan", "rose"] as const).map((color) => ({
+    kind: `link-card-${color}`,
+    size: 40,
+    markup: `<a href="#" class="k2b-paper k2b-link-card" data-color="${color}" data-interactive="true" data-parent><div class="k2b-link-card__icon k2b-icon-tile"><i class="ti ti-file k2b-link-card__glyph"></i></div><div class="k2b-link-card__copy">Notes</div></a>`,
+  })),
   {
     kind: "file-tree",
     size: 20,

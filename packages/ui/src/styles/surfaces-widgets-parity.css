@@ -177,14 +177,15 @@
    action colour outside a host that maps it. */
 .k2b-ui .k2b-link-card:not([data-color]) .k2b-link-card__icon { color: var(--k2b-app-workspace-active); }
 
+/* Each light glyph keeps 3:1 on its own chip, also over hover and muted fills. */
 .k2b-ui .k2b-link-card[data-color="blue"] .k2b-link-card__icon { color: var(--k2b-accent-600); }
-.k2b-ui .k2b-link-card[data-color="emerald"] .k2b-link-card__icon { color: var(--k2b-success-600); }
+.k2b-ui .k2b-link-card[data-color="emerald"] .k2b-link-card__icon { color: #047857; }
 .k2b-ui .k2b-link-card[data-color="violet"] .k2b-link-card__icon { color: #7c3aed; }
-.k2b-ui .k2b-link-card[data-color="orange"] .k2b-link-card__icon { color: #ea580c; }
+.k2b-ui .k2b-link-card[data-color="orange"] .k2b-link-card__icon { color: #c2410c; }
 .k2b-ui .k2b-link-card[data-color="red"] .k2b-link-card__icon { color: var(--k2b-danger-600); }
-.k2b-ui .k2b-link-card[data-color="amber"] .k2b-link-card__icon { color: #d97706; }
+.k2b-ui .k2b-link-card[data-color="amber"] .k2b-link-card__icon { color: #b45309; }
 .k2b-ui .k2b-link-card[data-color="zinc"] .k2b-link-card__icon { color: var(--k2b-neutral-600); }
-.k2b-ui .k2b-link-card[data-color="cyan"] .k2b-link-card__icon { color: #0891b2; }
+.k2b-ui .k2b-link-card[data-color="cyan"] .k2b-link-card__icon { color: #0e7490; }
 .k2b-ui .k2b-link-card[data-color="rose"] .k2b-link-card__icon { color: #e11d48; }
 
 .k2b-ui[data-theme="dark"] .k2b-link-card[data-color="blue"] .k2b-link-card__icon,
