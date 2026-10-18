@@ -104,9 +104,21 @@ export function installPanelSlot(): () => void {
     slot.dataset.state = "closed";
     if (status) status.textContent = "";
   };
-  const load = (replace = false) => {
+  const target = () => {
     const url = new URL(provider.href, location.origin);
     if (search !== undefined) url.search = search;
+    return url;
+  };
+  // The page the iframe shows now; a reader may have moved on inside the panel since it loaded.
+  const shownHref = () => {
+    try {
+      return frame?.contentWindow?.location.href;
+    } catch {
+      return undefined;
+    }
+  };
+  const load = (replace = false) => {
+    const url = target();
     if (!replace && frame?.src === url.href) return;
     frame?.remove();
     // The server validates every provider path; the iframe still never leaves this origin.
@@ -166,7 +178,9 @@ export function installPanelSlot(): () => void {
     slot.dataset.provider = provider.id;
     adoptStoredWidth(true);
     seedWidth();
-    load();
+    // A requested search is a destination: it replaces a page reached inside the panel.
+    const shown = shownHref();
+    load(search !== undefined && shown !== undefined && shown !== "about:blank" && shown !== target().href);
     writeCookie();
     update();
     frame?.focus();

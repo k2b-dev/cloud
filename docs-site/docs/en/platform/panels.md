@@ -96,7 +96,8 @@ closePanel();
 the provider is not visible. Keep the caller's ordinary navigation in that
 case. An accepted request loads the controller on demand, parks any open
 workspace detail drawer, and moves focus into the panel. `search` replaces the
-provider URL's query; a leading `?` is optional. Values other than strings and
+provider URL's query; a leading `?` is optional. A request with `search` loads
+that address even when the reader has moved to another page inside the panel. Values other than strings and
 strings longer than 2048 characters are ignored. Search is never stored in the
 panel cookie.
 Inside a provider page, `openPanel()` returns `false` because that page has no

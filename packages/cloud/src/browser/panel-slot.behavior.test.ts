@@ -203,6 +203,22 @@ else {
     expect(h.slot.querySelector(".k2b-placeholder__description")?.textContent).toContain("second panel");
   });
 
+  test("a requested search replaces a page reached inside the panel and keeps the page it already shows", () => {
+    const h = setup();
+    const show = (frame: HTMLIFrameElement, path: string) =>
+      Object.defineProperty(frame, "contentWindow", { configurable: true, value: { location: { href: `${location.origin}${path}` } } });
+    h.open("fixture", "q=bolts");
+    const first = h.frame();
+    show(first, "/app/fixture/panel/details?item=1");
+    h.open("fixture", "q=bolts");
+    expect(first.isConnected).toBe(false);
+    const second = h.frame();
+    expect(second.getAttribute("src")).toBe(`${location.origin}/app/fixture/panel?q=bolts`);
+    show(second, "/app/fixture/panel?q=bolts");
+    h.open("fixture", "q=bolts");
+    expect(h.frame()).toBe(second);
+  });
+
   test("close falls back to Main when the opener disappears, and removes its temporary tabindex on blur", () => {
     const h = setup();
     h.open();
