@@ -70,7 +70,8 @@ original `Accept-Encoding`, so they can serve precompressed static files.
 These responses stay unchanged:
 
 - responses that already have a `Content-Encoding`;
-- responses with `Cache-Control: no-transform`;
+- responses with `Cache-Control: no-transform`, and answers to requests that
+  send it;
 - `206` and other responses with `Content-Range`, answers to `HEAD`, and
   `1xx`, `204`, and `304` responses;
 - bodies with a `Content-Length` below 1024 bytes;

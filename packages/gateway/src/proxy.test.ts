@@ -1055,3 +1055,31 @@ describe("cross-site requests", () => {
     );
   });
 });
+
+describe("revalidation and client opt-out", () => {
+  test("a 304 with its own Vary keeps the gateway's cache keys", async () => {
+    await withCompressionGateway(
+      () => new Response(null, { status: 304, headers: { Vary: "Cookie", ETag: '"mail-v1"' } }),
+      async (url) => {
+        const response = await fetch(url, { headers: { "Accept-Encoding": "br" }, decompress: false });
+        expect(response.status).toBe(304);
+        expect(response.headers.get("Vary")).toBe("Cookie, Accept-Encoding, Sec-Fetch-Site");
+      },
+    );
+  });
+
+  test("a request with Cache-Control: no-transform gets the identity body", async () => {
+    await withCompressionGateway(
+      () => new Response(mailboxHtml, { headers: { "Content-Type": "text/html" } }),
+      async (url) => {
+        const response = await fetch(url, {
+          headers: { "Accept-Encoding": "br, gzip", "Cache-Control": "no-transform" },
+          decompress: false,
+        });
+        expect(response.headers.has("Content-Encoding")).toBe(false);
+        expect(response.headers.get("Vary")).toBe("Accept-Encoding, Sec-Fetch-Site");
+        expect(await response.text()).toBe(mailboxHtml);
+      },
+    );
+  });
+});

@@ -20,11 +20,15 @@ export const chooseEncoding = (acceptEncoding: string | null): Encoding | null =
   return br >= gzip ? "br" : "gzip";
 };
 
+/** Whether a Cache-Control value carries the no-transform directive (quoted values ignored). */
+const hasNoTransform = (headers: Headers): boolean =>
+  (headers.get("Cache-Control")?.match(/(?:[^,"]|"[^"]*")+/g) ?? []).some(
+    (directive) => directive.split("=", 1)[0]?.trim().toLowerCase() === "no-transform",
+  );
+
 export const isCompressionEligible = (method: string, status: number, hasBody: boolean, headers: Headers): boolean => {
   if (method === "HEAD" || status < 200 || [204, 206, 304].includes(status) || !hasBody) return false;
-  if (headers.has("Content-Range") || headers.has("Content-Encoding")) return false;
-  const directives = headers.get("Cache-Control")?.match(/(?:[^,"]|"[^"]*")+/g) ?? [];
-  if (directives.some((directive) => directive.split("=", 1)[0]?.trim().toLowerCase() === "no-transform")) return false;
+  if (headers.has("Content-Range") || headers.has("Content-Encoding") || hasNoTransform(headers)) return false;
   const type = headers.get("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
   if (type !== "text/html" && type !== "application/json" && !/^application\/[^\s/;]+\+json$/.test(type)) return false;
   return !headers.has("Content-Length") || Number(headers.get("Content-Length")) >= MIN_COMPRESSION_BYTES;
@@ -115,20 +119,27 @@ export const encodeStream = (
   return output;
 };
 
+/** The encoding depends on both request headers, so caches must key on both. */
+const mergeVary = (headers: Headers) => {
+  const vary = headers.get("Vary");
+  const tokens = vary?.split(",").map((token) => token.trim().toLowerCase()) ?? [];
+  if (tokens.includes("*")) return;
+  const missing = ["Accept-Encoding", "Sec-Fetch-Site"].filter((name) => !tokens.includes(name.toLowerCase()));
+  if (missing.length > 0) headers.set("Vary", [vary, ...missing].filter(Boolean).join(", "));
+};
+
 /**
  * Compress an eligible HTML or JSON body for a same-origin, direct, or non-browser
  * request. Mutates only the copied client headers; any other body stays byte-identical.
  */
 export const compressBody = (req: Request, response: Response, headers: Headers): ReadableStream<Uint8Array> | null => {
   const body = response.body;
+  // A cache replaces the stored Vary with the one on a 304, so keep the gateway's keys there.
+  if (response.status === 304 && headers.has("Vary")) mergeVary(headers);
   if (!body || !isCompressionEligible(req.method, response.status, true, headers)) return body;
-  // The encoding depends on both request headers, so caches must key on both.
-  const vary = headers.get("Vary");
-  const tokens = vary?.split(",").map((token) => token.trim().toLowerCase()) ?? [];
-  if (!tokens.includes("*")) {
-    const missing = ["Accept-Encoding", "Sec-Fetch-Site"].filter((name) => !tokens.includes(name.toLowerCase()));
-    if (missing.length > 0) headers.set("Vary", [vary, ...missing].filter(Boolean).join(", "));
-  }
+  mergeVary(headers);
+  // The client's own no-transform asks intermediaries to leave the content unchanged.
+  if (hasNoTransform(req.headers)) return body;
   // BREACH needs credentialed requests whose input the attacker chooses. Session
   // cookies are SameSite=Lax, so such requests are cross-site navigations; they
   // stay identity. Current browsers send Sec-Fetch-Site on HTTPS requests; a
