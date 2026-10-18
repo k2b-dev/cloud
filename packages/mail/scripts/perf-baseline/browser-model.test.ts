@@ -82,7 +82,15 @@ test("interaction samples count API requests and bytes and reject incomplete ent
   ).toBe(false);
   expect(interactionSampleSchema.safeParse({ ...sample, durationMs: Number.NaN }).success).toBe(false);
   expect(interactionResultSchema.safeParse({ id: "unknown", profiles: [] }).success).toBe(false);
-  expect(interactionIds).toEqual(["folder-switch", "conversation-open", "list-scroll", "search-submit", "live-arrival", "compose-open"]);
+  expect(interactionIds).toEqual([
+    "folder-switch",
+    "conversation-open",
+    "conversation-open-large",
+    "list-scroll",
+    "search-submit",
+    "live-arrival",
+    "compose-open",
+  ]);
   const summary = summarizeInteraction([10, 40, 20, 30].map((ms) => interactionSample(ms, [request("/api/a", ms)])));
   expect(summary).toEqual({ durationMs: { median: 25, p95: 40, min: 10, max: 40 }, apiRequests: 1, apiBytes: 25 });
   expect(() => summarizeInteraction([])).toThrow();
@@ -271,6 +279,28 @@ test("results without a browser part still parse; browser sections render in the
   expect(summary).toContain("### folder-switch");
   expect(summary).toContain("| chromium phone | 640 | 640 | 640 / 640 | 1 | 46.9 KB |");
   expect(summary).toContain("GET /api/mail/mailboxes/Mbx001/workspace-route 46.9 KB identity");
+});
+
+test("older results without conversation-open-large still parse and compare", () => {
+  const previous = parsePrevious(JSON.parse(JSON.stringify({ ...exampleResult(), browser: browserSection() })));
+  const current = { ...exampleResult(), browser: browserSection() };
+  current.browser.interactions.push({
+    id: "conversation-open-large",
+    profiles: structuredClone(current.browser.interactions[0]!.profiles),
+  });
+  const parsed = resultSchema.parse(current);
+  expect(previous.browser?.interactions.some(({ id }) => id === "conversation-open-large")).toBe(false);
+  expect(timeMetrics(previous).has("interaction.conversation-open-large.chromium.phone.median")).toBe(false);
+  expect(timeMetrics(parsed).get("interaction.conversation-open-large.chromium.phone.median")).toBe(640);
+  const summary = renderSummary(parsed, previous);
+  expect(summary).toContain("| detail-small | totalMs | 0.0 |");
+  expect(summary).toContain("### conversation-open-large");
+  expect(summary.split("### conversation-open-large")[1]!.split("### list-scroll")[0]).toContain(
+    "| chromium phone | 640 | 640 | 640 / 640 | 1 | 46.9 KB |",
+  );
+  // Browser interactions have no delta columns; an absent previous entry must not
+  // manufacture a zero or prevent the current measurements from rendering.
+  expect(summary.split("## Median deltas")[1]!.split("## detail-small: attribution")[0]).not.toContain("conversation-open-large");
 });
 
 test("time metrics index server, load, trace and interaction numbers by stable ids", () => {

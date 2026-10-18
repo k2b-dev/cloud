@@ -331,7 +331,7 @@ The Document transfer column shows the HTML body download time
 (`responseEnd - responseStart`), its transferred bytes, and its content
 encoding. An absent `content-encoding` header is recorded as `identity`.
 
-Six interactions share one definition for both engines and both profiles.
+Seven interactions share one definition for both engines and both profiles.
 Each sample opens its start page in its own fresh page, waits for TTI, and
 then times one action:
 
@@ -339,6 +339,7 @@ then times one action:
 | --- | --- | --- |
 | `folder-switch` | Click the fixture's first custom folder in the navigation; on the phone, in the opened app menu | The heading names that folder and its first row is on screen |
 | `conversation-open` | In the fixture's first custom folder, click the first conversation whose newest message has a body. Live arrivals land in the Inbox as envelopes without a body, so this folder keeps a body to render after any number of runs | The body of that newest message is on screen in the reader; an HTML body also needs its message frame to report its laid-out height |
+| `conversation-open-large` | Start with a mailbox-wide exact subject search for conversation 0 (`Project correspondence 0`, newest first), then click its conversation row. This isolates `plan.shape.largestThreadId` on page 1 without scrolling; live arrivals have different subjects. Before each sample, the workspace API must return that row on page 1 or the sample fails with the start href | The reader loads the newest 100 messages of the thread (180 messages by default). The newest message's body is on screen, with a body-format marker; an HTML body also needs its frame to report its laid-out height. A missing newest body fails the sample |
 | `list-scroll` | Scroll the list to its end | The first row of page 2 is in the list |
 | `search-submit` | Type the fixture's rare word into the search field and press Enter in one driver call; the timer starts at the Enter keydown | The heading names the search and its first result is on screen |
 | `live-arrival` | A message is ingested through `ingestEnvelope` against the run's database | The new row is on screen |
@@ -416,8 +417,6 @@ no lock.
   Real sync wakes the dispatcher right after commit.
 - Cold means the first request of a scenario; caches are not flushed. Compare
   runs on the same quiet host rather than reading absolute numbers.
-- The browser part opens a short conversation, not the 180-message thread,
-  so the client cost of a large thread is not measured.
 - The gateway compresses dynamic HTML and JSON according to `Accept-Encoding`.
   Eligible document and API transfer times reflect Brotli when the browser accepts it;
   the opt-outs above remain uncompressed.
