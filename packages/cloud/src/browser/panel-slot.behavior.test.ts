@@ -706,6 +706,41 @@ else {
     expect(h.slot.dataset.contextAllowed).toBe("false");
   });
 
+  test("a read from a restore that resolves after the withdrawal saved cannot bring sharing back", async () => {
+    const put = deferred();
+    const restoreRead = deferred();
+    const freshRead = deferred();
+    const fetch = spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(put.promise)
+      .mockReturnValueOnce(restoreRead.promise)
+      .mockReturnValueOnce(freshRead.promise);
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { shown, post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    consent("fixture", false);
+    restore();
+    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
+    await tick();
+    await tick();
+    // The older read answers first, with the value from before the withdrawal; the fresh one follows.
+    restoreRead.resolve(new Response(JSON.stringify({ answers: { fixture: true } })));
+    await tick();
+    await tick();
+    freshRead.resolve(new Response(JSON.stringify({ answers: { fixture: false } })));
+    await tick();
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(
+      contexts(post)
+        .slice(1)
+        .every((context) => context === null),
+    ).toBe(true);
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+  });
+
   test("an Allow response that arrives after a restore is checked against the server again", async () => {
     const put = deferred();
     const fetch = spyOn(globalThis, "fetch")

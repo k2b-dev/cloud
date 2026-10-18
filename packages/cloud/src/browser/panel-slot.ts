@@ -121,6 +121,14 @@ export function installPanelSlot(): () => void {
   };
   // A back/forward restore starts a new generation; a read from before it must not fill in answers afterwards.
   let answersGeneration = 0;
+  // Forget every answer and every read still in flight, then ask the server once more.
+  const revalidate = () => {
+    answersGeneration += 1;
+    answersRequest = undefined;
+    for (const item of panel.providers) if (item.consent) answers.delete(item.id);
+    update();
+    return readAnswers();
+  };
   const readAnswers = () => {
     const generation = answersGeneration;
     answersRequest ??= (async () => {
@@ -352,12 +360,11 @@ export function installPanelSlot(): () => void {
       )
         throw new Error("Invalid panel consent answer");
       if (disposed) return;
-      withdrawing.delete(item.id);
       if (generation !== answersGeneration) {
-        // A restore happened while saving: its read may predate this write, so ask the server once more.
-        answers.delete(item.id);
-        answersRequest = undefined;
-        void readAnswers().then(() => {
+        // A restore happened while saving: its read may predate this write. Ask the server again in a new
+        // generation, and keep a withdrawal's barrier until that answer is in.
+        void revalidate().then(() => {
+          withdrawing.delete(item.id);
           if (disposed) return;
           update();
           if (allowed()) sendContext();
@@ -365,6 +372,7 @@ export function installPanelSlot(): () => void {
         });
         return;
       }
+      withdrawing.delete(item.id);
       answers.set(item.id, request.allowed);
       // Anything shared while the withdrawal was in flight is cleared once more.
       if (!request.allowed && provider.id === item.id) stopSharing();
@@ -515,11 +523,7 @@ export function installPanelSlot(): () => void {
     // A restored page may hold answers changed elsewhere meanwhile: stop sharing and read them again.
     if (!panel.providers.some((item) => item.consent)) return;
     if (provider.consent) stopSharing();
-    answersGeneration += 1;
-    answersRequest = undefined;
-    for (const item of panel.providers) if (item.consent) answers.delete(item.id);
-    update();
-    void readAnswers().then(() => {
+    void revalidate().then(() => {
       if (disposed || (provider.consent && !answers.has(provider.id))) return;
       update();
       if (allowed()) sendContext();
