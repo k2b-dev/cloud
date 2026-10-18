@@ -1,6 +1,7 @@
 import { lazySync } from "@k2b/cloud";
-import { appApproval, pwaDevices } from "@k2b/cloud/services";
+import { appApproval, knownBrowsers, pwaDevices } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
+import { sql } from "bun";
 import { cleanupTerminalLogins } from "./api/identity-oauth-device-approval";
 import type { CoreNotificationSender } from "./notifications";
 
@@ -15,10 +16,22 @@ export const appApprovalRuntime = {
       cron: "* * * * *",
       timezone: "UTC",
       misfire: "latest",
-      meta: { appId: "core", family: "app-approval", label: "App device enrollment notices and expiry cleanup" },
+      meta: { appId: "core", family: "app-approval", label: "App device enrollment notices, expiry and known-browser cleanup" },
       process: async ({ signal }) => {
-        await appApproval.maintain(sender.sendDeviceEnrollment, signal);
-        await cleanupTerminalLogins();
+        // The steps are independent: a failing step never skips the later ones, and the run still fails.
+        const errors: unknown[] = [];
+        for (const step of [
+          () => knownBrowsers.cleanup(sql, { signal }),
+          () => appApproval.maintain(sender.sendDeviceEnrollment, signal),
+          () => cleanupTerminalLogins(),
+        ]) {
+          try {
+            await step();
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+        if (errors.length) throw errors[0];
       },
     });
     await scheduler().create({

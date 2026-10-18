@@ -246,3 +246,5 @@ export {
   resolveAllowedNetworkAddresses,
 } from "./network-security";
 export type { NetworkLookup, PublicNetworkAddress } from "./network-security";
+
+export { knownBrowsers } from "./known-browsers";
