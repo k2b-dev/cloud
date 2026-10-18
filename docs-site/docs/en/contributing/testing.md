@@ -799,11 +799,11 @@ add the image to that pull step in `.github/workflows/ci.yml` and
 runs a test file, so it does not report a missing image there; without it, the
 job pulls a Docker Hub image from Docker Hub.
 
-Tests that read a rendered PDF call Poppler's `pdftotext`, `pdfinfo`, and
-`pdffonts` from `PATH`; locally, install Poppler (`poppler-utils` on Debian
+Tests that read a rendered PDF call Poppler's `pdftotext`, `pdfinfo`, `pdffonts`, and
+`pdfimages` from `PATH`; locally, install Poppler (`poppler-utils` on Debian
 and Ubuntu). CI does not install Poppler on the runner: `.github/poppler.sh
 install` pulls a Poppler image pinned by digest with the job's other images,
-starts it without network access, and links the three tools into
+starts it without network access, and links the four tools into
 `/usr/local/bin` as wrappers that run each call in that container. Installing
 from the runner's apt mirror hung, and Homebrew failed when its API host
 `formulae.brew.sh` timed out. In CI, the tools can open only files under the

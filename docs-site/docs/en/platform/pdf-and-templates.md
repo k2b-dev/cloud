@@ -17,6 +17,11 @@ settings, authentication, timeouts, and size limits. Operators set the
 Gotenberg URL in the `gotenberg.url` setting or bootstrap it with
 `GOTENBERG_URL`; without it, rendering fails with the `not_configured` code.
 
+The **Max input bytes** setting (`gotenberg.max_html_bytes`, default 1 MiB)
+limits HTML, headers, footers, images and fonts together in one render request.
+The request timeout (`gotenberg.timeout_ms`) is also capped by Gotenberg's own
+`--api-timeout` (default 30 s).
+
 ## Render HTML
 
 ```ts
