@@ -405,6 +405,9 @@
 }
 .k2b-ui .k2b-notice-card__description { margin: 0; }
 .k2b-ui .k2b-notice-card__body { min-width: 0; }
+/* Buttons in a notice take its line height instead of their own, so a card's
+   actions keep the height its 22px lines give them (32px for `sm`). */
+.k2b-ui .k2b-notice-card .k2b-button { line-height: inherit; }
 /* A Markdown info block's body sits directly in the card and holds flow
    content. Whatever prose spacing the host applies, its outer margins would
    read as empty rows inside the card. `[data-tone]` lifts these rules above

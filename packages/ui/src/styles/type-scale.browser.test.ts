@@ -16,9 +16,9 @@ const TEST_TIMEOUT = 20_000;
 const entry = resolve(import.meta.dir, "type-scale.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, Button, DataTable, PanelHeader, StatusBadge, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, Button, DataTable, NoticeCard, PanelHeader, StatusBadge, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const label = (children) => createComponent(AppWorkspace.SidebarItemLabel, { children });
-const button = (size) => createComponent(Button, { size, variant: "secondary", "data-probe": "button-" + size, children: "Save changes" });
+const button = (size, probe = "button-" + size) => createComponent(Button, { size, variant: "secondary", "data-probe": probe, children: "Save changes" });
 render(() => createComponent(AppWorkspace, {
   resizable: false,
   get children() { return [
@@ -43,9 +43,10 @@ render(() => createComponent(AppWorkspace, {
           box.style.cssText = "display:grid;gap:12px;padding:16px;justify-items:start";
           render(() => [
             createComponent(PanelHeader, { title: "Team settings", size: "md" }),
-            ...["xs", "sm", "md", "lg"].map(button),
+            ...["xs", "sm", "md", "lg"].map((size) => button(size)),
             createComponent(TextInput, { label: "Display name", description: "Shown to people you share with.", value: "Ada" }),
             createComponent(StatusBadge, { tone: "ok", label: "Active" }),
+            createComponent(NoticeCard, { tone: "warning", title: "Settings cannot be read", get children() { return [button("sm", "notice-sm"), button("xs", "notice-xs")]; } }),
             createComponent(DataTable, {
               ariaLabel: "Files",
               rows: [{ id: "a", name: "Report.pdf", size: "2 MB" }],
@@ -101,6 +102,8 @@ const probes = {
   buttonSm: '[data-probe="button-sm"]',
   buttonMd: '[data-probe="button-md"]',
   buttonLg: '[data-probe="button-lg"]',
+  noticeButtonSm: '[data-probe="notice-sm"]',
+  noticeButtonXs: '[data-probe="notice-xs"]',
   fieldLabel: ".k2b-field__label",
   fieldDescription: ".k2b-field__description",
   field: ".k2b-field",
@@ -144,6 +147,9 @@ const baseline = {
   buttonSm: 28,
   buttonMd: 32,
   buttonLg: 40,
+  // A notice's 22px lines set its buttons' height, as before.
+  noticeButtonSm: 32,
+  noticeButtonXs: 28,
   fieldLabel: 18,
   fieldDescription: 15.39,
   field: 81.39,

@@ -72,7 +72,9 @@ Buttons and labels use 13px semibold type, sidebar rows 13px regular type;
 small buttons and sidebar section titles use 12px. Descriptions and supporting
 lines use secondary ink at 12px, sidebar row descriptions 13px. Each primitive
 sets its own line height, so its box keeps its height whatever the host page's
-line height. Titles use `-0.018em` tracking.
+line height. Buttons inside a `NoticeCard` take the card's line height instead,
+so its actions keep their height (32px for `sm`). Titles use `-0.018em`
+tracking.
 
 Three surfaces keep their own sizes: object sidebar rows keep a compact 11px
 subtitle, sidebar items shown as chips on narrow workspaces use 13px semibold
