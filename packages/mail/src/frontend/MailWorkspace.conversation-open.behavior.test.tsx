@@ -147,6 +147,8 @@ describe("Mail workspace conversation open", () => {
   let replies: Map<string, string>;
   /** Conversation revisions on the server; rows and details carry them. */
   let revisions: Map<string, number>;
+  /** Conversations with a flagged message on the server. */
+  let flagged: Set<string>;
   /** Holds a detail response until the test releases it. */
   let detailGate: Map<string, Promise<void>>;
   let detailStatus: (id: string) => number;
@@ -164,6 +166,7 @@ describe("Mail workspace conversation open", () => {
       sourceFolderId: id === B ? "Archive1" : id === A ? null : FOLDER,
       workStatus: null,
       revision: revisions.get(id) ?? 1,
+      flagged: flagged.has(id),
     });
   const listFor = (href: string): MailboxListView => {
     const url = new URL(href, "http://localhost");
@@ -198,7 +201,7 @@ describe("Mail workspace conversation open", () => {
       detailMessages: [
         {
           ...message(`m-${conversationId}`, `Subject ${conversationId}`, `Body of ${conversationId}`),
-          flags: unread.has(conversationId) ? [] : ["\\Seen"],
+          flags: [...(unread.has(conversationId) ? [] : ["\\Seen"]), ...(flagged.has(conversationId) ? ["\\Flagged"] : [])],
         },
         ...(reply ? [message(`r-${conversationId}`, `Subject ${conversationId}`, reply)] : []),
       ],
@@ -286,6 +289,7 @@ describe("Mail workspace conversation open", () => {
     unread = new Set();
     replies = new Map();
     revisions = new Map();
+    flagged = new Set();
     detailGate = new Map();
     detailStatus = () => 200;
     routeGate = undefined;
@@ -467,7 +471,8 @@ describe("Mail workspace conversation open", () => {
     await loadSecondPage();
     expect(shows(A)).toBe(true);
     expect(dom.document.body.textContent).toContain("A newer reply");
-    expect(routeRequests).toHaveLength(1);
+    // The reply also makes A's row older than its detail, so page 1 reloads once with A open.
+    expect(routeRequests).toEqual([`${folderPath}&conversation=${A}`, `${folderPath}&conversation=${A}`]);
   });
 
   test("a refresh requested before a newer detail open keeps that detail", async () => {
@@ -671,6 +676,8 @@ describe("Mail workspace conversation open", () => {
     await until(() => actionRequests.length === 1, "the mark read request");
     expect(actionRequests[0]!.conversationId).toBe(rowId(12));
     expect(actionRequests[0]!.body).toMatchObject({ kind: "change_state", change: { addFlags: ["seen"] }, sourceFolderId: FOLDER });
+    // The row was older than the detail: page 1 reloaded it before auto mark-read decided.
+    expect(routeRequests[0]).toBe(`${folderPath}&conversation=${rowId(12)}`);
   });
 
   test("a row older than its detail is refreshed with the list instead of taking the newer revision alone", async () => {
@@ -686,6 +693,16 @@ describe("Mail workspace conversation open", () => {
     await until(() => shows(rowId(15)), "the next conversation");
     await settle();
     expect(routeRequests).toHaveLength(1);
+  });
+
+  test("a flag set elsewhere after the list loaded refreshes the row, and the reader shows it", async () => {
+    mount();
+    flagged.add(rowId(16));
+    open(rowId(16));
+    await until(() => shows(rowId(16)), "the opened conversation");
+    await until(() => routeRequests.length === 1, "the list refresh");
+    expect(routeRequests).toEqual([`${folderPath}&conversation=${rowId(16)}`]);
+    await until(() => dom.root.querySelector('[aria-label="Flagged conversation"]') !== null, "the flag in the reader");
   });
 
   test("Enter on a row focuses the reader heading", async () => {

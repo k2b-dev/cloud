@@ -1,49 +1,37 @@
 import { describe, expect, test } from "bun:test";
 import { mailTestRow } from "./mail-list-test-fixtures";
-import { mailRowOlderThanDetail, syncMailRowWithDetail } from "./mail-selection-detail";
+import { mailRowOlderThanDetail } from "./mail-selection-detail";
 
-const message = (folderId: string | null, seen: boolean) => ({ folderId, flags: seen ? ["\\Seen"] : [] });
-const detail = (messages: ReturnType<typeof message>[]) => ({ detailMessages: messages });
-
-describe("syncMailRowWithDetail", () => {
-  test("keeps a row that is as new as the detail", () => {
-    const row = mailTestRow("one", { unread: true, unreadFolderIds: ["inbox"], messageCount: 2 });
-    expect(syncMailRowWithDetail(row, detail([message("inbox", false), message("inbox", true)]))).toBe(row);
-  });
-
-  test("a read row with a newer unread message becomes unread in that message's folder", () => {
-    const row = mailTestRow("one", { unread: false, unreadFolderIds: [], messageCount: 2 });
-    expect(syncMailRowWithDetail(row, detail([message("inbox", true), message("archive", false)]))).toMatchObject({
-      unread: true,
-      unreadFolderIds: ["archive"],
-    });
-  });
-
-  test("an unread row also gains the folders of unread messages it did not know", () => {
-    const row = mailTestRow("one", { unread: true, unreadFolderIds: ["inbox"], messageCount: 2 });
-    expect(syncMailRowWithDetail(row, detail([message("inbox", false), message("archive", false)])).unreadFolderIds).toEqual([
-      "inbox",
-      "archive",
-    ]);
-  });
-
-  test("a row with fewer messages than the detail takes the detail's count, and never its revision", () => {
-    const row = mailTestRow("one", { unread: false, unreadFolderIds: [], revision: 1, messageCount: 1 });
-    expect(syncMailRowWithDetail(row, detail([message("inbox", true), message("inbox", true)]))).toMatchObject({
-      messageCount: 2,
-      revision: 1,
-    });
-  });
+const message = (folderId: string | null, seen: boolean, flagged = false) => ({
+  folderId,
+  flags: [...(seen ? ["\\Seen"] : []), ...(flagged ? ["\\Flagged"] : [])],
+});
+const detail = (messages: ReturnType<typeof message>[], revision: number) => ({
+  detailMessages: messages,
+  collaborationState: { revision },
+  conversationLocalTags: null,
 });
 
 describe("mailRowOlderThanDetail", () => {
-  test("compares the row revision with the collaboration and tag revisions of the detail", () => {
-    const row = { revision: 3 };
-    expect(mailRowOlderThanDetail(row, { collaborationState: { revision: 3 }, conversationLocalTags: { conversationRevision: 3 } })).toBe(
-      false,
+  const all = () => true;
+  const fresh = mailTestRow("one", { unread: true, unreadFolderIds: ["inbox"], flagged: false, revision: 3, messageCount: 2 });
+
+  test("a row that matches its detail is not older", () => {
+    expect(mailRowOlderThanDetail(fresh, detail([message("inbox", false), message("inbox", true)], 3), all)).toBe(false);
+    expect(mailRowOlderThanDetail(undefined, detail([message("inbox", false)], 9), all)).toBe(false);
+  });
+
+  test("a newer revision, more messages, a new flag or an unread message in another folder make it older", () => {
+    expect(mailRowOlderThanDetail(fresh, detail([message("inbox", true)], 4), all)).toBe(true);
+    expect(mailRowOlderThanDetail(fresh, detail([message("inbox", true), message("inbox", true), message("inbox", true)], 3), all)).toBe(
+      true,
     );
-    expect(mailRowOlderThanDetail(row, { collaborationState: { revision: 4 }, conversationLocalTags: null })).toBe(true);
-    expect(mailRowOlderThanDetail(row, { collaborationState: null, conversationLocalTags: { conversationRevision: 5 } })).toBe(true);
-    expect(mailRowOlderThanDetail(undefined, { collaborationState: { revision: 9 }, conversationLocalTags: null })).toBe(false);
+    expect(mailRowOlderThanDetail(fresh, detail([message("inbox", true, true)], 3), all)).toBe(true);
+    expect(mailRowOlderThanDetail(fresh, detail([message("archive", false)], 3), all)).toBe(true);
+  });
+
+  test("messages in folders the list leaves out do not count", () => {
+    const listed = (folderId: string | null) => folderId !== "trash";
+    expect(mailRowOlderThanDetail(fresh, detail([message("trash", false, true)], 3), listed)).toBe(false);
   });
 });

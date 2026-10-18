@@ -17,7 +17,7 @@ import { batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, 
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
-import { isAggregatedListing, mailRowLeavesListing } from "../folder-display-rules";
+import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesListing } from "../folder-display-rules";
 import { mailFolderPaths } from "../folder-tree";
 import { parseMailLiveEvent } from "../live-event";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
@@ -85,7 +85,7 @@ import {
   resolveMailWorkspaceUrl,
 } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
-import { emptyMailSelection, mailRowOlderThanDetail, pickMailSelection, syncMailRowWithDetail } from "./_components/mail-selection-detail";
+import { emptyMailSelection, mailRowOlderThanDetail, pickMailSelection } from "./_components/mail-selection-detail";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
 import {
   decideMailAutoReadIntent,
@@ -259,6 +259,21 @@ function MailWorkspaceView(props: {
       scope: mailListScope(requestPath()),
     }),
   );
+  /** The folders whose messages the shown list leaves out, by the listing rule the server applies. */
+  const excludedListingFolderIds = createMemo(
+    () =>
+      new Set(
+        mailListingExcludesTrashAndJunk({
+          viewFolderId: data.folderId,
+          activeView: data.activeView,
+          hasSearch: data.search.expression !== null,
+          hasSavedView: !!data.savedViewId,
+          scheduledMode: data.scheduledMode,
+        })
+          ? data.folders.filter((folder) => folder.role === "trash" || folder.role === "junk").map((folder) => folder.id)
+          : [],
+      ),
+  );
   let disposed = false;
   const focusFrames = new Set<number>();
   let pendingListState = new Map<string, PendingMailListState>();
@@ -391,6 +406,8 @@ function MailWorkspaceView(props: {
   let openingConversation: { id: string; changed: boolean } | null = null;
   /** A conversation opening in the shown list shows the same pending state as a view that loads. */
   const [conversationOpening, setConversationOpening] = createSignal(false);
+  /** Page 1 reloads because the open row was older than its detail; auto mark-read waits for the fresh row. */
+  const [rowRefreshing, setRowRefreshing] = createSignal(false);
   const cancelConversationDetail = () => {
     conversationDetailRequest?.abort();
     finishConversationDetail();
@@ -551,15 +568,6 @@ function MailWorkspaceView(props: {
         if (!merged.ok) continue;
         next = { ...next, listItems: merged.items, nextListCursor: merged.nextCursor, listError: reconciled.listError };
       }
-      // The kept detail can be newer than the cached rows: its row keeps what actions read from the detail.
-      const kept = otherSelection ? next.selectedConversationId : null;
-      if (kept)
-        next = {
-          ...next,
-          listItems: next.listItems.map((item) =>
-            item.selectionKind === "conversation" && item.conversationId === kept ? syncMailRowWithDetail(item, next) : item,
-          ),
-        };
       batch(() => {
         // Only the page 1 of the requested selection commits its route; an older one keeps the route shown.
         if (!otherSelection) {
@@ -1081,16 +1089,7 @@ function MailWorkspaceView(props: {
     const path = `${target.pathname}${target.search}`;
     const source = encodeRouteSource(path, data.listMode);
     routeGeneration++;
-    // The row was loaded earlier than the detail; a snapshot carrying both would show the detail's read state on it.
-    const conversationId = selection.selectedConversationId;
-    const detail = { detailMessages: selection.detailMessages ?? [] };
     batch(() => {
-      if (conversationId)
-        setData("listItems", (items) =>
-          items.map((item) =>
-            item.selectionKind === "conversation" && item.conversationId === conversationId ? syncMailRowWithDetail(item, detail) : item,
-          ),
-        );
       setData(selection);
       committedRouteSource = source;
       setRouteSource(source);
@@ -1138,9 +1137,10 @@ function MailWorkspaceView(props: {
     const { conversationId: _, localTags, selectedSubject, ...incoming } = detail;
     const selection = data.selectedConversationId === conversationId ? preserveUnavailableMailDetail(data, incoming) : incoming;
     const row = data.listItems.find((item) => item.selectionKind === "conversation" && item.conversationId === conversationId);
-    // A row older than the detail carries older tags, assignees and status under its revision; only a snapshot
-    // refreshes them together, so the list reloads instead of taking the newer revision alone.
-    const rowOlder = mailRowOlderThanDetail(row, selection);
+    // The row is the view's own state of the conversation and decides read, flag and the actions' revision. When the
+    // detail shows it is older, page 1 reloads it as a whole, and auto mark-read waits for that row.
+    const listedFolderIds = (folderId: string | null) => folderId === null || !excludedListingFolderIds().has(folderId);
+    const rowOlder = mailRowOlderThanDetail(row, selection, listedFolderIds);
     commitSelectionInList(href, {
       ...selection,
       selectedConversationId: conversationId,
@@ -1150,12 +1150,15 @@ function MailWorkspaceView(props: {
       selectedSubject: selectedSubject || subject,
     });
     // Page 1 now asks for this conversation, so reloading it brings the change the detail may have missed.
-    if (opening.changed || rowOlder)
+    if (opening.changed || rowOlder) {
+      setRowRefreshing(true);
       void workspaceQuery
         .invalidate()
         .catch((error: unknown) =>
           reportRefreshFailure(error instanceof Error ? error : new Error(String(error)), t().refreshMailboxFailed),
-        );
+        )
+        .finally(() => setRowRefreshing(false));
+    }
     return "applied";
   };
 
@@ -2182,7 +2185,7 @@ function MailWorkspaceView(props: {
   let consumedOpenIntent = -1;
   createEffect(() => {
     const intent = conversationOpenIntent();
-    const pending = structureMutationLoading();
+    const pending = structureMutationLoading() || rowRefreshing();
     const item = selectedListItem();
     const conversationId = item?.conversationId ?? data.selectedConversationId;
     const target = conversationId ? (item ? actionTargetForItem(item, "mark_read") : actionTargets("mark_read")[0]) : undefined;

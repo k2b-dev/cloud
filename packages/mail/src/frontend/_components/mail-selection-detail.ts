@@ -59,30 +59,25 @@ export const emptyMailSelection = (): MailSelection => ({
 });
 
 /**
- * A row loaded earlier than its conversation's detail, brought up to what opening it reads: the message count and every
- * folder with an unread message in the detail, so auto mark-read sees what a snapshot would. The revision stays: it
- * guards the row's tags, assignees and status, which only a snapshot refreshes together. Returns the same row when
- * nothing is newer.
+ * Whether the detail shows that the row is older: a newer revision, more messages, or a flag or an unread message in a
+ * folder the row does not know. Only messages in folders the list covers count (`listed`), because the row leaves the
+ * others out. A missing row (not loaded) is never older.
  */
-export const syncMailRowWithDetail = (
-  item: MailListItem,
-  detail: { detailMessages: ReadonlyArray<{ flags: readonly string[]; folderId: string | null }> },
-): MailListItem => {
-  const unseenFolderIds = detail.detailMessages.flatMap((message) =>
-    !message.flags.includes("\\Seen") && message.folderId ? [message.folderId] : [],
-  );
-  const unreadFolderIds = [...new Set([...item.unreadFolderIds, ...unseenFolderIds])];
-  // The detail holds at most the newest 100 messages, so it can only raise the count.
-  const messageCount = Math.max(item.messageCount, detail.detailMessages.length);
-  return messageCount === item.messageCount && unreadFolderIds.length === item.unreadFolderIds.length
-    ? item
-    : { ...item, messageCount, unread: item.unread || unseenFolderIds.length > 0, unreadFolderIds };
-};
-
-/** Whether the detail saw a newer revision than the row, so the row's collaboration state is older than the reader's. */
 export const mailRowOlderThanDetail = (
-  item: Pick<MailListItem, "revision"> | undefined,
-  detail: { collaborationState: { revision: number } | null; conversationLocalTags: { conversationRevision: number } | null },
-): boolean =>
-  item !== undefined &&
-  Math.max(detail.collaborationState?.revision ?? 0, detail.conversationLocalTags?.conversationRevision ?? 0) > item.revision;
+  item: Pick<MailListItem, "revision" | "messageCount" | "flagged" | "unreadFolderIds"> | undefined,
+  detail: {
+    detailMessages: ReadonlyArray<{ flags: readonly string[]; folderId: string | null }>;
+    collaborationState: { revision: number } | null;
+    conversationLocalTags: { conversationRevision: number } | null;
+  },
+  listed: (folderId: string | null) => boolean,
+): boolean => {
+  if (!item) return false;
+  const revision = Math.max(detail.collaborationState?.revision ?? 0, detail.conversationLocalTags?.conversationRevision ?? 0);
+  if (revision > item.revision || detail.detailMessages.length > item.messageCount) return true;
+  const messages = detail.detailMessages.filter((message) => listed(message.folderId));
+  if (!item.flagged && messages.some((message) => message.flags.includes("\\Flagged"))) return true;
+  return messages.some(
+    (message) => !message.flags.includes("\\Seen") && message.folderId !== null && !item.unreadFolderIds.includes(message.folderId),
+  );
+};
