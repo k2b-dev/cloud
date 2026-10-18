@@ -20,6 +20,7 @@ import {
 import { Dynamic, isServer } from "solid-js/web";
 import { Button, IconButton, IconButtonLink } from "../actions/Button";
 import { dialogCore } from "../feedback/dialog-core";
+import { RenderErrorBoundary } from "../internal/render-error";
 import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
   APP_WORKSPACE_DETAIL_STEP_EVENT,
@@ -966,7 +967,9 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
    * The complete sidebar for a chip row: a second rendering of the same
    * children in a sheet. It shares the application's state through its
    * signals, inherits this sidebar's context and accent, and is disposed with
-   * the sheet. Choosing a link closes it.
+   * the sheet. Back closes it. A chosen link closes it first and then is
+   * followed through the same link in the row, so the link's own handlers,
+   * such as an enhanced navigation, run once the sheet has left the history.
    */
   const openAll = (button: HTMLButtonElement) => {
     if (sheetOpen() || !aside) return;
@@ -983,42 +986,61 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
       if (button.getClientRects().length === 0) leave.abort();
     });
     watch.observe(button);
+    let follow: (() => void) | undefined;
+    const choose = (event: MouseEvent, sheet: HTMLElement, close: () => void) => {
+      const link = (event.target as Element | null)?.closest?.("a[href]");
+      if (!(link instanceof HTMLAnchorElement) || !sheet.contains(link)) return;
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      if (link.target && link.target !== "_self") return;
+      event.preventDefault();
+      event.stopPropagation();
+      const href = link.getAttribute("href") ?? "";
+      // Both renderings come from the same children, so their links pair up in document order.
+      const index = Array.from(sheet.querySelectorAll("a[href]")).indexOf(link);
+      const twin = aside?.querySelectorAll<HTMLAnchorElement>(".k2b-app-workspace__sidebar-desktop a[href]")[index];
+      follow = () => {
+        if (twin?.isConnected && twin.getAttribute("href") === href) twin.click();
+        else {
+          const plain = document.createElement("a");
+          plain.href = href;
+          plain.hidden = true;
+          document.body.append(plain);
+          plain.click();
+          plain.remove();
+        }
+      };
+      close();
+    };
     void dialogCore
       .open<void>(
         (close, context) => {
           let dispose: (() => void) | undefined;
+          let sheet: HTMLElement | undefined;
           const view = createRoot((disposeRoot) => {
             dispose = disposeRoot;
             return (
               <BottomSheet onDismiss={context.requestDismiss}>
                 <BottomSheet.Header title={props.label} close={() => void context.requestDismiss()} />
                 <BottomSheet.Body>
-                  <nav
-                    class="k2b-app-workspace__sidebar-sheet"
-                    aria-label={props.label}
-                    style={accent}
-                    onClick={(event) => {
-                      const link = (event.target as Element | null)?.closest?.("a[href]");
-                      if (
-                        !link ||
-                        event.defaultPrevented ||
-                        event.button !== 0 ||
-                        event.metaKey ||
-                        event.ctrlKey ||
-                        event.shiftKey ||
-                        event.altKey
-                      )
-                        return;
-                      // After the link's own handlers: an enhanced navigation has started, a document one is leaving.
-                      queueMicrotask(() => close());
-                    }}
-                  >
-                    {
-                      flatten(props.hidden ? undefined : props.children)
-                        .filter(sidebarChildSlot)
-                        .find((slot) => slot.kind === SIDEBAR_DESKTOP)?.children
-                    }
-                  </nav>
+                  {/* The sheet keeps its own failure: the application's boundary around the sidebar stays untouched. */}
+                  <RenderErrorBoundary
+                    onClose={() => void context.requestDismiss()}
+                    content={() => (
+                      <nav
+                        ref={sheet}
+                        class="k2b-app-workspace__sidebar-sheet"
+                        aria-label={props.label}
+                        style={accent}
+                        on:click={{ capture: true, handleEvent: (event: MouseEvent) => sheet && choose(event, sheet, () => close()) }}
+                      >
+                        {
+                          flatten(props.hidden ? undefined : props.children)
+                            .filter(sidebarChildSlot)
+                            .find((slot) => slot.kind === SIDEBAR_DESKTOP)?.children
+                        }
+                      </nav>
+                    )}
+                  />
                 </BottomSheet.Body>
               </BottomSheet>
             );
@@ -1026,12 +1048,15 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
           onCleanup(() => dispose?.());
           return view;
         },
-        { ...bottomSheetAdaptiveOptions, ariaLabel: props.label, signal: leave.signal },
+        { ...bottomSheetAdaptiveOptions, ariaLabel: props.label, history: true, signal: leave.signal },
       )
       .finally(() => {
         watch.disconnect();
         setSheetOpen(false);
-        if (button.isConnected && !aside?.contains(document.activeElement)) button.focus({ preventScroll: true });
+        const next = follow;
+        follow = undefined;
+        if (next) next();
+        else if (button.isConnected && !aside?.contains(document.activeElement)) button.focus({ preventScroll: true });
       });
   };
   return (

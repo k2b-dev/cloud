@@ -317,6 +317,16 @@ for (const [width, height] of [
         await dialog.getByRole("link", { name: "Recently deleted", exact: true }).click();
         await dialog.waitFor({ state: "detached" });
         expect(new URL(page.url()).hash).toBe("#deleted");
+        // The link was followed after the sheet left the history: one Back returns to the overview.
+        await page.goBack();
+        await page.waitForFunction(() => location.hash === "");
+        // Back closes an open sheet and stays on the page, as the other phone sheets do.
+        await all(page).click();
+        await dialog.waitFor();
+        await page.goBack();
+        await dialog.waitFor({ state: "detached" });
+        expect(new URL(page.url()).pathname).toBe("/overview");
+        expect(new URL(page.url()).hash).toBe("");
       } finally {
         await page.close();
       }
