@@ -53,6 +53,9 @@ suite("Pulse store admin API", () => {
   const accessIds: string[] = [];
   let get: ReturnType<typeof spyOn<typeof app.settings, "get">>;
   let set: ReturnType<typeof spyOn<typeof app.settings, "set">>;
+  let read: ReturnType<typeof spyOn<typeof app.settings, "read">>;
+  // What the stored row looks like to this process; "unreadable" models a changed APP_SECRET.
+  let storedState: "readable" | "unreadable" = "readable";
   let sessionLookup: ReturnType<typeof spyOn<typeof session, "authenticateRequest">>;
   let credentialLookup: ReturnType<typeof spyOn<typeof serviceAccountCredentials, "authenticateApiToken">>;
   beforeAll(async () => {
@@ -88,6 +91,11 @@ suite("Pulse store admin API", () => {
     saved.url = server.url.origin;
     store();
     get = spyOn(app.settings, "get").mockImplementation(async (key) => current[key]);
+    read = spyOn(app.settings, "read").mockImplementation(async (key) =>
+      storedState === "unreadable"
+        ? { value: "", stored: "unreadable" }
+        : { value: current[key], stored: current[key] ? "readable" : "none" },
+    );
     set = spyOn(app.settings, "set").mockImplementation(async (key, value) => {
       current[key] = value;
     });
@@ -132,6 +140,7 @@ suite("Pulse store admin API", () => {
   });
   afterAll(async () => {
     get?.mockRestore();
+    read?.mockRestore();
     set?.mockRestore();
     sessionLookup?.mockRestore();
     credentialLookup?.mockRestore();
@@ -218,5 +227,20 @@ suite("Pulse store admin API", () => {
     }
     expect(received).toBe(0);
     expect(current).toEqual(before);
+  });
+  test("a password that the stored row cannot confirm is never reused", async () => {
+    // The cache may still hold the old tuple while the stored ciphertext became unreadable.
+    storedState = "unreadable";
+    received = 0;
+    const before = { ...current };
+    try {
+      const response = await call("admin", "PUT", "/api/pulse/admin/store", { url: saved.url, user: saved.user });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ code: "PASSWORD_REQUIRED" });
+      expect(received).toBe(0);
+      expect(current).toEqual(before);
+    } finally {
+      storedState = "readable";
+    }
   });
 });

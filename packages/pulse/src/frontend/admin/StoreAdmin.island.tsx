@@ -82,6 +82,8 @@ type FormProps = {
   submitLabel: string;
   /** A password the setup script was just built with; the form checks and saves it with the connection. */
   initialPassword?: string;
+  /** In a dialog: keeps the dialog open while a save runs, so its result is never dropped. */
+  setDismissHandler?: (handler: () => void) => void;
   onSaved: (value: StoreStatus) => void;
   onCancel?: () => void;
   signal: AbortSignal;
@@ -93,6 +95,9 @@ const ConnectionForm = (props: FormProps) => {
   const [user, setUser] = createSignal(props.config.user);
   const [password, setPassword] = createSignal(props.initialPassword ?? "");
   const [busy, setBusy] = createSignal(false);
+  props.setDismissHandler?.(() => {
+    if (!busy()) props.onCancel?.();
+  });
   const [failed, setFailed] = createSignal<StoreCheckResult | null>(null);
   const [error, setError] = createSignal("");
   const submit = async () => {
@@ -378,8 +383,9 @@ export default function StoreAdmin(props: { initial: StoreConfig }) {
   };
   const changeConnection = (initialPassword?: string) =>
     prompts.dialog<void>(
-      (close) => (
+      (close, context) => (
         <ConnectionForm
+          setDismissHandler={context.setDismissHandler}
           t={t()}
           locale={locale()}
           config={config()}

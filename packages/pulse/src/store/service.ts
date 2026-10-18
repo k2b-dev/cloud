@@ -11,7 +11,7 @@ import { StoreSaveInput, StoreSetupInput } from "./validation";
 export type StoreIdentity = Pick<AuthContext["Variables"], "actor" | "accessSubject">;
 export class StoreAdminError extends Error {
   constructor(
-    readonly code: "ACCESS_DENIED" | "INVALID_INPUT" | "PASSWORD_REQUIRED" | "STORE_NOT_CONFIGURED",
+    readonly code: "ACCESS_DENIED" | "INVALID_INPUT" | "PASSWORD_REQUIRED" | "STORE_BUSY" | "STORE_NOT_CONFIGURED",
     readonly status: 400 | 403 | 409 = 400,
   ) {
     super(code);
@@ -26,9 +26,7 @@ const DEFAULT_USER = "pulse_service";
 const Connection = z.object({ url: z.string(), user: z.string(), password: z.string() }).strict();
 type Connection = z.infer<typeof Connection>;
 const notConnected = (): Connection => ({ url: "", user: DEFAULT_USER, password: "" });
-/** The saved connection as one tuple; a value this version cannot read counts as not set up, and saving replaces it. */
-const config = async (): Promise<Connection> => {
-  const raw = await app.settings.get("pulse.clickhouse_connection");
+const parseConnection = (raw: string): Connection => {
   if (!raw) return notConnected();
   try {
     const parsed = Connection.safeParse(JSON.parse(raw));
@@ -36,6 +34,13 @@ const config = async (): Promise<Connection> => {
   } catch {
     return notConnected();
   }
+};
+/** The saved connection as one tuple; a value this version cannot read counts as not set up, and saving replaces it. */
+const config = async (): Promise<Connection> => parseConnection(await app.settings.get("pulse.clickhouse_connection"));
+/** The stored row itself, bypassing the cache: a save never keeps a password it could not decrypt. */
+const storedConfig = async (): Promise<Connection> => {
+  const stored = await app.settings.read("pulse.clickhouse_connection");
+  return stored.stored === "readable" ? parseConnection(stored.value) : notConnected();
 };
 const publicConfig = (value: Awaited<ReturnType<typeof config>>): StoreConfig => ({
   configured: Boolean(value.url && value.user && value.password),
@@ -67,8 +72,10 @@ export const createStoreAdmin = ({ prefix = "pulse_", clock = () => new Date() }
     if (!parsed.success) throw new StoreAdminError("INVALID_INPUT");
     const next = parsed.data;
     return sql.begin(async (tx) => {
-      await tx`SELECT pg_advisory_xact_lock(hashtext('pulse.store.settings'))`;
-      const current = await config();
+      // Try, never wait: a waiter would hold a pooled connection for the whole check of the save before it.
+      const [lock] = await tx<{ locked: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtext('pulse.store.settings')) AS locked`;
+      if (!lock?.locked) throw new StoreAdminError("STORE_BUSY", 409);
+      const current = await storedConfig();
       // The saved password goes only to the saved address and user: a new target needs it typed again,
       // so a changed address can never carry the stored secret to another host.
       const sameTarget = next.url === current.url && next.user === current.user;

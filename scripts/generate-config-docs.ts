@@ -74,6 +74,11 @@ const composeInputs: Record<string, { value: string; doc: string; optional?: tru
     doc: "Development only: loopback host port for the integration tests' own Valkey; CLOUD_TEST_VALKEY_URL must use the same port.",
     optional: true,
   },
+  CLOUD_DEV_CLICKHOUSE_PORT: {
+    value: "8123",
+    doc: "Development only: loopback host port for the ClickHouse HTTP interface Pulse uses; CLOUD_TEST_CLICKHOUSE_URL must use the same port.",
+    optional: true,
+  },
   CLOUD_DEV_NATS_PORT: {
     value: "4222",
     doc: "Development only: loopback host port for NATS; host-run processes and CLOUD_TEST_NATS_SERVERS must use the same port.",

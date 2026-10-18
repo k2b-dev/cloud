@@ -86,6 +86,7 @@ export const storeMessages = i18n.define({
       fixRight: (params: { right: string }) =>
         `The service user lacks ${params.right}. Run the setup script again as the ClickHouse admin.`,
       fixPasswordRequired: "Enter the password.",
+      fixBusy: "Another admin is saving the connection right now. Try again in a moment.",
       fixInvalidInput: "Check the address and the service user.",
       fixNotConfigured: "Enter address and service user first.",
       fixRequest: "The request failed. Your saved connection did not change. Try again.",
@@ -177,6 +178,7 @@ export const storeMessages = i18n.define({
       fixRight: (params: { right: string }) =>
         `Dem Dienst-Zugang fehlt ${params.right}. Führe das Einrichtungs-Skript erneut als ClickHouse-Admin aus.`,
       fixPasswordRequired: "Gib das Passwort ein.",
+      fixBusy: "Gerade speichert jemand anderes die Verbindung. Versuche es gleich noch einmal.",
       fixInvalidInput: "Prüfe Adresse und Dienst-Zugang.",
       fixNotConfigured: "Trage zuerst Adresse und Dienst-Zugang ein.",
       fixRequest: "Die Anfrage ist fehlgeschlagen. Die gespeicherte Verbindung ist unverändert. Versuche es erneut.",
@@ -193,6 +195,7 @@ export const storeFixHint = (code: StoreCheckCode | string, locale = "en"): stri
     VERSION_TOO_OLD: t.fixVersion,
     TOO_MANY_RIGHTS: t.fixTooManyRights,
     PASSWORD_REQUIRED: t.fixPasswordRequired,
+    STORE_BUSY: t.fixBusy,
     INVALID_INPUT: t.fixInvalidInput,
     STORE_NOT_CONFIGURED: t.fixNotConfigured,
   };
