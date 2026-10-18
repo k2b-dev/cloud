@@ -169,6 +169,19 @@ describe("sign-in locations block", () => {
     expect(view.statusLine()).toBe("The file is too large to send. Upload it as .mmdb.gz.");
   });
 
+  test("a coded request-size refusal asks for gzip while an unpacked-size refusal names the database limit", async () => {
+    const view = await mount();
+    await view.choose("dbip-city-lite.mmdb");
+    FakeXhr.last!.respond(413, { code: "geoip_request_too_large", maxRequestBytes: 134217728 });
+    await flush();
+    expect(view.statusLine()).toBe("The file is too large to send. Upload it as .mmdb.gz.");
+    expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot");
+    await view.choose("dbip-city-lite.mmdb.gz");
+    FakeXhr.last!.respond(413, { code: "geoip_too_large", maxDatabaseBytes: 201326592 });
+    await flush();
+    expect(view.statusLine()).toBe("The database is larger than 192 MiB unpacked. Nothing was changed.");
+  });
+
   test("an expired sign-in or removed admin role is a definite refusal that says to sign in again", async () => {
     const view = await mount();
     await view.choose();

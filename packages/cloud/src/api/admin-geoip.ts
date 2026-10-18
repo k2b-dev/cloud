@@ -1,7 +1,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { GEOIP_MAX_DATABASE_BYTES } from "../contracts/geoip";
+import { GEOIP_MAX_DATABASE_BYTES, GEOIP_MAX_REQUEST_BYTES } from "../contracts/geoip";
 import { type AuthContext, auth, v } from "../server";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
 import { GeoIpError, geoip } from "../services/geoip";
@@ -15,7 +15,11 @@ export const createAdminGeoIpRoutes = (
     .onError((error, c) => {
       if (error instanceof GeoIpError)
         return c.json(
-          { code: error.code, ...(error.code === "geoip_too_large" ? { maxDatabaseBytes: GEOIP_MAX_DATABASE_BYTES } : {}) },
+          {
+            code: error.code,
+            ...(error.code === "geoip_too_large" ? { maxDatabaseBytes: GEOIP_MAX_DATABASE_BYTES } : {}),
+            ...(error.code === "geoip_request_too_large" ? { maxRequestBytes: GEOIP_MAX_REQUEST_BYTES } : {}),
+          },
           error.status,
         );
       if (c.req.raw.signal.aborted) return new Response(null, { status: 499 });

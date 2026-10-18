@@ -15,7 +15,8 @@ const probeAddresses = [
 ];
 
 const errors = {
-  geoip_too_large: { status: 413, message: "The GeoIP database or request exceeds the upload limit." },
+  geoip_request_too_large: { status: 413, message: "The request body exceeds 128 MiB. Upload the .mmdb.gz file." },
+  geoip_too_large: { status: 413, message: "The GeoIP database exceeds 192 MiB unpacked." },
   geoip_empty: { status: 400, message: "The GeoIP upload is empty." },
   geoip_invalid: { status: 422, message: "Upload a valid IPv6 MMDB database with a build date." },
   geoip_unsupported_type: { status: 422, message: "Upload a City or ASN MMDB database." },
@@ -31,7 +32,7 @@ export class GeoIpError extends Error {
 
 /** Backpressure reaches the request; both limits are enforced before retaining a chunk. */
 export const readGeoIpUpload = async (body: ReadableStream<Uint8Array>, contentLength?: number): Promise<Buffer> => {
-  if (contentLength !== undefined && contentLength > GEOIP_MAX_REQUEST_BYTES) throw new GeoIpError("geoip_too_large");
+  if (contentLength !== undefined && contentLength > GEOIP_MAX_REQUEST_BYTES) throw new GeoIpError("geoip_request_too_large");
   const reader = body.getReader();
   let requestBytes = 0;
   async function* counted() {
@@ -39,7 +40,7 @@ export const readGeoIpUpload = async (body: ReadableStream<Uint8Array>, contentL
       const chunk = await reader.read();
       if (chunk.done) return;
       requestBytes += chunk.value.byteLength;
-      if (requestBytes > GEOIP_MAX_REQUEST_BYTES) throw new GeoIpError("geoip_too_large");
+      if (requestBytes > GEOIP_MAX_REQUEST_BYTES) throw new GeoIpError("geoip_request_too_large");
       if (chunk.value.byteLength) yield chunk.value;
     }
   }

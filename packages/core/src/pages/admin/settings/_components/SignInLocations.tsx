@@ -34,7 +34,14 @@ export type SignInLocationPhase =
 type Phase<K extends SignInLocationPhase["kind"]> = Extract<SignInLocationPhase, { kind: K }>;
 const isPhase = <K extends SignInLocationPhase["kind"]>(value: SignInLocationPhase, kind: K): value is Phase<K> => value.kind === kind;
 
-const API_CODES = ["geoip_too_large", "geoip_invalid", "geoip_unsupported_type", "geoip_empty", "geoip_upload_busy"] as const;
+const API_CODES = [
+  "geoip_request_too_large",
+  "geoip_too_large",
+  "geoip_invalid",
+  "geoip_unsupported_type",
+  "geoip_empty",
+  "geoip_upload_busy",
+] as const;
 const isApiCode = (value: string): value is (typeof API_CODES)[number] => API_CODES.some((code) => code === value);
 
 /** A definite refusal changed nothing; anything else (lost answer, server error) leaves the outcome open. */

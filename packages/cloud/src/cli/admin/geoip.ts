@@ -4,8 +4,12 @@ import { arg, type CloudCliContext, cliText, command, confirmFlag, printStructur
 const path = "/api/admin/core/geoip";
 const messages = {
   geoip_too_large: {
-    en: "The upload exceeds 192 MiB unpacked or 128 MiB in transit. Try a smaller database.",
-    de: "Der Upload überschreitet 192 MiB entpackt oder 128 MiB bei der Übertragung. Nutze eine kleinere Datenbank.",
+    en: "The database exceeds 192 MiB unpacked. Try a smaller database.",
+    de: "Die Datenbank überschreitet 192 MiB entpackt. Nutze eine kleinere Datenbank.",
+  },
+  geoip_request_too_large: {
+    en: "The compressed upload exceeds 128 MiB. Try a smaller database.",
+    de: "Der komprimierte Upload überschreitet 128 MiB. Nutze eine kleinere Datenbank.",
   },
   geoip_empty: { en: "The uploaded file is empty.", de: "Die hochgeladene Datei ist leer." },
   geoip_invalid: {

@@ -33,4 +33,10 @@ export type GeoIpAdminStatus = {
 export type GeoIpUploadResult = GeoIpAdminStatus & { kind: GeoIpKind };
 export type GeoIpResetResult = GeoIpAdminStatus & { changed: boolean };
 
-export type GeoIpErrorCode = "geoip_too_large" | "geoip_empty" | "geoip_invalid" | "geoip_unsupported_type" | "geoip_upload_busy";
+export type GeoIpErrorCode =
+  | "geoip_request_too_large"
+  | "geoip_too_large"
+  | "geoip_empty"
+  | "geoip_invalid"
+  | "geoip_unsupported_type"
+  | "geoip_upload_busy";

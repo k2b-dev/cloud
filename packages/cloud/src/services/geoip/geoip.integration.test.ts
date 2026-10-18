@@ -89,7 +89,7 @@ suite("GeoIP Postgres replacement, audit and multi-instance reload", () => {
     ])
       await expect(service.upload(admin, body(invalid), {})).rejects.toBeInstanceOf(Error);
     await expect(service.upload(admin, body(bytes()), { contentLength: GEOIP_MAX_REQUEST_BYTES + 1 })).rejects.toMatchObject({
-      code: "geoip_too_large",
+      code: "geoip_request_too_large",
     });
     expect((await service.status(admin, { now: () => frozenNow })).databases[0].upload?.sha256).toBe(sha256);
     expect(reader.status().city?.sha256).toBe(sha256);

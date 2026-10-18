@@ -67,6 +67,7 @@ test("status, raw-body upload and reset expose the typed result and validate the
 test("stable upload errors map to their HTTP status with limits only on 413", async () => {
   for (const [code, expected] of [
     ["geoip_too_large", 413],
+    ["geoip_request_too_large", 413],
     ["geoip_empty", 400],
     ["geoip_invalid", 422],
     ["geoip_unsupported_type", 422],
@@ -80,7 +81,13 @@ test("stable upload errors map to their HTTP status with limits only on 413", as
     });
     const response = await app.request("/", { method: "PUT" });
     expect(response.status).toBe(expected);
-    expect(await response.json()).toEqual(code === "geoip_too_large" ? { code, maxDatabaseBytes: 201326592 } : { code });
+    expect(await response.json()).toEqual(
+      code === "geoip_too_large"
+        ? { code, maxDatabaseBytes: 201326592 }
+        : code === "geoip_request_too_large"
+          ? { code, maxRequestBytes: 134217728 }
+          : { code },
+    );
   }
 });
 

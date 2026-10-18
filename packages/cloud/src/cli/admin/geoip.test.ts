@@ -143,7 +143,8 @@ test("reset requires yes, accepts a single type, defaults to both, and rejects u
 
 test("API codes become clear English and German CLI errors", async () => {
   for (const [code, en, de] of [
-    ["geoip_too_large", "192 MiB", "192 MiB"],
+    ["geoip_too_large", "192 MiB unpacked", "192 MiB entpackt"],
+    ["geoip_request_too_large", "compressed upload exceeds 128 MiB", "komprimierte Upload überschreitet 128 MiB"],
     ["geoip_empty", "empty", "leer"],
     ["geoip_invalid", "IPv6", "IPv6"],
     ["geoip_unsupported_type", "City and ASN", "City- und ASN"],

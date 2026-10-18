@@ -78,7 +78,7 @@ test("a declared oversized request is rejected before reading the body", async (
     },
     { highWaterMark: 0 },
   );
-  await expect(readGeoIpUpload(body, GEOIP_MAX_REQUEST_BYTES + 1)).rejects.toMatchObject({ code: "geoip_too_large" });
+  await expect(readGeoIpUpload(body, GEOIP_MAX_REQUEST_BYTES + 1)).rejects.toMatchObject({ code: "geoip_request_too_large" });
   expect(reads).toBe(0);
 });
 
@@ -98,7 +98,7 @@ test("raw streams stop at the request bound and cancel without consuming the res
     },
     { highWaterMark: 0 },
   );
-  await expect(readGeoIpUpload(body)).rejects.toMatchObject({ code: "geoip_too_large" });
+  await expect(readGeoIpUpload(body)).rejects.toMatchObject({ code: "geoip_request_too_large" });
   expect(sent).toBeLessThanOrEqual(GEOIP_MAX_REQUEST_BYTES / chunk.length + 2);
   expect(cancelled).toBe(true);
 });
