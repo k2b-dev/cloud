@@ -31,7 +31,7 @@ import {
 import { buildBlocksFromMessages } from "./protocol";
 import { withAiShortIdForDb } from "./short-id";
 import { aiConversations } from "./store";
-import { toolOutcome } from "./tool-wording";
+import { toolOutcome, toolWording } from "./tool-wording";
 import { finishAiTurnAbort } from "./turn-abort";
 import type { AiChatTurnRunConfig, AiStoredMessage, AiTurnStatus } from "./types";
 
@@ -347,7 +347,15 @@ const taskFingerprint = (input: {
 }): string =>
   new Bun.CryptoHasher("sha256")
     .update(
-      JSON.stringify([input.chatId, input.prompt.trim(), input.schedule, input.timezone, input.grants ?? [], input.title?.trim() ?? null]),
+      // Without a title the hash stays as before titles existed, so earlier idempotency keys still replay.
+      JSON.stringify([
+        input.chatId,
+        input.prompt.trim(),
+        input.schedule,
+        input.timezone,
+        input.grants ?? [],
+        ...(input.title?.trim() ? [input.title.trim()] : []),
+      ]),
     )
     .digest("hex");
 const taskSelect = () => sql`
@@ -537,8 +545,10 @@ const deliverStoppedTurn = async (db: SQL, turn: StoppedTurn, cause: StopCause, 
     // Web reads have chat wording too, but do not change anything for a stop receipt.
     if (block.name === "web_extract") return [];
     if (block.result && typeof block.result === "object" && "ok" in block.result && block.result.ok === false) return [];
-    const sentence = toolOutcome(block, "done", locale, config.background?.timezone ?? task?.timezone ?? "UTC");
-    return sentence ? [sentence] : [];
+    const wording = toolWording(block, locale);
+    if (!wording) return [];
+    // An Action without a done sentence still changed something; its title names it instead of dropping it.
+    return [toolOutcome(block, "done", locale, config.background?.timezone ?? task?.timezone ?? "UTC") ?? wording.title];
   });
   const text = chatTaskStopSentence(done, locale);
   const [conversation] =
@@ -846,8 +856,17 @@ export const aiChatTasks = {
         if (!updated.ok) throw mandateError("update", updated);
         updatedMandateRevision = updated.data.revision;
       }
-      if (!promptChanged && !scheduleChanged && grants === undefined && (input.title === undefined || input.title.trim() === current.title))
-        return toTask(current);
+      const titleChanged = input.title !== undefined && input.title.trim() !== current.title;
+      if (!promptChanged && !scheduleChanged && grants === undefined) {
+        if (!titleChanged) return toTask(current);
+        // A new name changes nothing about when or how the routine runs: state, reason and revision stay.
+        const [renamed] = await tx<TaskRow[]>`
+          UPDATE ai.chat_tasks task SET title = ${input.title!.trim()}, updated_at = now()
+          FROM ai.conversations conversation
+          WHERE conversation.id = task.conversation_id AND task.id = ${current.id}::uuid
+          RETURNING task.*, conversation.short_id AS conversation_short_id, conversation.title AS conversation_title`;
+        return renamed ? toTask({ ...renamed, mandate_policy: current.mandate_policy }) : null;
+      }
       await tx`
         UPDATE ai.chat_tasks task
         SET title = ${input.title?.trim() ?? current.title}, mandate_revision = ${updatedMandateRevision}, prompt = ${input.prompt?.trim() ?? current.prompt},

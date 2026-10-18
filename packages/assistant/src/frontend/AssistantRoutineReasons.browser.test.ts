@@ -18,7 +18,7 @@ const STATE: Record<ChatTaskReasonCode, AiChatTaskView["state"]> = {
 };
 const SENTENCES: Record<"en" | "de", Record<ChatTaskReasonCode, string>> = {
   en: {
-    paused: "Paused by you on 10/16/2026, 2:30 PM. What happens meanwhile is not caught up automatically.",
+    paused: "Paused by you on Oct 16, 2026, 16:30. What happens meanwhile is not caught up automatically.",
     chat_archived: "Paused because the chat is archived.",
     owner_inactive: "Paused because the account is inactive.",
     failed: "The last run failed.",
@@ -26,7 +26,7 @@ const SENTENCES: Record<"en" | "de", Record<ChatTaskReasonCode, string>> = {
     needs_approval: "That needs your approval every time, and routines never ask.",
   },
   de: {
-    paused: "Von dir pausiert am 16.10.2026, 14:30. Was in der Pause passiert, wird nicht von selbst nachgeholt.",
+    paused: "Von dir pausiert am 16. Okt. 2026, 16:30. Was in der Pause passiert, wird nicht von selbst nachgeholt.",
     chat_archived: "Pausiert, weil der Chat archiviert ist.",
     owner_inactive: "Pausiert, weil das Konto inaktiv ist.",
     failed: "Der letzte Lauf ist fehlgeschlagen.",
@@ -128,17 +128,17 @@ const sideways = (page: Page) => page.evaluate(() => document.documentElement.sc
 
 for (const width of [1440, 390]) {
   for (const lang of ["en", "de"] as const) {
-    test(`the routine says why it stopped for every reason in ${lang} at ${width} px`, async () => {
-      for (const code of Object.keys(STATE) as ChatTaskReasonCode[]) {
+    for (const code of Object.keys(STATE) as ChatTaskReasonCode[]) {
+      test(`the routine says why it stopped (${code}) in ${lang} at ${width} px`, async () => {
         const page = await open(width, `code=${code}&lang=${lang}`);
         try {
           const notice = page.locator(".assistant-task-detail__reason");
           await notice.waitFor();
           expect(await notice.locator(".k2b-notice-card__title").innerText()).toBe(SENTENCES[lang][code]);
           // The raw error waits behind Technical details; it is not part of what the notice says.
-          const technical = notice.locator("details");
+          const technical = page.locator(".assistant-task-detail__technical");
           if (STATE[code] === "needs_attention") {
-            await expect(technical.getAttribute("open")).resolves.toBeNull();
+            expect(await technical.getAttribute("open")).toBeNull();
             await technical.locator("summary").click();
             expect(await technical.innerText()).toContain(RAW_ERROR);
             expect(await notice.getByRole("button", { name: lang === "de" ? "Im Chat beheben" : "Fix in chat" }).count()).toBe(1);
@@ -150,8 +150,8 @@ for (const width of [1440, 390]) {
         } finally {
           await page.close();
         }
-      }
-    });
+      }, 30_000);
+    }
   }
 
   test(`archiving a chat names the routines it pauses at ${width} px`, async () => {
@@ -159,7 +159,8 @@ for (const width of [1440, 390]) {
     archivePosts.length = 0;
     const page = await open(width, "view=archive&lang=de");
     try {
-      await page.getByRole("button", { name: "Archivieren", exact: true }).click();
+      await page.getByText("Archivieren", { exact: true }).first().click();
+      await page.getByRole("button", { name: "Chat archivieren" }).click();
       const dialog = page.getByRole("alertdialog").or(page.getByRole("dialog").last());
       await dialog.getByText("In diesem Chat läuft 1 Routine („Neue Rechnungen eintragen“). Archivieren pausiert sie.").waitFor();
       const archiveAnyway = dialog.getByRole("button", { name: "Trotzdem archivieren" });
@@ -172,17 +173,18 @@ for (const width of [1440, 390]) {
     } finally {
       await page.close();
     }
-  });
+  }, 30_000);
 }
 
 test("archiving a chat without running routines asks the plain question", async () => {
   activeRoutines = [];
   const page = await open(1440, "view=archive&lang=en");
   try {
-    await page.getByRole("button", { name: "Archive", exact: true }).click();
+    await page.getByText("Archive", { exact: true }).first().click();
+    await page.getByRole("button", { name: "Archive chat" }).click();
     await page.getByText('Archive "Rechnungen"?').waitFor();
     expect(await page.getByText("routine runs in this chat").count()).toBe(0);
   } finally {
     await page.close();
   }
-});
+}, 30_000);

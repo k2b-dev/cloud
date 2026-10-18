@@ -269,30 +269,34 @@ export function AssistantTaskDetail(props: {
                 </div>
                 <Show when={reasonNotice()}>
                   {(notice) => (
-                    <NoticeCard
-                      class="assistant-task-detail__reason"
-                      tone={notice().attention ? "warning" : "neutral"}
-                      title={notice().sentence}
-                      detail={
-                        notice().failed ? text("Review the result before retrying. The routine may have completed some steps.") : undefined
-                      }
-                    >
-                      <Show when={notice().attention}>
-                        <div>
-                          <Button variant="secondary" size="sm" onClick={() => props.onEdit(task(), true)}>
-                            {text("Fix in chat")}
-                          </Button>
-                        </div>
-                      </Show>
+                    <div class="flex flex-col gap-1">
+                      <NoticeCard
+                        class="assistant-task-detail__reason"
+                        tone={notice().attention ? "warning" : "neutral"}
+                        title={notice().sentence}
+                        detail={
+                          notice().failed
+                            ? text("Review the result before retrying. The routine may have completed some steps.")
+                            : undefined
+                        }
+                      >
+                        <Show when={notice().attention}>
+                          <div>
+                            <Button variant="secondary" size="sm" onClick={() => props.onEdit(task(), true)}>
+                              {text("Fix in chat")}
+                            </Button>
+                          </div>
+                        </Show>
+                      </NoticeCard>
                       {/* The raw error is for whoever debugs the run; the sentence above is what happened. */}
                       <Show when={notice().technical}>
                         {(technical) => (
-                          <Disclosure surface="plain" summary={text("Technical details")}>
-                            <p class="whitespace-pre-wrap break-words font-mono text-xs text-secondary">{technical()}</p>
+                          <Disclosure class="assistant-task-detail__technical" surface="plain" summary={text("Technical details")}>
+                            <p class="whitespace-pre-wrap break-words font-mono">{technical()}</p>
                           </Disclosure>
                         )}
                       </Show>
-                    </NoticeCard>
+                    </div>
                   )}
                 </Show>
 

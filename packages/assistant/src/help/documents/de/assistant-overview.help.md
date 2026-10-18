@@ -51,7 +51,7 @@ Eine einmalige Routine verwendet einen genauen lokalen Zeitpunkt in der Zeitzone
 
 Öffne **Kontext** in der Seitenleiste **In diesem Chat** und wähle eine Routine, um sie anzupassen, zu pausieren, fortzusetzen, auszuführen oder zu löschen oder um ihren Ausführungsverlauf zu prüfen.
 
-**Pausiert** nennt den Grund: „Von dir pausiert am 16.10.2026, 14:30. Was in der Pause passiert, wird nicht von selbst nachgeholt.“, „Pausiert, weil der Chat archiviert ist.“ oder „Pausiert, weil das Konto inaktiv ist.“
+**Pausiert** nennt den Grund: „Von dir pausiert am 16. Okt. 2026, 14:30. Was in der Pause passiert, wird nicht von selbst nachgeholt.“, „Pausiert, weil der Chat archiviert ist.“ oder „Pausiert, weil das Konto inaktiv ist.“
 
 **Braucht dich** sagt „Der letzte Lauf ist fehlgeschlagen.“ oder „Was sie darf, hat sich geändert. Bitte neu bestätigen.“ Braucht eine Aktion deine Freigabe, heißt es: „Das macht der Assistant nur mit dir, und Routinen fragen nie.“ Unter den technischen Details findest du den ursprünglichen Fehler.
 

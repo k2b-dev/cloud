@@ -51,7 +51,7 @@ A one-time routine uses an exact local time in the Cloud application timezone. A
 
 Open **Context** in the sidebar **In this chat** and select a routine to adjust, pause, resume, run, or delete it, or to look at its run history.
 
-**Paused** says why: “Paused by you on 10/16/2026, 2:30 PM. What happens meanwhile is not caught up automatically.”, “Paused because the chat is archived.” or “Paused because the account is inactive.”
+**Paused** says why: “Paused by you on Oct 16, 2026, 14:30. What happens meanwhile is not caught up automatically.”, “Paused because the chat is archived.” or “Paused because the account is inactive.”
 
 **Needs you** says “The last run failed.” or “What it may do changed. Please confirm again.” If an action needs approval, the reason is “That needs your approval every time, and routines never ask.” Technical details hold the original error.
 

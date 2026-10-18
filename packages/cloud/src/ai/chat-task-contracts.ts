@@ -120,7 +120,8 @@ export const chatTaskCreateFingerprint = (input: {
         input.schedule,
         input.timezone ?? null,
         input.grants ?? [],
-        input.title?.trim() ?? null,
+        // Without a title the hash stays as before titles existed, so earlier idempotency keys still replay.
+        ...(input.title?.trim() ? [input.title.trim()] : []),
       ]),
     )
     .digest("hex");

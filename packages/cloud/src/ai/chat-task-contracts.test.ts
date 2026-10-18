@@ -67,6 +67,20 @@ describe("scheduled chat task contracts", () => {
 
     expect(chatTaskCreateFingerprint(input)).not.toBe(chatTaskCreateFingerprint({ ...input, timezone: "UTC" }));
   });
+
+  test("keeps the fingerprint of requests from before titles, so their idempotency keys still replay", () => {
+    const input = {
+      chatId: "cHt234",
+      prompt: "Check release.",
+      schedule: { kind: "once" as const, localAt: "2099-06-15T09:30" },
+      timezone: "Europe/Berlin",
+    };
+    const earlier = new Bun.CryptoHasher("sha256")
+      .update(JSON.stringify([input.chatId, input.prompt, input.schedule, input.timezone, []]))
+      .digest("hex");
+    expect(chatTaskCreateFingerprint(input)).toBe(earlier);
+    expect(chatTaskCreateFingerprint({ ...input, title: "Release prüfen" })).not.toBe(earlier);
+  });
 });
 
 test("routine name uses title, chat title, then a bounded prompt line", async () => {
