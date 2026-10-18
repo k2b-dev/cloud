@@ -139,6 +139,29 @@ its own document.
 loads its component after module mocks and registers delegated events in each
 test.
 
+## Pin the clock
+
+Tests that render dates use a fixed instant. In behavior tests, use
+`setSystemTime(new Date("2026-10-14T10:00:00.000Z"))` from `bun:test` and
+restore the clock with `setSystemTime()` after each test.
+
+In browser tests, fixtures stamp their data from a fixed clock, and each
+context gets an init script that replaces the page's `Date` with one that
+starts at that clock and flows from there. The Chat harness starts at
+`chatTestNow`, exposes its flowing clock as `harness.now()`, and pins pages
+with `pinPageClock` in `ChatWorkspace.browser.test.ts`. Do not use
+Playwright's `clock` for this: even `setSystemTime` replaces timers,
+animation frames, and `performance`, and the Chat read-state tests then
+failed in WebKit. Use `performance.now()` for durations and deadlines.
+
+The `test-clock` check rejects new `new Date()` and `Date.now()` reads in UI
+tests, fixtures, harnesses, and suites. A line comment
+`// real clock: <reason>` on the same line or directly above allows a read
+that needs the real clock. The reason must be non-empty. Known findings live
+in `scripts/checks/test-clock.baseline`. Its counts can only decrease;
+`bun scripts/check.ts test-clock --fix` lowers counts and removes entries
+when findings are gone.
+
 ## Test in Chromium and WebKit
 
 Layout, focus, touch, and paint need a real engine, so these tests drive one
@@ -174,6 +197,35 @@ reports after the timeout names what it waited for, not the cleanup in
 `finally`. Open pages and contexts in each test, not in `beforeAll`: a page
 kept across tests closes with its browser.
 `packages/ui/test/browser.browser.test.ts` guards this recovery.
+
+Open each URL state that a test checks in its own page. Navigate a loaded page
+in place only when the test checks navigation itself: reload, Back, Forward,
+or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place
+`goto` on an idle Notebooks page stalled before load in two WebKit CI runs,
+and a Back to a graph page in a third. The cause was a collapsed receive
+queue on the CI runner's kernel; see
+[When a page never fires load](#when-a-page-never-fires-load).
+
+When `goto`, `reload`, `goBack`, or `goForward` on a launcher page fails or
+times out, the error appends a navigation diagnosis. It names the call and how long it
+waited, the URL before the call and at failure, and up to five recent responses
+with their status, method, and URL. It also reports whether a document
+committed, the navigation response status, DOMContentLoaded and load events,
+open and failed requests, and a main-thread probe. A navigation cut off when
+Bun's test timeout closes the browser carries the same evidence instead of a
+cleanup error; the probe reports that the page or browser is closed. Do not
+call Playwright between catching an error and reporting it: after the browser
+closed, Playwright rejects every call with one shared error object and
+rewrites its message, so the reported error names the later call.
+No commit with an open document request points to the server or network.
+A commit with an open subresource points to that request. A silent main
+thread after a commit points to a blocked page; see
+[When a WebKit page stops answering](#when-a-webkit-page-stops-answering).
+Before a commit, Chromium holds the probe until the navigation ends, so there
+silence alone proves nothing.
+`packages/ui/test/browser.browser.test.ts` guards the diagnosis for an
+uncommitted navigation, a committed navigation whose load never fires, and a
+navigation cut off by Bun's test timeout.
 
 A step that scrolls the page, such as `focus()` on an element below the fold,
 dispatches its `scroll` event on the next frame. Chart inspection, popovers,
@@ -282,6 +334,34 @@ docker run --rm --network host --pid=container:playwright-webkit \
 
 A main thread in `gst_pad_stop_task` under `gst_element_change_state` is the
 media deadlock.
+
+### When a page never fires load
+
+A navigation that commits but never fires load, or never commits, waits for a
+response that does not finish. The navigation diagnosis lists that response
+under "Requests still open". When the test server wrote the whole response,
+look at the sockets on the server's port while the page waits:
+
+```bash
+sudo ss -tnoiepm state all '( sport = :PORT or dport = :PORT )'
+grep -A1 '^TcpExt' /proc/net/netstat
+```
+
+A browser socket with a receive buffer of about 1 KB (`rb` in `skmem`), no
+unread data, and drops (`d`), next to a server socket that waits on a 2 KB
+window, is a collapsed receive queue. Rising `PruneCalled`, `TCPRcvQDrop`, and
+`BeyondWindow` counters confirm it. On Linux 6.17, the kernel of the CI
+runners, this happens when the busy browser reads a large page, bundle, or
+font slowly. The receive buffer then shrinks, and the connection never
+recovers ([#1367](https://github.com/k2b-dev/cloud/issues/1367)). Every CI job
+that installs dependencies sets an 8 MiB default receive buffer through
+`.github/actions/install`. When
+browser tests stall like this on a development machine, apply the CI setting
+until the next reboot:
+
+```bash
+sudo sysctl -w net.ipv4.tcp_rmem="4096 8388608 33554432"
+```
 
 ### Engine differences
 
@@ -609,8 +689,10 @@ writes for the current `bun.lock`. With that cache, `bun ci` needs no
 registry. `scripts/ci-install.ts` stops an install that takes over two
 minutes and retries a stalled install once. Any other install failure fails
 at once. A pull request that changes `bun.lock` installs from the registry
-until it merges. The `ci-install` check rejects direct dependency installs in
-workflows. Only the release workflow keeps a plain `bun ci`, because it can
+until it merges. Before the install, the action sets the default TCP receive
+buffer to 8 MiB, so a slow browser cannot stall a test server's response; see
+[When a page never fires load](#when-a-page-never-fires-load). The
+`ci-install` check rejects direct dependency installs in workflows. Only the release workflow keeps a plain `bun ci`, because it can
 finish an older release from a commit without the install action.
 
 The standalone `cld` test compiles the release target. On Linux x64, Bun

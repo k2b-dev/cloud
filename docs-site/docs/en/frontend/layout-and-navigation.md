@@ -27,8 +27,8 @@ when people navigate.
 
 | Width | Signed-in pages | Anonymous pages |
 | --- | --- | --- |
-| Below 768 px (phones) | Header with Home, the app name, help, search, and the app menu; no app bar | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
-| 768 to 1023 px (tablets) | No header. The 56 px app bar runs down the left edge, and the app area meets the window's top, right, and bottom edges without spacing, radius, shadow, or border | The same header controls; header, content, and footer as cards on the app background |
+| Below 768 px (phones) | App gradient with a title row, search, help, and the app menu; a soft content card and a floating bar with Home and the first apps of the app bar | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
+| 768 to 1023 px (tablets) | No header. A 60 px app bar in a rounded gradient container sits beside the app card. Both have 20 px corners, 8 px spacing to the window edges, and 8 px between them | The same header controls; header, content, and footer as cards on the app background |
 | From 1024 px | No header. The 56 px app bar sits on the app background. The app area is a card whose spacing grows from 4 px at 1024 px to 8 px at 1440 px and whose radius grows from 10 px to 14 px. Wider windows keep those dimensions | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
 
 Where the app area is a card, the outermost workspace is that card. It has
@@ -40,21 +40,36 @@ workspace shows its content on the app background, so scroll the content in a
 
 From 768 px the app bar holds Home, the button that hides the sidebar, the
 apps, the app grid, search, help, and the profile avatar. Its controls are
-44 px targets. Between the app bar and the app area there is no line: the app
-bar shows the app background, and the app area is one opaque surface.
-Global announcements and account notices stay above the app as a strip across
-the app area; from 768 to 1023 px it has no radius or border.
+44 px targets. From 768 to 1023 px the app bar's container carries the app
+gradient on a neutral canvas. The selected app has a surface background, and
+there is no separator between shortcuts and apps. Announcements and account
+notices above the app are cards with the same 8 px spacing.
 
 The installed app on a tablet reports safe areas, such as the status bar and
-the home indicator. From 768 to 1023 px the app bar and the app area still
-reach the window's edges. The app bar fills those areas with the app
-background, and the app area fills them with its surface. Their content stays
-inside the safe areas: a regular page scrolls to its end above the home
-indicator, and `AppWorkspace` keeps the content of its sidebar, panes, and
-drawer above it. From 1024 px the card and app bar stay below the status bar,
-the card keeps its spacing at the bottom, and its surfaces keep their content
-above the home indicator. Below 768 px the whole canvas keeps the safe areas
-as padding, because it is one flat surface there.
+the home indicator. From 768 to 1023 px these insets add to the 8 px spacing:
+the app bar and card stay clear of them on every side. From 1024 px the card
+and app bar stay below the status bar. The card keeps its spacing at the
+bottom, and its surfaces keep their content
+above the home indicator.
+
+Below 768 px, including narrow tablet split views, the signed-in canvas
+shows the app gradient. Its title row has no line or surface fill and holds
+the app's name, search, help, and the app menu in that order. **Home** moves
+from the header to the first place of the floating bottom bar. The bar then
+shows the first four links of the person's app bar, shortcuts included, in
+the same order. When the current app comes later, it takes the fourth place,
+so the bar always marks it. The open item is the surface color on the bar's
+app gradient. Home is marked on the start page that `/` opens. When the
+person changes their app bar, the bar follows without a reload.
+
+The phone's content is a soft card with 28 px top corners. A regular signed-in
+page scrolls inside that card (`main`), while the window stays still. Content
+wider than the card scrolls sideways inside it, as from 768 px. The card
+keeps space for the bar at its end and when scrolling to a focused control.
+The bar sits 8 px above the bottom safe area; the title row and canvas keep
+the top and side safe areas. Anonymous phones retain Home in the header, its
+bottom line, a flat surface, and document scrolling. The phone app's own flat
+bottom bar is unchanged.
 
 Applications need no changes for any of this. `AppWorkspace` adds its compact
 navigation between 768 and 1023 px on its own; see
@@ -131,9 +146,9 @@ overscroll: their inner content, including embedded editors, owns scrolling
 without moving the outer Cloud shell or triggering pull-to-refresh.
 
 The shell measures the visible window with the dynamic viewport (`dvh`), not
-`vh`. From 768 px, and for full-page surfaces at every width, it is exactly as
-tall as the window and its content scrolls inside it. Below 768 px, a regular
-page is at least as tall as the window and grows with its content. `vh` follows
+`vh`. Signed-in pages, pages from 768 px, and full-page surfaces at every
+width are exactly as tall as the window and scroll their content inside it.
+Below 768 px, a regular anonymous page grows with its content. `vh` follows
 the larger viewport of a browser whose toolbar can collapse, such as Safari on
 iPad, so a page sized with it would scroll by that difference although its
 content fits. Full-page Help follows the same rule. A surface that renders
@@ -141,10 +156,10 @@ without the shell, such as a pop-out window or an unattended display, takes its
 height from `dvh` too, with `h-dvh` or `min-h-dvh`.
 
 The layout reserves a stable scrollbar gutter on every page scroller it owns:
-the content area of regular pages from 768 px and, below 768 px, the document
-of every page except full-page and focus-mode surfaces. Switching between short
-and long pages or tabs therefore does not shift the content sideways where
-scrollbars take layout space.
+the content area of regular pages from 768 px and, below 768 px, the soft card
+of signed-in pages and the document of anonymous pages, except full-page and
+focus-mode surfaces. Switching between short and long pages or tabs therefore
+does not shift the content sideways where scrollbars take layout space.
 
 Every Cloud page, with any layout, preloads the Latin IBM Plex Sans faces at
 weights 400, 500, and 600 next to its stylesheets. The first frame therefore
@@ -407,7 +422,7 @@ content.
 The layout places the profile menu with CSS:
 
 - Below 768 px, the app menu in the header holds the profile actions; the
-  header has no avatar.
+  title row has no avatar. Home and the apps are in the bottom bar.
 - From 768 px, the avatar is the last control of the app bar, below search and
   help. Its menu opens beside the app bar and grows upward from the avatar.
 

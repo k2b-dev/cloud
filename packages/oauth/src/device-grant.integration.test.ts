@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { type AppDeviceProof, AppDevicePublicKeySchema, appDeviceProofMessage } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
-import { toPgUuidArray } from "@k2b/cloud/services";
+import { type AppTerminalLogins, appApproval, readAppApprovalConfig, toPgUuidArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import * as settings from "@k2b/cloud/services/settings";
 import { redis, sql } from "bun";
@@ -166,8 +167,14 @@ suite("OAuth device authorization grant", () => {
   });
 
   afterAll(async () => {
-    if (createdClients.length > 0) await sql`DELETE FROM oauth.clients WHERE id = ANY(${toPgUuidArray(createdClients)}::uuid[])`;
-    if (createdUsers.length > 0) await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(createdUsers)}::uuid[])`;
+    if (createdClients.length > 0) {
+      await sql`DELETE FROM audit.events WHERE target_id = ANY(${toPgUuidArray(createdClients)}::text[])`;
+      await sql`DELETE FROM oauth.clients WHERE id = ANY(${toPgUuidArray(createdClients)}::uuid[])`;
+    }
+    if (createdUsers.length > 0) {
+      await sql`DELETE FROM audit.events WHERE actor_user_id = ANY(${toPgUuidArray(createdUsers)}::uuid[])`;
+      await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(createdUsers)}::uuid[])`;
+    }
   });
 
   test("discovery advertises the device endpoint and grant", async () => {
@@ -176,15 +183,25 @@ suite("OAuth device authorization grant", () => {
       device_authorization_endpoint: string;
       grant_types_supported: string[];
       cloud_login_ttl_supported: boolean;
+      cloud_login_hint_supported: boolean;
     };
     expect(metadata.device_authorization_endpoint).toBe(`${ISSUER}/oauth/device_authorization`);
     expect(metadata.grant_types_supported).toContain(DEVICE_GRANT);
     expect(metadata.cloud_login_ttl_supported).toBe(true);
+    expect(metadata.cloud_login_hint_supported).toBe(true);
   });
 
   test("full happy path issues refreshable tokens with the requested scopes and audits the approval", async () => {
     const who = await person("Device Happy Path");
     const started = await startDevice({ scope: "openid profile read offline_access" });
+    expect(Object.keys(started).sort()).toEqual([
+      "device_code",
+      "expires_in",
+      "interval",
+      "user_code",
+      "verification_uri",
+      "verification_uri_complete",
+    ]);
     expect(started.user_code).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
     expect(started.device_code.length).toBeGreaterThanOrEqual(43);
     expect(started.verification_uri).toBe(`${ISSUER}/oauth/device`);
@@ -592,5 +609,389 @@ suite("OAuth device authorization grant", () => {
     await oauth.device.cleanup();
     const [row] = await sql`SELECT 1 FROM oauth.device_authorizations WHERE device_code_hash = ${sha256(started.device_code)}`;
     expect(row).toBeUndefined();
+  });
+
+  describe("Cloud Login device approval with login_hint", () => {
+    const saved = new Map<string, unknown>();
+    const keys = ["user.app_approval.enabled", "user.app_approval.origin", "user.session.expiry_hours"];
+    const authorizationIds: string[] = [];
+    const pushes: { token: string; requestRef: string; cloudOrigin: string }[] = [];
+    let pushServer: ReturnType<typeof Bun.serve>;
+    let terminalLogins: AppTerminalLogins;
+
+    beforeAll(async () => {
+      // The computed import keeps Core's program out of the OAuth typecheck.
+      const corePath = "../../core/src/api/identity-oauth-device-approval";
+      const core: { terminalLogins: AppTerminalLogins } = await import(corePath);
+      terminalLogins = core.terminalLogins;
+      for (const key of keys) saved.set(key, await settings.get(key));
+      pushServer = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: async (request) => {
+          if (request.method !== "POST" || new URL(request.url).pathname !== "/push/notify") return new Response(null, { status: 404 });
+          pushes.push(await request.json());
+          return new Response(null, { status: 200 });
+        },
+      });
+      await settings.set("user.app_approval.enabled", true);
+      await settings.set("user.app_approval.origin", pushServer.url.origin);
+      await settings.set("user.session.expiry_hours", 8);
+    });
+
+    afterAll(async () => {
+      try {
+        if (authorizationIds.length) {
+          await sql`DELETE FROM auth.app_logins WHERE device_authorization_id=ANY(${toPgUuidArray(authorizationIds)}::uuid[])`;
+          await sql`DELETE FROM oauth.device_authorizations WHERE id=ANY(${toPgUuidArray(authorizationIds)}::uuid[])`;
+        }
+      } finally {
+        try {
+          for (const key of keys) if (saved.has(key)) await settings.set(key, saved.get(key));
+        } finally {
+          await pushServer?.stop(true);
+        }
+      }
+    });
+
+    const paired = async () => {
+      const who = await person("Cloud Login Device Test");
+      const [user] = await sql<{ uid: string; mail: string }[]>`SELECT uid,mail FROM auth.users WHERE id=${who.userId}::uuid`;
+      if (!user) throw new Error("Missing user");
+      const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
+      const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+      const key = AppDevicePublicKeySchema.parse({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y });
+      const deviceId = crypto.randomUUID();
+      const issuer = (await readAppApprovalConfig()).issuer;
+      const pushToken = `terminal-${deviceId}`;
+      await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted,accepts,push_token)
+        VALUES (${deviceId}::uuid,${issuer},${who.userId}::uuid,'Phone',${JSON.stringify(key)}::text::jsonb,false,ARRAY['terminal-logins'],${pushToken})`;
+      const decide = async (authorizationId: string, decision: "approve" | "deny") => {
+        const [login] = await sql<{ id: string; challenge: string; comparison: string }[]>`
+          SELECT id,challenge,comparison FROM auth.app_logins WHERE device_authorization_id=${authorizationId}::uuid`;
+        if (!login) throw new Error("Missing app login");
+        const now = Math.floor(Date.now() / 1000);
+        const proof: AppDeviceProof = {
+          issuer,
+          deviceId,
+          jti: crypto.randomUUID(),
+          issuedAt: now,
+          expiresAt: now + 60,
+          command: { operation: "decide", requestId: login.id, challenge: login.challenge, comparison: login.comparison, decision },
+        };
+        const signature = Buffer.from(
+          await crypto.subtle.sign(
+            { name: "ECDSA", hash: "SHA-256" },
+            pair.privateKey,
+            new TextEncoder().encode(appDeviceProofMessage(proof)),
+          ),
+        ).toString("base64url");
+        return appApproval.deviceCommand(
+          { proof, signature },
+          {
+            inbox: async () => ({ actions: [], moreActions: 0 }),
+            view: async () => null,
+            decide: async () => false,
+          },
+          terminalLogins,
+        );
+      };
+      return { ...who, ...user, deviceId, issuer, pushToken, decide };
+    };
+
+    const start = async (identifier: string, ttl?: string) => {
+      const response = await oauthRoutes.request(
+        "/oauth/device_authorization",
+        form({
+          client_id: "cloud-cli",
+          scope: "openid offline_access read",
+          login_hint: identifier,
+          ...(ttl !== undefined ? { ttl } : {}),
+        }),
+      );
+      expect(response.status).toBe(200);
+      const body: { device_code: string; comparison: string; expires_in: number; interval: number } = await response.json();
+      const row = await deviceRow(body.device_code);
+      authorizationIds.push(row.id);
+      expect(Object.keys(body).sort()).toEqual(["comparison", "device_code", "expires_in", "interval"]);
+      expect(body.comparison).toMatch(/^\d{6}$/);
+      expect(body.expires_in).toBe(300);
+      expect(body.interval).toBe(5);
+      const [stored] = await sql<
+        { comparison: string }[]
+      >`SELECT comparison FROM auth.app_logins WHERE device_authorization_id=${row.id}::uuid`;
+      expect(stored?.comparison).toBe(body.comparison);
+      return { ...body, id: row.id };
+    };
+
+    const expire = async (id: string) => {
+      await sql`UPDATE oauth.device_authorizations SET expires_at=now()-interval '1 second' WHERE id=${id}::uuid`;
+      await sql`UPDATE auth.app_logins SET expires_at=now()-interval '1 second' WHERE device_authorization_id=${id}::uuid`;
+    };
+
+    const waitForPush = async (id: string) => {
+      const [login] = await sql<{ id: string }[]>`SELECT id FROM auth.app_logins WHERE device_authorization_id=${id}::uuid`;
+      for (let attempt = 0; attempt < 100 && !pushes.some((push) => push.requestRef === login?.id); attempt++) await Bun.sleep(20);
+      const push = pushes.find((push) => push.requestRef === login?.id);
+      expect(push).toBeDefined();
+      return push;
+    };
+
+    const countRows = async (clientId = "cloud-cli") => {
+      const [row] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM oauth.device_authorizations WHERE client_id=${clientId}`;
+      return row!.count;
+    };
+
+    const managedClient = async () => {
+      const id = await insertUser();
+      const created = await oauth.clients.create({
+        actor: { id, uid: `admin-${id}`, provider: "local", roles: ["admin"] },
+        data: {
+          name: `Hint refusal ${crypto.randomUUID()}`,
+          redirectUris: [],
+          scopes: ["read"],
+          audiences: ["cloud"],
+          allowedProfiles: ["user"],
+          accessMode: "profiles",
+          allowedUserIds: [],
+          allowedGroupIds: [],
+          isPublic: true,
+          allowDeviceGrant: true,
+        },
+      });
+      if (!created.ok) throw new Error("Client setup failed");
+      createdClients.push(created.data.id);
+      return created.data;
+    };
+
+    test("username approval issues a session-length login, wakes the app and prevents replay", async () => {
+      const who = await paired();
+      const started = await start(`  ${who.uid}  `);
+      expect(await waitForPush(started.id)).toMatchObject({ token: who.pushToken, cloudOrigin: who.issuer });
+      const [stored] = await sql<{ app_approval: boolean; login_lifetime_seconds: number; remaining: number }[]>`
+        SELECT app_approval,login_lifetime_seconds,floor(extract(epoch FROM expires_at-now()))::int AS remaining
+        FROM oauth.device_authorizations WHERE id=${started.id}::uuid`;
+      expect(stored).toMatchObject({ app_approval: true, login_lifetime_seconds: 28800 });
+      expectRemaining(stored?.remaining, 300);
+      await who.decide(started.id, "approve");
+      const tokens = await poll(started.device_code);
+      expect(tokens.status).toBe(200);
+      expectRemaining(tokens.body.refresh_token_expires_in, 28800);
+      const family = await familyFor(String(tokens.body.refresh_token));
+      expectRemaining(Math.floor((family.expires_at.getTime() - Date.now()) / 1000), 28800);
+      expect(family.token_expires_at.getTime()).toBe(family.expires_at.getTime());
+      expectTokensEndBy(tokens.body, family.expires_at);
+      await allowNextPoll(started.device_code);
+      expect(await poll(started.device_code)).toMatchObject({ status: 400, body: { error: "invalid_grant" } });
+    });
+
+    test("email lookup ignores case and ttl reduces the absolute login lifetime", async () => {
+      const who = await paired();
+      const started = await start(who.mail.toUpperCase(), "1800");
+      await waitForPush(started.id);
+      await who.decide(started.id, "approve");
+      const tokens = await poll(started.device_code);
+      expect(tokens.status).toBe(200);
+      expectRemaining(tokens.body.refresh_token_expires_in, 1800);
+      const family = await familyFor(String(tokens.body.refresh_token));
+      expectRemaining(Math.floor((family.expires_at.getTime() - Date.now()) / 1000), 1800);
+    });
+
+    test("signed denial and expired app grants use normal device polling errors", async () => {
+      const who = await paired();
+      const denied = await start(who.uid);
+      await waitForPush(denied.id);
+      await who.decide(denied.id, "deny");
+      expect(await poll(denied.device_code)).toMatchObject({ status: 400, body: { error: "access_denied" } });
+      const expired = await start(who.uid);
+      await waitForPush(expired.id);
+      await expire(expired.id);
+      expect(await poll(expired.device_code)).toMatchObject({ status: 400, body: { error: "expired_token" } });
+    });
+
+    test("unknown, ambiguous and unpaired accounts answer identically and expire without a push", async () => {
+      const real = await paired();
+      const started = await start(real.uid);
+      await waitForPush(started.id);
+      const before = pushes.length;
+      const ambiguous = await paired();
+      const otherId = await insertUser();
+      await sql`UPDATE auth.users SET mail=${ambiguous.uid.toUpperCase()} WHERE id=${otherId}::uuid`;
+      const unpairedId = await insertUser();
+      const [unpaired] = await sql<{ uid: string }[]>`SELECT uid FROM auth.users WHERE id=${unpairedId}::uuid`;
+      for (const identifier of [`missing-${crypto.randomUUID()}`, ambiguous.uid, unpaired!.uid]) {
+        const decoy = await start(identifier);
+        expect(Object.keys(decoy).sort()).toEqual(Object.keys(started).sort());
+        expect(decoy.expires_in).toBe(started.expires_in);
+        expect(decoy.interval).toBe(started.interval);
+        const [login] = await sql<
+          { user_id: string | null }[]
+        >`SELECT user_id FROM auth.app_logins WHERE device_authorization_id=${decoy.id}::uuid`;
+        expect(login?.user_id).toBeNull();
+        expect(await poll(decoy.device_code)).toMatchObject({ status: 400, body: { error: "authorization_pending" } });
+        expect(await poll(decoy.device_code)).toMatchObject({ status: 400, body: { error: "slow_down" } });
+        await expire(decoy.id);
+        expect(await poll(decoy.device_code)).toMatchObject({ status: 400, body: { error: "expired_token" } });
+      }
+      expect(pushes).toHaveLength(before);
+    });
+
+    test("managed clients, empty/admin/disallowed scopes and malformed hints never reach Core or insert a row", async () => {
+      const client = await managedClient();
+      const fetch = globalThis.fetch;
+      let calls = 0;
+      const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+          (input: RequestInfo | URL, init?: RequestInit) => {
+            if (String(input).endsWith("/oauth/device-approval")) {
+              calls++;
+              return Promise.resolve(new Response(null, { status: 503 }));
+            }
+            return fetch(input, init);
+          },
+          { preconnect: fetch.preconnect },
+        ),
+      );
+      const settingsSpy = spyOn(settings, "get");
+      try {
+        const before = await countRows(client.clientId);
+        const response = await oauthRoutes.request(
+          "/oauth/device_authorization",
+          form({ client_id: client.clientId, login_hint: "alice", scope: "admin" }),
+        );
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({
+          error: "invalid_request",
+          error_description: "login_hint is only accepted for first-party clients",
+        });
+        expect(settingsSpy).not.toHaveBeenCalled();
+        expect(await countRows(client.clientId)).toBe(before);
+        for (const scope of ["admin", "unknown-scope"]) {
+          const count = await countRows();
+          const result = await oauthRoutes.request(
+            "/oauth/device_authorization",
+            form({ client_id: "cloud-cli", login_hint: "alice", scope }),
+          );
+          expect(result.status).toBe(400);
+          expect(await result.json()).toMatchObject({ error: "invalid_scope" });
+          expect(await countRows()).toBe(count);
+        }
+        // A first-party fixture without openid resolves an omitted scope to the empty set.
+        await sql`UPDATE oauth.clients SET registration_kind='first_party' WHERE id=${client.id}::uuid`;
+        const empty = await oauthRoutes.request("/oauth/device_authorization", form({ client_id: client.clientId, login_hint: "alice" }));
+        expect(empty.status).toBe(400);
+        expect(await empty.json()).toMatchObject({ error: "invalid_scope" });
+        expect(await countRows(client.clientId)).toBe(before);
+        for (const login_hint of ["", "  ", "a".repeat(255)]) {
+          const count = await countRows();
+          const malformed = await oauthRoutes.request("/oauth/device_authorization", form({ client_id: "cloud-cli", login_hint }));
+          expect(malformed.status).toBe(400);
+          expect(await malformed.json()).toEqual({
+            error: "invalid_request",
+            error_description: "Device authorization request validation failed",
+          });
+          expect(await countRows()).toBe(count);
+        }
+        expect(calls).toBe(0);
+        expect(settingsSpy).not.toHaveBeenCalled();
+      } finally {
+        settingsSpy.mockRestore();
+        fetchSpy.mockRestore();
+      }
+    });
+
+    test("app rows reject code entry and both stale confirmation and direct browser decisions", async () => {
+      const who = await paired();
+      const client = await oauth.clients.getByClientId({ clientId: "cloud-cli" });
+      if (!client) throw new Error("Missing CLI client");
+      const started = await oauth.device.create({ client, scopes: ["openid"], appApproval: true, loginLifetimeSeconds: 28800 });
+      authorizationIds.push(started.id);
+      expect(await view(who, started.userCode)).toMatchObject({ status: 400, view: { kind: "entry", error: expect.any(String) } });
+      expect(await oauth.device.findPendingByUserCode(started.userCode)).toBeNull();
+      expect(await oauth.device.getPending(started.id)).toBeNull();
+      const confirmation = await oauth.device.createConfirmation({ deviceAuthorizationId: started.id, userId: who.userId });
+      expect(await decide(who, confirmation, "approve")).toBe("/oauth/device?result=expired");
+      for (const decision of ["approve", "deny"] as const) {
+        expect(
+          await oauth.device.decide({
+            id: started.id,
+            client,
+            actor: { userId: who.userId, uid: who.uid, provider: "local", roles: [] },
+            decision,
+          }),
+        ).toBe(false);
+      }
+      expect((await deviceRow(started.deviceCode)).status).toBe("pending");
+    });
+
+    test("disabled app approval refuses the start without inserting or calling Core", async () => {
+      const before = await countRows();
+      const fetch = globalThis.fetch;
+      let calls = 0;
+      const spy = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+          (input: RequestInfo | URL, init?: RequestInit) => {
+            if (String(input).endsWith("/oauth/device-approval")) {
+              calls++;
+              throw new Error("Unexpected Core call");
+            }
+            return fetch(input, init);
+          },
+          { preconnect: fetch.preconnect },
+        ),
+      );
+      try {
+        await settings.set("user.app_approval.enabled", false);
+        const response = await oauthRoutes.request("/oauth/device_authorization", form({ client_id: "cloud-cli", login_hint: "alice" }));
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({
+          error: "invalid_request",
+          error_description: "Cloud Login approval is turned off on this Cloud; start the sign-in without login_hint",
+        });
+        expect(await countRows()).toBe(before);
+        expect(calls).toBe(0);
+      } finally {
+        spy.mockRestore();
+        await settings.set("user.app_approval.enabled", true);
+      }
+    });
+
+    for (const failure of ["old-core", "network", "cleanup"] as const) {
+      test(`Core ${failure} returns 503 and preserves other pending grants`, async () => {
+        const untouched = await start(`missing-${crypto.randomUUID()}`);
+        const before = await countRows();
+        const fetch = globalThis.fetch;
+        let calls = 0;
+        const deleteSpy = failure === "cleanup" ? spyOn(oauth.device, "deletePending").mockRejectedValue(new Error("Delete failed")) : null;
+        const spy = spyOn(globalThis, "fetch").mockImplementation(
+          Object.assign(
+            (input: RequestInfo | URL, init?: RequestInit) => {
+              if (String(input).endsWith("/oauth/device-approval")) {
+                calls++;
+                const body: { deviceAuthorizationId: string } = JSON.parse(String(init?.body));
+                authorizationIds.push(body.deviceAuthorizationId);
+                if (failure === "network") throw new TypeError("Network failure");
+                return Promise.resolve(new Response(null, { status: 404 }));
+              }
+              return fetch(input, init);
+            },
+            { preconnect: fetch.preconnect },
+          ),
+        );
+        try {
+          const response = await oauthRoutes.request("/oauth/device_authorization", form({ client_id: "cloud-cli", login_hint: "alice" }));
+          expect(response.status).toBe(503);
+          expect(await response.json()).toMatchObject({ error: "temporarily_unavailable" });
+          expect(calls).toBe(1);
+          expect(await countRows()).toBe(before + (failure === "cleanup" ? 1 : 0));
+          expect((await deviceRow(untouched.device_code)).status).toBe("pending");
+        } finally {
+          spy.mockRestore();
+          deleteSpy?.mockRestore();
+        }
+      });
+    }
   });
 });

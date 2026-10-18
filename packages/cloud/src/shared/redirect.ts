@@ -17,6 +17,18 @@ export const normalizeRedirectTo = (value: string | null | undefined): string | 
   }
 };
 
+/** Default landing page when no valid home path is configured. */
+export const DEFAULT_HOME_PATH = "/app/dashboard";
+
+/** Resolve a local home path, falling back for root, auth, admin, or invalid targets. */
+export const resolveHomePath = (value: unknown): string => {
+  const path = typeof value === "string" ? normalizeRedirectTo(value) : undefined;
+  if (!path || path === "/" || path === "/auth" || path.startsWith("/auth/") || path === "/admin" || path.startsWith("/admin/")) {
+    return DEFAULT_HOME_PATH;
+  }
+  return path;
+};
+
 /** Extract a safe post-login redirect target from an incoming request URL. */
 export const redirectPathFromRequestUrl = (requestUrl: string): string => {
   const url = new URL(requestUrl);

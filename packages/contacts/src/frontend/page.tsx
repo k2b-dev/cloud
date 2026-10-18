@@ -44,10 +44,10 @@ export default ssr<AuthContext>(async (c) => {
   const activeTagInternalId = activeTagId ? await resolvePublicId("tags", activeTagId) : null;
   const [booksResult, contactsResult] = await Promise.all([
     contactsService.book.list({
-      subject: { type: "user", userId: user.id },
+      subject: c.get("accessSubject"),
     }),
     contactsService.contact.search({
-      subject: { type: "user", userId: user.id },
+      subject: c.get("accessSubject"),
       pagination: { page, perPage },
       filter: {
         query: search.trim() || undefined,
@@ -65,10 +65,11 @@ export default ssr<AuthContext>(async (c) => {
     contacts: internalContacts,
     contactId: selectedContactIdFromUrl,
     bookId: selectedBookIdFromUrl,
-    user,
+    actor: c.get("actor"),
+    accessSubject: c.get("accessSubject"),
   });
   const [permissions, internalNotesPage, internalFavoriteKeys, internalGlobalTags] = await Promise.all([
-    loadContactBookPermissions({ books: internalBooks, user }),
+    loadContactBookPermissions({ books: internalBooks, actor: c.get("actor"), accessSubject: c.get("accessSubject") }),
     selectedContact
       ? contactsService.contact.notes.listPage({
           bookId: selectedContact.bookId,

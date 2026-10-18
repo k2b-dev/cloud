@@ -2468,7 +2468,11 @@ export const migrateCloudAi = async (): Promise<void> => {
   {
     const { coreSettings } = await import("../services");
     const { setAiCredential, splitAiProfileCredentials } = await import("./credentials");
-    const split = splitAiProfileCredentials((await coreSettings.get<string>("ai.model_profiles_json")) ?? "[]");
+    const profiles = await coreSettings.read<string>("ai.model_profiles_json");
+    if (profiles.stored === "unreadable") {
+      console.warn('[ai] cannot read setting "ai.model_profiles_json"; skipping credential split');
+    }
+    const split = profiles.stored === "unreadable" ? null : splitAiProfileCredentials(profiles.value ?? "[]");
     if (split && split.credentials.length > 0) {
       for (const { profileId, secret } of split.credentials) await setAiCredential(profileId, secret);
       await coreSettings.set("ai.model_profiles_json", split.profilesJson);

@@ -3,12 +3,10 @@ import { Chart, Placeholder } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import type { CustomAppValueFormat } from "../../custom-apps/contracts";
 import type { CustomAppChartData } from "../../service/custom-app-insights";
-import { buildChartRenderData, type ChartRenderData } from "./chart-data";
+import { type ChartRenderData, type ChartType, customAppChartRenderData } from "./chart-data";
 import { customAppChartTooltip } from "./chart-tooltip";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
 import { formatCustomAppValue } from "./value-format";
-
-export type ChartType = "bar" | "line" | "donut";
 
 // @k2b/ui draws every chart in a 480-unit wide space and stretches it to the box.
 const CHART_WIDTH = 480;
@@ -158,21 +156,6 @@ export default function CustomAppChart(props: {
     />
   );
 }
-
-export const customAppChartRenderData = (
-  chartType: ChartType,
-  data: Extract<CustomAppChartData, { kind: "chart" }>,
-  categoryFormat: { locale?: string; unknownRecordLabel?: string },
-): ChartRenderData =>
-  buildChartRenderData({
-    widget: { chartType },
-    groupBy: data.viewQuery.groupBy,
-    aggregations: data.viewQuery.aggregations,
-    buckets: data.buckets,
-    fieldsById: new Map(data.fields.map((field) => [field.id, field])),
-    relationLabels: data.relationLabels,
-    categoryFormat,
-  });
 
 export function CustomAppChartView(props: {
   chart: ChartRenderData;

@@ -7,7 +7,6 @@ import {
   type CloudResourceView,
   capabilityPage,
   defineCapabilities,
-  hasRole,
   UniversalSearchDataSchema,
   type UniversalSearchInput,
   UniversalSearchInputSchema,
@@ -55,7 +54,7 @@ import { type ContactCapabilityMessages, contactCapabilityMessages } from "./cap
 import { contactsCapabilityPresentation } from "./capability-presentation";
 import { ContactComposeInputSchema } from "./commands";
 import { type Contact, type ContactBook, type ContactNote, type ContactTag, contactsService } from "./service";
-import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID } from "./service/access";
+import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID, minPermission, permissionFromScopes } from "./service/access";
 import {
   projectBooks,
   projectContactReferences,
@@ -432,18 +431,6 @@ const pageResult = <T>(
     page: capabilityPage(page.hasNext ? encodeCursor(page.page + 1) : undefined),
   });
 
-const permissionFromScopes = (scopes: readonly string[]): PermissionLevel => {
-  if (scopes.includes("admin")) return "admin";
-  if (scopes.includes("write")) return "write";
-  if (scopes.includes("read")) return "read";
-  return "none";
-};
-
-const minPermission = (left: PermissionLevel, right: PermissionLevel): PermissionLevel => {
-  const ranks: Record<PermissionLevel, number> = { none: 0, read: 1, write: 2, admin: 3 };
-  return ranks[left] <= ranks[right] ? left : right;
-};
-
 const userBacked = (context: CapabilityExecutionContext) => context.user;
 
 const resourceBoundBookId = (context: CapabilityExecutionContext): string | null => {
@@ -473,19 +460,11 @@ const requireBookPermissionInternal = async (
   const book = await contactsService.book.get({ id: bookId });
   if (!book) return fail(err.notFound("Book"));
 
-  const user = userBacked(context);
-  if (user && hasRole(user, "admin")) return ok({ book, permission: "admin" });
-
-  if (context.accessSubject.type === "service_account" && !isStandaloneAccount(context)) {
-    const boundBookId = resourceBoundBookId(context);
-    if (!boundBookId || boundBookId !== bookId) return fail(err.forbidden("Access denied"));
-  }
-
-  let permission = await contactsService.book.permission.get({ bookId, subject: context.accessSubject });
-  // Only a user-delegated credential acts as its user; every other service account is capped by its scopes.
-  if (context.actor.kind === "service_account" && context.actor.serviceAccount.kind !== "user_delegated") {
-    permission = minPermission(permission, permissionFromScopes(context.actor.scopes));
-  }
+  const permission = await contactsService.book.permission.forActor({
+    bookId,
+    actor: context.actor,
+    accessSubject: context.accessSubject,
+  });
   return hasPermission(permission, required)
     ? ok({ book, permission })
     : fail(err.forbidden(`${required === "read" ? "Read" : "Write"} access to this address book is required`));
@@ -592,11 +571,9 @@ const runContactSuggest = async (input: z.infer<typeof ContactSuggestInputSchema
   const cursor = decodeContactCapabilityCursor(input.cursor);
   if (!cursor.ok) return cursor;
   if (!serviceAccountMayRead(context)) return fail(err.forbidden("A readable Contacts credential is required"));
-  const user = userBacked(context);
   const page = await contactsService.contact.search({
     subject: context.accessSubject,
     boundBookId: resourceBoundBookId(context),
-    bypassAccess: Boolean(user && hasRole(user, "admin")),
     pagination: { page: cursor.data, perPage: input.limit },
     filter: {
       query: input.query,
@@ -758,28 +735,6 @@ const runBookList = async (input: z.infer<typeof ContactBookListInputSchema>, co
       : ("admin" as PermissionLevel);
   if (!hasPermission(scopedPermission, input.minimumPermission)) {
     return fail(err.forbidden(`The Contacts credential does not grant ${input.minimumPermission} access`));
-  }
-  const user = userBacked(context);
-  if (user && hasRole(user, "admin")) {
-    const page = await contactsService.book.admin.list({
-      pagination: { page: cursor.data, perPage: input.limit },
-      filter: { query: input.query },
-    });
-    const books = await projectBooks(page.items);
-    return pageResult(
-      page,
-      books.map((book) => ({
-        ref: { type: "contacts.book" as const, id: book.id },
-        id: book.id,
-        name: book.name,
-        description: book.description,
-        permission: "admin" as const,
-        links: [{ rel: "open" as const, href: `/app/contacts/${book.id}` }],
-        createdAt: book.createdAt,
-        updatedAt: book.updatedAt,
-      })),
-      books.map(bookRef),
-    );
   }
   const page = await contactsService.book.listPage({
     subject: context.accessSubject,

@@ -4,7 +4,6 @@ import {
   createPagination,
   ErrorResponseSchema,
   GrantAccessSchema,
-  hasRole,
   MessageResponseSchema,
   PaginationQuerySchema,
   PaginationResponseSchema,
@@ -32,7 +31,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { ResourceShortIdSchema } from "../capability-contracts";
 import { contactsService } from "../service";
-import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID, getActorBookPermission, permissionFromScopes } from "../service/access";
+import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID, permissionFromScopes } from "../service/access";
 import { contactsLive } from "../service/live";
 import { contactsLiveChannels } from "../service/live-channels";
 import { contactsApiErrorMessage, contactsMessages, notFoundError } from "../service/messages";
@@ -557,7 +556,11 @@ const requireInternalBookAccess = async (c: Context<AuthContext>, bookId: string
     };
   }
 
-  const permission = await getActorBookPermission({ bookId, actor: c.get("actor"), subject: subject.subject });
+  const permission = await contactsService.book.permission.forActor({
+    bookId,
+    actor: c.get("actor"),
+    accessSubject: c.get("accessSubject"),
+  });
   if (!hasPermission(permission, requiredLevel)) {
     return {
       book: null,
@@ -570,26 +573,6 @@ const requireInternalBookAccess = async (c: Context<AuthContext>, bookId: string
 
   return { book, bookId, permission, user: subject.user, error: null as ApiErrorResponse | null };
 };
-
-const requireBookAdminOrAppAdmin = async (c: Context<AuthContext>, publicBookId: string) => {
-  const user = getUserBackedActor(c);
-  const bookId = await resolvePublicId("books", publicBookId);
-  if (!bookId) return { book: null, bookId: null, error: await respond(c, fail(err.notFound("Book"))) };
-  const book = await contactsService.book.get({ id: bookId });
-
-  if (!book) {
-    return {
-      book: null,
-      bookId: null,
-      error: await respond(c, fail(err.notFound("Book"))),
-    };
-  }
-
-  if (user && hasRole(user, "admin")) return { book, bookId, error: null as ApiErrorResponse | null };
-  return requireBookAccess(c, publicBookId, "admin");
-};
-
-const requireManualBookAdminOrAppAdmin = requireBookAdminOrAppAdmin;
 
 const safeExportFilename = (name: string | null | undefined, extension: "csv" | "vcf"): string => {
   const basename = (name ?? "contacts").replace(/[^a-z0-9-_]+/gi, "_");
@@ -621,28 +604,31 @@ const adminApi = new Hono<AuthContext>()
   .use(auth.requireRole("admin"))
   .get("/books/:bookId/access", async (c) => {
     const bookId = c.req.param("bookId") ?? "";
-    const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
-    if (error) return error;
-    const entries = await contactsService.book.access.list({ bookId: internalBookId! });
-    return respond(c, ok(entries.items));
+    const internalBookId = await resolvePublicId("books", bookId);
+    const book = internalBookId ? await contactsService.book.get({ id: internalBookId }) : null;
+    if (!book) return respond(c, fail(err.notFound("Book")));
+    const entries = await contactsService.book.admin.access.list({ bookId: internalBookId!, actor: c.get("actor") });
+    return respond(c, entries.ok ? ok(entries.data.items) : entries);
   })
   .post("/books/:bookId/access", v("json", GrantAccessSchema), async (c) => {
     const bookId = c.req.param("bookId") ?? "";
     const { principal, permission } = c.req.valid("json");
-    const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
-    if (error) return error;
-    return respond(c, contactsService.book.access.grant({ bookId: internalBookId!, principal, permission }));
+    const internalBookId = await resolvePublicId("books", bookId);
+    const book = internalBookId ? await contactsService.book.get({ id: internalBookId }) : null;
+    if (!book) return respond(c, fail(err.notFound("Book")));
+    return respond(c, contactsService.book.admin.access.grant({ bookId: internalBookId!, principal, permission, actor: c.get("actor") }));
   })
   .patch("/books/:bookId/access/:accessId", v("json", UpdateAccessSchema), async (c) => {
     const bookId = c.req.param("bookId") ?? "";
     const accessId = c.req.param("accessId") ?? "";
     const { permission } = c.req.valid("json");
-    const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
-    if (error) return error;
+    const internalBookId = await resolvePublicId("books", bookId);
+    const book = internalBookId ? await contactsService.book.get({ id: internalBookId }) : null;
+    if (!book) return respond(c, fail(err.notFound("Book")));
 
     return respondMessage(
       c,
-      contactsService.book.access.update({
+      contactsService.book.admin.access.update({
         bookId: internalBookId!,
         accessId,
         permission,
@@ -656,12 +642,13 @@ const adminApi = new Hono<AuthContext>()
   .delete("/books/:bookId/access/:accessId", async (c) => {
     const bookId = c.req.param("bookId") ?? "";
     const accessId = c.req.param("accessId") ?? "";
-    const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
-    if (error) return error;
+    const internalBookId = await resolvePublicId("books", bookId);
+    const book = internalBookId ? await contactsService.book.get({ id: internalBookId }) : null;
+    if (!book) return respond(c, fail(err.notFound("Book")));
 
     return respondMessage(
       c,
-      contactsService.book.access.remove({
+      contactsService.book.admin.access.remove({
         bookId: internalBookId!,
         accessId,
         actor: c.get("actor"),
@@ -1000,7 +987,7 @@ const app = new Hono<AuthContext>()
       if (!userResult.ok) return respond(c, userResult);
 
       const bookId = c.req.param("bookId") ?? "";
-      const { book, bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
+      const { book, bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
       if (error || !book) return error!;
 
       const [accessEntries, apiKeys, tags] = await Promise.all([
@@ -1111,7 +1098,7 @@ const app = new Hono<AuthContext>()
       if (!userResult.ok) return respond(c, userResult);
       const bookId = c.req.param("bookId") ?? "";
 
-      const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
+      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
       if (error) return error;
 
       const entries = await contactsService.book.access.list({ bookId: internalBookId! });
@@ -1140,7 +1127,7 @@ const app = new Hono<AuthContext>()
       const bookId = c.req.param("bookId") ?? "";
       const { principal, permission } = c.req.valid("json");
 
-      const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
+      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
       if (error) return error;
 
       return respond(c, contactsService.book.access.grant({ bookId: internalBookId!, principal, permission }));
@@ -1169,7 +1156,7 @@ const app = new Hono<AuthContext>()
       const accessId = c.req.param("accessId") ?? "";
       const { permission } = c.req.valid("json");
 
-      const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
+      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
       if (error) return error;
 
       return respondMessage(
@@ -1208,7 +1195,7 @@ const app = new Hono<AuthContext>()
       const bookId = c.req.param("bookId") ?? "";
       const accessId = c.req.param("accessId") ?? "";
 
-      const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
+      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
       if (error) return error;
 
       return respondMessage(
@@ -1245,7 +1232,7 @@ const app = new Hono<AuthContext>()
       if (!userResult.ok) return respond(c, userResult);
       const bookId = c.req.param("bookId") ?? "";
 
-      const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
+      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
       if (error) return error;
 
       return respond(c, async () => ok({ items: await contactsService.book.access.apiKeys.list({ bookId: internalBookId! }) }));
@@ -1275,7 +1262,7 @@ const app = new Hono<AuthContext>()
       const bookId = c.req.param("bookId") ?? "";
       const data = c.req.valid("json");
 
-      const { book, bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
+      const { book, bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
       if (error || !book) return error!;
 
       return respond(
@@ -1315,7 +1302,7 @@ const app = new Hono<AuthContext>()
       const bookId = c.req.param("bookId") ?? "";
       const credentialId = c.req.param("credentialId") ?? "";
 
-      const { bookId: internalBookId, error } = await requireManualBookAdminOrAppAdmin(c, bookId);
+      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
       if (error) return error;
 
       return respond(c, contactsService.book.access.apiKeys.revoke({ bookId: internalBookId!, credentialId, actor: user }));

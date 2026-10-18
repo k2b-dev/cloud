@@ -13,6 +13,9 @@ test("the shell modes cover every width exactly once", async () => {
 
   expect(widthQueries).toEqual([
     "not all and (min-width: 768px)",
+    // The phone bar switches with Tailwind's `md`, as the header and the rail
+    // do, so it stays in step with them under a larger default font size.
+    "not all and (min-width: 48rem)",
     "(min-width: 768px)",
     "(min-width: 768px)",
     "not all and (min-width: 1024px)",

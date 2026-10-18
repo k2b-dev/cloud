@@ -99,7 +99,7 @@ const hidden = async (page: Page, selector: string) => {
   expect(await page.locator(selector).count()).toBeGreaterThan(0);
   for (const element of await page.locator(selector).all()) expect(await element.boundingBox()).toBeNull();
 };
-const chrome = ".layout-rail,.layout-header,.layout-page-head,.k2b-app-workspace__sidebar,.k2b-app-workspace__detail";
+const chrome = ".cloud-tab-bar,.layout-rail,.layout-header,.layout-page-head,.k2b-app-workspace__sidebar,.k2b-app-workspace__detail";
 
 test("only regions print, with all 120 paragraphs and unclipped ancestors", async () => {
   const page = await open();
@@ -107,6 +107,7 @@ test("only regions print, with all 120 paragraphs and unclipped ancestors", asyn
     await page.emulateMedia({ media: "print" });
     for (const selector of [
       ".layout-rail",
+      ".cloud-tab-bar",
       ".layout-header",
       ".layout-page-head",
       ".k2b-app-workspace__sidebar",

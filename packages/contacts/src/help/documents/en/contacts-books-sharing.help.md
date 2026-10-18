@@ -8,6 +8,8 @@ order: 120
 
 Contact book settings control metadata, tags, access, API keys, import, export, and deletion for one book. Open them with the settings action next to a book in the Contacts sidebar. On mobile devices, this action stays visible next to the books that you have **Manage** access to.
 
+Cloud administrators also need access to see a book in Contacts; **Administration → Contacts** shows every book and its access.
+
 ## Find the book settings {icon="settings"}
 
 :::reference
