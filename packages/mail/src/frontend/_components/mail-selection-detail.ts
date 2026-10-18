@@ -1,4 +1,4 @@
-import type { MailboxPageData, MailSelectionDetail } from "../../service/workspace";
+import type { MailboxPageData, MailListItem, MailSelectionDetail } from "../../service/workspace";
 
 /** The part of a workspace snapshot that belongs to its selection; the list, folders and counts do not depend on it. */
 export type MailSelection = MailSelectionDetail & Pick<MailboxPageData, "selectedConversationId" | "selectedMessageId" | "selectedSubject">;
@@ -57,3 +57,29 @@ export const emptyMailSelection = (): MailSelection => ({
   selectedMessageId: null,
   selectedSubject: "",
 });
+
+/**
+ * A row loaded earlier than its conversation's detail, brought up to what actions read from it: the newer revision,
+ * and every folder with an unread message in the detail. Returns the same row when nothing is newer.
+ */
+export const syncMailRowWithDetail = (
+  item: MailListItem,
+  detail: {
+    detailMessages: ReadonlyArray<{ flags: readonly string[]; folderId: string | null }>;
+    collaborationState: { revision: number } | null;
+    conversationLocalTags: { conversationRevision: number } | null;
+  },
+): MailListItem => {
+  const unseenFolderIds = detail.detailMessages.flatMap((message) =>
+    !message.flags.includes("\\Seen") && message.folderId ? [message.folderId] : [],
+  );
+  const unreadFolderIds = [...new Set([...item.unreadFolderIds, ...unseenFolderIds])];
+  const revision = Math.max(
+    item.revision,
+    detail.collaborationState?.revision ?? 0,
+    detail.conversationLocalTags?.conversationRevision ?? 0,
+  );
+  return revision === item.revision && unreadFolderIds.length === item.unreadFolderIds.length
+    ? item
+    : { ...item, revision, unread: item.unread || unseenFolderIds.length > 0, unreadFolderIds };
+};

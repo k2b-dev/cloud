@@ -85,7 +85,7 @@ import {
   resolveMailWorkspaceUrl,
 } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
-import { emptyMailSelection, pickMailSelection } from "./_components/mail-selection-detail";
+import { emptyMailSelection, pickMailSelection, syncMailRowWithDetail } from "./_components/mail-selection-detail";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
 import {
   decideMailAutoReadIntent,
@@ -1072,23 +1072,18 @@ function MailWorkspaceView(props: {
     const path = `${target.pathname}${target.search}`;
     const source = encodeRouteSource(path, data.listMode);
     routeGeneration++;
-    // The row was loaded earlier than the detail. A message that arrived unread since then makes the row unread
-    // again, so opening it marks it read as a snapshot that carries both would.
+    // The row was loaded earlier than the detail; a snapshot carrying both would show the detail's state on it.
     const conversationId = selection.selectedConversationId;
-    const unreadFolderIds = [
-      ...new Set(
-        (selection.detailMessages ?? []).flatMap((message) =>
-          !message.flags.includes("\\Seen") && message.folderId ? [message.folderId] : [],
-        ),
-      ),
-    ];
+    const detail = {
+      detailMessages: selection.detailMessages ?? [],
+      collaborationState: selection.collaborationState ?? null,
+      conversationLocalTags: selection.conversationLocalTags ?? null,
+    };
     batch(() => {
-      if (conversationId && unreadFolderIds.length > 0)
+      if (conversationId)
         setData("listItems", (items) =>
           items.map((item) =>
-            item.selectionKind === "conversation" && item.conversationId === conversationId && !item.unread
-              ? { ...item, unread: true, unreadFolderIds }
-              : item,
+            item.selectionKind === "conversation" && item.conversationId === conversationId ? syncMailRowWithDetail(item, detail) : item,
           ),
         );
       setData(selection);
