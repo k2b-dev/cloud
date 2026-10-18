@@ -49,8 +49,6 @@ export const signInLocationMessages = i18n.define({
       unsupported: "This is neither a City nor an ASN database. Nothing was changed.",
       empty: "The file is empty. Nothing was changed.",
       busy: "Another upload is still running.",
-      interrupted: "The upload was interrupted. Nothing was changed.",
-      failed: "The upload failed. Nothing was changed.",
       attribution: "Place and network data:",
     },
     de: {
@@ -99,8 +97,6 @@ export const signInLocationMessages = i18n.define({
       unsupported: "Das ist weder eine City- noch eine ASN-Datenbank. Nichts wurde geändert.",
       empty: "Die Datei ist leer. Nichts wurde geändert.",
       busy: "Ein anderes Hochladen läuft noch.",
-      interrupted: "Das Hochladen wurde unterbrochen. Nichts wurde geändert.",
-      failed: "Hochladen hat nicht geklappt. Nichts wurde geändert.",
       attribution: "Orts- und Netzdaten:",
     },
   },

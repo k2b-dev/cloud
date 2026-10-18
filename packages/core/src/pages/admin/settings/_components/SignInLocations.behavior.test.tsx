@@ -168,14 +168,23 @@ describe("sign-in locations block", () => {
     expect(view.statusLine()).toBe("The file is too large to send. Upload it as .mmdb.gz.");
   });
 
-  test("an interrupted upload reads what is active, then retries the same file", async () => {
+  test("an interrupted upload whose result Cloud does not show yet stays unclear instead of claiming nothing changed", async () => {
     const view = await mount();
-    const file = await view.choose();
+    await view.choose();
     FakeXhr.last!.onerror?.();
     await flush();
     await flush();
     expect(view.requests).toEqual([{ url: "/api/admin/core/geoip", method: "GET" }]);
-    expect(view.statusLine()).toBe("The upload was interrupted. Nothing was changed. Try again");
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
+    expect(view.uploadButton().disabled).toBe(false);
+  });
+
+  test("a busy server gets the same file again with one click", async () => {
+    const view = await mount();
+    const file = await view.choose();
+    FakeXhr.last!.respond(409, { code: "geoip_upload_busy" });
+    await flush();
+    expect(view.statusLine()).toBe("Another upload is still running. Try again");
     view.button("Try again")!.click();
     await flush();
     expect(FakeXhr.sent).toEqual([file, file]);
@@ -264,18 +273,26 @@ describe("sign-in locations block", () => {
     expect(view.source("city")).toBe("Bundled DB-IP Lite snapshot");
   });
 
-  test("a failed reset reads what is active, keeps the uploaded file and offers a retry", async () => {
+  test("a refused reset keeps the uploaded file and offers a retry", async () => {
     const view = await mount({ initial: uploadedStatus, locale: "de" });
-    view.respondWith((_url, method) =>
-      method === "DELETE" ? Response.json({ code: "INTERNAL" }, { status: 500 }) : Response.json(uploadedStatus),
-    );
+    view.respondWith(() => Response.json({ code: "FORBIDDEN" }, { status: 403 }));
+    view.resetButton("city").click();
+    await flush();
+    await flush();
+    expect(view.requests.map((request) => request.method)).toEqual(["DELETE"]);
+    expect(view.statusLine()).toBe("Zurücksetzen hat nicht geklappt. Nichts wurde geändert. Erneut versuchen");
+    expect(view.source("city")).toBe("Hochgeladene Datei");
+  });
+
+  test("a server error on reset with the upload still listed stays unclear", async () => {
+    const view = await mount({ initial: uploadedStatus });
+    view.respondWith((_url, method) => (method === "DELETE" ? Response.json({}, { status: 502 }) : Response.json(uploadedStatus)));
     view.resetButton("city").click();
     await flush();
     await flush();
     await flush();
     expect(view.requests.map((request) => request.method)).toEqual(["DELETE", "GET"]);
-    expect(view.statusLine()).toBe("Zurücksetzen hat nicht geklappt. Nichts wurde geändert. Erneut versuchen");
-    expect(view.source("city")).toBe("Hochgeladene Datei");
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
   });
 
   test("a reset whose answer was lost after the commit reports the reset", async () => {

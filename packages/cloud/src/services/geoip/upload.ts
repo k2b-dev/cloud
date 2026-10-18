@@ -109,11 +109,16 @@ export const parseGeoIpUpload = (bytes: Uint8Array) => {
       typeof description === "object" && description !== null && "en" in description && typeof description.en === "string"
         ? description.en
         : "";
+    const languages: unknown = metadata.languages;
     const subset = {
       databaseType: metadata.databaseType,
       buildEpoch: metadata.buildEpoch.toISOString(),
       ipVersion: metadata.ipVersion,
-      languages: metadata.languages.slice(0, 16).map((language) => truncateUtf8(language, 32)),
+      // `languages` is optional in MMDB metadata; mmdb-lib leaves it undefined despite its type.
+      languages: (Array.isArray(languages) ? languages : [])
+        .filter((language): language is string => typeof language === "string")
+        .slice(0, 16)
+        .map((language) => truncateUtf8(language, 32)),
       description: { en: truncateUtf8(english, 256) },
       nodeCount: metadata.nodeCount,
       recordSize: metadata.recordSize,

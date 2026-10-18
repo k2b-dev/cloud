@@ -11,9 +11,7 @@ type ErrorCode =
   | "geoip_invalid"
   | "geoip_unsupported_type"
   | "geoip_empty"
-  | "geoip_upload_busy"
-  | "interrupted"
-  | "failed";
+  | "geoip_upload_busy";
 
 /** One fixed status line under the list; every transient state replaces its text in place. */
 export type SignInLocationPhase =
@@ -37,13 +35,13 @@ const isPhase = <K extends SignInLocationPhase["kind"]>(value: SignInLocationPha
 const API_CODES = ["geoip_too_large", "geoip_invalid", "geoip_unsupported_type", "geoip_empty", "geoip_upload_busy"] as const;
 const isApiCode = (value: string): value is (typeof API_CODES)[number] => API_CODES.some((code) => code === value);
 
-const errorCode = (status: number, body: unknown): ErrorCode => {
+/** A definite refusal changed nothing; anything else (lost answer, server error) leaves the outcome open. */
+const errorCode = (status: number, body: unknown): ErrorCode | "ambiguous" => {
   const code = typeof body === "object" && body !== null && "code" in body && typeof body.code === "string" ? body.code : "";
   if (isApiCode(code)) return code;
   // A 413 without Cloud's code comes from the platform request cap or a proxy in front of Cloud.
   if (status === 413) return "geoip_request_too_large";
-  if (status === 0 || status === 499 || status === 502 || status === 504) return "interrupted";
-  return "failed";
+  return "ambiguous";
 };
 
 const isStatus = (value: unknown): value is GeoIpAdminStatus =>
@@ -131,8 +129,11 @@ export default function SignInLocations(props: {
     announce(t().unknownOutcome, { politeness: "assertive" });
   };
 
-  /** A lost answer or a server error leaves the upload's outcome open; the active databases decide it. */
-  const settleUpload = async (code: "interrupted" | "failed", file: File, before: GeoIpAdminStatus | null) => {
+  /**
+   * A lost answer or a server error leaves the upload's outcome open. A changed checksum proves it landed; an
+   * unchanged one proves nothing, because the write may still commit, so the block then says the outcome is unclear.
+   */
+  const settleUpload = async (before: GeoIpAdminStatus | null) => {
     const after = await reconcile();
     if (!after) return unknownOutcome();
     const changed = after.databases.find(
@@ -143,8 +144,7 @@ export default function SignInLocations(props: {
       announce(changed.kind === "city" ? t().uploadedCity : t().uploadedAsn);
       return;
     }
-    setPhase({ kind: "upload-error", code, file });
-    announce(errorText(code), { politeness: "assertive" });
+    unknownOutcome();
   };
 
   const upload = (file: File) => {
@@ -174,14 +174,14 @@ export default function SignInLocations(props: {
         return;
       }
       const code = errorCode(xhr.status, body);
-      if (code === "interrupted" || code === "failed") return void settleUpload(code, file, before);
+      if (code === "ambiguous") return void settleUpload(before);
       setPhase({ kind: "upload-error", code, file });
       announce(errorText(code), { politeness: "assertive" });
     };
     xhr.onerror = () => {
       if (request !== xhr) return;
       request = undefined;
-      void settleUpload("interrupted", file, before);
+      void settleUpload(before);
     };
     xhr.send(file);
   };
@@ -209,6 +209,12 @@ export default function SignInLocations(props: {
     });
     if (!confirmed) return;
     setPhase({ kind: "resetting", type: database.kind });
+    const done = (next: GeoIpAdminStatus) => {
+      const bundled = next.databases.find((entry) => entry.kind === database.kind)?.source === "bundled";
+      setPhase({ kind: "reset", type: database.kind, bundled });
+      announce(bundled ? t().resetDoneBundled({ type }) : t().resetDoneEmpty({ type }));
+    };
+    let refused = false;
     try {
       const response = await fetch(`${API}/${database.kind}`, {
         method: "DELETE",
@@ -216,25 +222,22 @@ export default function SignInLocations(props: {
         headers: { accept: "application/json" },
       });
       const body: unknown = await response.json().catch(() => null);
-      if (!response.ok || !isStatus(body)) throw new Error("reset");
-      setStatus(body);
-      const bundled = body.databases.find((entry) => entry.kind === database.kind)?.source === "bundled";
-      setPhase({ kind: "reset", type: database.kind, bundled });
-      announce(bundled ? t().resetDoneBundled({ type }) : t().resetDoneEmpty({ type }));
-    } catch {
-      // The delete may have committed before the answer was lost: read what is active before offering a retry.
-      const after = await reconcile();
-      if (!after) return unknownOutcome();
-      const entry = after.databases.find((item) => item.kind === database.kind);
-      if (entry?.source !== "uploaded") {
-        const bundled = entry?.source === "bundled";
-        setPhase({ kind: "reset", type: database.kind, bundled });
-        announce(bundled ? t().resetDoneBundled({ type }) : t().resetDoneEmpty({ type }));
-        return;
+      if (response.ok && isStatus(body)) {
+        setStatus(body);
+        return done(body);
       }
+      // A client error is a definite refusal; a gateway or server error may hide a committed delete.
+      refused = response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 499;
+    } catch {}
+    if (refused) {
       setPhase({ kind: "reset-error", type: database.kind });
       announce(t().resetFailed, { politeness: "assertive" });
+      return;
     }
+    // Only a vanished upload proves the delete landed; an unchanged row may still be deleted by the open request.
+    const after = await reconcile();
+    if (after && after.databases.find((entry) => entry.kind === database.kind)?.source !== "uploaded") return done(after);
+    unknownOutcome();
   };
 
   const errorText = (code: ErrorCode) =>
@@ -245,17 +248,7 @@ export default function SignInLocations(props: {
       geoip_unsupported_type: t().unsupported,
       geoip_empty: t().empty,
       geoip_upload_busy: t().busy,
-      interrupted: t().interrupted,
-      failed: t().failed,
     })[code];
-
-  /** The file itself is the problem: offer another file instead of sending the same one again. */
-  const fileProblem = (code: ErrorCode) =>
-    code === "geoip_too_large" ||
-    code === "geoip_request_too_large" ||
-    code === "geoip_invalid" ||
-    code === "geoip_unsupported_type" ||
-    code === "geoip_empty";
 
   const sourceLine = (database: GeoIpAdminDatabase) => {
     if (!status()) return phase().kind === "loading" ? t().loadingStatus : t().unknown;
@@ -407,8 +400,8 @@ export default function SignInLocations(props: {
                 <StatusText tone="danger" icon="ti ti-alert-triangle">
                   {errorText(failure().code)}
                 </StatusText>
-                {/* A file problem is fixed with another file, through the Upload action above. */}
-                <Show when={!fileProblem(failure().code)}>
+                {/* A file problem is fixed with another file, through the Upload action above; only a busy server gets the same file again. */}
+                <Show when={failure().code === "geoip_upload_busy"}>
                   <Button type="button" variant="secondary" size="sm" onClick={() => upload(failure().file)}>
                     {t().retry}
                   </Button>

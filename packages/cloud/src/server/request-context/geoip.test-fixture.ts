@@ -33,7 +33,8 @@ export const mmdbFixture = (
     buildEpoch?: number | string;
     description?: string;
     cityName?: string;
-    languages?: string[];
+    /** Null leaves out the optional `languages` metadata key. */
+    languages?: string[] | null;
   },
 ): Buffer<ArrayBuffer> => {
   type Node = { children: [Node | number | null, Node | number | null]; index: number };
@@ -86,7 +87,7 @@ export const mmdbFixture = (
       record_size: 24,
       ip_version: options?.ipVersion ?? 6,
       database_type: options?.databaseType ?? (kind === "city" ? "DBIP-City-Lite" : "DBIP-ASN-Lite (compat=GeoLite2-ASN)"),
-      languages: options?.languages ?? ["en", "de"],
+      ...(options?.languages === null ? {} : { languages: options?.languages ?? ["en", "de"] }),
       binary_format_major_version: 2,
       binary_format_minor_version: 0,
       build_epoch: options?.buildEpoch ?? FIXTURE_EPOCH,

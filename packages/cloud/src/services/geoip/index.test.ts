@@ -207,6 +207,12 @@ test("a concurrent upload fails immediately and the flag clears after failure", 
   await expect(service.upload(actor, new Blob([]).stream(), {})).rejects.toMatchObject({ code: "geoip_empty" });
 });
 
+test("a database without the optional language list is accepted with an empty list", () => {
+  const parsed = parseGeoIpUpload(mmdbFixture("asn", { languages: null, databaseType: "GeoLite2-ASN" }));
+  expect(parsed.kind).toBe("asn");
+  expect(parsed.metadata.languages).toEqual([]);
+});
+
 test("stored metadata caps language count and UTF-8 size before reaching Postgres", () => {
   const result = parseGeoIpUpload(mmdbFixture("city", { languages: Array(100).fill("界".repeat(100)) }));
   expect(result.metadata.languages).toHaveLength(16);
