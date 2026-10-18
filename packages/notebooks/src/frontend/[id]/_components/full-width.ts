@@ -1,12 +1,10 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { watchAppHostWidth } from "@k2b/ui";
 import { type Accessor, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import type { notebookWorkspaceMessages } from "../messages";
 import { FULL_WIDTH_PREFERENCE_EVENT } from "./detail/events";
 import { readFullWidth, setFullWidth } from "./settings/NotebookSettingsStore";
 
-// Below this width the note is about as narrow as the reading column, so app.css
-// hides the switches and the command stays away too.
-const WIDE_SCREEN_QUERY = "(min-width: 64rem)";
 type ViewMessages = Pick<
   ReturnType<typeof notebookWorkspaceMessages.resolve>["t"],
   "fullWidthOnCommand" | "fullWidthOffCommand" | "fullWidthHint"
@@ -51,9 +49,8 @@ export const createFullWidth = (initial: boolean): Accessor<boolean> => {
  */
 export const followFullWidth = (scroller: HTMLElement, keepPosition: () => (() => void) | null, t: Accessor<ViewMessages>) => {
   const [fullWidth, setValue] = createSignal(readFullWidth());
-  const query = window.matchMedia(WIDE_SCREEN_QUERY);
-  const [wide, setWide] = createSignal(query.matches);
-  const resized = () => setWide(query.matches);
+  const [wide, setWide] = createSignal(false);
+  onCleanup(watchAppHostWidth(scroller, 64, setWide));
   const apply = () => {
     const on = readFullWidth();
     setValue(on);
@@ -67,12 +64,10 @@ export const followFullWidth = (scroller: HTMLElement, keepPosition: () => (() =
     if (document.visibilityState === "visible") apply();
   };
   apply();
-  query.addEventListener("change", resized);
   window.addEventListener(FULL_WIDTH_PREFERENCE_EVENT, apply);
   window.addEventListener("focus", follow);
   document.addEventListener("visibilitychange", follow);
   onCleanup(() => {
-    query.removeEventListener("change", resized);
     window.removeEventListener(FULL_WIDTH_PREFERENCE_EVENT, apply);
     window.removeEventListener("focus", follow);
     document.removeEventListener("visibilitychange", follow);

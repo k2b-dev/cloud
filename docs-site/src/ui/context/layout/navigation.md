@@ -7,6 +7,46 @@ with the owning Solid component. `Navigation` renders readable, nested rows.
 The library does not own the app router, subscriptions, permissions, or a
 mobile launcher.
 
+## Label overflow
+
+Navigation labels fade, never end in an ellipsis. Use the shared utilities for
+app-owned sidebar, tree, rail, tab, chip, and launcher labels inside `.k2b-ui`:
+
+- `k2b-truncate-fade` keeps one line and fades its last 1.5rem.
+- `k2b-truncate-fade-lines` wraps up to two lines and fades the last line over
+  half its width. Set `--k2b-truncate-fade-lines` to change the line count. For
+  one line, set it to `1` together with `white-space: nowrap`. Give it a line
+  height of at least 1.3, or glyphs that reach past the line box count as
+  overflow and fade a label that fits.
+- `--k2b-truncate-fade-inset` reserves the covered end when hover actions
+  overlay the text. It inherits from the row and includes the fade before the
+  actions. A fading label inside another one or inside row metadata resets it
+  to `0px`, because it does not end where the actions start.
+
+Put the class on a non-focusable inner text element that is a block or flex
+item. A mask on a link, button, or focusable heading would clip its focus
+ring. Keep the full text in the DOM for the accessible name.
+
+Labels that fit stay undimmed. CSS scroll timelines enable the fade only when
+text overflows. An engine without scroll timelines cannot tell the two apart,
+so there an overflowing label ends in an ellipsis and a label that fits stays
+as it is. WebKit can update the fade a moment late after a container changes
+width. RTL text fades on the left. The mask works on any fill, including
+hover, selection, and dark surfaces. Menu rows that wrap without clipping can
+keep wrapping.
+
+The detection runs as CSS animations on scroll timelines, which keep running
+and never finish. A browser test that waits for page animations to settle
+selects `document.getAnimations().filter((animation) => animation.timeline === document.timeline)`.
+
+```tsx
+// The row is a flex container, so the label is a flex item.
+<a href="/projects" class="project-row">
+  <i class="ti ti-folder" aria-hidden="true" />
+  <span class="k2b-truncate-fade">{project.name}</span>
+</a>
+```
+
 ## Import and example
 
 ```tsx

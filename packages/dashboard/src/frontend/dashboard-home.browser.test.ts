@@ -809,7 +809,12 @@ describe("the dashboard board in a browser", () => {
       await weather.getByRole("button", { name: "Customize Weather" }).click();
       const dialog = page.getByRole("dialog", { name: "Customize Weather" });
       await dialog.getByRole("radio", { name: "Hamburg" }).waitFor();
-      await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+      await page.waitForFunction(() =>
+        document
+          .getAnimations()
+          .filter((animation) => animation.timeline === document.timeline)
+          .every((animation) => animation.playState !== "running"),
+      );
       expect(await dialog.getAttribute("class")).toContain("k2b-bottom-sheet-frame is-adaptive");
       expect(await dialog.locator(".k2b-bottom-sheet__handle").isVisible()).toBe(false);
       const frame = await dialog.boundingBox();
@@ -1031,7 +1036,12 @@ describe("the dashboard board in a browser", () => {
       await page.getByRole("dialog", { name: "Customize Weather" }).waitFor();
       expect(await page.locator(".k2b-bottom-sheet-frame.is-adaptive").count()).toBe(1);
       expect(await page.locator(".k2b-bottom-sheet__handle").isVisible()).toBe(true);
-      await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+      await page.waitForFunction(() =>
+        document
+          .getAnimations()
+          .filter((animation) => animation.timeline === document.timeline)
+          .every((animation) => animation.playState !== "running"),
+      );
       const frame = (await page.getByRole("dialog").boundingBox())!;
       expect(frame.y + frame.height).toBe(page.viewportSize()!.height);
       await page.keyboard.press("Escape");

@@ -208,6 +208,14 @@ header through unchanged. Traefik replaces it by default; do not enable
 `forwardedHeaders.trustedIPs`. To verify, sign in from two networks: rate
 limits and audit entries must show different addresses, not the proxy's.
 
+A public proxy or CDN in front of the gateway that is absent from
+`GATEWAY_TRUSTED_PROXIES`, such as Cloudflare, makes Core see the proxy's
+address. Sign-in places and network names will then describe the proxy instead
+of the person when those details are used; see
+[Sign-in locations](/en/docs/operations/sign-in-locations). Private-network
+proxy addresses are ignored by the place lookup, but those proxies still need
+to be trusted for rate limits.
+
 ## Assign configuration to the correct service
 
 Inject secrets at runtime, never into image build arguments, browser bundles,
@@ -499,6 +507,10 @@ for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshootin
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
 
+### Upgrade Spaces task deadlines
+
+Spaces adds the nullable `spaces.items.deadline_date` DATE column and the `items_deadline_one_kind` check on startup. The check permits at most one of `deadline` and `deadline_date`. Existing timestamp deadlines remain timed; there is no backfill. API and capability consumers, such as scripts, agents and integrations, must accept `deadline` as either `YYYY-MM-DD` or an ISO instant and can use `deadlineAllDay` to distinguish them. Deploy the updated Spaces server and its matching browser and CLI assets together. Verify a date-only deadline, a timed deadline, and switching between them after the upgrade.
+
 ### Upgrade Spaces user claims and assignments
 
 Spaces now assigns a person when they claim a task. On each start, an
@@ -554,6 +566,24 @@ saved goes out without its signature. Rolling Mail back keeps the column and
 has the same effect for drafts saved after the update. After the rollout, open
 a new message in a mailbox with a default signature and check that the preview
 shows the signature below the text.
+
+### Mail mailbox logos
+
+On its next start, Mail adds `mail.mailbox_logo_versions`,
+`mail.mailboxes.logo_version_id`, and
+`mail.outbox_submissions.inline_logo_version_id`. No configuration change is
+needed. Roll all Mail replicas together: an older replica ignores the frozen
+logo in a queued message and sends HTML whose `cid:` image has no inline part.
+A rollback has the same limitation for messages queued with logos.
+
+Logos count toward the Mail database share, at most 100 KiB per immutable
+version. Unused versions are removed hourly; current logos and versions still
+needed by queued messages or Sent-copy retries are retained. Local sent copies
+retain their inline images in the deduplicated Mail blob store, independently
+of logo versions. After upgrading,
+upload a test logo, preview a signature containing `{{ mailbox.logo }}`, and
+schedule it. Check that the local copy shows the logo before provider sync,
+then send it and check that it arrives as an inline image without a remote image link.
 
 ### Mail storage for kept conversations
 

@@ -101,6 +101,7 @@ const item = (id: string, title: string) => ({
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   estimatedDurationMinutes: null,
   activeBlockerCount: 0,
   priority: null,
@@ -223,7 +224,7 @@ beforeAll(async () => {
             assigneeIds: [],
             assignCreator: true,
             checklist: ["Collect numbers", "Send"],
-            ...(url.searchParams.get("noDate") ? {} : { deadline: "2026-10-14T15:00:00.000Z" }),
+            ...(url.searchParams.get("noDate") ? {} : { deadline: "2026-10-14" }),
           },
         });
       if (path === "/api/spaces/calendar")
@@ -511,7 +512,7 @@ describe("changes", () => {
       columnId: "Col001",
       title: "Write notes",
       description: "Long text",
-      deadline: "2026-10-20T15:00:00.000Z",
+      deadline: "2026-10-20",
       estimatedDurationMinutes: 90,
       assigneeIds: [USER_ID, OTHER_ID],
       tagIds: ["Tag001"],
@@ -553,7 +554,7 @@ describe("changes", () => {
     expect(writes((await run(["assign", "Item01", "none"])).requests)[0]?.body).toEqual({ assigneeIds: [] });
     expect((await failing(["assign", "Item01", "nobody"])).stderr).toContain('"nobody"');
 
-    expect(writes((await run(["due", "Item01", "2026-10-20"])).requests)[0]?.body).toEqual({ deadline: "2026-10-20T15:00:00.000Z" });
+    expect(writes((await run(["due", "Item01", "2026-10-20"])).requests)[0]?.body).toEqual({ deadline: "2026-10-20" });
     expect(writes((await run(["due", "Item01", "none"])).requests)[0]?.body).toEqual({ deadline: null });
   });
 
@@ -614,8 +615,8 @@ describe("changes", () => {
     const exact = await run(["set", "Item01", "--deadline", "2026-10-20T10:00:00+02:00"]);
     expect(writes(exact.requests)[0]?.body).toEqual({ deadline: "2026-10-20T08:00:00.000Z" });
 
-    // Impossible dates fail instead of rolling over; years before 100 would turn into 19xx.
-    for (const date of ["2026-02-30", "0026-10-20"]) {
+    // Impossible calendar dates fail instead of rolling over.
+    for (const date of ["2026-02-30", "2026-13-01"]) {
       const invalid = await failing(["due", "Item01", date]);
       expect(invalid.stderr).toContain("<date> must be an ISO datetime or a YYYY-MM-DD date.");
       expect(writes(invalid.requests)).toEqual([]);
@@ -787,7 +788,7 @@ describe("templates", () => {
     expect(shown).toMatchObject({ id: "Tpl002", timeZone: "Europe/Berlin" });
     expect(shown.proposals).toHaveLength(1);
     const text = await cld(["spaces", "templates", "ls", "Roadmap"]);
-    expect(text.stdout).toContain("Wed or Thu · 17:00");
+    expect(text.stdout).toContain("Wed or Thu · all day");
     expect(text.stdout).toContain("In 2 days · 10:00");
   });
 
@@ -815,7 +816,7 @@ describe("templates", () => {
       assigneeIds: [],
       assignCreator: true,
       checklist: ["Collect numbers", "Send"],
-      deadline: "2026-10-14T15:00:00.000Z",
+      deadline: "2026-10-14",
     });
 
     const own = await run(["add", "Roadmap:Own title", "--template", "Tpl001", "--no-date", "--tag", "Backend", "--assignee", "ada"]);
@@ -836,7 +837,7 @@ describe("templates", () => {
     expect(dated.requests.find((entry) => entry.path.includes("/draft"))?.path).toBe(
       "/api/spaces/Space1/templates/Tpl001/draft?date=2026-10-23&timeZone=Europe%2FBerlin",
     );
-    expect(writes(dated.requests)[0]?.body).toMatchObject({ deadline: "2026-10-23T15:00:00.000Z" });
+    expect(writes(dated.requests)[0]?.body).toMatchObject({ deadline: "2026-10-23" });
 
     const halfRange = await failing(["add", "Roadmap", "--template", "Tpl002", "--starts-at", "2026-10-14T08:30:00Z"]);
     expect(halfRange.stderr).toContain("--ends-at");

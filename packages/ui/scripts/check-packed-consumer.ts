@@ -191,8 +191,9 @@ try {
   }
   // Each component family owns its message catalog, so this unminified build
   // carries only the common strings. A leaked family adds several kilobytes;
-  // the budget leaves a few percent for the two components to grow.
-  if (browserOutput.length > 56_000) {
+  // the budget leaves a few percent for the two components to grow. The
+  // locale weekend band and the one-click range moved the pair to about 58 kB.
+  if (browserOutput.length > 60_000) {
     throw new Error(`packed Button + DatePicker browser build is too large: ${browserOutput.length} bytes`);
   }
   for (const unusedMessage of ["chartCopyFailed", "installCopyLink", "qrCameraPreview", "pdfPreviewHttpError", "composerFormatting"]) {

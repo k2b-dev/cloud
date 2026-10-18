@@ -181,7 +181,7 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
                     }}
                   >
                     <Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-                    <span>{option.label}</span>
+                    <span class={props.variant === "pill" ? "k2b-truncate-fade" : undefined}>{option.label}</span>
                   </button>
                   <Show when={option.onClose}>
                     <button

@@ -35,6 +35,7 @@ import {
   APP_WORKSPACE_DRAWER_DEFAULT,
   APP_WORKSPACE_DRAWER_MAX,
   APP_WORKSPACE_DRAWER_MIN,
+  APP_WORKSPACE_MAIN_MIN,
   APP_WORKSPACE_PANE_DEFAULT,
   APP_WORKSPACE_PANE_MAX,
   APP_WORKSPACE_PANE_MIN,
@@ -209,6 +210,14 @@ export type AppWorkspaceMainProps = {
   class?: string;
   /** `"content"` centers the children as one reading column with the shared page width on large screens. */
   width?: "full" | "content";
+  /**
+   * The width in px that Main keeps beside the sidebar and an open Detail,
+   * from 48rem (768 px); at least the default 320. A Detail that does not fit
+   * beside it waits behind the head's Details button, and from 64rem of host
+   * width a sidebar that does not fit becomes the overlay. CSS decides, so
+   * the server renders the first frame.
+   */
+  minWidth?: number;
   mobilePane?: string;
   /** Levels in DOM order, shallowest first. The URL selects the deepest level by id. */
   level?: string;
@@ -244,6 +253,12 @@ export type AppWorkspaceDetailWidth = "sm" | "md" | "lg" | "xl";
 export type AppWorkspaceDetailProps = {
   children: JSX.Element;
   open: boolean;
+  /**
+   * Whether choosing an item in Main opens this Detail as the drawer while it waits.
+   * Set false when Main itself shows the chosen item, such as a reader beside a list:
+   * the drawer then opens only from Details or from a toggle in Main.
+   */
+  openOnChoice?: boolean;
   id: string;
   class?: string;
   width?: AppWorkspaceDetailWidth;
@@ -254,12 +269,11 @@ export type AppWorkspaceDetailProps = {
   minWidth?: number;
   maxWidth?: number;
   /**
-   * Closes the panel: Escape, a swipe on a touch screen, and dragging the
-   * phone sheet down call it. A panel rendered on the server only marks its
-   * own close button or link with `data-workspace-detail-close` instead, and
-   * those gestures click it. Without either, they leave the panel open, and on
-   * a touch tablet in portrait the panel makes room beside `Main` instead of
-   * overlaying it as a drawer.
+   * Closes the column with Escape, or the phone sheet with a downward drag.
+   * Server-rendered panels mark their close control with
+   * `data-workspace-detail-close` instead; those gestures click it.
+   * Escape and a rightward touch swipe park an open waiting drawer without
+   * calling onClose, so its Details button can open it again.
    */
   onClose?: () => void;
   /**
@@ -410,7 +424,7 @@ export type AppWorkspaceSidebarIconActionProps = {
 export type AppWorkspaceSidebarItemIconProps = { icon?: string; children?: JSX.Element };
 export type AppWorkspaceSidebarItemLabelProps = {
   children: JSX.Element;
-  /** False keeps one line with an ellipsis; rows wrap long labels onto a second line by default. */
+  /** False keeps one line that fades out; rows wrap long labels onto a second line by default. */
   marquee?: boolean;
 };
 export type AppWorkspaceSidebarItemMetaProps = {
@@ -545,9 +559,11 @@ function LevelHead(props: { label: string; description?: JSX.Element; actions?: 
     <header class="k2b-app-workspace__level-head">
       {props.children}
       <div class="k2b-app-workspace__level-title">
-        <h2 tabIndex={-1}>{props.label}</h2>
+        <h2 tabIndex={-1}>
+          <span class="k2b-truncate-fade">{props.label}</span>
+        </h2>
         <Show when={description()}>
-          <p>{description()}</p>
+          <p class="k2b-truncate-fade">{description()}</p>
         </Show>
       </div>
       <Show when={actions()}>
@@ -658,132 +674,147 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
   // layout. Deriving it from `regions()` made a workspace whose panes are all
   // closed fall back to `resolved()`, which renders the raw slot objects.
   const hasPanes = createMemo(() => paneIds().length > 0);
+  // The workspace's tracks and queries read Main's minimum on the workspace
+  // itself, which cannot read Main's own variables, so this rule hands it up,
+  // as `AppWorkspace.Detail` does with its width.
+  const minWidth = () => {
+    const value = props.minWidth;
+    return value !== undefined && Number.isFinite(value) && value > APP_WORKSPACE_MAIN_MIN ? Math.round(value) : undefined;
+  };
+  const minWidthRule = (value: number) => {
+    const main = `.k2b-app-workspace__main[data-workspace-main-min="${value}"]`;
+    return `.k2b-app-workspace:has(> .k2b-app-workspace__content > ${main}, > .k2b-app-workspace__content > :is(solid-island, solid-client) > ${main}){--k2b-workspace-main-min:${value}px}`;
+  };
 
   return (
-    <div
-      ref={mainElement}
-      class={`k2b-app-workspace__main ${hasPanes() ? "has-panes" : ""} ${props.class ?? ""}`}
-      data-workspace-levels={levelsMode() ? "" : undefined}
-      data-workspace-level-count={levelsMode() ? levels().length : undefined}
-      data-mobile-pane={levelsMode() ? undefined : props.mobilePane}
-      data-width={props.width === "content" ? "content" : undefined}
-      data-scroll-fade-mode={!hasPanes() && props.scroll !== false && props.scrollFade !== false ? "both" : undefined}
-      data-scroll={props.scroll === false ? "false" : undefined}
-      aria-busy={props["aria-busy"]}
-      {...scrollAttrs(props.scrollPreserveKey)}
-    >
-      <Show when={hasPanes()} fallback={resolved() as JSX.Element}>
-        <For each={regions()}>
-          {(region) => {
-            const activeMobilePane = () => {
-              const anchor = anchorRegion();
-              return props.mobilePane ?? (anchor?.type === "pane" ? anchor.slot.props.id : "main");
-            };
-            if (region.type === "primary") {
-              return (
-                <div
-                  class="k2b-app-workspace__main-primary"
-                  data-workspace-main-region="main"
-                  data-workspace-mobile-active={activeMobilePane() === "main" ? "true" : "false"}
-                >
-                  {region.children as JSX.Element}
-                </div>
+    <>
+      <Show when={minWidth()}>{(value) => <style innerHTML={minWidthRule(value())} />}</Show>
+      <div
+        ref={mainElement}
+        class={`k2b-app-workspace__main ${hasPanes() ? "has-panes" : ""} ${props.class ?? ""}`}
+        data-workspace-main-min={minWidth()}
+        data-workspace-levels={levelsMode() ? "" : undefined}
+        data-workspace-level-count={levelsMode() ? levels().length : undefined}
+        data-mobile-pane={levelsMode() ? undefined : props.mobilePane}
+        data-width={props.width === "content" ? "content" : undefined}
+        data-scroll-fade-mode={!hasPanes() && props.scroll !== false && props.scrollFade !== false ? "both" : undefined}
+        data-scroll={props.scroll === false ? "false" : undefined}
+        aria-busy={props["aria-busy"]}
+        {...scrollAttrs(props.scrollPreserveKey)}
+      >
+        <Show when={hasPanes()} fallback={resolved() as JSX.Element}>
+          <For each={regions()}>
+            {(region) => {
+              const activeMobilePane = () => {
+                const anchor = anchorRegion();
+                return props.mobilePane ?? (anchor?.type === "pane" ? anchor.slot.props.id : "main");
+              };
+              if (region.type === "primary") {
+                return (
+                  <div
+                    class="k2b-app-workspace__main-primary"
+                    data-workspace-main-region="main"
+                    data-workspace-mobile-active={activeMobilePane() === "main" ? "true" : "false"}
+                  >
+                    {region.children as JSX.Element}
+                  </div>
+                );
+              }
+              const pane = region.slot;
+              const levelIndex = () => levels().indexOf(pane) + 1;
+              const levelAttr = (kind: "shown" | "first" | "last" | "handle") =>
+                levelsMode() ? levelClasses(levelIndex(), kind) : undefined;
+              const panelId = assertStableUiId(pane.props.id, "AppWorkspace.MainPane id");
+              const variable = appWorkspacePanelVariable("pane", panelId);
+              const isAnchor = () => region === anchorRegion();
+              const resizable = () => !isAnchor() && (pane.props.resizable ?? rootResizable);
+              const defaultSize = () => pane.props.defaultSize ?? APP_WORKSPACE_PANE_DEFAULT;
+              const minSize = () => pane.props.minSize ?? APP_WORKSPACE_PANE_MIN;
+              const maxSize = () => Math.max(minSize(), pane.props.maxSize ?? APP_WORKSPACE_PANE_MAX);
+              const before = () => levelsMode() || region.index < (anchorRegion()?.index ?? 0);
+              const handle = () => (
+                <ResizeHandle
+                  kind="pane"
+                  levelShown={levelAttr("handle")}
+                  edge={before() ? "end" : "start"}
+                  controls={pane.domId}
+                  panelId={panelId}
+                  defaultSize={defaultSize()}
+                  minSize={minSize()}
+                  maxSize={maxSize()}
+                  shadow={pane.props.resizeShadow !== false}
+                  label={`Resize ${pane.props.label}`}
+                />
               );
-            }
-            const pane = region.slot;
-            const levelIndex = () => levels().indexOf(pane) + 1;
-            const levelAttr = (kind: "shown" | "first" | "last" | "handle") =>
-              levelsMode() ? levelClasses(levelIndex(), kind) : undefined;
-            const panelId = assertStableUiId(pane.props.id, "AppWorkspace.MainPane id");
-            const variable = appWorkspacePanelVariable("pane", panelId);
-            const isAnchor = () => region === anchorRegion();
-            const resizable = () => !isAnchor() && (pane.props.resizable ?? rootResizable);
-            const defaultSize = () => pane.props.defaultSize ?? APP_WORKSPACE_PANE_DEFAULT;
-            const minSize = () => pane.props.minSize ?? APP_WORKSPACE_PANE_MIN;
-            const maxSize = () => Math.max(minSize(), pane.props.maxSize ?? APP_WORKSPACE_PANE_MAX);
-            const before = () => levelsMode() || region.index < (anchorRegion()?.index ?? 0);
-            const handle = () => (
-              <ResizeHandle
-                kind="pane"
-                levelShown={levelAttr("handle")}
-                edge={before() ? "end" : "start"}
-                controls={pane.domId}
-                panelId={panelId}
-                defaultSize={defaultSize()}
-                minSize={minSize()}
-                maxSize={maxSize()}
-                shadow={pane.props.resizeShadow !== false}
-                label={`Resize ${pane.props.label}`}
-              />
-            );
-            return (
-              <Show when={pane.props.open !== false}>
-                <Show when={resizable() && !before()}>{handle()}</Show>
-                <section
-                  id={pane.domId}
-                  class={`k2b-app-workspace__main-pane ${isAnchor() ? "is-primary" : ""} ${pane.props.class ?? ""}`}
-                  aria-label={pane.props.label}
-                  data-workspace-level={levelsMode() ? levelIndex() : undefined}
-                  data-workspace-level-shown={levelAttr("shown")}
-                  data-workspace-level-first={levelAttr("first")}
-                  data-workspace-level-last={levelAttr("last")}
-                  data-workspace-main-region={pane.props.id}
-                  data-workspace-mobile-active={
-                    (levelsMode() ? levelClasses(levelIndex(), "shown").split(" ").includes("1") : activeMobilePane() === pane.props.id)
-                      ? "true"
-                      : "false"
-                  }
-                  data-workspace-panel-id={panelId}
-                  data-workspace-resizable={resizable() ? "true" : "false"}
-                  data-surface={pane.props.surface === "navigation" ? "navigation" : undefined}
-                  data-scroll={!levelsMode() && pane.props.scroll === false ? "false" : undefined}
-                  data-scroll-fade-mode={
-                    !levelsMode() && pane.props.scroll !== false && pane.props.scrollFade !== false ? "both" : undefined
-                  }
-                  style={
-                    isAnchor()
-                      ? undefined
-                      : {
-                          // A stored width keeps to this pane's limits before the controller attaches.
-                          "--k2b-workspace-panel-size": `clamp(${minSize()}px, var(${variable}, ${defaultSize()}px), ${maxSize()}px)`,
-                          "--k2b-workspace-panel-min": `${minSize()}px`,
-                        }
-                  }
-                >
-                  {levelsMode() ? (
-                    <>
-                      <LevelHead label={pane.props.label} description={pane.props.description} actions={pane.props.actions}>
-                        <Show when={levelIndex() > 1 && depth() > 1}>
-                          <IconButtonLink
-                            class="k2b-app-workspace__level-back"
-                            href={levels()[depth() - 2]?.props.href}
-                            label={workspaceMessages().backTo({ page: levels()[levelIndex() - 2]?.props.label ?? "" })}
-                            navigation={props.onLevelNavigate ? "enhanced" : "document"}
-                            onNavigate={props.onLevelNavigate ? navigateBack : undefined}
-                          >
-                            <i class="ti ti-chevron-left" aria-hidden="true" />
-                          </IconButtonLink>
-                        </Show>
-                      </LevelHead>
-                      <div
-                        class="k2b-app-workspace__level-body"
-                        data-scroll={pane.props.scroll === false ? "false" : undefined}
-                        data-scroll-fade-mode={pane.props.scroll !== false && pane.props.scrollFade !== false ? "both" : undefined}
-                      >
-                        {pane.props.children}
-                      </div>
-                    </>
-                  ) : (
-                    pane.props.children
-                  )}
-                </section>
-                <Show when={resizable() && before()}>{handle()}</Show>
-              </Show>
-            );
-          }}
-        </For>
-      </Show>
-    </div>
+              return (
+                <Show when={pane.props.open !== false}>
+                  <Show when={resizable() && !before()}>{handle()}</Show>
+                  <section
+                    id={pane.domId}
+                    class={`k2b-app-workspace__main-pane ${isAnchor() ? "is-primary" : ""} ${pane.props.class ?? ""}`}
+                    aria-label={pane.props.label}
+                    data-workspace-level={levelsMode() ? levelIndex() : undefined}
+                    data-workspace-level-shown={levelAttr("shown")}
+                    data-workspace-level-first={levelAttr("first")}
+                    data-workspace-level-last={levelAttr("last")}
+                    data-workspace-main-region={pane.props.id}
+                    data-workspace-mobile-active={
+                      (levelsMode() ? levelClasses(levelIndex(), "shown").split(" ").includes("1") : activeMobilePane() === pane.props.id)
+                        ? "true"
+                        : "false"
+                    }
+                    data-workspace-panel-id={panelId}
+                    data-workspace-resizable={resizable() ? "true" : "false"}
+                    data-surface={pane.props.surface === "navigation" ? "navigation" : undefined}
+                    data-scroll={!levelsMode() && pane.props.scroll === false ? "false" : undefined}
+                    data-scroll-fade-mode={
+                      !levelsMode() && pane.props.scroll !== false && pane.props.scrollFade !== false ? "both" : undefined
+                    }
+                    style={
+                      isAnchor()
+                        ? undefined
+                        : {
+                            // A stored width keeps to this pane's limits before the controller attaches.
+                            "--k2b-workspace-panel-size": `clamp(${minSize()}px, var(${variable}, ${defaultSize()}px), ${maxSize()}px)`,
+                            "--k2b-workspace-panel-min": `${minSize()}px`,
+                          }
+                    }
+                  >
+                    {levelsMode() ? (
+                      <>
+                        <LevelHead label={pane.props.label} description={pane.props.description} actions={pane.props.actions}>
+                          <Show when={levelIndex() > 1 && depth() > 1}>
+                            <IconButtonLink
+                              class="k2b-app-workspace__level-back"
+                              href={levels()[depth() - 2]?.props.href}
+                              label={workspaceMessages().backTo({ page: levels()[levelIndex() - 2]?.props.label ?? "" })}
+                              navigation={props.onLevelNavigate ? "enhanced" : "document"}
+                              onNavigate={props.onLevelNavigate ? navigateBack : undefined}
+                            >
+                              <i class="ti ti-chevron-left" aria-hidden="true" />
+                            </IconButtonLink>
+                          </Show>
+                        </LevelHead>
+                        <div
+                          class="k2b-app-workspace__level-body"
+                          data-scroll={pane.props.scroll === false ? "false" : undefined}
+                          data-scroll-fade-mode={pane.props.scroll !== false && pane.props.scrollFade !== false ? "both" : undefined}
+                        >
+                          {pane.props.children}
+                        </div>
+                      </>
+                    ) : (
+                      pane.props.children
+                    )}
+                  </section>
+                  <Show when={resizable() && before()}>{handle()}</Show>
+                </Show>
+              );
+            }}
+          </For>
+        </Show>
+      </div>
+    </>
   );
 }
 
@@ -863,6 +894,7 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
         class={`k2b-app-workspace__detail ${props.class ?? ""}`}
         data-width={props.width ?? "md"}
         data-workspace-detail-phone={props.phone === "page" ? "page" : undefined}
+        data-workspace-detail-choice={props.openOnChoice === false ? "request" : undefined}
         data-workspace-panel-id={panelId()}
         data-workspace-resizable={resizable() ? "true" : "false"}
         data-workspace-detail-closable={props.onClose ? "true" : undefined}
@@ -1465,7 +1497,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
       <span class="k2b-app-workspace__sidebar-item-copy">
         <Show when={props.context || props.contextMeta}>
           <span class="k2b-app-workspace__sidebar-item-context">
-            <span class="k2b-app-workspace__sidebar-item-context-label">{props.context}</span>
+            <span class="k2b-app-workspace__sidebar-item-context-label k2b-truncate-fade">{props.context}</span>
             <Show when={props.contextMeta}>
               <span class="k2b-app-workspace__sidebar-item-context-meta">{props.contextMeta}</span>
             </Show>
@@ -1476,10 +1508,10 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
           data-lines={oneLine() ? "1" : undefined}
           data-label={!oneLine() && typeof label() === "string" ? label() : undefined}
         >
-          <span class="k2b-app-workspace__sidebar-item-label-text">{label() as JSX.Element}</span>
+          <span class="k2b-app-workspace__sidebar-item-label-text k2b-truncate-fade-lines">{label() as JSX.Element}</span>
         </span>
         <Show when={props.description}>
-          <span class="k2b-app-workspace__sidebar-item-description">{props.description}</span>
+          <span class="k2b-app-workspace__sidebar-item-description k2b-truncate-fade">{props.description}</span>
         </Show>
       </span>
       <Show when={hasMeta()}>
@@ -1808,15 +1840,15 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
               when={item.description !== undefined}
               fallback={
                 <span class="k2b-app-workspace__sidebar-item-label" data-label={typeof item.label === "string" ? item.label : undefined}>
-                  <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
+                  <span class="k2b-app-workspace__sidebar-item-label-text k2b-truncate-fade-lines">{item.label}</span>
                 </span>
               }
             >
               <span class="k2b-app-workspace__sidebar-item-copy">
                 <span class="k2b-app-workspace__sidebar-item-label" data-label={typeof item.label === "string" ? item.label : undefined}>
-                  <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
+                  <span class="k2b-app-workspace__sidebar-item-label-text k2b-truncate-fade-lines">{item.label}</span>
                 </span>
-                <span class="k2b-app-workspace__sidebar-item-description">{item.description}</span>
+                <span class="k2b-app-workspace__sidebar-item-description k2b-truncate-fade">{item.description}</span>
               </span>
             </Show>
             <Show when={item.meta !== undefined}>

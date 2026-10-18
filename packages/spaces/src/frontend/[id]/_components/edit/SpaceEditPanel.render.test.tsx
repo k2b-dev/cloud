@@ -167,7 +167,7 @@ describe("Spaces settings", () => {
     expect(html).toContain("Aufgabenvorlagen");
     expect(html).toContain("Terminvorlagen");
     expect(html).toContain("Weekly report");
-    expect(html).toContain("Mi oder Do · 17:00");
+    expect(html).toContain("Mi oder Do · ganztägig");
     expect(html).toContain("Noch keine Terminvorlagen.");
     expect(html).toContain('aria-label="Vorlage bearbeiten: Weekly report"');
     expect(renderSettings("read")).not.toContain("Templates");

@@ -117,6 +117,34 @@ const open = async (device: BrowserContextOptions, options: { keyboard?: boolean
   return page;
 };
 
+test("a hidden navigation can be recovered from the editor toolbar at 900 px", async () => {
+  const page = await open({ viewport: { width: 900, height: 900 } });
+  try {
+    const toggle = page.locator(".notebooks-editor-toolbar .notebooks-navigation-toggle");
+    expect(await toggle.isVisible()).toBe(false);
+    // Follow the same shared visibility event as the navigation command and graph toolbar.
+    await page.evaluate(() =>
+      window.dispatchEvent(new CustomEvent("notebooks.navigation.visibilityChanged", { detail: { hidden: true } })),
+    );
+    const show = toggle.getByRole("button", { name: "Show navigation", exact: true });
+    await show.waitFor();
+    expect(await toggle.getAttribute("data-navigation-hidden")).toBe("");
+    expect(await toggle.evaluate((element) => getComputedStyle(element).display)).toBe("flex");
+    expect(await show.isVisible()).toBe(true);
+    // A keyboard press moves focus; a pointer press keeps it in the note anyway.
+    await show.focus();
+    await page.keyboard.press("Enter");
+    expect(await toggle.getAttribute("data-navigation-hidden")).toBeNull();
+    // The toggle hides again below a 64 rem host, so read the hidden button by selector, not by role.
+    expect(await toggle.locator("button").getAttribute("aria-expanded")).toBe("true");
+    expect(await toggle.isVisible()).toBe(false);
+    // Without a navigation that can take focus here, it returns to the note, never to the page start.
+    await page.waitForFunction(() => document.activeElement?.closest(".cm-editor") !== null);
+  } finally {
+    await page.context().close();
+  }
+});
+
 const load = (page: Page, doc: string) =>
   page.evaluate(async (doc) => {
     const harness = window.toolbarHarness;

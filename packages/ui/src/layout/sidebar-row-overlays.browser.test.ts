@@ -327,7 +327,7 @@ describe("@k2b/ui sidebar row controls", () => {
         const row = element.getBoundingClientRect();
         return {
           actionAtLeftEdge: Math.abs(action.left - row.left) < 1,
-          mask: getComputedStyle(element.querySelector(".k2b-app-workspace__sidebar-item-label")!).maskImage,
+          mask: getComputedStyle(element.querySelector(".k2b-app-workspace__sidebar-item-label-text")!).maskImage,
         };
       });
       expect(result.actionAtLeftEdge).toBe(true);

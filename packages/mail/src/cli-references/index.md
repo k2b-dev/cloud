@@ -138,7 +138,7 @@ Pass `nextCursor` with `--cursor` to page lists.
 ## Working model
 
 Start with `cld --json mail ls <mailbox> --view needs_action`. We recommend **Needs action** as your inbox: the work status (**Needs action**, **Waiting for reply**, **Done**) is your queue; folders are filing.
-Every incoming message sets **Needs action** and clears **Show later** once Mail loads it, whatever its folder. A confirmed human reply sets **Waiting for reply**.
+Every incoming message sets **Needs action** and clears **Show later** once Mail loads it or gives up loading it, whatever its folder. A confirmed human reply sets **Waiting for reply**.
 Moving, archiving, filing, and marking read change no work status. Follow-up and assignment views span folders; see [Choose where a folder's mail appears](/en/apps/mail#choose-where-a-folders-mail-appears) for folder visibility.
 **Assigned to me** and **Unassigned** leave out **Done** and **Later** conversations.
 
@@ -179,7 +179,7 @@ Run `cld --json mail automation create --definition-file newsletter.yaml`. This 
 For important mail, add no status step: incoming mail already sets **Needs action**.
 
 In the guided editor, **AI classify** starts with **Important**, **Routine**, and an If branch: **Set status → Needs action** for **Important**, **Set status → Done** otherwise. Add **Move to folder** to the **Routine** branch to file it too.
-An automation's **Done** or **Waiting for reply** covers only its triggering message: loading it later does not reopen it, but any other incoming message sets **Needs action** again. A person's Done or **Show later** also covers messages Mail still loads.
+An automation's **Done** or **Waiting for reply** covers only its triggering message, even if Mail loads it later or gives up loading it. Other incoming mail sets **Needs action** again. A person's Done or **Show later** also covers messages Mail still loads.
 When several automations match, the oldest decides the folder. Another skips its read step if the message has left its folder or is being moved. Keep read and move in one automation, with read first; the local status step can share that path.
 For existing messages, use an enabled automation without AI steps; see [Mail automation](automation.md#manage-incoming-automations) for backfill commands and details, or `cld mail sender move` for moving only.
 

@@ -129,7 +129,9 @@ const openAttachmentDialog = (attachment: PreviewAttachment, kind: FileViewPrevi
     {
       ...panelDialogWorkspaceOptions,
       panelClassName: classes.join(" "),
-      // Reading comes first: focus starts on the content, so arrow keys and Page Down scroll it at once.
+      // Reading comes first: focus starts on the content, so arrow keys and Page Down scroll it at once. The content's
+      // `autofocus` makes it the browser's own pick as the dialog opens, before any frame; this names the same place
+      // for the dialog's later focus passes.
       initialFocus: (dialog) => dialog.querySelector<HTMLElement>(".notebooks-attachment-dialog__content"),
     },
   );
@@ -228,7 +230,7 @@ function AttachmentPreviewDialog(props: {
         close={props.close}
       />
       <PanelDialog.Body>
-        <div class="notebooks-attachment-dialog__content" tabindex="-1">
+        <div class="notebooks-attachment-dialog__content" tabindex="-1" autofocus>
           <Show
             when={props.kind === "pdf"}
             fallback={

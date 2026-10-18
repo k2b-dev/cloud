@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
+import { dates } from "@k2b/stdlib";
 import type { SpaceItem } from "./contracts";
 import { isTaskOverdue } from "./task-overdue";
 
@@ -46,3 +47,16 @@ describe("task overdue at local day boundaries", () => {
     expect(isTaskOverdue({ ...task, deadline: new Date(Date.parse(localMidnight) - 60_000).toISOString() }, berlin)).toBeTrue();
   });
 });
+
+for (const timeZone of ["America/Los_Angeles", "Pacific/Kiritimati", "Europe/Berlin"]) {
+  test(`all-day deadlines remain open for their whole day in ${timeZone}`, () => {
+    const context = { timeZone };
+    setSystemTime(new Date(dates.zonedDateTimeToInstant("2026-10-24T23:59", timeZone)));
+    expect(isTaskOverdue({ ...task, deadline: "2026-10-23" }, context)).toBeTrue();
+    expect(isTaskOverdue({ ...task, deadline: "2026-10-24" }, context)).toBeFalse();
+    expect(isTaskOverdue({ ...task, deadline: dates.zonedDateTimeToInstant("2026-10-24T09:00", timeZone) }, context)).toBeFalse();
+    setSystemTime(new Date(dates.zonedDateTimeToInstant("2026-10-25T00:00", timeZone)));
+    expect(isTaskOverdue({ ...task, deadline: "2026-10-24" }, context)).toBeTrue();
+    expect(isTaskOverdue({ ...task, deadline: dates.zonedDateTimeToInstant("2026-10-24T09:00", timeZone) }, context)).toBeTrue();
+  });
+}

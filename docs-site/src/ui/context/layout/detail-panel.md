@@ -18,10 +18,11 @@ import { DescriptionList, DetailPanel, NumberInput } from "@k2b/ui";
 
 Place it inside `AppWorkspace.Detail` for persistent selection context, or in
 another host when the same inspector content is reused. The host owns opening,
-closing, sizing, and persistence. AppWorkspace.Detail is a raised floating
-surface. Its sections and groups have no boxes of their own. The application
-owns data, permissions,
-mutations, and which sections are present.
+closing, sizing, and persistence. An `AppWorkspace.Detail` column shares the
+workspace surface; a waiting Detail opens as a raised drawer. Its sections and
+groups have no boxes of their own. The application owns data, permissions,
+mutations, and which sections are present. See
+[Detail and panel](/en/ui/layout/workspace#detail-and-panel).
 
 `DetailPanel.Header` keeps identity and actions in one compact region. Pass
 `icon` for the standard accent-tinted identity tile or `leading` for an avatar
@@ -49,11 +50,11 @@ pointer only stands in for the scrollbar style: a touch device with classic
 scrollbars shows the gutter next to the inset, and a desktop with overlay
 scrollbars keeps the panel at the trailing edge. Do not add a second
 full-height scroller inside it. The panel keeps a 0.5rem horizontal gutter;
-the floating `AppWorkspace.Detail` host adds its own 0.5rem inset.
+the `AppWorkspace.Detail` column adds its own 0.5rem inset.
 
 Use `DetailPanel.Summary` once, directly below the header, when the selected
 item has a primary set of facts or controls. In other hosts, the summary keeps
-its own surface. Inside the floating workspace, it shares the panel surface
+its own surface. Inside `AppWorkspace.Detail`, it shares the panel surface
 and aligns with the header title. Do not repeat the summary for every group.
 
 The panel uses `--k2b-detail-panel-accent` for restrained identity and action
@@ -93,9 +94,8 @@ The content owns its layout: wrap form controls in a column with a gap.
 
 Use `DetailPanel.Group` when one or more sections form one stable context, such
 as a company and its contacts or a document and its derived metadata. Merge
-adjacent sections when they belong to that same context. Outside a floating
-workspace, the group owns the same quiet surface as the
-summary. Inside it, the group is transparent. Spacing and section headings
+adjacent sections when they belong to that same context. Outside
+`AppWorkspace.Detail`, the group owns the same quiet surface as the summary. Inside it, the group is transparent. Spacing and section headings
 separate its sections without borders or lines. Pass `label` when the
 shared context benefits from an accessible group name.
 

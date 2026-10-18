@@ -22,6 +22,7 @@ import {
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Space } from "@/contracts";
+import { formatDeadline } from "@/presentation/deadline";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import { setPinnedSpaceIds } from "./[id]/_components/settings/SpaceSettingsStore";
 import { createSpaceCreation, type SpaceStarter } from "./create-space-dialog";
@@ -427,7 +428,9 @@ export default function SpacesOverview(props: Props) {
               </Show>
               <Show when={item.startsAt || item.deadline}>
                 <time datetime={item.startsAt ?? item.deadline ?? undefined}>
-                  {dates.formatDateTimeRelative(item.startsAt ?? item.deadline!, props.dateConfig)}
+                  {item.startsAt
+                    ? dates.formatDateTimeRelative(item.startsAt, props.dateConfig)
+                    : formatDeadline(item.deadline!, props.dateConfig)}
                 </time>
               </Show>
               <i class="ti ti-chevron-right text-dimmed" aria-hidden="true" />

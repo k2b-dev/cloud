@@ -64,7 +64,8 @@ Tabs render complete server HTML. Selection and roving focus require browser cod
 
 ## Workspace tabs
 
-Use `variant="pill"` for compact rounded tabs. Each option (or `Tabs.Item`)
+Use `variant="pill"` for compact rounded tabs. Long labels use the shared
+[fade utility](/en/ui/layout/navigation#label-overflow). Each option (or `Tabs.Item`)
 may provide `onClose` and a localized `closeLabel`. Closing reports intent;
 the application owns confirmation, item removal, and the next selected value.
 Delete or Backspace closes the focused tab when a close handler is present.

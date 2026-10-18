@@ -4,7 +4,7 @@ import { pipeline } from "node:stream/promises";
 import { logger } from "@k2b/cloud/services";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { Headers } from "@zone-eu/mailsplit";
-import { sql } from "bun";
+import { sql, type TransactionSQL } from "bun";
 import { type AttachmentStream, MailParser, type MessageText } from "mailparser";
 import sanitizeHtml from "sanitize-html";
 import { withShortIdDb } from "../lib/short-id";
@@ -39,6 +39,15 @@ const log = logger("mail:hydration");
 // Hydration stops retrying at this attempt count; a permanent failure jumps to it.
 const MAX_HYDRATION_ATTEMPTS = 5;
 
+/** A message whose hydration failed for good; its envelope still decides the work status. */
+export const isTerminalHydrationFailure = (message: {
+  hydrationStatus: Bun.SQL.Query<unknown>;
+  hydrationAttempt: Bun.SQL.Query<unknown>;
+}): Bun.SQL.Query<unknown> => sql`(
+  ${message.hydrationStatus} = 'failed'
+  AND ${message.hydrationAttempt} >= ${MAX_HYDRATION_ATTEMPTS}
+)`;
+
 type ClaimedMessage = {
   id: string;
   mailbox_id: string;
@@ -64,6 +73,7 @@ type VerifiedConversationProjection = {
   reference_ids: string[];
   protocol_facts: Record<string, unknown> | string;
   outbound: boolean;
+  loaded: boolean;
   is_latest_verified: boolean;
   status_decided: boolean;
   received_since_send: boolean;
@@ -471,7 +481,18 @@ const mergeVerifiedDuplicate = async (params: {
   return { canonicalMessageId: canonical.id, duplicateFound: true };
 };
 
+/** Derives work state from a loaded message or a terminal failure's envelope. */
 const applyVerifiedConversationTransition = async (params: { db: typeof sql; messageId: string }): Promise<MailActivityChange | null> => {
+  // Lock mailbox, then conversation, as keeps, merges and command creation do.
+  // KEY SHARE satisfies the activity foreign key without blocking other hydration.
+  await params.db`
+    SELECT mailbox.id
+    FROM mail.conversation_messages link
+    JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+    JOIN mail.mailboxes mailbox ON mailbox.id = conversation.mailbox_id
+    WHERE link.message_id = ${params.messageId}::uuid
+    FOR KEY SHARE OF mailbox
+  `;
   const [lockedConversation] = await params.db<{ id: string }[]>`
     SELECT conversation.id
     FROM mail.message_contents message
@@ -492,6 +513,7 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
       message.in_reply_to,
       message.reference_ids,
       message.protocol_facts,
+      message.hydration_status = 'complete' AS loaded,
       EXISTS (
         SELECT 1
         FROM mail.message_addresses sender
@@ -505,7 +527,13 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
         FROM mail.conversation_messages newer_link
         JOIN mail.message_contents newer_message ON newer_message.id = newer_link.message_id
         WHERE newer_link.conversation_id = conversation.id
-          AND ${isTimelineMessage({ id: sql`newer_message.id`, hydrationStatus: sql`newer_message.hydration_status` })}
+          AND (
+            ${isTimelineMessage({ id: sql`newer_message.id`, hydrationStatus: sql`newer_message.hydration_status` })}
+            OR ${isTerminalHydrationFailure({
+              hydrationStatus: sql`newer_message.hydration_status`,
+              hydrationAttempt: sql`newer_message.hydration_attempt`,
+            })}
+          )
           AND (newer_message.internal_date, newer_message.id) > (message.internal_date, message.id)
           -- A reply someone chose to send before Mail stored this message was written without it.
           AND NOT EXISTS (
@@ -552,19 +580,20 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
     projection.work_status !== nextWorkStatus ||
     (projection.snoozed_until ? new Date(projection.snoozed_until).toISOString() : null) !==
       (nextSnoozedUntil ? new Date(nextSnoozedUntil).toISOString() : null);
+  const bumpRevision = (projection.loaded && projection.message_count > 1) || changed;
   await refreshConversationTimeline(params.db, projection.conversation_id);
   const [updated] = await params.db<{ revision: string | number }[]>`
     UPDATE mail.conversations
     SET
       work_status = ${nextWorkStatus},
       snoozed_until = ${nextSnoozedUntil},
-      revision = revision + CASE WHEN ${projection.message_count > 1 || changed} THEN 1 ELSE 0 END
+      revision = revision + CASE WHEN ${bumpRevision} THEN 1 ELSE 0 END
     WHERE id = ${projection.conversation_id}::uuid
     RETURNING revision
   `;
   if (!updated) throw new Error("Conversation work-state update returned no row");
   // A workflow that this message triggered tells this revision apart from other changes.
-  if (projection.message_count > 1 || changed) {
+  if (bumpRevision) {
     await params.db`
       UPDATE mail.conversation_messages SET hydrated_revision = ${updated.revision}
       WHERE message_id = ${params.messageId}::uuid
@@ -607,6 +636,48 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
   };
 };
 
+// Locks the conversations of these messages in ID order, so batches of terminal failures cannot deadlock each other.
+const lockMessageConversations = async (db: typeof sql, messageIds: string[]): Promise<void> => {
+  if (messageIds.length === 0) return;
+  await db`
+    SELECT id FROM mail.mailboxes
+    WHERE id IN (
+      SELECT conversation.mailbox_id
+      FROM mail.conversations conversation
+      JOIN mail.conversation_messages link ON link.conversation_id = conversation.id
+      WHERE link.message_id = ANY(${toPgUuidArray(messageIds)}::uuid[])
+    )
+    ORDER BY id FOR KEY SHARE
+  `;
+  await db`
+    SELECT id FROM mail.conversations
+    WHERE id IN (
+      SELECT conversation_id FROM mail.conversation_messages WHERE message_id = ANY(${toPgUuidArray(messageIds)}::uuid[])
+    )
+    ORDER BY id FOR UPDATE
+  `;
+};
+
+/** Applies the work-state transition of messages whose hydration just failed for the last time. */
+const applyTerminalHydrationFailureTransitions = async (db: TransactionSQL, messageIds: string[]): Promise<MailActivityChange[]> => {
+  if (messageIds.length === 0) return [];
+  await lockMessageConversations(db, messageIds);
+  const events: MailActivityChange[] = [];
+  for (const messageId of [...messageIds].sort()) {
+    try {
+      const event = await db.savepoint(async (sp) => applyVerifiedConversationTransition({ db: sp, messageId }));
+      if (event) events.push(event);
+    } catch (error) {
+      // `cld mail repair hydration` retries the message and its transition.
+      log.error("Mail could not set the work status for a message it cannot load", {
+        messageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return events;
+};
+
 /**
  * Counts a fetch that the provider answered without the message source as one hydration
  * attempt. Folder reconciliation usually retires the reference of a deleted message first; a
@@ -614,9 +685,21 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
  * Returns the messages whose attempt was counted.
  */
 export const recordMissingMessageSources = async (messageIds: string[], transportFence: MailboxTransportFence): Promise<string[]> => {
-  const recorded = await sql.begin(async (tx) => {
+  const { recorded, events } = await sql.begin(async (tx) => {
     await assertMailboxTransportFence(transportFence, tx);
-    return tx<{ id: string; mailbox_id: string; hydration_attempt: number }[]>`
+    // Keeping a conversation locks it before it retries the conversation's failed messages, so the
+    // conversations of messages on their last attempt are locked before their rows.
+    const lastAttempts = await tx<{ id: string }[]>`
+      SELECT id FROM mail.message_contents
+      WHERE id = ANY(${toPgUuidArray(messageIds)}::uuid[])
+        AND hydration_status IN ('envelope', 'headers', 'body', 'failed')
+        AND hydration_attempt = ${MAX_HYDRATION_ATTEMPTS - 1}
+    `;
+    await lockMessageConversations(
+      tx,
+      lastAttempts.map((message) => message.id),
+    );
+    const recorded = await tx<{ id: string; mailbox_id: string; hydration_attempt: number }[]>`
       UPDATE mail.message_contents
       SET
         hydration_attempt = hydration_attempt + 1,
@@ -627,7 +710,13 @@ export const recordMissingMessageSources = async (messageIds: string[], transpor
         AND hydration_attempt < ${MAX_HYDRATION_ATTEMPTS}
       RETURNING id, mailbox_id, hydration_attempt
     `;
+    const events = await applyTerminalHydrationFailureTransitions(
+      tx,
+      recorded.filter((message) => message.hydration_attempt >= MAX_HYDRATION_ATTEMPTS).map((message) => message.id),
+    );
+    return { recorded, events };
   });
+  if (events.length > 0) mailLive.wake();
   for (const message of recorded) {
     if (message.hydration_attempt < MAX_HYDRATION_ATTEMPTS) continue;
     await publishMailWorkflowDependency({ mailboxId: message.mailbox_id, dependency: { kind: "mail.hydration", key: message.id } });
@@ -645,17 +734,25 @@ export const recordMissingMessageSources = async (messageIds: string[], transpor
 export const releaseExpiredHydrationClaims = async (): Promise<{ id: string; mailbox_id: string }[]> => {
   // `message_contents_hydration_claim_idx` covers the claims. Each running job holds at most one,
   // so a stopped process leaves at most as many as it ran jobs.
-  const released = await sql<{ id: string; mailbox_id: string; hydration_attempt: number }[]>`
-    UPDATE mail.message_contents
-    SET
-      hydration_status = 'failed',
-      hydration_error_code = 'HYDRATION_INTERRUPTED',
-      hydration_claim_id = NULL,
-      hydration_claimed_at = NULL
-    WHERE hydration_status = 'hydrating'
-      AND hydration_claimed_at < now() - interval '15 minutes'
-    RETURNING id, mailbox_id, hydration_attempt
-  `;
+  const { released, events } = await sql.begin(async (tx) => {
+    const released = await tx<{ id: string; mailbox_id: string; hydration_attempt: number }[]>`
+      UPDATE mail.message_contents
+      SET
+        hydration_status = 'failed',
+        hydration_error_code = 'HYDRATION_INTERRUPTED',
+        hydration_claim_id = NULL,
+        hydration_claimed_at = NULL
+      WHERE hydration_status = 'hydrating'
+        AND hydration_claimed_at < now() - interval '15 minutes'
+      RETURNING id, mailbox_id, hydration_attempt
+    `;
+    const events = await applyTerminalHydrationFailureTransitions(
+      tx,
+      released.filter((message) => message.hydration_attempt >= MAX_HYDRATION_ATTEMPTS).map((message) => message.id),
+    );
+    return { released, events };
+  });
+  if (events.length > 0) mailLive.wake();
   for (const message of released) {
     if (message.hydration_attempt < MAX_HYDRATION_ATTEMPTS) continue;
     await publishMailWorkflowDependency({ mailboxId: message.mailbox_id, dependency: { kind: "mail.hydration", key: message.id } });
@@ -686,16 +783,24 @@ export const hydrateMessageFromSource = async (params: {
   // A source the connector cannot even fetch must not be parsed into memory.
   if (Number(claimed.size_bytes) > MAX_IMAP_LITERAL_BYTES) {
     params.source.destroy();
-    await sql`
-      UPDATE mail.message_contents
-      SET
-        hydration_status = 'failed',
-        hydration_error_code = 'MESSAGE_TOO_LARGE',
-        hydration_attempt = ${MAX_HYDRATION_ATTEMPTS},
-        hydration_claim_id = NULL,
-        hydration_claimed_at = NULL
-      WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
-    `;
+    const events = await sql.begin(async (tx) => {
+      const updated = await tx<{ id: string }[]>`
+        UPDATE mail.message_contents
+        SET
+          hydration_status = 'failed',
+          hydration_error_code = 'MESSAGE_TOO_LARGE',
+          hydration_attempt = ${MAX_HYDRATION_ATTEMPTS},
+          hydration_claim_id = NULL,
+          hydration_claimed_at = NULL
+        WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
+        RETURNING id
+      `;
+      return applyTerminalHydrationFailureTransitions(
+        tx,
+        updated.map((message) => message.id),
+      );
+    });
+    if (events.length > 0) mailLive.wake();
     throw Object.assign(new Error("Message source is too large to hydrate"), { code: "MESSAGE_TOO_LARGE" });
   }
 
@@ -986,16 +1091,26 @@ export const hydrateMessageFromSource = async (params: {
         WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
       `;
     } else {
-      const [failed] = await sql<{ mailbox_id: string; hydration_attempt: number }[]>`
-        UPDATE mail.message_contents
-        SET
-          hydration_status = 'failed',
-          hydration_error_code = ${normalizeErrorCode(error)},
-          hydration_claim_id = NULL,
-          hydration_claimed_at = NULL
-        WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
-        RETURNING mailbox_id, hydration_attempt
-      `.catch(() => []);
+      const { failed, events } = await sql
+        .begin(async (tx) => {
+          const [failed] = await tx<{ mailbox_id: string; hydration_attempt: number }[]>`
+            UPDATE mail.message_contents
+            SET
+              hydration_status = 'failed',
+              hydration_error_code = ${normalizeErrorCode(error)},
+              hydration_claim_id = NULL,
+              hydration_claimed_at = NULL
+            WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
+            RETURNING mailbox_id, hydration_attempt
+          `;
+          const events =
+            failed && failed.hydration_attempt >= MAX_HYDRATION_ATTEMPTS
+              ? await applyTerminalHydrationFailureTransitions(tx, [params.messageId])
+              : [];
+          return { failed, events };
+        })
+        .catch(() => ({ failed: undefined, events: [] }));
+      if (events.length > 0) mailLive.wake();
       if (failed && failed.hydration_attempt >= MAX_HYDRATION_ATTEMPTS) {
         await publishMailWorkflowDependency({
           mailboxId: failed.mailbox_id,

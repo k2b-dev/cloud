@@ -14,7 +14,6 @@ import {
  * week, month, and daylight-saving boundaries cannot move a proposed day.
  */
 
-export const DEFAULT_TASK_TEMPLATE_TIME = "17:00";
 export const DEFAULT_EVENT_TEMPLATE_TIME = "09:00";
 export const DEFAULT_EVENT_TEMPLATE_DURATION_MINUTES = 60;
 export const TEMPLATE_PROPOSAL_COUNT = 3;
@@ -108,7 +107,7 @@ export const localNow = (now: Date, timeZone: string): { date: string; time: str
 };
 
 export const templateTime = (template: Pick<SpaceItemTemplate, "kind" | "timeOfDay">): string =>
-  template.timeOfDay ?? (template.kind === "task" ? DEFAULT_TASK_TEMPLATE_TIME : DEFAULT_EVENT_TEMPLATE_TIME);
+  template.timeOfDay ?? DEFAULT_EVENT_TEMPLATE_TIME;
 
 const toInstant = (date: string, time: string, timeZone: string): string =>
   dates.zonedDateTimeToInstant(`${date}T${time}`, timeZone, { disambiguation: "compatible" });
@@ -118,7 +117,7 @@ const toInstant = (date: string, time: string, timeZone: string): string =>
 /**
  * The dates a template proposes, earliest first: the next `count` matching weekdays, today plus the offset, or none.
  * For weekdays, today only counts while the template's time still lies ahead, compared as instants so a time in a
- * skipped or repeated daylight-saving hour is judged by when it really happens; an all-day event keeps today all day.
+ * skipped or repeated daylight-saving hour is judged by when it really happens; all-day tasks and events keep today all day.
  */
 export const proposeTemplateDates = (template: TemplateTiming, options: { now: Date; timeZone: string; count?: number }): string[] => {
   const rule = template.dateRule;
@@ -129,6 +128,7 @@ export const proposeTemplateDates = (template: TemplateTiming, options: { now: D
   const count = options.count ?? TEMPLATE_PROPOSAL_COUNT;
   const todayStillOpen =
     (template.kind === "event" && template.allDay) ||
+    (template.kind === "task" && !template.timeOfDay) ||
     options.now.getTime() < new Date(toInstant(today.date, templateTime(template), options.timeZone)).getTime();
   const proposals: string[] = [];
   // Seven days hold every weekday once, so `count` matches lie within `count` weeks.
@@ -180,7 +180,7 @@ export const templateSchedule = (
   timeZone: string,
 ): Pick<TemplateItemDraft, "deadline" | "startsAt" | "endsAt" | "allDay"> => {
   if (!date) return {};
-  if (template.kind === "task") return { deadline: toInstant(date, templateTime(template), timeZone) };
+  if (template.kind === "task") return { deadline: template.timeOfDay ? toInstant(date, template.timeOfDay, timeZone) : date };
   if (template.allDay) {
     return { startsAt: toInstant(date, "00:00", timeZone), endsAt: toInstant(addCalendarDays(date, 1), "00:00", timeZone), allDay: true };
   }
@@ -233,12 +233,13 @@ const weekdayList = (weekdays: TemplateWeekday[], locale?: string): string => {
   return new Intl.ListFormat(locale ?? "en", { type: "disjunction", style: "short" }).format(labels);
 };
 
-/** The rule as one line, e.g. `Mi oder Do · 17:00`, `In 3 Tagen · 09:00`, or `Ohne Datum`. */
+/** The rule as one line, e.g. `Mi oder Do · ganztägig`, `In 3 Tagen · 09:00`, or `Ohne Datum`. */
 export const describeTemplateDateRule = (template: TemplateTiming, locale?: string): string => {
   const { t } = messages.resolve(locale ? [locale] : []);
   const rule: TemplateDateRule = template.dateRule;
   if (rule.type === "none") return t.noDate;
   const day = rule.type === "offset" ? (rule.days === 0 ? t.today : t.inDays({ days: rule.days })) : weekdayList(rule.weekdays, locale);
-  const time = template.kind === "event" && template.allDay ? t.allDay : templateTime(template);
+  const time =
+    (template.kind === "event" && template.allDay) || (template.kind === "task" && !template.timeOfDay) ? t.allDay : templateTime(template);
   return `${day} · ${time}`;
 };

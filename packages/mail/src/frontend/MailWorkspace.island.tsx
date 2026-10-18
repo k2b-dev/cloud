@@ -23,7 +23,7 @@ import { parseMailLiveEvent } from "../live-event";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
 import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
-import type { MailboxPageData, MailListItem } from "../service/workspace";
+import type { MailboxListView, MailboxPageData, MailListItem } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
 import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
 import MailConversationList from "./_components/MailConversationList";
@@ -112,7 +112,7 @@ const mailListScope = (href: string): string => {
 };
 
 /** Scheduled and Drafts page through their own lists; every other view pages through conversations. */
-const pageNextCursor = (snapshot: MailboxPageData): string | null | undefined =>
+const pageNextCursor = (snapshot: MailboxListView): string | null | undefined =>
   snapshot.scheduledMode
     ? snapshot.scheduledPage?.nextCursor
     : snapshot.draftsMode
@@ -284,7 +284,7 @@ function MailWorkspaceView(props: {
     onCleanup(() => observer.disconnect());
   });
 
-  const applyPendingListState = (snapshot: MailboxPageData): MailboxPageData => {
+  const applyPendingListState = <T extends MailboxListView>(snapshot: T): T => {
     const reconciled = reconcileMailListOptimisticState(snapshot.listItems, pendingListState);
     pendingListState = reconciled.pending;
     return { ...snapshot, listItems: reconciled.items };
@@ -326,7 +326,33 @@ function MailWorkspaceView(props: {
     return await response.json();
   };
 
-  type WorkspaceRouteResult = { source: string; snapshot: MailboxPageData };
+  /** Every request path resolves against this mailbox and the browser origin; the list never carries a selection. */
+  const fetchWorkspaceList = async (
+    href: string,
+    signal: AbortSignal,
+    listMode: MailboxPageData["listMode"],
+  ): Promise<MailboxListView | null> => {
+    const target = resolveMailWorkspaceUrl(href, mailboxId, window.location.origin);
+    if (!target) return null;
+    target.searchParams.delete("conversation");
+    target.searchParams.delete("message");
+    const response = await apiClient.mailboxes[":mailboxId"]["workspace-list"].$get(
+      {
+        param: { mailboxId },
+        query: { href: `${target.pathname}${target.search}`, listMode },
+      },
+      { init: { signal } },
+    );
+    if (!response.ok) return null;
+    return await response.json();
+  };
+
+  /**
+   * Page 1 is the whole workspace snapshot: folders, counts and the open conversation. Every later page is only its
+   * list page, so scrolling on and a live refresh of many pages do not rebuild the mailbox once per page.
+   */
+  type WorkspaceRouteResult = { source: string; snapshot: MailboxPageData } | { source: string; list: MailboxListView };
+  const pageList = (page: WorkspaceRouteResult): MailboxListView => ("snapshot" in page ? page.snapshot : page.list);
   type WorkspaceTransition = {
     source: string;
     resolve: (result: "applied" | "failed" | "stale") => void;
@@ -373,14 +399,18 @@ function MailWorkspaceView(props: {
     loadPage: async (source, { cursor, abortSignal }) => {
       const target = decodeRouteSource(source);
       const url = new URL(target.href, window.location.origin);
-      if (cursor !== undefined) url.searchParams.set("cursor", cursor);
-      const snapshot = await fetchWorkspaceRoute(url.toString(), abortSignal, target.listMode);
-      if (!snapshot) throw new Error(t().loadViewFailed);
-      const nextCursor = pageNextCursor(snapshot);
-      assertCursorProgress(cursor, nextCursor, "mailbox");
-      return { source, snapshot };
+      if (cursor === undefined) {
+        const snapshot = await fetchWorkspaceRoute(url.toString(), abortSignal, target.listMode);
+        if (!snapshot) throw new Error(t().loadViewFailed);
+        return { source, snapshot };
+      }
+      url.searchParams.set("cursor", cursor);
+      const list = await fetchWorkspaceList(url.toString(), abortSignal, target.listMode);
+      if (!list) throw new Error(t().loadViewFailed);
+      assertCursorProgress(cursor, pageNextCursor(list), "mailbox");
+      return { source, list };
     },
-    getNextCursor: (page) => pageNextCursor(page.snapshot),
+    getNextCursor: (page) => pageNextCursor(pageList(page)),
   });
   routeLoading = () => workspaceQuery.loading() || workspaceQuery.refreshing() || workspaceQuery.loadingMore();
 
@@ -416,12 +446,12 @@ function MailWorkspaceView(props: {
   createEffect(() => {
     const pages = workspaceQuery.pages();
     const first = pages[0];
-    if (!first || first.source !== routeSource()) return;
+    if (!first || !("snapshot" in first) || first.source !== routeSource()) return;
     const target = decodeRouteSource(first.source);
     const scopeChanged = mailListScope(requestPath()) !== mailListScope(target.href);
     let next = applyPendingListState(preserveCurrentDetail(first.snapshot));
     for (const page of pages.slice(1)) {
-      const reconciled = applyPendingListState(page.snapshot);
+      const reconciled = applyPendingListState(pageList(page));
       if (next.scheduledMode && next.scheduledPage && reconciled.scheduledPage) {
         const items = new Map(next.scheduledPage.items.map((item) => [item.id, item]));
         for (const item of reconciled.scheduledPage.items) items.set(item.id, item);
@@ -454,7 +484,7 @@ function MailWorkspaceView(props: {
     batch(() => {
       committedRouteSource = first.source;
       setRequestPath(target.href);
-      const rawItems = new Map(pages.flatMap((page) => page.snapshot.listItems.map((item) => [mailListRowKey(item), item] as const)));
+      const rawItems = new Map(pages.flatMap((page) => pageList(page).listItems.map((item) => [mailListRowKey(item), item] as const)));
       setSnapshotItems([...rawItems.values()]);
       setData(reconcile(next));
       const releases = [...releasesOnNextSnapshot];
@@ -2173,6 +2203,7 @@ function MailWorkspaceView(props: {
         </AppWorkspace.Main>
         <AppWorkspace.Detail
           id="mail-context"
+          openOnChoice={false}
           open={detailsOpen() && canShowDetails()}
           onClose={() => setDetailsVisible(false)}
           width="lg"

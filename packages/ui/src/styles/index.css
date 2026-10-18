@@ -407,6 +407,144 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
 }
 
+/* Navigation labels that do not fit fade out at their end; they never end in
+   an ellipsis. `k2b-truncate-fade` keeps one line and fades its last 1.5rem.
+   `k2b-truncate-fade-lines` wraps up to `--k2b-truncate-fade-lines` lines
+   (2 by default) and fades the last of several lines over half its width:
+   that line ends at a word, short of the edge, so a 1.5rem fade would miss
+   its last word.
+   The fade is a mask, not an overlay, so it works on any fill: selected,
+   hovered, or dark. A scroll timeline on the label is active only while its
+   text overflows, so a label that fits is never dimmed. The text, its box,
+   and its accessible name stay as they are. One line overflows only sideways,
+   so `k2b-truncate-fade` follows the inline axis alone: a tight line height
+   lets glyphs reach past the line box, which would read as block overflow.
+   `k2b-truncate-fade-lines` also follows the block axis and needs a line
+   height of at least 1.3. An engine without scroll timelines cannot tell a
+   label that fits from one that overflows, so it keeps an ellipsis or line
+   clamp instead of dimming every label.
+   `--k2b-truncate-fade-inset` (inherited) is the length of the end that a
+   control overlays, such as a row's hover actions, including a 0.75rem fade
+   before it: text under that control fades out whether it overflows or not. */
+@property --k2b-truncate-fade-on {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@keyframes k2b-truncate-fade {
+  from,
+  to {
+    --k2b-truncate-fade-on: 1;
+    /* Balanced lines would end the last visible line even shorter. */
+    text-wrap-style: auto;
+  }
+}
+
+.k2b-ui :is(.k2b-truncate-fade, .k2b-truncate-fade-lines) {
+  --k2b-truncate-fade-on: 0;
+  --k2b-truncate-fade-length: 1.5rem;
+  --k2b-truncate-fade-start: calc(var(--k2b-truncate-fade-inset, 0px) - min(var(--k2b-truncate-fade-inset, 0px), 0.75rem));
+  --k2b-truncate-fade-end: linear-gradient(
+    to left,
+    transparent var(--k2b-truncate-fade-start),
+    #000 max(var(--k2b-truncate-fade-inset, 0px), calc(var(--k2b-truncate-fade-on) * var(--k2b-truncate-fade-length)))
+  );
+  min-width: 0;
+  overflow: hidden;
+  mask-image: var(--k2b-truncate-fade-end);
+}
+
+.k2b-ui .k2b-truncate-fade {
+  white-space: nowrap;
+}
+
+/* Lines above the last fade only under an overlaid control. */
+.k2b-ui .k2b-truncate-fade-lines {
+  /* One line runs to its edge, so it keeps the 1.5rem fade. */
+  --k2b-truncate-fade-length: max(1.5rem, calc(min(var(--k2b-truncate-fade-lines, 2) - 1, 1) * 50%));
+  --k2b-truncate-fade-above: linear-gradient(
+    to left,
+    transparent var(--k2b-truncate-fade-start),
+    #000 var(--k2b-truncate-fade-inset, 0px)
+  );
+  display: block;
+  max-height: calc(var(--k2b-truncate-fade-lines, 2) * 1lh);
+  overflow-wrap: anywhere;
+  mask-image: var(--k2b-truncate-fade-above), var(--k2b-truncate-fade-end);
+  mask-position:
+    top,
+    bottom;
+  mask-repeat: no-repeat;
+  mask-size:
+    100% calc(100% - 1lh),
+    100% 1lh;
+}
+
+/* Right-to-left text ends on the left. The attribute selectors cover the
+   build, which lowers `:dir()` to a list of right-to-left languages; a
+   left-to-right island inside right-to-left text keeps the left-to-right fade. */
+.k2b-ui :is(.k2b-truncate-fade, .k2b-truncate-fade-lines):is(:dir(rtl), [dir="rtl"], [dir="rtl"] *):not([dir="ltr"], [dir="rtl"] [dir="ltr"] *) {
+  --k2b-truncate-fade-end: linear-gradient(
+    to right,
+    transparent var(--k2b-truncate-fade-start),
+    #000 max(var(--k2b-truncate-fade-inset, 0px), calc(var(--k2b-truncate-fade-on) * var(--k2b-truncate-fade-length)))
+  );
+  --k2b-truncate-fade-above: linear-gradient(
+    to right,
+    transparent var(--k2b-truncate-fade-start),
+    #000 var(--k2b-truncate-fade-inset, 0px)
+  );
+}
+
+/* A label inside another fading label, inside row metadata, or in a card's
+   context header does not end where the overlaid control starts: the outer
+   element fades under it, and a context header keeps its width. */
+.k2b-ui
+  :is(
+    .k2b-truncate-fade,
+    .k2b-truncate-fade-lines,
+    .k2b-app-workspace__sidebar-item-meta,
+    .k2b-app-workspace__sidebar-item-context
+  )
+  :is(.k2b-truncate-fade, .k2b-truncate-fade-lines) {
+  --k2b-truncate-fade-inset: 0px;
+}
+
+@supports (animation-timeline: scroll()) {
+  .k2b-ui .k2b-truncate-fade {
+    animation: k2b-truncate-fade linear both;
+    animation-timeline: scroll(self inline);
+  }
+
+  .k2b-ui .k2b-truncate-fade-lines {
+    animation:
+      k2b-truncate-fade linear both,
+      k2b-truncate-fade linear both;
+    animation-timeline:
+      scroll(self inline),
+      scroll(self block);
+  }
+}
+
+/* Without scroll timelines, labels keep the ellipsis they had before. A line
+   clamp ends only wrapping text with one, so a one-line `-lines` label wraps
+   into its single clamped line here instead of staying unwrapped. */
+@supports not (animation-timeline: scroll()) {
+  .k2b-ui .k2b-truncate-fade {
+    text-overflow: ellipsis;
+  }
+
+  .k2b-ui .k2b-truncate-fade-lines {
+    white-space: normal !important;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--k2b-truncate-fade-lines, 2);
+    line-clamp: var(--k2b-truncate-fade-lines, 2);
+    text-overflow: ellipsis;
+  }
+}
+
 .k2b-ui .k2b-panes {
   display: flex;
   width: 100%;
@@ -1139,11 +1277,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-align: center;
 }
 
-/* A row's label takes up to two balanced lines and ends with an ellipsis after
-   them, so names that share a beginning stay apart without hover or motion. A
-   hidden copy of a plain-text label at the weight of the current row sizes it,
-   so selecting a row never wraps it onto another line. `data-lines="1"` keeps
-   one line with an ellipsis instead. */
+/* A row's label takes up to two balanced lines and fades out at the end of
+   the second (`k2b-truncate-fade-lines`), so names that share a beginning stay
+   apart without hover or motion. A hidden copy of a plain-text label at the
+   weight of the current row sizes it, so selecting a row never wraps it onto
+   another line. `data-lines="1"` keeps one line that fades out instead. */
 .k2b-ui .k2b-app-workspace__sidebar-item-label {
   @apply min-w-0 flex-1;
   display: grid;
@@ -1152,19 +1290,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-app-workspace__sidebar-item-label-text,
 .k2b-ui .k2b-app-workspace__sidebar-item-label[data-label]::after {
-  display: -webkit-box;
   grid-area: 1 / 1;
   align-self: center;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow-wrap: anywhere;
   text-wrap: balance;
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item-label[data-label]::after {
   content: attr(data-label) / "";
+  display: block;
+  max-height: 2lh;
+  overflow: hidden;
+  overflow-wrap: anywhere;
   font-weight: 600;
   visibility: hidden;
 }
@@ -1178,23 +1314,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     [data-lines="1"],
     :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
     .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
-  ) {
-  display: block;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.k2b-ui
-  .k2b-app-workspace__sidebar-item-label:is(
-    [data-lines="1"],
-    :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
-    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
   )::after {
   display: none;
 }
 
-/* `text-wrap: balance` above would turn wrapping back on. */
 .k2b-ui
   .k2b-app-workspace__sidebar-item-label:is(
     [data-lines="1"],
@@ -1202,7 +1325,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
   )
   > .k2b-app-workspace__sidebar-item-label-text {
-  display: inline;
+  --k2b-truncate-fade-lines: 1;
   white-space: nowrap;
 }
 
@@ -4933,7 +5056,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade-inset: 2.5rem;
+    --k2b-truncate-fade-inset: 2.5rem;
   }
 
   .k2b-ui
@@ -4946,7 +5069,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child > :nth-child(2)
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade-inset: 4.25rem;
+    --k2b-truncate-fade-inset: 4.25rem;
   }
 
   /* Hover actions and the row chevron overlay the row's trailing edge:
@@ -4989,7 +5112,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade-inset: 2.5rem;
+    --k2b-truncate-fade-inset: 2.5rem;
   }
 
   .k2b-ui
@@ -5000,7 +5123,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade-inset: 4.25rem;
+    --k2b-truncate-fade-inset: 4.25rem;
   }
 
   /* Without a touch screen, an action preview opens on hover, so its button
@@ -5030,28 +5153,26 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-ui
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
       > .k2b-app-workspace__sidebar-item-main {
-      --k2b-sidebar-item-fade-inset: 2.5rem;
+      --k2b-truncate-fade-inset: 2.5rem;
     }
   }
 
-  /* The fade inset spans the covered end and a 0.75rem gradient before it. */
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item-main
-    :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-meta) {
+  /* Labels and descriptions fade under the covered end through their
+     `k2b-truncate-fade` mask; counts take the same fade here. The inset spans
+     the covered end and a 0.75rem gradient before it. */
+  .k2b-ui .k2b-app-workspace__sidebar-item-main .k2b-app-workspace__sidebar-item-meta {
     mask-image: linear-gradient(
       to left,
-      transparent calc(var(--k2b-sidebar-item-fade-inset) - 0.75rem),
-      #000 var(--k2b-sidebar-item-fade-inset)
+      transparent calc(var(--k2b-truncate-fade-inset) - 0.75rem),
+      #000 var(--k2b-truncate-fade-inset)
     );
   }
 
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item-main
-    :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-meta):dir(rtl) {
+  .k2b-ui .k2b-app-workspace__sidebar-item-main .k2b-app-workspace__sidebar-item-meta:is(:dir(rtl), [dir="rtl"], [dir="rtl"] *):not([dir="ltr"], [dir="rtl"] [dir="ltr"] *) {
     mask-image: linear-gradient(
       to right,
-      transparent calc(var(--k2b-sidebar-item-fade-inset) - 0.75rem),
-      #000 var(--k2b-sidebar-item-fade-inset)
+      transparent calc(var(--k2b-truncate-fade-inset) - 0.75rem),
+      #000 var(--k2b-truncate-fade-inset)
     );
   }
 
@@ -6800,6 +6921,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-date-calendar {
+  --k2b-date-weekend: var(--k2b-surface-muted);
   min-width: 0;
   flex: 1;
   padding: 0.625rem;
@@ -6867,7 +6989,32 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: contents;
 }
 
-.k2b-ui .k2b-date-weekdays span {
+/* The weekend band: one soft column per run of weekend days, behind the
+   weekday letter and every week. Each grid draws its part, so the weekday row
+   rounds the top and the days round the bottom; the two rows touch, so the
+   parts read as one column. It is positioned, so it takes no grid cell and
+   never moves a day, and it sits below the days inside each grid's own
+   stacking context. */
+.k2b-ui .k2b-date-weekdays,
+.k2b-ui .k2b-date-grid {
+  position: relative;
+  isolation: isolate;
+}
+
+.k2b-ui .k2b-date-weekend {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: var(--k2b-radius-control) var(--k2b-radius-control) 0 0;
+  background: var(--k2b-date-weekend);
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-date-grid > .k2b-date-weekend {
+  border-radius: 0 0 var(--k2b-radius-control) var(--k2b-radius-control);
+}
+
+.k2b-ui .k2b-date-weekdays > span:not(.k2b-date-weekend) {
   padding-block: 0.25rem;
   color: var(--k2b-text-muted);
   font-size: 0.625rem;
@@ -6896,6 +7043,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-date-months button:hover {
   color: var(--k2b-text);
   background: var(--k2b-hover);
+}
+
+/* The hover fill would nearly vanish on the weekend band, so a weekend day
+   mixes the hover tint into the band instead. */
+.k2b-ui .k2b-date-grid button[data-weekend="true"]:hover:not([aria-selected="true"], [data-in-range="true"]) {
+  background: color-mix(in srgb, var(--k2b-action) 9%, var(--k2b-date-weekend));
 }
 
 .k2b-ui .k2b-date-grid button[data-outside="true"] {
@@ -7043,6 +7196,56 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-date-durations button {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+/* The optional time of a DateTimePicker: one slot of the time field's height holds either "Add time" or the field
+   with its remove button, so adding or removing the time never moves the panel. */
+.k2b-ui .k2b-date-optional-time {
+  display: flex;
+  min-width: 0;
+  min-height: 2rem;
+  flex: 1;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-date-optional-time__add,
+.k2b-ui .k2b-date-optional-time__remove {
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-date-optional-time__add {
+  margin-left: -0.5rem;
+}
+
+.k2b-ui .k2b-date-optional-time__remove {
+  width: 2rem;
+  padding: 0;
+}
+
+.k2b-ui .k2b-date-optional-time__add:hover,
+.k2b-ui .k2b-date-optional-time__remove:hover {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-date-optional-time__add:focus-visible,
+.k2b-ui .k2b-date-optional-time__remove:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
 }
 
 .k2b-ui .k2b-date-durations button[aria-pressed="true"] {
@@ -11921,10 +12124,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-spotlight-button[data-variant="sidebar"] .k2b-spotlight-button__label {
   min-width: 0;
   flex: 1;
-  overflow: hidden;
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .k2b-ui .k2b-spotlight-button[data-variant="sidebar-mobile"] {
@@ -12585,7 +12785,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"]) { background:var(--k2b-surface-muted); }
 .k2b-ui .k2b-tabs[data-variant="pill"] [role="tab"][aria-selected="true"] { color:var(--k2b-text); font-weight:500; }
 .k2b-ui .k2b-tabs[data-variant="pill"] [role="tab"] { border:0; margin:0; border-radius:.75rem; max-width:16rem; }
-.k2b-ui .k2b-tabs[data-variant="pill"] [role="tab"] span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .k2b-ui .k2b-tabs[data-orientation="vertical"] .k2b-tabs__bar { flex-direction:column; }
 
 /* Optional chart exploration surface; the viewport never changes size on load. */
@@ -12727,14 +12926,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   gap: 0.2rem;
 }
+/* One line that fades out at its end (`k2b-truncate-fade`). */
 .k2b-ui .k2b-app-workspace__sidebar-item-description {
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
   line-height: 1.125rem;
@@ -12788,7 +12984,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade-inset: 2.5rem;
+    --k2b-truncate-fade-inset: 2.5rem;
   }
   .k2b-ui
     .k2b-app-workspace__sidebar-item:not(
@@ -12798,7 +12994,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade-inset: 4.25rem;
+    --k2b-truncate-fade-inset: 4.25rem;
   }
 }
 
@@ -12943,10 +13139,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-app-workspace__sidebar-item-context-label {
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item-context-meta {
   flex-shrink: 0;

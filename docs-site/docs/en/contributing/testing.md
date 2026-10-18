@@ -154,6 +154,13 @@ Playwright's `clock` for this: even `setSystemTime` replaces timers,
 animation frames, and `performance`, and the Chat read-state tests then
 failed in WebKit. Use `performance.now()` for durations and deadlines.
 
+Measure browser timing on the browser's clock. Playwright events such as
+`request` reach the test process late under load, so tests that assert a browser
+throttle or delay record `performance.now()` in the page, as the Chat read-state
+tests do with `chatReadStarts` in an init script that wraps fetch. Wait for
+browser-side windows with a timer inside the page. The `test-clock` check also
+rejects clock reads inside Playwright event listeners.
+
 The `test-clock` check rejects new `new Date()` and `Date.now()` reads in UI
 tests, fixtures, harnesses, and suites. A line comment
 `// real clock: <reason>` on the same line or directly above allows a read
@@ -176,6 +183,17 @@ whose duration is the subject of the test. The reason must be non-empty.
 Known findings live in `scripts/checks/test-waits.baseline`. Its counts can
 only decrease; `bun scripts/check.ts test-waits --fix` lowers counts and
 removes entries when findings are gone.
+
+Scroll-driven animations, such as the navigation label fade in `@k2b/ui`,
+keep running and never finish. Before waiting for page animations to stop or
+awaiting their `finished` promises, select only the document timeline with
+`document.getAnimations().filter((animation) => animation.timeline === document.timeline)`.
+Apply the same filter to element calls with `{ subtree: true }`, which can
+include navigation labels. The `animation-settle` check requires an actual
+`.timeline` property access in the surrounding statement of document-wide and
+subtree calls in tests, browser suites, and browser harnesses, or a leading
+`// animation-settle: all timelines` comment (optionally followed by a reason)
+for deliberate inspection of all timelines.
 
 ## Test in Chromium and WebKit
 
@@ -280,6 +298,14 @@ that a mutation keeps an element and its height. Never read `boundingBox()`
 right after a change: it does not wait and returns `null` for an element that
 a refresh is replacing. See the claim test in
 `packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts`.
+
+Use `mostAtOnce(page, selector, change)` from `packages/ui/test/browser.ts` to
+check that Undo or a refresh never shows an entity twice and ends with exactly
+one. Scope a locator that reads the entity to its row, not to the page. Await
+Playwright calls and read their values: `expect(await box.isChecked())`.
+Never use `expect(promise).resolves`, which hides the reason for a rejection.
+See the tray Undo test in
+`packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
 
 ### Run WebKit locally
 
@@ -460,11 +486,18 @@ branch:
   wider than the screen. Measure sideways overflow against
   `document.documentElement.clientWidth`.
 - Playwright can read and type into a page before its first frame, and WebKit
-  can hold that frame back while a page loads. A dialog places its initial
-  focus in the next frame after it opens; until then, keys go to the element
-  the browser focused first. A test that types into a dialog right after it
-  opens first waits for the dialog's content and then for one frame:
+  can hold that frame back while a page loads or the machine is busy. A dialog
+  places its initial focus in the next frame after it opens; until then, keys
+  go to the element the browser focused first, which is the content's
+  `autofocus` element or else its first focusable element. A test that types
+  into a dialog right after it opens first waits for the dialog's content and
+  then for one frame:
   `await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))`.
+  Waiting for the content alone is not a frame: a test that read focus after
+  it failed in WebKit CI (#1456). Where keys must reach the target at once, as
+  in the Notebooks attachment preview, the target carries `autofocus`, and the
+  test reads focus in the same `page.evaluate` that opens the dialog, before
+  any frame can pass.
 - Neither engine shows a PDF in a frame. Chromium's headless shell reports
   `navigator.pdfViewerEnabled === false`, so `PdfPreview` shows its
   missing-viewer hint instead of the frame, and an automatic preview requests
@@ -640,6 +673,12 @@ A new integration test needs no configuration of its own: import nothing
 special, use the resolved runtime variables, and name the file
 `*.integration.test.ts`.
 
+bun:test does not stop a timed-out test body. An integration test ends the
+work it starts: teardown cancels and awaits every sync, job, or loop the test
+started before it restores shared stand-ins. A stand-in shared by several
+tests routes calls to the test that owns them and rejects calls from an ended
+test; see `packages/mail/src/service/remote-changes-fixture.ts`.
+
 Keep a test that needs one of these targets out of the Playwright suites
 (`*.browser.test.ts`): the nightly browser job sets no `CLOUD_TEST_*`
 variables, so the test would only ever be skipped there.
@@ -799,11 +838,11 @@ add the image to that pull step in `.github/workflows/ci.yml` and
 runs a test file, so it does not report a missing image there; without it, the
 job pulls a Docker Hub image from Docker Hub.
 
-Tests that read a rendered PDF call Poppler's `pdftotext`, `pdfinfo`, and
-`pdffonts` from `PATH`; locally, install Poppler (`poppler-utils` on Debian
+Tests that read a rendered PDF call Poppler's `pdftotext`, `pdfinfo`, `pdffonts`, and
+`pdfimages` from `PATH`; locally, install Poppler (`poppler-utils` on Debian
 and Ubuntu). CI does not install Poppler on the runner: `.github/poppler.sh
 install` pulls a Poppler image pinned by digest with the job's other images,
-starts it without network access, and links the three tools into
+starts it without network access, and links the four tools into
 `/usr/local/bin` as wrappers that run each call in that container. Installing
 from the runner's apt mirror hung, and Homebrew failed when its API host
 `formulae.brew.sh` timed out. In CI, the tools can open only files under the
@@ -843,6 +882,13 @@ stop the others. The same workflow, `mirror-images.yml`, also runs weekly and
 on demand. A new package created by the first copy must be public; if the
 check reports that it is not, change its visibility in the package settings on
 GitHub once.
+
+The Core image's DB-IP snapshot is the one mirror entry that is not a Docker
+Hub image: `ghcr.io/k2b-dev/mirror/dbip-lite:<YYYY-MM>`. It is referenced by
+tag and pinned by the gzip checksums in the Dockerfile. `.github/mirror-images.sh`
+copies it from DB-IP while DB-IP still serves that month. It holds only data
+and is pushed for `linux/amd64`; the Dockerfile takes that manifest with
+`FROM --platform=linux/amd64`, so arm64 release builds resolve it too.
 
 The `mirror-images` check fails when a workflow or Dockerfile would pull a
 Docker Hub image directly, including through BuildKit's default SBOM generator,

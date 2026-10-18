@@ -84,6 +84,7 @@ type DbItem = {
   ends_at: Date | null;
   all_day: boolean;
   deadline: Date | null;
+  deadline_date: string | null;
   estimated_duration_minutes: number | null;
   priority: string | null;
   recurrence_rrule: string | null;
@@ -112,6 +113,7 @@ type DbCalendarItem = {
   ends_at: Date | null;
   all_day: boolean;
   deadline: Date | null;
+  deadline_date: string | null;
   priority: string | null;
   recurrence_rrule: string | null;
   recurrence_dtstart: Date | null;
@@ -636,7 +638,8 @@ const mapToItem = (row: DbItem): SpaceItem => ({
   startsAt: row.starts_at?.toISOString() ?? null,
   endsAt: row.ends_at?.toISOString() ?? null,
   allDay: row.all_day,
-  deadline: row.deadline?.toISOString() ?? null,
+  deadline: row.deadline_date ?? row.deadline?.toISOString() ?? null,
+  deadlineAllDay: row.deadline_date != null,
   estimatedDurationMinutes: row.estimated_duration_minutes,
   activeBlockerCount: 0,
   priority: (row.priority as Priority) ?? null,
@@ -803,18 +806,32 @@ const hydrateRelations = async (items: SpaceItem[], viewer?: ReactionViewer): Pr
   return items;
 };
 
+const calendarSortTime = (item: CalendarItem, dateConfig?: DateContext): number => {
+  if (item.startsAt) return new Date(item.startsAt).getTime();
+  if (!item.deadline) return 0;
+  return new Date(
+    isDateOnly(item.deadline)
+      ? dates.zonedDateTimeToInstant(`${item.deadline}T00:00`, deadlineTimeZone(dateConfig), { disambiguation: "compatible" })
+      : item.deadline,
+  ).getTime();
+};
+const isDateOnly = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+const deadlineTimeZone = (dateConfig?: DateContext) => dateConfig?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+const deadlineDaySql = (timeZone: string) => sql`COALESCE(i.deadline_date, (i.deadline AT TIME ZONE ${timeZone})::date)`;
+const deadlineSortSql = (timeZone: string) => sql`COALESCE(i.deadline, i.deadline_date::timestamp AT TIME ZONE ${timeZone})`;
 const deadlineWindow = (dateConfig?: DateContext) => {
   const todayStart = dates.today(dateConfig);
   return {
     todayStart: todayStart.toISOString(),
     tomorrowStart: dates.addDays(todayStart, 1, dateConfig).toISOString(),
-    weekEnd: dates.addDays(todayStart, 7, dateConfig).toISOString(),
+    todayKey: dates.formatDateKey(todayStart, dateConfig),
+    weekEndKey: dates.formatDateKey(dates.addDays(todayStart, 7, dateConfig), dateConfig),
   };
 };
 
-/** isTaskOverdue in SQL, without the completion check that the status filter owns: a task, not an event, due before today. */
-const overdueMatch = (todayStart: string) =>
-  sql`((i.starts_at IS NULL OR i.ends_at IS NULL) AND i.deadline IS NOT NULL AND i.deadline < ${todayStart}::timestamptz)`;
+/** isTaskOverdue in SQL; completion is owned by the status filter. */
+const overdueMatch = (dateConfig?: DateContext) =>
+  sql`((i.starts_at IS NULL OR i.ends_at IS NULL) AND COALESCE(${deadlineDaySql(deadlineTimeZone(dateConfig))} < ${deadlineWindow(dateConfig).todayKey}::date, false))`;
 
 /**
  * Dashboard widget query: today's events and the next deadlines, across
@@ -839,6 +856,7 @@ export type DashboardItem = {
   startsAt: string | null;
   endsAt: string | null;
   deadline: string | null;
+  deadlineAllDay: boolean;
 };
 
 export const dashboardSnapshot = async (params: {
@@ -882,7 +900,7 @@ export const dashboardSnapshot = async (params: {
       COUNT(*) FILTER (
         WHERE i.completed_at IS NULL AND (
           (i.starts_at IS NOT NULL AND i.starts_at >= ${todayStart}::timestamptz AND i.starts_at < ${tomorrowStart}::timestamptz)
-          OR (i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${tomorrowStart}::timestamptz)
+          OR (${deadlineDaySql(deadlineTimeZone(params.dateConfig))} = ${deadlineWindow(params.dateConfig).todayKey}::date)
         )
       )::int AS today_count,
       COUNT(*) FILTER (
@@ -915,6 +933,7 @@ export const dashboardSnapshot = async (params: {
     starts_at: string | null;
     ends_at: string | null;
     deadline: string | null;
+    deadline_date: string | null;
   };
 
   // Today's events: starts_at within today's window OR deadline within today.
@@ -924,14 +943,14 @@ export const dashboardSnapshot = async (params: {
       : await sql<DbWidget[]>`
     SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name AS space_name, s.color AS space_color, s.ical_token AS space_ical,
            i.title, i.priority,
-           i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline
+           i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline, i.deadline_date::text AS deadline_date
     FROM spaces.items i
     JOIN spaces.spaces s ON s.id = i.space_id
     WHERE i.completed_at IS NULL
       ${spaceFilter}
       AND (
         (i.starts_at IS NOT NULL AND i.starts_at >= ${todayStart}::timestamptz AND i.starts_at < ${tomorrowStart}::timestamptz)
-        OR (i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${tomorrowStart}::timestamptz)
+        OR (${deadlineDaySql(deadlineTimeZone(params.dateConfig))} = ${deadlineWindow(params.dateConfig).todayKey}::date)
       )
       AND EXISTS (
         SELECT 1 FROM spaces.space_access sa
@@ -940,7 +959,7 @@ export const dashboardSnapshot = async (params: {
           AND a.permission <> 'none'
           AND ${principalMatch}
       )
-    ORDER BY COALESCE(i.starts_at, i.deadline) ASC
+    ORDER BY COALESCE(i.starts_at, ${deadlineSortSql(deadlineTimeZone(params.dateConfig))}) ASC
     LIMIT 5
   `;
 
@@ -951,7 +970,7 @@ export const dashboardSnapshot = async (params: {
       : await sql<DbWidget[]>`
     SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name AS space_name, s.color AS space_color, s.ical_token AS space_ical,
            i.title, i.priority,
-           i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline
+           i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline, i.deadline_date::text AS deadline_date
     FROM spaces.items i
     JOIN spaces.columns c ON c.id = i.column_id
     JOIN spaces.spaces s ON s.id = i.space_id
@@ -966,7 +985,7 @@ export const dashboardSnapshot = async (params: {
           AND a.permission <> 'none'
           AND ${principalMatch}
       )
-    ORDER BY i.deadline ASC NULLS LAST, i.created_at ASC
+    ORDER BY ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} ASC NULLS LAST, i.created_at ASC
     LIMIT ${params.todoLimit}
   `;
 
@@ -982,7 +1001,8 @@ export const dashboardSnapshot = async (params: {
     priority: r.priority,
     startsAt: r.starts_at,
     endsAt: r.ends_at,
-    deadline: r.deadline,
+    deadline: r.deadline_date ?? (r.deadline ? new Date(r.deadline).toISOString() : null),
+    deadlineAllDay: r.deadline_date != null,
   });
 
   return {
@@ -1006,7 +1026,7 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
   if (includeCompleted) {
     rows = await sql<DbItem[]>`
       SELECT
-        i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline,
+        i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline, i.deadline_date::text AS deadline_date,
         i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
         i.rank::text AS rank,
         i.completed_at, i.created_by, i.created_at, i.updated_at
@@ -1018,7 +1038,7 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
   } else {
     rows = await sql<DbItem[]>`
       SELECT
-        i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline,
+        i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline, i.deadline_date::text AS deadline_date,
         i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
         i.rank::text AS rank,
         i.completed_at, i.created_by, i.created_at, i.updated_at
@@ -1090,10 +1110,9 @@ export const listFiltered = async (params: {
   }
 
   if (filter.overdue !== undefined) {
-    const { todayStart } = deadlineWindow(params.dateConfig);
     conditions = filter.overdue
-      ? sql`${conditions} AND ${overdueMatch(todayStart)}`
-      : sql`${conditions} AND NOT ${overdueMatch(todayStart)}`;
+      ? sql`${conditions} AND ${overdueMatch(params.dateConfig)}`
+      : sql`${conditions} AND NOT ${overdueMatch(params.dateConfig)}`;
   }
 
   // Status filter
@@ -1128,19 +1147,16 @@ export const listFiltered = async (params: {
 
   // Deadline filter
   if (deadlineFilter === "overdue") {
-    const { todayStart } = deadlineWindow(params.dateConfig);
-    conditions = sql`${conditions} AND ${overdueMatch(todayStart)}`;
+    conditions = sql`${conditions} AND ${overdueMatch(params.dateConfig)}`;
   } else if (deadlineFilter === "today") {
-    const { todayStart, tomorrowStart } = deadlineWindow(params.dateConfig);
-    conditions = sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${tomorrowStart}::timestamptz`;
+    conditions = sql`${conditions} AND ${deadlineDaySql(deadlineTimeZone(params.dateConfig))} = ${deadlineWindow(params.dateConfig).todayKey}::date`;
   } else if (deadlineFilter === "week") {
-    const { todayStart, weekEnd } = deadlineWindow(params.dateConfig);
-    conditions = sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${weekEnd}::timestamptz`;
+    conditions = sql`${conditions} AND ${deadlineDaySql(deadlineTimeZone(params.dateConfig))} >= ${deadlineWindow(params.dateConfig).todayKey}::date AND ${deadlineDaySql(deadlineTimeZone(params.dateConfig))} < ${deadlineWindow(params.dateConfig).weekEndKey}::date`;
   } else if (deadlineFilter === "none") {
-    conditions = sql`${conditions} AND i.deadline IS NULL`;
+    conditions = sql`${conditions} AND (i.deadline IS NULL AND i.deadline_date IS NULL)`;
   }
   if (deadlineBefore) {
-    conditions = sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline < ${deadlineBefore}::timestamptz`;
+    conditions = sql`${conditions} AND ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} < ${deadlineBefore}::timestamptz`;
   }
 
   // Tag filter (items that have ANY of the specified tags)
@@ -1195,8 +1211,8 @@ export const listFiltered = async (params: {
       break;
     case "deadline":
       orderClause = sortDesc
-        ? sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE i.deadline END DESC NULLS FIRST, i.rank ASC, i.id ASC`
-        : sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE i.deadline END ASC NULLS LAST, i.rank ASC, i.id ASC`;
+        ? sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} END DESC NULLS FIRST, i.rank ASC, i.id ASC`
+        : sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} END ASC NULLS LAST, i.rank ASC, i.id ASC`;
       break;
     case "created":
       orderClause = sortDesc ? sql`i.created_at DESC, i.id ASC` : sql`i.created_at ASC, i.id ASC`;
@@ -1231,8 +1247,8 @@ export const listFiltered = async (params: {
     case "deadline": {
       const timeZone = params.dateConfig?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
       const todayKey = dates.formatDateKey(dates.today(params.dateConfig), params.dateConfig);
-      const schedule = sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE i.deadline END`;
-      const dayKey = sql`to_char(${schedule} AT TIME ZONE ${timeZone}, 'YYYY-MM-DD')`;
+      const schedule = sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} END`;
+      const dayKey = sql`(CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN (i.starts_at AT TIME ZONE ${timeZone})::date ELSE ${deadlineDaySql(timeZone)} END)::text`;
       groupKey = sql`CASE
         WHEN ${schedule} IS NULL THEN 'none'
         WHEN ${dayKey} < ${todayKey} AND i.completed_at IS NULL THEN
@@ -1278,7 +1294,7 @@ export const listFiltered = async (params: {
   // Get items with pagination
   const rows = await sql<DbItem[]>`
     SELECT i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at,
-           i.all_day, i.deadline, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
+           i.all_day, i.deadline, i.deadline_date::text AS deadline_date, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
            i.rank::text AS rank,
            i.completed_at,
            i.created_by, i.created_at, i.updated_at
@@ -1346,7 +1362,8 @@ const mapCalendarRow = (r: DbCalendarItem, tags: SpaceTag[], assignees: SpaceIte
   startsAt: r.starts_at?.toISOString() ?? null,
   endsAt: r.ends_at?.toISOString() ?? null,
   allDay: r.all_day,
-  deadline: r.deadline?.toISOString() ?? null,
+  deadline: r.deadline_date ?? r.deadline?.toISOString() ?? null,
+  deadlineAllDay: r.deadline_date != null,
   priority: (r.priority as Priority) ?? null,
   recurrence: mapRecurrence(r),
   recurringEventId: r.recurring_event_id,
@@ -1405,6 +1422,7 @@ const expandedToCalendarItem = (event: ExpandedRecurringEvent & { calendarItem?:
       endsAt: event.end ? new Date(event.end).toISOString() : null,
       allDay: event.allDay ?? false,
       deadline: null,
+      deadlineAllDay: false,
       priority: null,
       recurrence: null,
       recurringEventId: parent,
@@ -1479,13 +1497,13 @@ export const searchAcross = async (params: {
   const window = deadlineWindow(params.dateConfig);
   const deadlineMatch =
     params.deadlineFilter === "overdue"
-      ? overdueMatch(window.todayStart)
+      ? overdueMatch(params.dateConfig)
       : params.deadlineFilter === "today"
-        ? sql`i.deadline >= ${window.todayStart}::timestamptz AND i.deadline < ${window.tomorrowStart}::timestamptz`
+        ? sql`${deadlineDaySql(deadlineTimeZone(params.dateConfig))} = ${window.todayKey}::date`
         : params.deadlineFilter === "week"
-          ? sql`i.deadline >= ${window.todayStart}::timestamptz AND i.deadline < ${window.weekEnd}::timestamptz`
+          ? sql`${deadlineDaySql(deadlineTimeZone(params.dateConfig))} >= ${window.todayKey}::date AND ${deadlineDaySql(deadlineTimeZone(params.dateConfig))} < ${window.weekEndKey}::date`
           : params.deadlineFilter === "none"
-            ? sql`i.deadline IS NULL`
+            ? sql`(i.deadline IS NULL AND i.deadline_date IS NULL)`
             : sql`true`;
   const blockedMatch =
     params.blocked === undefined
@@ -1504,7 +1522,7 @@ export const searchAcross = async (params: {
   const rows = await sql<DbItemAcross[]>`
     SELECT
       i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at,
-      i.all_day, i.deadline, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
+      i.all_day, i.deadline, i.deadline_date::text AS deadline_date, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
       i.rank::text AS rank,
       i.completed_at,
       i.created_by, i.created_at, i.updated_at,
@@ -1575,7 +1593,7 @@ export const get = async (params: { id: string; viewer?: ReactionViewer }): Prom
       i.starts_at,
       i.ends_at,
       i.all_day,
-      i.deadline,
+      i.deadline, i.deadline_date::text AS deadline_date,
       i.estimated_duration_minutes,
       i.priority,
       i.recurrence_rrule,
@@ -1684,7 +1702,7 @@ export const create = async (params: {
       const shortId = newShortId();
       const [created] = await tx<{ id: string }[]>`
       INSERT INTO spaces.items (
-        id, short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, deadline,
+        id, short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, deadline, deadline_date,
         estimated_duration_minutes, all_day, priority, recurrence_rrule, recurrence_dtstart, recurrence_exdate,
         recurring_event_id, recurrence_id, rank, completed_at, created_by
       )
@@ -1698,7 +1716,8 @@ export const create = async (params: {
         ${data.url ?? null},
         ${data.startsAt ?? null},
         ${data.endsAt ?? null},
-        ${data.deadline ?? null},
+        ${data.deadline && !isDateOnly(data.deadline) ? data.deadline : null},
+        ${data.deadline && isDateOnly(data.deadline) ? data.deadline : null}::date,
         ${data.estimatedDurationMinutes ?? null},
         ${data.allDay ?? false},
         ${data.priority ?? null},
@@ -1798,7 +1817,7 @@ export const update = async (params: {
 
   const result = await sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
     const [locked] = await tx<DbItem[]>`
-      SELECT id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline,
+      SELECT id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, deadline_date::text AS deadline_date,
         estimated_duration_minutes, priority, recurrence_rrule, recurrence_dtstart, recurrence_exdate,
         recurring_event_id, recurrence_id, rank::text AS rank, completed_at, created_by, created_at, updated_at
       FROM spaces.items
@@ -1903,7 +1922,8 @@ export const update = async (params: {
               starts_at = ${startsAt},
               ends_at = ${endsAt},
               all_day = ${allDay},
-              deadline = ${deadline},
+              deadline = ${deadline && !isDateOnly(deadline) ? deadline : null},
+              deadline_date = ${deadline && isDateOnly(deadline) ? deadline : null}::date,
               estimated_duration_minutes = ${estimatedDurationMinutes},
               priority = ${priority},
               recurrence_rrule = ${recurrenceDb.rrule},
@@ -1924,7 +1944,8 @@ export const update = async (params: {
               starts_at = ${startsAt},
               ends_at = ${endsAt},
               all_day = ${allDay},
-              deadline = ${deadline},
+              deadline = ${deadline && !isDateOnly(deadline) ? deadline : null},
+              deadline_date = ${deadline && isDateOnly(deadline) ? deadline : null}::date,
               estimated_duration_minutes = ${estimatedDurationMinutes},
               priority = ${priority},
               recurrence_rrule = ${recurrenceDb.rrule},
@@ -2010,7 +2031,7 @@ export const splitRecurring = async (params: {
     sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
       const [source] = await tx<DbItem[]>`
       SELECT
-        id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, estimated_duration_minutes, priority,
+        id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, deadline_date::text AS deadline_date, estimated_duration_minutes, priority,
         recurrence_rrule, recurrence_dtstart, recurrence_exdate, recurring_event_id, recurrence_id, rank::text AS rank,
         completed_at, created_by, created_at, updated_at
       FROM spaces.items
@@ -2088,7 +2109,7 @@ export const splitRecurring = async (params: {
 
       const [created] = await tx<{ id: string }[]>`
       INSERT INTO spaces.items (
-        short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, estimated_duration_minutes, priority,
+        short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, deadline_date, estimated_duration_minutes, priority,
         recurrence_rrule, recurrence_dtstart, recurrence_exdate, recurring_event_id, recurrence_id, rank,
         completed_at, created_by
       )
@@ -2104,6 +2125,7 @@ export const splitRecurring = async (params: {
         ${params.data.endsAt}::timestamptz,
         ${params.data.allDay},
         deadline,
+        deadline_date,
         estimated_duration_minutes,
         priority,
         ${split.nextRrule},
@@ -2667,7 +2689,7 @@ type CalendarAccessParams = {
 };
 
 const calendarTypeMatch = (type?: ItemType) => {
-  if (type === "task") return sql`(i.starts_at IS NULL OR i.ends_at IS NULL) AND i.deadline IS NOT NULL`;
+  if (type === "task") return sql`(i.starts_at IS NULL OR i.ends_at IS NULL) AND (i.deadline IS NOT NULL OR i.deadline_date IS NOT NULL)`;
   if (type === "event") return sql`i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL`;
   return sql`true`;
 };
@@ -2744,7 +2766,7 @@ export const listCalendar = async (
         AND ${requestedSpaceMatch}
     )
     SELECT i.id, i.space_id, i.column_id, s.name as space_name, s.color as space_color,
-           i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline, i.priority,
+           i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline, i.deadline_date::text AS deadline_date, i.priority,
            i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id
     FROM spaces.items i
     JOIN spaces.spaces s ON i.space_id = s.id
@@ -2783,9 +2805,9 @@ export const listCalendar = async (
             ) > ${from}::timestamptz)
           )
         )
-        OR (i.deadline IS NOT NULL AND i.deadline >= ${from}::timestamptz AND i.deadline < ${to}::timestamptz)
+        OR (${deadlineSortSql(deadlineTimeZone(params.dateConfig))} >= ${from}::timestamptz AND ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} < ${to}::timestamptz)
       )
-    ORDER BY COALESCE(i.starts_at, i.deadline), i.id
+    ORDER BY COALESCE(i.starts_at, ${deadlineSortSql(deadlineTimeZone(params.dateConfig))}), i.id
     LIMIT ${params.sourceLimit === undefined ? null : params.sourceLimit + 1}
   `;
 
@@ -2863,8 +2885,8 @@ export const listCalendar = async (
   });
 
   return [...regularItems, ...expanded].sort((a, b) => {
-    const aTime = new Date(a.startsAt ?? a.deadline ?? 0).getTime();
-    const bTime = new Date(b.startsAt ?? b.deadline ?? 0).getTime();
+    const aTime = calendarSortTime(a, params.dateConfig);
+    const bTime = calendarSortTime(b, params.dateConfig);
     return aTime - bTime;
   });
 };
@@ -2918,13 +2940,19 @@ export type TaskItem = {
   spaceColor: string;
   title: string;
   deadline: string | null;
+  deadlineAllDay: boolean;
   priority: Priority | null;
 };
 
 /**
  * List tasks assigned to a specific user (across all spaces they have access to)
  */
-export const listMyTasks = async (params: { userId: string; minPriority?: Priority; limit?: number }): Promise<TaskItem[]> => {
+export const listMyTasks = async (params: {
+  userId: string;
+  minPriority?: Priority;
+  limit?: number;
+  dateConfig?: DateContext;
+}): Promise<TaskItem[]> => {
   const { userId, minPriority, limit = 20 } = params;
   const principalMatch = buildSpacePrincipalCondition({ type: "user", userId });
 
@@ -2950,6 +2978,7 @@ export const listMyTasks = async (params: { userId: string; minPriority?: Priori
       space_color: string;
       title: string;
       deadline: Date | null;
+      deadline_date: string | null;
       priority: string | null;
     }[]
   >`
@@ -2962,7 +2991,7 @@ export const listMyTasks = async (params: { userId: string; minPriority?: Priori
         AND ${principalMatch}
     )
     SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name as space_name, s.color as space_color,
-           i.title, i.deadline, i.priority
+           i.title, i.deadline, i.deadline_date::text AS deadline_date, i.priority
     FROM spaces.items i
     JOIN spaces.spaces s ON i.space_id = s.id
     WHERE i.space_id IN (SELECT id FROM accessible_spaces)
@@ -2981,7 +3010,7 @@ export const listMyTasks = async (params: { userId: string; minPriority?: Priori
         WHEN 'low' THEN 4
         ELSE 5
       END,
-      i.deadline ASC NULLS LAST,
+      ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} ASC NULLS LAST,
       i.created_at DESC
     LIMIT ${limit}
   `;
@@ -2994,7 +3023,8 @@ export const listMyTasks = async (params: { userId: string; minPriority?: Priori
     spaceName: r.space_name,
     spaceColor: r.space_color,
     title: r.title,
-    deadline: r.deadline?.toISOString() ?? null,
+    deadline: r.deadline_date ?? r.deadline?.toISOString() ?? null,
+    deadlineAllDay: r.deadline_date != null,
     priority: (r.priority as Priority) ?? null,
   }));
 };

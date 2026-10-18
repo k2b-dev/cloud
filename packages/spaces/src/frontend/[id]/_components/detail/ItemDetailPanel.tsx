@@ -37,6 +37,7 @@ import {
   type SpaceWormhole,
   type WormholeTransferResult,
 } from "@/contracts";
+import { deadlineDayKey, formatDeadline, isDateOnlyDeadline } from "@/presentation/deadline";
 import { summarizeRecurrence } from "@/presentation/recurrence";
 import { spaceCommandMessages } from "../../../../commands";
 import { shouldHandleDetailClick } from "../../../lib/detail";
@@ -57,7 +58,7 @@ import {
 } from "../shared/claim/claim";
 import { setItemCompleted } from "../shared/completion";
 import { openEditItemDialog } from "../shared/editItem";
-import { deadlinePresets } from "../shared/item-form/date";
+import { DEADLINE_DEFAULT_TIME, deadlinePresets } from "../shared/item-form/date";
 import ItemReactions, { createReactionPicker } from "../shared/reactions/ItemReactions";
 import SpaceAssigneePicker from "../shared/SpaceAssigneePicker";
 import {
@@ -169,6 +170,15 @@ function AssigneesSection(props: {
  * Item detail panel with inline editing.
  * All edits are saved immediately via API.
  */
+/** "today", "tomorrow", "in 3 days" for a date-only deadline, counted in whole days from today in the app timezone. */
+const daysAway = (deadline: string, dateConfig: DateContext | undefined, locale: string): string => {
+  const day = (key: string) => Date.UTC(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, Number(key.slice(8, 10)));
+  const today = deadlineDayKey(dates.today(dateConfig).toISOString(), dateConfig);
+  const days = Math.round((day(deadline) - day(today)) / 86_400_000);
+  const format = new Intl.RelativeTimeFormat(dateConfig?.locale ?? locale, { numeric: "auto" });
+  return Math.abs(days) < 7 ? format.format(days, "day") : format.format(Math.round(days / 7), "week");
+};
+
 export default function ItemDetailPanel(props: Props) {
   const locale = useLocale();
   const t = useSpaceMessages();
@@ -692,7 +702,9 @@ export default function ItemDetailPanel(props: Props) {
           action: async () => {
             const result = await prompts.form({
               title: t.deadline,
-              fields: { deadline: { type: "datetime", label: t.deadline, default: props.item.deadline ?? undefined } },
+              fields: {
+                deadline: { type: "datetime", label: t.deadline, optionalTime: true, default: props.item.deadline ?? undefined },
+              },
             });
             if (result && props.item.id === itemId && canEditItem()) await updateMutation.mutate({ deadline: result.deadline || null });
           },
@@ -784,10 +796,16 @@ export default function ItemDetailPanel(props: Props) {
   const dueRow: DescriptionListItem = {
     term: t.due,
     get description() {
+      // A deadline without a time names its day and how many days away it is; a timed one keeps date, time and span.
       const due = (deadline: string) => (
         <span>
-          {dates.formatDateTime(deadline, props.dateConfig)}
-          <span class="text-dimmed"> · {dates.formatTimeSpan(deadline, props.dateConfig)}</span>
+          {isDateOnlyDeadline(deadline) ? formatDeadline(deadline, props.dateConfig) : dates.formatDateTime(deadline, props.dateConfig)}
+          <span class="text-dimmed">
+            {" · "}
+            {isDateOnlyDeadline(deadline)
+              ? daysAway(deadline, props.dateConfig, locale())
+              : dates.formatTimeSpan(deadline, props.dateConfig)}
+          </span>
         </span>
       );
       return canEditItem() ? (
@@ -799,6 +817,8 @@ export default function ItemDetailPanel(props: Props) {
           onValueChange={(deadline) => void deadlineEdit.update(deadline)}
           renderValue={due}
           presets={deadlinePresets(props.dateConfig)}
+          optionalTime
+          defaultTime={DEADLINE_DEFAULT_TIME}
           dateConfig={props.dateConfig}
           clearable
         />

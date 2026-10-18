@@ -75,6 +75,8 @@ cld spaces show Item01 --context --json
 
 ```bash
 cld spaces add "Roadmap":"Publish release notes" --deadline 2026-10-20 --estimate-minutes 90 --assignee me
+cld spaces due "Roadmap":"Publish release notes" 2026-10-24
+cld spaces due "Roadmap":"Publish release notes" 2026-10-24T17:00:00+02:00
 cld spaces add "Roadmap":"Launch review" --starts-at 2026-10-20T10:00:00Z --ends-at 2026-10-20T11:00:00Z
 cld spaces add "Roadmap":"Migrate the archive" --priority high --from task.md
 cld spaces set "Roadmap":"Publish release notes" --priority high --from notes.md
@@ -94,7 +96,7 @@ cld spaces create "Hiring" --description "Open roles"
 - `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` it lands in the space's first column. `add` takes the field flags of `set` except `--title` and `--clear-*`, including the description from `--description <text>` or `--from <file|->` (5,000 characters at most). It adds `--template`, `--kind`, `--date`, and `--no-date`; see [Templates](#templates).
 - `set` changes only the fields you pass. `--description` or `--from` replaces the description. Repeat `--tag` and `--assignee` to set several; they replace the current selection. `--clear-*` cannot be combined with new values.
 - Assignees are `me`, a user or service account UUID, a username, or a service account name with access to the space. Service account names match without regard to case. `assign` replaces all assignees with one person or account, or none.
-- Dates accept ISO datetimes, used as given, or `YYYY-MM-DD`. A date is a day in your system timezone (`TZ` overrides it), stored as the web interface stores it: a deadline at 17:00, like the form's *Today* and *Tomorrow* presets, a start at the beginning of the day, and an end that includes the whole day. Dates for both `--starts-at` and `--ends-at` make an all-day event. Other values keep the item's all-day setting; to give an all-day event times, turn off *All-day event* in the web interface.
+- Task deadlines default to all-day: `--deadline YYYY-MM-DD` and `due <item> YYYY-MM-DD` keep that calendar date without a timezone conversion. An ISO date-time sets a timed deadline; offset-free date-times keep their local wall-clock interpretation (`TZ` overrides the system timezone). Responses include `deadlineAllDay`: true only for an all-day deadline, false for timed or absent deadlines. `due <item> none` clears it. `--due-before` keeps its instant comparison and excludes an all-day deadline on the named date. Date-only event bounds still use local midnight, with the end including its whole day; two date-only bounds make an all-day event.
 - `mv` moves an item to another column of its own space and puts it at the top of that column; it does not reorder items within a column. Moving between spaces is done with wormholes in the web interface.
 - `done` fails while the task has an active blocker. `rm` needs `--yes`.
 
@@ -109,7 +111,7 @@ cld spaces add "Roadmap":"Report for the board" --template "Weekly report" --pri
 cld spaces add "Roadmap" --template "Notes" --no-date
 ```
 
-A template stores defaults for new tasks or events of one space: title and description, which may contain `{{date}}`, `{{weekday}}`, and `{{week}}`, priority, tags, assignees or the person who creates the item, a task checklist, and for events location, link, start time, and duration. Its date rule proposes dates: the next matching weekdays (`Wed or Thu · 17:00`), today plus some days, or none. A weekday rule offers today only while the template's time still lies ahead.
+A template stores defaults for new tasks or events of one space: title and description, which may contain `{{date}}`, `{{weekday}}`, and `{{week}}`, priority, tags, assignees or the person who creates the item, a task checklist, and for events location, link, start time, and duration. Its date rule proposes dates: the next matching weekdays (`Wed or Thu · all day`), today plus some days, or none. A task template without a time creates an all-day deadline and keeps today available all day. A weekday template with a time offers today only while that time still lies ahead.
 
 - `templates ls` shows each template's kind, date rule, and the next proposals in your system timezone (`TZ` overrides it). `templates show <space>:<template>` takes a name, matched without regard to case, or an ID. A name that both a task and an event template use needs `--kind task` or `--kind event`.
 - `add --template` fills every field you leave out, so `<space>` alone is enough when the template has a title. Without `--date` the first proposal applies and the text output names the others; `--date YYYY-MM-DD` picks another day, and `--no-date` makes a task without a due date. Other `add` flags win over the template; `--tag` and `--assignee` replace its lists. Pass at most one of `--date`, `--no-date`, `--deadline`, and `--starts-at`; a given `--deadline` or `--starts-at` also picks the day the placeholders use, and `--starts-at` needs `--ends-at`.
@@ -298,4 +300,4 @@ Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link 
 
 Each assignee has `kind` (`user` or `service_account`), its principal UUID as `id`, and a `displayName`; service accounts have no avatar hash.
 
-An item has `id`, `spaceId`, `columnId`, `title`, `description`, `startsAt`, `endsAt`, `deadline`, `estimatedDurationMinutes`, `priority`, `completedAt`, `activeBlockerCount`, `assignees`, `tags`, and timestamps. Errors print `{"error":{"message","status","exitCode"}}` with `--json`; an ambiguous address is status `409`.
+An item has `id`, `spaceId`, `columnId`, `title`, `description`, `startsAt`, `endsAt`, `deadline`, `deadlineAllDay`, `estimatedDurationMinutes`, `priority`, `completedAt`, `activeBlockerCount`, `assignees`, `tags`, and timestamps. Errors print `{"error":{"message","status","exitCode"}}` with `--json`; an ambiguous address is status `409`.

@@ -14,6 +14,12 @@ Beim Erstellen eines Eintrags wählt Spaces anhand der aktuellen Ansicht zunäch
 
 Wähle **Weitere Optionen**, um alle Felder für Aufgaben oder Termine zu sehen. Deine Eingaben bleiben erhalten. Eine Aufgabe bekommt den Status, in dem du sie erstellst, oder den ersten Status, wenn keiner ausgewählt ist.
 
+## Eine Fälligkeit festlegen {icon="calendar-due"}
+
+Fälligkeiten sind standardmäßig ganztägig. Wähle ein Datum, an dem die Aufgabe fällig ist. **Uhrzeit hinzufügen** ergänzt eine feste Uhrzeit; **Uhrzeit entfernen** macht die Fälligkeit wieder ganztägig.
+
+Eine ganztägige Fälligkeit wird erst am Folgetag in deiner Zeitzone überfällig. Am gewählten Tag zählt sie den ganzen Tag als heute fällig. Im Kalender steht sie in der Tages- und Wochenansicht in der Ganztagszeile, in der Monats- und Jahresansicht an ihrem Datum. Bestehende Fälligkeiten mit Uhrzeit behalten ihre Uhrzeit.
+
 ## Mit einer Vorlage beginnen {icon="template"}
 
 Hat ein Space Vorlagen, zeigt der Dialog für eine neue Aufgabe oder einen neuen Termin die Zeile **Vorlage**. Die Zeile bietet **Leer** und die Vorlagen für diese Art von Eintrag. Bei mehr als sechs Vorlagen wird die Zeile zu einer durchsuchbaren Liste.
@@ -25,7 +31,7 @@ Eine Vorlage kann Daten vorschlagen:
 - Eine Regel wie „Mittwoch oder Donnerstag“ zeigt die nächsten passenden Tage als Auswahl, zum Beispiel **Mi 14.10.**, **Do 15.10.** und **Mi 21.10.** Eine Regel wie „in 3 Tagen“ schlägt ein Datum vor.
 - Der erste Vorschlag ist ausgewählt. Wähle einen anderen Vorschlag, **Anderes Datum…** für ein beliebiges Datum oder **Kein Datum** für eine Aufgabe ohne Fälligkeit.
 - Bei Terminen bleibt das Zeitfeld darunter für jede andere Zeit verfügbar.
-- Die Vorschläge richten sich nach deiner Zeitzone. Bei einer Wochentagsregel erscheint heute nur, solange die Uhrzeit der Vorlage noch nicht vorbei ist.
+- Die Vorschläge richten sich nach deiner Zeitzone. Bei einer Wochentagsregel bleibt heute für eine ganztägige Aufgabe den ganzen Tag verfügbar. Eine Vorlage mit Uhrzeit bietet heute nur an, solange diese Uhrzeit noch bevorsteht.
 - Die Platzhalter `{{date}}`, `{{weekday}}` und `{{week}}` in Titel und Beschreibung folgen dem gewählten Datum, bis du den Text änderst. Das gilt auch bei **Kein Datum** und bei einer Auswahl im Kalender.
 
 Mit Zugriff **Verwalten** richtest du Vorlagen in den Space-Einstellungen unter **Vorlagen** ein: Name, Vorgaben, Datumsregel und Fälligkeits- oder Startzeit. **Mir zuweisen** weist die Person zu, die den Eintrag anlegt. Eine geänderte oder gelöschte Vorlage ändert keine Einträge, die schon daraus entstanden sind. Alle, die Einträge anlegen können, können die Vorlagen nutzen.

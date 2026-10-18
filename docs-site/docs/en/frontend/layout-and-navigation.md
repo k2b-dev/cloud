@@ -80,20 +80,17 @@ A regular page, without `fullWidth` or `fullPage`, owns its inset: from 768 px
 no header sits above a signed-in page, so give the content its own padding, as
 `AppOverview` does.
 
-`AppWorkspace.Detail` occupies a full-height column beside the workspace head
-and panes from 768 px. Below 768 px it is a half or full sheet at the window’s
-bottom edge. A closable panel on a coarse pointer from 768 to 1023 px overlays
-Main as a drawer. Pass its existing close action as `onClose` in an island or
-client component, or mark a server-rendered panel’s close control with
-`data-workspace-detail-close`. Use `scrollClass="k2b-detail-trail"` on
-DataTable, and `k2b-detail-trail` on a board’s horizontal scroller: beside
-the panel the table keeps its column widths, and under a tablet drawer both
-get the drawer’s width as space at their end. The trail is the clipping scroll
-viewport and carries the surface radius. Put it directly in Main’s content box
-with `scroll={false}` on Main and no vertical scroller around it; a reserved
-scrollbar gutter would widen the gap before the panel beyond
-`--k2b-workspace-detail-inset`.
-See [Add contextual detail](/en/docs/frontend/application-shells#add-contextual-detail).
+From 768 px, `AppWorkspace.Detail` is a column when it fits beside Main's
+minimum (320 px, raised with `AppWorkspace.Main minWidth`). Otherwise it waits
+behind **Details**; selecting an item opens it directly as a drawer. The
+column shares the workspace surface. The drawer sits flush with the app card's
+edge; Escape parks it and returns focus to Details. Opening Cloud's panel
+parks the drawer; closing the panel restores the column if it fits. The panel
+never closes automatically. Below 768 px, Detail remains a phone sheet or page.
+Use `scrollClass="k2b-detail-trail"` on DataTable or mark a board's horizontal
+scroller with `k2b-detail-trail` so its last item can scroll beside an open drawer.
+See [Detail and panel](/en/ui/layout/workspace#detail-and-panel) for sizing,
+focus, gestures, and the close-action contract.
 
 ### Hide the app bar and navigation
 
