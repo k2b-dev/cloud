@@ -25,23 +25,43 @@ suite("Core panel consent persistence", () => {
     await db?.close();
     await disposable?.drop();
   });
-  test("answers are per person/provider, unique, idempotent and cascade on account deletion", async () => {
+  test("answers are per person/provider, insert only once and cascade on account deletion", async () => {
     expect(await service.get(first, "fixture")).toBeNull();
     expect(await service.list(first, [])).toEqual({});
-    await Promise.all([service.set(first, "fixture", true), service.set(first, "fixture", true)]);
-    expect(await service.set(first, "other", false)).toBe(false);
+    expect(await service.set(first, "fixture", true, 1)).toBeNull();
+    expect(await service.get(first, "fixture")).toBeNull();
+    const inserted = await Promise.all([service.set(first, "fixture", true, 0), service.set(first, "fixture", true, 0)]);
+    expect(inserted.filter(Boolean)).toEqual([{ allowed: true, revision: 1 }]);
+    expect(inserted.filter((answer) => answer === null)).toHaveLength(1);
+    expect(await service.set(first, "other", false, 0)).toEqual({ allowed: false, revision: 1 });
     expect(await service.get(second, "fixture")).toBeNull();
-    expect(await service.list(first, ["fixture", "other"])).toEqual({ fixture: true, other: false });
+    expect(await service.list(first, ["fixture", "other"])).toEqual({
+      fixture: { allowed: true, revision: 1 },
+      other: { allowed: false, revision: 1 },
+    });
     expect(await service.list(second, ["fixture", "other"])).toEqual({});
     expect(await db`SELECT * FROM auth.panel_context_consent WHERE user_id = ${first}::uuid AND provider = 'fixture'`).toHaveLength(1);
-    expect(await service.set(first, "fixture", false)).toBe(false);
-    expect(await service.get(first, "fixture")).toBe(false);
-    await service.set(second, "fixture", true);
+    expect(await service.set(first, "fixture", false, 1)).toEqual({ allowed: false, revision: 2 });
+    expect(await service.set(first, "fixture", true, 1)).toBeNull();
+    expect(await service.get(first, "fixture")).toEqual({ allowed: false, revision: 2 });
+    expect(await service.set(second, "fixture", true, 0)).toEqual({ allowed: true, revision: 1 });
     await db`DELETE FROM auth.users WHERE id = ${first}::uuid`;
     expect(await service.list(first, ["fixture", "other"])).toEqual({});
-    expect(await service.get(second, "fixture")).toBe(true);
+    expect(await service.get(second, "fixture")).toEqual({ allowed: true, revision: 1 });
     await expect(
-      db`INSERT INTO auth.panel_context_consent (user_id, provider, allowed) VALUES (${second}::uuid, ${"a".repeat(81)}, true)`,
+      db`INSERT INTO auth.panel_context_consent (user_id, provider, allowed, revision) VALUES (${second}::uuid, ${"a".repeat(81)}, true, 1)`,
     ).rejects.toThrow();
+    await expect(
+      db`INSERT INTO auth.panel_context_consent (user_id, provider, allowed, revision) VALUES (${second}::uuid, 'invalid', true, 0)`,
+    ).rejects.toThrow();
+  });
+  test("a delayed withdrawal cannot overwrite a newer Allow saved from the same revision", async () => {
+    expect(await service.set(second, "delayed", true, 0)).toEqual({ allowed: true, revision: 1 });
+    expect(await service.set(second, "delayed", true, 1)).toEqual({ allowed: true, revision: 2 });
+    const [before] = await db`SELECT updated_at FROM auth.panel_context_consent WHERE user_id = ${second}::uuid AND provider = 'delayed'`;
+    expect(await service.set(second, "delayed", false, 1)).toBeNull();
+    expect(await service.get(second, "delayed")).toEqual({ allowed: true, revision: 2 });
+    const [after] = await db`SELECT updated_at FROM auth.panel_context_consent WHERE user_id = ${second}::uuid AND provider = 'delayed'`;
+    expect(after.updated_at).toEqual(before.updated_at);
   });
 });

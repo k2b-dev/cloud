@@ -8,10 +8,10 @@ import { type AuthContext, jsonResponse, requiresAuth, v } from "../server";
 import { panelContextConsent } from "../services/panel-context-consent";
 import { getRuntimeContext } from "../ssr/runtime";
 
-const AnswerSchema = z.object({ allowed: z.boolean() }).strict();
-const AnswersSchema = z.object({ answers: z.record(CapabilityAppIdSchema, z.boolean()) }).strict();
+const AnswerSchema = z.object({ allowed: z.boolean(), revision: z.number().int().min(0).max(2_147_483_647) }).strict();
+const AnswersSchema = z.object({ answers: z.record(CapabilityAppIdSchema, AnswerSchema) }).strict();
 const ProviderSchema = z.object({ provider: CapabilityAppIdSchema }).strict();
-const SavedSchema = ProviderSchema.extend({ allowed: z.boolean() }).strict();
+const SavedSchema = ProviderSchema.extend(AnswerSchema.shape).strict();
 
 /** Mounted below /me's session and user guards. The live request registry owns provider membership. */
 export const createMePanelConsentRoutes = (service = panelContextConsent) => {
@@ -41,17 +41,24 @@ export const createMePanelConsentRoutes = (service = panelContextConsent) => {
         tags: ["Me"],
         summary: "Save a personal panel context answer",
         ...requiresAuth,
-        responses: { 200: jsonResponse(SavedSchema, "Saved answer"), 404: { description: "Panel provider not found" } },
+        responses: {
+          200: jsonResponse(SavedSchema, "Saved answer"),
+          404: { description: "Panel provider not found" },
+          409: { description: "Answer changed since it was read" },
+        },
       }),
-      // A boolean object is under 32 bytes; 256 leaves room for ordinary JSON whitespace.
+      // The answer and revision fit within 256 bytes, including ordinary JSON whitespace.
       bodyLimit({ maxSize: 256 }),
       v("param", ProviderSchema),
       v("json", AnswerSchema),
       async (c) => {
         const { provider } = c.req.valid("param");
         if (!providers(c).includes(provider)) return c.json({ code: "PANEL_PROVIDER_NOT_FOUND", message: "Panel provider not found" }, 404);
-        const allowed = await service.set(c.get("user").id, provider, c.req.valid("json").allowed);
-        return c.json({ provider, allowed });
+        const { allowed, revision } = c.req.valid("json");
+        const saved = await service.set(c.get("user").id, provider, allowed, revision);
+        return saved
+          ? c.json({ provider, ...saved })
+          : c.json({ code: "CONFLICT", message: "Panel consent changed. Read the current answer before saving again." }, 409);
       },
     );
 };

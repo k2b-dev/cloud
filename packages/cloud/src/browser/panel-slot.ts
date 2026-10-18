@@ -53,14 +53,18 @@ export function installPanelSlot(): () => void {
   let context = panel.context ?? null;
   let loadVersion = 0;
   const answers = new Map<string, boolean | null>();
-  if (panel.consent) answers.set(panel.consent.provider, panel.consent.allowed);
+  const revisions = new Map<string, number>();
+  if (panel.consent) {
+    answers.set(panel.consent.provider, panel.consent.allowed);
+    revisions.set(panel.consent.provider, panel.consent.revision);
+  }
   const saving = new Set<string>();
   const errors = new Set<string>();
   const requests = new AbortController();
   /*
    * Consent reads and writes run one at a time, in order, and sharing with a provider that needs consent is blocked
-   * while any of them is pending or the answers are stale (a back/forward restore). So no response can overtake a
-   * later one, and only a settled, current `true` lets context through.
+   * while any of them is pending or the answers are stale (a back/forward restore). Server revisions also fence
+   * writes still running after a client timeout; only a settled, current `true` lets context through.
    */
   let consentQueue: Promise<void> = Promise.resolve();
   let consentPending = 0;
@@ -150,6 +154,7 @@ export function installPanelSlot(): () => void {
   // Replaces every answer of providers that need consent; a failed read leaves them unanswered (fail closed).
   const readAnswersNow = async () => {
     const next = new Map<string, boolean | null>();
+    const nextRevisions = new Map<string, number>();
     try {
       const response = await fetch("/api/me/panel-consent", {
         cache: "no-store",
@@ -160,13 +165,29 @@ export function installPanelSlot(): () => void {
       if (data && typeof data === "object" && "answers" in data && data.answers && typeof data.answers === "object") {
         for (const item of panel.providers) {
           const value: unknown = Reflect.get(data.answers, item.id);
-          if (typeof value === "boolean") next.set(item.id, value);
+          if (
+            value &&
+            typeof value === "object" &&
+            "allowed" in value &&
+            typeof value.allowed === "boolean" &&
+            "revision" in value &&
+            typeof value.revision === "number" &&
+            Number.isInteger(value.revision) &&
+            value.revision > 0
+          ) {
+            next.set(item.id, value.allowed);
+            nextRevisions.set(item.id, value.revision);
+          }
         }
       }
     } catch {
       // No answer is fail closed, including an unavailable store or an aborted request.
     }
-    for (const item of panel.providers) if (item.consent) answers.set(item.id, next.get(item.id) ?? null);
+    for (const item of panel.providers) {
+      if (!item.consent) continue;
+      answers.set(item.id, next.get(item.id) ?? null);
+      revisions.set(item.id, nextRevisions.get(item.id) ?? 0);
+    }
     answersStale = false;
   };
   let answersRead: Promise<void> | undefined;
@@ -375,9 +396,13 @@ export function installPanelSlot(): () => void {
         const response = await fetch(`/api/me/panel-consent/${encodeURIComponent(item.id)}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ allowed: request.allowed }),
+          body: JSON.stringify({ allowed: request.allowed, revision: revisions.get(item.id) ?? 0 }),
           signal: AbortSignal.any([requests.signal, AbortSignal.timeout(PANEL_READY_TIMEOUT_MS)]),
         });
+        if (response.status === 409) {
+          await readAnswersNow();
+          return;
+        }
         if (!response.ok) throw new Error("Panel consent was not saved");
         const saved: unknown = await response.json();
         if (
@@ -386,10 +411,15 @@ export function installPanelSlot(): () => void {
           !("provider" in saved) ||
           saved.provider !== item.id ||
           !("allowed" in saved) ||
-          saved.allowed !== request.allowed
+          saved.allowed !== request.allowed ||
+          !("revision" in saved) ||
+          typeof saved.revision !== "number" ||
+          !Number.isInteger(saved.revision) ||
+          saved.revision <= 0
         )
           throw new Error("Invalid panel consent answer");
         answers.set(item.id, request.allowed);
+        revisions.set(item.id, saved.revision);
       } catch {
         answers.set(item.id, null);
         errors.add(item.id);

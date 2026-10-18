@@ -6,14 +6,16 @@ import type { AuthContext } from "../server";
 import { createMePanelConsentRoutes } from "./me-panel-consent";
 
 test("personal panel consent authenticates, filters the live registry and separates people", async () => {
-  const stored = new Map<string, boolean>();
+  const stored = new Map<string, { allowed: boolean; revision: number }>();
   const service = {
     get: async (id: string, provider: string) => stored.get(`${id}:${provider}`) ?? null,
     list: async (id: string, providers: string[]) =>
       Object.fromEntries(providers.flatMap((p) => (stored.has(`${id}:${p}`) ? [[p, stored.get(`${id}:${p}`)!]] : []))),
-    set: async (id: string, provider: string, allowed: boolean) => {
-      stored.set(`${id}:${provider}`, allowed);
-      return allowed;
+    set: async (id: string, provider: string, allowed: boolean, revision: number) => {
+      if ((stored.get(`${id}:${provider}`)?.revision ?? 0) !== revision) return null;
+      const saved = { allowed, revision: revision + 1 };
+      stored.set(`${id}:${provider}`, saved);
+      return saved;
     },
   };
   const routes = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>()
@@ -40,19 +42,31 @@ test("personal panel consent authenticates, filters the live registry and separa
     });
   expect((await createMePanelConsentRoutes(service).request("/panel-consent")).status).toBe(401);
   for (const provider of ["unknown", "core", "plain"])
-    expect(await (await put(provider, { allowed: true })).json()).toMatchObject({ code: "PANEL_PROVIDER_NOT_FOUND" });
+    expect(await (await put(provider, { allowed: true, revision: 0 })).json()).toMatchObject({ code: "PANEL_PROVIDER_NOT_FOUND" });
   expect(stored.size).toBe(0);
-  expect((await put("fixture", { allowed: true, userId: "another" })).status).toBe(400);
-  expect((await put("fixture", { allowed: "true" })).status).toBe(400);
-  expect((await put("fixture", { allowed: true, padding: "x".repeat(300) })).status).toBe(413);
-  expect(await (await put("fixture", { allowed: true })).json()).toEqual({ provider: "fixture", allowed: true });
-  expect(await (await put("other", { allowed: false })).json()).toEqual({ provider: "other", allowed: false });
+  expect((await put("fixture", { allowed: true, revision: 0, userId: "another" })).status).toBe(400);
+  expect((await put("fixture", { allowed: "true", revision: 0 })).status).toBe(400);
+  for (const body of [{ allowed: true }, ...[-1, 0.5, "0", null].map((revision) => ({ allowed: true, revision }))])
+    expect((await put("fixture", body)).status).toBe(400);
+  expect((await put("fixture", { allowed: true, revision: 0, padding: "x".repeat(300) })).status).toBe(413);
+  expect(await (await put("fixture", { allowed: true, revision: 0 })).json()).toEqual({ provider: "fixture", allowed: true, revision: 1 });
+  expect(await (await put("other", { allowed: false, revision: 0 })).json()).toEqual({ provider: "other", allowed: false, revision: 1 });
   const answer = await routes.request("/panel-consent?userId=another");
   expect(answer.headers.get("cache-control")).toBe("no-store");
-  expect(await answer.json()).toEqual({ answers: { fixture: true, other: false } });
+  expect(await answer.json()).toEqual({ answers: { fixture: { allowed: true, revision: 1 }, other: { allowed: false, revision: 1 } } });
   expect(
     await (await routes.request("/panel-consent", { headers: { "test-person": "22222222-2222-4222-8222-222222222222" } })).json(),
   ).toEqual({ answers: {} });
-  expect((await put("fixture", { allowed: false })).status).toBe(200);
+  const conflict = await put("fixture", { allowed: false, revision: 0 });
+  expect(conflict.status).toBe(409);
+  expect(conflict.headers.get("cache-control")).toBe("no-store");
+  expect(await conflict.json()).toMatchObject({ code: "CONFLICT", message: expect.any(String) });
+  expect(await (await routes.request("/panel-consent")).json()).toEqual({
+    answers: { fixture: { allowed: true, revision: 1 }, other: { allowed: false, revision: 1 } },
+  });
+  const saved = await put("fixture", { allowed: false, revision: 1 });
+  expect(saved.status).toBe(200);
+  expect(await saved.json()).toEqual({ provider: "fixture", allowed: false, revision: 2 });
+  expect((await put("fixture", { allowed: true, revision: 1 })).status).toBe(409);
   expect(stored.size).toBe(2);
 });

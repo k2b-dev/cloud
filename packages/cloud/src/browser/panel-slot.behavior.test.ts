@@ -44,7 +44,7 @@ else {
       icon: "ti ti-box",
       href: href(id),
     }));
-    dom.root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({ panel: { providers, provider: "fixture", context: contextOptions.context, ...(Object.hasOwn(contextOptions, "answer") ? { consent: { provider: "fixture", allowed: contextOptions.answer } } : {}) } })}</script>
+    dom.root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({ panel: { providers, provider: "fixture", context: contextOptions.context, ...(Object.hasOwn(contextOptions, "answer") ? { consent: { provider: "fixture", allowed: contextOptions.answer, revision: typeof contextOptions.answer === "boolean" ? 1 : 0 } } : {}) } })}</script>
     <button id="opener" data-cloud-panel-toggle>Panel</button>
     <div class="cloud-app-canvas" ${initialOpen ? 'data-panel="open"' : ""} style="${storedWidth ? "--cloud-panel-width-set:24rem" : ""}">
       <div data-cloud-app-area><main class="layout-content-main">Application</main></div>
@@ -439,7 +439,7 @@ else {
   test("foreign providers receive no URL or live context until consent; allow delivers live without reloading", async () => {
     const fetch = spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(JSON.stringify({ answers: {} })))
-      .mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: true })));
+      .mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: true, revision: 1 })));
     fetchSpy = fetch;
     const h = setupContext();
     h.open();
@@ -464,7 +464,9 @@ else {
   });
 
   test("stored approval is read before the first provider load; a failed read asks and never leaks", async () => {
-    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: true } })));
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 1 } } })),
+    );
     const h = setupContext();
     h.open();
     await tick();
@@ -501,8 +503,10 @@ else {
 
   test("switch, close and consent withdrawal clear the old context, and withdrawal stops later updates", async () => {
     fetchSpy = spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: { fixture: true, second: true } })))
-      .mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 1 }, second: { allowed: true, revision: 1 } } })),
+      )
+      .mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 2 })));
     const { publishPageContext } = await import("./panel");
     const h = setupContext(pageContext, true, true);
     h.open();
@@ -530,7 +534,9 @@ else {
   });
 
   test("withdrawal also drops the URL snapshot, so a provider reload stays without context", async () => {
-    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 2 })),
+    );
     const h = setupContext(pageContext, true, true);
     h.open();
     const shown = new URL(h.frame().src);
@@ -565,7 +571,9 @@ else {
   });
 
   test("a page restored from the back/forward cache stops sharing until it has read the answers again", async () => {
-    const fetch = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: false } })));
+    const fetch = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 2 } } })),
+    );
     fetchSpy = fetch;
     const { publishPageContext } = await import("./panel");
     const h = setupContext(pageContext, true, true);
@@ -616,7 +624,9 @@ else {
   };
 
   test("withdrawn while the provider was still loading, its address loses the snapshot once it is ready", async () => {
-    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 2 })),
+    );
     const h = setupContext(pageContext, true, true);
     h.open();
     const src = h.frame().src;
@@ -631,7 +641,9 @@ else {
   });
 
   test("a restore that reads a withdrawn answer also removes the snapshot from the provider's address", async () => {
-    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: false } })));
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 2 } } })),
+    );
     const h = setupContext(pageContext, true, true);
     h.open();
     const { shown } = loadedDocument(h, h.frame().src);
@@ -646,12 +658,12 @@ else {
     const pending = new Promise<Response>((resolve) => (answerOld = resolve));
     const fetch = spyOn(globalThis, "fetch")
       .mockReturnValueOnce(pending)
-      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: false } })));
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 2 } } })));
     fetchSpy = fetch;
     const h = setupContext();
     h.open();
     restore();
-    answerOld(new Response(JSON.stringify({ answers: { fixture: true } })));
+    answerOld(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 1 } } })));
     await tick();
     await tick();
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -682,7 +694,7 @@ else {
     const put = deferred();
     const fetch = spyOn(globalThis, "fetch")
       .mockReturnValueOnce(put.promise)
-      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: false } })));
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 2 } } })));
     fetchSpy = fetch;
     const { publishPageContext } = await import("./panel");
     const h = setupContext(pageContext, true, true);
@@ -697,7 +709,7 @@ else {
     await tick();
     // Reads and writes run in order: the restore's read waits for the pending save.
     expect(fetch).toHaveBeenCalledTimes(1);
-    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
+    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 2 })));
     await tick();
     await tick();
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -711,7 +723,9 @@ else {
   });
 
   test("a document that arrives after the withdrawal with the old address is cleaned when it reports ready", async () => {
-    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 2 })),
+    );
     const h = setupContext(pageContext, true, true);
     h.open();
     const src = h.frame().src;
@@ -738,7 +752,7 @@ else {
       await tick();
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(contexts(post).every((context) => context === null)).toBe(true);
-      read.resolve(new Response(JSON.stringify({ answers: { fixture: false } })));
+      read.resolve(new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 2 } } })));
       await tick();
       await tick();
       expect(h.slot.dataset.contextAllowed).toBe("false");
@@ -749,7 +763,7 @@ else {
   test("after a save with an unknown outcome nothing is shared until the person answers again", async () => {
     fetchSpy = spyOn(globalThis, "fetch")
       .mockRejectedValueOnce(new DOMException("The operation timed out.", "TimeoutError"))
-      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: true } })));
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 1 } } })));
     const h = setupContext(pageContext, true, true);
     h.open();
     const { post } = loadedDocument(h, h.frame().src);
@@ -768,6 +782,96 @@ else {
     ).toBe(true);
   });
 
+  test("a timed-out withdrawal, renewed Allow and later conflict follow the server without sharing a stored denial", async () => {
+    const read = deferred();
+    const fetch = spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new DOMException("The operation timed out.", "TimeoutError"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ provider: "fixture", allowed: true, revision: 2 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: "CONFLICT" }), { status: 409 }))
+      .mockReturnValueOnce(read.promise);
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { shown, post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    consent("fixture", false);
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(h.slot.dataset.consent).toBe("ask");
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("true");
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({ allowed: false, revision: 1 });
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({ allowed: true, revision: 1 });
+
+    // The old withdrawal is fenced at revision 1. Another answer has since stored false at revision 3.
+    // A stale Allow must wait for its conflict's read, without an error or disclosure.
+    post.mockClear();
+    consent("fixture", true);
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(JSON.parse(String(fetch.mock.calls[2]?.[1]?.body))).toEqual({ allowed: true, revision: 2 });
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(h.slot.dataset.consentSaving).toBe("true");
+    expect(h.slot.querySelector("[data-cloud-panel-consent-error]")!.textContent).toBe("");
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    read.resolve(new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 3 } } })));
+    await tick();
+    ready(h);
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(h.slot.dataset.consentSaving).toBe("false");
+    expect(h.slot.dataset.consent).toBeUndefined();
+    expect(h.slot.querySelector("[data-cloud-panel-consent-error]")!.textContent).toBe("");
+    expect(contexts(post).every((context) => context === null)).toBe(true);
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+  });
+
+  test("a conflict read can allow sharing and replaces the revision for the next queued save", async () => {
+    const read = deferred();
+    const fetch = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockReturnValueOnce(read.promise)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 8 })));
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, null);
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    consent("fixture", true);
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(contexts(post).every((context) => context === null)).toBe(true);
+    read.resolve(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 7 } } })));
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("true");
+    consent("fixture", false);
+    await tick();
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({ allowed: true, revision: 0 });
+    expect(JSON.parse(String(fetch.mock.calls[2]?.[1]?.body))).toEqual({ allowed: false, revision: 7 });
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+  });
+
+  test("a failed conflict revalidation leaves the answer unanswered and sharing blocked", async () => {
+    fetchSpy = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockRejectedValueOnce(new Error("Offline"));
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { shown, post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    consent("fixture", true);
+    post.mockClear();
+    await tick();
+    ready(h);
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(h.slot.dataset.consent).toBe("ask");
+    expect(h.slot.dataset.consentSaving).toBe("false");
+    expect(h.slot.querySelector("[data-cloud-panel-consent-error]")!.textContent).toBe("");
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    expect(contexts(post).every((context) => context === null)).toBe(true);
+  });
+
   test("a slow save does not pull focus back into the panel after the reader moved on", async () => {
     const put = deferred();
     fetchSpy = spyOn(globalThis, "fetch").mockReturnValueOnce(put.promise);
@@ -779,7 +883,7 @@ else {
     allow.focus();
     allow.click();
     h.opener.focus();
-    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: true })));
+    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: true, revision: 1 })));
     await tick();
     await tick();
     expect(h.slot.dataset.contextAllowed).toBe("true");
@@ -790,7 +894,7 @@ else {
     const put = deferred();
     const fetch = spyOn(globalThis, "fetch")
       .mockReturnValueOnce(put.promise)
-      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: false } })));
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 2 } } })));
     fetchSpy = fetch;
     const h = setupContext(pageContext, true, null);
     h.open();
@@ -799,7 +903,7 @@ else {
     h.click('[data-cloud-panel-consent-answer="allow"]');
     restore();
     await tick();
-    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: true })));
+    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: true, revision: 1 })));
     await tick();
     await tick();
     // The restore's read runs after the save and has the final word.

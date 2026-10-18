@@ -8,6 +8,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
       provider TEXT NOT NULL CHECK (length(provider) BETWEEN 1 AND ${CAPABILITY_APP_ID_MAX_LENGTH}),
       allowed BOOLEAN NOT NULL,
+      revision INTEGER NOT NULL CHECK (revision > 0),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       PRIMARY KEY (user_id, provider)
     )

@@ -40,7 +40,7 @@ export const PanelPageContextSchema = z
   .strict();
 /** v1 carries only the place and static Help ids. Later fields are additive; never infer authority from a ref. */
 export type PanelPageContext = z.infer<typeof PanelPageContextSchema>;
-export type PanelConsentSnapshot = { provider: string; allowed: boolean | null };
+export type PanelConsentSnapshot = { provider: string; allowed: boolean | null; revision: number };
 
 // 128 chars cover JSON keys/punctuation, version and a 16-digit safe seq; add UUID (36), app (80),
 // ref type (180), ref id (512), and three Help ids (180 each + quotes/comma).

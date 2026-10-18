@@ -8,7 +8,7 @@ import { panelContextConsent } from "../services/panel-context-consent";
 import { preloadPanelConsent } from "./panel-consent";
 
 test("SSR reads exactly once for an open consent provider, with no reads for closed, Core, unknown or anonymous", async () => {
-  const get = spyOn(panelContextConsent, "get").mockResolvedValue(true);
+  const get = spyOn(panelContextConsent, "get").mockResolvedValue({ allowed: true, revision: 3 });
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime; panelConsent: PanelConsentSnapshot } }>()
     .use("*", async (c, next) => {
       if (!c.req.query("anonymous")) c.set("user", person);
@@ -36,14 +36,22 @@ test("SSR reads exactly once for an open consent provider, with no reads for clo
     expect(await (await app.request("/", { headers: { cookie: "cloud_panel=1:fixture:24" } })).json()).toEqual({
       provider: "fixture",
       allowed: true,
+      revision: 3,
     });
     expect(get.mock.calls).toEqual([[person.id, "fixture"]]);
+    get.mockResolvedValue(null);
+    expect(await (await app.request("/", { headers: { cookie: "cloud_panel=1:fixture:24" } })).json()).toEqual({
+      provider: "fixture",
+      allowed: null,
+      revision: 0,
+    });
     get.mockRejectedValue(new Error("Store unavailable"));
     expect(await (await app.request("/", { headers: { cookie: "cloud_panel=1:fixture:24" } })).json()).toEqual({
       provider: "fixture",
       allowed: null,
+      revision: 0,
     });
-    expect(get).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenCalledTimes(3);
   } finally {
     get.mockRestore();
   }

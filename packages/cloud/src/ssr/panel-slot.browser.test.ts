@@ -156,8 +156,8 @@ async function fixture(width = 1440, cookie?: string, height = 900, ask = false)
     ask
       ? new Map()
       : new Map([
-          ["fixture", true],
-          ["second", true],
+          ["fixture", { allowed: true, revision: 1 }],
+          ["second", { allowed: true, revision: 1 }],
         ]),
   );
   context.on("close", () => consentAnswers.delete(personId));

@@ -327,7 +327,7 @@ that use the new `Layout.context` or provider helpers against this runtime.
 Core's normal migrations create `auth.panel_context_consent` before startup
 completes; no manual migration or configuration step is needed. The
 idempotent `panel-context-consent` migration adds one row per user and provider
-app ID, holding `allowed` and `updated_at`. It preserves existing answers and
+app ID, holding `allowed`, `revision`, and `updated_at`. It preserves existing answers and
 deletes a person's rows when their `auth.users` account is deleted. Include
 this table in the existing Core database backup policy. The table stores
 answers only, never resource refs or page context.

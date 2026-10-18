@@ -82,7 +82,11 @@ const server = new Hono<Environment>()
 async function render(query = "", cookie = "") {
   const spies = [
     spyOn(panelContextConsent, "get").mockResolvedValue(
-      query.includes("answer=allow") ? true : query.includes("answer=deny") ? false : null,
+      query.includes("answer=allow")
+        ? { allowed: true, revision: 3 }
+        : query.includes("answer=deny")
+          ? { allowed: false, revision: 2 }
+          : null,
     ),
     spyOn(rail, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
@@ -198,6 +202,7 @@ test("SSR URL includes the first place only for allowed providers; false shares 
       scope: { type: "fixture.place", id: "public01" },
     });
     expect(JSON.parse(frameContext(html)!)).toEqual(panel.context);
+    if (query === "answer=allow") expect(panel.consent).toEqual({ provider: "fixture", allowed: true, revision: 3 });
     expect(panel.providers[0]).toMatchObject({ appName: "fixture", consent: query !== "core=1" });
   }
   const disabled = await render("context=false&answer=allow", "cloud_panel=1:fixture:24");

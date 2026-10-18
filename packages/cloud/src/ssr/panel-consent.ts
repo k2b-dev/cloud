@@ -16,11 +16,11 @@ export async function preloadPanelConsent(c: Context): Promise<void> {
   );
   const provider = state.open && providers.find((provider) => provider.id === state.provider);
   if (!provider || !provider.consent) return;
-  let allowed: boolean | null = null;
+  let answer: { allowed: boolean; revision: number } | null = null;
   try {
-    allowed = await panelContextConsent.get(user.id, provider.id);
+    answer = await panelContextConsent.get(user.id, provider.id);
   } catch {
     // The shell shows the unanswered question, without context in the URL or messages.
   }
-  c.set("panelConsent", { provider: provider.id, allowed });
+  c.set("panelConsent", { provider: provider.id, allowed: answer?.allowed ?? null, revision: answer?.revision ?? 0 });
 }

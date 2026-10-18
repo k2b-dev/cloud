@@ -206,6 +206,7 @@ Providers served by Core (app ID `core`) are the platform's own surface and
 need no consent. Every other provider asks once per provider app. Cloud stores
 the answer server-side per person and provider app ID. Unanswered, denied, or
 unreadable answers send no context, in either the URL or a message.
+Answers carry a revision, and a stale save is refused so an older save can never overwrite a newer answer.
 
 The person chooses **Allow** or **Don't share** in the slot. They can later
 change **Share context** in the **⋯** menu, below **Panel from <App>**. The new

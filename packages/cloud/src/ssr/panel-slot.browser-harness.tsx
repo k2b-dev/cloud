@@ -10,7 +10,8 @@ import PanelLayout from "./PanelLayout";
 import { readPanelContext } from "./panel-context";
 import type { RuntimeContext } from "./runtime";
 
-export const consentAnswers = new Map<string, Map<string, boolean>>();
+type ConsentAnswer = { allowed: boolean; revision: number };
+export const consentAnswers = new Map<string, Map<string, ConsentAnswer>>();
 export const fixtureConsent = {
   get: async (userId: string, provider: string) => consentAnswers.get(userId)?.get(provider) ?? null,
   list: async (userId: string, providers: string[]) =>
@@ -20,11 +21,13 @@ export const fixtureConsent = {
         return answer === undefined ? [] : [[id, answer]];
       }),
     ),
-  set: async (userId: string, provider: string, allowed: boolean) => {
-    const answers = consentAnswers.get(userId) ?? new Map<string, boolean>();
-    answers.set(provider, allowed);
+  set: async (userId: string, provider: string, allowed: boolean, revision: number) => {
+    const answers = consentAnswers.get(userId) ?? new Map<string, ConsentAnswer>();
+    if ((answers.get(provider)?.revision ?? 0) !== revision) return null;
+    const saved = { allowed, revision: revision + 1 };
+    answers.set(provider, saved);
     consentAnswers.set(userId, answers);
-    return allowed;
+    return saved;
   },
 };
 
