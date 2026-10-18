@@ -94,7 +94,9 @@ export function chatCommandListModel(input: {
   searchResultsFresh: boolean;
   searchSettled: boolean;
   searching: boolean;
-}): { scope?: ChatCommandScope; groups: Group[]; rows: ChatCommandRow[]; empty: boolean } {
+  /** The composer's `commandFallback` row for this query, if any. */
+  fallback?: ChatCommand;
+}): { scope?: ChatCommandScope; groups: Group[]; rows: ChatCommandRow[]; empty: boolean; fallback?: ChatCommandRow } {
   const { scope, query: rawQuery } = parseChatCommandQuery(input.query, input.scopes ?? []);
   const query = foldChatSearchText(rawQuery).trim();
   const overview = !scope && !query;
@@ -141,8 +143,18 @@ export function chatCommandListModel(input: {
   }
   // A section without rows has no heading, also in the overview; a scope always shows its title.
   const visible = groups.filter((group) => scope || group.rows.length || group.placeholder);
-  const rows = visible.flatMap((group) => group.rows);
-  return { scope, groups: visible, rows, empty: rows.length === 0 && !input.searching };
+  const matches = visible.flatMap((group) => group.rows);
+  // The fallback is no match: unscoped it ends the list after "Nothing found"; in a scope it is the scope's last row.
+  const fallback =
+    !overview && input.fallback && !seen.has(chatCommandKey(input.fallback)) ? { command: input.fallback, server: false } : undefined;
+  if (fallback && scope) visible[0]!.rows.push(fallback);
+  return {
+    scope,
+    groups: visible,
+    rows: fallback ? [...matches, fallback] : matches,
+    empty: matches.length === 0 && !input.searching,
+    fallback: scope ? undefined : fallback,
+  };
 }
 
 /** Use the composer ranking rules to filter consumer-owned server rows. */
