@@ -1394,15 +1394,22 @@ All. Write the sidebar's children as JSX inside `AppWorkspace.Sidebar`:
 ```
 
 The children render a second time in the sheet and share the application's
-signals. Markup built ahead of time and passed as a value would move into
-the sheet instead of rendering there again. While the sheet is open, the row
-and the sheet both hold each row, so code that looks a row up, for example
-to restore focus, searches the copy that has focus
-(`.k2b-app-workspace__sidebar-sheet`) before the document. A chosen link
-runs its own handlers in the sheet, then the sheet closes; a tree branch's
-disclosure only expands the branch. The sheet adds no history entry: a
-sidebar may replace the URL, such as a search, and Back leaves the page as
-for other dialogs.
+signals. Markup built ahead of time and passed as a value cannot render a
+second time: the sheet leaves it in the row, stays without it, and logs an
+error. While the sheet is open, the row and the sheet both hold each row, so
+code that looks a row up, for example to restore focus, searches the copy
+that has focus (`.k2b-app-workspace__sidebar-sheet`) before the document.
+For the same reason, sidebar children must not use fixed `id` values; use
+`createUniqueId()` so labels and ARIA references resolve inside each copy.
+A chosen link runs its own handlers in the sheet, then the sheet closes; a
+tree branch's disclosure only expands the branch. When the workspace widens
+into the sidebar column, the sheet closes and focus moves to the current
+item in the column.
+
+The sheet adds no history entry, so Back leaves the page while it is open.
+Other phone sheets close on Back, but a sidebar may replace the URL while
+the sheet is open, such as a search, and the sheet's entry would then stay
+behind as a stale step in the history.
 
 Hosts can set `--k2b-workspace-chip-inset` for the row's content inset
 (default `clamp(1rem, 3vw, 2.5rem)`, `1rem` below a 40 rem viewport),

@@ -974,7 +974,7 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
     setSheetOpen(true);
     const computed = getComputedStyle(aside);
     const accent = Object.fromEntries(
-      ["--k2b-app-workspace-active", "--k2b-app-workspace-selected"]
+      ["--k2b-app-workspace-active", "--k2b-app-workspace-selected", "--k2b-link-accent", "--k2b-detail-panel-accent"]
         .map((name) => [name, computed.getPropertyValue(name).trim()])
         .filter(([, value]) => value),
     );
@@ -1007,20 +1007,31 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
                   {/* The sheet keeps its own failure: the application's boundary around the sidebar stays untouched. */}
                   <RenderErrorBoundary
                     onClose={() => void context.requestDismiss()}
-                    content={() => (
-                      <nav
-                        class="k2b-app-workspace__sidebar-sheet"
-                        aria-label={props.label}
-                        style={accent}
-                        on:click={(event) => choose(event, () => close())}
-                      >
-                        {
+                    content={() => {
+                      const resolved = children(
+                        () =>
                           flatten(props.hidden ? undefined : props.children)
                             .filter(sidebarChildSlot)
-                            .find((slot) => slot.kind === SIDEBAR_DESKTOP)?.children
-                        }
-                      </nav>
-                    )}
+                            .find((slot) => slot.kind === SIDEBAR_DESKTOP)?.children,
+                      );
+                      // Pre-resolved children belong to the row; inserting them here would move its nodes into the sheet.
+                      if (resolved.toArray().some((node) => node instanceof Node && aside?.contains(node))) {
+                        console.error(
+                          "AppWorkspace.Sidebar: write the sidebar children as JSX inside AppWorkspace.Sidebar so they can render a second time in the All sheet; pre-resolved children cannot be reused.",
+                        );
+                        return null;
+                      }
+                      return (
+                        <nav
+                          class="k2b-app-workspace__sidebar-sheet"
+                          aria-label={props.label}
+                          style={accent}
+                          on:click={(event) => choose(event, () => close())}
+                        >
+                          {resolved()}
+                        </nav>
+                      );
+                    }}
                   />
                 </BottomSheet.Body>
               </BottomSheet>
@@ -1030,13 +1041,20 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
           return view;
         },
         // No history entry: an application may replace the URL from inside the sidebar, such as a search, and an
-        // entry of the sheet would then outlive it. Back leaves the page, as for other dialogs.
+        // entry of the sheet would then outlive it. So Back leaves the page here, unlike other phone sheets.
         { ...bottomSheetAdaptiveOptions, ariaLabel: props.label, signal: leave.signal },
       )
       .finally(() => {
         watch.disconnect();
         setSheetOpen(false);
-        if (button.isConnected && !aside?.contains(document.activeElement)) button.focus({ preventScroll: true });
+        if (button.isConnected && !aside?.contains(document.activeElement)) {
+          if (button.getClientRects().length) button.focus({ preventScroll: true });
+          else {
+            const current = aside?.querySelector<HTMLElement>("[aria-current], .k2b-app-workspace__sidebar-item.is-active");
+            const link = current?.matches("a[href]") ? current : current?.querySelector<HTMLElement>("a[href]");
+            (link ?? aside?.querySelector<HTMLElement>("a[href]"))?.focus({ preventScroll: true });
+          }
+        }
       });
   };
   return (

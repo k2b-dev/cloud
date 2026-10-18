@@ -18,7 +18,7 @@ const { IconButton } = await import("../actions/Button");
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 
-type Options = { count?: number; active?: number; dark?: boolean; stacked?: boolean; tree?: boolean };
+type Options = { count?: number; active?: number; dark?: boolean; stacked?: boolean; tree?: boolean; preResolved?: boolean };
 type Components = {
   AppWorkspace: typeof AppWorkspace;
   IconButton: typeof IconButton;
@@ -192,7 +192,34 @@ import { AppWorkspace, IconButton } from ${JSON.stringify(resolve(ui, "dist/brow
 const tree = ${tree};
 const island = document.getElementById("island");
 island.innerHTML = "";
-render(() => tree({ AppWorkspace, IconButton, createComponent, createSignal }, JSON.parse(document.body.dataset.options), (select, clicks) => { window.selectChip = select; window.chipClicks = clicks; }), island);
+const options = JSON.parse(document.body.dataset.options);
+render(() => {
+  if (options.preResolved) {
+    // Created once ahead of the sidebar, as when an application stores JSX in a variable.
+    const desktop = createComponent(AppWorkspace.SidebarDesktop, {
+      children: [
+        createComponent(AppWorkspace.SidebarBody, {
+          children: [0, 1].map((index) => createComponent(AppWorkspace.SidebarItem, {
+            href: "#object-" + index, variant: "object", active: index === 0, children: "Object " + index,
+          })),
+        }),
+        createComponent(AppWorkspace.SidebarFooter, { children: "Footer" }),
+      ],
+    });
+    return createComponent(AppWorkspace, {
+      flat: true, resizable: false, mobileSurface: "flush",
+      get children() {
+        return [
+          createComponent(AppWorkspace.Sidebar, { label: "Notebooks", mobile: "stacked", children: desktop }),
+          createComponent(AppWorkspace.Content, {
+            get children() { return createComponent(AppWorkspace.Main, { children: "Notebook overview" }); },
+          }),
+        ];
+      },
+    });
+  }
+  return tree({ AppWorkspace, IconButton, createComponent, createSignal }, options, (select, clicks) => { window.selectChip = select; window.chipClicks = clicks; });
+}, island);
 window.chipClient = window.chipMeasure();
 requestAnimationFrame(() => requestAnimationFrame(() => { window.chipSettled = window.chipMeasure(); }));
 `,
@@ -361,6 +388,52 @@ for (const [width, height] of [
         await dialog.getByText("Leaf", { exact: true }).click();
         await dialog.waitFor({ state: "detached" });
         expect(await page.evaluate(() => window.chipClicks())).toBe(1);
+      } finally {
+        await page.close();
+      }
+    });
+
+    if (width === 834)
+      test("widening to the sidebar column closes All and focuses the current link", async () => {
+        const page = await load(width, height, { active: 3 });
+        try {
+          await all(page).click();
+          const dialog = page.getByRole("dialog", { name: "Notebooks", exact: true });
+          await dialog.waitFor();
+          await page.setViewportSize({ width: 1194, height: 834 });
+          await dialog.waitFor({ state: "detached" });
+          await page.waitForFunction(
+            () => document.activeElement === document.querySelector('.k2b-app-workspace__sidebar a[aria-current="page"]'),
+          );
+          expect(
+            await page.locator('.k2b-app-workspace__sidebar a[aria-current="page"]').evaluate((link) => link === document.activeElement),
+          ).toBe(true);
+          expect(await page.evaluate(() => document.activeElement?.getAttribute("href"))).toBe("#object-3");
+        } finally {
+          await page.close();
+        }
+      });
+
+    test("pre-resolved children stay in the chip row while All is open and after it closes", async () => {
+      const page = await load(width, height, { preResolved: true });
+      const errors: string[] = [];
+      page.on("console", (message) => {
+        if (message.type() === "error") errors.push(message.text());
+      });
+      try {
+        const links = page.locator(".k2b-app-workspace__sidebar-desktop a[href]");
+        expect(await links.allTextContents()).toEqual(["Object 0", "Object 1"]);
+        await all(page).click();
+        const dialog = page.getByRole("dialog", { name: "Notebooks", exact: true });
+        await dialog.waitFor();
+        expect(await links.allTextContents()).toEqual(["Object 0", "Object 1"]);
+        expect(await dialog.getByRole("link").count()).toBe(0);
+        expect(errors).toEqual([
+          "AppWorkspace.Sidebar: write the sidebar children as JSX inside AppWorkspace.Sidebar so they can render a second time in the All sheet; pre-resolved children cannot be reused.",
+        ]);
+        await page.keyboard.press("Escape");
+        await dialog.waitFor({ state: "detached" });
+        expect(await links.allTextContents()).toEqual(["Object 0", "Object 1"]);
       } finally {
         await page.close();
       }
