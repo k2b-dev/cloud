@@ -7,7 +7,7 @@ import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { browserName, launchBrowser, storedCookie } from "../../../ui/test/browser";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-shell-focus-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -178,7 +178,7 @@ for (const [width, height, touch, inset] of [
         expect(hidden[name].bottom).toBe(original[name].bottom);
       }
       expect(await page.locator(show).evaluate((element) => element === document.activeElement)).toBe(true);
-      expect((await context.cookies()).find((cookie) => cookie.name === "cloud_shell_focus")?.value).toBe("1");
+      expect((await storedCookie(page, "cloud_shell_focus"))?.value).toBe("1");
       await page.reload();
       await settle(page);
       expect(await initialBoxes(page)).toEqual(hidden);
@@ -188,7 +188,7 @@ for (const [width, height, touch, inset] of [
       await page.waitForFunction(() => !document.querySelector(".cloud-app-canvas")?.hasAttribute("data-shell-focus"));
       await settle(page);
       expect(await boxes(page)).toEqual(original);
-      expect((await context.cookies()).some((cookie) => cookie.name === "cloud_shell_focus")).toBe(false);
+      expect(await storedCookie(page, "cloud_shell_focus")).toBeUndefined();
       if (touch) {
         await page.locator(hide).click();
         const coarse = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);

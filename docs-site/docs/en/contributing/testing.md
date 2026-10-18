@@ -195,6 +195,12 @@ subtree calls in tests, browser suites, and browser harnesses, or a leading
 `// animation-settle: all timelines` comment (optionally followed by a reason)
 for deliberate inspection of all timelines.
 
+The `cookie-store` check rejects direct `cookies()` reads in tests, browser
+suites, and browser harnesses. Use `storedCookie(page, name)` for cookies that
+page scripts write; see [Engine differences](#engine-differences). A leading
+`// cookie-store: <reason>` line comment allows a deliberate store read, such
+as an HttpOnly cookie set by a server response. The reason must be non-empty.
+
 ## Test in Chromium and WebKit
 
 Layout, focus, touch, and paint need a real engine, so these tests drive one
@@ -478,6 +484,13 @@ branch:
   source order where a grid or flex layout shows elements in another order.
   Put elements in the source in the order they are shown, in every layout,
   so that a focus order test expects the same order in both engines.
+- WebKit stores a `document.cookie` write in its network process
+  asynchronously, so `context.cookies()` right after a key or click can still
+  return the previous value ([#1496](https://github.com/k2b-dev/cloud/issues/1496)).
+  Read cookies that page scripts write with `storedCookie(page, name)` from
+  `packages/ui/test/browser.ts`. It waits until the browser store agrees with
+  the document and returns the full cookie with its attributes. The
+  `cookie-store` check enforces this.
 - Playwright's WebKit draws overlay scrollbars that reserve no gutter.
 - Playwright's WebKit ignores the charset of a routed response. A page that a
   test serves names it with `<meta charset="utf-8">`, as every Cloud page

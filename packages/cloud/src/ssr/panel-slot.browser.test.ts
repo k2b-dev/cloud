@@ -6,8 +6,8 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
-import type { Browser, BrowserContext, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import type { Browser, Page } from "playwright";
+import { launchBrowser, storedCookie } from "../../../ui/test/browser";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-panel-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -132,7 +132,7 @@ const separator = ".cloud-panel__resize";
 const ready = (page: Page) => page.waitForFunction(() => document.getElementById("cloud-panel")?.dataset.state === "ready");
 const closed = (page: Page) => page.waitForFunction(() => document.getElementById("cloud-panel")?.dataset.state === "closed");
 const settle = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-const panelCookie = async (context: BrowserContext) => (await context.cookies()).find((cookie) => cookie.name === "cloud_panel")?.value;
+const panelCookie = async (page: Page) => (await storedCookie(page, "cloud_panel"))?.value;
 const modJ = async (page: Page) =>
   (await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent))) ? "Meta+j" : "Control+j";
 async function fixture(width = 1440, cookie?: string, options: { focus?: boolean; hasTouch?: boolean } = {}) {
@@ -210,16 +210,16 @@ test("pointer and keyboard resize commit width and ARIA in rem", async () => {
     await page.mouse.up();
     expect(await page.locator(separator).getAttribute("aria-valuenow")).toBe("28");
     expect((await page.locator(slot).boundingBox())?.width).toBe(448);
-    expect(await panelCookie(context)).toBe("1:fixture:28");
+    expect(await panelCookie(page)).toBe("1:fixture:28");
     await page.locator(separator).focus();
     await page.keyboard.press("ArrowLeft");
-    expect(await panelCookie(context)).toBe("1:fixture:29");
+    expect(await panelCookie(page)).toBe("1:fixture:29");
     await page.keyboard.press("Shift+ArrowRight");
-    expect(await panelCookie(context)).toBe("1:fixture:25");
+    expect(await panelCookie(page)).toBe("1:fixture:25");
     await page.keyboard.press("Home");
-    expect(await panelCookie(context)).toBe("1:fixture:20");
+    expect(await panelCookie(page)).toBe("1:fixture:20");
     await page.keyboard.press("End");
-    expect(await panelCookie(context)).toBe("1:fixture:36");
+    expect(await panelCookie(page)).toBe("1:fixture:36");
   } finally {
     await context.close();
   }
@@ -237,7 +237,7 @@ test("close drag shows its hint and keeps the committed width", async () => {
     expect((await page.locator(slot).boundingBox())?.width).toBe(320);
     await page.mouse.up();
     await closed(page);
-    expect(await panelCookie(context)).toBe("0:fixture:24");
+    expect(await panelCookie(page)).toBe("0:fixture:24");
     await open(page);
     expect((await page.locator(slot).boundingBox())?.width).toBe(384);
   } finally {
@@ -412,14 +412,14 @@ test("390px sheet grows and navigation, popstate and persisted pageshow close it
       await closed(page);
       await open(page);
     }
-    expect(await panelCookie(context)).toBe("1:fixture:24");
+    expect(await panelCookie(page)).toBe("1:fixture:24");
     // The half-height sheet leaves the page's top in reach.
     await page.locator("[data-cloud-panel-grow]").click();
     await page.locator("#next-page").click();
     await page.waitForURL("**/app/fixture/next");
     await page.waitForFunction(() => document.documentElement.dataset.panelHostMounted === "true");
     expect(await page.locator(slot).isVisible()).toBe(false);
-    expect(await panelCookie(context)).toBe("1:fixture:24");
+    expect(await panelCookie(page)).toBe("1:fixture:24");
   } finally {
     await context.close();
   }
@@ -528,7 +528,7 @@ test("two provider tabs switch and unload, with one iframe in the DOM", async ()
     expect(await page.locator(".cloud-panel__frame").count()).toBe(1);
     expect(await second.getAttribute("aria-selected")).toBe("true");
     expect(await first.getAttribute("aria-selected")).toBe("false");
-    expect(await panelCookie(context)).toBe("1:second:");
+    expect(await panelCookie(page)).toBe("1:second:");
   } finally {
     await context.close();
   }

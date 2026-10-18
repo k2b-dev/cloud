@@ -7,7 +7,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceItemReaction, type SpaceWormhole } from "@/contracts";
-import { browserName, keptThrough, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, keptThrough, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
 import type { KanbanBucketInitial } from "./types";
 
 // Where the board starts, whether the toolbar stays one row, and how a folded column takes a drop are
@@ -1101,7 +1101,7 @@ describe("Spaces Kanban board in a browser", () => {
       expect(await page.evaluate(() => window.document.activeElement?.getAttribute("data-spaces-kanban-fold"))).toBe("column:Col002");
       expect(await fold.getAttribute("aria-label")).toBe("Unfold In progress, 2 items");
       const settings = async () => {
-        const cookie = (await page.context().cookies()).find((entry) => entry.name === "settings-app-spaces");
+        const cookie = await storedCookie(page, "settings-app-spaces");
         return cookie ? JSON.parse(decodeURIComponent(cookie.value)).spaces.Space1 : undefined;
       };
       expect((await settings())?.foldedColumns).toEqual(["column:Col002"]);
