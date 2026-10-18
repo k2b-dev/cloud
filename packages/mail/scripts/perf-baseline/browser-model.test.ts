@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { installInteractionProbe, watchKey } from "./browser";
+import { errorsKey, installInteractionProbe, watchKey } from "./browser";
 import {
   type BrowserSection,
   interactionIds,
@@ -434,9 +434,10 @@ test("the interaction probe refuses an end state that already holds and times a 
     expect(untouched.actionAt).toBeNull();
     expect(untouched.inputAt).toBeNull();
     expect(untouched.hitAt).toBeNull();
-    // Uncaught errors of the app's document fail the sample.
+    // Uncaught errors and island errors of the app's document fail the sample, also after it navigated.
     dom.window.dispatchEvent(new dom.window.ErrorEvent("error", { message: "boom" }));
-    expect(window.__mailPerfErrors).toEqual(["boom"]);
+    dom.window.document.dispatchEvent(new dom.window.Event("ssr:island-error"));
+    expect(JSON.parse(sessionStorage.getItem(errorsKey) ?? "[]")).toEqual(["boom", "ssr:island-error"]);
     // A plain-text body holds at once; an HTML body only after its frame reported a height.
     document.body.insertAdjacentHTML("beforeend", '<div data-plain-body></div><div data-html-body><iframe title="Message"></iframe></div>');
     expect(window.__mailPerfArm?.({ id: "x", action: "mark", conditions: [{ selector: "[data-plain-body]", framesReported: true }] })).toBe(
@@ -450,7 +451,6 @@ test("the interaction probe refuses an end state that already holds and times a 
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);
       else Reflect.deleteProperty(globalThis, name);
     Reflect.deleteProperty(window, "__mailPerfArm");
-    Reflect.deleteProperty(window, "__mailPerfErrors");
     dom.cleanup();
   }
 });

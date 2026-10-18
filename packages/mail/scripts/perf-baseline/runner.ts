@@ -456,6 +456,11 @@ export async function run(options: Options) {
     }
     if (result.browser) {
       console.log("Measuring browsers…");
+      // The last scenario's explain pass may have failed to disable instrumentation; browser
+      // timings must not include SQL analysis, so a failed restore stops the browser part.
+      await setExplainDuration(explainControl, -1).catch((error: unknown) => {
+        throw new Error(`Browser part not measured: auto_explain could not be disabled: ${String(error)}`);
+      });
       await measureBrowsers(
         {
           signal: controller.signal,

@@ -302,7 +302,8 @@ The result is `.local/mail-perf/<UTC timestamp>/result.json` and
 ### Browser part
 
 `--browser chromium,webkit` runs after the server scenarios, on the same
-installation. It starts the run-owned Playwright container from this page
+installation, once SQL plan logging (`auto_explain`) is off again; if it
+cannot be turned off, the browser part fails instead of measuring. It starts the run-owned Playwright container from this page
 and uses the same desktop and phone profiles, throttling, TTI definition, and
 transfer sizes. `--browser chromium` or `--browser webkit` measures one
 engine. `--browser-runs N` (1–20, default 3) sets the cold loads per page,
@@ -352,8 +353,9 @@ wall-clock milliseconds; the browser container shares the host clock. An end
 state that already holds before the action fails the sample. After `compose-open`,
 the harness types one character and fails the sample if the editor does not
 take it. An interaction sample also fails on an uncaught error or rejection
-in the app's own document, or on an island error. Errors inside the sandboxed
-message frame do not count.
+or on an island error in any of the app's documents during the sample, so an
+error in the start page still counts after compose navigated away. Errors
+inside the sandboxed message frame do not count.
 Each interaction records the requests that started from the
 action until its end state, with their encoded response bytes and content
 encoding (`identity` when the header is absent); a request

@@ -44,12 +44,12 @@ declare global {
   interface Window {
     __mailPerfArm?: (watch: Watch) => boolean;
     __mailPerfMark?: () => void;
-    /** Uncaught errors and rejections of this top-level document. */
-    __mailPerfErrors?: string[];
   }
 }
 
 export const watchKey = "cloud-mail-perf-watch";
+/** Uncaught errors, rejections and island errors of every top-level document of the sample. */
+export const errorsKey = `${watchKey}:errors`;
 const interactionTimeoutMs = 30_000;
 const sampleTimeoutMs = 120_000;
 const unsettledMs = 10_000;
@@ -69,12 +69,17 @@ export function installInteractionProbe(key: string) {
   // Init scripts also run in child frames; a sandboxed message iframe has no storage access,
   // and Playwright's service worker block throws there. Only the app's own document counts.
   if (window !== window.top) return;
-  const errors: string[] = [];
-  window.__mailPerfErrors = errors;
+  // Errors live in sessionStorage too, so an error in the start document still fails the
+  // sample after the action navigated to another document (compose).
+  const fail = (message: string) => {
+    const errors = JSON.parse(sessionStorage.getItem(`${key}:errors`) ?? "[]") as string[];
+    sessionStorage.setItem(`${key}:errors`, JSON.stringify([...errors, message]));
+  };
   addEventListener("error", (event) => {
-    if (event instanceof ErrorEvent) errors.push(event.message);
+    if (event instanceof ErrorEvent) fail(event.message);
   });
-  window.addEventListener("unhandledrejection", (event) => errors.push(`Unhandled rejection: ${String(event.reason)}`));
+  window.addEventListener("unhandledrejection", (event) => fail(`Unhandled rejection: ${String(event.reason)}`));
+  document.addEventListener("ssr:island-error", () => fail("ssr:island-error"));
   const now = () => performance.timeOrigin + performance.now();
   const read = (): WatchState | null => {
     const value = sessionStorage.getItem(key);
@@ -543,7 +548,7 @@ class MailBrowser {
           await editor.pressSequentially("x", { timeout: interactionTimeoutMs });
           if (!(await editor.inputValue()).includes("x")) throw new Error("compose-open: the editor did not accept input");
         }
-        const errors = await page.evaluate(() => [...(window.__mailPerfErrors ?? []), ...(window.__cloudPerf?.errors ?? [])]);
+        const errors = await page.evaluate((key) => JSON.parse(sessionStorage.getItem(key) ?? "[]") as string[], errorsKey);
         if (errors.length) throw new Error(`${id}: ${errors.join("; ")}`);
         // Candidates by host event time, then the browser's own start time decides: only requests
         // started between the action and the painted end state belong to the timed window.
