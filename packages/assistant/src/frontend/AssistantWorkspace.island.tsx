@@ -1415,7 +1415,7 @@ export default function AssistantWorkspace(props: Props) {
         copy: commandCopy(),
         locale: locale(),
         tags: catalog.tags(),
-        partCount: attachmentCount() + mentionCount(),
+        partCount: () => attachmentCount() + mentionCount(),
         excludeRefs: () => assistantExcludedRefs(composerAttachmentsFor(sessionKey()), mentionsFor(sessionKey())),
         fileSelectionDisabled: composerRunning(),
         track: trackComposerPicking,

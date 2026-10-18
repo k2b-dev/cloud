@@ -236,7 +236,7 @@ const mount = async (
       copy,
       locale,
       tags: catalogTags.tags(),
-      partCount: (options.attachments ?? []).length + mentions().length,
+      partCount: () => (options.attachments ?? []).length + mentions().length,
       excludeRefs: () => assistantExcludedRefs(options.attachments ?? [], mentions()),
       fileSelectionDisabled: state() === "running",
       track: options.track,

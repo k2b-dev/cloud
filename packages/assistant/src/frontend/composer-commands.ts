@@ -80,7 +80,7 @@ export function assistantInsertCommands(input: {
   locale: string;
   tags: readonly CloudSearchTag[];
   /** Attachments plus references in the text: the server counts both. */
-  partCount: number;
+  partCount: () => number;
   excludeRefs: () => readonly CloudResourceRef[];
   fileSelectionDisabled: boolean;
   /** Sees every open picker through, so the draft can wait with changes that would move it elsewhere. */
@@ -107,7 +107,7 @@ export function assistantInsertCommands(input: {
     scopeWords: { "assistant:studio-app": ["app", "apps"] },
     // Studio apps have no Cloud reader; the Assistant reads them as `assistant.artifact`, as it did before.
     ownReaders: { "assistant:studio-app": "assistant.app" },
-    reason: input.partCount >= AI_TURN_ATTACHMENT_MAX_ITEMS ? limit : undefined,
+    reason: input.partCount() >= AI_TURN_ATTACHMENT_MAX_ITEMS ? limit : undefined,
     excludeRefs: input.excludeRefs,
     mention: assistantResourceMention,
   });
@@ -120,11 +120,27 @@ export function assistantInsertCommands(input: {
     icon: "ti ti-paperclip",
     keywords: ["datei", "dateien", "anhängen", "anhang", "hochladen", "upload", "attach", "file", "files", "attachment"],
     attachFiles: true,
-    reason: input.fileSelectionDisabled ? input.copy.commandNeedsIdle : input.partCount >= AI_TURN_ATTACHMENT_MAX_ITEMS ? limit : undefined,
+    reason: input.fileSelectionDisabled
+      ? input.copy.commandNeedsIdle
+      : input.partCount() >= AI_TURN_ATTACHMENT_MAX_ITEMS
+        ? limit
+        : undefined,
   };
   const tracked = (command: ChatCommand): ChatCommand => {
     const { action, ...rest } = command;
-    return action && input.track ? { ...rest, action: (context) => input.track!(Promise.resolve(action(context))) } : command;
+    if (!action) return command;
+    return {
+      ...rest,
+      action: (context) => {
+        const picking = Promise.resolve(action(context)).then((result) => {
+          // The count can grow while the picker is open.
+          if (result && typeof result === "object" && "mention" in result && input.partCount() >= AI_TURN_ATTACHMENT_MAX_ITEMS)
+            throw new Error(limit);
+          return result;
+        });
+        return input.track ? input.track(picking) : picking;
+      },
+    };
   };
   return {
     commands: [tracked(menu.insert), attach, ...menu.tags.map(tracked)],

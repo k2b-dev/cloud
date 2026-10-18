@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AiChatTaskView, AiProject, AiSkillSummary } from "@k2b/cloud/ai";
+import type { CloudResourcePickerItem } from "@k2b/cloud/browser/resource-picker";
 import { createConfig } from "@k2b/ssr";
 
 const root = mkdtempSync(join(tmpdir(), "assistant-slash-"));
@@ -1062,7 +1063,7 @@ test("references in the text count toward the limit for inserting and attaching 
     copy: assistantCopyFor("de"),
     locale: "de",
     tags: [],
-    partCount: 16,
+    partCount: () => 16,
     excludeRefs: () => [],
     fileSelectionDisabled: false,
   };
@@ -1072,8 +1073,62 @@ test("references in the text count toward the limit for inserting and attaching 
   expect(rows.commands[1]!.reason).toBe(rows.commands[0]!.reason);
   expect(rows.commands[2]!.reason).toBe(rows.commands[0]!.reason);
   expect(rows.fallback({ query: "q3" })?.reason).toBe(rows.commands[0]!.reason);
-  const running = assistantInsertCommands({ ...input, partCount: 0, fileSelectionDisabled: true });
+  const running = assistantInsertCommands({ ...input, partCount: () => 0, fileSelectionDisabled: true });
   expect(running.commands[0]!.reason).toBeUndefined();
   expect(running.commands[1]!.reason).toBe(input.copy.commandNeedsIdle);
   expect(running.scopes.find((scope) => scope.words.includes("app"))?.title).toBe("Studio-Apps aus Assistent");
 });
+
+for (const withTrack of [false, true]) {
+  for (const rowKind of ["insert", "tag", "scoped fallback"] as const) {
+    test.each([
+      { count: 16, cancelled: false },
+      { count: 15, cancelled: false },
+      { count: 16, cancelled: true },
+    ])(`${rowKind} rechecks a delayed picker result (track: ${withTrack}): %j`, async ({ count, cancelled }) => {
+      const picker = await import("@k2b/cloud/browser/resource-picker");
+      const picking = Promise.withResolvers<CloudResourcePickerItem | undefined>();
+      spyOn(picker, "openCloudResourcePicker").mockReturnValueOnce(picking.promise);
+      const item: CloudResourcePickerItem = {
+        ref: { type: "assistant.app", id: "App1" },
+        title: "Plan",
+        appId: "assistant",
+        appName: "Assistant",
+        appIcon: "ti ti-sparkles",
+        href: "/assistant/apps/App1",
+        readable: true,
+      };
+      let partCount = 14;
+      const tracked: Promise<unknown>[] = [];
+      const rows = assistantInsertCommands({
+        copy: assistantCopyFor("de"),
+        locale: "de",
+        tags: [],
+        partCount: () => partCount,
+        excludeRefs: () => [],
+        fileSelectionDisabled: false,
+        track: withTrack
+          ? (promise) => {
+              tracked.push(promise);
+              return promise;
+            }
+          : undefined,
+      });
+      const row =
+        rowKind === "insert"
+          ? rows.commands[0]!
+          : rowKind === "tag"
+            ? rows.commands[2]!
+            : rows.fallback({ query: "plan", scope: rows.scopes[0]!.id })!;
+      expect(row.reason).toBeUndefined();
+      const result = row.action!(context);
+      expect(tracked).toHaveLength(withTrack ? 1 : 0);
+      if (withTrack) expect(result === tracked[0]).toBe(true);
+      partCount = count;
+      picking.resolve(cancelled ? undefined : item);
+      if (cancelled) expect(await result).toBe("cancelled");
+      else if (count === 16) await expect(result).rejects.toThrow("Eine Nachricht kann höchstens 16 Elemente enthalten.");
+      else expect(await result).toEqual({ mention: assistantResourceMention(item) });
+    });
+  }
+}

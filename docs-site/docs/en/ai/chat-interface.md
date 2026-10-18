@@ -1197,7 +1197,9 @@ inserts its name as a reference where `/…` was; Ctrl/⌘+Z restores the token 
 one step. Escape in the picker keeps `/…` and returns focus to the composer.
 References remain available while a response runs. File attachment waits for
 the response to finish. Cloud insert rows explain when the message has reached its
-16-item limit, counting attachments and inline references together.
+16-item limit, counting attachments and inline references together. If the
+message fills up while the picker is open, the choice is not inserted, `/…`
+stays, and the composer shows the limit.
 
 The Skills overview shows the first four enabled Skills. If there are more,
 **All N Skills** narrows to the full Skill list with Enter or Tab. If the Skill
