@@ -1,4 +1,7 @@
 import { z } from "zod";
+
+export { PANEL_CONTEXT_PARAM, panelProviderNeedsConsent, withPanelContext } from "./panel-context-url";
+
 import { HELP_VIEW_LIMIT } from "../shared/help";
 import {
   CAPABILITY_APP_ID_MAX_LENGTH,
@@ -8,7 +11,6 @@ import {
   CloudResourceRefSchema,
 } from "./capabilities";
 
-export const PANEL_CONTEXT_PARAM = "cloud_panel_context";
 /** Local Help document ids, as accepted by Layout.help, bounded for URL transport. */
 export const PANEL_HELP_ID_MAX_LENGTH = 180;
 export const PanelPageContextSchema = z
@@ -56,19 +58,6 @@ export function parsePanelContextParam(value: string | null | undefined): PanelP
     return null;
   }
 }
-
-/** Only application-owned same-origin paths. Null also removes a caller-supplied reserved parameter. */
-export function withPanelContext(href: string, context: PanelPageContext | null): string {
-  if (!href.startsWith("/") || href.startsWith("//") || /[\\\u0000-\u0020\u007f]/.test(href))
-    throw new Error("Expected a same-origin panel path");
-  const url = new URL(href, "https://panel.invalid");
-  url.searchParams.delete(PANEL_CONTEXT_PARAM);
-  if (context) url.searchParams.set(PANEL_CONTEXT_PARAM, encodePanelContextParam(context));
-  return `${url.pathname}${url.search}${url.hash}`;
-}
-
-/** Core is the platform's own surface. Every other provider asks once per app. */
-export const panelProviderNeedsConsent = (appId: string): boolean => appId !== "core";
 
 export const PanelContextMessageSchema = z
   .object({ type: z.literal("cloud.panel.context"), v: z.literal(1), context: PanelPageContextSchema.nullable() })

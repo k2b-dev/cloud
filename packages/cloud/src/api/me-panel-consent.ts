@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
-import { panelProviderNeedsConsent } from "../contracts/panel-context";
+import { panelProviderNeedsConsent } from "../contracts/panel-context-url";
 import { type AuthContext, jsonResponse, requiresAuth, v } from "../server";
 import { panelContextConsent } from "../services/panel-context-consent";
 import { getRuntimeContext } from "../ssr/runtime";

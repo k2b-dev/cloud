@@ -1,7 +1,7 @@
 import { isOwnAppPath } from "../_internal/app-path";
 import { hasAnyAppRole } from "../_internal/app-roles";
 import type { RuntimeAppMeta } from "../contracts/app";
-import { panelProviderNeedsConsent } from "../contracts/panel-context";
+import { panelProviderNeedsConsent } from "../contracts/panel-context-url";
 import { isPwaPartId } from "../contracts/pwa-paths";
 import type { User } from "../contracts/shared";
 import { resolveAppPresentation } from "../shared/app-presentation";

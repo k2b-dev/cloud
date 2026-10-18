@@ -1,6 +1,6 @@
 import { Button, IconButton, type KeyboardPlatform, NoticeCard, Placeholder, ResizeSeparator, useLocale } from "@k2b/ui";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, type PanelCookieState } from "../_internal/panel-cookie";
-import { withPanelContext } from "../contracts/panel-context";
+import { withPanelContext } from "../contracts/panel-context-url";
 import { platformMessages } from "./platform-messages";
 import type { ShellData } from "./shell-data";
 
