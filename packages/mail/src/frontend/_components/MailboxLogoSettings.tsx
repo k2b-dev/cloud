@@ -66,16 +66,39 @@ export default function MailboxLogoSettings(props: { mailboxId: string; canManag
 
   // Saving disables the control that started it; focus returns to a control that stays.
   const focusControl = (controlId: string) => queueMicrotask(() => document.getElementById(controlId)?.focus());
-  const [pending, setPending] = createSignal<"upload" | "details" | null>(null);
 
-  const save = mutations.create<Logo | null, LogoUpload>({
-    mutation: async (json, { abortSignal }) => {
-      const response = await apiClient.mailboxes[":mailboxId"]["compose-logo"].$put(
-        { param: { mailboxId: props.mailboxId }, json },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveLogo));
-      return (await response.json()).logo;
+  const putLogo = async (json: LogoUpload, abortSignal: AbortSignal) => {
+    const response = await apiClient.mailboxes[":mailboxId"]["compose-logo"].$put(
+      { param: { mailboxId: props.mailboxId }, json },
+      { init: { signal: abortSignal } },
+    );
+    if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveLogo));
+    return (await response.json()).logo;
+  };
+  // A cancelled save (the settings closed meanwhile) reaches neither handler, so it never reports success.
+  const upload = mutations.create<Logo | null, LogoUpload>({
+    mutation: (json, { abortSignal }) => putLogo(json, abortSignal),
+    onSuccess: (next) => {
+      setLogo(next);
+      setDetailsError();
+      toast.success(messages().logoUploaded);
+      focusControl(dropzoneId);
+    },
+    onError: (error) => {
+      setUploadError(error.message);
+      focusControl(dropzoneId);
+    },
+  });
+  const saveDetails = mutations.create<Logo | null, LogoUpload>({
+    mutation: (json, { abortSignal }) => putLogo(json, abortSignal),
+    onSuccess: (next) => {
+      setLogo(next);
+      toast.success(messages().logoDetailsSaved);
+      focusControl(altTextId);
+    },
+    onError: (error) => {
+      setDetailsError(error.message);
+      focusControl(altTextId);
     },
   });
   const remove = mutations.create<void, void>({
@@ -96,11 +119,12 @@ export default function MailboxLogoSettings(props: { mailboxId: string; canManag
     onError: (error) => prompts.error(error.message),
   });
   onCleanup(() => {
-    save.abort();
+    upload.abort();
+    saveDetails.abort();
     remove.abort();
   });
 
-  const busy = () => save.loading() || remove.loading();
+  const busy = () => upload.loading() || saveDetails.loading() || remove.loading();
   const loaded = () => logo() !== undefined;
   const editable = () => props.canManage && loaded() && !busy();
   const detailsEditable = () => editable() && Boolean(logo());
@@ -110,7 +134,7 @@ export default function MailboxLogoSettings(props: { mailboxId: string; canManag
     return Boolean(current) && (displayWidth() !== current?.displayWidth || trimmedAlt() !== current?.altText);
   };
 
-  const upload = async (file: File | undefined) => {
+  const chooseFile = async (file: File | undefined) => {
     if (!file) return;
     setUploadError();
     if (file.size > MAX_LOGO_BYTES) {
@@ -126,20 +150,10 @@ export default function MailboxLogoSettings(props: { mailboxId: string; canManag
     }
     // A replacement keeps the stored width and alt text; a first upload takes the server's defaults.
     const current = logo();
-    setPending("upload");
-    await save.mutate(current ? { content, displayWidth: current.displayWidth, altText: current.altText } : { content });
-    setPending(null);
-    const error = save.error();
-    if (error) setUploadError(error.message);
-    else {
-      setLogo(save.data() ?? null);
-      setDetailsError();
-      toast.success(messages().logoUploaded);
-    }
-    focusControl(dropzoneId);
+    await upload.mutate(current ? { content, displayWidth: current.displayWidth, altText: current.altText } : { content });
   };
 
-  const saveDetails = async () => {
+  const submitDetails = async () => {
     const current = logo();
     const width = displayWidth();
     if (!current || width === null) return;
@@ -149,16 +163,7 @@ export default function MailboxLogoSettings(props: { mailboxId: string; canManag
     }
     setDetailsError();
     // Versions are immutable: a new width or alt text stores the same bytes again.
-    setPending("details");
-    await save.mutate({ content: storedContent(current), displayWidth: width, altText: trimmedAlt() });
-    setPending(null);
-    const error = save.error();
-    if (error) setDetailsError(error.message);
-    else {
-      setLogo(save.data() ?? null);
-      toast.success(messages().logoDetailsSaved);
-    }
-    focusControl(altTextId);
+    await saveDetails.mutate({ content: storedContent(current), displayWidth: width, altText: trimmedAlt() });
   };
 
   const confirmRemove = async () => {
@@ -227,10 +232,10 @@ export default function MailboxLogoSettings(props: { mailboxId: string; canManag
             subtitle={messages().logoLimits}
             dropLabel={messages().dropLogo}
             class="sm:[&_.k2b-dropzone]:h-44"
-            busy={pending() === "upload"}
+            busy={upload.loading()}
             disabled={!editable()}
             error={uploadError}
-            onDrop={([file]) => upload(file)}
+            onDrop={([file]) => chooseFile(file)}
           />
         </div>
         <div class="grid gap-3 sm:grid-cols-2">
@@ -269,9 +274,9 @@ export default function MailboxLogoSettings(props: { mailboxId: string; canManag
               size="sm"
               type="button"
               disabled={!detailsEditable() || !detailsDirty() || displayWidth() === null}
-              onClick={() => void saveDetails()}
+              onClick={() => void submitDetails()}
             >
-              <i class={`ti ${pending() === "details" ? "ti-loader-2 animate-spin" : "ti-device-floppy"}`} aria-hidden="true" />
+              <i class={`ti ${saveDetails.loading() ? "ti-loader-2 animate-spin" : "ti-device-floppy"}`} aria-hidden="true" />
               {messages().saveLogoDetails}
             </Button>
           </div>

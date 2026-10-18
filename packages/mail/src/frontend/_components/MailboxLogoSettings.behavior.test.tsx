@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 import type { MailboxComposeLogo } from "../../contracts";
@@ -7,11 +7,11 @@ import type { MailboxComposeLogo } from "../../contracts";
 const load = async () => {
   const dom = createDomTestHarness();
   try {
-    const [{ default: MailboxLogoSettings }, { dialogCore, LocaleProvider }] = await Promise.all([
+    const [{ default: MailboxLogoSettings }, { dialogCore, LocaleProvider, toast }] = await Promise.all([
       import("./MailboxLogoSettings"),
       import("@k2b/ui"),
     ]);
-    return { MailboxLogoSettings, dialogCore, LocaleProvider };
+    return { MailboxLogoSettings, dialogCore, LocaleProvider, toast };
   } finally {
     dom.cleanup();
   }
@@ -45,13 +45,13 @@ describe("Mailbox logo settings", () => {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
     return;
   }
-  const { MailboxLogoSettings, dialogCore, LocaleProvider } = modules!;
+  const { MailboxLogoSettings, dialogCore, LocaleProvider, toast } = modules!;
   const originalFetch = globalThis.fetch;
   let dom: DomTestHarness;
   let dispose = () => {};
   let initialLogo: Logo | null;
   let getResponse: () => Response;
-  let putResponse: () => Response;
+  let putResponse: (request: Request) => Response | Promise<Response>;
   let requests: Array<{ method: string; path: string; body: unknown }>;
   let unexpected: string[];
 
@@ -71,7 +71,7 @@ describe("Mailbox logo settings", () => {
         requests.push({ method: request.method, path, body: request.method === "PUT" ? await request.json() : null });
         if (path === endpoint) {
           if (request.method === "GET") return getResponse();
-          if (request.method === "PUT") return putResponse();
+          if (request.method === "PUT") return putResponse(request);
           if (request.method === "DELETE") return Response.json({ logo: null });
         }
         unexpected.push(`${request.method} ${path}`);
@@ -160,6 +160,29 @@ describe("Mailbox logo settings", () => {
     expect(text()).not.toContain("No logo yet");
     expect(dropzone().querySelector("strong")?.textContent).toBe("Replace the logo");
     expect(dom.document.activeElement?.id).toBe(dropzone().id);
+  });
+
+  test("reports no upload when the settings close while the upload is still running", async () => {
+    let started = false;
+    putResponse = (request) => {
+      started = true;
+      return new Promise<Response>((_resolve, reject) =>
+        request.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError"))),
+      );
+    };
+    const success = spyOn(toast, "success");
+    try {
+      mount();
+      await waitFor(() => text().includes("No logo yet"));
+      chooseFile();
+      await waitFor(() => started);
+      dispose();
+      dispose = () => {};
+      await Bun.sleep(20);
+      expect(success).not.toHaveBeenCalled();
+    } finally {
+      success.mockRestore();
+    }
   });
 
   test("shows the German server validation message in the dropzone field and keeps the empty state", async () => {
