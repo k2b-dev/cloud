@@ -138,22 +138,30 @@ export const cleanup = async (
     throw new Error("Known-browser cleanup requires a positive batch size and a non-negative batch count");
   const cutoff = cutoffAt(now);
   const counts = { browsers: 0, countries: 0 };
-  // The outer cutoff is re-checked on a row that a concurrent sign-in refreshed while the delete waited for it.
-  // A short batch can therefore mean such a skip; the next run continues the backlog.
+  // Cleanup never waits for a sign-in: rows a sign-in holds are skipped (waiting could deadlock with its own
+  // eviction of the account's other expired rows), and the outer cutoff re-checks a row refreshed meanwhile.
+  // A short batch can therefore mean such a skip; the next run continues the backlog. The batch is a
+  // materialized CTE because a locking LIMIT subquery inside IN (...) may run more than once and exceed it.
   for (let batch = 0; batch < maxBatches && !signal?.aborted; batch++) {
     const rows = await db`
-      DELETE FROM auth.known_browsers WHERE last_seen_at <= ${cutoff} AND id IN (
+      WITH batch AS MATERIALIZED (
         SELECT id FROM auth.known_browsers WHERE last_seen_at <= ${cutoff} ORDER BY last_seen_at LIMIT ${batchSize}
-      ) RETURNING id
+        FOR UPDATE SKIP LOCKED
+      )
+      DELETE FROM auth.known_browsers kb USING batch
+      WHERE kb.id = batch.id AND kb.last_seen_at <= ${cutoff} RETURNING kb.id
     `;
     counts.browsers += rows.length;
     if (rows.length < batchSize) break;
   }
   for (let batch = 0; batch < maxBatches && !signal?.aborted; batch++) {
     const rows = await db`
-      DELETE FROM auth.sign_in_countries WHERE last_seen_at <= ${cutoff} AND (user_id, country) IN (
+      WITH batch AS MATERIALIZED (
         SELECT user_id, country FROM auth.sign_in_countries WHERE last_seen_at <= ${cutoff} ORDER BY last_seen_at LIMIT ${batchSize}
-      ) RETURNING user_id
+        FOR UPDATE SKIP LOCKED
+      )
+      DELETE FROM auth.sign_in_countries sc USING batch
+      WHERE sc.user_id = batch.user_id AND sc.country = batch.country AND sc.last_seen_at <= ${cutoff} RETURNING sc.user_id
     `;
     counts.countries += rows.length;
     if (rows.length < batchSize) break;
