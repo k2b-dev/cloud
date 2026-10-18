@@ -44,6 +44,15 @@ type CalendarPointerSessionOptions<T> = {
 let cancelActiveSession: (() => void) | null = null;
 
 /**
+ * Runs `open` once the browser has handled the pointer release that ends a drag. The browser light-dismisses an
+ * `auto` popover that opens while it dispatches that `pointerup`, as the HTML popover rules ask and Chromium 156
+ * does, so a popover that a drag opens must open after the release.
+ */
+export const afterPointerRelease = (open: () => void): void => {
+  window.setTimeout(open, 0);
+};
+
+/**
  * Owns one pointer gesture from threshold crossing through commit or cancel.
  * Views provide geometry through `resolve`; this helper owns global cleanup,
  * pointer cancellation, Escape handling, and edge auto-scroll.
