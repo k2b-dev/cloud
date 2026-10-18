@@ -28,12 +28,11 @@ export const checkTestClockSource = (file: string, source: string): Finding[] =>
     ),
   ].map((match) => {
     const start = match.index + match[0].length;
-    const tokens = /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|[()]/g;
-    tokens.lastIndex = start;
     let depth = 1;
-    for (let token; (token = tokens.exec(code)); ) {
+    for (const token of code.slice(start).matchAll(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|[()]/g)) {
       if (token[0] === "(") depth++;
-      else if (token[0] === ")" && --depth === 0) return { start, end: token.index };
+      else if (token[0] === ")") depth--;
+      if (depth === 0) return { start, end: start + token.index };
     }
     return { start, end: code.length };
   });
