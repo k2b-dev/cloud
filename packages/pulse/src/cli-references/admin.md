@@ -59,4 +59,7 @@ For `UNREACHABLE`, check network, TLS and address. For `AUTH_FAILED`, check the
 service credentials. For `VERSION_TOO_OLD`, upgrade to ClickHouse 26.9 or newer.
 For `MISSING_RIGHT:<right>` or `PROFILE_MISSING:<profile>`, re-run the setup
 script as ClickHouse admin. `TOO_MANY_RIGHTS` requires a dedicated service user
-without admin privileges or inherited admin roles.
+without admin privileges or inherited admin roles, and without rights to change
+settings profiles, roles, quotas or row policies. `CLICKHOUSE_ERROR:<code>`
+means ClickHouse refused the check for another reason, such as memory; check its
+log and resources, then run `check` again.
