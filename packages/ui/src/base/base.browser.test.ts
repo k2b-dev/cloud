@@ -267,7 +267,7 @@ describe("@k2b/ui base stylesheet in a browser", () => {
   test("keeps row actions quiet until their row is hovered or focused", async () => {
     const tab = await open("desktop", "light");
     try {
-      const muted = "rgb(82, 82, 91)";
+      const muted = "rgb(69, 69, 78)";
       const danger = "rgb(185, 28, 28)";
       const rowAction = "tbody tr:first-child .danger";
       await tab.mouse.move(0, 0);
@@ -368,7 +368,7 @@ describe("@k2b/ui base stylesheet in a browser", () => {
       await tab.emulateMedia({ media: "print" });
       expect(await style(tab, "html", "color-scheme")).toBe("light");
       expect(await style(tab, "html", "background-color")).toBe("rgb(255, 255, 255)");
-      expect(await style(tab, "main > p.muted", "color")).toBe("rgb(82, 82, 91)");
+      expect(await style(tab, "main > p.muted", "color")).toBe("rgb(69, 69, 78)");
       expect(await style(tab, ".tag[data-tone=success]", "background-color")).toBe("rgb(236, 253, 245)");
       expect(await style(tab, "input[name=purpose]", "background-color")).toBe("rgb(244, 244, 245)");
     } finally {

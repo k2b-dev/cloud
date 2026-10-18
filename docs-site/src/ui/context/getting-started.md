@@ -101,7 +101,7 @@ Override tokens on your scoped root. Components derive focus, selection, and act
 <main class="k2b-ui product-ui">...</main>
 ```
 
-Most themes only need the font and accent stack. Override semantic tokens such as `--k2b-action`, `--k2b-surface`, `--k2b-text`, or `--k2b-border` when a specific role needs different treatment. See [Theme and styles](./surfaces/utilities) for theme roles and overrides.
+Most themes only need the font and accent stack. Override semantic tokens such as `--k2b-action`, `--k2b-surface`, `--k2b-text`, `--k2b-text-secondary`, `--k2b-text-muted`, or `--k2b-border` when a specific role needs different treatment. See [Ink hierarchy](./surfaces/utilities#ink-hierarchy) for text roles and contrast floors, and [Theme and styles](./surfaces/utilities) for other theme roles and overrides.
 
 ## Solid and SSR
 
