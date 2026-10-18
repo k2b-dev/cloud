@@ -145,7 +145,8 @@ export function combineDatabase(windows: DatabaseMeasurement[], runs: number): D
   const statements = new Map<string, DatabaseMeasurement["statements"][number]>();
   for (const window of windows) {
     for (const statement of window.statements) {
-      const key = JSON.stringify([statement.queryid, statement.query]);
+      // pg_stat_statements keeps the first text it saw per window; the query id is the stable key.
+      const key = statement.queryid ?? statement.query;
       const combined = statements.get(key);
       if (!combined) statements.set(key, { ...statement });
       else {

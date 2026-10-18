@@ -304,3 +304,27 @@ test("explain threshold remains reloadable while other requested server instrume
     expect(postgresArgs).toContain(setting);
   expect(postgresLog).toBe("/var/lib/postgresql/data/perf-logs/mail-perf.json");
 });
+
+test("combined windows merge one statement by query id even when its recorded text differs", () => {
+  const statement = (query: string, totalMs: number) => ({
+    queryid: "42",
+    query,
+    calls: 1,
+    totalMs,
+    meanMs: totalMs,
+    rows: 1,
+    hits: 1,
+    reads: 0,
+  });
+  const window = (query: string, totalMs: number) => ({
+    windowMs: 10,
+    calls: 1,
+    totalMs,
+    callsPerRun: 1,
+    msPerRun: totalMs,
+    statements: [statement(query, totalMs)],
+  });
+  const combined = combineDatabase([window("SELECT $1 FROM t", 30), window("SELECT 1 FROM t", 10)], 2);
+  expect(combined.statements).toHaveLength(1);
+  expect(combined.statements[0]).toMatchObject({ queryid: "42", calls: 2, totalMs: 40, meanMs: 20 });
+});
