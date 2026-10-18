@@ -22,7 +22,7 @@ export const interactions = [
     id: "conversation-open",
     start: "The fixture's first custom folder, where no live arrivals land",
     action: "Click its first conversation whose newest message has a body",
-    end: "The reader shows the body of the conversation's newest message in the viewport",
+    end: "The reader shows the body of the conversation's newest message in the viewport (HTML: after its frame reported its height)",
   },
   {
     id: "list-scroll",

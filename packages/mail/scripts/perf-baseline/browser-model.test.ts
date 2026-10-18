@@ -422,6 +422,14 @@ test("the interaction probe refuses an end state that already holds and times a 
     expect(untouched.actionAt).toBeNull();
     expect(untouched.inputAt).toBeNull();
     expect(untouched.hitAt).toBeNull();
+    // A plain-text body holds at once; an HTML body only after its frame reported a height.
+    document.body.insertAdjacentHTML("beforeend", '<div data-plain-body></div><div data-html-body><iframe title="Message"></iframe></div>');
+    expect(window.__mailPerfArm?.({ id: "x", action: "mark", conditions: [{ selector: "[data-plain-body]", framesReported: true }] })).toBe(
+      false,
+    );
+    expect(window.__mailPerfArm?.({ id: "x", action: "mark", conditions: [{ selector: "[data-html-body]", framesReported: true }] })).toBe(
+      true,
+    );
   } finally {
     for (const [name, descriptor] of previous)
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);

@@ -35,7 +35,8 @@ import { monotonicMs } from "./measure";
 import { draftSeedBodies } from "./requests";
 
 type Profile = (typeof profiles)[number];
-type Condition = { selector: string; text?: string; visible?: boolean; writable?: boolean; mounted?: boolean };
+/** framesReported: every iframe inside reported its laid-out height (the HTML message frame does after its body). */
+type Condition = { selector: string; text?: string; visible?: boolean; writable?: boolean; mounted?: boolean; framesReported?: boolean };
 /** pointerdown/enter: the trusted input event; mark: the page calls __mailPerfMark; external: the host supplies t0. */
 type Watch = { id: string; conditions: Condition[]; action: "pointerdown" | "enter" | "mark" | "external" };
 type WatchState = Watch & { actionAt: number | null; inputAt: number | null; hitAt: number | null };
@@ -71,6 +72,17 @@ export function installInteractionProbe(key: string) {
     return value ? (JSON.parse(value) as WatchState) : null;
   };
   const write = (state: WatchState) => sessionStorage.setItem(key, JSON.stringify(state));
+  // A message frame posts its height once its body is laid out (mail-message-document.ts).
+  const reported = new WeakSet<object>();
+  addEventListener(
+    "message",
+    (event) => {
+      const data: unknown = event.data;
+      if (event.source && typeof data === "object" && data !== null && "source" in data && "type" in data)
+        if (data.source === "cloud-mail-message" && data.type === "height") reported.add(event.source);
+    },
+    { capture: true },
+  );
   const holds = (condition: Condition) => {
     for (const element of document.querySelectorAll(condition.selector)) {
       if (condition.text !== undefined && !(element.textContent ?? "").includes(condition.text)) continue;
@@ -81,6 +93,11 @@ export function installInteractionProbe(key: string) {
             : element instanceof HTMLElement && element.isContentEditable;
         if (!writable) continue;
       }
+      if (
+        condition.framesReported &&
+        ![...element.querySelectorAll("iframe")].every((frame) => frame.contentWindow && reported.has(frame.contentWindow))
+      )
+        continue;
       if (condition.mounted) {
         const island = element.closest("solid-island,solid-client");
         if (!island || !window.__cloudPerf?.mounted.has(island)) continue;
@@ -328,7 +345,7 @@ class MailBrowser {
               action: "pointerdown",
               // The body itself, not the loading placeholder of a message without one.
               conditions: [
-                { selector: `[data-mail-message-id="${newest}"] .mail-message-body`, visible: true },
+                { selector: `[data-mail-message-id="${newest}"] .mail-message-body`, visible: true, framesReported: true },
                 { selector: `[data-mail-message-id="${newest}"] [data-mail-body-format]` },
               ],
             });

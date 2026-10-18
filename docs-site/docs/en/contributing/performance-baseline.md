@@ -330,7 +330,7 @@ then times one action:
 | Interaction | Action | Ends when |
 | --- | --- | --- |
 | `folder-switch` | Click the fixture's first custom folder in the navigation; on the phone, in the opened app menu | The heading names that folder and its first row is on screen |
-| `conversation-open` | In the fixture's first custom folder, click the first conversation whose newest message has a body. Live arrivals land in the Inbox as envelopes without a body, so this folder keeps a body to render after any number of runs | The body of that newest message is on screen in the reader |
+| `conversation-open` | In the fixture's first custom folder, click the first conversation whose newest message has a body. Live arrivals land in the Inbox as envelopes without a body, so this folder keeps a body to render after any number of runs | The body of that newest message is on screen in the reader; an HTML body also needs its message frame to report its laid-out height |
 | `list-scroll` | Scroll the list to its end | The first row of page 2 is in the list |
 | `search-submit` | Fill the search field with the fixture's rare word, then press Enter; the timer starts at the Enter keydown | The heading names the search and its first result is on screen |
 | `live-arrival` | A message is ingested through `ingestEnvelope` against the run's database | The new row is on screen |
