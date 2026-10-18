@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-export { PANEL_CONTEXT_PARAM, panelProviderNeedsConsent, withPanelContext } from "./panel-context-url";
+export {
+  isPanelContextMessage,
+  isPanelPageContext,
+  PANEL_CONTEXT_PARAM,
+  panelProviderNeedsConsent,
+  withPanelContext,
+} from "./panel-context-plain";
 
 import { HELP_VIEW_LIMIT } from "../shared/help";
 import {
@@ -63,17 +69,3 @@ export const PanelContextMessageSchema = z
   .object({ type: z.literal("cloud.panel.context"), v: z.literal(1), context: PanelPageContextSchema.nullable() })
   .strict();
 export type PanelContextMessage = z.infer<typeof PanelContextMessageSchema>;
-export function isPanelContextMessage(value: unknown): value is PanelContextMessage {
-  // Match the exact-key message contracts, including symbol/non-enumerable keys.
-  if (
-    !value ||
-    typeof value !== "object" ||
-    Array.isArray(value) ||
-    Reflect.ownKeys(value).length !== 3 ||
-    !Object.hasOwn(value, "type") ||
-    !Object.hasOwn(value, "v") ||
-    !Object.hasOwn(value, "context")
-  )
-    return false;
-  return PanelContextMessageSchema.safeParse(value).success;
-}

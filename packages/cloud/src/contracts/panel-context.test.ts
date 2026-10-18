@@ -95,3 +95,42 @@ test("Core alone skips consent; the context message has exactly three keys", () 
   ])
     expect(isPanelContextMessage(value)).toBe(false);
 });
+
+test("the zod-free check accepts exactly what the schema accepts", async () => {
+  const { isPanelPageContext } = await import("./panel-context-plain");
+  const { PanelPageContextSchema } = await import("./panel-context");
+  const base = { v: 1, seq: 4, pageId: "11111111-1111-4111-8111-111111111111", app: "mail" };
+  const samples: unknown[] = [
+    base,
+    { ...base, scope: { type: "mail.mailbox", id: "Box001" }, help: ["mail-work"] },
+    { ...base, scope: { type: "mail.mailbox", id: "x".repeat(512) }, help: ["a", "b", "c"] },
+    { ...base, scope: { type: "m.x", id: "1" } },
+    { ...base, app: "a".repeat(80) },
+    { ...base, seq: Number.MAX_SAFE_INTEGER },
+    { ...base, v: 2 },
+    { ...base, seq: -1 },
+    { ...base, seq: 1.5 },
+    { ...base, seq: "1" },
+    { ...base, pageId: "not-a-uuid" },
+    { ...base, app: "Mail" },
+    { ...base, app: "a".repeat(81) },
+    { ...base, scope: { type: "mail", id: "1" } },
+    { ...base, scope: { type: "mail.mailbox", id: "" } },
+    { ...base, scope: { type: "mail.mailbox", id: "x".repeat(513) } },
+    { ...base, scope: { type: "mail.mailbox", id: "1", title: "Leak" } },
+    { ...base, scope: null },
+    { ...base, scope: undefined },
+    { ...base, help: [] },
+    { ...base, help: ["a", "b", "c", "d"] },
+    { ...base, help: ["Not-Kebab"] },
+    { ...base, help: [""] },
+    { ...base, help: ["a".repeat(181)] },
+    { ...base, focus: { type: "mail.draft", id: "1" } },
+    Object.assign(Object.create(null), base),
+    [base],
+    null,
+    "context",
+  ];
+  for (const sample of samples)
+    expect([sample, isPanelPageContext(sample)]).toEqual([sample, PanelPageContextSchema.safeParse(sample).success]);
+});

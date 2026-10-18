@@ -4,7 +4,7 @@ import { render } from "solid-js/web";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, readPanelCookie, serializePanelCookie } from "../_internal/panel-cookie";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
 import type { PanelPageContext } from "../contracts/panel-context";
-import { PANEL_CONTEXT_PARAM, withPanelContext } from "../contracts/panel-context-url";
+import { PANEL_CONTEXT_PARAM, withPanelContext } from "../contracts/panel-context-plain";
 import { platformMessages } from "../ssr/platform-messages";
 import { readShellData } from "../ssr/shell-data";
 import type { PanelRequest } from "./panel";

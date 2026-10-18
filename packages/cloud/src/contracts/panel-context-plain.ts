@@ -1,0 +1,67 @@
+import type { PanelContextMessage, PanelPageContext } from "./panel-context";
+
+/**
+ * The zod-free half of the panel context contract, for code on every page: islands, the provider runtime and the
+ * slot markup must not pull the schema into their first load (shell and Mail first-load guards). The zod schema in
+ * ./panel-context stays the contract; a parity test keeps the check below at least as strict.
+ */
+export const PANEL_CONTEXT_PARAM = "cloud_panel_context";
+
+/** Core is the platform's own surface. Every other provider asks once per app. */
+export const panelProviderNeedsConsent = (appId: string): boolean => appId !== "core";
+
+/**
+ * Only application-owned same-origin paths. The context must already be valid: Layout and the slot controller build
+ * it from validated parts. Null also removes a caller-supplied reserved parameter.
+ */
+export function withPanelContext(href: string, context: PanelPageContext | null): string {
+  if (!href.startsWith("/") || href.startsWith("//") || /[\\\u0000-\u0020\u007f]/.test(href))
+    throw new Error("Expected a same-origin panel path");
+  const url = new URL(href, "https://panel.invalid");
+  url.searchParams.delete(PANEL_CONTEXT_PARAM);
+  if (context) url.searchParams.set(PANEL_CONTEXT_PARAM, JSON.stringify(context));
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+const HELP_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const APP_ID = /^[a-z][a-z0-9-]*$/;
+const QUALIFIED_ID = /^[a-z][a-z0-9-]*\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
+// RFC 9562 versions 1 to 8 with the RFC variant; the shell always uses crypto.randomUUID().
+const PAGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Exact keys, including symbol and non-enumerable ones, like the other panel messages.
+const exactKeys = (value: unknown, required: string[], optional: string[] = []): value is Record<string, unknown> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const keys = Reflect.ownKeys(value);
+  return (
+    required.every((key) => Object.hasOwn(value, key)) &&
+    keys.every((key) => typeof key === "string" && (required.includes(key) || optional.includes(key)))
+  );
+};
+const text = (value: unknown, min: number, max: number, pattern?: RegExp): value is string =>
+  typeof value === "string" && value.length >= min && value.length <= max && (!pattern || pattern.test(value));
+
+export function isPanelPageContext(value: unknown): value is PanelPageContext {
+  if (!exactKeys(value, ["v", "seq", "pageId", "app"], ["scope", "help"])) return false;
+  const { v, seq, pageId, app, scope, help } = value;
+  return (
+    v === 1 &&
+    typeof seq === "number" &&
+    Number.isSafeInteger(seq) &&
+    seq >= 0 &&
+    text(pageId, 36, 36, PAGE_ID) &&
+    text(app, 1, 80, APP_ID) &&
+    (scope === undefined ||
+      (exactKeys(scope, ["type", "id"]) && text(scope.type, 3, 180, QUALIFIED_ID) && text(scope.id, 1, 512))) &&
+    (help === undefined ||
+      (Array.isArray(help) && help.length >= 1 && help.length <= 3 && help.every((id) => text(id, 0, 180, HELP_ID))))
+  );
+}
+
+export function isPanelContextMessage(value: unknown): value is PanelContextMessage {
+  return (
+    exactKeys(value, ["type", "v", "context"]) &&
+    value.type === "cloud.panel.context" &&
+    value.v === 1 &&
+    (value.context === null || isPanelPageContext(value.context))
+  );
+}

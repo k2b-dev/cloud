@@ -1,4 +1,4 @@
-import { isPanelContextMessage } from "../contracts/panel-context";
+import { isPanelContextMessage } from "../contracts/panel-context-plain";
 import { PANEL_CONTEXT_CHANGED, PANEL_CONTEXT_ELEMENT, readProviderContext } from "./panel-context-bridge";
 
 /** Installed only by an embedded PanelRuntime; the public page publisher never imports validation. */
