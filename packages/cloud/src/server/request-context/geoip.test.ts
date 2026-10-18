@@ -112,6 +112,14 @@ describe("GeoIP", () => {
     expect(hasBoundedMmdbMetadata(Buffer.concat([valid, Buffer.alloc(128 * 1024 - valid.length + 1)]))).toBe(false);
   });
 
+  test("metadata pre-check counts the payload bytes of a shared string once per reference", () => {
+    const text = [0x5e, ...[(8000 - 285) >> 8, (8000 - 285) & 255], ...Array(8000).fill(0x41)];
+    // An array of 64 pointers to one 8,000-byte string decodes 512 KB from about 8 KB.
+    const shared = [0x1d, 4, 64 - 29, ...Array(64).fill([0x20, 131]).flat(), ...text];
+    expect(hasBoundedMmdbMetadata(metadata(Buffer.from(shared)))).toBe(false);
+    expect(hasBoundedMmdbMetadata(metadata(Buffer.from([0x01, 4, 0x20, 4, ...text])))).toBe(true);
+  });
+
   test("metadata pre-check checks the section mmdb-lib decodes when its scan skips the last marker", () => {
     // mmdb-lib's backward scan misses a marker followed by "Mind.com" and falls back to the earlier section.
     const decoy = metadata(Buffer.from("Mind.comxxxxxx"));

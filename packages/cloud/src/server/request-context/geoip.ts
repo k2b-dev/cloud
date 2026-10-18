@@ -140,7 +140,9 @@ const isBoundedMmdbValue = (
       default:
         return false;
     }
-    if (offset + size > end) return false;
+    // Payload bytes count as well: uncached metadata decodes a shared string once per reference.
+    expansionBudget -= size;
+    if (offset + size > end || expansionBudget < 0) return false;
     offset += size;
   }
   return true;
@@ -159,7 +161,7 @@ const boundedMmdbMetadataStart = (bytes: Buffer): number => {
   }
   if (found <= last) return -1;
   const metaStart = position + found;
-  // Metadata decoding has no cache: count repeated expansion using memoized target costs as well.
+  // Metadata decoding has no cache: count repeated expansion, in nodes and payload bytes, using memoized target costs.
   return isBoundedMmdbValue(bytes, metaStart, metaStart, bytes.length, new Set(), bytes.length - metaStart) ? metaStart : -1;
 };
 
