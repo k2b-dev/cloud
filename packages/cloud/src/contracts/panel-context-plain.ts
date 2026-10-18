@@ -50,10 +50,13 @@ export function isPanelPageContext(value: unknown): value is PanelPageContext {
     seq >= 0 &&
     text(pageId, 36, 36, PAGE_ID) &&
     text(app, 1, 80, APP_ID) &&
-    (scope === undefined ||
-      (exactKeys(scope, ["type", "id"]) && text(scope.type, 3, 180, QUALIFIED_ID) && text(scope.id, 1, 512))) &&
+    (scope === undefined || (exactKeys(scope, ["type", "id"]) && text(scope.type, 3, 180, QUALIFIED_ID) && text(scope.id, 1, 512))) &&
     (help === undefined ||
-      (Array.isArray(help) && help.length >= 1 && help.length <= 3 && help.every((id) => text(id, 0, 180, HELP_ID))))
+      // Index by index: `every` skips the holes of a sparse array, which the schema rejects.
+      (Array.isArray(help) &&
+        help.length >= 1 &&
+        help.length <= 3 &&
+        Array.from({ length: help.length }, (_, index) => index).every((index) => index in help && text(help[index], 0, 180, HELP_ID))))
   );
 }
 

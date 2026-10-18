@@ -65,7 +65,9 @@ export function installPanelSlot(): () => void {
   let consentQueue: Promise<void> = Promise.resolve();
   let consentPending = 0;
   let answersStale = false;
-  const allowed = () => !provider.consent || (consentPending === 0 && !answersStale && answers.get(provider.id) === true);
+  // A save that failed or timed out has an unknown outcome on the server: nothing is shared until the person answers again.
+  const allowed = () =>
+    !provider.consent || (consentPending === 0 && !answersStale && !errors.has(provider.id) && answers.get(provider.id) === true);
   // Whether the current frame has seen a context, in its URL or by message; only such a frame needs a clearing null.
   let disclosed = !!frame && new URL(frame.src, location.origin).searchParams.has(PANEL_CONTEXT_PARAM);
   // The frame may have navigated on its own; only the selected provider's page below its panel path may receive context.
@@ -272,12 +274,21 @@ export function installPanelSlot(): () => void {
     clearTimer();
     slot.dataset.state = "ready";
     if (status) status.textContent = "";
-    // A provider without consent may still carry an older snapshot (a reload after withdrawal); clear it.
-    if (allowed()) sendContext();
-    else if (disclosed) {
+    if (allowed()) {
+      sendContext();
+      return;
+    }
+    // The arriving document may carry a snapshot this controller never cleaned (a navigation that was already under
+    // way at withdrawal, a reload): look at the document itself, not only at what the last one saw.
+    let carries = disclosed;
+    try {
+      carries ||= new URL(frame?.contentWindow?.location.href ?? "about:blank").searchParams.has(PANEL_CONTEXT_PARAM);
+    } catch {
+      carries = true;
+    }
+    if (carries) {
       postNull();
-      // Withdrawn while this document was still loading: its address still carries the snapshot.
-      forgetUrlContext();
+      disclosed = !forgetUrlContext();
     }
   };
   const unload = () => {
@@ -594,6 +605,8 @@ export function installPanelSlot(): () => void {
   phoneChange.addEventListener("change", modeChange);
   column.addEventListener("change", modeChange);
   window.addEventListener("pageshow", pageShow);
+  // Restored from the back/forward cache before this lazy module arrived: the server's answers may be outdated.
+  if (document.documentElement.hasAttribute("data-cloud-page-restored")) void revalidate();
   window.addEventListener("popstate", closeSheet);
   window.navigation?.addEventListener("currententrychange", entryChange);
   window.addEventListener("resize", seedWidth);

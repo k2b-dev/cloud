@@ -126,6 +126,9 @@ test("the zod-free check accepts exactly what the schema accepts", async () => {
     { ...base, help: [""] },
     { ...base, help: ["a".repeat(181)] },
     { ...base, focus: { type: "mail.draft", id: "1" } },
+    // A sparse array survives structured cloning; the check must reject it like the schema.
+    { ...base, help: [, "mail-work"] },
+    { ...base, help: new Array(1) },
     Object.assign(Object.create(null), base),
     [base],
     null,

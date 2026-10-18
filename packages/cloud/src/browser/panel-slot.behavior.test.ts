@@ -26,7 +26,10 @@ else {
     beforeInstall?: (frame: HTMLIFrameElement) => void,
     navigationApi = false,
     href = (id: string) => `/app/${id}/panel?base=1`,
-    contextOptions: { context: PanelPageContext | null; consent: boolean; answer?: boolean | null } = { context: null, consent: false },
+    contextOptions: { context: PanelPageContext | null; consent: boolean; answer?: boolean | null; restored?: boolean } = {
+      context: null,
+      consent: false,
+    },
   ) {
     const dom = createDomTestHarness();
     const navigation = new dom.window.EventTarget();
@@ -56,6 +59,7 @@ else {
     Object.defineProperty(document.getElementById("cloud-panel"), "getBoundingClientRect", {
       value: () => ({ width: dom.window.innerWidth < 1280 ? 344 : 416 }),
     });
+    if (contextOptions.restored) document.documentElement.setAttribute("data-cloud-page-restored", "");
     const serverFrame = document.querySelector<HTMLIFrameElement>("iframe");
     if (serverFrame) beforeInstall?.(serverFrame);
     const dispose = installPanelSlot();
@@ -413,8 +417,8 @@ else {
     scope: { type: "mail.mailbox", id: "Box001" },
   };
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-  const setupContext = (context: PanelPageContext | null = pageContext, consent = true, answer?: boolean | null) =>
-    setup(1440, false, true, undefined, false, undefined, { context, consent, ...(answer !== undefined ? { answer } : {}) });
+  const setupContext = (context: PanelPageContext | null = pageContext, consent = true, answer?: boolean | null, restored = false) =>
+    setup(1440, false, true, undefined, false, undefined, { context, consent, restored, ...(answer !== undefined ? { answer } : {}) });
   // A loaded provider document: its own location and the ready mark its PanelRuntime writes.
   const showDocument = (frame: HTMLIFrameElement, window: object, provider = frame.dataset.cloudPanelFrame) => {
     Object.defineProperty(frame, "contentWindow", { configurable: true, value: window });
@@ -704,6 +708,64 @@ else {
     ).toBe(true);
     expect(h.slot.dataset.contextAllowed).toBe("false");
     dispose();
+  });
+
+  test("a document that arrives after the withdrawal with the old address is cleaned when it reports ready", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const src = h.frame().src;
+    loadedDocument(h, src);
+    ready(h);
+    // The outgoing document is cleaned at once; the navigation already under way still uses the old address.
+    consent("fixture", false);
+    await tick();
+    const arriving = loadedDocument(h, src);
+    ready(h);
+    expect(arriving.shown.searchParams.has("cloud_panel_context")).toBe(false);
+    expect(contexts(arriving.post)).toEqual([null]);
+  });
+
+  test("a restore before the lazy controller arrived rechecks the answers before anything is shared", async () => {
+    const read = deferred();
+    const fetch = spyOn(globalThis, "fetch").mockReturnValue(read.promise);
+    fetchSpy = fetch;
+    {
+      const h = setupContext(pageContext, true, true, true);
+      h.open();
+      const { post } = loadedDocument(h, h.frame().src);
+      ready(h);
+      await tick();
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(contexts(post).every((context) => context === null)).toBe(true);
+      read.resolve(new Response(JSON.stringify({ answers: { fixture: false } })));
+      await tick();
+      await tick();
+      expect(h.slot.dataset.contextAllowed).toBe("false");
+      expect(contexts(post).every((context) => context === null)).toBe(true);
+    }
+  });
+
+  test("after a save with an unknown outcome nothing is shared until the person answers again", async () => {
+    fetchSpy = spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new DOMException("The operation timed out.", "TimeoutError"))
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: true } })));
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    consent("fixture", false);
+    await tick();
+    expect(h.slot.dataset.consent).toBe("ask");
+    restore();
+    await tick();
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(
+      contexts(post)
+        .slice(1)
+        .every((context) => context === null),
+    ).toBe(true);
   });
 
   test("an Allow response that arrives after a restore is checked against the server again", async () => {
