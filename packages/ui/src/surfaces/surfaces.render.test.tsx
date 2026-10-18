@@ -314,7 +314,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(error).toContain("Try again.");
   });
 
-  test("keeps placeholder icons free of decorative frames", () => {
+  test("leaves placeholder chip decoration to the shared icon tile", () => {
     const iconDeclarations = [...parityCss.matchAll(/[^{}]*\.k2b-placeholder__icon[^{}]*\{([^}]*)\}/g)].map((match) => match[1] ?? "");
 
     expect(iconDeclarations.length).toBeGreaterThan(0);
@@ -478,10 +478,9 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
       const rule = parityCss.match(new RegExp(`\\.k2b-ui \\${selector} \\{[^}]*\\}`))?.[0] ?? "";
       expect(rule).not.toContain("box-shadow:");
     }
-    // Link cards retain a neutral tile; dashboard widgets keep their header
-    // glyph directly on the surface to avoid nested chrome.
-    expect(parityCss).toMatch(/\.k2b-link-card__icon \{[^}]*background: var\(--k2b-surface-muted\)/);
-    expect(parityCss).toMatch(/\.k2b-widget__icon \{[^}]*background: transparent/);
+    // Link cards and widget headers leave the chip fill to the shared icon tile.
+    expect(parityCss).not.toMatch(/\.k2b-link-card__icon \{[^}]*background:/);
+    expect(parityCss).not.toMatch(/\.k2b-widget__icon \{[^}]*background:/);
     // `.state-placeholder[data-variant="panel"]` is 13rem/1.5rem, not 14rem/2rem.
     expect(parityCss).toContain('.k2b-placeholder[data-variant="panel"] { min-height: 13rem;');
     // A muted StatGrid tints the frame, never the cells.

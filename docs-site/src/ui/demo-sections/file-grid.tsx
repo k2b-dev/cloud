@@ -1,11 +1,11 @@
-import { Button, createCollectionSelection, DataTable, FileGrid, SegmentedControl } from "@k2b/ui";
+import { Button, createCollectionSelection, DataTable, FileGrid, FileTypeIcon, SegmentedControl } from "@k2b/ui";
 import { createSignal, Match, Switch } from "solid-js";
 
 const files = [
-  { id: "reports", name: "Reports", icon: "ti ti-folder", meta: "" },
-  { id: "notes", name: "Meeting notes.md", icon: "ti ti-file-text", meta: "4 KiB" },
-  { id: "photo", name: "Team photo.jpg", icon: "ti ti-photo", meta: "2.1 MiB" },
-  { id: "archive", name: "Archive.zip", icon: "ti ti-file-zip", meta: "Too large, up to 50 MiB" },
+  { id: "reports", name: "Reports", folder: true, meta: "" },
+  { id: "notes", name: "Meeting notes.md", folder: false, meta: "4 KiB" },
+  { id: "photo", name: "Team photo.jpg", folder: false, meta: "2.1 MiB" },
+  { id: "archive", name: "Archive.zip", folder: false, meta: "Too large, up to 50 MiB" },
 ];
 const tooLarge = (id: string) => id === "archive";
 export function FileGridDemo() {
@@ -41,6 +41,12 @@ export function FileGridDemo() {
             getRowId={(file) => file.id}
             selection={selection}
             columns={[{ id: "name", header: "Name", value: "name" }]}
+            renderCell={({ row }) => (
+              <span class="flex items-center gap-2">
+                <FileTypeIcon name={row.name} folder={row.folder} />
+                <span>{row.name}</span>
+              </span>
+            )}
             onRowDoubleClick={(file) => setOpened(file.name)}
           />
         </Match>
@@ -50,7 +56,7 @@ export function FileGridDemo() {
             getRowId={(file) => file.id}
             selection={selection}
             label="Demo files"
-            renderPreview={(file) => <i class={`${file.icon} text-3xl`} aria-hidden="true" />}
+            renderPreview={(file) => <FileTypeIcon name={file.name} folder={file.folder} size="lg" />}
             renderLabel={(file) => file.name}
             onOpen={(file) => setOpened(file.name)}
           />
@@ -62,9 +68,13 @@ export function FileGridDemo() {
             selection={choice}
             label="Choose files"
             layout="list"
-            renderPreview={(file) => (
-              <i class={`${choice.selected().has(file.id) ? "ti ti-circle-check" : file.icon} text-xl`} aria-hidden="true" />
-            )}
+            renderPreview={(file) =>
+              choice.selected().has(file.id) ? (
+                <i class="ti ti-circle-check text-xl" aria-hidden="true" />
+              ) : (
+                <FileTypeIcon name={file.name} folder={file.folder} />
+              )
+            }
             renderLabel={(file) => file.name}
             renderMeta={(file) => file.meta}
             onOpen={(file) => setOpened(file.name)}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Poppler's pdftotext, pdfinfo, and pdffonts for CI, from an image pinned by
+# Poppler's pdftotext, pdfinfo, pdffonts, and pdfimages for CI, from an image pinned by
 # digest. Installing Poppler on the runner failed CI twice: apt-get hung on
 # the runner's apt mirror, and Homebrew downloads its API index from
 # formulae.brew.sh before every install, which timed out. The image comes
@@ -8,7 +8,7 @@
 #
 # Usage:
 #   .github/poppler.sh install       start the container and link the tools into /usr/local/bin
-#   pdftotext|pdfinfo|pdffonts ...   run the tool through one of those links
+#   pdftotext|pdfinfo|pdffonts|pdfimages ...   run the tool through one of those links
 #
 # The container runs without network access, as the calling user, and reads
 # only the working directory of `install`, the temporary directory, and
@@ -32,5 +32,5 @@ tmp=$(realpath "${TMPDIR:-/tmp}")
 docker run --detach --name "$container" --network none --read-only --user "$(id -u):$(id -g)" \
   --volume "$tmp:$tmp:ro" --volume "$PWD:$PWD:ro" ${RUNNER_TEMP:+--volume "$RUNNER_TEMP:$RUNNER_TEMP:ro"} \
   --entrypoint sleep "$image" infinity >/dev/null
-for name in pdftotext pdfinfo pdffonts; do sudo ln -sf "$(realpath "$0")" "/usr/local/bin/$name"; done
+for name in pdftotext pdfinfo pdffonts pdfimages; do sudo ln -sf "$(realpath "$0")" "/usr/local/bin/$name"; done
 pdftotext -v

@@ -1,7 +1,7 @@
 import type { AiChatTaskView as AssistantChatTask } from "@k2b/cloud/ai";
 import { dates } from "@k2b/stdlib";
 
-export const assistantTaskTitle = (task: AssistantChatTask) => task.prompt.split(/\n|:\s/u)[0]!.slice(0, 80);
+export const assistantTaskTitle = (task: AssistantChatTask) => task.name;
 export const formatAssistantTaskSchedule = (task: AssistantChatTask, locale = "en"): string => {
   if (task.schedule.kind === "once") return locale.startsWith("de") ? "Einmalig" : "One-time";
   const [minute, hour, day, month, weekday] = task.schedule.cron.split(" ");

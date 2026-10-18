@@ -3,6 +3,7 @@ import { CloudResourceRefSchema, ErrorResponseSchema } from "@k2b/cloud/contract
 import { auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono, type Next } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -60,6 +61,7 @@ import {
   MAX_MAILBOX_PREFERENCES,
   type MailCommand,
   type MailCommandInput,
+  mailboxComposeLogoSchema,
   mailboxGrantAccessSchema,
   mailboxSchema,
   mailboxUpdateAccessSchema,
@@ -100,6 +102,7 @@ import {
   updateConversationCollaborationSchema,
   updateConversationCommentSchema,
   updateConversationSummarySchema,
+  updateMailboxComposeLogoInputSchema,
   updateMailboxComposeStyleInputSchema,
   updateSavedConversationViewSchema,
   updateSenderIdentityInputSchema,
@@ -2449,6 +2452,65 @@ const mailOperationsApi = new Hono<MailApiContext>()
         }),
       );
     },
+  )
+  .get(
+    "/mailboxes/:mailboxId/compose-logo",
+    describeRoute({
+      tags: ["Mail:Compose"],
+      summary: "Read the mailbox signature logo (write access)",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailboxComposeLogoSchema, "Mailbox signature logo"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid logo"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    async (c) => respondPublic(c, composeTemplates.getMailboxComposeLogo(requestContext(c), internalMailboxId(c))),
+  )
+  .put(
+    "/mailboxes/:mailboxId/compose-logo",
+    describeRoute({
+      tags: ["Mail:Compose"],
+      summary: "Upload an immutable mailbox signature logo (admin access)",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailboxComposeLogoSchema, "Mailbox signature logo"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid logo"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    bodyLimit({ maxSize: 136536 + 4096, onError: (c) => respond(c, fail(err.badInput("Logo upload exceeds 100 KiB plus JSON metadata"))) }),
+    v("param", mailboxParamSchema),
+    v("json", updateMailboxComposeLogoInputSchema),
+    async (c) =>
+      respondPublic(
+        c,
+        composeTemplates.updateMailboxComposeLogo({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: c.req.valid("json"),
+        }),
+      ),
+  )
+  .delete(
+    "/mailboxes/:mailboxId/compose-logo",
+    describeRoute({
+      tags: ["Mail:Compose"],
+      summary: "Remove the current mailbox signature logo (admin access)",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailboxComposeLogoSchema, "Mailbox signature logo"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid logo"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    async (c) =>
+      respondPublic(c, composeTemplates.removeMailboxComposeLogo({ context: requestContext(c), mailboxId: internalMailboxId(c) })),
   )
   .get("/mailboxes/:mailboxId/compose-style", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, composeTemplates.getMailboxComposeStyle(requestContext(c), internalMailboxId(c))),

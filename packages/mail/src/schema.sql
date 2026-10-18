@@ -2833,3 +2833,24 @@ ALTER TABLE ONLY mail.workflow_run_state
 -- ---------------------------------------------------------------------------
 
 INSERT INTO mail.security_settings (singleton) VALUES (true);
+
+-- Immutable mailbox signature logos ---------------------------------------
+
+CREATE TABLE mail.mailbox_logo_versions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+    content bytea NOT NULL CHECK (octet_length(content) BETWEEN 1 AND 102400),
+    content_type text NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg')),
+    pixel_width integer NOT NULL CHECK (pixel_width BETWEEN 1 AND 1200),
+    pixel_height integer NOT NULL CHECK (pixel_height BETWEEN 1 AND 400),
+    display_width integer NOT NULL CHECK (display_width BETWEEN 1 AND 600),
+    alt_text text NOT NULL CHECK (char_length(alt_text) BETWEEN 1 AND 200),
+    sha256 text NOT NULL CHECK (sha256 ~ '^[a-f0-9]{64}$'),
+    created_by_actor_kind text NOT NULL CHECK (created_by_actor_kind IN ('user', 'service_account')),
+    created_by_actor_id uuid NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX mailbox_logo_versions_mailbox_idx ON mail.mailbox_logo_versions (mailbox_id);
+ALTER TABLE mail.mailboxes ADD COLUMN logo_version_id uuid REFERENCES mail.mailbox_logo_versions(id);
+ALTER TABLE mail.outbox_submissions ADD COLUMN inline_logo_version_id uuid REFERENCES mail.mailbox_logo_versions(id) ON DELETE SET NULL;
+CREATE INDEX outbox_inline_logo_version_idx ON mail.outbox_submissions (inline_logo_version_id) WHERE inline_logo_version_id IS NOT NULL;

@@ -4,6 +4,11 @@ import { isProviderAuthenticationFailure, isProviderTimeout, isTransientProvider
 const failure = (code: string) => Object.assign(new Error(code), { code });
 
 describe("provider connection failures", () => {
+  test("a throttled IMAP command is transient, while a confirmed missing message is not", () => {
+    expect(isTransientProviderFailure({ code: "ETHROTTLE" })).toBe(true);
+    expect(isTransientProviderFailure({ code: "REMOTE_MESSAGE_MISSING" })).toBe(false);
+  });
+
   test("count a server that could not be reached or a connection that broke mid-command as transient", () => {
     for (const code of [
       "ECONNREFUSED",

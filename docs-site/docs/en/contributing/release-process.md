@@ -58,6 +58,15 @@ demo data, never a person's real data, and show only the states that changed
 or that a decision depends on. Pull requests are public, and one baseline
 theme lets reviewers compare screenshots across changes.
 
+## Refresh the bundled location snapshot
+
+The image mirror keeps every pinned DB-IP month, so builds and rebuilds of old
+releases do not depend on db-ip.com. To ship newer data, run
+`bun scripts/geoip-snapshot.ts <YYYY-MM>` and review the Dockerfile pin and
+[sign-in location snapshot details](/en/docs/operations/sign-in-locations).
+The pull request's `mirror` job copies the new month to the mirror. Merge it
+while DB-IP still serves that month: the current or previous month.
+
 ## Let release-please cut the release
 
 release-please runs on every push to `main`:

@@ -21,8 +21,8 @@ function Header(props: WidgetProps): JSX.Element {
     <>
       <Show when={props.icon}>
         {(icon) => (
-          <span class="k2b-widget__icon">
-            <i class={icon()} aria-hidden="true" />
+          <span class="k2b-widget__icon k2b-icon-tile" aria-hidden="true">
+            <i class={icon()} />
           </span>
         )}
       </Show>

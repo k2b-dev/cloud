@@ -28,6 +28,8 @@ refer to an existing schedule, list routines before creating a duplicate.
 
 ## Prepare the routine
 
+Give every routine a short `title` (≤80 characters) in the user's language that says what it does.
+
 1. Resolve the user's timing with the exact runtime timezone (IANA). For a
    one-time reminder or delayed job use kind once and localAt; for recurrence use
    kind cron and cron. Resolve relative wording against the current runtime date

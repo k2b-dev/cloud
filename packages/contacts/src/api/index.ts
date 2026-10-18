@@ -14,7 +14,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, respondMessage, v } from "@k2b/cloud/server";
 import { err, fail, ok, type ServiceError } from "@k2b/stdlib";
-import { type Context, Hono, type MiddlewareHandler, type TypedResponse } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { ResourceShortIdSchema } from "../capability-contracts";
@@ -36,6 +36,7 @@ import {
   resolvePublicId,
   resolvePublicIds,
 } from "../service/public-resources";
+import { isUuid } from "../service/shared";
 import type { Contact, ContactBook } from "../service/types";
 import * as vcard from "../service/vcard";
 import { isSafeWebsiteUrl, resolveContactName } from "../shared";
@@ -44,7 +45,7 @@ import { exportBody } from "./export-stream";
 
 const documentRoute = (options: Parameters<typeof describeRoute>[0]) => describeRoute(options) as MiddlewareHandler<AuthContext>;
 
-// Every authenticated route can return 401; requireBookAccess adds 403/404.
+// Every authenticated route can return 401; book-scoped services add 403/404.
 const authResponses = { 401: jsonResponse(ErrorResponseSchema, "Authentication required") };
 const bookScopedResponses = {
   ...authResponses,
@@ -52,7 +53,6 @@ const bookScopedResponses = {
   404: jsonResponse(ErrorResponseSchema, "Book not found"),
 };
 
-type ApiErrorResponse = TypedResponse<{ message: string; code?: string }, 400 | 401 | 403 | 404 | 409 | 500, "json">;
 const MAX_IMPORT_CONTACTS = contactsService.import.MAX_IMPORT_CONTACTS;
 const MAX_IMPORT_CONTENT_CHARS = contactsService.import.MAX_IMPORT_CONTENT_CHARS;
 const MAX_IMPORT_BODY_BYTES = contactsService.import.MAX_IMPORT_BODY_BYTES;
@@ -470,28 +470,15 @@ const requireUserBackedActor = (c: Context<AuthContext>) => {
   return ok(user);
 };
 
-/**
- * Resolves one book and checks required permissions for the current actor.
- */
-const requireBookAccess = async (c: Context<AuthContext>, publicBookId: string, requiredLevel: PermissionLevel = "read") => {
-  const bookId = await resolvePublicId("books", publicBookId);
-  if (!bookId) {
-    return { book: null, bookId: null, error: await respond(c, fail(err.notFound("Book"))) };
-  }
-  const access = await contactsService.book.authorize({
-    bookId,
-    level: requiredLevel,
-    actor: c.get("actor"),
-    accessSubject: c.get("accessSubject"),
-  });
-  if (!access.ok) return { book: null, bookId: null, error: await respond(c, access) };
-  return { ...access.data, bookId, error: null as ApiErrorResponse | null };
-};
-
 /** Preserve book errors when a transport step fails before the checking operation runs. */
 const failAfterBookAccess = async (c: Context<AuthContext>, checks: { bookId: string; level: PermissionLevel }[], error: ServiceError) => {
   for (const check of checks) {
-    const access = await contactsService.book.authorize({ ...check, actor: c.get("actor"), accessSubject: c.get("accessSubject") });
+    const access = await contactsService.book.get({
+      id: check.bookId,
+      level: check.level,
+      actor: c.get("actor"),
+      accessSubject: c.get("accessSubject"),
+    });
     if (!access.ok) return respond(c, access);
   }
   return respond(c, fail(error));
@@ -716,14 +703,21 @@ const resolveApi = new Hono<AuthContext>().use(auth.requireRole("authenticated")
     // The contact inside the book: an ID wins; otherwise the exact display name.
     const byId = RESOURCE_SHORT_ID.test(query.contact) ? await resolveBookPublicIds("contacts", book.id, [query.contact]) : null;
     if (byId?.[0]) return found(book, byId[0]);
-    const ids = await contactsService.contact.findByDisplayName({ bookId: book.id, name: query.contact, limit: RESOLVE_CANDIDATES });
-    if (ids.length === 0) return notFound(t.noContactWithName({ name: query.contact, book: book.name }));
-    if (ids.length > 1) {
+    const result = await contactsService.contact.findByDisplayName({
+      actor: c.get("actor"),
+      accessSubject: c.get("accessSubject"),
+      bookId: book.id,
+      name: query.contact,
+      limit: RESOLVE_CANDIDATES,
+    });
+    if (!result.ok) return respond(c, result);
+    if (result.data.length === 0) return notFound(t.noContactWithName({ name: query.contact, book: book.name }));
+    if (result.data.length > 1) {
       const loaded = await contactsService.contact.getMany({
         actor: c.get("actor"),
         accessSubject: c.get("accessSubject"),
         bookId: book.id,
-        ids,
+        ids: result.data,
       });
       const contacts = loaded.ok ? await projectContacts(loaded.data) : [];
       return ambiguous(
@@ -732,7 +726,7 @@ const resolveApi = new Hono<AuthContext>().use(auth.requireRole("authenticated")
         contacts.map((contact) => ({ path: `${book.name}:${resolveContactName(contact)}`, id: contact.id })),
       );
     }
-    return found(book, ids[0]!);
+    return found(book, result.data[0]!);
   },
 );
 
@@ -764,13 +758,8 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const userResult = requireUserBackedActor(c);
       if (!userResult.ok) return respond(c, userResult);
-      const [favorites, books] = await Promise.all([
-        contactsService.favorite.list(userResult.data.id),
-        contactsService.book.list({ actor: c.get("actor"), accessSubject: { type: "user", userId: userResult.data.id } }),
-      ]);
-      if (!books.ok) return respond(c, books);
-      const readableBookIds = new Set(books.data.items.map((book) => book.id));
-      return respond(c, ok(await projectFavorites(favorites.filter((favorite) => readableBookIds.has(favorite.bookId)))));
+      const favorites = await contactsService.favorite.list({ actor: c.get("actor"), accessSubject: c.get("accessSubject") });
+      return respond(c, favorites.ok ? ok(await projectFavorites(favorites.data)) : favorites);
     },
   )
   .get(
@@ -790,20 +779,17 @@ const app = new Hono<AuthContext>()
       if (!userResult.ok) return respond(c, userResult);
       const bookId = c.req.param("bookId") ?? "";
       const contactId = c.req.param("contactId") ?? "";
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "read");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
       const [internalContactId] = (await resolveBookPublicIds("contacts", internalBookId!, [contactId])) ?? [];
-      if (!internalContactId) return respond(c, fail(err.notFound("Contact")));
-      return respond(
-        c,
-        ok({
-          favorite: await contactsService.favorite.has({
-            userId: userResult.data.id,
-            bookId: internalBookId!,
-            contactId: internalContactId,
-          }),
-        }),
-      );
+      if (!internalContactId) return failAfterBookAccess(c, [{ bookId: internalBookId, level: "read" }], err.notFound("Contact"));
+      const result = await contactsService.favorite.has({
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
+        bookId: internalBookId,
+        contactId: internalContactId,
+      });
+      return respond(c, result.ok ? ok({ favorite: result.data }) : result);
     },
   )
   .put(
@@ -825,34 +811,21 @@ const app = new Hono<AuthContext>()
       const bookId = c.req.param("bookId") ?? "";
       const contactId = c.req.param("contactId") ?? "";
       const { favorite } = c.req.valid("json");
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "read");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
       const [internalContactId] = (await resolveBookPublicIds("contacts", internalBookId!, [contactId])) ?? [];
-      if (!internalContactId) return respond(c, fail(err.notFound("Contact")));
-      if (!favorite) {
-        await contactsService.favorite.set({
-          userId: userResult.data.id,
-          bookId: internalBookId!,
+      if (!internalContactId) return failAfterBookAccess(c, [{ bookId: internalBookId, level: "read" }], err.notFound("Contact"));
+      return respondMessage(
+        c,
+        contactsService.favorite.set({
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
+          bookId: internalBookId,
           contactId: internalContactId,
-          favorite: false,
-        });
-        return respondMessage(c, Promise.resolve(ok(undefined)), "Favorite state updated");
-      }
-      const contact = await contactsService.contact.get({
-        actor: c.get("actor"),
-        accessSubject: c.get("accessSubject"),
-        bookId: internalBookId!,
-        id: internalContactId,
-      });
-      if (!contact.ok) return respond(c, contact);
-      if (!contact.data) return respond(c, fail(err.notFound("Contact")));
-      await contactsService.favorite.set({
-        userId: userResult.data.id,
-        bookId: internalBookId!,
-        contactId: internalContactId,
-        favorite: true,
-      });
-      return respondMessage(c, Promise.resolve(ok(undefined)), "Favorite state updated");
+          favorite,
+        }),
+        "Favorite state updated",
+      );
     },
   )
 
@@ -935,24 +908,17 @@ const app = new Hono<AuthContext>()
       if (!userResult.ok) return respond(c, userResult);
 
       const bookId = c.req.param("bookId") ?? "";
-      const { book, bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
-      if (error || !book) return error!;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
 
-      const [accessEntries, apiKeys, tags] = await Promise.all([
-        contactsService.book.access.list({ bookId: internalBookId! }),
-        contactsService.book.access.apiKeys.list({ bookId: internalBookId! }),
-        contactsService.tag.list({ bookId: internalBookId! }),
-      ]);
-
-      return respond(
-        c,
-        ok({
-          book: (await projectBooks([book]))[0]!,
-          accessEntries: accessEntries.items,
-          apiKeys,
-          tags: await projectTags(tags),
-        }),
-      );
+      const result = await contactsService.book.settingsContext({
+        id: internalBookId,
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
+      });
+      if (!result.ok) return respond(c, result);
+      const { book, accessEntries, apiKeys, tags } = result.data;
+      return respond(c, ok({ book: (await projectBooks([book]))[0]!, accessEntries, apiKeys, tags: await projectTags(tags) }));
     },
   )
 
@@ -1055,11 +1021,15 @@ const app = new Hono<AuthContext>()
       if (!userResult.ok) return respond(c, userResult);
       const bookId = c.req.param("bookId") ?? "";
 
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
 
-      const entries = await contactsService.book.access.list({ bookId: internalBookId! });
-      return respond(c, ok(entries.items));
+      const entries = await contactsService.book.access.list({
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
+        bookId: internalBookId!,
+      });
+      return respond(c, entries.ok ? ok(entries.data.items) : entries);
     },
   )
 
@@ -1084,10 +1054,19 @@ const app = new Hono<AuthContext>()
       const bookId = c.req.param("bookId") ?? "";
       const { principal, permission } = c.req.valid("json");
 
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
 
-      return respond(c, contactsService.book.access.grant({ bookId: internalBookId!, principal, permission }));
+      return respond(
+        c,
+        contactsService.book.access.grant({
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
+          bookId: internalBookId!,
+          principal,
+          permission,
+        }),
+      );
     },
   )
 
@@ -1113,9 +1092,11 @@ const app = new Hono<AuthContext>()
       const accessId = c.req.param("accessId") ?? "";
       const { permission } = c.req.valid("json");
 
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
 
+      if (!isUuid(accessId))
+        return failAfterBookAccess(c, [{ bookId: internalBookId, level: "admin" }], err.notFound("Book or access entry"));
       return respondMessage(
         c,
         contactsService.book.access.update({
@@ -1152,9 +1133,11 @@ const app = new Hono<AuthContext>()
       const bookId = c.req.param("bookId") ?? "";
       const accessId = c.req.param("accessId") ?? "";
 
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
 
+      if (!isUuid(accessId))
+        return failAfterBookAccess(c, [{ bookId: internalBookId, level: "admin" }], err.notFound("Book or access entry"));
       return respondMessage(
         c,
         contactsService.book.access.remove({
@@ -1189,10 +1172,15 @@ const app = new Hono<AuthContext>()
       if (!userResult.ok) return respond(c, userResult);
       const bookId = c.req.param("bookId") ?? "";
 
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
 
-      return respond(c, async () => ok({ items: await contactsService.book.access.apiKeys.list({ bookId: internalBookId! }) }));
+      const result = await contactsService.book.access.apiKeys.list({
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
+        bookId: internalBookId,
+      });
+      return respond(c, result.ok ? ok({ items: result.data }) : result);
     },
   )
 
@@ -1215,19 +1203,18 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const userResult = requireUserBackedActor(c);
       if (!userResult.ok) return respond(c, userResult);
-      const user = userResult.data;
       const bookId = c.req.param("bookId") ?? "";
       const data = c.req.valid("json");
 
-      const { book, bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
-      if (error || !book) return error!;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
 
       return respond(
         c,
         contactsService.book.access.apiKeys.create({
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
           bookId: internalBookId!,
-          actor: user,
-          bookName: book.name,
           data: {
             name: data.name,
             expiresAt: data.expiresAt ?? null,
@@ -1255,14 +1242,21 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const userResult = requireUserBackedActor(c);
       if (!userResult.ok) return respond(c, userResult);
-      const user = userResult.data;
       const bookId = c.req.param("bookId") ?? "";
       const credentialId = c.req.param("credentialId") ?? "";
 
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
 
-      return respond(c, contactsService.book.access.apiKeys.revoke({ bookId: internalBookId!, credentialId, actor: user }));
+      return respond(
+        c,
+        contactsService.book.access.apiKeys.revoke({
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
+          bookId: internalBookId!,
+          credentialId,
+        }),
+      );
     },
   )
 
@@ -1314,7 +1308,7 @@ const app = new Hono<AuthContext>()
         },
       });
       if (!result.ok) return respond(c, result);
-      const favoriteKeys = user ? await contactsService.favorite.listKeysForContacts({ userId: user.id, contacts: result.data.items }) : [];
+      const favoriteKeys = await contactsService.favorite.listKeysForContacts({ actor: c.get("actor"), contacts: result.data.items });
       const projected = await projectContactPage(result.data.items, favoriteKeys);
 
       return respond(
@@ -1821,17 +1815,18 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const bookId = c.req.param("bookId") ?? "";
       const contactId = c.req.param("contactId") ?? "";
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "read");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
       const contactIds = await resolveBookPublicIds("contacts", internalBookId!, [contactId]);
-      if (!contactIds) return respond(c, fail(err.notFound("Contact")));
+      if (!contactIds) return failAfterBookAccess(c, [{ bookId: internalBookId, level: "read" }], err.notFound("Contact"));
       const page = await contactsService.contact.notes.listPage({
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
         bookId: internalBookId!,
         contactId: contactIds[0]!,
-        viewerUserId: getUserBackedActor(c)?.id ?? null,
         pagination: parsePagination(c.req.valid("query")),
       });
-      return respond(c, ok({ ...page, items: await projectNotes(page.items) }));
+      return respond(c, page.ok ? ok({ ...page.data, items: await projectNotes(page.data.items) }) : page);
     },
   )
   .get(
@@ -1851,16 +1846,17 @@ const app = new Hono<AuthContext>()
       const bookId = c.req.param("bookId") ?? "";
       const contactId = c.req.param("contactId") ?? "";
 
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "read");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
       const contactIds = await resolveBookPublicIds("contacts", internalBookId!, [contactId]);
-      if (!contactIds) return respond(c, fail(err.notFound("Contact")));
+      if (!contactIds) return failAfterBookAccess(c, [{ bookId: internalBookId, level: "read" }], err.notFound("Contact"));
       const notes = await contactsService.contact.notes.list({
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
         bookId: internalBookId!,
         contactId: contactIds[0]!,
-        viewerUserId: getUserBackedActor(c)?.id ?? null,
       });
-      return respond(c, ok(await projectNotes(notes)));
+      return respond(c, notes.ok ? ok(await projectNotes(notes.data)) : notes);
     },
   )
   .post(
@@ -1883,17 +1879,16 @@ const app = new Hono<AuthContext>()
       const data = c.req.valid("json");
       const userResult = requireUserBackedActor(c);
       if (!userResult.ok) return respond(c, userResult);
-      const user = userResult.data;
 
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "write");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
       const contactIds = await resolveBookPublicIds("contacts", internalBookId!, [contactId]);
-      if (!contactIds) return respond(c, fail(err.notFound("Contact")));
+      if (!contactIds) return failAfterBookAccess(c, [{ bookId: internalBookId, level: "write" }], err.notFound("Contact"));
       const result = await contactsService.contact.notes.create({
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
         bookId: internalBookId!,
         contactId: contactIds[0]!,
-        authorUserId: user.id,
-        authorDisplayName: user.displayName ?? user.uid,
         data,
       });
       return respond(c, result.ok ? ok((await projectNotes([result.data]))[0]!) : result);
@@ -1921,20 +1916,21 @@ const app = new Hono<AuthContext>()
       const data = c.req.valid("json");
       const userResult = requireUserBackedActor(c);
       if (!userResult.ok) return respond(c, userResult);
-      const user = userResult.data;
 
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "write");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
       const [contactIds, internalNoteId] = await Promise.all([
         resolveBookPublicIds("contacts", internalBookId!, [contactId]),
         resolvePublicId("notes", noteId),
       ]);
-      if (!contactIds || !internalNoteId) return respond(c, fail(err.notFound("Contact note")));
+      if (!contactIds || !internalNoteId)
+        return failAfterBookAccess(c, [{ bookId: internalBookId, level: "write" }], err.notFound("Contact note"));
       const result = await contactsService.contact.notes.update({
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
         bookId: internalBookId!,
         contactId: contactIds[0]!,
         noteId: internalNoteId,
-        authorUserId: user.id,
         data,
       });
       return respond(c, result.ok ? ok((await projectNotes([result.data]))[0]!) : result);
@@ -1960,23 +1956,24 @@ const app = new Hono<AuthContext>()
       const noteId = c.req.param("noteId") ?? "";
       const userResult = requireUserBackedActor(c);
       if (!userResult.ok) return respond(c, userResult);
-      const user = userResult.data;
 
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "write");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
       const [contactIds, internalNoteId] = await Promise.all([
         resolveBookPublicIds("contacts", internalBookId!, [contactId]),
         resolvePublicId("notes", noteId),
       ]);
-      if (!contactIds || !internalNoteId) return respond(c, fail(err.notFound("Contact note")));
+      if (!contactIds || !internalNoteId)
+        return failAfterBookAccess(c, [{ bookId: internalBookId, level: "write" }], err.notFound("Contact note"));
 
       return respondMessage(
         c,
         contactsService.contact.notes.remove({
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
           bookId: internalBookId!,
           contactId: contactIds[0]!,
           noteId: internalNoteId,
-          authorUserId: user.id,
         }),
         "Note deleted",
       );
@@ -1999,10 +1996,14 @@ const app = new Hono<AuthContext>()
     }),
     async (c) => {
       const bookId = c.req.param("bookId") ?? "";
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "read");
-      if (error) return error;
-      const items = await contactsService.tag.list({ bookId: internalBookId! });
-      return respond(c, ok(await projectTags(items)));
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
+      const items = await contactsService.tag.list({
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
+        bookId: internalBookId!,
+      });
+      return respond(c, items.ok ? ok(await projectTags(items.data)) : items);
     },
   )
   .post(
@@ -2021,9 +2022,14 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const bookId = c.req.param("bookId") ?? "";
       const data = c.req.valid("json");
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "write");
-      if (error) return error;
-      const result = await contactsService.tag.create({ bookId: internalBookId!, data });
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
+      const result = await contactsService.tag.create({
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
+        bookId: internalBookId!,
+        data,
+      });
       return respond(c, result.ok ? ok((await projectTags([result.data]))[0]!) : result);
     },
   )
@@ -2044,11 +2050,17 @@ const app = new Hono<AuthContext>()
       const bookId = c.req.param("bookId") ?? "";
       const tagId = c.req.param("tagId") ?? "";
       const data = c.req.valid("json");
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "write");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
       const ids = await resolveBookPublicIds("tags", internalBookId!, [tagId]);
-      if (!ids) return respond(c, fail(err.notFound("Tag")));
-      const result = await contactsService.tag.update({ bookId: internalBookId!, id: ids[0]!, data });
+      if (!ids) return failAfterBookAccess(c, [{ bookId: internalBookId, level: "write" }], err.notFound("Tag"));
+      const result = await contactsService.tag.update({
+        actor: c.get("actor"),
+        accessSubject: c.get("accessSubject"),
+        bookId: internalBookId!,
+        id: ids[0]!,
+        data,
+      });
       return respond(c, result.ok ? ok((await projectTags([result.data]))[0]!) : result);
     },
   )
@@ -2067,11 +2079,15 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const bookId = c.req.param("bookId") ?? "";
       const tagId = c.req.param("tagId") ?? "";
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "write");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
       const ids = await resolveBookPublicIds("tags", internalBookId!, [tagId]);
-      if (!ids) return respond(c, fail(err.notFound("Tag")));
-      return respondMessage(c, contactsService.tag.remove({ bookId: internalBookId!, id: ids[0]! }), "Tag deleted");
+      if (!ids) return failAfterBookAccess(c, [{ bookId: internalBookId, level: "write" }], err.notFound("Tag"));
+      return respondMessage(
+        c,
+        contactsService.tag.remove({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), bookId: internalBookId!, id: ids[0]! }),
+        "Tag deleted",
+      );
     },
   )
 
@@ -2164,10 +2180,18 @@ const app = new Hono<AuthContext>()
     ),
     async (c) => {
       const bookId = c.req.param("bookId") ?? "";
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
       const body = c.req.valid("json");
-      return respond(c, contactsService.import.preview({ bookId: internalBookId!, content: body.content }));
+      return respond(
+        c,
+        contactsService.import.preview({
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
+          bookId: internalBookId!,
+          content: body.content,
+        }),
+      );
     },
   )
   .post(
@@ -2192,21 +2216,21 @@ const app = new Hono<AuthContext>()
     ),
     async (c) => {
       const bookId = c.req.param("bookId") ?? "";
-      const { bookId: internalBookId, error } = await requireBookAccess(c, bookId, "admin");
-      if (error) return error;
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
       const body = c.req.valid("json");
       return respond(
         c,
-        ok(
-          await contactsService.import.commit({
-            bookId: internalBookId!,
-            candidates: body.contacts,
-            validateCandidate: (candidate) => {
-              const parsed = CreateContactSchema.safeParse(candidate);
-              return parsed.success ? ok(parsed.data) : fail(err.badInput(parsed.error.message));
-            },
-          }),
-        ),
+        contactsService.import.commit({
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
+          bookId: internalBookId!,
+          candidates: body.contacts,
+          validateCandidate: (candidate) => {
+            const parsed = CreateContactSchema.safeParse(candidate);
+            return parsed.success ? ok(parsed.data) : fail(err.badInput(parsed.error.message));
+          },
+        }),
       );
     },
   )
@@ -2254,7 +2278,7 @@ const app = new Hono<AuthContext>()
         },
       });
       if (!result.ok) return respond(c, result);
-      const favoriteKeys = user ? await contactsService.favorite.listKeysForContacts({ userId: user.id, contacts: result.data.items }) : [];
+      const favoriteKeys = await contactsService.favorite.listKeysForContacts({ actor: c.get("actor"), contacts: result.data.items });
       const projected = await projectContactPage(result.data.items, favoriteKeys);
 
       return respond(

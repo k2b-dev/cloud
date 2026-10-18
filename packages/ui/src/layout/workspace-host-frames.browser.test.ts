@@ -55,15 +55,17 @@ afterAll(async () => {
   await browser?.close();
 });
 
-for (const [host, scenario] of [
-  [1024, "open"],
-  [1024, "levels"],
-  [860, "open"],
-] as const) {
-  test(`server frame, first island frame and settled geometry agree at ${host}px (${scenario}), ten reloads`, async () => {
-    const options: FixtureOptions = { scenario };
+for (const { host, viewport, options } of [
+  { host: 1024, viewport: 1440, options: { scenario: "open" } },
+  { host: 1024, viewport: 1440, options: { scenario: "levels" } },
+  { host: 860, viewport: 1440, options: { scenario: "open" } },
+  { host: null, viewport: 1194, options: { mainMin: 760, detailWidth: "lg" } },
+  { host: null, viewport: 834, options: { mainMin: 760, detailWidth: "lg" } },
+  { host: null, viewport: 1440, options: { mainMin: 760, detailWidth: "lg", sidebar: false } },
+] satisfies { host: number | null; viewport: number; options: FixtureOptions }[]) {
+  test(`server frame, first island frame and settled geometry agree at ${host ?? "default"} host / ${viewport}px (${options.scenario ?? "minimum"}), ten reloads`, async () => {
     for (let attempt = 0; attempt < 10; attempt++) {
-      const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+      const page = await browser.newPage({ viewport: { width: viewport, height: 900 }, reducedMotion: "reduce" });
       try {
         const html = renderToString(() => workspaceTree({ AppWorkspace, createComponent, createSignal, Dynamic }, options));
         await page.route("http://workspace.test/**", (route) =>
@@ -71,7 +73,7 @@ for (const [host, scenario] of [
             contentType: "text/html",
             body: `<!doctype html><html><head><style>${css}</style></head>
             <body class="k2b-ui" style="margin:0;display:flex" data-options='${JSON.stringify(options)}'>
-              <div style="container:k2b-app-area / inline-size;width:${host}px;flex:none">
+              <div style="${host === null ? "width:100%" : `container:k2b-app-area / inline-size;width:${host}px`};flex:none">
                 <div id="app" style="height:900px;margin-inline:64px"><solid-island id="island" style="display:contents">${html}</solid-island></div>
               </div><div style="flex:1">Host panel</div>
               <script>requestAnimationFrame(() => { window.workspaceHostServerFrame = (${workspaceGeometry.toString()})(); });</script>
@@ -93,12 +95,17 @@ for (const [host, scenario] of [
         expect(frames[1], `mount #${attempt + 1}`).toEqual(frames[0]);
         expect(frames[2], `settled #${attempt + 1}`).toEqual(frames[0]);
         // This proves that the server used the host before hydration.
-        const expectedForm = host < 1024 ? "overlay" : "column";
-        expect(
-          await page
-            .locator(".k2b-app-workspace")
-            .evaluate((element) => getComputedStyle(element).getPropertyValue("--k2b-workspace-sidebar-form").trim()),
-        ).toBe(expectedForm);
+        const expectedForm = (host ?? viewport) < 1024 ? "overlay" : "column";
+        if (options.sidebar !== false)
+          expect(
+            await page
+              .locator(".k2b-app-workspace__sidebar")
+              .evaluate((element) => getComputedStyle(element).getPropertyValue("--k2b-workspace-sidebar-form").trim()),
+          ).toBe(expectedForm);
+        if (host === null) {
+          expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(viewport === 1440);
+          expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(viewport !== 1440);
+        }
         if (host === 860) expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(true);
       } finally {
         await page.close();
