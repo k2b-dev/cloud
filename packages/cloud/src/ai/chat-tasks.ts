@@ -965,6 +965,33 @@ export const aiChatTasks = {
     }
   },
 
+  /** Run before a restore: the fresh timestamp keeps the recovery backstop away from routines this restore handles. */
+  markRestoreStarted: async (input: { conversationId: string; userId?: string }): Promise<void> => {
+    await sql`UPDATE ai.chat_tasks SET updated_at = now()
+      WHERE conversation_id = ${input.conversationId}::uuid AND reason_code = 'chat_archived'
+        AND (${input.userId ?? null}::uuid IS NULL OR sponsor_user_id = ${input.userId ?? null}::uuid)`;
+  },
+
+  /**
+   * Recovery backstop for a restore whose routine step failed: archive pauses of restored chats become plain pauses,
+   * so they never name an archive that has ended. It never resumes; the grace leaves a restore in progress alone.
+   */
+  relabelRestoredArchivePauses: async (input: { olderThanMs?: number; limit?: number } = {}): Promise<number> => {
+    const limit = Math.min(Math.max(input.limit ?? 100, 1), 500);
+    const graceSeconds = Math.max(input.olderThanMs ?? 5 * 60_000, 0) / 1000;
+    return sql.begin(async (tx) => {
+      const rows = await tx<{ id: string }[]>`
+        SELECT task.id FROM ai.chat_tasks task
+        JOIN ai.conversations conversation ON conversation.id = task.conversation_id
+        WHERE task.reason_code = 'chat_archived' AND conversation.archived_at IS NULL
+          AND task.updated_at < now() - make_interval(secs => ${graceSeconds}::double precision)
+        ORDER BY task.id LIMIT ${limit}
+        FOR UPDATE OF task SKIP LOCKED FOR SHARE OF conversation SKIP LOCKED`;
+      for (const row of rows) await tx`UPDATE ai.chat_tasks SET reason_code = 'paused', updated_at = now() WHERE id = ${row.id}::uuid`;
+      return rows.length;
+    });
+  },
+
   setState: async (input: {
     userId: string;
     taskId: string;

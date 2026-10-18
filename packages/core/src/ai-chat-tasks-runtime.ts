@@ -219,6 +219,7 @@ type RecoveryDependencies = {
   listTerminal: typeof aiChatTasks.listTerminalRunningTurns;
   finalize: (terminal: Awaited<ReturnType<typeof aiChatTasks.listTerminalRunningTurns>>[number]) => Promise<unknown>;
   pruneExpiredRuns: () => Promise<unknown>;
+  relabelRestoredArchivePauses: () => Promise<unknown>;
   materialize: () => Promise<unknown>;
   listQueued: () => Promise<Array<{ occurrence: { id: string } }>>;
   submit: (occurrenceId: string) => Promise<unknown>;
@@ -231,6 +232,7 @@ export const recoverAiChatTasks = async (dependencies: RecoveryDependencies): Pr
     await recoveryStep(`finalize:${occurrence.turnId}`, () => dependencies.finalize(occurrence));
   }
   await recoveryStep("prune-expired-runs", dependencies.pruneExpiredRuns);
+  await recoveryStep("relabel-restored-archive-pauses", dependencies.relabelRestoredArchivePauses);
   await recoveryStep("materialize", dependencies.materialize);
   const queued = await recoveryStep("list-queued", dependencies.listQueued);
   let submitted = 0;
@@ -250,6 +252,7 @@ const recover = (): Promise<{ queued: number }> =>
     listTerminal: () => aiChatTasks.listTerminalRunningTurns(),
     finalize: (terminal) => aiChatTasks.finalizeTurn(terminal),
     pruneExpiredRuns: () => aiChatTasks.pruneExpiredRuns(),
+    relabelRestoredArchivePauses: () => aiChatTasks.relabelRestoredArchivePauses(),
     materialize: () => aiChatTasks.materializeDueOnce(),
     listQueued: () => aiChatTasks.listQueuedOccurrences(),
     submit: submitOccurrence,

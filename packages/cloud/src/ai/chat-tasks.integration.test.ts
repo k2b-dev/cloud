@@ -1325,6 +1325,70 @@ suite("AI chat tasks", () => {
     }
   });
 
+  test("recovery relabels archive pauses a failed restore step left behind, never inside the grace", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
+      VALUES (${`routine-restore-backstop-${suffix}`}, 'local', 'user', 'Routine owner') RETURNING id`;
+    const restoredChat = await aiConversations.createConversation({ ownerUserId: user!.id });
+    const archivedChat = await aiConversations.createConversation({ ownerUserId: user!.id });
+    const create = (chatId: string) =>
+      aiChatTasks.create({
+        userId: user!.id,
+        chatId,
+        prompt: "Save invoices",
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      });
+    try {
+      const restored = (await create(restoredChat.shortId))!;
+      const archived = (await create(archivedChat.shortId))!;
+      const manual = (await create(restoredChat.shortId))!;
+      await aiChatTasks.setState({ userId: user!.id, taskId: manual.shortId, state: "paused" });
+      for (const chat of [restoredChat, archivedChat]) {
+        await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: user!.id });
+        await aiChatTasks.pauseForArchivedChat({ conversationId: chat.id, userId: user!.id });
+      }
+      await sql`UPDATE ai.chat_tasks SET updated_at = now() - interval '10 minutes'
+        WHERE id IN (${restored.id}::uuid, ${archived.id}::uuid, ${manual.id}::uuid)`;
+      await aiChatTasks.markRestoreStarted({ conversationId: restoredChat.id, userId: crypto.randomUUID() });
+      const [unmarked] = await sql<{ untouched: boolean }[]>`SELECT updated_at < now() - interval '5 minutes' AS untouched
+        FROM ai.chat_tasks WHERE id = ${restored.id}::uuid`;
+      expect(unmarked!.untouched).toBe(true);
+      // The restore marks its routines before it restores the chat; its routine step then fails and never runs.
+      await aiChatTasks.markRestoreStarted({ conversationId: restoredChat.id, userId: user!.id });
+      const [marked] = await sql<{ fresh: boolean }[]>`SELECT updated_at > now() - interval '1 minute' AS fresh
+        FROM ai.chat_tasks WHERE id = ${restored.id}::uuid`;
+      expect(marked!.fresh).toBe(true);
+      const untouched = await sql<{ untouched: boolean }[]>`SELECT updated_at < now() - interval '5 minutes' AS untouched
+        FROM ai.chat_tasks WHERE id IN (${manual.id}::uuid, ${archived.id}::uuid)`;
+      expect(untouched).toHaveLength(2);
+      expect(untouched.every((task) => task.untouched)).toBe(true);
+      await aiConversations.restoreConversation({ conversationId: restoredChat.id, ownerUserId: user!.id });
+      await aiChatTasks.relabelRestoredArchivePauses();
+      expect((await aiChatTasks.get({ userId: user!.id, taskId: restored.shortId }))?.reasonCode).toBe("chat_archived");
+      await sql`UPDATE ai.chat_tasks SET updated_at = now() - interval '10 minutes' WHERE id IN (${restored.id}::uuid, ${archived.id}::uuid)`;
+      const pausedMandate = await mandates.get(restored.mandateId!);
+      expect(pausedMandate?.state).toBe("paused");
+      const paused = (await aiChatTasks.get({ userId: user!.id, taskId: restored.shortId }))!;
+      // Other suites' rows may share the database, so the count is not exact.
+      expect(await aiChatTasks.relabelRestoredArchivePauses()).toBeGreaterThanOrEqual(1);
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: restored.shortId })).toMatchObject({
+        state: "paused",
+        reasonCode: "paused",
+        reasonAt: paused.reasonAt,
+        lastError: paused.lastError,
+      });
+      expect(await mandates.get(restored.mandateId!)).toEqual(pausedMandate);
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: archived.shortId })).toMatchObject({
+        state: "paused",
+        reasonCode: "chat_archived",
+      });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id IN (${restoredChat.id}::uuid, ${archivedChat.id}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
   test("archive and restore never undo a stop or accept changed authority", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)

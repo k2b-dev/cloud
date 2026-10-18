@@ -410,7 +410,9 @@ archive paused. Otherwise they need attention with `rights_changed`. A
 routine that stays paused after the restore, because it is a one-time routine
 past its time or because an app session restored the chat, changes to
 `paused`, so it no longer names an archive that has ended. App sessions never
-resume background authority.
+resume background authority. If the restore's routine step fails, the routine
+recovery relabels those routines `paused` after five minutes; it never resumes
+them, so the person resumes them by hand.
 
 A one-time routine resumes only before its time. Once its time has passed, a
 run at that time already happened or was stopped, so it needs a new time

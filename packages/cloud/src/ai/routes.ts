@@ -800,12 +800,14 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx, true);
         if (!conversation) return notFound(c);
+        await aiChatTasks.markRestoreStarted({ conversationId: conversation.id, userId: ctx.ownerUserId });
         const restored = await aiConversations.restoreConversation({
           conversationId: conversation.id,
           ownerUserId: ctx.ownerUserId,
         });
         // A restored chat must not leave archive reasons on routines that stay paused.
         // The phone app may restore the chat and relabel pauses, but may not resume background authority.
+        // If this step fails, the routine recovery relabels them after a grace period; it never resumes.
         if (restored)
           await aiChatTasks
             .resumeForRestoredChat({
