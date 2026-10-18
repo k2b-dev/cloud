@@ -1,5 +1,5 @@
 name: Install dependencies
-description: Restore the Bun install cache and run a bounded install
+description: Give loopback sockets room for test responses, restore the Bun install cache, and run a bounded install
 inputs:
   args:
     description: Extra bun ci arguments
@@ -15,6 +15,16 @@ outputs:
 runs:
   using: composite
   steps:
+    # Browser tests read pages, bundles, and fonts of up to about 2 MB from test
+    # servers on 127.0.0.1. On the runner's Linux 6.17 kernel, the browser's
+    # socket with the kernel's 128 KiB default receive buffer fills while a
+    # loaded browser reads slowly. The kernel then prunes the queue, drops data,
+    # and shrinks the buffer to about 1 KB. The response never completes, so the
+    # page never fires load (#1367). An 8 MiB default receive buffer, four times
+    # the largest of these responses, never fills. It keeps the runner's minimum
+    # and maximum and applies to every socket opened after this step.
+    - shell: bash
+      run: sudo sysctl -q -w net.ipv4.tcp_rmem="4096 8388608 33554432"
     # A warm cache needs no registry, so a registry hang cannot touch the gate.
     # main.yml writes it; consumers only restore the current lockfile's cache.
     - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
