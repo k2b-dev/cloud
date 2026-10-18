@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, spyOn } from "bun:test";
+import { afterEach, beforeEach, spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,8 @@ export const prepareNoTransformRouterTest = () => {
   const root = mkdtempSync(join(tmpdir(), "compression-router-"));
   const { plugin } = createConfig({ dev: true, rootDir: root });
   Bun.plugin(plugin());
+  // The plugin stays registered for later files in the same test process, so its root must outlive this file.
+  process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   const install = () => [
     spyOn(runtime, "ensureRuntimeWatcher").mockResolvedValue(undefined),
     spyOn(runtime, "getCurrentRuntime").mockReturnValue(buildRuntimeFromRegistry([])),
@@ -34,5 +36,4 @@ export const prepareNoTransformRouterTest = () => {
   afterEach(() => {
     for (const spy of spies) spy.mockRestore();
   });
-  afterAll(() => rmSync(root, { recursive: true, force: true }));
 };
