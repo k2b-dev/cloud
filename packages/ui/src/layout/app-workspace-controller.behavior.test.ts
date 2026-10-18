@@ -2112,6 +2112,12 @@ test("a nested workspace's Main chooses its own open detail instead of the surro
 });
 
 describe("waiting detail drawers", () => {
+  const mainRow = (item: HTMLElement) => {
+    const row = document.createElement("div");
+    item.replaceWith(row);
+    row.append(item);
+    return row;
+  };
   const waitingWorkspace = () => {
     const fixture = detailWorkspace();
     const toggle = document.createElement("button");
@@ -2123,8 +2129,8 @@ describe("waiting detail drawers", () => {
     return { ...fixture, toggle };
   };
 
-  for (const interaction of ["pointer", "Enter", " "] as const) {
-    test(`a parked open Detail reopens on content change after a fresh ${interaction} selection`, async () => {
+  for (const interaction of ["pointer", "Enter", " ", "assistive"] as const) {
+    test(`a parked open Detail reopens after a marked ${interaction} choice settles`, async () => {
       const { root, aside, item, title, toggle } = waitingWorkspace();
       let reveals = 0;
       item.scrollIntoView = () => reveals++;
@@ -2135,14 +2141,22 @@ describe("waiting detail drawers", () => {
         if (interaction === "pointer") {
           rememberPointer(item);
           item.focus(); // Native pointer focus follows pointerdown before the click updates content.
-        } else {
+        } else if (interaction === "assistive") item.click();
+        else {
           item.focus();
           detailKey(item, interaction);
         }
         expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        // Selection may be on the item or its row, and may change in the click handler.
+        if (interaction === "Enter") mainRow(item).setAttribute("aria-current", "page");
+        else item.setAttribute("aria-selected", "true");
         title.textContent = "Another contact";
+        if (interaction === "pointer") item.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
         await window.happyDOM.whenAsyncComplete();
         flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        flushFrames();
+        flushFrames(); // Reveal follows the drawer opening.
         expect(aside.dataset.workspaceDetailDrawer).toBe("open");
         expect(toggle.getAttribute("aria-expanded")).toBe("true");
         expect(document.activeElement === (interaction === "pointer" ? item : title)).toBe(true);
@@ -2157,7 +2171,16 @@ describe("waiting detail drawers", () => {
     });
   }
 
-  for (const gesture of ["click", "unmarked click", "secondary button", "cancelled", "roving row"] as const) {
+  for (const gesture of [
+    "click",
+    "unmarked click",
+    "false current",
+    "secondary button",
+    "cancelled",
+    "cancelled after click",
+    "roving row",
+    "Main marked",
+  ] as const) {
     test(`choosing the selected item again: ${gesture}`, async () => {
       const { root, main, aside, item, toggle } = waitingWorkspace();
       // A collection row with a roving tab index, as in FileGrid or DataTable.
@@ -2166,18 +2189,66 @@ describe("waiting detail drawers", () => {
       row.textContent = "Selected row";
       main.append(row);
       const target = gesture === "roving row" ? row : item;
-      if (gesture !== "unmarked click") target.setAttribute("aria-selected", "true");
+      if (gesture === "false current") target.setAttribute("aria-current", "false");
+      else if (gesture === "Main marked") main.setAttribute("aria-current", "page");
+      else if (gesture !== "unmarked click") target.setAttribute("aria-selected", "true");
       const dispose = installAppWorkspaceController({ root });
       try {
         toggle.click();
         detailKey(toggle, "Escape");
         target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: gesture === "secondary button" ? 2 : 0 }));
         if (gesture === "cancelled") target.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
-        else target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        else target.dispatchEvent(new MouseEvent("click", { bubbles: true, button: gesture === "secondary button" ? 2 : 0, detail: 1 }));
+        if (gesture === "cancelled after click") target.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
         flushFrames();
         flushFrames();
         const opens = gesture === "click" || gesture === "roving row";
         expect(aside.dataset.workspaceDetailDrawer).toBe(opens ? "open" : undefined);
+      } finally {
+        dispose();
+      }
+    });
+  }
+
+  test("an unmarked toolbar click and a later live update keep an open Detail parked", async () => {
+    const { root, main, aside, title } = waitingWorkspace();
+    const toolbar = document.createElement("button");
+    main.prepend(toolbar);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      rememberPointer(toolbar);
+      toolbar.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+      flushFrames();
+      flushFrames();
+      title.textContent = "Live contact update";
+      await window.happyDOM.whenAsyncComplete();
+      flushFrames();
+      flushFrames();
+      expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+    } finally {
+      dispose();
+    }
+  });
+
+  for (const key of ["Enter", " "]) {
+    test(`the native click after ${key} does not create a second choice`, async () => {
+      const { root, aside, item } = waitingWorkspace();
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        detailKey(item, key);
+        flushFrames();
+        item.click();
+        flushFrames(); // The key's unmarked check ends here; the click must not restart it.
+        item.setAttribute("aria-current", "page");
+        // A second native click must not have left another check behind.
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        item.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key }));
+        flushFrames();
+        item.click(); // A subsequent assistive click is its own activation.
+        flushFrames();
+        flushFrames();
+        expect(aside.dataset.workspaceDetailDrawer).toBe("open");
       } finally {
         dispose();
       }
@@ -2207,17 +2278,31 @@ describe("waiting detail drawers", () => {
     }
   });
 
-  for (const cancellation of ["none", "pointer", "key", "focus", "hidden", "removed", "not waiting", "dispose"] as const) {
-    test(`a content update does not open a parked Detail after ${cancellation}`, async () => {
+  for (const cancellation of [
+    "pointer",
+    "Detail pointer",
+    "key",
+    "focus",
+    "assistive elsewhere",
+    "hidden",
+    "removed",
+    "not waiting",
+    "dispose",
+  ] as const) {
+    test(`a pending ARIA check is cancelled by ${cancellation}`, async () => {
       const { root, aside, item, title } = waitingWorkspace();
       const outside = document.createElement("button");
       document.body.append(outside);
       const dispose = installAppWorkspaceController({ root });
       try {
-        if (cancellation !== "none") rememberPointer(item);
+        item.setAttribute("aria-selected", "true");
+        rememberPointer(item);
+        item.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
         if (cancellation === "pointer") rememberPointer(outside);
+        if (cancellation === "Detail pointer") rememberPointer(title);
         if (cancellation === "key") detailKey(outside, "Tab");
         if (cancellation === "focus") outside.focus();
+        if (cancellation === "assistive elsewhere") outside.click();
         if (cancellation === "hidden") aside.hidden = true;
         if (cancellation === "removed") aside.remove();
         if (cancellation === "not waiting") {
@@ -2233,6 +2318,8 @@ describe("waiting detail drawers", () => {
         aside.style.setProperty("--k2b-workspace-detail-waiting", "1");
         title.textContent = "Live contact update";
         await window.happyDOM.whenAsyncComplete();
+        flushFrames();
+        flushFrames();
         expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
       } finally {
         if (cancellation !== "dispose") dispose();
@@ -2241,7 +2328,7 @@ describe("waiting detail drawers", () => {
   }
 
   for (const source of ["Detail", "outside Main", "focus only", "editor Enter", "editor Space", "editor pointer"] as const) {
-    test(`${source} does not arm a content watch`, async () => {
+    test(`${source} does not choose an item`, async () => {
       const { root, main, aside, item, title } = waitingWorkspace();
       const input = document.createElement("input");
       main.append(input);
@@ -2261,17 +2348,18 @@ describe("waiting detail drawers", () => {
     });
   }
 
-  for (const interaction of ["pointer", "keyboard", "none", "focus only"] as const) {
+  for (const interaction of ["pointer", "keyboard", "assistive", "none", "focus only"] as const) {
     test(`a waiting detail opened after ${interaction} interaction uses the drawer only for a fresh Main selection`, async () => {
       const { root, aside, item, title, toggle, content } = waitingWorkspace();
       aside.hidden = true;
       const dispose = installAppWorkspaceController({ root });
       try {
-        const chosen = interaction === "pointer" || interaction === "keyboard";
+        const chosen = interaction === "pointer" || interaction === "keyboard" || interaction === "assistive";
         if (interaction !== "none") {
           item.focus();
           if (interaction === "pointer") rememberPointer(item);
           else if (interaction === "keyboard") detailKey(item, "Enter");
+          else if (interaction === "assistive") item.click();
         }
         aside.hidden = false;
         await window.happyDOM.whenAsyncComplete();
@@ -2279,7 +2367,7 @@ describe("waiting detail drawers", () => {
         expect(toggle.getAttribute("aria-expanded")).toBe(chosen ? "true" : "false");
         if (chosen) {
           expect(content.style.getPropertyValue("--k2b-detail-space")).toBe("416px");
-          expect(document.activeElement === (interaction === "keyboard" ? title : item)).toBe(true);
+          expect(document.activeElement === (interaction === "pointer" ? item : title)).toBe(true);
         }
       } finally {
         dispose();

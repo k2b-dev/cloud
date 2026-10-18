@@ -617,7 +617,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     scrollTop: number;
     top: number;
     fresh: boolean;
-    /** A pointer or Enter/Space on an item outside text entry chose it; focus alone does not. */
+    /** Pointer, Enter/Space, or assistive activation chose an item outside text entry. */
     chosen: boolean;
   };
   const detailHidden = new WeakMap<HTMLElement, boolean>();
@@ -660,6 +660,28 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     snapshot.top = snapshot.item.getBoundingClientRect().top;
     snapshot.scrollTop = snapshot.scroller?.scrollTop ?? 0;
   };
+  // Native Enter/Space clicks and pointer clicks continue their initiating event.
+  let activationItem: HTMLElement | null = null;
+  let activationFrame: number | null = null;
+  const clearActivation = () => {
+    if (activationFrame !== null) cancelAnimationFrame(activationFrame);
+    activationFrame = null;
+    activationItem = null;
+  };
+  const endActivation = () => {
+    if (!activationItem) return;
+    // Space's native click follows keyup before the next frame.
+    if (activationFrame !== null) cancelAnimationFrame(activationFrame);
+    activationFrame = requestAnimationFrame(clearActivation);
+  };
+  const onChoiceClick = (event: MouseEvent) => {
+    const preceded = event.target instanceof Node && Boolean(activationItem?.contains(event.target));
+    clearActivation();
+    if (event.detail === 0 && !preceded) {
+      cancelTitleOnInteraction(event);
+      rememberInteraction(event);
+    } else if (!(event.target instanceof Node && lastChosen?.item.contains(event.target))) cancelTitleOnInteraction(event);
+  };
   // A table row can exceed its scroller's width, so keep the clicked cell for horizontal reveal.
   const rememberInteraction = (event: Event) => {
     const target = eventElement(event);
@@ -672,18 +694,22 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const item = target.closest<HTMLElement>(`${FOCUSABLE_SELECTOR}, [tabindex]`);
     if (!main || !item || item === main || !main.contains(item) || item.closest(ROOT_SELECTOR) !== root) return;
     if (event instanceof KeyboardEvent && event.key !== "Enter" && event.key !== " ") return;
+    if (event.type === "pointerdown" || event.type === "keydown") activationItem = item;
+    const assistive = event instanceof MouseEvent && event.type === "click" && event.detail === 0 && event.button === 0;
     const cell = target.closest<HTMLElement>("td, th");
     const snapshot: RememberedItem = {
       item,
       cell: cell && main.contains(cell) && cell.closest(ROOT_SELECTOR) === root ? cell : null,
-      interaction: event instanceof KeyboardEvent ? "keyboard" : "pointer",
+      interaction: event instanceof KeyboardEvent || assistive ? "keyboard" : "pointer",
       scroller: verticalScroller(item, main),
       scrollTop: 0,
       top: 0,
       fresh: true,
-      // A pointer or Enter/Space on an item chooses something; focus alone and text entry do not.
+      // Text entry and focus alone do not choose an item.
       chosen:
-        ((event instanceof PointerEvent && event.type === "pointerdown" && event.button === 0) || event instanceof KeyboardEvent) &&
+        ((event instanceof PointerEvent && event.type === "pointerdown" && event.button === 0) ||
+          event instanceof KeyboardEvent ||
+          assistive) &&
         !target.closest(KEY_OWNER_SELECTOR),
     };
     refreshItem(snapshot);
@@ -691,11 +717,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (snapshot.chosen) lastChosen = snapshot;
     if (snapshot.chosen) {
       const aside = openDetails(root).find((aside) => detailWaiting(aside) && !detailDrawer(aside));
-      if (aside) watchPendingDetail(root, aside, snapshot);
+      if (aside) checkPendingDetail(root, aside, snapshot);
     }
     // Enter in an editor or a field types; only an item that chooses something moves on to its title.
-    if (event instanceof KeyboardEvent && !target.closest(KEY_OWNER_SELECTOR)) {
-      const aside = openDetails(root).find(isVisible);
+    if (snapshot.chosen && snapshot.interaction === "keyboard") {
+      const aside = openDetails(root).find((aside) => isVisible(aside) && (!detailWaiting(aside) || detailDrawer(aside)));
       if (aside) requestTitle(aside, true);
     }
   };
@@ -748,14 +774,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   // that opens later than that does not take the drawer or the focus.
   let lastChosen: RememberedItem | null = null;
   const cancelTitleOnInteraction = (event: Event) => {
+    if (event.type === "pointerdown" || event.type === "keydown") clearActivation();
     if (lastChosen && !(event.target instanceof Node && lastChosen.item.contains(event.target))) {
       lastChosen.chosen = false;
       lastChosen = null;
     }
     if (
       pendingDetail &&
-      !(event.target instanceof Node && pendingDetail.aside.contains(event.target)) &&
-      // Native pointer focus on the chosen item continues the interaction that armed the watch.
+      // Native pointer focus on the chosen item continues its activation.
       !(event.type === "focusin" && event.target instanceof Node && pendingDetail.snapshot.item.contains(event.target))
     )
       cancelPendingDetail();
@@ -895,58 +921,54 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       }),
     );
   };
-  let pendingDetail: { aside: HTMLElement; snapshot: RememberedItem; observer: MutationObserver; stop: () => void } | null = null;
+  let pendingDetail: { aside: HTMLElement; snapshot: RememberedItem; stop: () => void } | null = null;
   const canOpenPendingDetail = (aside: HTMLElement) =>
     aside.isConnected && eventRoot.contains(aside) && !aside.hidden && detailWaiting(aside) && !detailDrawer(aside);
   const cancelPendingDetail = () => {
-    pendingDetail?.observer.disconnect();
     pendingDetail?.stop();
     pendingDetail = null;
   };
-  const watchPendingDetail = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem) => {
+  const checkPendingDetail = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem) => {
     cancelPendingDetail();
-    const open = () => {
-      cancelPendingDetail();
-      snapshot.fresh = false;
-      openDetailDrawer(aside);
-      revealItem(root, aside, snapshot);
-      if (snapshot.interaction === "keyboard") requestTitle(aside);
+    let frame: number | null = null;
+    const settle = () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
+          frame = null;
+          const main = mainElement(root);
+          const selected = snapshot.item.closest('[aria-selected="true"], [aria-current]:not([aria-current="false"])');
+          const opens =
+            canOpenPendingDetail(aside) &&
+            snapshot.chosen &&
+            snapshot.item.isConnected &&
+            main?.contains(snapshot.item) &&
+            snapshot.item.closest(ROOT_SELECTOR) === root &&
+            selected &&
+            selected !== main &&
+            main.contains(selected);
+          cancelPendingDetail();
+          if (!opens) return;
+          snapshot.fresh = false;
+          openDetailDrawer(aside);
+          revealItem(root, aside, snapshot);
+          if (snapshot.interaction === "keyboard") requestTitle(aside);
+        });
+      });
     };
-    const observer = new MutationObserver((records) => {
-      if (!canOpenPendingDetail(aside)) {
-        cancelPendingDetail();
-        return;
-      }
-      if (records.some((record) => aside.contains(record.target))) open();
-    });
-    // Choosing the item that is already selected changes no content. An item
-    // that the app marks as selected or current once the activation has
-    // settled reopens the drawer as well: after Enter or Space, or after the
-    // click a pointer completes. A cancelled gesture, such as a touch that
-    // starts a scroll, ends the watch.
-    const selected = () => snapshot.item.closest('[aria-selected="true"], [aria-current]:not([aria-current="false"])');
-    const settle = () =>
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          if (pendingDetail?.observer === observer && canOpenPendingDetail(aside) && selected()) open();
-        }),
-      );
-    const onClick = (event: Event) => {
-      if (event.target instanceof Node && snapshot.item.contains(event.target)) settle();
+    const onClick = (event: MouseEvent) => {
+      if (event.button === 0 && event.target instanceof Node && snapshot.item.contains(event.target)) settle();
+      else cancelPendingDetail();
     };
     const stop = () => {
+      if (frame !== null) cancelAnimationFrame(frame);
       ownerDocument.removeEventListener("click", onClick, true);
       ownerDocument.removeEventListener("pointercancel", cancelPendingDetail, true);
     };
-    pendingDetail = { aside, snapshot, observer, stop };
+    pendingDetail = { aside, snapshot, stop };
+    ownerDocument.addEventListener("pointercancel", cancelPendingDetail, true);
     if (snapshot.interaction === "keyboard") settle();
-    else {
-      ownerDocument.addEventListener("click", onClick, true);
-      ownerDocument.addEventListener("pointercancel", cancelPendingDetail, true);
-    }
-    observer.observe(aside, { childList: true, subtree: true, characterData: true });
-    // Also detect removal when this controller is scoped to the removed workspace itself.
-    observer.observe(ownerDocument, { childList: true, subtree: true });
+    else ownerDocument.addEventListener("click", onClick, true);
   };
   const detailTransition = (aside: HTMLElement, wasHidden: boolean) => {
     const root = aside.closest<HTMLElement>(ROOT_SELECTOR);
@@ -1756,6 +1778,10 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   ownerDocument.addEventListener("focusin", cancelTitleOnInteraction, true);
   ownerDocument.addEventListener("pointerdown", cancelTitleOnInteraction, true);
   ownerDocument.addEventListener("keydown", cancelTitleOnInteraction, true);
+  ownerDocument.addEventListener("click", onChoiceClick, true);
+  ownerDocument.addEventListener("keyup", endActivation, true);
+  ownerDocument.addEventListener("pointerup", endActivation, true);
+  ownerDocument.addEventListener("pointercancel", clearActivation, true);
   eventRoot.addEventListener("pointerdown", rememberInteraction, true);
   eventRoot.addEventListener("keydown", rememberInteraction, true);
   eventRoot.addEventListener("focusin", onDetailFocusIn);
@@ -1808,6 +1834,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     ownerDocument.removeEventListener("focusin", cancelTitleOnInteraction, true);
     ownerDocument.removeEventListener("pointerdown", cancelTitleOnInteraction, true);
     ownerDocument.removeEventListener("keydown", cancelTitleOnInteraction, true);
+    clearActivation();
+    ownerDocument.removeEventListener("click", onChoiceClick, true);
+    ownerDocument.removeEventListener("keyup", endActivation, true);
+    ownerDocument.removeEventListener("pointerup", endActivation, true);
+    ownerDocument.removeEventListener("pointercancel", clearActivation, true);
     eventRoot.removeEventListener("pointerdown", rememberInteraction, true);
     eventRoot.removeEventListener("keydown", rememberInteraction, true);
     eventRoot.removeEventListener("focusin", onDetailFocusIn);

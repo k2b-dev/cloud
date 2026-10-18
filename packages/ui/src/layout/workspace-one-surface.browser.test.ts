@@ -188,7 +188,7 @@ test("834 with a mouse: md Detail waits and Details opens a drawer", async () =>
   }
 });
 
-test("1194: selecting another item reopens a parked open Detail; live content alone leaves it parked", async () => {
+test("1194: marking a chosen item current reopens a parked Detail; live content alone leaves it parked", async () => {
   const page = await load(1194, { mainMin: 760, detailWidth: "lg", scenario: "selection" });
   try {
     await waiting(page);
@@ -204,6 +204,7 @@ test("1194: selecting another item reopens a parked open Detail; live content al
     await waiting(page);
     const item = main(page).getByRole("button", { name: "Another message" });
     await item.click();
+    expect(await item.getAttribute("aria-current")).toBe("true");
     await page.waitForFunction(() => document.querySelector('[data-workspace-detail-drawer="open"]'));
     expect(await detail(page).locator("h2").innerText()).toBe("Another contact");
     expect(await toggle(page).getAttribute("aria-expanded")).toBe("true");

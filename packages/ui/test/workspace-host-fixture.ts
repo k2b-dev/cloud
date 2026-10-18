@@ -80,7 +80,10 @@ export function workspaceTree({ AppWorkspace, createComponent, createSignal, Dyn
                               createComponent(Dynamic, {
                                 component: "button",
                                 children: "Another message",
-                                onClick: () => setContact("Another contact"),
+                                onClick: (event: MouseEvent) => {
+                                  if (event.currentTarget instanceof HTMLElement) event.currentTarget.setAttribute("aria-current", "true");
+                                  setContact("Another contact");
+                                },
                               }),
                             ]
                           : []),

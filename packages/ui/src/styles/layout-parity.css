@@ -1766,6 +1766,16 @@ html {
     --k2b-workspace-sidebar-space: var(--k2b-workspace-sidebar-width, 13rem);
   }
 
+  /* A stacked sidebar is an overview's object list and has no overlay form,
+     so it keeps its column. */
+  .k2b-ui
+    .k2b-app-workspace:has(
+      > .k2b-app-workspace__sidebar[data-mobile="stacked"],
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar[data-mobile="stacked"]
+    ) {
+    --k2b-workspace-sidebar-track: var(--k2b-workspace-sidebar-space);
+  }
+
   .k2b-ui .k2b-app-workspace__sidebar {
     display: flex;
     width: var(--k2b-workspace-sidebar-width, 13rem);
