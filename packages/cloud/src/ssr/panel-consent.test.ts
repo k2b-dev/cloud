@@ -39,6 +39,12 @@ test("SSR reads exactly once for an open consent provider, with no reads for clo
       revision: 3,
     });
     expect(get.mock.calls).toEqual([[person.id, "fixture"]]);
+    // A save of this browser with an unknown outcome: ask again, keep the revision for the fenced next save.
+    expect(await (await app.request("/", { headers: { cookie: "cloud_panel=1:fixture:24; cloud_panel_unsure=fixture" } })).json()).toEqual({
+      provider: "fixture",
+      allowed: null,
+      revision: 3,
+    });
     get.mockResolvedValue(null);
     expect(await (await app.request("/", { headers: { cookie: "cloud_panel=1:fixture:24" } })).json()).toEqual({
       provider: "fixture",
@@ -51,7 +57,7 @@ test("SSR reads exactly once for an open consent provider, with no reads for clo
       allowed: null,
       revision: 0,
     });
-    expect(get).toHaveBeenCalledTimes(3);
+    expect(get).toHaveBeenCalledTimes(4);
   } finally {
     get.mockRestore();
   }

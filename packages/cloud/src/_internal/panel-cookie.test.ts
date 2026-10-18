@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readPanelCookie, serializePanelCookie } from "./panel-cookie";
+import { readPanelCookie, readPanelUnsure, serializePanelCookie, serializePanelUnsure } from "./panel-cookie";
 
 test("round trips encoded provider ids, open state and rounded width", () => {
   const state = { open: true, provider: "fixture:two", widthRem: 24.126 };
@@ -42,4 +42,13 @@ test("malformed cookies and inaccessible providers close and drop all state", ()
   }
   expect(readPanelCookie(undefined, ["a"])).toEqual({ open: false });
   expect(readPanelCookie("other=1:a:24", ["a"])).toEqual({ open: false });
+});
+
+test("the unsure list names only registered providers and clears itself when empty", () => {
+  expect(readPanelUnsure("a=1; cloud_panel_unsure=fixture:ghost:fixture", ["fixture", "other"])).toEqual(["fixture"]);
+  expect(readPanelUnsure(undefined, ["fixture"])).toEqual([]);
+  expect(serializePanelUnsure(["fixture", "Bad Id", "fixture"], true)).toBe(
+    "cloud_panel_unsure=fixture; Path=/; Max-Age=86400; SameSite=Lax; Secure",
+  );
+  expect(serializePanelUnsure([], false)).toBe("cloud_panel_unsure=; Path=/; Max-Age=0; SameSite=Lax");
 });
