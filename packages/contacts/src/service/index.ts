@@ -360,7 +360,12 @@ export const contactsService = {
       return wake(contacts.remove(config));
     },
     findBookId: (config: Parameters<typeof contacts.findBookId>[0]) => contacts.findBookId(config),
-    findByDisplayName: contacts.findByDisplayName,
+    findByDisplayName: async (config: BookCaller & Parameters<typeof contacts.findByDisplayName>[0]): Promise<Result<string[]>> => {
+      const access = await authorizeBook(config.bookId, config, "read");
+      if (!access.ok) return access;
+      const { bookId, name, limit } = config;
+      return ok(await contacts.findByDisplayName({ bookId, name, limit }));
+    },
     bulk: {
       addTags: async (config: BookCaller & Parameters<typeof contacts.addTags>[0]) => {
         const access = await authorizeBook(config.bookId, config, "write");

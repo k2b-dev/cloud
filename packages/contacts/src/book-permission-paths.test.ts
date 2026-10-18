@@ -2,6 +2,13 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+const insideDeclaration = (source: string, name: string) => {
+  const start = source.indexOf(`const ${name} =`);
+  const nextTopLevel = start < 0 ? -1 : source.slice(start + 1).search(/^const /m);
+  const end = nextTopLevel < 0 ? source.length : start + 1 + nextTopLevel;
+  return (offset: number) => start >= 0 && offset >= start && offset < end;
+};
+
 test("Contacts shares one book permission decision (ACC-02)", async () => {
   const root = import.meta.dir;
   const violations: string[] = [];
@@ -15,10 +22,9 @@ test("Contacts shares one book permission decision (ACC-02)", async () => {
     const searchStart = file === "capabilities.ts" ? source.indexOf("const runSearch = async") : -1;
     const nextSearchTopLevel = searchStart < 0 ? -1 : source.slice(searchStart + 1).search(/^const /m);
     const searchEnd = nextSearchTopLevel < 0 ? source.length : searchStart + 1 + nextSearchTopLevel;
-    const failureStart = ["api/index.ts", "capabilities.ts"].includes(file) ? source.indexOf("const failAfterBookAccess =") : -1;
-    const nextFailureTopLevel = failureStart < 0 ? -1 : source.slice(failureStart + 1).search(/^const /m);
-    const failureEnd = nextFailureTopLevel < 0 ? source.length : failureStart + 1 + nextFailureTopLevel;
-    const inFailure = (offset: number) => failureStart >= 0 && offset >= failureStart && offset < failureEnd;
+    const inFailure = ["api/index.ts", "capabilities.ts"].includes(file) ? insideDeclaration(source, "failAfterBookAccess") : () => false;
+    const inRequireBookPermission = insideDeclaration(source, "requireBookPermission");
+    const inResolveContactAtLevel = insideDeclaration(source, "resolveContactAtLevel");
     const report = (pattern: RegExp, rule: string, allowed: (offset: number) => boolean = () => false) => {
       for (const match of source.matchAll(pattern)) {
         if (allowed(match.index)) continue;
@@ -44,7 +50,19 @@ test("Contacts shares one book permission decision (ACC-02)", async () => {
       report(/\bisContactsAdministrator\b/g, "Contacts administration authority belongs only to service/access.ts and service/index.ts");
     }
     report(/bypassAccess/g, "Book grants cannot be bypassed");
+    if (!file.startsWith("service/")) {
+      report(
+        /\b(?:capByCredential|credentialPermission|permissionFromScopes|minPermission)\b/g,
+        "Credential scope caps belong to the service (service/access.ts)",
+      );
+    }
     if (file.startsWith("frontend/") || file.startsWith("api/") || file === "capabilities.ts") {
+      report(
+        /contactsService\s*\.\s*(?:book|contact)\s*\.\s*get\s*\(\s*\{[^}]*?\blevel\s*:/g,
+        "An intent level on book.get/contact.get is a pre-check; call the checking service operation",
+        (offset) =>
+          inFailure(offset) || (file === "capabilities.ts" && (inRequireBookPermission(offset) || inResolveContactAtLevel(offset))),
+      );
       report(/\{\s*type:\s*["']user["']\s*,\s*userId\b/g, "Use the request accessSubject instead of constructing a user subject");
     }
     if (file !== "frontend/admin.tsx") {

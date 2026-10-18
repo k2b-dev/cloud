@@ -83,6 +83,11 @@ const operations: Operation[] = [
   },
   { name: "book.remove", level: "admin", run: (caller, f) => contactsService.book.remove({ ...caller, id: f.bookId }) },
   { name: "contact.list", level: "read", run: (caller, f) => contactsService.contact.list({ ...caller, bookId: f.bookId }) },
+  {
+    name: "contact.findByDisplayName",
+    level: "read",
+    run: (caller, f) => contactsService.contact.findByDisplayName({ ...caller, bookId: f.bookId, name: "Ada", limit: 10 }),
+  },
   { name: "contact.get", level: "read", run: (caller, f) => contactsService.contact.get({ ...caller, bookId: f.bookId, id: f.contactId }) },
   {
     name: "contact.getMany",

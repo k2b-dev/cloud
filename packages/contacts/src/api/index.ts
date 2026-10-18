@@ -703,14 +703,21 @@ const resolveApi = new Hono<AuthContext>().use(auth.requireRole("authenticated")
     // The contact inside the book: an ID wins; otherwise the exact display name.
     const byId = RESOURCE_SHORT_ID.test(query.contact) ? await resolveBookPublicIds("contacts", book.id, [query.contact]) : null;
     if (byId?.[0]) return found(book, byId[0]);
-    const ids = await contactsService.contact.findByDisplayName({ bookId: book.id, name: query.contact, limit: RESOLVE_CANDIDATES });
-    if (ids.length === 0) return notFound(t.noContactWithName({ name: query.contact, book: book.name }));
-    if (ids.length > 1) {
+    const result = await contactsService.contact.findByDisplayName({
+      actor: c.get("actor"),
+      accessSubject: c.get("accessSubject"),
+      bookId: book.id,
+      name: query.contact,
+      limit: RESOLVE_CANDIDATES,
+    });
+    if (!result.ok) return respond(c, result);
+    if (result.data.length === 0) return notFound(t.noContactWithName({ name: query.contact, book: book.name }));
+    if (result.data.length > 1) {
       const loaded = await contactsService.contact.getMany({
         actor: c.get("actor"),
         accessSubject: c.get("accessSubject"),
         bookId: book.id,
-        ids,
+        ids: result.data,
       });
       const contacts = loaded.ok ? await projectContacts(loaded.data) : [];
       return ambiguous(
@@ -719,7 +726,7 @@ const resolveApi = new Hono<AuthContext>().use(auth.requireRole("authenticated")
         contacts.map((contact) => ({ path: `${book.name}:${resolveContactName(contact)}`, id: contact.id })),
       );
     }
-    return found(book, ids[0]!);
+    return found(book, result.data[0]!);
   },
 );
 
