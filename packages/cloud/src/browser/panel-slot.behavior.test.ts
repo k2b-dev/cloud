@@ -497,7 +497,7 @@ else {
 
   test("switch, close and consent withdrawal clear the old context, and withdrawal stops later updates", async () => {
     fetchSpy = spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: { second: true } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: { fixture: true, second: true } })))
       .mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
     const { publishPageContext } = await import("./panel");
     const h = setupContext(pageContext, true, true);
@@ -541,10 +541,10 @@ else {
     await tick();
     expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
     expect(shown.searchParams.get("base")).toBe("1");
-    // The provider reloads its own document and reports ready again: it is told there is no context.
+    // The provider reloads its own, now clean address and reports ready again: nothing is sent to it.
     post.mockClear();
     ready(h);
-    expect(post.mock.calls).toEqual([[{ type: "cloud.panel.context", v: 1, context: null }, location.origin]]);
+    expect(post).not.toHaveBeenCalled();
   });
 
   test("a frame that navigated to another provider's page gets no context", async () => {
@@ -566,12 +566,10 @@ else {
     const { publishPageContext } = await import("./panel");
     const h = setupContext(pageContext, true, true);
     h.open();
-    const post = spyFrame(h);
+    const { post } = loadedDocument(h, h.frame().src);
     ready(h);
     post.mockClear();
-    const restored = new Event("pageshow");
-    Object.defineProperty(restored, "persisted", { value: true });
-    window.dispatchEvent(restored);
+    restore();
     expect(post.mock.calls).toEqual([[{ type: "cloud.panel.context", v: 1, context: null }, location.origin]]);
     const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
     await tick();
@@ -676,69 +674,36 @@ else {
     dispose();
   });
 
-  test("a restore while a withdrawal is saving never shares again, and the saved denial clears once more", async () => {
+  test("a restore while a withdrawal is saving reads the answers only after the save, and never shares meanwhile", async () => {
     const put = deferred();
-    fetchSpy = spyOn(globalThis, "fetch")
-      .mockReturnValueOnce(put.promise)
-      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: true } })));
-    const h = setupContext(pageContext, true, true);
-    h.open();
-    const { shown, post } = loadedDocument(h, h.frame().src);
-    ready(h);
-    consent("fixture", false);
-    restore();
-    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
-    await tick();
-    expect(
-      contexts(post)
-        .slice(1)
-        .every((context) => context === null),
-    ).toBe(true);
-    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
-    await tick();
-    await tick();
-    expect(contexts(post).at(-1)).toBeNull();
-    expect(
-      contexts(post)
-        .slice(1)
-        .every((context) => context === null),
-    ).toBe(true);
-    expect(h.slot.dataset.contextAllowed).toBe("false");
-  });
-
-  test("a read from a restore that resolves after the withdrawal saved cannot bring sharing back", async () => {
-    const put = deferred();
-    const restoreRead = deferred();
-    const freshRead = deferred();
     const fetch = spyOn(globalThis, "fetch")
       .mockReturnValueOnce(put.promise)
-      .mockReturnValueOnce(restoreRead.promise)
-      .mockReturnValueOnce(freshRead.promise);
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: false } })));
     fetchSpy = fetch;
+    const { publishPageContext } = await import("./panel");
     const h = setupContext(pageContext, true, true);
     h.open();
     const { shown, post } = loadedDocument(h, h.frame().src);
     ready(h);
     consent("fixture", false);
+    expect(contexts(post).at(-1)).toBeNull();
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
     restore();
+    const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    await tick();
+    // Reads and writes run in order: the restore's read waits for the pending save.
+    expect(fetch).toHaveBeenCalledTimes(1);
     put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: false })));
     await tick();
     await tick();
-    // The older read answers first, with the value from before the withdrawal; the fresh one follows.
-    restoreRead.resolve(new Response(JSON.stringify({ answers: { fixture: true } })));
-    await tick();
-    await tick();
-    freshRead.resolve(new Response(JSON.stringify({ answers: { fixture: false } })));
-    await tick();
-    await tick();
-    expect(fetch).toHaveBeenCalledTimes(3);
-    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(fetch).toHaveBeenCalledTimes(2);
     expect(
       contexts(post)
         .slice(1)
         .every((context) => context === null),
     ).toBe(true);
-    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    dispose();
   });
 
   test("an Allow response that arrives after a restore is checked against the server again", async () => {
@@ -757,7 +722,8 @@ else {
     put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: true })));
     await tick();
     await tick();
-    expect(fetch).toHaveBeenCalledTimes(3);
+    // The restore's read runs after the save and has the final word.
+    expect(fetch).toHaveBeenCalledTimes(2);
     expect(contexts(post).every((context) => context === null)).toBe(true);
     expect(h.slot.dataset.contextAllowed).toBe("false");
   });

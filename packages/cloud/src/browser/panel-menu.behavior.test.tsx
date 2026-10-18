@@ -13,7 +13,7 @@ else {
   afterEach(() => cleanup());
   test("the checkbox requests consent through events and follows current controller state", async () => {
     const dom = createDomTestHarness();
-    const initial: PanelState = { provider: "fixture", appName: "Inventory", consent: true, allowed: true, saving: false };
+    const initial: PanelState = { provider: "fixture", appName: "Inventory", consent: true, allowed: true, saving: false, open: true };
     const dispose = render(() => createComponent(PanelMenu, { initial, locale: "en" }), dom.root);
     const request = mock((_event: CustomEvent) => {});
     window.addEventListener("cloud.panel.consent", request);
@@ -38,7 +38,7 @@ else {
 
   test("the checkbox waits for the lazy controller, so an early change cannot get lost", async () => {
     const dom = createDomTestHarness();
-    const initial: PanelState = { provider: "fixture", appName: "Inventory", consent: true, allowed: true, saving: true };
+    const initial: PanelState = { provider: "fixture", appName: "Inventory", consent: true, allowed: true, saving: true, open: true };
     const dispose = render(() => createComponent(PanelMenu, { initial, locale: "en" }), dom.root);
     cleanup = () => {
       dispose();
@@ -51,5 +51,21 @@ else {
     window.dispatchEvent(new CustomEvent("cloud.panel.state", { detail: { ...initial, saving: false } }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(choice().getAttribute("aria-disabled") === "true" || choice().disabled).toBe(false);
+  });
+
+  test("closing the slot collapses an expanded menu, so reopening never finds it hanging open", async () => {
+    const dom = createDomTestHarness();
+    const initial: PanelState = { provider: "fixture", appName: "Inventory", consent: true, allowed: true, saving: false, open: true };
+    const dispose = render(() => createComponent(PanelMenu, { initial, locale: "en" }), dom.root);
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    const trigger = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Panel menu"]')!;
+    trigger.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    window.dispatchEvent(new CustomEvent("cloud.panel.state", { detail: { ...initial, open: false } }));
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });
 }

@@ -57,10 +57,15 @@ export function installPanelSlot(): () => void {
   const saving = new Set<string>();
   const errors = new Set<string>();
   const requests = new AbortController();
-  let answersRequest: Promise<void> | undefined;
-  // A withdrawal blocks sharing from the click until its save settles, whatever a read meanwhile returns.
-  const withdrawing = new Set<string>();
-  const allowed = () => !provider.consent || (!withdrawing.has(provider.id) && answers.get(provider.id) === true);
+  /*
+   * Consent reads and writes run one at a time, in order, and sharing with a provider that needs consent is blocked
+   * while any of them is pending or the answers are stale (a back/forward restore). So no response can overtake a
+   * later one, and only a settled, current `true` lets context through.
+   */
+  let consentQueue: Promise<void> = Promise.resolve();
+  let consentPending = 0;
+  let answersStale = false;
+  const allowed = () => !provider.consent || (consentPending === 0 && !answersStale && answers.get(provider.id) === true);
   // Whether the current frame has seen a context, in its URL or by message; only such a frame needs a clearing null.
   let disclosed = !!frame && new URL(frame.src, location.origin).searchParams.has(PANEL_CONTEXT_PARAM);
   // The frame may have navigated on its own; only the selected provider's page below its panel path may receive context.
@@ -86,18 +91,21 @@ export function installPanelSlot(): () => void {
   };
   const postNull = () => frame?.contentWindow?.postMessage({ type: "cloud.panel.context", v: 1, context: null }, location.origin);
   const clearContext = () => {
-    if (allowed() && panel.context) postNull();
+    if (disclosed) postNull();
   };
   // The provider's address carries the snapshot its server renders on reload: it follows sharing in both directions.
-  function syncUrlContext(next: PanelPageContext | null) {
+  // True when the provider's current address now matches; false while its document is not reachable yet.
+  function syncUrlContext(next: PanelPageContext | null): boolean {
     try {
       const shown = frame?.contentWindow;
-      if (!shown || (next && !showsProvider())) return;
+      if (!shown || (next && !showsProvider())) return false;
       const current = `${shown.location.pathname}${shown.location.search}${shown.location.hash}`;
       const path = withPanelContext(current, next);
       if (path !== current) shown.history.replaceState(shown.history.state, "", path);
+      return true;
     } catch {
-      // Not yet a same-origin document; its ready handshake clears it below.
+      // Not yet a same-origin document (about:blank, a pending navigation); its ready handshake clears it.
+      return false;
     }
   }
   // A withdrawn answer must not come back when the provider reloads its own document: the URL snapshot goes too.
@@ -105,7 +113,8 @@ export function installPanelSlot(): () => void {
   const stopSharing = () => {
     if (!disclosed) return;
     postNull();
-    forgetUrlContext();
+    // Only a frame whose address is clean holds nothing any more; otherwise ready cleans it up later.
+    if (forgetUrlContext()) disclosed = false;
   };
   const collectContext = () => {
     if (!context) return;
@@ -119,40 +128,55 @@ export function installPanelSlot(): () => void {
     context = { ...base, seq: context.seq + 1, ...(scope ? { scope } : {}) };
     sendContext();
   };
-  // A back/forward restore starts a new generation; a read from before it must not fill in answers afterwards.
-  let answersGeneration = 0;
-  // Forget every answer and every read still in flight, then ask the server once more.
-  const revalidate = () => {
-    answersGeneration += 1;
-    answersRequest = undefined;
-    for (const item of panel.providers) if (item.consent) answers.delete(item.id);
+  // Share or stop sharing after every consent step; an open question or its absence follows in update().
+  const reconcile = () => {
+    if (disposed) return;
     update();
-    return readAnswers();
+    if (allowed()) sendContext();
+    else if (provider.consent) stopSharing();
   };
-  const readAnswers = () => {
-    const generation = answersGeneration;
-    answersRequest ??= (async () => {
-      try {
-        const response = await fetch("/api/me/panel-consent", {
-          cache: "no-store",
-          signal: AbortSignal.any([requests.signal, AbortSignal.timeout(PANEL_READY_TIMEOUT_MS)]),
-        });
-        if (!response.ok) throw new Error("Panel consent unavailable");
-        const data: unknown = await response.json();
-        if (generation !== answersGeneration) return;
-        if (data && typeof data === "object" && "answers" in data && data.answers && typeof data.answers === "object") {
-          for (const item of panel.providers) {
-            const value: unknown = Reflect.get(data.answers, item.id);
-            if (!answers.has(item.id) && typeof value === "boolean") answers.set(item.id, value);
-          }
+  const enqueueConsent = (step: () => Promise<void>) => {
+    consentPending += 1;
+    reconcile();
+    const run = consentQueue.then(step).finally(() => {
+      consentPending -= 1;
+      reconcile();
+    });
+    consentQueue = run.catch(() => {});
+    return run;
+  };
+  // Replaces every answer of providers that need consent; a failed read leaves them unanswered (fail closed).
+  const readAnswersNow = async () => {
+    const next = new Map<string, boolean | null>();
+    try {
+      const response = await fetch("/api/me/panel-consent", {
+        cache: "no-store",
+        signal: AbortSignal.any([requests.signal, AbortSignal.timeout(PANEL_READY_TIMEOUT_MS)]),
+      });
+      if (!response.ok) throw new Error("Panel consent unavailable");
+      const data: unknown = await response.json();
+      if (data && typeof data === "object" && "answers" in data && data.answers && typeof data.answers === "object") {
+        for (const item of panel.providers) {
+          const value: unknown = Reflect.get(data.answers, item.id);
+          if (typeof value === "boolean") next.set(item.id, value);
         }
-      } catch {
-        // No answer is fail closed, including an unavailable store or an aborted request.
       }
-      if (generation !== answersGeneration) return;
-      for (const item of panel.providers) if (!answers.has(item.id)) answers.set(item.id, null);
-    })();
-    return answersRequest;
+    } catch {
+      // No answer is fail closed, including an unavailable store or an aborted request.
+    }
+    for (const item of panel.providers) if (item.consent) answers.set(item.id, next.get(item.id) ?? null);
+    answersStale = false;
+  };
+  let answersRead: Promise<void> | undefined;
+  const readAnswers = () => {
+    answersRead ??= enqueueConsent(readAnswersNow);
+    return answersRead;
+  };
+  // A restored page may hold answers changed elsewhere meanwhile: stop sharing now and read them again in order.
+  const revalidate = () => {
+    answersStale = true;
+    answersRead = enqueueConsent(readAnswersNow);
+    return answersRead;
   };
   let search: string | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -224,6 +248,7 @@ export function installPanelSlot(): () => void {
           consent: provider.consent,
           allowed: allowed(),
           saving: saving.has(provider.id),
+          open: isOpen(),
         },
       }),
     );
@@ -318,8 +343,6 @@ export function installPanelSlot(): () => void {
       clearTimer(); // The consent read has its own bounded timeout; provider readiness starts with its load.
       void readAnswers().then(() => {
         if (disposed || !isOpen() || version !== loadVersion) return;
-        // The read belonged to an earlier generation (a restore happened meanwhile): wait for the current one.
-        if (!answers.has(provider.id)) return load(replace);
         loadNow(replace);
         update();
         // open() could not move focus while nothing was there; do it now unless the reader moved on meanwhile.
@@ -329,67 +352,43 @@ export function installPanelSlot(): () => void {
       });
     } else loadNow(replace);
   };
-  const saveConsent = async (request: PanelConsentRequest) => {
+  const saveConsent = (request: PanelConsentRequest) => {
     const item = panel.providers.find((item) => item.id === request.provider && item.consent);
     if (!item || typeof request.allowed !== "boolean" || saving.has(item.id)) return;
     saving.add(item.id);
     errors.delete(item.id);
-    const generation = answersGeneration;
-    // Withdrawal stops disclosure immediately, including while the idempotent save is in flight.
-    if (!request.allowed) {
-      if (provider.id === item.id) stopSharing();
-      withdrawing.add(item.id);
-    }
-    update();
-    try {
-      const response = await fetch(`/api/me/panel-consent/${encodeURIComponent(item.id)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ allowed: request.allowed }),
-        signal: AbortSignal.any([requests.signal, AbortSignal.timeout(PANEL_READY_TIMEOUT_MS)]),
-      });
-      if (!response.ok) throw new Error("Panel consent was not saved");
-      const saved: unknown = await response.json();
-      if (
-        !saved ||
-        typeof saved !== "object" ||
-        !("provider" in saved) ||
-        saved.provider !== item.id ||
-        !("allowed" in saved) ||
-        saved.allowed !== request.allowed
-      )
-        throw new Error("Invalid panel consent answer");
-      if (disposed) return;
-      if (generation !== answersGeneration) {
-        // A restore happened while saving: its read may predate this write. Ask the server again in a new
-        // generation, and keep a withdrawal's barrier until that answer is in.
-        void revalidate().then(() => {
-          withdrawing.delete(item.id);
-          if (disposed) return;
-          update();
-          if (allowed()) sendContext();
-          else if (provider.id === item.id) stopSharing();
+    const questionHadFocus = slot.querySelector("[data-cloud-panel-consent]")?.contains(document.activeElement);
+    // Enqueueing blocks sharing at once, so a withdrawal stops disclosure before its save even starts.
+    void enqueueConsent(async () => {
+      try {
+        const response = await fetch(`/api/me/panel-consent/${encodeURIComponent(item.id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ allowed: request.allowed }),
+          signal: AbortSignal.any([requests.signal, AbortSignal.timeout(PANEL_READY_TIMEOUT_MS)]),
         });
-        return;
+        if (!response.ok) throw new Error("Panel consent was not saved");
+        const saved: unknown = await response.json();
+        if (
+          !saved ||
+          typeof saved !== "object" ||
+          !("provider" in saved) ||
+          saved.provider !== item.id ||
+          !("allowed" in saved) ||
+          saved.allowed !== request.allowed
+        )
+          throw new Error("Invalid panel consent answer");
+        answers.set(item.id, request.allowed);
+      } catch {
+        answers.set(item.id, null);
+        errors.add(item.id);
+      } finally {
+        saving.delete(item.id);
       }
-      withdrawing.delete(item.id);
-      answers.set(item.id, request.allowed);
-      // Anything shared while the withdrawal was in flight is cleared once more.
-      if (!request.allowed && provider.id === item.id) stopSharing();
-      const questionHadFocus = slot.querySelector("[data-cloud-panel-consent]")?.contains(document.activeElement);
-      update();
-      if (provider.id === item.id && isOpen() && questionHadFocus) frame?.focus();
-      if (provider.id === item.id && request.allowed) sendContext();
-    } catch {
+    }).then(() => {
       if (disposed) return;
-      if (provider.id === item.id) stopSharing();
-      withdrawing.delete(item.id);
-      answers.set(item.id, null);
-      errors.add(item.id);
-    } finally {
-      saving.delete(item.id);
-      if (!disposed) update();
-    }
+      if (provider.id === item.id && isOpen() && questionHadFocus && slot.dataset.consent !== "ask") frame?.focus();
+    });
   };
   const consentRequest = (event: CustomEvent<PanelConsentRequest>) => {
     void saveConsent(event.detail);
@@ -522,12 +521,7 @@ export function installPanelSlot(): () => void {
     closeSheet();
     // A restored page may hold answers changed elsewhere meanwhile: stop sharing and read them again.
     if (!panel.providers.some((item) => item.consent)) return;
-    if (provider.consent) stopSharing();
-    void revalidate().then(() => {
-      if (disposed || (provider.consent && !answers.has(provider.id))) return;
-      update();
-      if (allowed()) sendContext();
-    });
+    void revalidate();
   };
   const entryChange = (event: NavigationCurrentEntryChangeEvent) => {
     if (event.navigationType === "push") closeSheet();
@@ -622,6 +616,7 @@ export function installPanelSlot(): () => void {
       consent: provider.consent,
       allowed: allowed(),
       saving: saving.has(provider.id),
+      open: isOpen(),
     };
     disposeMenu = render(
       () =>

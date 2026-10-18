@@ -14,7 +14,8 @@ export default function PanelMenu(props: { initial: PanelState; locale: string }
   const [open, setOpen] = createSignal(false);
   onMount(() => {
     const changed = (event: CustomEvent<PanelState>) => {
-      if (event.detail.provider !== state().provider || !event.detail.consent) setOpen(false);
+      // A closed slot, another provider or one without consent leaves no reason for the menu to stay expanded.
+      if (!event.detail.open || event.detail.provider !== state().provider || !event.detail.consent) setOpen(false);
       setState(event.detail);
     };
     window.addEventListener("cloud.panel.state", changed);

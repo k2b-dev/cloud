@@ -8,7 +8,7 @@ export const PANEL_CONTEXT_ELEMENT = "cloud-panel-context";
 export type PageContextSource = { scope?: CloudResourceRef };
 export type PageContextCollection = { sources: PageContextSource[] };
 export type PanelConsentRequest = { provider: string; allowed: boolean };
-export type PanelState = { provider: string; appName: string; consent: boolean; allowed: boolean; saving: boolean };
+export type PanelState = { provider: string; appName: string; consent: boolean; allowed: boolean; saving: boolean; open: boolean };
 
 declare global {
   interface WindowEventMap {
