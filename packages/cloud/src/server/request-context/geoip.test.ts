@@ -86,6 +86,22 @@ describe("GeoIP", () => {
       expect(hasBoundedMmdbMetadata(metadata(Buffer.from(payload)))).toBe(false);
   });
 
+  test("map keys must be strings, inline or through one bounded pointer", () => {
+    for (const payload of [
+      [0xe1, 0x40, 0x40],
+      [0xe1, 0x20, 4, 0x40, 0x40],
+    ])
+      expect(hasBoundedMmdbMetadata(metadata(Buffer.from(payload)))).toBe(true);
+    for (const payload of [
+      [0xe1, 0xc0, 0x40],
+      [0xe1, 0, 4, 0x40],
+      [0xe1, 0x20, 4, 0x40, 0xc0],
+      [0xe1, 0x20, 4, 0x40, 0x20, 6, 0x40],
+      [0xe1, 0x20, 4, 0x40, 0x41],
+    ])
+      expect(hasBoundedMmdbMetadata(metadata(Buffer.from(payload)))).toBe(false);
+  });
+
   test("metadata pre-check uses the last marker and walks deep nesting without recursion", () => {
     const valid = metadata(Buffer.from([0x40]));
     expect(hasBoundedMmdbMetadata(Buffer.concat([valid, metadata(Buffer.from([0x41]))]))).toBe(false);

@@ -293,6 +293,48 @@ test("shared pointer containers stay bounded during upload probes and lookups", 
   expect(database.get("8.8.8.8")).not.toBe(result);
 });
 
+test("shared arrays used as map keys are rejected before decoder coercion", () => {
+  const bytes = mmdbFixture("city", { mapKeyPointerDepth: 24 });
+  const started = performance.now();
+  expect(() => parseGeoIpUpload(bytes)).toThrow(expect.objectContaining({ code: "geoip_invalid" }));
+  expect(performance.now() - started).toBeLessThan(500);
+  const database = openGeoIpDatabase("city", bytes)!;
+  expect(database).not.toBeNull();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const lookupStarted = performance.now();
+    expect(() => database.get("8.8.8.8")).toThrow();
+    expect(performance.now() - lookupStarted).toBeLessThan(500);
+  }
+});
+
+test("a container already checked as a value cannot be reused as a map key", () => {
+  const bytes = mmdbFixture("city", { repeatedPointerDepth: 1 });
+  const dataStart = new Reader(bytes).metadata.searchTreeSize + 16;
+  // The shared array follows the five-byte leaf string and takes twelve bytes.
+  bytes.set([0xe2, 0x40, 0x38, 0, 0, 0, 5, 0x38, 0, 0, 0, 5, 0x40], dataStart + 17);
+  expect(() => parseGeoIpUpload(bytes)).toThrow(expect.objectContaining({ code: "geoip_invalid" }));
+  expect(() => openGeoIpDatabase("city", bytes)!.get("8.8.8.8")).toThrow();
+});
+
+test("data pointers cannot escape into the metadata marker or section", () => {
+  for (const sectionOffset of [0, 14]) {
+    const bytes = mmdbFixture("city");
+    const dataStart = new Reader(bytes).metadata.searchTreeSize + 16;
+    const marker = bytes.indexOf(Buffer.from("abcdef4d61784d696e642e636f6d", "hex"));
+    bytes[dataStart] = 0x38;
+    bytes.writeUInt32BE(marker + sectionOffset - dataStart, dataStart + 1);
+    expect(() => openGeoIpDatabase("city", bytes)!.get("8.8.8.8")).toThrow();
+  }
+});
+
+test("map keys can point to a shared string", () => {
+  const bytes = mmdbFixture("city", { mapKeyPointerDepth: 0 });
+  expect(parseGeoIpUpload(bytes).kind).toBe("city");
+  const database = openGeoIpDatabase("city", bytes)!;
+  expect(database.get("8.8.8.8")).toMatchObject({ leaf: "shared value" });
+  expect(database.get("2a01:4f8::1")).toMatchObject({ leaf: "shared value" });
+});
+
 test("metadata pointer expansion is rejected before upload parsing or opening a stored database", () => {
   const bytes = mmdbFixture("city", { metadataPointerDepth: 24 });
   const started = performance.now();

@@ -45,61 +45,75 @@ const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {};
 
 const METADATA_MARKER = Buffer.from("abcdef4d61784d696e642e636f6d", "hex");
-export const hasBoundedMmdbMetadata = (bytes: Uint8Array): boolean => {
-  // Mirror mmdb-lib's backward marker scan exactly: it can skip a marker after a partial match, and the checked
-  // section must be the one Reader decodes. The MMDB spec caps the section, marker included, at 128 KiB.
-  const floor = bytes.byteLength - 128 * 1024;
-  const last = METADATA_MARKER.length - 1;
-  let found = 0;
-  let position = bytes.byteLength - 1;
-  while (found <= last && position-- > 0) {
-    if (position < floor) return false;
-    found += bytes[position] === METADATA_MARKER[last - found] ? 1 : -found;
-  }
-  if (found <= last) return false;
-  const metadata = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).subarray(position + found);
-  let budget = metadata.length;
-  let offset = 0;
-  const stack: { remaining: number; resume?: number }[] = [{ remaining: 1 }];
-  // Metadata decoding has no cache, so bound pointer expansion before constructing a Reader.
+const isBoundedMmdbValue = (
+  bytes: Buffer,
+  start: number,
+  base: number,
+  end: number,
+  checked: Set<number>,
+  expandedLimit?: number,
+): boolean => {
+  if (start < base || start >= end) return false;
+  let budget = end - base;
+  let offset = start;
+  let expansionBudget = expandedLimit ?? Infinity;
+  const costs = expandedLimit === undefined ? undefined : new Map<number, number>();
+  const active = new Set([start]);
+  checked.add(start);
+  const stack: { remaining: number; map?: boolean; resume?: number; target?: number; expansionStart?: number }[] = [{ remaining: 1 }];
   while (stack.length) {
     const frame = stack[stack.length - 1]!;
     if (!frame.remaining) {
       stack.pop();
+      if (frame.target !== undefined) {
+        active.delete(frame.target);
+        costs?.set(frame.target, frame.expansionStart! - expansionBudget);
+      }
       offset = frame.resume ?? offset;
       continue;
     }
+    const key = frame.map && frame.remaining % 2 === 0;
     frame.remaining--;
-    if (--budget < 0 || offset >= metadata.length) return false;
-    const control = metadata[offset++]!;
+    if (--budget < 0 || --expansionBudget < 0 || offset < base || offset >= end) return false;
+    const control = bytes[offset++]!;
     let type = control >> 5;
+    if (key && type !== 2 && type !== 1) return false;
     if (type === 1) {
       const size = (control >> 3) & 3;
-      if (offset + size + 1 > metadata.length) return false;
+      if (offset + size + 1 > end) return false;
       let target = size === 3 ? 0 : control & 7;
-      for (let i = 0; i <= size; i++) target = target * 256 + metadata[offset++]!;
-      target += [0, 2048, 526336, 0][size]!;
-      if (target >= metadata.length) return false;
-      stack.push({ remaining: 1, resume: offset });
+      for (let i = 0; i <= size; i++) target = target * 256 + bytes[offset++]!;
+      target += base + [0, 2048, 526336, 0][size]!;
+      if (target < base || target >= end || active.has(target)) return false;
+      // A key may point directly to a string, never another pointer or a container.
+      if (key && bytes[target]! >> 5 !== 2) return false;
+      if (checked.has(target)) {
+        expansionBudget -= costs?.get(target) ?? 0;
+        if (expansionBudget < 0) return false;
+        continue;
+      }
+      checked.add(target);
+      active.add(target);
+      stack.push({ remaining: 1, resume: offset, target, expansionStart: expansionBudget });
       offset = target;
       continue;
     }
     if (type === 0) {
-      if (offset >= metadata.length) return false;
-      type = metadata[offset++]! + 7;
+      if (offset >= end) return false;
+      type = bytes[offset++]! + 7;
       if (type < 8 || type > 15) return false;
     }
     let size = control & 31;
     if (size >= 29) {
       const extra = size - 28;
-      if (offset + extra > metadata.length) return false;
-      size = [29, 285, 65821][extra - 1]! + metadata.readUIntBE(offset, extra);
+      if (offset + extra > end) return false;
+      size = [29, 285, 65821][extra - 1]! + bytes.readUIntBE(offset, extra);
       offset += extra;
     }
     if (type === 7 || type === 11) {
       const remaining = size * (type === 7 ? 2 : 1);
       if (remaining > budget) return false;
-      stack.push({ remaining });
+      stack.push({ remaining, map: type === 7 });
       continue;
     }
     switch (type) {
@@ -126,24 +140,60 @@ export const hasBoundedMmdbMetadata = (bytes: Uint8Array): boolean => {
       default:
         return false;
     }
-    if (offset + size > metadata.length) return false;
+    if (offset + size > end) return false;
     offset += size;
   }
   return true;
 };
 
+const boundedMmdbMetadataStart = (bytes: Buffer): number => {
+  // Mirror mmdb-lib's backward marker scan exactly: it can skip a marker after a partial match, and the checked
+  // section must be the one Reader decodes. The MMDB spec caps the section, marker included, at 128 KiB.
+  const floor = bytes.byteLength - 128 * 1024;
+  const last = METADATA_MARKER.length - 1;
+  let found = 0;
+  let position = bytes.byteLength - 1;
+  while (found <= last && position-- > 0) {
+    if (position < floor) return -1;
+    found += bytes[position] === METADATA_MARKER[last - found] ? 1 : -found;
+  }
+  if (found <= last) return -1;
+  const metaStart = position + found;
+  // Metadata decoding has no cache: count repeated expansion using memoized target costs as well.
+  return isBoundedMmdbValue(bytes, metaStart, metaStart, bytes.length, new Set(), bytes.length - metaStart) ? metaStart : -1;
+};
+
+export const hasBoundedMmdbMetadata = (bytes: Uint8Array): boolean =>
+  boundedMmdbMetadataStart(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)) !== -1;
+
 export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "bundled" | "uploaded" = "bundled") => {
-  if (!hasBoundedMmdbMetadata(bytes)) return null;
+  // This Buffer is a view: Buffer.from(bytes) would copy the entire mmap.
+  const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const metadataStart = boundedMmdbMetadataStart(buffer);
+  if (metadataStart === -1) return null;
+  const dataEnd = metadataStart - METADATA_MARKER.length;
   try {
-    // Cache decoded pointer targets by byte offset so shared containers decode once per lookup.
-    const cache = new Map<string | number, unknown>();
-    // This Buffer is a view: Buffer.from(bytes) would copy the entire mmap.
-    const reader = new Reader(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), { cache });
+    const cursors = new Map<string | number, unknown>();
+    const checked = new Set<number>();
+    // decodeMap coerces non-string keys, which can expand shared arrays exponentially.
+    // mmdb-lib asks the cache before decoding each record and pointer target.
+    const cache = {
+      get(key: string | number) {
+        if (typeof key !== "number" || (!checked.has(key) && !isBoundedMmdbValue(buffer, key, dataStart, dataEnd, checked)))
+          throw new Error("Invalid MMDB data value");
+        return cursors.get(key);
+      },
+      set(key: string | number, value: unknown) {
+        cursors.set(key, value);
+      },
+    };
+    const reader = new Reader(buffer, { cache });
     const metadata = reader.metadata;
+    const dataStart = metadata.searchTreeSize + 16;
     if (
       !Number.isSafeInteger(metadata.nodeCount) ||
       metadata.nodeCount <= 0 ||
-      !(metadata.searchTreeSize + 16 <= bytes.byteLength) ||
+      !(dataStart <= dataEnd) ||
       metadata.binaryFormatMajorVersion !== 2
     )
       return null;
@@ -157,7 +207,8 @@ export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "b
         try {
           return reader.get(address);
         } finally {
-          cache.clear();
+          cursors.clear();
+          checked.clear();
         }
       },
     };

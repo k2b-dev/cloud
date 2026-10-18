@@ -42,6 +42,7 @@ export const mmdbFixture = (
     description?: string;
     cityName?: string;
     repeatedPointerDepth?: number;
+    mapKeyPointerDepth?: number;
     metadataPointerDepth?: number;
     metadataDescriptionPointer?: boolean;
     /** Null leaves out the optional `languages` metadata key. */
@@ -53,10 +54,11 @@ export const mmdbFixture = (
   const nodes = [root];
   const data: Buffer[] = [];
   let shared: Buffer | undefined;
-  if (options?.repeatedPointerDepth !== undefined) {
+  const pointerDepth = options?.mapKeyPointerDepth ?? options?.repeatedPointerDepth;
+  if (pointerDepth !== undefined) {
     data.push(encode("leaf"));
     let offset = 0;
-    for (let depth = 0; depth < options.repeatedPointerDepth; depth++) {
+    for (let depth = 0; depth < pointerDepth; depth++) {
       shared = pointer(offset);
       offset = data.reduce((total, bytes) => total + bytes.length, 0);
       data.push(Buffer.concat([Buffer.from([0x02, 0x04]), shared, shared]));
@@ -73,7 +75,12 @@ export const mmdbFixture = (
           options?.corruptData
             ? Buffer.from([0])
             : shared
-              ? Buffer.concat([Buffer.from([0xe2]), encode("value"), encode(value), encode("shared"), shared])
+              ? Buffer.concat([
+                  Buffer.from([0xe2]),
+                  encode("value"),
+                  encode(value),
+                  ...(options?.mapKeyPointerDepth !== undefined ? [shared, encode("shared value")] : [encode("shared"), shared]),
+                ])
               : encode(value),
         );
       } else {
