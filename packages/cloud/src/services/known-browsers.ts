@@ -110,6 +110,18 @@ export const countrySeen = async (
   return Boolean(userId && row?.present);
 };
 
+/** Both country facts use the same retention window and one query, including decoys. */
+export const countryHistory = async (
+  db: SQL,
+  { userId, country, now }: { userId?: string | null; country: string | null; now: Date },
+): Promise<{ seen: boolean; any: boolean }> => {
+  const [row] = await db<{ seen: boolean; any: boolean }[]>`
+    SELECT COALESCE(bool_or(country = ${country}), false) AS seen, count(*) > 0 AS "any"
+    FROM auth.sign_in_countries WHERE user_id = ${userId ?? crypto.randomUUID()}::uuid AND last_seen_at > ${cutoffAt(now)}
+  `;
+  return { seen: Boolean(userId && row?.seen), any: Boolean(userId && row?.any) };
+};
+
 export const trustState = async (
   db: SQL,
   now: Date,
@@ -169,4 +181,4 @@ export const cleanup = async (
 };
 
 /** Core-internal persistence and maintenance; no request surface. */
-export const knownBrowsers = { findBrowser, countrySeen, trustState, cleanup };
+export const knownBrowsers = { findBrowser, countrySeen, countryHistory, trustState, cleanup };

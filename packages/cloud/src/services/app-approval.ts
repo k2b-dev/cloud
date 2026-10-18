@@ -13,15 +13,20 @@ import {
   AppDevicePublicKeySchema,
   type AppDeviceRequest,
   type AppDeviceView,
+  AppLoginContextSchema,
   type AppPendingLogin,
   appDeviceProofMessage,
   appPairingProofMessage,
   APP_APPROVAL_LIMITS as limits,
 } from "../contracts/app-approval";
+import { addressPrefix } from "../server/request-context/address";
 import { publicCloudOrigin } from "../shared/app-url";
 import { isAccountCategoryAllowed } from "./account-category-policy";
 import { appApprovalText } from "./approvals/device";
 import { audit } from "./audit";
+import { countryHistory, findBrowser, trustState } from "./known-browsers";
+import { type AppLoginAddressStore, appLoginAddressProof, appLoginAddressMatches, valkeyAppLoginAddressStore } from "./login-address-store";
+import { type AppLoginRequestContext, buildLoginContext, trimAppLoginResponse } from "./login-context";
 import { logger } from "./logging";
 import { pairingSecret } from "./pairing-secret";
 import { toPgTextArray } from "./postgres";
@@ -131,6 +136,7 @@ type PairingRow = {
   comparison: string | null;
 };
 type LoginRow = {
+  context: unknown;
   kind: "browser" | "terminal";
   device_authorization_id: string | null;
   client_id: string | null;
@@ -262,7 +268,25 @@ export const createAppApprovalService = (
   configuration = (requireEnabled = true) => readAppApprovalConfig(db, requireEnabled),
   hints: AppLoginDecisionHints = syncLoginDecisionHints,
   push: AppLoginPushSender = fetchPushSender,
+  addresses: AppLoginAddressStore = valkeyAppLoginAddressStore,
 ) => {
+  // Error messages may contain their inputs; log only the error class, never addresses or proofs.
+  const addressFailure = (error: unknown) =>
+    log.warn("App login address hint unavailable", { error: error instanceof Error ? error.name : "UnknownError" });
+  const addSameNetwork = async (logins: AppPendingLogin[], address?: string) => {
+    const prefix = addressPrefix(address ?? "unknown");
+    const browserLogins = logins.filter((login) => !login.terminal && login.context);
+    if (!prefix || !browserLogins.length) return;
+    try {
+      const proofs = await addresses.read(browserLogins.map((login) => login.requestId));
+      for (const login of browserLogins) {
+        const proof = proofs.get(login.requestId);
+        if (proof && login.context && appLoginAddressMatches(proof, prefix)) login.context.sameNetwork = true;
+      }
+    } catch (error) {
+      addressFailure(error);
+    }
+  };
   const config = async (requireEnabled = true) => {
     const value = await configuration(requireEnabled);
     if (requireEnabled && (!value.enabled || !value.appOrigin)) return reject("UNAVAILABLE", 503);
@@ -556,7 +580,7 @@ export const createAppApprovalService = (
         return { device: view(row!), revoked: true };
       });
     },
-    startLogin: async (identifier: string, category: AccountCategory) => {
+    startLogin: async (identifier: string, category: AccountCategory, request?: AppLoginRequestContext) => {
       const cfg = await config();
       await cleanup();
       const id = crypto.randomUUID(),
@@ -568,12 +592,25 @@ export const createAppApprovalService = (
       await db.begin(async (tx) => {
         let candidate = await loginCandidate(tx, identifier, category);
         if (candidate && !(await loginBudget(tx, cfg.issuer, candidate.id))) candidate = undefined;
-        // Unknown, ambiguous, disabled and throttled accounts have the identical
-        // public shape and a decoy pending transaction; no account enumeration.
-        await tx`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,expires_at)
-          VALUES (${id}::uuid,${cfg.issuer},${candidate?.id ?? null}::uuid,${candidate?.auth_epoch ?? null},${category},${hash(browserSecret)},${challenge},${code},${expiresAt})`;
+        const now = new Date();
+        // These reads also run for decoys; the helpers use random account IDs when absent.
+        const browser = await findBrowser(tx, { userId: candidate?.id, cookie: request?.cookie ?? null, now });
+        const trust = await trustState(tx, now);
+        const countries = await countryHistory(tx, { userId: candidate?.id, country: request?.country ?? null, now });
+        const context = buildLoginContext({ request, browser, trust, countries, now });
+        // Unknown, ambiguous, disabled and throttled accounts keep the identical public shape.
+        await tx`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,expires_at,context)
+          VALUES (${id}::uuid,${cfg.issuer},${candidate?.id ?? null}::uuid,${candidate?.auth_epoch ?? null},${category},${hash(browserSecret)},${challenge},${code},${expiresAt},${candidate && context ? JSON.stringify(context) : null}::text::jsonb)`;
         owner = candidate?.id;
       });
+      // No cache I/O in SQL transactions; decoys do the same address work as real requests.
+      if (request?.prefix) {
+        try {
+          await addresses.remember(id, appLoginAddressProof(request.prefix), expiresAt);
+        } catch (error) {
+          addressFailure(error);
+        }
+      }
       // Not awaited: decoy and real requests answer alike, and push is only a wake-up.
       if (owner) void wake(cfg, owner, id);
       return { requestId: id, browserSecret, comparison: code, expiresAt: iso(expiresAt), pollAfterSeconds: limits.pollSeconds };
@@ -609,7 +646,12 @@ export const createAppApprovalService = (
       if (owner) void wake(cfg, owner, id, { terminal: true });
       return { comparison: code, expiresAt: iso(expiresAt) };
     },
-    deviceCommand: async (request: AppDeviceRequest, actions: AppDeviceActions, terminal?: AppTerminalLogins) => {
+    deviceCommand: async (
+      request: AppDeviceRequest,
+      actions: AppDeviceActions,
+      terminal?: AppTerminalLogins,
+      options?: { address?: string },
+    ) => {
       const cfg = await config();
       const { proof, signature } = request;
       const now = Math.floor(Date.now() / 1000);
@@ -623,6 +665,7 @@ export const createAppApprovalService = (
       )
         return reject("FORBIDDEN", 403);
       await cleanup();
+      let decidedBrowserId: string | undefined;
       const outcome = await db.begin(async (tx) => {
         const device = await activeDevice(tx, proof.deviceId, cfg.issuer);
         if (!(await verify(AppDevicePublicKeySchema.parse(device.public_key), appDeviceProofMessage(proof), signature)))
@@ -686,6 +729,14 @@ export const createAppApprovalService = (
                 lifetimeSeconds: row.lifetime_seconds,
               };
             }
+            if (row.kind === "browser" && command.accept?.includes("login-context")) {
+              const parsed = AppLoginContextSchema.safeParse(row.context);
+              if (parsed.success) {
+                // sameNetwork is transient, even if an unexpected stored value contains it.
+                const { sameNetwork: _transient, ...context } = parsed.data;
+                login.context = context;
+              }
+            }
             requests.push(login);
           }
           if (command.operation === "inbox") {
@@ -727,10 +778,13 @@ export const createAppApprovalService = (
         const decided = await tx`UPDATE auth.app_logins SET state=${state},approved_by=${device.id}::uuid
           WHERE id=${row.id}::uuid AND expires_at > clock_timestamp() RETURNING id`;
         if (!decided.length) return reject("CONFLICT", 409);
+        const storedContext = row.kind === "browser" ? AppLoginContextSchema.safeParse(row.context) : null;
         await record(tx, `login.${command.decision}`, device.user_id, device.id, {
           requestId: row.id,
           ...(row.kind === "terminal" ? { kind: "terminal", clientId: row.client_id, deviceGrantId: row.device_authorization_id } : {}),
+          ...(storedContext?.success ? { level: storedContext.data.level } : {}),
         });
+        if (row.kind === "browser") decidedBrowserId = row.id;
         return { state };
       });
       if (outcome.operation !== undefined) {
@@ -738,12 +792,8 @@ export const createAppApprovalService = (
         const input = { userId: outcome.userId, issuer: cfg.issuer };
         if (outcome.operation === "inbox") {
           const inbox = { logins: outcome.logins, ...(await actions.inbox(input)), pollAfterSeconds: limits.pollSeconds };
-          // Multibyte summaries share the unchanged response budget with pending sign-ins.
-          while (inbox.actions.length && new TextEncoder().encode(JSON.stringify(inbox)).length > limits.bodyBytes) {
-            inbox.actions.pop();
-            inbox.moreActions++;
-          }
-          return inbox;
+          await addSameNetwork(inbox.logins, options?.address);
+          return trimAppLoginResponse(inbox);
         }
         if (command.operation === "action") {
           const view = await actions.view({ ...input, actionId: command.actionId });
@@ -763,8 +813,19 @@ export const createAppApprovalService = (
         }
         return reject("INVALID_REQUEST", 400);
       }
+      if (outcome.requests !== undefined) {
+        await addSameNetwork(outcome.requests, options?.address);
+        return trimAppLoginResponse(outcome);
+      }
       // Only after commit: the waiting browser re-reads Postgres, so a hint never grants anything.
       if (proof.command.operation === "decide") hints.publish(proof.command.requestId);
+      if (decidedBrowserId) {
+        try {
+          await addresses.forget(decidedBrowserId);
+        } catch (error) {
+          addressFailure(error);
+        }
+      }
       return outcome;
     },
     /** With `hold`, a pending request is answered on its decision, its expiry, or after `hold.ms`, whichever comes first. */

@@ -44,7 +44,11 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   await db`ALTER TABLE auth.app_logins ADD COLUMN IF NOT EXISTS client_id TEXT`.simple();
   await db`ALTER TABLE auth.app_logins ADD COLUMN IF NOT EXISTS scopes TEXT[]`.simple();
   await db`ALTER TABLE auth.app_logins ADD COLUMN IF NOT EXISTS lifetime_seconds INTEGER`.simple();
+  await db`ALTER TABLE auth.app_logins ADD COLUMN IF NOT EXISTS context JSONB`.simple();
   await db`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='auth.app_logins'::regclass AND conname='app_logins_context_bytes') THEN
+      ALTER TABLE auth.app_logins ADD CONSTRAINT app_logins_context_bytes CHECK (context IS NULL OR octet_length(context::text) <= 512);
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='auth.app_logins'::regclass AND conname='app_logins_kind') THEN
       ALTER TABLE auth.app_logins ADD CONSTRAINT app_logins_kind CHECK (kind IN ('browser','terminal'));
     END IF;

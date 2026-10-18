@@ -15,6 +15,7 @@ import {
   AppPairingStartSchema,
 } from "../contracts/app-approval";
 import { type AuthContext, auth, rateLimit, v } from "../server";
+import { addressPrefix, clientIp, describeRequest } from "../server/request-context";
 import {
   type AppApprovalActor,
   AppApprovalError,
@@ -22,6 +23,7 @@ import {
   appApproval,
   type createAppApprovalService,
 } from "../services/app-approval";
+import { readBrowserCookie } from "../services/known-browsers";
 import { appNameIn } from "../ssr/runtime";
 import { createDeviceActions } from "./app-approval-actions";
 
@@ -118,6 +120,7 @@ export const createAppApprovalRoutes = (service: Service = appApproval, actions 
             c.req.valid("json"),
             actions((appId, locale) => appNameIn(c, appId, locale, appId)),
             terminal,
+            { address: clientIp(c) },
           ),
         ),
     )
@@ -127,7 +130,10 @@ export const createAppApprovalRoutes = (service: Service = appApproval, actions 
       v("json", AppLoginStartSchema),
       async (c) => {
         const input = c.req.valid("json");
-        return c.json(await service.startLogin(input.identifier, input.category), 202);
+        const description = describeRequest(c);
+        const cookie = readBrowserCookie(c);
+        const prefix = addressPrefix(clientIp(c));
+        return c.json(await service.startLogin(input.identifier, input.category, { ...description, cookie, prefix }), 202);
       },
     )
     .post("/login/status", v("json", AppLoginReferenceSchema), async (c) => {

@@ -265,7 +265,7 @@ The authenticator sends signed commands to `POST /device`:
 
 | Command | Result |
 | --- | --- |
-| `{operation:"pending"}` | `{requests, pollAfterSeconds}` for this device's account and Cloud only. Each request contains `requestId`, `challenge`, `comparison`, `createdAt`, `expiresAt`. |
+| `{operation:"pending", accept?: ["login-context"]}` | `{requests, pollAfterSeconds}` for this device's account and Cloud only. Each request contains `requestId`, `challenge`, `comparison`, `createdAt`, `expiresAt`. Signed opt-in adds `context` as described below. |
 | `{operation:"decide", requestId, challenge, comparison, decision:"approve"}` | `{state:"approved"}`. With `decision:"deny"`, returns `{state:"denied"}`. |
 | `{operation:"revoke"}` | `{state:"revoked"}` for the signing device only. |
 | `{operation:"push", token}` | `{state:"updated"}`. Stores the authenticator's opaque push token (43 URL-safe characters) for this device; a new token replaces the old one. Clouds without this command answer 400. |
@@ -296,6 +296,75 @@ after the previous one started. Once approved, call
 `POST /login/complete` with that body. Success is HTTP 204 with the normal
 HttpOnly Cloud session cookie, never a token in JSON. Completion is atomic and
 one-use. A lost response or failed session issuance requires a new login.
+
+## Read browser sign-in context
+
+Cloud announces `"login-context"` in `/info.features`. The SDK exposes this as
+`client.loginContext`. An app opts in only when it can show the context:
+
+```ts
+const pending = await client.pending(device, signal, { accept: ["login-context"] });
+const inbox = await client.inbox(device, signal, {
+  accept: ["terminal-logins", "login-context"],
+});
+```
+
+Both commands sign `accept`. The SDK filters the list against `/info.features`
+and omits the key when nothing matches. `APP_APPROVAL_PENDING_ACCEPT` contains
+only `login-context`; `terminal-logins` is inbox-only. `APP_APPROVAL_ACCEPT`
+contains both. Without `login-context`, neither response includes a `context`
+key. Updating the SDK alone does not opt in.
+
+With opt-in, each browser sign-in carries this strict `AppLoginContext`:
+
+| Field | Meaning |
+| --- | --- |
+| `level` | `info`, `hint`, or `warn`, computed by Core. The app displays it and never derives its own. |
+| `browser` | `firefox`, `chrome`, `safari`, `edge`, `samsung`, `opera`, or `other`. |
+| `os` | `windows`, `macos`, `mac-or-ipad`, `ios`, `android`, `linux`, `chromeos`, or `other`. `mac-or-ipad` means the browser cannot distinguish the two. |
+| `country` | Uppercase ISO 3166-1 alpha-2 code, or `null` when unknown. |
+| `city`, `network` | Plain text, each at most 96 UTF-8 bytes, or `null`. `network` names the network operator; it never labels a VPN or data center. |
+| `history` | `null` during the installation's 14-day introduction phase. Cloud makes no known/new claim then. Otherwise the object below. |
+| `history.knownSince` | This browser's first successful sign-in for this account inside its current remembered period, or `null` if unknown. |
+| `history.newCountry` | Core has a country for the request, `geoip_since` is set, and this account has no successful sign-in from that country inside the 90-day window. |
+| `history.countriesSince` | `geoip_since` when less than 90 days ago, otherwise `null`. A shorter history can be shown as “since {date}”. |
+| `sameNetwork` | Optional literal `true`. The browser request and phone share the full IPv4 address or IPv6 /64. Absence makes no claim. |
+
+Dates use UTC ISO date-times. Browser recognition uses the browser cookie
+(S1); countries use successful sign-ins inside the last 90 days (S6).
+Core applies this level table:
+
+| Browser and country history | Level |
+| --- | --- |
+| Introduction phase | `info`, with `history: null` |
+| Known browser; country seen or no country/GeoIP | `info` |
+| Known browser; new country | `hint` |
+| New browser; country seen or no country/GeoIP | `hint` |
+| New browser; new country; account has no countries in the window | `hint` |
+| New browser; new country; account already has countries in the window | `warn` |
+
+Browser/OS descriptions (S2), network operator (S4), and the same-network hint
+(S5) never change the level. The shorter `countriesSince` window does not
+change it either. See [Sign-in locations](./sign-in-locations.md) for accuracy,
+address pseudonyms, storage, and retention.
+
+Terminal sign-ins never carry context. Push never carries it. The waiting
+browser's `/login/start`, `/login/status`, and `/login/complete` responses stay
+unchanged, and `/login/start` sets no cookie. Context is a snapshot of the
+start request; it is not recomputed while the phone polls.
+
+An opted-in browser request can lack context if it started before the upgrade
+or the response budget forced it out. Cloud first drops Actions from the end
+of the inbox and adds them to `moreActions`. If needed, it then drops context
+from the last login backwards. It never drops a login. `pending` uses the same
+context trim order. Both responses stay within 8 KiB.
+
+| App and Cloud combination | Browser context behavior |
+| --- | --- |
+| Old app, old Cloud | Original signed commands and response bytes. |
+| Old app, new Cloud | No opt-in; original response bytes, with no `context` key. |
+| New app, old Cloud | SDK omits unsupported `accept`; original command body and signing bytes. |
+| New app, new Cloud | Signed `login-context` opt-in returns browser context. |
 
 ## Approve a terminal sign-in
 
@@ -392,10 +461,11 @@ Send the following signed commands to `POST /device`:
 
 | Command | Result |
 | --- | --- |
-| `{operation:"inbox", accept?: ["terminal-logins"]}` | `{logins, actions, moreActions, pollAfterSeconds}`. Without `accept`, `logins` has the same fields as the `pending` list. Opt-in adds terminal consent fields; see below. `actions` contains up to five newest open Action summaries of the device's account. `moreActions` counts other open requests. |
+| `{operation:"inbox", accept?: string[]}` | `{logins, actions, moreActions, pollAfterSeconds}`. Without `accept`, `logins` has the same fields as the `pending` list. Opt-in adds terminal consent or browser context fields as requested. `actions` contains up to five newest open Action summaries of the device's account. `moreActions` counts other open requests. |
 | `{operation:"action", actionId}` | The full device view of one open request. |
 | `{operation:"act", actionId, digest, decision:"approve"}` | `{state:"approved"}`. With `decision:"deny"`, returns `{state:"denied"}`. |
 
+`accept` lists `terminal-logins`, `login-context`, or both.
 `inbox` without `accept` has no signature appendix. With `accept`, append
 the capability list as one nested array. For `action`, append `[actionId]` to the
 device proof array. For `act`, append `[actionId, digest, decision]`.
@@ -540,19 +610,24 @@ every call, including polls. Times are Unix seconds. Sign:
 For `decide`, append `requestId, challenge, comparison, decision` to the array.
 For `push`, append `token`.
 For `action`, append `actionId`; for `act`, append `actionId, digest, decision`.
-For `inbox` with `accept`, append the whole list as **one nested array**:
+For `pending` or `inbox` with `accept`, append the whole list as **one nested array**:
 
 ```text
 ["cloud-app-approval-v1","device",issuer,deviceId,jti,issuedAt,expiresAt,"inbox",["terminal-logins"]]
 ```
 
+For example, the context-only pending proof ends with
+`"pending",["login-context"]]`.
 Without `accept`, the signing bytes stay unchanged and there is no appendix.
 `accept` must be non-empty and unique, with at most eight entries from
-`APP_APPROVAL_ACCEPT`. Unknown entries are rejected.
+`APP_APPROVAL_ACCEPT` (`terminal-logins` and `login-context`) for `inbox`.
+For `pending`, use only `APP_APPROVAL_PENDING_ACCEPT` (`login-context`).
+Unknown entries are rejected.
 All operation parameters are covered. Public `@k2b/cloud/contracts`
 exports include `appDeviceProofMessage`, `appPairingProofMessage`, request/response schemas
 and `APP_APPROVAL_PROTOCOL`, `APP_APPROVAL_PATH`, `APP_APPROVAL_LIMITS`,
-`APP_APPROVAL_FEATURES`, `APP_APPROVAL_ACCEPT`, `AppTerminalLogin`, `APP_ACTION_LIMITS`, and the Action schemas and
+`APP_APPROVAL_FEATURES`, `APP_APPROVAL_ACCEPT`, `APP_APPROVAL_PENDING_ACCEPT`,
+`AppLoginContextSchema`, `AppLoginContext`, `AppTerminalLogin`, `APP_ACTION_LIMITS`, and the Action schemas and
 digest helpers. These helpers hold no credentials and make no network calls.
 
 The compile-checked signing example is

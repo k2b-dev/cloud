@@ -13,7 +13,9 @@ updated: 2026-10-18
 Core includes a server module and a bundled database snapshot that describe a
 sign-in request by browser, operating system, approximate place, and network
 operator. Successful browser sign-ins now use this module to remember browsers
-and countries. No page, API, CLI, or notification exposes the stored data yet.
+and countries. Paired apps can request browser sign-in context through the
+[signed app approval API](./app-approval.md#read-browser-sign-in-context).
+Cloud Login does not display this context yet.
 
 ## Bundled snapshot and updates
 
@@ -74,7 +76,7 @@ refresh it. The mobile app does not get this cookie.
 
 ## Stored data
 
-Core stores three tables in Postgres:
+Core stores browser and country history in three Postgres tables:
 
 - `auth.device_trust_state` has one installation-wide row (`id`). `started_at`
   records the first migration start and never changes. `geoip_since` records
@@ -93,8 +95,33 @@ cannot link two accounts in one browser. Anyone who sees the cookie value at
 runtime can compute the hash for any account. This includes an operator who
 can see cookies in proxy logs or a browser.
 
+Core also stores the request's context snapshot in `auth.app_logins.context`.
+It contains the level, browser/OS codes, country, city, operator, and history.
+It is limited to 512 bytes of PostgreSQL JSONB text, including spaces and
+escaped characters. Core first removes city and network names if needed,
+then drops the whole context if it still does not fit. A context failure
+never fails the sign-in. Decoy and terminal rows have `context = NULL`.
+The snapshot lives with the request until expiry and bounded cleanup.
+It never contains `sameNetwork` or an address.
+
 No raw IP address is stored in these tables. No legal review was done for
 this storage or cookie behavior.
+
+## Same-network hint
+
+After a browser request commits, Core stores a request address pseudonym in
+Valkey: SHA-256 of a fresh 16-byte salt followed by the full IPv4 address or
+IPv6 /64. The salt is stored beside the digest and differs for each request.
+The value has no account data or raw address, and the key is per request.
+Decoys do the same work. Private or unknown addresses produce no entry.
+
+The key expires with the five-minute request and is deleted after approval or
+denial. A signed context read compares the phone's prefix with this pseudonym
+and returns `sameNetwork: true` only on a match. Core reads the listed browser
+requests in one Valkey call after the SQL transaction. If Valkey is down,
+the hint is missing and sign-in continues. Nothing about S5 changes the level.
+This is pseudonymization, not anonymization: someone with the salt and digest
+can test candidate addresses.
 
 ## Retention and limits
 
@@ -109,8 +136,8 @@ extends how long a record counts as remembered.
 
 Each account keeps at most 100 browsers and 50 countries. New sign-ins evict
 the oldest records first. An installation-wide introduction phase lasts 14
-days from the first Core start after the upgrade. During it, later releases
-will not call any browser new and will send no new-sign-in notice, because
+days from the first Core start after the upgrade. During it, context has
+`level: "info"` and `history: null`; Cloud makes no known/new claim because
 Core has not seen the browsers yet. Accounts and requests cannot restart or
 extend it.
 
@@ -121,6 +148,9 @@ extend it.
 | `auth.device_trust_state` | Installation start and first stored country time | Installation-wide; neither timestamp is reset by sign-ins or account deletion. |
 | `auth.known_browsers` | Account, browser hash, browser, OS, latest country and city, first and latest sign-in, reserved notification time | 90 days after the latest sign-in; at most 100 per account; account deletion removes rows by CASCADE. |
 | `auth.sign_in_countries` | Account, country and latest sign-in | 90 days after the latest sign-in; at most 50 per account; account deletion removes rows by CASCADE. |
+| `auth.app_logins.context` | Request context, at most 512 bytes of JSONB text; no S5 or address; empty for terminal and decoy requests | Five-minute request lifetime, then existing bounded expiry cleanup; account deletion removes account rows by CASCADE. |
+| App-login address key in Valkey | Per-request salt and SHA-256 digest of full IPv4 or IPv6 /64; no account data | Expires with the request; deleted after approve or deny; missing when Valkey is unavailable. |
+| `audit.events` for app-login approve/deny | Browser decisions include the stored `level` only, alongside the request ID; no city, country, network, browser/OS, or S5 | Existing audit retention; terminal decision metadata stays unchanged. |
 | Existing rate limiter in Valkey | IP addresses used briefly for rate limits | Unchanged; short-lived rate-limit keys. |
 | `auth.session_families.created_user_agent` | The sign-in's user-agent header | Unchanged; follows session-family retention. |
 | Proxy logs and backups | Depends on the operator's configuration | Outside Cloud's retention and deletion jobs. |

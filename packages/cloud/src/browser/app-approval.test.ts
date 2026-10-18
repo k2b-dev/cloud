@@ -246,3 +246,59 @@ test("terminal consent requires both Cloud support and an explicit app opt-in", 
     }
   }
 });
+
+test("context opt-in is signed only when advertised, for pending and inbox", async () => {
+  const key = await appApproval.createKey();
+  const device = { issuer, deviceId: id, key };
+  for (const features of [undefined, ["actions", "terminal-logins"], ["actions", "terminal-logins", "login-context"]]) {
+    for (const asks of [false, true]) {
+      const optedIn = asks && features?.includes("login-context") === true;
+      const client = await appApproval.connect({
+        issuer,
+        authenticatorOrigin,
+        fetch: async (url, init) => {
+          if (url.endsWith("/info")) return Response.json({ ...info, ...(features ? { features } : {}) });
+          const request = AppDeviceRequestSchema.parse(JSON.parse(String(init.body)));
+          const operation = request.proof.command.operation;
+          if (operation !== "pending" && operation !== "inbox") throw new Error("Unexpected command");
+          expect(request.proof.command).toEqual({ operation, ...(optedIn ? { accept: ["login-context"] } : {}) });
+          // Independently reconstruct the pre-extension body and signature bytes for old Clouds.
+          const message = JSON.stringify([
+            "cloud-app-approval-v1",
+            "device",
+            issuer,
+            device.deviceId,
+            request.proof.jti,
+            1792238400,
+            1792238460,
+            operation,
+            ...(optedIn ? [["login-context"]] : []),
+          ]);
+          expect(appDeviceProofMessage(request.proof)).toBe(message);
+          await verify(key, message, request.signature);
+          expect(String(init.body)).toBe(
+            JSON.stringify({
+              proof: {
+                issuer,
+                deviceId: id,
+                jti: request.proof.jti,
+                issuedAt: 1792238400,
+                expiresAt: 1792238460,
+                command: { operation, ...(optedIn ? { accept: ["login-context"] } : {}) },
+              },
+              signature: request.signature,
+            }),
+          );
+          return Response.json(
+            operation === "pending"
+              ? { requests: [], pollAfterSeconds: 5 }
+              : { logins: [], actions: [], moreActions: 0, pollAfterSeconds: 5 },
+          );
+        },
+      });
+      expect(client.loginContext).toBe(features?.includes("login-context") === true);
+      await client.pending(device, undefined, asks ? { accept: ["login-context"] } : undefined);
+      await client.inbox(device, undefined, asks ? { accept: ["login-context"] } : undefined);
+    }
+  }
+});
