@@ -37,6 +37,8 @@ export function exampleResult(): Result {
         notes: [],
         database: null,
         plan: null,
+        planError: null,
+        unparsedPlans: 0,
         metrics: null,
         samples: [10, 20, 40].map((totalMs) => ({
           totalMs,
@@ -141,4 +143,51 @@ test("summary labels explain matches and warns when falling back to a possible b
   scenario.plan.matched = true;
   expect(renderSummary(result)).toContain("Slowest explain (matched)");
   expect(renderSummary(result)).not.toContain("may be background");
+});
+
+test("JSON keeps all statement IDs while the summary displays only the top 20", () => {
+  const result = exampleResult();
+  result.scenarios[0]!.database = {
+    windowMs: 100,
+    calls: 25,
+    callsPerRun: 25,
+    totalMs: 25,
+    msPerRun: 25,
+    statements: Array.from({ length: 25 }, (_, i) => ({
+      query: `SELECT column_${i} FROM mail.conversations`,
+      queryid: String(9007199254740993n + BigInt(i)),
+      calls: 1,
+      totalMs: 1,
+      meanMs: 1,
+      rows: 1,
+      hits: 0,
+      reads: 0,
+    })),
+  };
+  const parsed = resultSchema.parse(JSON.parse(JSON.stringify(result)));
+  expect(parsed.scenarios[0]!.database!.statements).toHaveLength(25);
+  expect(parsed.scenarios[0]!.database!.statements[24]!.queryid).toBe("9007199254741017");
+  const summary = renderSummary(parsed);
+  expect(summary).toContain("SELECT column_19 FROM");
+  expect(summary).not.toContain("SELECT column_20 FROM");
+  // Comparison with pre-queryid results remains supported.
+  const oldStatements = result.scenarios[0]!.database!.statements.map(({ queryid, ...statement }) => statement);
+  result.scenarios[0]!.database!.statements = oldStatements;
+  expect(parsePrevious(result).scenarios[0]!.database!.statements).toHaveLength(25);
+});
+
+test("summary retains metrics and reports optional plan capture errors and skipped entries", () => {
+  const result = exampleResult();
+  const scenario = result.scenarios[0]!;
+  scenario.planError = "auto_explain pass produced no request plan";
+  scenario.unparsedPlans = 1;
+  const summary = renderSummary(result);
+  expect(summary).toContain("10.0 / 30.0 / 40.0");
+  expect(summary).toContain("Plan error: auto_explain pass produced no request plan");
+  expect(summary).toContain("Unparsed plan log entries: 1");
+  expect(summary).not.toContain("**FAILED**");
+  // Earlier schemaVersion 1 results remain valid comparison inputs.
+  const { planError, unparsedPlans, ...oldScenario } = scenario;
+  const parsed = parsePrevious({ ...result, scenarios: [oldScenario] });
+  expect(parsed.scenarios[0]).toMatchObject({ planError: null, unparsedPlans: 0 });
 });

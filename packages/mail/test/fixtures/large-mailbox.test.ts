@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
+import { brotliCompressSync } from "node:zlib";
 import { anchor, digestPlan, planLargeMailbox } from "./large-mailbox";
 
 const parameters = { seed: 20261001, anchor, messages: 20000, conversations: 3000, folders: 30 };
@@ -21,6 +22,8 @@ test("mailbox planning is deterministic and does not consult time or system rand
     const a = planLargeMailbox(parameters),
       b = planLargeMailbox({ ...parameters });
     expect(digestPlan(a)).toBe(digestPlan(b));
+    expect(a.bodyCorpus).toBe(b.bodyCorpus);
+    expect(digestPlan({ ...a, bodyCorpus: `X${a.bodyCorpus.slice(1)}` })).not.toBe(digestPlan(a));
     expect(digestPlan(planLargeMailbox({ ...parameters, seed: 42 }))).not.toBe(digestPlan(a));
     expect(digestPlan(planLargeMailbox({ ...parameters, anchor: "2025-10-01T00:00:00Z" }))).not.toBe(digestPlan(a));
   } finally {
@@ -28,6 +31,43 @@ test("mailbox planning is deterministic and does not consult time or system rand
     uuid.mockRestore();
     now.mockRestore();
     random.mockRestore();
+  }
+});
+test("corpus bodies preserve byte sizes, search prefixes and wraparound without extreme Brotli compression", () => {
+  const p = planLargeMailbox(parameters);
+  expect(p.bodyCorpus.length).toBe(256 * 1024);
+  expect(p.bodyCorpus).toMatch(/^[A-Za-z.\s]+$/);
+  expect(p.bodyCorpus).toContain(".\n\n");
+  expect(p.bodyCorpus.toLowerCase()).not.toContain(p.shape.rareWord);
+  expect(p.bodyCorpus.toLowerCase()).not.toContain(p.shape.commonWord);
+  const doubled = p.bodyCorpus.repeat(2);
+  // Mirrors perf_corpus + perf_bodies: PostgreSQL substring is 1-based.
+  const body = (message: (typeof p.messages)[number]) => {
+    const length = message.bodyBytes - message.text.length - (message.html ? 7 : 0);
+    const plain = message.text + doubled.slice(message.bodyOffset, message.bodyOffset + length);
+    return message.html ? `<p>${plain}</p>` : plain;
+  };
+  let rareMessages = 0;
+  let commonMessages = 0;
+  for (const message of p.messages) {
+    expect(message.bodyOffset).toBeGreaterThanOrEqual(0);
+    expect(message.bodyOffset).toBeLessThan(p.bodyCorpus.length);
+    const sample = body(message);
+    expect(Buffer.byteLength(sample)).toBe(message.bodyBytes);
+    expect(sample.startsWith((message.html ? "<p>" : "") + message.text)).toBe(true);
+    if (sample.includes(p.shape.rareWord)) rareMessages++;
+    if (sample.includes(p.shape.commonWord)) commonMessages++;
+  }
+  expect(rareMessages).toBe(1);
+  expect(commonMessages).toBe(parameters.messages - 1);
+  const message = p.messages[0]!;
+  const offset = p.bodyCorpus.length - 10;
+  const wrapped = body({ ...message, html: false, bodyBytes: message.text.length + 30, bodyOffset: offset });
+  expect(wrapped).toBe(message.text + p.bodyCorpus.slice(-10) + p.bodyCorpus.slice(0, 20));
+  for (const html of [false, true]) {
+    const sample = body({ ...message, html, bodyBytes: 50 * 1024, bodyOffset: offset });
+    expect(Buffer.byteLength(sample)).toBe(50 * 1024);
+    expect(Buffer.byteLength(sample) / brotliCompressSync(sample).length).toBeLessThan(8);
   }
 });
 test("declared mailbox shape covers all rows and production-sized skew", () => {
@@ -127,4 +167,7 @@ test("small, sparse and dense requested shapes preserve exact sizes", () => {
     for (const m of p.messages) expect(Date.parse(m.date)).toBeLessThan(Date.parse(parameters.anchor) - 86400_000);
     for (const [i, f] of p.folders.entries()) if (f.parent !== null) expect(f.parent).toBeLessThan(i);
   }
+});
+test("the body corpus is ASCII, so seeding can slice it by byte offset", () => {
+  expect(planLargeMailbox(parameters).bodyCorpus).toMatch(/^[\x20-\x7e\n]*$/);
 });

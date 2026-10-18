@@ -23,6 +23,53 @@ import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "../../src/service/attachment-
 export const anchor = "2026-10-01T00:00:00Z";
 export type Parameters = { seed: number; anchor: string; messages: number; conversations: number; folders: number };
 const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz";
+
+/** ASCII words keep PostgreSQL character offsets equal to the planned byte sizes. */
+function createBodyCorpus(random: () => number) {
+  const vocabulary = `
+    about above across action active address adjust advice after again agenda agree ahead allow almost along already also always
+    amount analysis annual answer anyone appear apply approval archive area arrange arrive article ask asset assign assist attach
+    audit available average aware balance basic before begin below benefit better between board booking brief budget build business
+    calendar call campaign cancel capacity case category central certain change chart check choose city clarify client close collect
+    comment complete concern confirm connect consider contact contain context continue contract copy correct cost country course cover
+    create current customer daily data date decision deliver demand department describe design detail develop device direct discuss
+    document draft during early effort either enable energy enjoy enough ensure entire entry environment equipment estimate event
+    every example exchange expect expense explain export extend external extra facility fact feedback field figure file final finance
+    finish first flexible focus folder follow forecast format forward found framework friday future general given goal good great group
+    guide handle happy health helpful history hold holiday home hope hour however human idea identify image improve include income
+    increase index indicate industry inform initial input insight install instance instead interest internal introduce inventory invite
+    invoice issue item join journal journey keep kind knowledge label language large last later launch learn leave legal length letter
+    level light likely limit line link list local location long look lunch main maintain major manage manual market match material
+    matter measure meeting member mention message method middle might minute model modern monday month morning move much name nature
+    near necessary need network next nice normal note notice number objective offer office once online open operate opinion option
+    order organize original other output overall owner package page paper paragraph parent part partner past payment people period
+    person phone photo place plan please point policy position possible prepare present previous price primary print priority private
+    process produce product progress project proposal provide public purpose quality quarter question quick range rate reach read ready
+    reason receive recent record reference region regular relation release remain remind remote remove renew repair repeat reply report
+    request require research reserve resolve resource respond response rest result return review right risk role room route rule run
+    safe sales sample save schedule scope search second section select send senior sentence separate series service session set several
+    share short should show side similar simple since single site situation size skill small social software solution soon source space
+    special specific spend staff stage standard start state status step still stock store strategy structure student study subject submit
+    success suggest summary summer support system table take target task team technical term test text thank thing think third thursday
+    ticket time today together tomorrow topic total track training transfer travel treatment trial tuesday turn type understand unit
+    update useful user usual value various version view visit volume wait wanted warehouse week welcome whether whole window within
+    without word work working world write year yesterday`
+    .trim()
+    .split(/\s+/);
+  const sentences: string[] = [];
+  let bytes = 0;
+  let paragraphRemaining = 3 + Math.floor(random() * 4);
+  while (bytes < 256 * 1024) {
+    const words = Array.from({ length: 8 + Math.floor(random() * 13) }, () => vocabulary[Math.floor(random() * vocabulary.length)]!);
+    const text = words.join(" ");
+    const sentence = text[0]!.toUpperCase() + text.slice(1) + (--paragraphRemaining === 0 ? ".\n\n" : ". ");
+    if (paragraphRemaining === 0) paragraphRemaining = 3 + Math.floor(random() * 4);
+    sentences.push(sentence);
+    bytes += sentence.length;
+  }
+  return sentences.join("").slice(0, 256 * 1024);
+}
+
 export function planLargeMailbox(parameters: Parameters) {
   const { seed, messages: count, conversations: threads, folders: folderCount } = parameters;
   if (
@@ -210,7 +257,18 @@ export function planLargeMailbox(parameters: Parameters) {
       messageId: messages.find((m) => m.from === "needle@example.test")?.id ?? null,
     },
   };
-  return { parameters, folders, conversations, messages, shape, senderIdentityShortId: shortId() };
+  // Draw body data last so the existing mailbox shape and planned sizes stay stable.
+  const senderIdentityShortId = shortId();
+  const bodyCorpus = createBodyCorpus(random);
+  return {
+    parameters,
+    folders,
+    conversations,
+    messages: messages.map((message) => ({ ...message, bodyOffset: Math.floor(random() * bodyCorpus.length) })),
+    bodyCorpus,
+    shape,
+    senderIdentityShortId,
+  };
 }
 export type LargeMailboxPlan = ReturnType<typeof planLargeMailbox>;
 export function digestPlan(plan: LargeMailboxPlan) {
@@ -285,12 +343,19 @@ export async function seedLargeMailbox(db: SQL, plan: LargeMailboxPlan, options:
       VALUES (${identity!.id}::uuid, ${binding!.id}::uuid, 'perf@example.test', ${plan.parameters.anchor}::timestamptz, true)`;
     await tx`CREATE TEMP TABLE perf_messages (data jsonb) ON COMMIT DROP`;
     for (let i = 0; i < plan.messages.length; i += 1000) {
-      await tx`INSERT INTO perf_messages SELECT value FROM jsonb_array_elements(${JSON.stringify(plan.messages.slice(i, i + 1000))}::jsonb)`;
+      await tx`INSERT INTO perf_messages SELECT value FROM jsonb_array_elements(${plan.messages.slice(i, i + 1000)}::jsonb)`;
     }
-    await tx`CREATE TEMP TABLE perf_bodies ON COMMIT DROP AS SELECT data,
-      left(repeat(data->>'text', 2000), (data->>'bodyBytes')::int - CASE WHEN (data->>'html')::boolean THEN 7 ELSE 0 END) AS plain,
-      CASE WHEN (data->>'html')::boolean THEN '<p>' || left(repeat(data->>'text', 2000), (data->>'bodyBytes')::int - 7) || '</p>' ELSE NULL END AS html
-      FROM perf_messages`;
+    // Transfer once; doubling once in PostgreSQL covers wraparound for bodies <= 50 KiB.
+    // The ASCII corpus is stored as uncompressed bytea, so substring() fetches only the slice it
+    // needs; compressed text would be decompressed in full once per message.
+    await tx`CREATE TEMP TABLE perf_corpus (body bytea) ON COMMIT DROP`;
+    await tx`ALTER TABLE perf_corpus ALTER COLUMN body SET STORAGE EXTERNAL`;
+    await tx`INSERT INTO perf_corpus SELECT convert_to(repeat(${plan.bodyCorpus}::text, 2), 'UTF8')`;
+    await tx`CREATE TEMP TABLE perf_bodies ON COMMIT DROP AS WITH bodies AS MATERIALIZED (SELECT data,
+      (data->>'text') || convert_from(substring(body FROM (data->>'bodyOffset')::int + 1 FOR
+        (data->>'bodyBytes')::int - length(data->>'text') - CASE WHEN (data->>'html')::boolean THEN 7 ELSE 0 END), 'UTF8') AS plain
+      FROM perf_messages CROSS JOIN perf_corpus)
+      SELECT data, plain, CASE WHEN (data->>'html')::boolean THEN '<p>' || plain || '</p>' ELSE NULL END AS html FROM bodies`;
     await tx`INSERT INTO mail.message_contents
       (short_id, mailbox_id, message_id, in_reply_to, reference_ids, subject, normalized_subject, internal_date, sent_at, size_bytes, plain_text, sanitized_html, source_hash, content_hash, hydration_status, hydrated_at, created_at, selected_headers)
       SELECT data->>'id', ${mailboxId}::uuid, '<' || (data->>'id') || '@example.test>',
@@ -316,6 +381,7 @@ export async function seedLargeMailbox(db: SQL, plan: LargeMailboxPlan, options:
       CROSS JOIN LATERAL (VALUES ('from', p.data->>'from'), ('to', p.data->>'to')) a(role, email)`;
     // Store complete body, source and attachment blobs/chunks, as hydration does.
     await tx`CREATE TEMP TABLE perf_parts ON COMMIT DROP AS
+      SELECT parts.*, encode(sha256(convert_to(body, 'UTF8')), 'hex') AS content_hash FROM (
       SELECT m.id AS message_id, CASE WHEN b.html IS NULL THEN 'normalized-plain' ELSE 'original-html' END AS path, CASE WHEN b.html IS NULL THEN 'text/plain' ELSE 'text/html' END AS content_type,
         coalesce(b.html, b.plain) AS body, false AS attachment, NULL::text AS short_id, NULL::text AS filename
       FROM perf_bodies b JOIN mail.message_contents m ON m.short_id = b.data->>'id'
@@ -335,18 +401,18 @@ export async function seedLargeMailbox(db: SQL, plan: LargeMailboxPlan, options:
           '--perf-' || m.short_id, 'Content-Type: text/plain',
           'Content-Disposition: attachment; filename="' || (b.data->'attachment'->>'filename') || '"',
           'Content-Transfer-Encoding: 7bit', '', repeat('a', (b.data->'attachment'->>'bytes')::int), '--perf-' || m.short_id || '--') ELSE NULL END), false, NULL, NULL
-      FROM perf_bodies b JOIN mail.message_contents m ON m.short_id = b.data->>'id'`;
+      FROM perf_bodies b JOIN mail.message_contents m ON m.short_id = b.data->>'id') parts`;
     await tx`INSERT INTO mail.message_part_blobs (content_hash, byte_length, chunk_count, complete, completed_at)
-      SELECT DISTINCT encode(sha256(convert_to(body, 'UTF8')), 'hex'), octet_length(body), 1, true, ${plan.parameters.anchor}::timestamptz FROM perf_parts
+      SELECT DISTINCT content_hash, octet_length(body), 1, true, ${plan.parameters.anchor}::timestamptz FROM perf_parts
       ON CONFLICT (content_hash) DO NOTHING`;
     await tx`INSERT INTO mail.message_part_chunks (blob_id, position, bytes)
-      SELECT DISTINCT b.id, 0, convert_to(p.body, 'UTF8') FROM perf_parts p JOIN mail.message_part_blobs b ON b.content_hash = encode(sha256(convert_to(p.body, 'UTF8')), 'hex')
+      SELECT DISTINCT b.id, 0, convert_to(p.body, 'UTF8') FROM perf_parts p JOIN mail.message_part_blobs b ON b.content_hash = p.content_hash
       ON CONFLICT DO NOTHING`;
     await tx`INSERT INTO mail.message_parts (message_id, part_path, content_type, charset, transfer_encoding, disposition, filename, size_bytes, blob_id, hydration_status)
       SELECT p.message_id, p.path, p.content_type, CASE WHEN p.attachment THEN NULL ELSE 'utf-8' END, NULL, CASE WHEN p.attachment THEN 'attachment' ELSE 'inline' END, p.filename, octet_length(p.body), b.id, 'complete'
-      FROM perf_parts p JOIN mail.message_part_blobs b ON b.content_hash = encode(sha256(convert_to(p.body, 'UTF8')), 'hex') WHERE p.path <> 'source'`;
+      FROM perf_parts p JOIN mail.message_part_blobs b ON b.content_hash = p.content_hash WHERE p.path <> 'source'`;
     await tx`UPDATE mail.message_contents m SET source_blob_id = b.id, source_hash = b.content_hash, size_bytes = b.byte_length
-      FROM perf_parts p JOIN mail.message_part_blobs b ON b.content_hash = encode(sha256(convert_to(p.body, 'UTF8')), 'hex') WHERE p.path = 'source' AND m.id = p.message_id`;
+      FROM perf_parts p JOIN mail.message_part_blobs b ON b.content_hash = p.content_hash WHERE p.path = 'source' AND m.id = p.message_id`;
     await tx`INSERT INTO mail.attachments (short_id, message_id, part_id, filename, content_type, disposition, checksum, size_bytes, blob_id)
       SELECT p.short_id, p.message_id, part.id, p.filename, p.content_type, 'attachment', b.content_hash, b.byte_length, b.id
       FROM perf_parts p JOIN mail.message_parts part ON part.message_id = p.message_id AND part.part_path = p.path
@@ -372,7 +438,7 @@ export async function seedLargeMailbox(db: SQL, plan: LargeMailboxPlan, options:
       (short_id, mailbox_id, subject, participant_summary, latest_inbound_at, latest_outbound_at, latest_message_at, assignee_user_id, work_status, snoozed_until, revision, created_at, updated_at)
       SELECT c.id, ${mailboxId}::uuid, max(m.subject), 'Contact', max(m.internal_date) FILTER (WHERE p.data->>'from' <> 'perf@example.test'), max(m.internal_date) FILTER (WHERE p.data->>'from' = 'perf@example.test'), max(m.internal_date),
         CASE WHEN c.assigned THEN ${userIds[0]}::uuid END, c.status, c."snoozedUntil"::timestamptz, c.size + 1, min(m.internal_date), max(m.internal_date)
-      FROM jsonb_to_recordset(${JSON.stringify(plan.conversations)}::jsonb) c(id text, assigned boolean, status text, "snoozedUntil" text, size int)
+      FROM jsonb_to_recordset(${plan.conversations}::jsonb) c(id text, assigned boolean, status text, "snoozedUntil" text, size int)
       JOIN perf_messages p ON p.data->>'conversation' = c.id JOIN mail.message_contents m ON m.short_id = p.data->>'id'
       GROUP BY c.id, c.assigned, c.status, c."snoozedUntil", c.size`;
     await tx`INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by, hydrated_revision)

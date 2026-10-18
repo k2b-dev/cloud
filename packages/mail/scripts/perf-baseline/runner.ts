@@ -15,8 +15,21 @@ import {
 } from "../../../../scripts/perf-baseline/runtime";
 import { Api, waitForRoutes } from "../../../../scripts/perf-baseline/seed";
 import { anchor, digestPlan, planLargeMailbox, seedLargeMailbox } from "../../test/fixtures/large-mailbox";
-import { assertRunUrl, emptySample, explain, monotonicMs, postgresArgs, readDatabase, request, reset, setExplainDuration } from "./measure";
+import {
+  assertRunUrl,
+  capturePlan,
+  emptySample,
+  explain,
+  monotonicMs,
+  postgresArgs,
+  readDatabase,
+  request,
+  reset,
+  setExplainDuration,
+} from "./measure";
 import { type Options, parsePrevious, type Result, renderSummary, resultSchema, type Sample, sortedJson, summarizeSamples } from "./model";
+
+import { draftSeedBodies, mailboxBody, searchBodies } from "./requests";
 
 const resourceSchema = z.object({ id: z.string().min(1) });
 const workspaceSchema = z.object({
@@ -266,12 +279,7 @@ export async function run(options: Options) {
     const api = new Api(runtime.origin, controller.signal);
     const userId = await api.login(runtime.adminToken);
     await waitForRoutes(api, apps, runtime);
-    const mailbox = resourceSchema.parse(
-      await api.request("/api/mail/mailboxes", "POST", {
-        name: "Mailbox performance baseline",
-        description: "Disposable deterministic mailbox",
-      }),
-    );
+    const mailbox = resourceSchema.parse(await api.request("/api/mail/mailboxes", "POST", mailboxBody()));
     const [mailboxRow] = await db<{ id: string }[]>`SELECT id FROM mail.mailboxes WHERE short_id = ${mailbox.id}`;
     if (!mailboxRow) throw new Error("Created mailbox not found by short_id");
     const start = performance.now();
@@ -327,22 +335,9 @@ export async function run(options: Options) {
       add(id!, "Details", async (s) => {
         await request(api, s, `${base}/workspace-detail/${thread}`);
       });
-    for (const [id, expression] of [
-      ["search-rare", { type: "text", field: "any", query: plan.shape.rareWord, match: "words" }],
-      ["search-common", { type: "text", field: "any", query: plan.shape.commonWord, match: "words" }],
-      [
-        "search-structured",
-        {
-          type: "and",
-          expressions: [
-            { type: "text", field: "from", query: plan.shape.structuredTarget.from, match: "exact" },
-            { type: "text", field: "body", query: plan.shape.rareWord, match: "words" },
-          ],
-        },
-      ],
-    ] as const)
+    for (const { id, body } of searchBodies(plan.shape))
       add(id, "Search", async (s) => {
-        await request(api, s, `${base}/search`, { expression, sort: "relevance", limit: 50 });
+        await request(api, s, `${base}/search`, body);
       });
     for (const [id, folder] of [
       ["folder-large", plan.shape.largeFolderId],
@@ -366,31 +361,18 @@ export async function run(options: Options) {
       "Live and compose",
       (s) => liveArrival(api, s, activeRuntime, fixture, mailboxRow.id, mailbox.id, plan.shape.largeFolderId, arrival++),
       [
-        "Live protocol: sub id=m channel=mailbox scope={mailbox:shortId}; wait for ready, then await the mailbox-wide event (conversationId=null) written by the sync batch boundary. The application dispatcher polls within one second; no host-side wake or NATS client is started. Poll Inbox every 50 ms, bounded at 30 s. Commit time is the worker's transaction commit acknowledgement on the shared host monotonic clock. Visibility includes IPC handoff and polling. Worker startup excluded from commit-to-live/visibility metrics; request totals include only visibility polls.",
+        "Live protocol: sub id=m channel=mailbox scope={mailbox:shortId}; wait for ready, then await the mailbox-wide event (conversationId=null) written by the sync batch boundary. The application dispatcher polls within one second; no host-side wake or NATS client is started. Poll Inbox every 50 ms, bounded at 30 s. Commit time is the worker's transaction commit acknowledgement on the shared host epoch-based performance clock. Visibility includes IPC handoff and polling. Worker startup excluded from commit-to-live/visibility metrics; request totals include only visibility polls.",
       ],
     );
-    const replyMessage = plan.messages.find((m) => m.conversation === plan.shape.mediumThreadId)!;
+    const replyMessage =
+      plan.messages.find((m) => m.conversation === plan.shape.mediumThreadId && m.from !== "perf@example.test") ??
+      plan.messages.find((m) => m.conversation === plan.shape.mediumThreadId)!;
     add(
       "compose-open",
       "Live and compose",
       async (s) => {
-        for (const origin of [
-          {
-            kind: "compose",
-            input: {
-              senderIdentityId: fixture.senderIdentityId,
-              to: [{ address: "recipient@example.test" }],
-              subject: "Performance compose",
-              body: "Draft fixture",
-            },
-          },
-          {
-            kind: "derive",
-            messageId: replyMessage.id,
-            input: { kind: "reply", senderIdentityId: fixture.senderIdentityId, includeAttachments: true },
-          },
-        ]) {
-          const seed = resourceSchema.parse(await request(api, s, `${base}/draft-seeds`, { origin }));
+        for (const body of draftSeedBodies(fixture.senderIdentityId, replyMessage)) {
+          const seed = resourceSchema.parse(await request(api, s, `${base}/draft-seeds`, body));
           await request(api, s, `${page}/compose/local/${seed.id}?return=${encodeURIComponent(page)}`, undefined, true);
         }
       },
@@ -408,6 +390,8 @@ export async function run(options: Options) {
       metrics: null,
       database: null,
       plan: null,
+      planError: null,
+      unparsedPlans: 0,
     }));
     console.log("Measuring 5-second idle background window…");
     await reset(db);
@@ -435,12 +419,16 @@ export async function run(options: Options) {
         } finally {
           scenario.database = await readDatabase(db, started, scenario.samples.length || 1);
         }
-        scenario.plan = await explain(explainControl, runtime, scenario.database.statements, async () => {
-          await definition.action(emptySample());
-        });
-        if (!scenario.plan) throw new Error("auto_explain pass produced no request plan");
         scenario.status = "ok";
         scenario.metrics = summarizeSamples(scenario.samples);
+        const control = explainControl,
+          statements = scenario.database.statements;
+        await capturePlan(scenario, () =>
+          explain(control, activeRuntime, statements, async () => {
+            await definition.action(emptySample());
+          }),
+        );
+        controller.signal.throwIfAborted();
       } catch (error) {
         scenario.errors.push(String(error));
         controller.signal.throwIfAborted();

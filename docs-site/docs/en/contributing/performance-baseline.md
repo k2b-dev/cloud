@@ -280,13 +280,33 @@ The output is `.local/mail-perf/<UTC timestamp>/result.json` and `summary.md`.
 Failures retain partial results. `--compare <earlier result.json>` adds median
 deltas per scenario and metric; page-baseline results are rejected.
 
-Explain selection prefers the slowest plan whose query matches a statement
-in that scenario's statistics window after normalizing whitespace and
-trailing semicolons. JSON records `matched: true`. Without a match, it keeps
+Explain selection prefers the slowest plan whose Query Identifier matches a
+statement's `queryid` in that scenario's statistics window, including statements
+outside the displayed top 20. IDs are recorded as strings to preserve bigint
+precision; literals normalized by PostgreSQL do not affect matching.
+JSON records `matched: true`. Without a match, it keeps
 the slowest logged plan with `matched: false`, labelled "unmatched (may be
-background)" in the summary. Observer queries never log explain plans.
+background)" in the summary. The run-owned Postgres uses the logging collector
+and one fixed JSON log file with rotation disabled. Each explain pass reads
+from the byte offset recorded before that pass. Entries from the observer role
+are excluded; corrupt entries are skipped and counted as `unparsedPlans`.
+A failed capture or a pass without plans records `planError` in JSON and the
+summary, while successful timings and database attribution keep status `ok`.
 JSON keeps full statement text; the summary shows the top 20 statements with
 text truncated for display.
+
+Draft-seed and search bodies come from pure builders tested against the public
+request schemas. Replies use a compose origin with reply intent and the medium
+thread's source message and conversation IDs. HTTP 200 workspace responses
+with list or detail errors fail the scenario. Live commit and arrival times
+use `performance.timeOrigin + performance.now()` in both host processes.
+Fixture bodies use seeded offsets into a deterministic 256 KiB word corpus,
+with sentence and paragraph structure, instead of repeating a short phrase.
+The corpus is part of the fixture digest and transfers to PostgreSQL once;
+body expansion stays in PostgreSQL. Planned byte sizes, HTML wrapping, and
+rare/common search prefixes are preserved. Fixture seeding stores each part's
+SHA-256 once and reuses it for blob joins; HTML bodies reuse the expanded
+plain text.
 
 No provider connection is made. The persistence fixture uses example.test
 addresses and disables sync. BM25 is optional; plain Postgres uses fallback

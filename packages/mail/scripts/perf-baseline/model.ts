@@ -117,6 +117,8 @@ export const sampleSchema = z.object({
 export type Sample = z.infer<typeof sampleSchema>;
 const statementSchema = z.object({
   query: z.string(),
+  // Earlier schemaVersion 1 comparison files did not capture query IDs.
+  queryid: z.string().optional(),
   calls: number,
   totalMs: number,
   meanMs: number,
@@ -153,6 +155,8 @@ export const scenarioSchema = z.object({
   metrics: z.record(z.string(), z.object({ cold: number, median: number, p95: number })).nullable(),
   database: databaseSchema.nullable(),
   plan: planSchema.nullable(),
+  planError: z.string().nullable().default(null),
+  unparsedPlans: z.number().int().nonnegative().default(0),
 });
 export type Scenario = z.infer<typeof scenarioSchema>;
 export const resultSchema = z.object({
@@ -274,6 +278,8 @@ export function renderSummary(result: Result, previous?: Result) {
     lines.push(`## ${s.id}: attribution`, "", `Status: ${s.status}. Window: ${fmt(s.database?.windowMs)} ms.`, "");
     for (const note of s.notes) lines.push(`- ${note}`);
     for (const error of s.errors) lines.push(`- Error: ${escape(error)}`);
+    if (s.planError) lines.push(`- Plan error: ${escape(s.planError)}`);
+    if (s.unparsedPlans) lines.push(`- Unparsed plan log entries: ${s.unparsedPlans}.`);
     if (s.samples.some((sample) => sample.liveMs !== undefined))
       lines.push(
         `- Commit → live cold/median/p95: ${fmt(s.samples[0]?.liveMs)} / ${fmt(metric(s, "liveMs")?.median)} / ${fmt(metric(s, "liveMs")?.p95)} ms; visible: ${fmt(s.samples[0]?.visibleMs)} / ${fmt(metric(s, "visibleMs")?.median)} / ${fmt(metric(s, "visibleMs")?.p95)} ms.`,
