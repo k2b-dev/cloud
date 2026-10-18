@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as logging from "../../services/logging";
-import { createGeoIp, openGeoIpDatabase, truncateUtf8 } from "./geoip";
+import { createGeoIp, hasBoundedMmdbMetadata, openGeoIpDatabase, truncateUtf8 } from "./geoip";
 import { mmdbFixture } from "./geoip.test-fixture";
 
 const directories: string[] = [];
@@ -36,6 +36,73 @@ const quiet = () => {
 };
 
 describe("GeoIP", () => {
+  const metadata = (payload: Uint8Array) => Buffer.concat([Buffer.from("abcdef4d61784d696e642e636f6d", "hex"), payload]);
+
+  test("metadata pre-check handles scalar payloads, extended sizes and pointer widths", () => {
+    for (const payload of [
+      [0x40],
+      [0x68, ...Array(8).fill(0)],
+      [0x80],
+      [0xa2, 0, 0],
+      [0xc4, 0, 0, 0, 0],
+      [0xe0],
+      [0x04, 1, 0, 0, 0, 0],
+      [0x08, 2, ...Array(8).fill(0)],
+      [0x10, 3, ...Array(16).fill(0)],
+      [0x02, 4, 0, 7, 1, 7],
+      [0x04, 8, 0, 0, 0, 0],
+      [0x5d, 0, ...Array(29).fill(0)],
+      [0x5e, 0, 0, ...Array(285).fill(0)],
+      [0x5f, 0, 0, 0, ...Array(65821).fill(0)],
+      [0x20, 2, 0x40],
+      [0x28, 0, 0, ...Array(2045).fill(0), 0x40],
+      [0x38, 0, 0, 0, 5, 0x40],
+    ])
+      expect(hasBoundedMmdbMetadata(metadata(Buffer.from(payload)))).toBe(true);
+  });
+
+  test("metadata pre-check rejects cycles, bad offsets, types, sizes and truncated controls", () => {
+    for (const payload of [
+      [],
+      [0x20, 0],
+      [0x20, 2],
+      [0x28, 0, 0],
+      [0x30, 0, 0, 0],
+      [0x38, 255, 255, 255, 255],
+      [0x38, 0],
+      [0],
+      [0, 0],
+      [0, 9],
+      [0x5d],
+      [0x5e, 0],
+      [0x5f, 0, 0],
+      [0x41],
+      [0xe1, 0x40],
+      [0x67, ...Array(7).fill(0)],
+      [2, 7],
+      [5, 1, 0, 0, 0, 0, 0],
+      [5, 8, 0, 0, 0, 0, 0],
+    ])
+      expect(hasBoundedMmdbMetadata(metadata(Buffer.from(payload)))).toBe(false);
+  });
+
+  test("metadata pre-check uses the last marker and walks deep nesting without recursion", () => {
+    const valid = metadata(Buffer.from([0x40]));
+    expect(hasBoundedMmdbMetadata(Buffer.concat([valid, metadata(Buffer.from([0x41]))]))).toBe(false);
+    expect(hasBoundedMmdbMetadata(Buffer.concat([metadata(Buffer.from([0x41])), valid]))).toBe(true);
+    expect(hasBoundedMmdbMetadata(metadata(Buffer.from([...Array(4000).fill([1, 4]).flat(), 0x40])))).toBe(true);
+    expect(hasBoundedMmdbMetadata(Buffer.concat([Buffer.alloc(7), valid]).subarray(7))).toBe(true);
+    expect(hasBoundedMmdbMetadata(Buffer.concat([valid, Buffer.alloc(128 * 1024 - valid.length)]))).toBe(true);
+    expect(hasBoundedMmdbMetadata(Buffer.concat([valid, Buffer.alloc(128 * 1024 - valid.length + 1)]))).toBe(false);
+  });
+
+  test("metadata pre-check checks the section mmdb-lib decodes when its scan skips the last marker", () => {
+    // mmdb-lib's backward scan misses a marker followed by "Mind.com" and falls back to the earlier section.
+    const decoy = metadata(Buffer.from("Mind.comxxxxxx"));
+    expect(hasBoundedMmdbMetadata(Buffer.concat([mmdbFixture("city", { metadataPointerDepth: 24 }), decoy]))).toBe(false);
+    expect(hasBoundedMmdbMetadata(Buffer.concat([mmdbFixture("city"), decoy]))).toBe(true);
+  });
+
   test("opens lazily and resolves locale, IPv4 subtree, IPv6 and ASN", () => {
     const files = paths();
     const geo = createGeoIp(files);

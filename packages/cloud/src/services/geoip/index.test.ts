@@ -216,6 +216,30 @@ test("shared pointer containers stay bounded during upload probes and lookups", 
   expect(database.get("8.8.8.8")).not.toBe(result);
 });
 
+test("metadata pointer expansion is rejected before upload parsing or opening a stored database", () => {
+  const bytes = mmdbFixture("city", { metadataPointerDepth: 24 });
+  const started = performance.now();
+  expect(() => parseGeoIpUpload(bytes)).toThrow(expect.objectContaining({ code: "geoip_invalid" }));
+  expect(performance.now() - started).toBeLessThan(500);
+  const openStarted = performance.now();
+  expect(openGeoIpDatabase("city", bytes)).toBeNull();
+  expect(performance.now() - openStarted).toBeLessThan(500);
+});
+
+test("legitimate metadata pointers preserve the uploaded description", () => {
+  const bytes = mmdbFixture("city", { metadataDescriptionPointer: true, description: "Shared description" });
+  expect(parseGeoIpUpload(bytes).metadata.description.en).toBe("Shared description");
+  expect(openGeoIpDatabase("city", bytes)).not.toBeNull();
+});
+
+test("truncated metadata and a marker outside the final 128 KiB are rejected", () => {
+  const bytes = mmdbFixture("city");
+  for (const invalid of [bytes.subarray(0, bytes.length - 1), Buffer.concat([bytes, Buffer.alloc(128 * 1024)])]) {
+    expect(() => parseGeoIpUpload(invalid)).toThrow(expect.objectContaining({ code: "geoip_invalid" }));
+    expect(openGeoIpDatabase("city", invalid)).toBeNull();
+  }
+});
+
 test("a concurrent upload fails immediately and the flag clears after failure", async () => {
   const service = createGeoIpService();
   const actor = { id: "unused", roles: ["admin"] };

@@ -44,7 +44,96 @@ const cleanName = (value: unknown): string | null => {
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {};
 
+const METADATA_MARKER = Buffer.from("abcdef4d61784d696e642e636f6d", "hex");
+export const hasBoundedMmdbMetadata = (bytes: Uint8Array): boolean => {
+  // Mirror mmdb-lib's backward marker scan exactly: it can skip a marker after a partial match, and the checked
+  // section must be the one Reader decodes. The MMDB spec caps the section, marker included, at 128 KiB.
+  const floor = bytes.byteLength - 128 * 1024;
+  const last = METADATA_MARKER.length - 1;
+  let found = 0;
+  let position = bytes.byteLength - 1;
+  while (found <= last && position-- > 0) {
+    if (position < floor) return false;
+    found += bytes[position] === METADATA_MARKER[last - found] ? 1 : -found;
+  }
+  if (found <= last) return false;
+  const metadata = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).subarray(position + found);
+  let budget = metadata.length;
+  let offset = 0;
+  const stack: { remaining: number; resume?: number }[] = [{ remaining: 1 }];
+  // Metadata decoding has no cache, so bound pointer expansion before constructing a Reader.
+  while (stack.length) {
+    const frame = stack[stack.length - 1]!;
+    if (!frame.remaining) {
+      stack.pop();
+      offset = frame.resume ?? offset;
+      continue;
+    }
+    frame.remaining--;
+    if (--budget < 0 || offset >= metadata.length) return false;
+    const control = metadata[offset++]!;
+    let type = control >> 5;
+    if (type === 1) {
+      const size = (control >> 3) & 3;
+      if (offset + size + 1 > metadata.length) return false;
+      let target = size === 3 ? 0 : control & 7;
+      for (let i = 0; i <= size; i++) target = target * 256 + metadata[offset++]!;
+      target += [0, 2048, 526336, 0][size]!;
+      if (target >= metadata.length) return false;
+      stack.push({ remaining: 1, resume: offset });
+      offset = target;
+      continue;
+    }
+    if (type === 0) {
+      if (offset >= metadata.length) return false;
+      type = metadata[offset++]! + 7;
+      if (type < 8 || type > 15) return false;
+    }
+    let size = control & 31;
+    if (size >= 29) {
+      const extra = size - 28;
+      if (offset + extra > metadata.length) return false;
+      size = [29, 285, 65821][extra - 1]! + metadata.readUIntBE(offset, extra);
+      offset += extra;
+    }
+    if (type === 7 || type === 11) {
+      const remaining = size * (type === 7 ? 2 : 1);
+      if (remaining > budget) return false;
+      stack.push({ remaining });
+      continue;
+    }
+    switch (type) {
+      case 2:
+      case 4:
+        break;
+      case 3:
+        if (size !== 8) return false;
+        break;
+      case 5:
+      case 6:
+      case 8:
+      case 9:
+      case 10:
+        if (size > ({ 5: 2, 6: 4, 8: 4, 9: 8, 10: 16 } as const)[type]) return false;
+        break;
+      case 14:
+        if (size > 1) return false;
+        size = 0;
+        break;
+      case 15:
+        if (size !== 4) return false;
+        break;
+      default:
+        return false;
+    }
+    if (offset + size > metadata.length) return false;
+    offset += size;
+  }
+  return true;
+};
+
 export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "bundled" | "uploaded" = "bundled") => {
+  if (!hasBoundedMmdbMetadata(bytes)) return null;
   try {
     // Cache decoded pointer targets by byte offset so shared containers decode once per lookup.
     const cache = new Map<string | number, unknown>();

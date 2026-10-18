@@ -2,7 +2,7 @@ import { Readable } from "node:stream";
 import { createGunzip } from "node:zlib";
 import { Reader } from "mmdb-lib";
 import { GEOIP_MAX_DATABASE_BYTES, GEOIP_MAX_REQUEST_BYTES, type GeoIpErrorCode, type GeoIpKind } from "../../contracts/geoip";
-import { openGeoIpDatabase, truncateUtf8 } from "../../server/request-context/geoip";
+import { hasBoundedMmdbMetadata, openGeoIpDatabase, truncateUtf8 } from "../../server/request-context/geoip";
 
 const probeAddresses = [
   ...Array.from({ length: 512 }, (_, i) => [`${i >> 1}.${(i % 2) * 128}.0.0`, `${(0x2000 + i * 16).toString(16)}::`]).flat(),
@@ -97,6 +97,7 @@ export const readGeoIpUpload = async (body: ReadableStream<Uint8Array>, contentL
 };
 
 export const parseGeoIpUpload = (bytes: Uint8Array) => {
+  if (!hasBoundedMmdbMetadata(bytes)) throw new GeoIpError("geoip_invalid");
   try {
     const metadata = new Reader(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)).metadata;
     const type = metadata.databaseType.toLowerCase();

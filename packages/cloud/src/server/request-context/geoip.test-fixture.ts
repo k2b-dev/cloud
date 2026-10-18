@@ -1,6 +1,13 @@
 // Minimal deterministic MMDB writer: 24-bit tree, maps, strings, uint32 and arrays.
-type Value = string | number | Value[] | { [key: string]: Value };
+type Value = string | number | Buffer<ArrayBuffer> | Value[] | { [key: string]: Value };
+const pointer = (offset: number) => {
+  const bytes = Buffer.alloc(5);
+  bytes[0] = 0x38;
+  bytes.writeUInt32BE(offset, 1);
+  return bytes;
+};
 const encode = (value: Value): Buffer<ArrayBuffer> => {
+  if (Buffer.isBuffer(value)) return value;
   const header = (type: number, size: number) => {
     const extra = size < 29 ? [] : size < 285 ? [size - 29] : [(size - 285) >> 8, (size - 285) & 255];
     return Buffer.from([
@@ -34,6 +41,8 @@ export const mmdbFixture = (
     description?: string;
     cityName?: string;
     repeatedPointerDepth?: number;
+    metadataPointerDepth?: number;
+    metadataDescriptionPointer?: boolean;
     /** Null leaves out the optional `languages` metadata key. */
     languages?: string[] | null;
   },
@@ -44,12 +53,6 @@ export const mmdbFixture = (
   const data: Buffer[] = [];
   let shared: Buffer | undefined;
   if (options?.repeatedPointerDepth !== undefined) {
-    const pointer = (offset: number) => {
-      const bytes = Buffer.alloc(5);
-      bytes[0] = 0x38; // Four-byte pointer relative to the data section.
-      bytes.writeUInt32BE(offset, 1);
-      return bytes;
-    };
     data.push(encode("leaf"));
     let offset = 0;
     for (let depth = 0; depth < options.repeatedPointerDepth; depth++) {
@@ -101,21 +104,39 @@ export const mmdbFixture = (
       tree.writeUIntBE(pointer, node.index * 6 + side * 3, 3);
     });
   }
-  return Buffer.concat([
-    tree,
-    Buffer.alloc(16),
-    ...data,
-    Buffer.from("abcdef4d61784d696e642e636f6d", "hex"),
-    encode({
-      node_count: nodes.length,
-      record_size: 24,
-      ip_version: options?.ipVersion ?? 6,
-      database_type: options?.databaseType ?? (kind === "city" ? "DBIP-City-Lite" : "DBIP-ASN-Lite (compat=GeoLite2-ASN)"),
-      ...(options?.languages === null ? {} : { languages: options?.languages ?? ["en", "de"] }),
-      binary_format_major_version: 2,
-      binary_format_minor_version: 0,
-      build_epoch: options?.buildEpoch ?? FIXTURE_EPOCH,
-      description: { en: options?.description ?? "Synthetic test database" },
-    }),
-  ]);
+  const description = options?.description ?? "Synthetic test database";
+  const descriptionPointer = pointer(0);
+  const sharedPointer = pointer(0);
+  const metadata = {
+    node_count: nodes.length,
+    record_size: 24,
+    ip_version: options?.ipVersion ?? 6,
+    database_type: options?.databaseType ?? (kind === "city" ? "DBIP-City-Lite" : "DBIP-ASN-Lite (compat=GeoLite2-ASN)"),
+    ...(options?.languages === null ? {} : { languages: options?.languages ?? ["en", "de"] }),
+    binary_format_major_version: 2,
+    binary_format_minor_version: 0,
+    build_epoch: options?.buildEpoch ?? FIXTURE_EPOCH,
+    description: { en: options?.metadataDescriptionPointer ? descriptionPointer : description },
+    ...(options?.metadataPointerDepth !== undefined ? { shared: sharedPointer } : {}),
+  };
+  const extra: Buffer[] = [];
+  let offset = encode(metadata).length;
+  if (options?.metadataDescriptionPointer) {
+    descriptionPointer.writeUInt32BE(offset, 1);
+    extra.push(encode(description));
+    offset += extra[0]!.length;
+  }
+  if (options?.metadataPointerDepth !== undefined) {
+    extra.push(encode("leaf"));
+    let target = offset;
+    offset += extra[extra.length - 1]!.length;
+    for (let depth = 0; depth < options.metadataPointerDepth; depth++) {
+      const next = Buffer.concat([Buffer.from([0x02, 0x04]), pointer(target), pointer(target)]);
+      target = offset;
+      extra.push(next);
+      offset += next.length;
+    }
+    sharedPointer.writeUInt32BE(target, 1);
+  }
+  return Buffer.concat([tree, Buffer.alloc(16), ...data, Buffer.from("abcdef4d61784d696e642e636f6d", "hex"), encode(metadata), ...extra]);
 };
