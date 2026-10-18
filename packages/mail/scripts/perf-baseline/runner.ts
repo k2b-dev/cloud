@@ -231,7 +231,7 @@ export async function run(options: Options) {
       ...(options.skipBuild ? ["--skip-build reused bundles; recorded commit does not prove their provenance."] : []),
       ...(options.browsers.length
         ? [
-            "Browser part runs after the server scenarios on the same installation. Every load and interaction sample uses a fresh context: Chromium disables its cache, so loads are cold. Local emulation in the run-owned Playwright container, not real phones.",
+            "Browser part runs after the server scenarios on the same installation. Every load and interaction sample uses a fresh context, so start pages load cold (Chromium cache disabled); interactions then reuse what their start page cached. Local emulation in the run-owned Playwright container, not real phones.",
             "Interaction times are epoch milliseconds from the trusted input event (live: the ingest worker's commit acknowledgement on the host; the container shares the host clock) to the animation frame in which the end state first holds. A probe checks the end state once per frame.",
           ]
         : []),

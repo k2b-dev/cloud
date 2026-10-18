@@ -350,10 +350,12 @@ action until its end state, with their encoded response bytes; a request
 that a navigation cancels counts with its error and no bytes. The summary
 shows the API requests and bytes.
 
-Every sample uses a fresh browser context. Chromium disables its cache, so
-loads and interactions are cold, including the JavaScript that compose
-loads. These are local emulations in a container, not measurements on real
-phones.
+Every sample uses a fresh browser context, so each start page loads cold.
+The interaction then reuses what that load cached, as for a person who just
+opened the page: Chromium turns its cache back on after the start page, and
+WebKit keeps the context's cache. JavaScript and styles that only the next
+page needs, such as compose, still load from the network. These are local
+emulations in a container, not measurements on real phones.
 
 ### Rank bottlenecks
 

@@ -8,6 +8,8 @@ import { Browsers, type LoadTiming, measuredLocale, measuredTimeZone, profiles }
 import { validatePage } from "../../../../scripts/perf-baseline/model";
 import { buildRoot, localTls, type Runtime, repository } from "../../../../scripts/perf-baseline/runtime";
 import type { Api } from "../../../../scripts/perf-baseline/seed";
+import { mailDraftSeedSchema } from "../../src/contracts";
+import { mailDraftSeedKey } from "../../src/frontend/_components/mail-draft-seed-store";
 import { buildMailSearchHref } from "../../src/frontend/_components/mail-navigation";
 import type { LargeMailboxPlan } from "../../test/fixtures/large-mailbox";
 import { Arrival } from "./arrival";
@@ -48,6 +50,8 @@ export const watchKey = "cloud-mail-perf-watch";
 const interactionTimeoutMs = 30_000;
 const sampleTimeoutMs = 120_000;
 const unsettledMs = 10_000;
+/** Host request events trail the browser; candidates come from this margin around the window. */
+const clockSlackMs = 1_000;
 const traceCategories = ["devtools.timeline", "disabled-by-default-devtools.timeline", "v8", "blink.user_timing", "toplevel"];
 
 /**
@@ -147,6 +151,8 @@ type Setup = {
   nextUid: () => number;
 };
 type Recorded = { request: Request; at: number };
+type LoadTarget = { path: string; storage: { key: string; value: string } | null; ready: string };
+const composeEditor = 'textarea[aria-label="Message body"]';
 /** act resolves to the host epoch t0 for external actions, or null when the page observed the input event. */
 type Prepared = { startPath: string; act: (page: Page, profile: Profile) => Promise<number | null> };
 
@@ -188,15 +194,34 @@ class MailBrowser {
     if (!item) throw new Error(`Fixture list is empty: ${href}`);
     return item;
   }
-  async composePath() {
+  /**
+   * A fresh draft seed: the compose page reads it from the browser's localStorage, where
+   * Compose stores it before navigating, so a measured load installs it the same way.
+   */
+  private async composeTarget(): Promise<LoadTarget> {
     const body = draftSeedBodies(this.setup.fixture.senderIdentityId, this.setup.plan.messages[0]!)[0]!;
-    const seed = z
-      .object({ id: z.string().min(1) })
-      .parse(await this.setup.api.request(`/api/mail/mailboxes/${this.setup.mailbox.shortId}/draft-seeds`, "POST", body));
-    return `${this.base}/compose/local/${seed.id}?return=${encodeURIComponent(this.base)}`;
+    const seed = mailDraftSeedSchema.parse(
+      await this.setup.api.request(`/api/mail/mailboxes/${this.setup.mailbox.shortId}/draft-seeds`, "POST", body),
+    );
+    return {
+      path: `${this.base}/compose/local/${seed.id}?return=${encodeURIComponent(this.base)}`,
+      storage: { key: mailDraftSeedKey(seed.mailboxId, seed.id), value: JSON.stringify(seed) },
+      ready: composeEditor,
+    };
   }
-  pagePath(page: LoadPage) {
-    return page === "mailbox" ? Promise.resolve(this.base) : this.composePath();
+  private target(page: LoadPage): Promise<LoadTarget> {
+    return page === "mailbox"
+      ? Promise.resolve({ path: this.base, storage: null, ready: "[data-mail-conversation-list] [data-conversation-id]" })
+      : this.composeTarget();
+  }
+  /** Installs the target's local state before navigation. */
+  private static async prepareLoad(page: Page, target: LoadTarget) {
+    if (target.storage) await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), target.storage);
+  }
+  /** A load only counts when the page shows what it is for, not an error or empty state. */
+  private static async requireReady(page: Page, target: LoadTarget) {
+    if (!(await page.locator(target.ready).filter({ visible: true }).count()))
+      throw new Error(`Page is interactive but does not show ${target.ready}`);
   }
 
   /** A link that is visible now; on phones the navigation sits behind the app menu. */
@@ -347,7 +372,7 @@ class MailBrowser {
         };
       }
       case "compose-open": {
-        const editor = 'textarea[aria-label="Message body"]';
+        const editor = composeEditor;
         return {
           startPath: this.base,
           act: async (page, profile) => {
@@ -365,10 +390,7 @@ class MailBrowser {
     }
   }
 
-  /** Host epoch time of the latest arm; requests from here on belong to the interaction. */
-  private armedAt = 0;
   private async arm(page: Page, watch: Watch) {
-    this.armedAt = monotonicMs();
     const armed = await page.evaluate((value) => window.__mailPerfArm?.(value) ?? null, watch);
     if (armed === null) throw new Error("Interaction probe missing in the page");
     if (!armed) throw new Error(`${watch.id}: the end state already holds before the action`);
@@ -415,7 +437,10 @@ class MailBrowser {
           }),
         );
       },
-      afterLoad: async (page) => {
+      afterLoad: async (page, _timing, cdp) => {
+        // The person just loaded the start page: like WebKit's fresh context, the interaction
+        // reuses what that load cached instead of the cold load's disabled Chromium cache.
+        await cdp?.send("Network.setCacheDisabled", { cacheDisabled: false });
         const recorded: Recorded[] = [];
         const settled = new Map<Request, (failure: string | null) => void>();
         const outcomes = new Map<Request, Promise<string | null>>();
@@ -428,37 +453,47 @@ class MailBrowser {
         page.on("requestfailed", (request) => settled.get(request)?.(request.failure()?.errorText ?? "failed"));
         const external = await prepared.act(page, profile);
         const state = await this.outcome(page);
-        const observedAt = monotonicMs();
         const actionAt = external ?? state.actionAt;
         if (actionAt === null || state.hitAt === null) throw new Error(`${id}: the action was not observed in the page`);
         if (state.hitAt < actionAt && external === null) throw new Error(`${id}: end state painted before the action`);
-        const caused = recorded.filter((entry) => entry.at >= this.armedAt && entry.at <= observedAt);
+        const hitAt = state.hitAt;
         if (id === "compose-open") {
           // Not timed: prove that the editor really takes input.
-          const editor = page.locator('textarea[aria-label="Message body"]').filter({ visible: true }).first();
+          const editor = page.locator(composeEditor).filter({ visible: true }).first();
           await editor.pressSequentially("x", { timeout: interactionTimeoutMs });
           if (!(await editor.inputValue()).includes("x")) throw new Error("compose-open: the editor did not accept input");
         }
-        const requests = await Promise.all(
-          caused.map(async ({ request }) => {
-            const target = new URL(request.url());
+        // Candidates by host event time, then the browser's own start time decides: only requests
+        // started between the action and the painted end state belong to the timed window.
+        const candidates = recorded.filter((entry) => entry.at >= actionAt - clockSlackMs && entry.at <= hitAt + clockSlackMs);
+        const settledRequests = await Promise.all(
+          candidates.map(async ({ request, at }) => {
             // A request of a replaced document may never settle; it counts as unsettled without bytes.
             const failed = await within(outcomes.get(request)!, unsettledMs, "").catch(
               () => `unsettled ${unsettledMs} ms after the end state`,
             );
-            const sizes = failed === null ? await request.sizes() : null;
-            return {
-              method: request.method(),
-              path: `${target.pathname}${target.search}`.slice(0, 300),
-              type: request.resourceType(),
-              status: failed === null ? ((await request.response())?.status() ?? null) : null,
-              bytes: sizes ? sizes.responseBodySize + sizes.responseHeadersSize : 0,
-              failure: failed,
-            };
+            const startTime = request.timing().startTime;
+            return { request, failed, startedAt: startTime > 0 ? startTime : at };
           }),
         );
+        const requests = await Promise.all(
+          settledRequests
+            .filter(({ startedAt }) => startedAt >= actionAt && startedAt <= hitAt)
+            .map(async ({ request, failed }) => {
+              const target = new URL(request.url());
+              const sizes = failed === null ? await request.sizes() : null;
+              return {
+                method: request.method(),
+                path: `${target.pathname}${target.search}`.slice(0, 300),
+                type: request.resourceType(),
+                status: failed === null ? ((await request.response())?.status() ?? null) : null,
+                bytes: sizes ? sizes.responseBodySize + sizes.responseHeadersSize : 0,
+                failure: failed,
+              };
+            }),
+        );
         // A live arrival can paint before the worker's commit acknowledgement reaches the host.
-        return interactionSample(Math.max(0, state.hitAt - actionAt), requests);
+        return interactionSample(Math.max(0, hitAt - actionAt), requests);
       },
     });
     if (!after) throw new Error(`${id}: no interaction result`);
@@ -466,9 +501,14 @@ class MailBrowser {
   }
 
   async load(browser: Browser, engine: Engine, profile: Profile, page: LoadPage): Promise<LoadSample> {
-    const url = new URL(await this.pagePath(page), this.setup.api.origin).href;
+    const target = await this.target(page);
+    const url = new URL(target.path, this.setup.api.origin).href;
     const { metrics, after } = await this.browsers.sample(browser, engine, profile, url, this.setup.api.cookie, {
-      afterLoad: async (_page, timing) => timing,
+      beforeLoad: (tab) => MailBrowser.prepareLoad(tab, target),
+      afterLoad: async (tab, timing) => {
+        await MailBrowser.requireReady(tab, target);
+        return timing;
+      },
     });
     if (!after) throw new Error("Missing load timing");
     const tasks = after.longtasks.filter((task) => task.start < after.tti);
@@ -483,12 +523,14 @@ class MailBrowser {
 
   /** One extra Chromium load with tracing; its timings are not samples because tracing slows the page. */
   async trace(browser: Browser, profile: Profile, page: LoadPage) {
-    const url = new URL(await this.pagePath(page), this.setup.api.origin).href;
+    const target = await this.target(page);
+    const url = new URL(target.path, this.setup.api.origin).href;
     let tracing = false;
     try {
       const { after } = await this.browsers.sample(browser, "chromium", profile, url, this.setup.api.cookie, {
         timeoutMs: sampleTimeoutMs,
         beforeLoad: async (tab) => {
+          await MailBrowser.prepareLoad(tab, target);
           await browser.startTracing(tab, { categories: traceCategories });
           tracing = true;
         },
@@ -496,6 +538,7 @@ class MailBrowser {
           const markTimeMs = await tab.evaluate((name) => performance.mark(name).startTime, syncMark);
           const buffer = await browser.stopTracing();
           tracing = false;
+          await MailBrowser.requireReady(tab, target);
           return traceBreakdown(JSON.parse(buffer.toString("utf8")), { markTimeMs, ...timing });
         },
       });
@@ -507,7 +550,7 @@ class MailBrowser {
   }
 
   async static(page: LoadPage) {
-    const path = await this.pagePath(page);
+    const { path } = await this.target(page);
     const url = new URL(path, this.setup.api.origin).href;
     const response = await fetch(url, {
       ...localTls(url, this.setup.api.origin),

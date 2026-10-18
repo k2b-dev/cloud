@@ -157,7 +157,8 @@ export type LoadTiming = {
 export type LoadHooks<T> = {
   timeoutMs?: number;
   beforeLoad?: (page: Page, context: BrowserContext) => Promise<void>;
-  afterLoad?: (page: Page, timing: LoadTiming) => Promise<T>;
+  /** `cdp` is the load's Chromium session (cache disabled, throttling); undefined in WebKit. */
+  afterLoad?: (page: Page, timing: LoadTiming, cdp: CDPSession | undefined) => Promise<T>;
 };
 
 export class Browsers {
@@ -455,14 +456,18 @@ export class Browsers {
         ttiMs: Math.round(tti),
         ...longtasks,
       });
-      const after = await hooks.afterLoad?.(page, {
-        fcp: timing.fcp,
-        lcp: timing.lcp,
-        tti,
-        mountStarts: timing.mountStarts,
-        mountTimes: timing.mountTimes,
-        longtasks: timing.longtasks,
-      });
+      const after = await hooks.afterLoad?.(
+        page,
+        {
+          fcp: timing.fcp,
+          lcp: timing.lcp,
+          tti,
+          mountStarts: timing.mountStarts,
+          mountTimes: timing.mountTimes,
+          longtasks: timing.longtasks,
+        },
+        cdp,
+      );
       await cdp?.detach();
       return { metrics, encodings: { js: [...encodings.js].sort(), css: [...encodings.css].sort() }, after };
     } catch (error) {
