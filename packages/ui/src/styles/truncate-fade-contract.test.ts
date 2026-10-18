@@ -7,7 +7,7 @@ const message = "navigation labels fade with `k2b-truncate-fade`, they never end
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 const builtRules = parseCssRules("dist/styles.css", css);
 const navigation =
-  /\.k2b-(?:app-workspace__(?:sidebar|nav-tree|level-title)|settings__tab|tab-bar|sidebar-switcher|tabs\b)|\.k2b-spotlight-button\[data-variant=["']?sidebar["']?\]/;
+  /\.k2b-(?:app-workspace__(?:sidebar|nav-tree|level-title)|settings__tab|tab-bar|sidebar-switcher|tabs\b|view-tabs)|\.k2b-spotlight-button\[data-variant=["']?sidebar["']?\]/;
 
 describe("navigation truncation contract", () => {
   test(message, () => {

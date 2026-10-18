@@ -112,7 +112,9 @@ current view. Opening the menu is the only step that reads CSS visibility;
 the server already renders the final strip and both counts.
 
 Every view is a document link, in the strip and under **More**, so reload,
-back, and forward show the view that the URL names.
+back, and forward show the view that the URL names. A long view name shrinks
+before the strip scrolls and fades out at its end with the shared
+[fade utility](/en/ui/layout/navigation#label-overflow).
 
 Both tab controls have a soft appearance: no tray, baseline, selection ring,
 or underline. The selected view uses the app tint. Font weight never changes

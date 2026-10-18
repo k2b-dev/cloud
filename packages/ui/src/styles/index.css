@@ -12352,10 +12352,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
+/* A long view name fades out at its end (`k2b-truncate-fade`). */
 .k2b-ui .k2b-view-tabs__label {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .k2b-ui .k2b-view-tabs__tab > i {

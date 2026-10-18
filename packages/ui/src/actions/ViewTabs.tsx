@@ -60,7 +60,7 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
   const tabContent = (item: ViewTab) => (
     <>
       <Show when={item.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-      <span class="k2b-view-tabs__label">{item.label}</span>
+      <span class="k2b-view-tabs__label k2b-truncate-fade">{item.label}</span>
       <Show when={item.count !== undefined}>
         <span class="k2b-view-tabs__count">{item.count}</span>
       </Show>
