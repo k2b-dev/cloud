@@ -200,8 +200,9 @@ a phone, and its arrows move by whole weeks. Both load the week before and
 after while you scroll, and the URL follows the first day you see; an item
 opens there in place. Another filter keeps the days already loaded and the
 place you see, and **Back** after an item keeps the day you scrolled to. The count next to the filters counts the days you see.
-Deadlines show as dashed lines with a checkbox, or **Space**, to check the
-task off, and keep their time when you drag them. Free time creates an event
+Timed deadlines show as dashed lines with a checkbox, or **Space**, to check the
+task off, and keep their time when you drag them. All-day deadlines sit in the
+all-day row; move them in the month view, where they stay all-day, or in the task. Free time creates an event
 where it lies, and a task dragged from the row below the day view into free
 time gets that time, keeps its deadline also when it moves later, and leaves
 the row. **H**, **J**, **K**, **1** to **4**, **G**, **N**, and **Shift+N**
