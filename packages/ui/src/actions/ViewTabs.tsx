@@ -1,4 +1,3 @@
-import { Link, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import Dropdown, { type DropdownItem } from "./Dropdown";
@@ -12,9 +11,6 @@ export type ViewTabsProps = {
   current: string | undefined;
   /** Tabs shown before More (default 5). */
   max?: number;
-  /** Enhanced navigation requires onNavigate to load and apply the destination. */
-  navigation?: "enhanced" | "document";
-  onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   class?: string;
 };
 
@@ -33,7 +29,10 @@ export function viewTabsLayout(items: readonly ViewTab[], current: string | unde
   return { wide, compact, wideHidden: items.length - wide.length, compactHidden: items.length - compact.length };
 }
 
-/** URL-backed object views. Every visible view is an ordinary navigation link. */
+/**
+ * URL-backed object views. Every view is an ordinary document link, in the strip and under More, so reload, back,
+ * and forward keep the view the URL names.
+ */
 export function ViewTabs(props: ViewTabsProps): JSX.Element {
   const messages = useUiMessages();
   const layout = createMemo(() => viewTabsLayout(props.items, props.current, props.max));
@@ -81,23 +80,9 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
                 data-view-tab={item().id}
                 data-compact-hidden={!layout().compact.includes(index) ? "" : undefined}
               >
-                <Show
-                  when={props.navigation === "enhanced" && props.onNavigate}
-                  fallback={
-                    <a class="k2b-view-tabs__tab" href={item().href} aria-current={item().id === props.current ? "page" : undefined}>
-                      {tabContent(item())}
-                    </a>
-                  }
-                >
-                  <Link
-                    class="k2b-view-tabs__tab"
-                    href={item().href}
-                    onNavigate={props.onNavigate}
-                    aria-current={item().id === props.current ? "page" : undefined}
-                  >
-                    {tabContent(item())}
-                  </Link>
-                </Show>
+                <a class="k2b-view-tabs__tab" href={item().href} aria-current={item().id === props.current ? "page" : undefined}>
+                  {tabContent(item())}
+                </a>
               </li>
             );
           }}

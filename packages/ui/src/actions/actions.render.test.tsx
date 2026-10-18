@@ -1191,4 +1191,14 @@ describe("workspace head navigation", () => {
     expect(workspace(false, false)).toContain("k2b-app-workspace__head-lead");
     expect(workspace(false, false)).not.toContain("data-row");
   });
+  test("shows a zero result count while filtered", () => {
+    const html = renderToString(() =>
+      createComponent(AppWorkspace, {
+        get children() {
+          return createComponent(AppWorkspace.Head, { filters: "FILTER SLOT", filtered: true, count: 0 });
+        },
+      }),
+    );
+    expect(html).toMatch(/class="k2b-app-workspace__head-count"><span>(?:<!--[^>]*-->)*0/);
+  });
 });

@@ -2202,7 +2202,7 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
             </Show>
           </div>
         </Show>
-        <Show when={props.head?.filtered && props.head?.count}>
+        <Show when={props.head?.filtered && props.head.count !== undefined && props.head.count !== null && props.head.count !== false}>
           <span class="k2b-app-workspace__head-count">
             <span>{props.head?.count}</span>
           </span>

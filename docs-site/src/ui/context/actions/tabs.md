@@ -111,9 +111,8 @@ original order, with counts as quiet trailing text. It never repeats the
 current view. Opening the menu is the only step that reads CSS visibility;
 the server already renders the final strip and both counts.
 
-Navigation defaults to `"document"`. Use `"enhanced"` only with `onNavigate`
-inside an island that loads and applies the destination. Without that callback,
-links keep document navigation.
+Every view is a document link, in the strip and under **More**, so reload,
+back, and forward show the view that the URL names.
 
 Both tab controls have a soft appearance: no tray, baseline, selection ring,
 or underline. The selected view uses the app tint. Font weight never changes
@@ -126,8 +125,6 @@ type ViewTab = {
 };
 type ViewTabsProps = {
   label: string; items: readonly ViewTab[]; current: string | undefined; max?: number;
-  navigation?: "enhanced" | "document";
-  onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   class?: string;
 };
 ```
