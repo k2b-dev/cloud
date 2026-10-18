@@ -227,6 +227,7 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
           : APP_WORKSPACE_DRAWER_MAX;
   const mainMinValue = cssState(root, "--k2b-workspace-main-min");
   const mainMin = mainMinValue.endsWith("px") ? Number.parseFloat(mainMinValue) : APP_WORKSPACE_MAIN_MIN;
+  const mainExtra = Math.max(0, (Number.isFinite(mainMin) ? mainMin : APP_WORKSPACE_MAIN_MIN) - APP_WORKSPACE_MAIN_MIN);
   const limits = appWorkspaceResizeLimits({
     kind,
     workspaceSize:
@@ -239,11 +240,12 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
             : kind === "sidebar"
               ? root.getBoundingClientRect().width - 2 * root.clientLeft
               : root.getBoundingClientRect().width,
+    // Interactive sizing keeps Main's declared minimum beside the sidebar and the Detail.
     reservedSize:
       kind === "sidebar" && reserveMainMinimum
-        ? Math.max(0, (Number.isFinite(mainMin) ? mainMin : APP_WORKSPACE_MAIN_MIN) - APP_WORKSPACE_MAIN_MIN)
+        ? mainExtra
         : kind === "detail"
-          ? 8
+          ? 8 + (reserveMainMinimum ? mainExtra : 0)
           : kind === "pane"
             ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0) + separatorSize
             : 0,
@@ -709,10 +711,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       top: 0,
       fresh: true,
       // Text entry and focus alone do not choose an item.
+      // A modified activation, such as Ctrl/Cmd-click opening a new tab, chooses nothing here.
       chosen:
         ((event instanceof PointerEvent && event.type === "pointerdown" && event.button === 0) ||
           event instanceof KeyboardEvent ||
           assistive) &&
+        !(event instanceof MouseEvent || event instanceof KeyboardEvent
+          ? event.ctrlKey || event.metaKey || event.shiftKey || event.altKey
+          : false) &&
         !target.closest(KEY_OWNER_SELECTOR),
     };
     refreshItem(snapshot);

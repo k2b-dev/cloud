@@ -174,6 +174,19 @@ describe("AppWorkspace resize controller behaviour", () => {
     }
   });
 
+  test("Detail resizing reserves Main's configured minimum", () => {
+    const { root, handle } = detailWorkspace();
+    root.style.setProperty("--k2b-workspace-main-min", "760px");
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      dispatchKey(handle, "End");
+      // 1400 px from Content's start to the workspace's end, less the 8 px inset and Main's 760 px.
+      expect(handle.getAttribute("aria-valuemax")).toBe("632");
+    } finally {
+      dispose();
+    }
+  });
+
   test("sidebar resizing reserves Main's configured minimum and never sets max below min", () => {
     const { root, handle, sidebar } = workspace({ width: 1000.75, sidebarWidth: 208 });
     root.style.setProperty("--k2b-workspace-main-min", "760px");
@@ -2187,6 +2200,7 @@ describe("waiting detail drawers", () => {
     "cancelled after click",
     "roving row",
     "data-selected row",
+    "modified click",
     "Main marked",
   ] as const) {
     test(`choosing the selected item again: ${gesture}`, async () => {
@@ -2206,7 +2220,13 @@ describe("waiting detail drawers", () => {
       try {
         toggle.click();
         detailKey(toggle, "Escape");
-        target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: gesture === "secondary button" ? 2 : 0 }));
+        target.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            button: gesture === "secondary button" ? 2 : 0,
+            ctrlKey: gesture === "modified click",
+          }),
+        );
         if (gesture === "cancelled") target.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
         else target.dispatchEvent(new MouseEvent("click", { bubbles: true, button: gesture === "secondary button" ? 2 : 0, detail: 1 }));
         if (gesture === "cancelled after click") target.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
