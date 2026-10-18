@@ -391,7 +391,7 @@ const WorkspaceDemo = () => {
     <DemoCard
       id="workspace"
       chip={{ kind: "component", name: "AppWorkspace", from: "@k2b/ui" }}
-      description="A portable application frame with responsive, collapsible, and hideable navigation, peer panes, contextual detail, a bottom drawer, and pointer and keyboard resizing."
+      description="A portable application frame with responsive, collapsible, and hideable navigation, peer panes, contextual detail, a bottom drawer, and pointer and keyboard resizing. Object-row icons sit in soft chips of the app color."
       code={`const [layout, setLayout] = createSignal<AppWorkspaceLayoutState>({ version: 2, sidebarWidth: 208 });
 const [active, setActive] = createSignal("available");
 const [expanded, setExpanded] = createSignal(["items"]);
@@ -670,7 +670,7 @@ const OverviewDemo = () => (
       { kind: "component", name: "AppOverview", from: "@k2b/ui" },
       { kind: "component", name: "LinkCard", from: "@k2b/ui" },
     ]}
-    description="An application landing page with one primary action in the page header, objects as calm cards, and a quieter supporting panel."
+    description="An application landing page with one primary action, soft app-color icon chips in the header and cards, and a quieter supporting panel."
     code={`<AppOverview title="Projects" subtitle="3 projects" icon="ti ti-folders" actions={<Button>New project</Button>}>
   <AppOverview.Main title="Your projects">
     <AppOverview.Cards>
@@ -1096,7 +1096,7 @@ const PanelDemo = () => {
     <DemoCard
       id="panel-dialog"
       chip={{ kind: "component", name: "PanelDialog", from: "@k2b/ui" }}
-      description="Each section is a title above one tinted group; fields and muted fills such as segmented tracks inside it turn white. Scroll the bounded body: header and footer stay in view. Toggle the optional sections: their titles stay in place and edited values stay intact."
+      description="The header icon sits in a soft chip of the app color. Each section is a title above one tinted group; fields and muted fills such as segmented tracks inside it turn white. Scroll the bounded body: header and footer stay in view. Toggle the optional sections: their titles stay in place and edited values stay intact."
       code={`const [shared, setShared] = createSignal(true);
 const [baseUrl, setBaseUrl] = createSignal("");
 const [auth, setAuth] = createSignal("token");

@@ -586,7 +586,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     expect(rootRule).toBeDefined();
     expect(rootRule).not.toContain("--k2b-workspace-sidebar-width");
-    expect(css.match(/var\(--k2b-workspace-sidebar-width, 13rem\)/g)).toHaveLength(3);
+    // The sidebar space calculation also inherits the server-rendered width.
+    expect(css.match(/var\(--k2b-workspace-sidebar-width, 13rem\)/g)).toHaveLength(4);
     expect(css).not.toContain("var(--k2b-workspace-sidebar-width)");
   });
 
@@ -911,7 +912,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
         ".k2b-ui[data-theme=dark] .k2b-app-workspace,.k2b-ui.k2b-dark .k2b-app-workspace,.dark .k2b-ui .k2b-app-workspace",
       );
       expect(css).toContain("border-color:var(--k2b-border)");
-      expect(rule(".k2b-app-workspace__sidebar")).toContain("background:var(--k2b-surface-muted)");
+      expect(rule(".k2b-app-workspace__sidebar")).toContain("background:var(--k2b-surface)");
       expect(rule(".k2b-app-workspace__sidebar-desktop")).toContain("display:flex");
       expect(rule(".k2b-app-workspace__sidebar-desktop")).toContain("padding:.5rem");
       expect(rule(".k2b-app-workspace__sidebar-body")).toContain("padding:0");
@@ -920,15 +921,14 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-app-workspace__main[data-scroll=false]")).toContain("overflow:hidden");
       expect(rule(".k2b-app-workspace__main-pane[data-scroll=false]")).toContain("overflow:hidden");
       expect(rule(".k2b-app-workspace__main-pane")).not.toContain("border-right");
-      expect(css).toMatch(
-        /\.k2b-app-workspace__main-pane:has\(~\s*\[data-workspace-main-region\]\)[^{]*\{border-right:1px solid var\(--k2b-border\)/,
-      );
+      // Peer panes now separate with a 12px gap carried by a transparent border.
+      expect(rule(".k2b-app-workspace__main-pane:has(~[data-workspace-main-region])")).toContain("border-right:.75rem solid #0000");
       expect(rule(".k2b-app-workspace__sidebar-item")).toContain("--k2b-sidebar-item-depth");
       expect(rule(".k2b-app-workspace__sidebar-icon-action")).toContain("width:100%");
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("background:var(--k2b-surface-muted)");
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("padding:.5rem");
       expect(rule(".k2b-app-workspace__detail")).toContain("background:var(--k2b-surface-elevated)");
-      // A phone sheet belongs to the window; from 48 rem the panel floats inside the content area.
+      // A phone sheet belongs to the window; from 48 rem the column or drawer sits inside the workspace.
       expect(rule(".k2b-app-workspace__detail")).toContain("position:fixed");
       expect(css).toContain(".k2b-ui .k2b-app-workspace__detail{position:absolute;");
       expect(rule(".k2b-app-workspace__drawer")).toContain("background:var(--k2b-surface-muted)");
@@ -974,9 +974,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     });
 
     test("gives object rows an accent tile, a strong title, and stacked counts", () => {
-      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-icon")).toContain(
-        "width:1.25rem",
-      );
+      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-icon")).toContain("width:2rem");
       expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-main")).toContain(
         "min-height:2.75rem",
       );

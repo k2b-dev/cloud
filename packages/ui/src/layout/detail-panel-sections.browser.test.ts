@@ -298,10 +298,18 @@ const measure = () => {
     return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
   };
   const action = document.querySelector("#one .k2b-discussion__actions .k2b-button")!;
-  const frame = document.querySelector("#one")!;
-  const [light, dark] = [luminance(style(action).color), luminance(style(frame).backgroundColor)].sort((a, b) => b - a);
+  // The column and panel sections are transparent. Follow their painted ancestors
+  // to the workspace surface, rather than reading transparent rgba as black.
+  let frame: Element | null = action;
+  while (frame && style(frame).backgroundColor === "rgba(0, 0, 0, 0)") frame = frame.parentElement;
+  if (!frame) throw new Error("Comment action has no painted background");
+  const actionColor = style(action).color;
+  const actionBackground = style(frame).backgroundColor;
+  const [light, dark] = [luminance(actionColor), luminance(actionBackground)].sort((a, b) => b - a);
   return {
     actionContrast: (light! + 0.05) / (dark! + 0.05),
+    actionColor,
+    actionBackground,
     grouped,
     inSection: {
       left: box(inSection).left - box(sectionBody).left,
@@ -489,7 +497,7 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           expect(result.headerMeta[2]).toBe("one line");
 
           // The comment action is text, so it keeps 4.5:1 on its frame in both themes.
-          expect(result.actionContrast).toBeGreaterThanOrEqual(4.5);
+          expect(result.actionContrast, `${result.actionColor} on ${result.actionBackground}`).toBeGreaterThanOrEqual(4.5);
 
           // In a group, the discussion's icon sits in the sections' column and the spacing between
           // neighbours matches; inside a section it adds no frame or inset of its own.

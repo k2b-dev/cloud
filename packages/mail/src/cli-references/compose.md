@@ -9,6 +9,33 @@ the conversation remains visible. New messages, edit-as-new and resend drafts,
 recipient suggestions, and compose configuration changes require mailbox-wide
 access. Removing your assignment also stops queued sends before delivery.
 
+## Mailbox signature logo
+
+A mailbox admin uploads or removes the mailbox's one signature logo. Anyone
+with mailbox-wide write access can read it:
+
+```bash
+cld --json mail compose logo get --mailbox <mailbox>
+cld --json mail compose logo set --mailbox <mailbox> --file logo.png --width 200 --alt "Support team"
+cld --json mail compose logo remove --mailbox <mailbox> --yes
+```
+
+PNG and JPEG only: at most 100 KiB (102400 bytes), 1200×400 pixels. Width is
+1–600 px (default 200). Alt text defaults to the trimmed mailbox name and must
+have 1–200 characters with no control characters. `set` reads a bounded file
+and uploads base64; `remove` refuses without `--yes`. All three commands
+return `{ logo: { contentType, pixelWidth, pixelHeight, displayWidth, altText,
+byteLength, sha256, dataUrl, createdAt } | null }` with `--json` or `--jsonl`.
+
+Place `{{ mailbox.logo }}` in a signature. HTML mail includes it as a `cid:`
+image with an inline MIME part, never a remote image link. API, CLI, and
+composer previews show the same bytes as a `data:` URL. Plain text uses its
+alt text; snippets leave it empty. Without an uploaded logo the placeholder
+stays empty and preview reports `missing_mailbox_logo`. Provider Drafts copies
+have no signature or logo. Queued and scheduled sends keep their original logo
+even after replacement or removal, including retries. Browser logo settings
+come later.
+
 ## Compose templates and previews
 
 Mail compose templates are either `signature` or `snippet` and either private to the current user or shared at mailbox scope. List, create, update, and archive them:
@@ -37,6 +64,7 @@ Template bodies use Markdown and Liquid. Presets are application behavior, not p
 | `sender.display_name` | Display name of the sender identity, or its address when it has no name |
 | `sender.email` | From address of the sender identity |
 | `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
+| `mailbox.logo` | The mailbox logo as an inline image in signatures; empty when the mailbox has no logo and in snippets |
 | `mailbox.name` | Mailbox name |
 | `mailbox.description` | Mailbox description; empty when not set |
 | `message.subject` | Subject of the draft |

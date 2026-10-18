@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.39.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.38.0...npm-cloud-v0.39.0) (2026-10-18)
+
+
+### Features
+
+* **ai:** say which routine stopped and why ([#1448](https://github.com/k2b-dev/cloud/issues/1448)) ([da8fc05](https://github.com/k2b-dev/cloud/commit/da8fc0511451965593d7e530e6c4569cdb764a50))
+* **assistant:** call Assistant tasks routines ([#1416](https://github.com/k2b-dev/cloud/issues/1416)) ([f651e11](https://github.com/k2b-dev/cloud/commit/f651e11821e6f452a4f1246664892bd9eb1bc01a))
+* **cloud:** a panel beside every app that any app can offer with `panel` in defineApp ([#1439](https://github.com/k2b-dev/cloud/issues/1439)) ([53bf2e7](https://github.com/k2b-dev/cloud/commit/53bf2e77757ac8d3211ee4d54f312fb90d3665c1))
+* **cloud:** approve terminal sign-ins in Cloud Login, with client, rights and lifetime ([#1395](https://github.com/k2b-dev/cloud/issues/1395)) ([1dcf324](https://github.com/k2b-dev/cloud/commit/1dcf324abb4952c6e9137f232a8e4b049e278dea))
+* **cloud:** insert notes, contacts, tasks and other Cloud content from the slash menu ([#1370](https://github.com/k2b-dev/cloud/issues/1370)) ([d2514a7](https://github.com/k2b-dev/cloud/commit/d2514a7133277868624074cbbdf66812ed80a912))
+* **cloud:** prepare images for PDFs in an isolated worker ([#1407](https://github.com/k2b-dev/cloud/issues/1407)) ([244f067](https://github.com/k2b-dev/cloud/commit/244f0673cd95035f2da50c687b6f42ab526647e0))
+* **cloud:** show stored settings that cannot be read as unreadable and refuse to write over them ([#1303](https://github.com/k2b-dev/cloud/issues/1303)) ([#1422](https://github.com/k2b-dev/cloud/issues/1422)) ([3745c92](https://github.com/k2b-dev/cloud/commit/3745c92b8ef69516aade682def91dd3ff3cc3448))
+* **cloud:** soft shell on iPad and phone: rail in an app-gradient container and the app as a card (I5), a soft card on the gradient and a floating bottom bar (P5) ([#1419](https://github.com/k2b-dev/cloud/issues/1419)) ([99e9e3e](https://github.com/k2b-dev/cloud/commit/99e9e3e626967cf08ff4020bbe09b53d2f07b79a))
+* **notebooks:** print attached images in note PDFs ([#1455](https://github.com/k2b-dev/cloud/issues/1455)) ([86da2f9](https://github.com/k2b-dev/cloud/commit/86da2f902f1313e0d14291e79b436a672499ea75))
+* **spaces:** let service accounts be assignees so an agent that claims a task is responsible like a person ([#1384](https://github.com/k2b-dev/cloud/issues/1384)) ([c3199d1](https://github.com/k2b-dev/cloud/commit/c3199d15a96ee54007a00a9d81c0d75d5d9a6751)), closes [#1269](https://github.com/k2b-dev/cloud/issues/1269)
+* **ui:** app and file-type icons sit in a soft chip of their color ([#1451](https://github.com/k2b-dev/cloud/issues/1451)) ([4589907](https://github.com/k2b-dev/cloud/commit/45899070079ba3e5321d51c2b5956c7fe208f510))
+* **ui:** every Chart shows tooltips by default ([#1357](https://github.com/k2b-dev/cloud/issues/1357)) ([a2605a0](https://github.com/k2b-dev/cloud/commit/a2605a065473f9824463fc45cbe8129c9ff2e9b2))
+* **ui:** lay out workspaces by the width their host gives them and let a detail that does not fit wait ([#1380](https://github.com/k2b-dev/cloud/issues/1380)) ([a57ba45](https://github.com/k2b-dev/cloud/commit/a57ba45bac687e335b96d134e0ea2c848c33cd85))
+* **ui:** show an overview's objects as chips on iPad and phone instead of the grey block, with an All sheet and a phone title menu ([#1441](https://github.com/k2b-dev/cloud/issues/1441)) ([6643a73](https://github.com/k2b-dev/cloud/commit/6643a73dbc14a864d1658a6ea6871254814529d1))
+* **ui:** stat trends name and format their values in tooltips ([#1420](https://github.com/k2b-dev/cloud/issues/1420)) ([7f42bb3](https://github.com/k2b-dev/cloud/commit/7f42bb35afadaf701bbf3c31617f2431dafae050))
+
+
+### Bug Fixes
+
+* **access:** keep keyboard focus and open member lists when access settings refresh after a change ([#1346](https://github.com/k2b-dev/cloud/issues/1346)) ([da4353b](https://github.com/k2b-dev/cloud/commit/da4353bef18a5cac5ff8ec058dfd6224c6c35f9d))
+* **ai:** audit remembered approvals and their revocation ([#1378](https://github.com/k2b-dev/cloud/issues/1378)) ([1771214](https://github.com/k2b-dev/cloud/commit/1771214a2921186a3ec4b127e8e9319a92578b2b))
+* **cloud:** keep app-colored text readable and give each app its selection fills ([#1398](https://github.com/k2b-dev/cloud/issues/1398)) ([c486eb9](https://github.com/k2b-dev/cloud/commit/c486eb93a1f463ae2c525e92f65cd784aedae489))
+* stop WebKit's network process from crashing on Back in browser tests ([#1431](https://github.com/k2b-dev/cloud/issues/1431)) ([#1447](https://github.com/k2b-dev/cloud/issues/1447)) ([4c5d68d](https://github.com/k2b-dev/cloud/commit/4c5d68d9e8a18fb960970e7cbf80815da29c9ff8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.28.0 to 0.29.0
+
 ## [0.38.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.37.0...npm-cloud-v0.38.0) (2026-10-17)
 
 

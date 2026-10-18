@@ -1,11 +1,10 @@
-import { Checkbox, type CollectionSelection, Format, IconButton } from "@k2b/ui";
+import { Checkbox, type CollectionSelection, FileTypeIcon, Format, IconButton } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 
 export type RowAttributes = JSX.HTMLAttributes<HTMLDivElement> & { [key: `data-${string}`]: string | undefined };
 
 import type { FileEntry } from "../contracts";
 import FileThumbnail from "./FileThumbnail";
-import { fileIcon } from "./file-preview";
 
 /** One flat row list; tree mode adds depth and disclosure, search mode shows the path below the folder. */
 export type FileRow = FileEntry & { depth?: number; expanded?: boolean; loading?: boolean; more?: boolean };
@@ -74,12 +73,17 @@ export default function FileList(props: {
   const icon = (row: FileRow) => {
     const busy = row.loading || props.opening === row.path;
     if (busy) return <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />;
-    if (props.tree && row.directory) return <i class={row.expanded ? "ti ti-folder-open" : "ti ti-folder"} aria-hidden="true" />;
+    if (props.tree && row.directory)
+      return (
+        <span class="filesv2-thumbnail" aria-hidden="true">
+          <FileTypeIcon name={row.name} folder icon={row.expanded ? "ti-folder-open" : "ti-folder"} />
+        </span>
+      );
     // In the flat list an active folder opens like the tree's current one; folders with their own icon keep it.
     if (row.directory && active(row))
       return (
         <span class="filesv2-thumbnail" aria-hidden="true">
-          <i class={fileIcon(row).replace(/\bti-folder(?= |$)/, "ti-folder-open")} />
+          <FileTypeIcon name={row.name} folder open />
         </span>
       );
     return <FileThumbnail baseId={props.baseId} entry={row} />;

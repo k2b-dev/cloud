@@ -336,6 +336,11 @@ const germanText: Record<string, string> = {
   All: "Alle",
   Running: "Läuft",
   "Needs attention": "Eingriff erforderlich",
+  "Needs you": "Braucht dich",
+  "Fix in chat": "Im Chat beheben",
+  "Technical details": "Technische Details",
+  Stopped: "Angehalten",
+  "Archive anyway": "Trotzdem archivieren",
   Failed: "Fehlgeschlagen",
   "New responses": "Neue Antworten",
   Archived: "Archiviert",
@@ -587,6 +592,8 @@ const copy = i18n.define({
         `Not sure whether “${title}” started: ${reason}. Choose it here again to check; that does not start it twice.`,
       commandTaskAlreadyRan: ({ title }: { title: string }) => `“${title}” already ran. The result is in the routine's chat.`,
       commandTaskAlreadyFailed: ({ title }: { title: string }) => `“${title}” already ran but failed. The routine's chat has the details.`,
+      commandTaskAlreadyStopped: ({ title }: { title: string }) =>
+        `“${title}” was stopped while it ran. The routine's chat says what was already done.`,
       commandModelNow: ({ name }: { name: string }) => `Now: ${name}`,
       commandModelChosen: ({ name }: { name: string }) => `Model for this chat: ${name}`,
       commandAllSkills: ({ count }: { count: number }) => `All ${count} Skills`,
@@ -633,6 +640,14 @@ const copy = i18n.define({
       newChatDraftKept: ({ title }: { title: string }) => `Your draft stays in the chat “${title}”.`,
       text: ({ value }: { value: string }) => value,
       archiveChat: ({ title }: { title: string }) => `Archive "${title}"?`,
+      archiveChatRoutines: ({ names }: { names: string[] }) => {
+        const shown = names.slice(0, 3).map((name) => `“${name}”`);
+        const list = names.length > 3 ? `${shown.join(", ")} and ${names.length - 3} more` : shown.join(", ");
+        return names.length === 1
+          ? `1 routine runs in this chat (${list}). Archiving pauses it.`
+          : `${names.length} routines run in this chat (${list}). Archiving pauses them.`;
+      },
+      archiveChatAnyRoutines: "Archiving pauses the routines in this chat.",
       deleteNamed: ({ name }: { name: string }) => `Delete "${name}"?`,
       deleteChatFile: ({ name }: { name: string }) =>
         `Delete “${name}” from this chat? Earlier messages keep their text, but their links to this file stop working.`,
@@ -689,6 +704,8 @@ const copy = i18n.define({
       commandTaskAlreadyRan: ({ title }: { title: string }) => `„${title}“ ist schon gelaufen. Das Ergebnis steht im Chat der Routine.`,
       commandTaskAlreadyFailed: ({ title }: { title: string }) =>
         `„${title}“ ist schon gelaufen, aber fehlgeschlagen. Mehr dazu steht im Chat der Routine.`,
+      commandTaskAlreadyStopped: ({ title }: { title: string }) =>
+        `„${title}“ wurde angehalten, während sie lief. Im Chat der Routine steht, was schon erledigt war.`,
       commandModelNow: ({ name }: { name: string }) => `Jetzt: ${name}`,
       commandModelChosen: ({ name }: { name: string }) => `Modell für diesen Chat: ${name}`,
       commandAllSkills: ({ count }: { count: number }) => `Alle ${count} Skills`,
@@ -735,6 +752,14 @@ const copy = i18n.define({
       newChatDraftKept: ({ title }: { title: string }) => `Dein Entwurf bleibt im Chat „${title}“.`,
       text: ({ value }: { value: string }) => germanText[value] ?? value,
       archiveChat: ({ title }: { title: string }) => `„${title}“ archivieren?`,
+      archiveChatRoutines: ({ names }: { names: string[] }) => {
+        const shown = names.slice(0, 3).map((name) => `„${name}“`);
+        const list = names.length > 3 ? `${shown.join(", ")} und ${names.length - 3} weitere` : shown.join(", ");
+        return names.length === 1
+          ? `In diesem Chat läuft 1 Routine (${list}). Archivieren pausiert sie.`
+          : `In diesem Chat laufen ${names.length} Routinen (${list}). Archivieren pausiert sie.`;
+      },
+      archiveChatAnyRoutines: "Archivieren pausiert die Routinen in diesem Chat.",
       deleteNamed: ({ name }: { name: string }) => `„${name}“ löschen?`,
       deleteChatFile: ({ name }: { name: string }) =>
         `„${name}“ aus diesem Chat löschen? Frühere Nachrichten bleiben erhalten, ihre Verweise auf diese Datei funktionieren aber nicht mehr.`,

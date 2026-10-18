@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
@@ -5,6 +6,7 @@ import { normalizeEmailAddress } from "./address-normalization";
 import { sha256Json } from "./canonical";
 import { refreshConversationTimeline } from "./conversation-timeline";
 import { enqueueMailInvalidation } from "./live";
+import { storeReadableBlob } from "./message-blobs";
 import { normalizeMailSubject } from "./message-threading";
 import type { OutboundDraftSnapshot } from "./outbound-mime";
 import { splitSearchText } from "./search-chunks";
@@ -99,14 +101,46 @@ const ensureConversation = async (params: {
   return conversation.id;
 };
 
-const insertAttachments = async (params: { db: SqlClient; messageId: string; snapshot: OutboundDraftSnapshot }): Promise<void> => {
-  for (const [index, attachment] of params.snapshot.attachments.entries()) {
+const insertAttachments = async (params: {
+  db: SqlClient;
+  messageId: string;
+  snapshot: OutboundDraftSnapshot;
+  inlineLogoContent: Buffer | null;
+}): Promise<void> => {
+  const attachments: (Omit<OutboundDraftSnapshot["attachments"][number], "id"> & {
+    partPath: string;
+    disposition: "attachment" | "inline";
+    contentId: string | null;
+  })[] = params.snapshot.attachments.map((attachment, index) => ({
+    ...attachment,
+    partPath: `outbound-attachment-${index + 1}`,
+    disposition: "attachment",
+    contentId: null,
+  }));
+  if (params.snapshot.format === "markdown" && params.snapshot.inlineLogo) {
+    if (!params.inlineLogoContent) throw Object.assign(new Error("Inline logo content is required"), { code: "INLINE_LOGO_UNAVAILABLE" });
+    const logo = params.snapshot.inlineLogo;
+    const blob = await storeReadableBlob(Readable.from([params.inlineLogoContent]), logo.byteLength);
+    // Both rows reference the blob, keeping the sender's image available after logo-version cleanup.
+    attachments.push({
+      partPath: "outbound-logo",
+      filename: logo.contentType === "image/png" ? "logo.png" : "logo.jpg",
+      contentType: logo.contentType,
+      disposition: "inline",
+      contentId: `<${logo.contentId}>`,
+      contentHash: blob.contentHash,
+      byteLength: blob.byteLength,
+      blobId: blob.id,
+    });
+  }
+  for (const attachment of attachments) {
     const [part] = await params.db<{ id: string }[]>`
       INSERT INTO mail.message_parts (
         message_id,
         part_path,
         content_type,
         disposition,
+        content_id,
         filename,
         size_bytes,
         blob_id,
@@ -114,9 +148,10 @@ const insertAttachments = async (params: { db: SqlClient; messageId: string; sna
       )
       VALUES (
         ${params.messageId}::uuid,
-        ${`outbound-attachment-${index + 1}`},
+        ${attachment.partPath},
         ${attachment.contentType},
-        'attachment',
+        ${attachment.disposition},
+        ${attachment.contentId},
         ${attachment.filename},
         ${attachment.byteLength},
         ${attachment.blobId}::uuid,
@@ -136,6 +171,7 @@ const insertAttachments = async (params: { db: SqlClient; messageId: string; sna
         filename,
         content_type,
         disposition,
+        content_id,
         checksum,
         size_bytes,
         blob_id
@@ -146,7 +182,8 @@ const insertAttachments = async (params: { db: SqlClient; messageId: string; sna
         ${part.id}::uuid,
         ${attachment.filename},
         ${attachment.contentType},
-        'attachment',
+        ${attachment.disposition},
+        ${attachment.contentId},
         ${attachment.contentHash},
         ${attachment.byteLength},
         ${attachment.blobId}::uuid
@@ -178,6 +215,7 @@ export const materializeOutboundMessage = async (params: {
   stableMessageId: string;
   conversationId: string | null;
   snapshot: OutboundDraftSnapshot;
+  inlineLogoContent: Buffer | null;
   internalDate: Date;
   byteLength: number;
 }): Promise<OutboundMessageProjection> => {
@@ -228,7 +266,7 @@ export const materializeOutboundMessage = async (params: {
       INSERT INTO mail.message_addresses ${sql(addresses, "message_id", "role", "position", "display_name", "email", "normalized_email")}
     `;
   }
-  await insertAttachments({ db: params.db, messageId: message.id, snapshot: params.snapshot });
+  await insertAttachments({ db: params.db, messageId: message.id, snapshot: params.snapshot, inlineLogoContent: params.inlineLogoContent });
   await insertSearchChunks({ db: params.db, mailboxId: params.mailboxId, messageId: message.id, plainText });
 
   const conversationId = await ensureConversation({

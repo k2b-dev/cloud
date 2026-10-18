@@ -8,6 +8,13 @@ Register an endpoint when users need a compact cross-application summary or a di
 
 Use the portable widget components directly when the host already owns its data and layout and does not need Cloud endpoint discovery.
 
+The widget's header icon sits in a soft chip of its source app's color,
+from that app's declared `appearance.accent`, in loading, error, locked, empty,
+and loaded states. A widget whose app declares no accent uses the
+dashboard's color. In a small dashboard tile, a failure message with
+Try again shows no status icon, so the message and the button fit the tile
+on a 320px phone.
+
 ## Import
 
 ```ts

@@ -1,6 +1,7 @@
 import { sql } from "bun";
 import { CapabilityActionReviewSchema } from "../contracts/capabilities";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
+import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { migrateAiQuotas } from "./quotas-migrate";
@@ -885,6 +886,8 @@ export const migrateCloudAi = async (): Promise<void> => {
     )
   `.simple();
 
+  await sql.begin(migrateChatTaskReasons);
+
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS idempotency_fingerprint TEXT`.simple();
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 0`.simple();
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS mandate_id UUID`.simple();
@@ -998,6 +1001,17 @@ export const migrateCloudAi = async (): Promise<void> => {
     )
   `.simple();
 
+  await sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_chat_task_occurrences_state_check'
+          AND pg_get_constraintdef(oid) LIKE '%stopped%') THEN
+        ALTER TABLE ai.chat_task_occurrences DROP CONSTRAINT IF EXISTS ai_chat_task_occurrences_state_check;
+        ALTER TABLE ai.chat_task_occurrences ADD CONSTRAINT ai_chat_task_occurrences_state_check
+          CHECK (state IN ('queued', 'running', 'completed', 'failed', 'stopped'));
+      END IF;
+    END $$
+  `.simple();
+
   await sql`ALTER TABLE ai.chat_task_occurrences ADD COLUMN IF NOT EXISTS task_revision BIGINT NOT NULL DEFAULT 0`.simple();
 
   await sql`
@@ -1017,9 +1031,17 @@ export const migrateCloudAi = async (): Promise<void> => {
   `.simple();
 
   await sql`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'ai' AND indexname = 'idx_ai_chat_task_occurrences_finished'
+          AND indexdef NOT LIKE '%stopped%') THEN
+        DROP INDEX ai.idx_ai_chat_task_occurrences_finished;
+      END IF;
+    END $$
+  `.simple();
+  await sql`
     CREATE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_finished
     ON ai.chat_task_occurrences(completed_at, id)
-    WHERE state IN ('completed', 'failed')
+    WHERE state IN ('completed', 'failed', 'stopped')
   `.simple();
 
   await sql`

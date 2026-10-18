@@ -2173,6 +2173,7 @@ function MailWorkspaceView(props: {
         </AppWorkspace.Main>
         <AppWorkspace.Detail
           id="mail-context"
+          openOnChoice={false}
           open={detailsOpen() && canShowDetails()}
           onClose={() => setDetailsVisible(false)}
           width="lg"
