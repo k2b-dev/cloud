@@ -134,8 +134,18 @@ const mergeVary = (headers: Headers) => {
  */
 export const compressBody = (req: Request, response: Response, headers: Headers): ReadableStream<Uint8Array> | null => {
   const body = response.body;
-  // A cache replaces the stored Vary with the one on a 304, so keep the gateway's keys there.
-  if (response.status === 304 && headers.has("Vary")) mergeVary(headers);
+  if (response.status === 304) {
+    // A cache replaces the stored Vary and ETag with the ones on a 304. Keep the
+    // gateway's keys, and keep the weak tag of a compressed copy the client holds.
+    if (headers.has("Vary")) mergeVary(headers);
+    const etag = headers.get("ETag");
+    const held =
+      req.headers
+        .get("If-None-Match")
+        ?.split(",")
+        .map((tag) => tag.trim()) ?? [];
+    if (etag?.startsWith('"') && held.includes(`W/${etag}`)) headers.set("ETag", `W/${etag}`);
+  }
   if (!body || !isCompressionEligible(req.method, response.status, true, headers)) return body;
   mergeVary(headers);
   // The client's own no-transform asks intermediaries to leave the content unchanged.

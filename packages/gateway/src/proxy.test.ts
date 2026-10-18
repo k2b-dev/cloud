@@ -1068,6 +1068,24 @@ describe("revalidation and client opt-out", () => {
     );
   });
 
+  test("revalidating a compressed copy keeps its weak ETag", async () => {
+    await withCompressionGateway(
+      (req) =>
+        req.headers.get("If-None-Match") === 'W/"mail-v1"'
+          ? new Response(null, { status: 304, headers: { ETag: '"mail-v1"' } })
+          : new Response(mailboxHtml, { headers: { "Content-Type": "text/html", ETag: '"mail-v1"' } }),
+      async (url) => {
+        const first = await fetch(url, { headers: { "Accept-Encoding": "br" }, decompress: false });
+        const etag = first.headers.get("ETag");
+        expect(etag).toBe('W/"mail-v1"');
+        await first.arrayBuffer();
+        const again = await fetch(url, { headers: { "Accept-Encoding": "br", "If-None-Match": etag ?? "" }, decompress: false });
+        expect(again.status).toBe(304);
+        expect(again.headers.get("ETag")).toBe('W/"mail-v1"');
+      },
+    );
+  });
+
   test("a request with Cache-Control: no-transform gets the identity body", async () => {
     await withCompressionGateway(
       () => new Response(mailboxHtml, { headers: { "Content-Type": "text/html" } }),
