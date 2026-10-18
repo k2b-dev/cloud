@@ -471,10 +471,15 @@ const requireBookPermission = async (
   return access.ok ? ok({ ...access.data, bookId }) : access;
 };
 
-const resolveContact = async (
+/**
+ * Resolve a contact for a following service operation that enforces `required` itself.
+ * This only reads at read level; `required` shapes the error message and the level checked
+ * when the contact is missing. Use `resolveContactWithAccess` before operations that do not check.
+ */
+const resolveContactForCheckedOperation = async (
   contactId: string,
   context: CapabilityExecutionContext,
-  required: PermissionLevel = "read",
+  required: PermissionLevel,
 ): Promise<Result<{ contact: Contact; bookId: string; contactId: string }>> => {
   const internalContactId = await resolvePublicId("contacts", contactId);
   if (!internalContactId) return fail(err.notFound("Contact"));
@@ -666,7 +671,7 @@ const runContactList = async (input: z.infer<typeof ContactListInputSchema>, con
 };
 
 const runContactRead = async (input: z.infer<typeof ContactReadInputSchema>, context: CapabilityExecutionContext) => {
-  const resolved = await resolveContact(input.id, context);
+  const resolved = await resolveContactForCheckedOperation(input.id, context, "read");
   if (!resolved.ok) return resolved;
   const [contact] = await projectContacts([resolved.data.contact]);
   if (!contact) return fail(err.notFound("Contact"));
@@ -753,6 +758,15 @@ const runNoteRead = async (input: z.infer<typeof ContactNoteReadInputSchema>, co
 const runBookList = async (input: z.infer<typeof ContactBookListInputSchema>, context: CapabilityExecutionContext) => {
   const cursor = decodeContactCapabilityCursor(input.cursor);
   if (!cursor.ok) return cursor;
+  const scope = withCollectionAccessMessage(readableBookScope(context));
+  if (!scope.ok) return scope;
+  const scopedPermission =
+    context.actor.kind === "service_account" && context.actor.serviceAccount.kind !== "user_delegated"
+      ? permissionFromScopes(context.actor.scopes)
+      : ("admin" as PermissionLevel);
+  if (!hasPermission(scopedPermission, input.minimumPermission)) {
+    return fail(err.forbidden(`The Contacts credential does not grant ${input.minimumPermission} access`));
+  }
   const result = await contactsService.book.listPage({
     actor: context.actor,
     accessSubject: context.accessSubject,
@@ -761,13 +775,6 @@ const runBookList = async (input: z.infer<typeof ContactBookListInputSchema>, co
   });
   if (!result.ok) return withCollectionAccessMessage(result);
   const page = result.data;
-  const scopedPermission =
-    context.actor.kind === "service_account" && context.actor.serviceAccount.kind !== "user_delegated"
-      ? permissionFromScopes(context.actor.scopes)
-      : ("admin" as PermissionLevel);
-  if (!hasPermission(scopedPermission, input.minimumPermission)) {
-    return fail(err.forbidden(`The Contacts credential does not grant ${input.minimumPermission} access`));
-  }
 
   const books = await projectBooks(page.items);
   return pageResult(
@@ -902,7 +909,7 @@ const runContactCreate = async (input: z.infer<typeof ContactCreateInputSchema>,
 const runContactUpdate = async (input: z.infer<typeof ContactUpdateInputSchema>, context: CapabilityExecutionContext) => {
   const auditParams = actionAudit(context, "contact.update", "contact", input.contactId);
   return audited(auditParams, async () => {
-    const resolved = await resolveContact(input.contactId, context, "write");
+    const resolved = await resolveContactForCheckedOperation(input.contactId, context, "write");
     if (!resolved.ok) return resolved;
     const { contactId, expectedUpdatedAt, ...data } = input;
     const internalData = await resolveWriteRelations(resolved.data.bookId, data);
@@ -935,7 +942,7 @@ const runContactUpdate = async (input: z.infer<typeof ContactUpdateInputSchema>,
 const runContactMove = async (input: z.infer<typeof ContactMoveInputSchema>, context: CapabilityExecutionContext) => {
   const auditParams = actionAudit(context, "contact.move", "contact", input.contactId);
   return audited(auditParams, async () => {
-    const source = await resolveContact(input.contactId, context, "write");
+    const source = await resolveContactForCheckedOperation(input.contactId, context, "write");
     if (!source.ok) return source;
     const targetBookId = await resolvePublicId("books", input.targetBookId);
     if (!targetBookId) return failAfterBookAccess(context, [{ bookId: source.data.bookId, level: "write" }], err.notFound("Book"));
@@ -966,7 +973,7 @@ const runContactMove = async (input: z.infer<typeof ContactMoveInputSchema>, con
 const runContactDelete = async (input: z.infer<typeof ContactDeleteInputSchema>, context: CapabilityExecutionContext) => {
   const auditParams = actionAudit(context, "contact.delete", "contact", input.contactId);
   return audited(auditParams, async () => {
-    const resolved = await resolveContact(input.contactId, context, "write");
+    const resolved = await resolveContactForCheckedOperation(input.contactId, context, "write");
     if (!resolved.ok) return resolved;
     const result = await contactsService.contact.remove({
       actor: context.actor,
