@@ -249,6 +249,7 @@ const stopTaskAdmission = async (
   code: ChatTaskReasonCode,
   reason: string | null,
   db: SQL,
+  appLocale: string | undefined,
   pausedMandateRevision?: number | null,
 ): Promise<null> => {
   const state = chatTaskReasonState(code);
@@ -279,7 +280,7 @@ const stopTaskAdmission = async (
     }
     for (const occurrence of occurrences) {
       const taskReason = { code, at: iso(stopped!.reason_at!) };
-      await deliverOccurrenceResult(db, task, occurrence.id, await reasonSentence(task, taskReason), {
+      await deliverOccurrenceResult(db, task, occurrence.id, reasonSentence(task, taskReason, appLocale), {
         reason: taskReason,
         reasonOnly: true,
       });
@@ -288,7 +289,7 @@ const stopTaskAdmission = async (
   return null;
 };
 /** The caller holds the task lock; mandate and sponsor locks remain held until turn admission commits. */
-const prepareTaskForExecution = async (input: TaskRow, db: SQL): Promise<TaskRow | null> => {
+const prepareTaskForExecution = async (input: TaskRow, db: SQL, appLocale: string | undefined): Promise<TaskRow | null> => {
   if (input.state !== "active") return null;
   const task = input;
   const mandate = await loadTaskMandate(task, db);
@@ -299,10 +300,17 @@ const prepareTaskForExecution = async (input: TaskRow, db: SQL): Promise<TaskRow
   const [conversation] = await db<{ archived_at: Date | null; created_by_user_id: string }[]>`
     SELECT archived_at, created_by_user_id FROM ai.conversations WHERE id = ${task.conversation_id}::uuid FOR UPDATE`;
   if (!sponsor)
-    return stopTaskAdmission(task, "owner_inactive", "Scheduled task sponsor is unavailable", db, await pauseTerminalTaskMandate(task, db));
+    return stopTaskAdmission(
+      task,
+      "owner_inactive",
+      "Scheduled task sponsor is unavailable",
+      db,
+      appLocale,
+      await pauseTerminalTaskMandate(task, db),
+    );
   const archived = () =>
     pauseTerminalTaskMandate(task, db).then((revision) =>
-      stopTaskAdmission(task, "chat_archived", "Scheduled task chat is archived or unavailable", db, revision),
+      stopTaskAdmission(task, "chat_archived", "Scheduled task chat is archived or unavailable", db, appLocale, revision),
     );
   if (!conversation) return archived();
   // Authority comes before the archive: a stop or change of what the routine may do must not turn into an archive
@@ -317,11 +325,11 @@ const prepareTaskForExecution = async (input: TaskRow, db: SQL): Promise<TaskRow
     !isChatTaskMandatePolicy(policy) ||
     mandate.state === "revoked"
   ) {
-    return stopTaskAdmission(task, "rights_changed", "Scheduled task mandate or sponsor is unavailable", db);
+    return stopTaskAdmission(task, "rights_changed", "Scheduled task mandate or sponsor is unavailable", db, appLocale);
   }
-  if (mandate.state === "paused") return stopTaskAdmission(task, "paused", null, db, Number(mandate.revision));
+  if (mandate.state === "paused") return stopTaskAdmission(task, "paused", null, db, appLocale, Number(mandate.revision));
   if (task.mandate_revision === null || Number(task.mandate_revision) !== Number(mandate.revision)) {
-    return stopTaskAdmission(task, "rights_changed", "Scheduled task mandate revision changed", db);
+    return stopTaskAdmission(task, "rights_changed", "Scheduled task mandate revision changed", db, appLocale);
   }
   if (conversation.archived_at) return archived();
   return task;
@@ -414,13 +422,13 @@ const toOccurrence = (row: OccurrenceRow): AiChatTaskOccurrence => ({
 });
 
 const prepareTaskById = (taskId: string): Promise<AiChatTask | null> =>
-  sql.begin(async (tx) => {
+  beginWithAppLocale(async (tx, appLocale) => {
     const [task] = await tx<TaskRow[]>`
       ${taskSelect()}
       WHERE task.id = ${taskId}::uuid
       FOR UPDATE OF task
     `;
-    const prepared = task ? await prepareTaskForExecution(task, tx) : null;
+    const prepared = task ? await prepareTaskForExecution(task, tx, appLocale) : null;
     return prepared ? toTask(prepared) : null;
   });
 const loadOccurrenceTask = async (occurrenceId: string, db: SQL): Promise<TaskRow | null> => {
@@ -446,12 +454,18 @@ const loadTurnTask = async (turnId: string, db: SQL): Promise<TaskRow | null> =>
   return task ?? null;
 };
 
+/**
+ * A transaction that may word a routine's reason or stop line. The app locale is read first: on a cache miss the
+ * settings read takes another pooled connection, which must never wait inside a transaction holding task locks.
+ */
+const beginWithAppLocale = async <T>(run: (tx: SQL, appLocale: string | undefined) => Promise<T>): Promise<T> => {
+  const appLocale = await coreSettings.get<string>("app.locale");
+  return sql.begin((tx) => run(tx, appLocale));
+};
+
 /** Called in the occurrence terminal transition transaction, so delivery is exactly once. */
-const reasonSentence = async (task: TaskRow, reason: ChatTaskReason): Promise<string> =>
-  chatTaskReasonSentence(reason, {
-    locale: chatTaskLocale(task.locale, await coreSettings.get<string>("app.locale")),
-    timeZone: task.timezone,
-  });
+const reasonSentence = (task: TaskRow, reason: ChatTaskReason, appLocale: string | undefined): string =>
+  chatTaskReasonSentence(reason, { locale: chatTaskLocale(task.locale, appLocale), timeZone: task.timezone });
 
 const deliverOccurrenceResult = async (
   db: SQL,
@@ -500,7 +514,7 @@ const withTaskAbortTransaction = async <T>(
     input: { conversationId: string; turnId: string };
     request: Awaited<ReturnType<typeof aiConversations.requestTurnAbort>>;
   }> = [];
-  const result = await sql.begin(async (tx) =>
+  const result = await beginWithAppLocale(async (tx, appLocale) =>
     run(tx, async (task, cause) => {
       const turns = await tx<{ turn_id: string; scheduled_for: Date | string; trigger: "scheduled" | "manual" }[]>`
         SELECT turn_id, scheduled_for, trigger FROM ai.chat_task_occurrences
@@ -508,7 +522,7 @@ const withTaskAbortTransaction = async <T>(
       for (const turn of turns) {
         const input = { conversationId: task.conversation_id, turnId: turn.turn_id };
         // Keep the run's delivery coordinates even when its task/occurrence is about to cascade away.
-        const locale = chatTaskLocale(task.locale, await coreSettings.get<string>("app.locale"));
+        const locale = chatTaskLocale(task.locale, appLocale);
         await tx`UPDATE ai.turns SET run_config = jsonb_set(
           jsonb_set(run_config, '{locale}', to_jsonb(COALESCE(run_config->>'locale', ${locale}))),
           '{background}', jsonb_build_object('scheduledFor', ${iso(turn.scheduled_for)}::text,
@@ -532,7 +546,13 @@ const withTaskAbortTransaction = async <T>(
 type StoppedTurn = { id: string; conversation_id: string; cancellation_reason: string | null; run_config: AiChatTurnRunConfig };
 /** The turn lock and persisted receipt survive deletion of the task and its occurrences. */
 /** Returns the stop line once; `null` when another finalization already claimed it. */
-const deliverStoppedTurn = async (db: SQL, turn: StoppedTurn, cause: StopCause, task: TaskRow | null): Promise<string | null> => {
+const deliverStoppedTurn = async (
+  db: SQL,
+  turn: StoppedTurn,
+  cause: StopCause,
+  task: TaskRow | null,
+  appLocale: string | undefined,
+): Promise<string | null> => {
   const config = turn.run_config;
   if (!config.background) return null;
   // Chat before turn, the order archiving locks them in, so the two never wait on each other.
@@ -541,7 +561,7 @@ const deliverStoppedTurn = async (db: SQL, turn: StoppedTurn, cause: StopCause, 
   const [claimed] = await db`UPDATE ai.turns SET run_config = jsonb_set(run_config, '{background,stopDeliveredAt}', to_jsonb(now()::text))
     WHERE id = ${turn.id}::uuid AND run_config #>> '{background,stopDeliveredAt}' IS NULL RETURNING id`;
   if (!claimed) return null;
-  const locale = chatTaskLocale(config.locale ?? task?.locale, await coreSettings.get<string>("app.locale"));
+  const locale = chatTaskLocale(config.locale ?? task?.locale, appLocale);
   const messages = await db<{ seq: number; message: Message; meta: AiStoredMessage["meta"] }[]>`
     SELECT seq, message, meta FROM ai.task_messages WHERE loop_id = ${turn.id} ORDER BY seq`;
   const done = buildBlocksFromMessages(messages).flatMap((block) => {
@@ -818,7 +838,7 @@ export const aiChatTasks = {
     schedule?: AiChatTaskSchedule;
     timezone?: string;
   }): Promise<AiChatTask | null> =>
-    sql.begin(async (tx) => {
+    beginWithAppLocale(async (tx, appLocale) => {
       const rows = await tx<TaskRow[]>`
         ${taskSelect()}
         WHERE task.sponsor_user_id = ${input.userId}::uuid
@@ -829,7 +849,7 @@ export const aiChatTasks = {
       if (!current) return null;
       requireTaskMandate(current);
       const wasActive = current.state === "active";
-      const authorityStopped = wasActive && !(await prepareTaskForExecution(current, tx));
+      const authorityStopped = wasActive && !(await prepareTaskForExecution(current, tx, appLocale));
       if (authorityStopped) {
         [current] = await tx<TaskRow[]>`${taskSelect()} WHERE task.id = ${current.id}::uuid`;
         if (!current) return null;
@@ -912,7 +932,7 @@ export const aiChatTasks = {
     }),
 
   pauseForArchivedChat: async (input: { conversationId: string; userId?: string }): Promise<void> => {
-    await sql.begin(async (tx) => {
+    await beginWithAppLocale(async (tx, appLocale) => {
       const tasks = await tx<TaskRow[]>`${taskSelect()}
         WHERE task.conversation_id = ${input.conversationId}::uuid AND task.state = 'active'
           AND (${input.userId ?? null}::uuid IS NULL OR task.sponsor_user_id = ${input.userId ?? null}::uuid)
@@ -924,7 +944,7 @@ export const aiChatTasks = {
         AND archived_at IS NOT NULL FOR UPDATE`;
       if (!archived) return;
       // Admission decides the reason: an archive pause only for a routine whose authority is still intact.
-      for (const task of tasks) await prepareTaskForExecution(task, tx);
+      for (const task of tasks) await prepareTaskForExecution(task, tx, appLocale);
     });
   },
 
@@ -954,12 +974,13 @@ export const aiChatTasks = {
         });
       } catch (error) {
         if (!(error instanceof AiChatTaskAuthorityError)) throw error;
-        await sql.begin(async (tx) => {
+        await beginWithAppLocale(async (tx, appLocale) => {
           const [current] = await tx<TaskRow[]>`${taskSelect()} WHERE task.id = ${task.id}::uuid FOR UPDATE OF task`;
           // Archived again meanwhile: the routine stays paused for that reason.
           const [restored] = await tx`SELECT 1 FROM ai.conversations WHERE id = ${input.conversationId}::uuid
             AND archived_at IS NULL FOR SHARE`;
-          if (current?.reason_code === "chat_archived" && restored) await stopTaskAdmission(current, "rights_changed", error.message, tx);
+          if (current?.reason_code === "chat_archived" && restored)
+            await stopTaskAdmission(current, "rights_changed", error.message, tx, appLocale);
         });
       }
     }
@@ -1127,9 +1148,9 @@ export const aiChatTasks = {
     requestKey: string;
     expectedRevision?: number;
   }): Promise<AiChatTaskOccurrence | null> => {
-    return sql.begin(async (tx) => {
+    return beginWithAppLocale(async (tx, appLocale) => {
       const [current] = await tx<TaskRow[]>`${taskSelect()} WHERE task.id = ${input.taskId}::uuid FOR UPDATE OF task`;
-      if (!current || !(await prepareTaskForExecution(current, tx))) return null;
+      if (!current || !(await prepareTaskForExecution(current, tx, appLocale))) return null;
       // One occurrence per schedule; timer ticks during a run do not accumulate.
       const [inFlight] = await tx<
         OccurrenceRow[]
@@ -1291,7 +1312,7 @@ export const aiChatTasks = {
   },
 
   getQueuedOccurrence: async (occurrenceId: string): Promise<{ occurrence: AiChatTaskOccurrence; task: AiChatTask } | null> => {
-    return sql.begin(async (tx) => {
+    return beginWithAppLocale(async (tx, appLocale) => {
       const occurrences = await tx<OccurrenceRow[]>`
         SELECT * FROM ai.chat_task_occurrences WHERE id = ${occurrenceId}::uuid AND state = 'queued' LIMIT 1
       `;
@@ -1304,7 +1325,7 @@ export const aiChatTasks = {
         FOR UPDATE OF task
       `;
       if (!tasks[0]) return null;
-      const task = await prepareTaskForExecution(tasks[0], tx);
+      const task = await prepareTaskForExecution(tasks[0], tx, appLocale);
       if (!task) return null;
       await tx`
         UPDATE ai.chat_task_occurrences SET task_revision = ${task.revision}::bigint
@@ -1315,7 +1336,7 @@ export const aiChatTasks = {
   },
 
   failOccurrence: async (input: { occurrenceId: string; error: string; code: ChatTaskReasonCode }): Promise<"failed" | "stale" | "gone"> =>
-    sql.begin(async (tx) => {
+    beginWithAppLocale(async (tx, appLocale) => {
       const task = await loadOccurrenceTask(input.occurrenceId, tx);
       if (!task) return "gone" as const;
       const rows = await tx<{ task_id: string; task_revision: number | bigint }[]>`
@@ -1338,7 +1359,7 @@ export const aiChatTasks = {
         `;
         const [stopped] = await tx<TaskRow[]>`SELECT * FROM ai.chat_tasks WHERE id = ${task.id}::uuid`;
         const reason = { code: input.code, at: iso(stopped!.reason_at!) };
-        await deliverOccurrenceResult(tx, task, input.occurrenceId, await reasonSentence(task, reason), { reason, reasonOnly: true });
+        await deliverOccurrenceResult(tx, task, input.occurrenceId, reasonSentence(task, reason, appLocale), { reason, reasonOnly: true });
         return "failed" as const;
       }
       const stale = await tx<{ stale: boolean }[]>`
@@ -1360,9 +1381,9 @@ export const aiChatTasks = {
     userMessage: Message;
     expectedRevision: number;
   }): Promise<{ delivered: true; conversationId: string; turnId: string } | { delivered: false; reason: "not_found" | "busy" | "stale" }> =>
-    sql.begin(async (tx) => {
+    beginWithAppLocale(async (tx, appLocale) => {
       const current = await loadOccurrenceTask(input.occurrenceId, tx);
-      const task = current ? await prepareTaskForExecution(current, tx) : null;
+      const task = current ? await prepareTaskForExecution(current, tx, appLocale) : null;
       if (!task) {
         return { delivered: false as const, reason: "not_found" as const };
       }
@@ -1409,7 +1430,7 @@ export const aiChatTasks = {
       `;
       const runConfig: AiChatTurnRunConfig = {
         ...input.runConfig,
-        locale: chatTaskLocale(task.locale, await coreSettings.get<string>("app.locale")),
+        locale: chatTaskLocale(task.locale, appLocale),
         background: {
           taskId: task.short_id,
           occurrenceId: occurrence.short_id,
@@ -1465,14 +1486,20 @@ export const aiChatTasks = {
     status: AiTurnStatus;
     error?: string | null;
   }): Promise<{ occurrenceId: string; failed: boolean } | null> =>
-    sql.begin(async (tx) => {
+    beginWithAppLocale(async (tx, appLocale) => {
       const task = await loadTurnTask(input.turnId, tx);
       // A plain read: the stop line claims the turn itself, after it locked the chat as archiving does.
       const [turn] = await tx<StoppedTurn[]>`SELECT id, conversation_id, cancellation_reason, run_config FROM ai.turns
         WHERE id = ${input.turnId}::uuid`;
       if (!turn) return null;
       if (turn.cancellation_reason === "routine_paused" || turn.cancellation_reason === "routine_deleted") {
-        const text = await deliverStoppedTurn(tx, turn, turn.cancellation_reason === "routine_paused" ? "paused" : "deleted", task);
+        const text = await deliverStoppedTurn(
+          tx,
+          turn,
+          turn.cancellation_reason === "routine_paused" ? "paused" : "deleted",
+          task,
+          appLocale,
+        );
         const [occurrence] = await tx<{ id: string }[]>`UPDATE ai.chat_task_occurrences
           SET state = 'stopped', error = NULL, result_text = COALESCE(${text}, result_text), completed_at = now(), delivered_at = now()
           WHERE turn_id = ${input.turnId}::uuid AND state = 'running' RETURNING id`;
@@ -1556,7 +1583,7 @@ export const aiChatTasks = {
         tx,
         task,
         row.occurrence_id,
-        resultText || (reason ? await reasonSentence(task, reason) : ""),
+        resultText || (reason ? reasonSentence(task, reason, appLocale) : ""),
         reason ? { reason, ...(resultText ? {} : { reasonOnly: true as const }) } : {},
       );
       return { occurrenceId: row.occurrence_id, failed: input.status !== "completed" };
