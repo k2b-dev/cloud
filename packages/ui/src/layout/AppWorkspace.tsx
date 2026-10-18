@@ -2128,6 +2128,12 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
 function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; head?: AppWorkspaceHeadProps }): JSX.Element {
   const messages = useWorkspaceMessages();
   const filters = useFilterMessages();
+  // JSX prop getters construct their elements on every read. Share each
+  // resolved slot between its presence check and its rendered content.
+  const resolvedViews = children(() => props.head?.views);
+  const resolvedFilters = children(() => props.head?.filters);
+  const resolvedActions = children(() => props.head?.actions);
+  const resolvedCount = children(() => props.head?.count);
   // A nested workspace is part of a page that already shows its title.
   const trail = props.nested ? () => undefined : usePageTrail();
   const resetContent = () => filters().reset;
@@ -2164,12 +2170,12 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
             </>
           )}
         </Show>
-        <Show when={props.head?.views}>
-          <div class="k2b-app-workspace__head-views">{props.head?.views}</div>
+        <Show when={resolvedViews.toArray().some(Boolean)}>
+          <div class="k2b-app-workspace__head-views">{resolvedViews()}</div>
         </Show>
-        <Show when={props.head?.filters || props.head?.filtered}>
+        <Show when={resolvedFilters.toArray().some(Boolean) || props.head?.filtered}>
           <div class="k2b-app-workspace__head-filters" role="group" aria-label={filters().filters}>
-            {props.head?.filters}
+            {resolvedFilters()}
             <Show when={props.head?.filtered}>
               <Show
                 when={props.head?.resetHref}
@@ -2202,15 +2208,17 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
             </Show>
           </div>
         </Show>
-        <Show when={props.head?.filtered && props.head.count !== undefined && props.head.count !== null && props.head.count !== false}>
+        <Show
+          when={props.head?.filtered && resolvedCount.toArray().some((value) => value !== undefined && value !== null && value !== false)}
+        >
           <span class="k2b-app-workspace__head-count">
-            <span>{props.head?.count}</span>
+            <span>{resolvedCount()}</span>
           </span>
         </Show>
       </div>
-      <Show when={props.head?.actions || props.head?.primary}>
+      <Show when={resolvedActions.toArray().some(Boolean) || props.head?.primary}>
         <div class="k2b-app-workspace__head-actions">
-          {props.head?.actions}
+          {resolvedActions()}
           <Show when={props.head?.primary}>
             {(primary) => (
               <Show

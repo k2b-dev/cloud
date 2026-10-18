@@ -1201,4 +1201,66 @@ describe("workspace head navigation", () => {
     );
     expect(html).toMatch(/class="k2b-app-workspace__head-count"><span>(?:<!--[^>]*-->)*0/);
   });
+  test("constructs each JSX head slot once", () => {
+    const reads = { views: 0, filters: 0, actions: 0, count: 0 };
+    renderToString(() =>
+      createComponent(AppWorkspace, {
+        get children() {
+          return createComponent(AppWorkspace.Head, {
+            filtered: true,
+            get views() {
+              reads.views++;
+              return createComponent(ViewTabs, {
+                label: "Views",
+                items: [{ id: "list", label: "List", href: "?view=list" }],
+                current: "list",
+              });
+            },
+            get filters() {
+              reads.filters++;
+              return createComponent(FilterChip, {
+                label: "Status",
+                icon: "ti ti-filter",
+                options: [],
+                value: [],
+                onValueChange: () => {},
+              });
+            },
+            get actions() {
+              reads.actions++;
+              return createComponent(IconButton, { label: "Refresh", children: "R" });
+            },
+            get count() {
+              reads.count++;
+              return createComponent(Button, { children: "Count" });
+            },
+          });
+        },
+      }),
+    );
+    expect(reads).toEqual({ views: 1, filters: 1, actions: 1, count: 1 });
+  });
+  test("omits absent head slots and counts, with actions for a primary alone", () => {
+    for (const count of [undefined, null, false]) {
+      const html = renderToString(() =>
+        createComponent(AppWorkspace, {
+          get children() {
+            return createComponent(AppWorkspace.Head, {
+              views: false,
+              filters: false,
+              actions: false,
+              filtered: true,
+              count,
+              primary: { label: "New task", icon: "ti ti-plus", href: "/new" },
+            });
+          },
+        }),
+      );
+      expect(html).not.toContain("k2b-app-workspace__head-views");
+      expect(html).not.toContain("k2b-app-workspace__head-count");
+      expect(html).toContain("k2b-app-workspace__head-reset");
+      expect(html).toContain("k2b-app-workspace__head-actions");
+      expect(html.match(/data-workspace-primary=""/g)).toHaveLength(1);
+    }
+  });
 });
