@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-12
+updated: 2026-10-17
 ---
 
 # Build and deploy
@@ -49,7 +49,13 @@ cd dist
 bun server.js
 ```
 
-The bundle does not need `node_modules` at runtime.
+The server bundle does not need root `node_modules` at runtime. Native workers
+are shipped under `dist/canvas/` only when their caller survives bundling, with
+their own `node_modules` dependency closure for the build OS, CPU, and libc.
+Copy the whole directory into the runtime image and keep build and runtime
+platforms aligned. Print image preparation adds sharp's libvips (about 18 MB);
+the build runs the packaged image worker once to verify native loading. See
+[Prepare images for print](/en/docs/platform/pdf-and-templates#prepare-images-for-print).
 
 Cloud maintainers building an application from the monorepo use the same build
 contract through the checked-out script:

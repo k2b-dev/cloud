@@ -434,7 +434,10 @@ capability calls through Core; see [App capabilities](/en/docs/platform/capabili
 
 PDF applications use `renderHtmlToPdf`, `renderFacturXHtmlToPdf` and
 `attachPdfFiles` from `@k2b/cloud/services` for HTML conversion, invoice XML
-embedding and ordinary file attachments. See [PDF and templates](/en/docs/platform/pdf-and-templates)
+embedding and ordinary file attachments. `preparePdfImage` and its input,
+variant, result, and error types are available from `@k2b/cloud/services` and
+`@k2b/cloud/services/pdf` for bounded print image preparation.
+See [PDF and templates](/en/docs/platform/pdf-and-templates)
 for their input, access, cancellation and deployment responsibilities.
 
 ### Workspace navigation
