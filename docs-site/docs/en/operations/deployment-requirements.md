@@ -208,6 +208,14 @@ header through unchanged. Traefik replaces it by default; do not enable
 `forwardedHeaders.trustedIPs`. To verify, sign in from two networks: rate
 limits and audit entries must show different addresses, not the proxy's.
 
+A public proxy or CDN in front of the gateway that is absent from
+`GATEWAY_TRUSTED_PROXIES`, such as Cloudflare, makes Core see the proxy's
+address. Sign-in places and network names will then describe the proxy instead
+of the person when those details are used; see
+[Sign-in locations](/en/docs/operations/sign-in-locations). Private-network
+proxy addresses are ignored by the place lookup, but those proxies still need
+to be trusted for rate limits.
+
 ## Assign configuration to the correct service
 
 Inject secrets at runtime, never into image build arguments, browser bundles,

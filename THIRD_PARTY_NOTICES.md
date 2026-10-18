@@ -9,6 +9,12 @@ materials.
 
 ## Runtime and Distributed Assets
 
+- The Core image contains the DB-IP IP to City Lite and IP to ASN Lite
+  databases, © DB-IP.com, licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+  Attribution: [IP Geolocation by DB-IP](https://db-ip.com).
+  Converted from gzip only; otherwise unmodified.
+
 - IBM Plex fonts are provided under the SIL Open Font License 1.1.
 - Tabler Icons are used for UI iconography. The package metadata for
   `@tabler/icons-webfont` may omit the `license` field in some published
