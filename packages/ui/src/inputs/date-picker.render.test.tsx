@@ -16,10 +16,13 @@ import {
   msUntilNextDay,
   normalizeTimeInput,
   orderedRange,
+  pickRangeDay,
   previewRange,
+  rangeAnchor,
   resolveFocusDay,
   splitDateTime,
   toDateTimeValue,
+  weekendBands,
 } from "./date-picker";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-date-picker-tests-"));
@@ -77,13 +80,89 @@ describe("@k2b/ui complete date picker migration", () => {
       start: "2026-07-27",
       end: "2026-07-29",
     });
-    expect(previewRange({ start: "2026-07-27", end: null }, "2026-07-25")).toEqual({
+    expect(previewRange({ start: "2026-07-27", end: "2026-07-27" }, "2026-07-27", "2026-07-25")).toEqual({
       start: "2026-07-25",
       end: "2026-07-27",
     });
     expect(formatDateOnlyRangeDuration({ start: "2026-07-27", end: "2026-07-29" })).toBe("3 days");
     expect(formatDateOnlyRangeDuration({ start: "2026-03-28", end: "2026-03-30" }, { timeZone: "Europe/Berlin" })).toBe("3 days");
+    expect(formatDateOnlyRangeDuration({ start: "2026-07-27", end: "2026-07-27" }, { locale: "de" })).toBe("1 Tag");
+    expect(formatDateOnlyRangeDuration({ start: "2026-07-27", end: "2026-07-29" }, { locale: "de" })).toBe("3 Tage");
+    expect(formatDateOnlyRangeDuration({ start: "2026-07-27", end: null }, { locale: "de" })).toBe("");
   });
+
+  test("picks a complete single day, keeps it on repeat, and extends in either direction", () => {
+    const first = pickRangeDay({ start: null, end: null }, null, "2026-10-24");
+    expect(first).toEqual({ range: { start: "2026-10-24", end: "2026-10-24" }, anchor: "2026-10-24" });
+    expect(pickRangeDay(first.range, first.anchor, "2026-10-24")).toEqual(first);
+    const forward = pickRangeDay(first.range, first.anchor, "2026-10-27");
+    expect(forward).toEqual({ range: { start: "2026-10-24", end: "2026-10-27" }, anchor: null });
+    expect(pickRangeDay(first.range, first.anchor, "2026-10-21")).toEqual({
+      range: { start: "2026-10-21", end: "2026-10-24" },
+      anchor: null,
+    });
+    expect(pickRangeDay(forward.range, forward.anchor, "2026-10-30")).toEqual({
+      range: { start: "2026-10-30", end: "2026-10-30" },
+      anchor: "2026-10-30",
+    });
+  });
+
+  test("only extends or previews while the anchor still matches the single-day draft", () => {
+    const single = { start: "2026-10-24", end: "2026-10-24" };
+    expect(rangeAnchor(single, "2026-10-24")).toBe("2026-10-24");
+    expect(rangeAnchor(single, null)).toBeNull();
+    expect(previewRange(single, "2026-10-24", "2026-10-27")).toEqual({ start: "2026-10-24", end: "2026-10-27" });
+    expect(previewRange(single, "2026-10-24", null)).toBe(single);
+    expect(previewRange(single, null, "2026-10-27")).toBe(single);
+    for (const draft of [
+      { start: null, end: null },
+      { start: "2026-10-24", end: null },
+      { start: "2026-10-25", end: "2026-10-25" }, // A date preset replaced the day.
+      { start: "2026-10-24", end: "2026-10-26" }, // A duration changed the end day.
+      { start: "2026-10-22", end: "2026-10-24" },
+    ]) {
+      expect(rangeAnchor(draft, "2026-10-24")).toBeNull();
+      expect(previewRange(draft, "2026-10-24", "2026-10-27")).toBe(draft);
+      expect(pickRangeDay(draft, "2026-10-24", "2026-10-28")).toEqual({
+        range: { start: "2026-10-28", end: "2026-10-28" },
+        anchor: "2026-10-28",
+      });
+    }
+  });
+
+  test("groups adjacent weekend columns without wrapping across the week boundary", () => {
+    expect(weekendBands([false, false, false, false, false, true, true])).toEqual([{ start: 5, span: 2 }]);
+    expect(weekendBands([true, false, false, false, false, false, true])).toEqual([
+      { start: 0, span: 1 },
+      { start: 6, span: 1 },
+    ]);
+    expect(weekendBands([false, false, false, false, true, false, false])).toEqual([{ start: 4, span: 1 }]);
+    expect(weekendBands([false, false, false, false, false, false, false])).toEqual([]);
+  });
+
+  for (const [locale, column, labels] of [
+    ["de-DE", 6, ["Sa", "So"]],
+    ["he-IL", 5, ["יום ו׳", "שבת"]],
+  ] as const) {
+    test(`renders locale weekend bands in server HTML (${locale})`, () => {
+      for (const render of [
+        () => createComponent(DatePicker, { label: "Date", value: "2026-10-18", dateConfig: { locale } }),
+        () =>
+          createComponent(DateRangePicker, { label: "Range", value: { start: "2026-10-18", end: "2026-10-18" }, dateConfig: { locale } }),
+      ]) {
+        const html = renderToString(render);
+        const bands = html.match(/<span[^>]*class="k2b-date-weekend"[^>]*>/g) ?? [];
+        expect(bands).toHaveLength(2);
+        // Solid serializes style objects without spaces after colons or a trailing semicolon.
+        expect(bands[0]).toContain(`style="grid-column:${column} / span 2"`);
+        expect(bands[1]).toMatch(new RegExp(`style="grid-column:${column} / span 2;grid-row:1 / span [56]"`));
+        const weekdays = html.match(/<div class="k2b-date-weekdays"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? "";
+        const marked = [...weekdays.matchAll(/<span data-weekend="true">([^<]*)<\/span>/g)].map((match) => match[1]);
+        expect(marked).toEqual([...labels]);
+        expect(html).toMatch(/<button[^>]*data-date-day="2026-10-(?:23|24|25)"[^>]*data-weekend="true"/);
+      }
+    });
+  }
 
   test("keeps the month panel on short, locale-aware names", () => {
     const english = monthNames({ locale: "en" });

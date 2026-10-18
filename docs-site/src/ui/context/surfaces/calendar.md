@@ -76,6 +76,10 @@ off. Put state that the line shows only as an icon into `accessibleDetail`.
 
 ## Views and navigation
 
+Weekend shading follows the locale's week data in month, week, and phone month
+views, with Saturday and Sunday as the fallback. Day and year views keep their
+existing backgrounds without weekend shading.
+
 `view` accepts:
 
 - `day` for one timed column;
