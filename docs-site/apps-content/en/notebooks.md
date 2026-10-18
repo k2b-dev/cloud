@@ -62,9 +62,11 @@ including from Book view. Use the overview to start from a template.
   the PDF left out, with a reason and what to do. The PDF marks each item in
   place. Attached JPEG, PNG, WebP and GIF images appear at the size Book shows
   them. Images share the administrator's **Max input bytes** budget; large
-  images print at 300, 200 or 150 dpi. SVG attachments stay available as
-  downloads, and external HTTPS images are not printed yet. Anything left out
-  shows **Image not included: …** in the PDF and is listed in the dialog.
+  images print at 300, 200 or 150 dpi. Preparing images gets the same time as
+  the renderer's **Timeout** setting, at most 115 seconds. SVG attachments stay
+  available as downloads, and external HTTPS images are not printed yet.
+  Anything left out shows **Image not included: …** in the PDF and is listed in
+  the dialog.
 - Add filtered page lists with `:::query` and page contents with `:::toc`, using
   your own named data instead of a fixed metadata schema.
 

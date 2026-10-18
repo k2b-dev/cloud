@@ -121,7 +121,7 @@ export const bookRendererMessages = i18n.define({
       omissionHint_unreadable: "Prüfe die Datei und hänge sie erneut an.",
       omissionHint_too_large: "Verwende eine kleinere Datei oder teile die Notiz auf.",
       omissionHint_over_budget:
-        "Verwende kleinere Bilder oder teile die Notiz auf. Ein Administrator kann die maximale Eingabegröße erhöhen.",
+        "Verwende kleinere Bilder oder teile die Notiz auf. Die Administration kann die maximale Eingabegröße erhöhen.",
       omissionHint_unreachable: "Versuche es später erneut.",
       omissionHint_blocked: "Verwende stattdessen einen Anhang.",
       omissionHint_timed_out: "Versuche es später erneut.",

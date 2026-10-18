@@ -30,7 +30,7 @@ The PDF marks each missing image with **Image not included: …** and a reason. 
 - **File could not be read:** Open the file to check it, then export it again and attach the new copy.
 - **File too large:** Attach a smaller image. The notebook's attachment limit also applies to PDF images.
 - **No room left in the PDF:** Use smaller images or split the note. Images share **Max input bytes** with the document; an administrator can raise that budget. Large images print at 300, 200 or 150 dpi.
-- **Preparation took too long:** Try again, or use smaller images.
+- **Preparation took too long:** Try again, or use fewer or smaller images. Preparing images gets the same time as the PDF renderer, at most 115 seconds; an administrator can raise the renderer **Timeout**.
 - **Address not allowed:** Attach the image to this notebook and use its attachment link.
 - **Not printed in PDFs yet:** External HTTP(S) images are not included yet. Attach the image instead, or open the note to view it.
 - **Address not reachable:** Check the address or try again later.
