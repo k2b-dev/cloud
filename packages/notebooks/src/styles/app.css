@@ -131,7 +131,6 @@
 .notebook-sidebar-chip > span {
   max-width: 8rem;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 .notebook-sidebar-chip__chevron {
   color: var(--k2b-text-muted);
@@ -160,7 +159,6 @@
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .notebook-sidebar-filter__label > small {

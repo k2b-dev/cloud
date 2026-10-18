@@ -93,6 +93,7 @@ const settled = (page: Page, selector: string) =>
       document
         .querySelector(query)!
         .getAnimations({ subtree: true })
+        .filter((animation) => animation.timeline === document.timeline)
         .every((animation) => animation.playState !== "running"),
     selector,
   );

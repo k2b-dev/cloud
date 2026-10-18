@@ -184,6 +184,17 @@ Known findings live in `scripts/checks/test-waits.baseline`. Its counts can
 only decrease; `bun scripts/check.ts test-waits --fix` lowers counts and
 removes entries when findings are gone.
 
+Scroll-driven animations, such as the navigation label fade in `@k2b/ui`,
+keep running and never finish. Before waiting for page animations to stop or
+awaiting their `finished` promises, select only the document timeline with
+`document.getAnimations().filter((animation) => animation.timeline === document.timeline)`.
+Apply the same filter to element calls with `{ subtree: true }`, which can
+include navigation labels. The `animation-settle` check requires an actual
+`.timeline` property access in the surrounding statement of document-wide and
+subtree calls in tests, browser suites, and browser harnesses, or a leading
+`// animation-settle: all timelines` comment (optionally followed by a reason)
+for deliberate inspection of all timelines.
+
 ## Test in Chromium and WebKit
 
 Layout, focus, touch, and paint need a real engine, so these tests drive one

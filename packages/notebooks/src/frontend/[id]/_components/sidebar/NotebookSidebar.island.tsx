@@ -451,7 +451,7 @@ export default function NotebookSidebar(props: Props) {
               onClick={() => toggleFilter("favorites")}
             >
               <i class="ti ti-star" aria-hidden="true" />
-              <span>{t().favorites}</span>
+              <span class="k2b-truncate-fade">{t().favorites}</span>
             </Button>
             <Button
               size="xs"
@@ -461,7 +461,7 @@ export default function NotebookSidebar(props: Props) {
               onClick={() => toggleFilter("recents")}
             >
               <i class="ti ti-clock" aria-hidden="true" />
-              <span>{t().recent}</span>
+              <span class="k2b-truncate-fade">{t().recent}</span>
             </Button>
             <Show when={tags().length > 0 || tagFilter()}>
               <Dropdown.Root
@@ -489,7 +489,7 @@ export default function NotebookSidebar(props: Props) {
                   aria-current={tagFilter() ? "true" : undefined}
                 >
                   <i class="ti ti-hash" aria-hidden="true" />
-                  <span>{tagFilter() ?? t().tags}</span>
+                  <span class="k2b-truncate-fade">{tagFilter() ?? t().tags}</span>
                   <i class="ti ti-chevron-down notebook-sidebar-chip__chevron" aria-hidden="true" />
                 </Dropdown.Trigger>
               </Dropdown.Root>
@@ -538,7 +538,7 @@ export default function NotebookSidebar(props: Props) {
               }
             >
               <div class="notebook-sidebar-filter">
-                <span class="notebook-sidebar-filter__label">
+                <span class="notebook-sidebar-filter__label k2b-truncate-fade">
                   {filterLabel()} <small>{t().noteCount({ count: listedNotes().length })}</small>
                 </span>
                 <IconButton size="xs" label={t().clearFilter} tooltip={t().clearFilter} onClick={() => setFilter({})}>
