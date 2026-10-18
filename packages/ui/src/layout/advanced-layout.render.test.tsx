@@ -974,9 +974,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     });
 
     test("gives object rows an accent tile, a strong title, and stacked counts", () => {
-      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-icon")).toContain(
-        "width:1.25rem",
-      );
+      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-icon")).toContain("width:2rem");
       expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-main")).toContain(
         "min-height:2.75rem",
       );

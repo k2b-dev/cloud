@@ -244,7 +244,7 @@ const measure = () => {
       background: style(element).backgroundColor,
       rules: [style(element).borderTopStyle, style(element).borderBottomStyle],
     })),
-    inset: box(grouped.querySelector(".k2b-panel-dialog__header > i")!).left - box(grouped).left,
+    inset: box(grouped.querySelector(".k2b-panel-dialog__icon")!).left - box(grouped).left,
     bodyInset: box(grouped.querySelector(".k2b-panel-dialog__section")!).left - box(grouped).left,
     sections: sections.map((element) => ({ border: style(element).borderTopStyle, background: style(element).backgroundColor })),
     tints: visibleBodies.map((element) => style(element).backgroundColor),

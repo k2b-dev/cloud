@@ -85,6 +85,20 @@
   --k2b-reference-note: #64748b;
   --k2b-reference-heading: var(--k2b-neutral-500);
   --k2b-reference-task: #047857;
+  /* Icon tiles: an app, object, or file-type icon sits in a soft chip of its
+     own colour. The fill is this share of the glyph colour over whatever
+     surface lies below, so every hue gets its chip without a token per hue. */
+  --k2b-icon-tile-fill: 12%;
+  /* File-type glyph colours. Each keeps at least 3:1 on its own tile, also
+     over hover and selection fills. Folders use the app accent hook. */
+  --k2b-file-type-pdf: var(--k2b-reference-pdf);
+  --k2b-file-type-image: var(--k2b-reference-image);
+  --k2b-file-type-sheet: #15803d;
+  --k2b-file-type-document: #1d4ed8;
+  --k2b-file-type-slides: #c2410c;
+  --k2b-file-type-video: #be185d;
+  --k2b-file-type-audio: #a21caf;
+  --k2b-file-type-archive: #a16207;
   --k2b-action-solid: var(--k2b-accent-700);
   --k2b-action-solid-hover: var(--k2b-accent-800);
   --k2b-selection: rgb(29 78 216 / 0.35);
@@ -228,6 +242,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-reference-note: #94a3b8;
   --k2b-reference-heading: var(--k2b-neutral-400);
   --k2b-reference-task: #34d399;
+  --k2b-icon-tile-fill: 22%;
+  --k2b-file-type-sheet: #4ade80;
+  --k2b-file-type-document: #60a5fa;
+  --k2b-file-type-slides: #fb923c;
+  --k2b-file-type-video: #f472b6;
+  --k2b-file-type-audio: #e879f9;
+  --k2b-file-type-archive: #facc15;
   --k2b-focus-fill: color-mix(in srgb, var(--k2b-focus-ring) 55%, var(--k2b-surface));
   --k2b-focus-inset: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-fill);
   --k2b-info-surface: var(--k2b-accent-950);
@@ -3847,10 +3868,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-.k2b-ui .k2b-panel-dialog__header > i {
-  color: var(--k2b-text-muted);
-  font-size: 1.25rem;
-  line-height: 1.3;
+/* The header icon sits in a soft chip of the app accent hook. */
+.k2b-ui .k2b-panel-dialog__icon {
+  width: 2rem;
+  height: 2rem;
+  color: var(--k2b-app-workspace-active);
+  font-size: 1.125rem;
 }
 
 .k2b-ui .k2b-panel-dialog__heading {
@@ -11888,6 +11911,49 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* ------------------------------------------------------- Shared primitives */
+/* Icon tile: an app, object, or file-type icon in a soft chip of its own
+   colour. The fill is the glyph colour (`currentColor`) at
+   `--k2b-icon-tile-fill` over whatever surface lies below, so the app accent,
+   a file type, or a card colour each gets its matching chip from this one
+   rule. The owning element sets a fixed box; hover, focus, and selection never
+   change the tile. Status icons and avatars do not use it. */
+.k2b-ui .k2b-icon-tile {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 28%;
+  background: color-mix(in srgb, currentColor var(--k2b-icon-tile-fill), transparent);
+}
+
+/* `FileTypeIcon`: the glyph takes its type colour, a folder the app accent
+   hook, and code, text, and unknown files a neutral ink. */
+.k2b-ui .k2b-file-type-icon {
+  width: 2rem;
+  height: 2rem;
+  color: var(--k2b-text-muted);
+  font-size: 1.125rem;
+}
+.k2b-ui .k2b-file-type-icon[data-size="sm"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  font-size: 0.75rem;
+}
+.k2b-ui .k2b-file-type-icon[data-size="lg"] {
+  width: 4.5rem;
+  height: 4.5rem;
+  font-size: 2.25rem;
+}
+.k2b-ui .k2b-file-type-icon[data-file-type="folder"] { color: var(--k2b-app-workspace-active); }
+.k2b-ui .k2b-file-type-icon[data-file-type="pdf"] { color: var(--k2b-file-type-pdf); }
+.k2b-ui .k2b-file-type-icon[data-file-type="image"] { color: var(--k2b-file-type-image); }
+.k2b-ui .k2b-file-type-icon[data-file-type="sheet"] { color: var(--k2b-file-type-sheet); }
+.k2b-ui .k2b-file-type-icon[data-file-type="document"] { color: var(--k2b-file-type-document); }
+.k2b-ui .k2b-file-type-icon[data-file-type="slides"] { color: var(--k2b-file-type-slides); }
+.k2b-ui .k2b-file-type-icon[data-file-type="video"] { color: var(--k2b-file-type-video); }
+.k2b-ui .k2b-file-type-icon[data-file-type="audio"] { color: var(--k2b-file-type-audio); }
+.k2b-ui .k2b-file-type-icon[data-file-type="archive"] { color: var(--k2b-file-type-archive); }
+
 .k2b-ui .k2b-tabs {
   display: flex;
   min-width: 0;
@@ -12800,7 +12866,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Object rows: one resource per row with a title, a description line, and
-   stacked trailing counts. The leading icon becomes a small accent tile. */
+   stacked trailing counts. The leading icon sits in a soft accent chip. */
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"]:not(.has-action),
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-main {
   min-height: 2.75rem;
@@ -12808,8 +12874,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.375rem 0.5625rem;
   color: var(--k2b-text);
 }
+/* A fixed 2rem box beside the two-line copy; a plain glyph gets the shared
+   `k2b-icon-tile` chip, custom icon content keeps the same box. */
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-icon {
-  width: 1.25rem;
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
   color: var(--k2b-app-workspace-active);
   font-size: 1rem;
 }

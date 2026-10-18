@@ -239,7 +239,7 @@ const EmptyDemo = () => (
       { kind: "component", name: "Placeholder", from: "@k2b/ui" },
       { kind: "component", name: "NotFoundState", from: "@k2b/ui" },
     ]}
-    description="The examples intentionally combine compact, inline, panel, centered, and left-aligned placeholders; the code below names each non-default layout choice. NotFoundState handles a route-level dead end."
+    description="Empty icons sit in soft chips of the app color; loading, error, and inline icons stay plain. The examples name each non-default layout choice. NotFoundState handles a route-level dead end."
     code={`import { Button, NotFoundState, Placeholder } from "@k2b/ui";
 
 <Placeholder
@@ -249,6 +249,7 @@ const EmptyDemo = () => (
   icon="ti ti-folder-off"
   action={<Button size="sm">New project</Button>}
 />
+<Placeholder surface="paper" variant="panel" icon="ti ti-folder-off" title="No projects" description="Create the first project." />
 <Placeholder surface="paper" state="loading" variant="panel" title="Loading projects" description="Fetching the latest projects." />
 <Placeholder surface="paper" state="error" align="left" title="Projects unavailable" description="Reload the page to try again." />
 <NotFoundState code="404" title="Project not found" description="It may have been moved." action={{ label: "All projects", href: "/projects" }} />
@@ -262,6 +263,7 @@ const EmptyDemo = () => (
         icon="ti ti-folder-off"
         action={<Button size="sm">New project</Button>}
       />
+      <Placeholder surface="paper" variant="panel" icon="ti ti-folder-off" title="No projects" description="Create the first project." />
       <Placeholder surface="paper" state="loading" variant="panel" title="Loading projects" description="Fetching the latest projects." />
       <Placeholder surface="paper" state="error" align="left" title="Projects unavailable" description="Reload the page to try again." />
       <NotFoundState
@@ -315,7 +317,7 @@ const CardsDemo = () => (
       { kind: "component", name: "LinkCard", from: "@k2b/ui" },
       { kind: "component", name: "Avatar", from: "@k2b/ui" },
     ]}
-    description="LinkCard uses an explicit color or the app accent and can carry one trailing count. Avatar shows an image or text fallback, with an optional status ring inside its box that keeps its size."
+    description="LinkCard puts its icon in a soft chip of an explicit color or the app accent and can carry one trailing count. Avatar shows an image or text fallback, with an optional status ring inside its box that keeps its size."
     code={`import { Avatar, LinkCard } from "@k2b/ui";
 
 <LinkCard href="/runtime" title="Runtime" description="Open details" icon="ti ti-server" color="cyan" />
