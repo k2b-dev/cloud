@@ -2190,7 +2190,7 @@ describe("waiting detail drawers", () => {
     });
   }
 
-  for (const source of ["Detail", "outside Main", "focus only", "editor Enter", "editor Space"] as const) {
+  for (const source of ["Detail", "outside Main", "focus only", "editor Enter", "editor Space", "editor pointer"] as const) {
     test(`${source} does not arm a content watch`, async () => {
       const { root, main, aside, item, title } = waitingWorkspace();
       const input = document.createElement("input");
@@ -2200,6 +2200,7 @@ describe("waiting detail drawers", () => {
         if (source === "Detail") rememberPointer(title);
         else if (source === "outside Main") rememberPointer(root);
         else if (source === "focus only") item.focus();
+        else if (source === "editor pointer") rememberPointer(input);
         else detailKey(input, source === "editor Enter" ? "Enter" : " ");
         title.textContent = "Live contact update";
         await window.happyDOM.whenAsyncComplete();
@@ -2210,22 +2211,23 @@ describe("waiting detail drawers", () => {
     });
   }
 
-  for (const interaction of ["pointer", "keyboard", "none"] as const) {
+  for (const interaction of ["pointer", "keyboard", "none", "focus only"] as const) {
     test(`a waiting detail opened after ${interaction} interaction uses the drawer only for a fresh Main selection`, async () => {
       const { root, aside, item, title, toggle, content } = waitingWorkspace();
       aside.hidden = true;
       const dispose = installAppWorkspaceController({ root });
       try {
+        const chosen = interaction === "pointer" || interaction === "keyboard";
         if (interaction !== "none") {
           item.focus();
           if (interaction === "pointer") rememberPointer(item);
-          else detailKey(item, "Enter");
+          else if (interaction === "keyboard") detailKey(item, "Enter");
         }
         aside.hidden = false;
         await window.happyDOM.whenAsyncComplete();
-        expect(aside.dataset.workspaceDetailDrawer).toBe(interaction === "none" ? undefined : "open");
-        expect(toggle.getAttribute("aria-expanded")).toBe(interaction === "none" ? "false" : "true");
-        if (interaction !== "none") {
+        expect(aside.dataset.workspaceDetailDrawer).toBe(chosen ? "open" : undefined);
+        expect(toggle.getAttribute("aria-expanded")).toBe(chosen ? "true" : "false");
+        if (chosen) {
           expect(content.style.getPropertyValue("--k2b-detail-space")).toBe("416px");
           expect(document.activeElement === (interaction === "keyboard" ? title : item)).toBe(true);
         }

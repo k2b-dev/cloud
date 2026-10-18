@@ -617,6 +617,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     scrollTop: number;
     top: number;
     fresh: boolean;
+    /** A pointer or Enter/Space on an item outside text entry chose it; focus alone does not. */
+    chosen: boolean;
   };
   const detailHidden = new WeakMap<HTMLElement, boolean>();
   const remembered = new WeakMap<HTMLElement, RememberedItem>();
@@ -678,11 +680,12 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       scrollTop: 0,
       top: 0,
       fresh: true,
+      // A pointer or Enter/Space on an item chooses something; focus alone and text entry do not.
+      chosen: (event.type === "pointerdown" || event instanceof KeyboardEvent) && !target.closest(KEY_OWNER_SELECTOR),
     };
     refreshItem(snapshot);
     remembered.set(root, snapshot);
-    // A pointer or Enter/Space on an item chooses something; focus alone and typing in a field do not.
-    if (event.type === "pointerdown" || (event instanceof KeyboardEvent && !target.closest(KEY_OWNER_SELECTOR))) {
+    if (snapshot.chosen) {
       const aside = openDetails(root).find((aside) => detailWaiting(aside) && !detailDrawer(aside));
       if (aside) watchPendingDetail(root, aside, snapshot);
     }
@@ -954,7 +957,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       return;
     }
     if (detailWaiting(aside) && !detailDrawer(aside)) {
-      if (!followedInteraction) return;
+      if (!followedInteraction || !snapshot?.chosen) return;
       openDetailDrawer(aside);
     }
     anchorItem(root, aside, snapshot);
@@ -1014,6 +1017,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           scrollTop: 0,
           top: 0,
           fresh: false,
+          chosen: false,
         };
         refreshItem(snapshot);
         remembered.set(owningRoot, snapshot);
