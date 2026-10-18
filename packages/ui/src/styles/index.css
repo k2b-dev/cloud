@@ -6800,6 +6800,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-date-calendar {
+  --k2b-date-weekend: var(--k2b-surface-muted);
   min-width: 0;
   flex: 1;
   padding: 0.625rem;
@@ -6867,7 +6868,32 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: contents;
 }
 
-.k2b-ui .k2b-date-weekdays span {
+/* The weekend band: one soft column per run of weekend days, behind the
+   weekday letter and every week. Each grid draws its part, so the weekday row
+   rounds the top and the days round the bottom; the two rows touch, so the
+   parts read as one column. It is positioned, so it takes no grid cell and
+   never moves a day, and it sits below the days inside each grid's own
+   stacking context. */
+.k2b-ui .k2b-date-weekdays,
+.k2b-ui .k2b-date-grid {
+  position: relative;
+  isolation: isolate;
+}
+
+.k2b-ui .k2b-date-weekend {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: var(--k2b-radius-control) var(--k2b-radius-control) 0 0;
+  background: var(--k2b-date-weekend);
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-date-grid > .k2b-date-weekend {
+  border-radius: 0 0 var(--k2b-radius-control) var(--k2b-radius-control);
+}
+
+.k2b-ui .k2b-date-weekdays > span:not(.k2b-date-weekend) {
   padding-block: 0.25rem;
   color: var(--k2b-text-muted);
   font-size: 0.625rem;
@@ -6896,6 +6922,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-date-months button:hover {
   color: var(--k2b-text);
   background: var(--k2b-hover);
+}
+
+/* The hover fill would nearly vanish on the weekend band, so a weekend day
+   mixes the hover tint into the band instead. */
+.k2b-ui .k2b-date-grid button[data-weekend="true"]:hover:not([aria-selected="true"], [data-in-range="true"]) {
+  background: color-mix(in srgb, var(--k2b-action) 9%, var(--k2b-date-weekend));
 }
 
 .k2b-ui .k2b-date-grid button[data-outside="true"] {
