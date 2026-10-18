@@ -15,6 +15,10 @@ import type { ComposePreview } from "../../contracts";
 import MailFormattingWarnings from "./MailFormattingWarnings";
 import { mailComposerMessages } from "./mail-composer-messages";
 
+/** The preview loads nothing from the network: the mailbox logo and every other image arrive as `data:` URLs. */
+const PREVIEW_POLICY =
+  "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'\">";
+
 export default function MailComposerEditor(props: {
   format: Accessor<"plain" | "markdown">;
   body: Accessor<string>;
@@ -82,7 +86,7 @@ export default function MailComposerEditor(props: {
                 <iframe
                   class="min-h-0 w-full flex-1 border-0 bg-white"
                   sandbox=""
-                  srcdoc={`<style>body{margin:0}</style>${value().html}`}
+                  srcdoc={`${PREVIEW_POLICY}<style>body{margin:0}</style>${value().html}`}
                   title={t().emailPreview}
                 />
                 <MailFormattingWarnings warnings={value().formattingWarnings} />

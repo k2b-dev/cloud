@@ -32,6 +32,7 @@ import {
 } from "../../contracts";
 import { readApiError } from "./api-response";
 import { emailDesignPreviewDocument } from "./email-design-preview-document";
+import MailboxLogoSettings from "./MailboxLogoSettings";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
 const TEMPLATE_VARIABLES = Object.keys(composeTemplateVariables);
@@ -195,18 +196,21 @@ function ComposeTemplateEditor(props: {
             <p class="mb-2 text-xs text-dimmed">{messages().templateContentDescription}</p>
             <MarkdownEditor value={body} onValueChange={setBody} lines={14} aria-label={messages().templateContent} spellcheck />
           </div>
-          <div class="flex flex-wrap gap-1.5" role="group" aria-label={messages().availableComposeVariables}>
-            <For each={TEMPLATE_VARIABLES}>
-              {(variable) => (
-                <button
-                  type="button"
-                  class="chip text-xs"
-                  onClick={() => setBody((value) => `${value}${value && !value.endsWith("\n") ? " " : ""}{{ ${variable} }}`)}
-                >
-                  {variable}
-                </button>
-              )}
-            </For>
+          <div class="flex flex-col gap-1.5">
+            <div class="flex flex-wrap gap-1.5" role="group" aria-label={messages().availableComposeVariables}>
+              <For each={TEMPLATE_VARIABLES}>
+                {(variable) => (
+                  <button
+                    type="button"
+                    class="chip text-xs"
+                    onClick={() => setBody((value) => `${value}${value && !value.endsWith("\n") ? " " : ""}{{ ${variable} }}`)}
+                  >
+                    {variable}
+                  </button>
+                )}
+              </For>
+            </div>
+            <p class="text-xs text-dimmed">{messages().logoVariableHint}</p>
           </div>
         </PanelDialog.Section>
       </PanelDialog.Body>
@@ -577,6 +581,8 @@ export default function MailComposeSettings(props: {
           <IgnoredDesignNotice warnings={style().formattingWarnings} />
         </SettingsGroup>
       </Show>
+
+      <MailboxLogoSettings mailboxId={props.mailboxId} canManage={props.permission === "admin"} />
     </div>
   );
 }

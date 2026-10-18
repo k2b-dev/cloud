@@ -48,6 +48,7 @@ import {
   validateComposeTemplateSource,
   withoutSignatureSegments,
 } from "./compose-renderer";
+import { mailboxLogoFailure } from "./mailbox-logo-errors";
 import { validateMailboxLogoImage } from "./mailbox-logo-image";
 import {
   currentMailboxLogo,
@@ -690,7 +691,10 @@ export const updateMailboxComposeLogo = async (params: {
   input: UpdateMailboxComposeLogoInput;
 }): Promise<Result<MailboxComposeLogo>> => {
   const parsed = updateMailboxComposeLogoInputSchema.safeParse(params.input);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid mailbox logo"));
+  if (!parsed.success) {
+    if (parsed.error.issues[0]?.path[0] === "altText") return fail(mailboxLogoFailure("invalidAltText"));
+    return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid mailbox logo"));
+  }
   let content = Buffer.from(parsed.data.content, "base64");
   if (content.toString("base64") !== parsed.data.content) return fail(err.badInput("Logo content must be valid padded base64"));
   const originalImage = validateMailboxLogoImage(content);
@@ -698,10 +702,10 @@ export const updateMailboxComposeLogo = async (params: {
   try {
     content = Buffer.from(stripImageMetadata(content));
   } catch {
-    return fail(err.badInput("The logo file is damaged or truncated"));
+    return fail(mailboxLogoFailure("damaged"));
   }
   const image = validateMailboxLogoImage(content);
-  if (!image.ok) return fail(err.badInput("The logo file is damaged or truncated"));
+  if (!image.ok) return fail(mailboxLogoFailure("damaged"));
   try {
     return await sql.begin(async (tx) => {
       // Lock the mailbox before the permission check, so a concurrent access revocation either finishes first or waits.
@@ -715,7 +719,7 @@ export const updateMailboxComposeLogo = async (params: {
       const actorId = actorDatabaseId(actor);
       if (!actorId || actor.kind === "workflow" || actor.kind === "system") return fail(err.forbidden("Logo editor is invalid"));
       const alt = mailboxLogoAltTextSchema.safeParse(parsed.data.altText ?? mailbox.name);
-      if (!alt.success) return fail(err.badInput(alt.error.issues[0]?.message ?? "Invalid logo alt text"));
+      if (!alt.success) return fail(mailboxLogoFailure("invalidAltText"));
       const [row] = await tx<DbMailboxLogo[]>`
         INSERT INTO mail.mailbox_logo_versions (mailbox_id, content, content_type, pixel_width, pixel_height, display_width, alt_text, sha256, created_by_actor_kind, created_by_actor_id)
         VALUES (${params.mailboxId}::uuid, ${content}, ${image.data.contentType}, ${image.data.width}, ${image.data.height}, ${parsed.data.displayWidth ?? 200}, ${alt.data}, ${mailboxLogoSha256(content)}, ${actor.kind}, ${actorId}::uuid)
@@ -875,6 +879,8 @@ export const renderComposeDraft = async (params: {
           src: params.logoSource === "cid" ? `cid:${contentId}` : mailboxLogoDataUrl(logo),
           altText: logo.alt_text,
           displayWidth: logo.display_width,
+          pixelWidth: logo.pixel_width,
+          pixelHeight: logo.pixel_height,
           byteLength: logo.content.byteLength,
         }
       : null,
