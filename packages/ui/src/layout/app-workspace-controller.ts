@@ -668,8 +668,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const previous = remembered.get(root);
     if (previous && openDetails(root).length) refreshItem(previous);
     const main = mainElement(root);
-    const item = target.closest<HTMLElement>(FOCUSABLE_SELECTOR);
-    if (!main || !item || !main.contains(item) || item.closest(ROOT_SELECTOR) !== root) return;
+    // Collection rows with a roving tab index are items too, though no tab stops.
+    const item = target.closest<HTMLElement>(`${FOCUSABLE_SELECTOR}, [tabindex]`);
+    if (!main || !item || item === main || !main.contains(item) || item.closest(ROOT_SELECTOR) !== root) return;
     if (event instanceof KeyboardEvent && event.key !== "Enter" && event.key !== " ") return;
     const cell = target.closest<HTMLElement>("td, th");
     const snapshot: RememberedItem = {
@@ -681,7 +682,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       top: 0,
       fresh: true,
       // A pointer or Enter/Space on an item chooses something; focus alone and text entry do not.
-      chosen: (event.type === "pointerdown" || event instanceof KeyboardEvent) && !target.closest(KEY_OWNER_SELECTOR),
+      chosen:
+        ((event instanceof PointerEvent && event.type === "pointerdown" && event.button === 0) || event instanceof KeyboardEvent) &&
+        !target.closest(KEY_OWNER_SELECTOR),
     };
     refreshItem(snapshot);
     remembered.set(root, snapshot);
@@ -892,11 +895,12 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       }),
     );
   };
-  let pendingDetail: { aside: HTMLElement; snapshot: RememberedItem; observer: MutationObserver } | null = null;
+  let pendingDetail: { aside: HTMLElement; snapshot: RememberedItem; observer: MutationObserver; stop: () => void } | null = null;
   const canOpenPendingDetail = (aside: HTMLElement) =>
     aside.isConnected && eventRoot.contains(aside) && !aside.hidden && detailWaiting(aside) && !detailDrawer(aside);
   const cancelPendingDetail = () => {
     pendingDetail?.observer.disconnect();
+    pendingDetail?.stop();
     pendingDetail = null;
   };
   const watchPendingDetail = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem) => {
@@ -915,16 +919,31 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       }
       if (records.some((record) => aside.contains(record.target))) open();
     });
-    pendingDetail = { aside, snapshot, observer };
     // Choosing the item that is already selected changes no content. An item
-    // that the app marks as selected or current once the choice has settled
-    // reopens the drawer as well.
+    // that the app marks as selected or current once the activation has
+    // settled reopens the drawer as well: after Enter or Space, or after the
+    // click a pointer completes. A cancelled gesture, such as a touch that
+    // starts a scroll, ends the watch.
     const selected = () => snapshot.item.closest('[aria-selected="true"], [aria-current]:not([aria-current="false"])');
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        if (pendingDetail?.observer === observer && canOpenPendingDetail(aside) && selected()) open();
-      }),
-    );
+    const settle = () =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          if (pendingDetail?.observer === observer && canOpenPendingDetail(aside) && selected()) open();
+        }),
+      );
+    const onClick = (event: Event) => {
+      if (event.target instanceof Node && snapshot.item.contains(event.target)) settle();
+    };
+    const stop = () => {
+      ownerDocument.removeEventListener("click", onClick, true);
+      ownerDocument.removeEventListener("pointercancel", cancelPendingDetail, true);
+    };
+    pendingDetail = { aside, snapshot, observer, stop };
+    if (snapshot.interaction === "keyboard") settle();
+    else {
+      ownerDocument.addEventListener("click", onClick, true);
+      ownerDocument.addEventListener("pointercancel", cancelPendingDetail, true);
+    }
     observer.observe(aside, { childList: true, subtree: true, characterData: true });
     // Also detect removal when this controller is scoped to the removed workspace itself.
     observer.observe(ownerDocument, { childList: true, subtree: true });

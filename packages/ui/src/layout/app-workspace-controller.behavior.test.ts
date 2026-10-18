@@ -2157,19 +2157,27 @@ describe("waiting detail drawers", () => {
     });
   }
 
-  for (const marked of [true, false]) {
-    test(`choosing the ${marked ? "selected" : "unmarked"} item again ${marked ? "reopens" : "leaves"} a parked Detail without a content change`, async () => {
-      const { root, aside, item, toggle } = waitingWorkspace();
-      if (marked) item.setAttribute("aria-selected", "true");
+  for (const gesture of ["click", "unmarked click", "secondary button", "cancelled", "roving row"] as const) {
+    test(`choosing the selected item again: ${gesture}`, async () => {
+      const { root, main, aside, item, toggle } = waitingWorkspace();
+      // A collection row with a roving tab index, as in FileGrid or DataTable.
+      const row = document.createElement("div");
+      row.tabIndex = -1;
+      row.textContent = "Selected row";
+      main.append(row);
+      const target = gesture === "roving row" ? row : item;
+      if (gesture !== "unmarked click") target.setAttribute("aria-selected", "true");
       const dispose = installAppWorkspaceController({ root });
       try {
         toggle.click();
         detailKey(toggle, "Escape");
-        rememberPointer(item);
-        item.focus();
+        target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: gesture === "secondary button" ? 2 : 0 }));
+        if (gesture === "cancelled") target.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
+        else target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
         flushFrames();
         flushFrames();
-        expect(aside.dataset.workspaceDetailDrawer).toBe(marked ? "open" : undefined);
+        const opens = gesture === "click" || gesture === "roving row";
+        expect(aside.dataset.workspaceDetailDrawer).toBe(opens ? "open" : undefined);
       } finally {
         dispose();
       }
