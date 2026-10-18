@@ -1903,7 +1903,7 @@ html {
   display: none;
 }
 
-.k2b-ui:has(.k2b-page-title:not([data-fallback])) .k2b-app-workspace__head > .k2b-page-title {
+.k2b-ui:has(.k2b-page-title:not([data-fallback])) .k2b-app-workspace__head > .k2b-app-workspace__head-lead > .k2b-page-title {
   display: none;
 }
 
@@ -1916,6 +1916,294 @@ html {
 .k2b-ui .k2b-app-workspace__head-heading {
   display: none;
   margin: 0;
+}
+
+/* The lead holds the head's way to the sidebar and its title; a head row
+   adds the views, the filters, and the result count to it. */
+.k2b-ui .k2b-app-workspace__head-lead {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* The head row (`AppWorkspace.Head`): views, filters, and actions in one
+   row while they fit. Otherwise the filters wrap to a second row; the
+   workspace's width decides, not the window's, and flex wrapping decides it
+   in the first frame. The row is there in every layout; only its title
+   follows the head's rules above and below: it shows only where the old head
+   showed it, and beside a sidebar that marks the page it is gone, with a
+   visually hidden `h1` when Main has none. The row draws no line. The
+   selector outweighs every rule that hides or clips the head. */
+.k2b-ui
+  .k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head[data-row][data-row][data-row]:is(
+    [data-trail],
+    :not([data-trail])
+  ) {
+  position: static;
+  display: flex;
+  width: auto;
+  height: auto;
+  min-height: 3.5rem;
+  margin: 0;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem var(--k2b-workspace-head-end, 0.75rem) 0.5rem 0.75rem;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+}
+
+/* Every part of the row stands in a line of the same height, so the
+   title, the views, the filters, and the actions share one centre in the
+   first row, also when the lead wraps below them. */
+.k2b-ui .k2b-app-workspace__head[data-row] {
+  --k2b-workspace-head-line: 2.5rem;
+}
+
+.k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  container: k2b-head-lead / inline-size;
+}
+
+.k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-page-title {
+  flex: 0 1 auto;
+  min-height: var(--k2b-workspace-head-line);
+}
+
+/* A page without its own `h1` keeps the head's heading for assistive
+   technology, whether or not the visible title shows. */
+.k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+  .k2b-app-workspace:not(:has(.k2b-app-workspace__main h1))
+  > .k2b-app-workspace__head[data-row]
+  > .k2b-app-workspace__head-lead
+  > .k2b-app-workspace__head-heading {
+  display: block;
+}
+
+.k2b-ui .k2b-app-workspace__head[data-row]:not([data-trail="up"]) > .k2b-app-workspace__head-lead > .k2b-page-title {
+  display: none;
+}
+
+.k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.k2b-ui :is(.k2b-app-workspace__head-views, .k2b-app-workspace__head-filters) {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--k2b-workspace-head-line, 2.5rem);
+  flex: 0 1 auto;
+  align-items: center;
+}
+
+/* The filters move as one group; on their own row they scroll sideways.
+   Both scrollers keep room for focus rings in a padding that a negative
+   margin returns, so no ring is cut and nothing moves. */
+.k2b-ui .k2b-app-workspace__head-filters {
+  gap: 0.375rem;
+  overflow: auto hidden;
+  scrollbar-width: none;
+}
+
+.k2b-ui .k2b-app-workspace__head-filters,
+.k2b-ui .k2b-app-workspace__head-views .k2b-view-tabs__list {
+  margin: -0.25rem;
+  padding: 0.25rem;
+  scroll-padding-inline: 0.25rem;
+}
+
+.k2b-ui .k2b-app-workspace__head-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.k2b-ui .k2b-app-workspace__head-filters > * {
+  flex: none;
+}
+
+.k2b-ui .k2b-app-workspace__head-filters .k2b-filter-chip {
+  min-height: 2rem;
+  padding-block: 0.375rem;
+}
+
+.k2b-ui .k2b-app-workspace__head-reset {
+  min-height: 2rem;
+  font-size: 0.75rem;
+}
+
+/* The quiet result count fills what the row leaves. When its text does not
+   fit, it wraps to a second line that the count's one-line box clips, so it
+   is the first thing to go and moves nothing else. */
+.k2b-ui .k2b-app-workspace__head-count {
+  display: flex;
+  min-width: 0;
+  height: var(--k2b-workspace-head-line, 2.5rem);
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: var(--k2b-workspace-head-line, 2.5rem);
+}
+
+.k2b-ui .k2b-app-workspace__head-count::before {
+  content: "";
+  width: 0;
+  height: var(--k2b-workspace-head-line, 2.5rem);
+}
+
+.k2b-ui .k2b-app-workspace__head-count > span {
+  padding-inline: 0.25rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-app-workspace__head-actions {
+  display: flex;
+  min-height: var(--k2b-workspace-head-line, 2.5rem);
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Narrow, the strip keeps fewer views and counts the rest in "More". */
+@container k2b-head-lead (width < 40rem) {
+  .k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__item[data-compact-hidden] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__more {
+    display: flex;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__more-count[data-level="wide"] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__more-count[data-level="compact"] {
+    display: inline;
+  }
+}
+
+/* Phone: the views are the card's top row and stay while Main scrolls below
+   them, with the actions at their end; the filters follow in their own row.
+   With a title (a page with a way up), the title and the actions share the
+   first row and the views take the second. Both strips run to the card's
+   edges, so a tab or chip is cut at the edge, never inside a word at the
+   padding. The lead's parts join the head's own rows here, so the strip keeps
+   its compact views by the viewport. The primary action is a round button; a
+   host with a bottom bar places it beside the bar (Cloud does). */
+@media not all and (min-width: 48rem) {
+  .k2b-ui
+    .k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head[data-row][data-row][data-row]:is(
+      [data-trail],
+      :not([data-trail])
+    ) {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.5rem;
+    padding: 0.5rem 1rem 0.25rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
+    display: contents;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-page-title {
+    flex: 1 1 0;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-views {
+    flex: 1 1 0;
+    margin-inline-start: -1rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-actions {
+    order: 1;
+    margin-inline-start: auto;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-filters {
+    order: 2;
+    flex: 1 1 100%;
+    margin-inline: -1rem;
+  }
+
+  /* A visible title takes the first row with the actions; the views move to
+     their own row. The title shows here only on a page with a way up that
+     does not render its own `PageTitle`. */
+  .k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+    .k2b-app-workspace__head[data-row][data-trail="up"]
+    > .k2b-app-workspace__head-lead
+    > .k2b-app-workspace__head-views {
+    order: 2;
+    flex: 1 1 100%;
+    margin-inline: -1rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-app-workspace__head-views > .k2b-view-tabs,
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__list {
+    width: 100%;
+    margin-inline: 0;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__list,
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-filters {
+    padding-inline: 1rem;
+    scroll-padding-inline: 1rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__item[data-compact-hidden] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__more {
+    display: flex;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__more-count[data-level="wide"] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__more-count[data-level="compact"] {
+    display: inline;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-count {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-primary {
+    width: 3rem;
+    min-width: 3rem;
+    height: 3rem;
+    min-height: 3rem;
+    padding: 0;
+    border-radius: 999px;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-primary > i {
+    font-size: 1.25rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-primary-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 @container k2b-app-area (min-width: 64rem) {
@@ -1946,6 +2234,7 @@ html {
       > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
     )
     > .k2b-app-workspace__head
+    > .k2b-app-workspace__head-lead
     > .k2b-page-title {
     display: none;
   }
@@ -1956,6 +2245,7 @@ html {
       > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
     ):not(:has(.k2b-app-workspace__main h1))
     > .k2b-app-workspace__head
+    > .k2b-app-workspace__head-lead
     > .k2b-app-workspace__head-heading {
     display: block;
   }
@@ -2034,8 +2324,22 @@ html {
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > .k2b-app-workspace__head
+      > .k2b-app-workspace__head-lead
       > .k2b-app-workspace__head-toggle {
       display: inline-flex;
+    }
+
+    /* A head row shows the title beside the overlay's button, as the head
+       does, unless the page shows its own. */
+    .k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
+      )
+      > .k2b-app-workspace__head[data-row]
+      > .k2b-app-workspace__head-lead
+      > .k2b-page-title.k2b-page-title {
+      display: flex;
     }
 
     .k2b-ui .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]) {
@@ -2762,6 +3066,21 @@ html {
   transform: translateY(-50%);
 }
 
+/* A head row can wrap to more lines; the Details button stays centred on
+   its first line, beside the actions: the row's top padding plus half of
+   its 2.5 rem line. */
+.k2b-ui
+  .k2b-app-workspace:has(> .k2b-app-workspace__head[data-row])
+  > .k2b-app-workspace__content
+  > .k2b-app-workspace__detail-toggle,
+.k2b-ui
+  .k2b-app-workspace:has(> .k2b-app-workspace__head[data-row])
+  > .k2b-app-workspace__content
+  > :is(solid-island, solid-client)
+  > .k2b-app-workspace__detail-toggle {
+  top: 1.75rem;
+}
+
 /* From 64 rem of host width, a sidebar whose column would leave `Main` less
    than its minimum is the overlay behind the head's button, as below 64 rem,
    and the head shows the page's title. The detail has started waiting
@@ -2818,6 +3137,7 @@ html {
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > .k2b-app-workspace__head
+      > .k2b-app-workspace__head-lead
       > .k2b-app-workspace__head-toggle {
       display: inline-flex;
     }
@@ -2829,6 +3149,7 @@ html {
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > .k2b-app-workspace__head
+      > .k2b-app-workspace__head-lead
       > .k2b-page-title.k2b-page-title {
       display: flex;
     }
@@ -2910,6 +3231,7 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
+    --k2b-workspace-head-end: 7rem;
     padding: 0.25rem 7rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
@@ -2971,6 +3293,7 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
+    --k2b-workspace-head-end: 7rem;
     padding: 0.25rem 7rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
@@ -3032,6 +3355,7 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
+    --k2b-workspace-head-end: 7rem;
     padding: 0.25rem 7rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
@@ -3093,6 +3417,7 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
+    --k2b-workspace-head-end: 7rem;
     padding: 0.25rem 7rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
