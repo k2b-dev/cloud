@@ -386,6 +386,8 @@ function MailWorkspaceView(props: {
    */
   let routeGeneration = 0;
   let conversationDetailRequest: AbortController | null = null;
+  /** The conversation whose detail is loading, and whether a live change touched it meanwhile. */
+  let openingConversation: { id: string; changed: boolean } | null = null;
   /** A conversation opening in the shown list shows the same pending state as a view that loads. */
   const [conversationOpening, setConversationOpening] = createSignal(false);
   const cancelConversationDetail = () => {
@@ -394,8 +396,11 @@ function MailWorkspaceView(props: {
   };
   const finishConversationDetail = () => {
     conversationDetailRequest = null;
+    openingConversation = null;
     setConversationOpening(false);
   };
+  const touches = (conversationIds: readonly (string | null)[] | null, conversationId: string) =>
+    conversationIds === null || conversationIds.some((id) => id === null || id === conversationId);
 
   type ConversationActivityResult = { conversationId: string; items: MailActivityEvent[] };
   const activityQuery = query.create<string | null, ConversationActivityResult>({
@@ -729,9 +734,11 @@ function MailWorkspaceView(props: {
    * activity stays in place.
    */
   const refreshLiveData = async (conversationIds: readonly (string | null)[] | null): Promise<void> => {
+    // A detail that is loading may have been read before this change; it reloads once it is shown.
+    if (openingConversation && touches(conversationIds, openingConversation.id)) openingConversation.changed = true;
     await whenRefreshAllowed();
     const selected = selectedConversationId();
-    const activity = selected !== null && (conversationIds === null || conversationIds.some((id) => id === null || id === selected));
+    const activity = selected !== null && touches(conversationIds, selected);
     if (activity) void activityQuery.invalidate().catch(() => undefined);
     await workspaceQuery.invalidate();
   };
@@ -1081,6 +1088,8 @@ function MailWorkspaceView(props: {
     cancelConversationDetail();
     const request = new AbortController();
     conversationDetailRequest = request;
+    const opening = { id: conversationId, changed: false };
+    openingConversation = opening;
     setConversationOpening(true);
     let detail: MailConversationDetailData;
     try {
@@ -1112,6 +1121,8 @@ function MailWorkspaceView(props: {
       // The snapshot's rule: the latest message's subject, else the list row's.
       selectedSubject: selectedSubject || subject,
     });
+    // Page 1 now asks for this conversation, so reloading it brings the change the detail may have missed.
+    if (opening.changed) void workspaceQuery.invalidate().catch(() => undefined);
     return "applied";
   };
 
