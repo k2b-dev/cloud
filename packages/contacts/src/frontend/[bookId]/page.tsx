@@ -1,6 +1,7 @@
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale, hasPermission } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { ok } from "@k2b/stdlib";
 import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../../config";
 import { contactsService } from "../../service";
@@ -82,11 +83,15 @@ export default ssr<AuthContext>(async (c) => {
         favoriteUserId: queryOptions.favorites ? user.id : undefined,
       },
     }),
-    contactsService.tag.list({ bookId }),
+    contactsService.tag.list({ bookId, actor: c.get("actor"), accessSubject: c.get("accessSubject") }),
   ]);
   if (!contactsResult.ok)
     return ssr.error(c, contactsResult.error.code === "NOT_FOUND" ? 404 : 403, {
       description: contactsResult.error.code === "FORBIDDEN" ? t.askAdminDescription : undefined,
+    });
+  if (!internalBookTags.ok)
+    return ssr.error(c, internalBookTags.error.code === "NOT_FOUND" ? 404 : 403, {
+      description: internalBookTags.error.code === "FORBIDDEN" ? t.askAdminDescription : undefined,
     });
   const internalContacts = contactsResult.data.items;
   const selectedContact = await resolveSelectedContact({
@@ -96,17 +101,23 @@ export default ssr<AuthContext>(async (c) => {
     actor: c.get("actor"),
     accessSubject: c.get("accessSubject"),
   });
-  const [internalNotesPage, internalFavoriteKeys] = await Promise.all([
+  const [notesResult, internalFavoriteKeys] = await Promise.all([
     selectedContact
       ? contactsService.contact.notes.listPage({
           bookId,
           contactId: selectedContact.id,
-          viewerUserId: user.id,
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
           pagination: { page: 1, perPage: 30 },
         })
-      : Promise.resolve({ items: [], page: 1, perPage: 30, total: 0, hasNext: false }),
-    loadFavoriteKeysForContacts(user.id, selectedContact ? [...internalContacts, selectedContact] : internalContacts),
+      : Promise.resolve(ok({ items: [], page: 1, perPage: 30, total: 0, hasNext: false })),
+    loadFavoriteKeysForContacts(c.get("actor"), selectedContact ? [...internalContacts, selectedContact] : internalContacts),
   ]);
+  if (!notesResult.ok)
+    return ssr.error(c, notesResult.error.code === "NOT_FOUND" ? 404 : 403, {
+      description: notesResult.error.code === "FORBIDDEN" ? t.askAdminDescription : undefined,
+    });
+  const internalNotesPage = notesResult.data;
   const favoriteContacts = selectedContact ? [...internalContacts, selectedContact] : internalContacts;
   const [books, publicBook, contacts, projectedSelected, initialNoteItems, favoriteKeys, bookTags] = await Promise.all([
     projectBooks(internalBooks),
@@ -115,7 +126,7 @@ export default ssr<AuthContext>(async (c) => {
     selectedContact ? projectContacts([selectedContact]) : Promise.resolve([]),
     projectNotes(internalNotesPage.items),
     projectFavoriteKeys(favoriteContacts, internalFavoriteKeys),
-    projectTags(internalBookTags),
+    projectTags(internalBookTags.data),
   ]);
   const initialNotesPage = { ...internalNotesPage, items: initialNoteItems };
   const selectedPublicContact = projectedSelected[0] ?? null;
