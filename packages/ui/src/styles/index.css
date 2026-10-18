@@ -9620,6 +9620,29 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
 }
 
+/* A wrapping line keeps its icon on the first line and shows the whole sentence. */
+.k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__row {
+  align-items: flex-start;
+}
+
+.k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__leading {
+  min-height: 1.25rem;
+}
+
+.k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__copy {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__copy strong,
+.k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__copy small {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .k2b-ui .k2b-chat-activity__trailing {
   display: inline-flex;
   align-items: center;

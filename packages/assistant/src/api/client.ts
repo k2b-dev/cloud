@@ -376,7 +376,7 @@ export const assistantApi = {
     const body: unknown = await response.json().catch(() => null);
     if (body && typeof body === "object" && "state" in body) {
       const { state } = body;
-      if (state === "queued" || state === "running" || state === "completed" || state === "failed") return state;
+      if (state === "queued" || state === "running" || state === "completed" || state === "failed" || state === "stopped") return state;
     }
     return "queued";
   },

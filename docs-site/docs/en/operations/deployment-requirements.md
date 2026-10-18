@@ -988,7 +988,7 @@ and `idx_ai_turns_background_finished`.
 The latter uses a plain `CREATE INDEX` on `ai.turns`, briefly blocking writes
 to `ai.turns` while it builds; allow for a longer build on large installations.
 The routine recovery tick then
-deletes completed and failed runs older than 90 days, their background turns
+deletes completed, failed and stopped runs older than 90 days, their background turns
 with tool calls, and their run transcripts (`ai.task_messages`) in batches of
 100 per minute. Queued and running runs, finished runs whose turns are still
 active, and chat result messages stay.
@@ -1003,6 +1003,26 @@ same 90-day clock, measured from when the turn finished.
 An installation with a large backlog drains it over time. PostgreSQL reuses
 the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
 See [Routine run history](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days).
+
+### Record why routines stop
+
+This release gives every paused routine and every routine that needs its owner
+a reason. It needs no configuration change. The first Core start adds the
+columns `reason_code`, `reason_at`, `title`, and `locale` to `ai.chat_tasks`,
+fills the reason and locale of existing routines once, and adds the constraint
+`ai_chat_tasks_reason_state_check`. Adding the constraint locks
+`ai.chat_tasks` while it checks the existing rows.
+
+Earlier Core and Assistant processes write such states without a reason, which
+the constraint rejects. Stop them before the new Core starts instead of
+running both versions side by side. Before rolling Core back to an earlier
+release, run the following in the Cloud database:
+
+```sql
+ALTER TABLE ai.chat_tasks DROP CONSTRAINT IF EXISTS ai_chat_tasks_reason_state_check;
+```
+
+See [Routine names and stop reasons](/en/docs/ai/structured-and-background-ai#routine-names-and-stop-reasons).
 
 ### Approve OAuth sign-ins in Cloud Login
 

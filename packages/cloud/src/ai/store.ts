@@ -2992,12 +2992,14 @@ export const aiConversations: AiConversationService = {
     return Boolean(rows[0]);
   },
 
-  requestTurnAbort: async (input) => {
+  requestTurnAbort: async (input, options) => {
     const reason = input.reason ?? "user";
-    const rows = await sql<TurnRow[]>`
+    const rows = await (options?.db ?? sql)<TurnRow[]>`
       UPDATE ai.turns
       SET cancel_requested_at = COALESCE(cancel_requested_at, now()),
-          cancellation_reason = COALESCE(cancellation_reason, ${reason})
+          cancellation_reason = CASE WHEN ${reason} = 'routine_deleted' THEN ${reason}
+            WHEN ${reason} = 'routine_paused' AND cancellation_reason IS DISTINCT FROM 'routine_deleted' THEN ${reason}
+            ELSE COALESCE(cancellation_reason, ${reason}) END
       WHERE id = ${input.turnId}
         AND conversation_id = ${input.conversationId}
         AND status IN ('queued', 'running', 'waiting_for_action')
