@@ -82,7 +82,11 @@ const open = async (width: number, dark: boolean, locale: string, status: GeoIpA
           title: "Sign-in",
           icon: "ti ti-users",
           get children() {
-            return createComponent(SignInLocations, { initial: status, initialPhase: phase });
+            return createComponent(SignInLocations, {
+              initial: status,
+              actorId: "11111111-1111-4111-8111-111111111111",
+              initialPhase: phase,
+            });
           },
         });
       },

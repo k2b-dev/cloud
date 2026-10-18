@@ -21,7 +21,7 @@ const html = (initial: GeoIpAdminStatus | null, locale = "en") =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(SignInLocations, { initial });
+        return createComponent(SignInLocations, { initial, actorId: "11111111-1111-4111-8111-111111111111" });
       },
     }),
   );
@@ -73,7 +73,7 @@ describe("sign-in locations block", () => {
             icon: "ti ti-users",
             entries: [],
             accountSection: "sign-in",
-            signInLocations: { status: bundledStatus },
+            signInLocations: { status: bundledStatus, actorId: "11111111-1111-4111-8111-111111111111" },
           });
         },
       }),

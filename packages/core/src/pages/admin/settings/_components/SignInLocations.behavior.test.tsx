@@ -5,6 +5,7 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import { bundledStatus, uploadedStatus } from "./sign-in-locations-fixture";
 
+const uploader = uploadedStatus.databases[0].upload!.uploadedBy!.id;
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** A scripted XMLHttpRequest: the test decides when progress, the end of the upload and the answer arrive. */
@@ -80,7 +81,10 @@ const mount = async (options: { initial?: GeoIpAdminStatus | null; locale?: stri
       createComponent(LocaleProvider, {
         locale: options.locale ?? "en",
         get children() {
-          return createComponent(SignInLocations, { initial: options.initial === undefined ? bundledStatus : options.initial });
+          return createComponent(SignInLocations, {
+            initial: options.initial === undefined ? bundledStatus : options.initial,
+            actorId: uploader,
+          });
         },
       }),
     dom.root,
@@ -227,6 +231,26 @@ describe("sign-in locations block", () => {
     await flush();
     await flush();
     expect(view.statusLine()).toBe("Uploaded. Sign-in requests now use this file for places.");
+    expect(view.source("city")).toBe("Uploaded file");
+  });
+
+  test("another administrator's upload during a lost answer does not count as this upload", async () => {
+    const view = await mount();
+    const other = { id: "22222222-2222-4222-8222-222222222222", name: "Ana Silva" };
+    view.respondWith(() =>
+      Response.json({
+        ...uploadedStatus,
+        databases: [
+          { ...uploadedStatus.databases[0], upload: { ...uploadedStatus.databases[0].upload!, uploadedBy: other } },
+          uploadedStatus.databases[1],
+        ],
+      }),
+    );
+    await view.choose();
+    FakeXhr.last!.respond(502, "Bad Gateway");
+    await flush();
+    await flush();
+    expect(view.statusLine()).toBe("Unclear whether the change was saved. Load status");
     expect(view.source("city")).toBe("Uploaded file");
   });
 

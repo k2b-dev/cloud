@@ -133,7 +133,7 @@ type Props = {
   accountSection?: "sign-in" | "registration";
   approvalState?: ApprovalAvailability;
   /** Present on the sign-in tab; `status` is null when the server could not read it. */
-  signInLocations?: { status: GeoIpAdminStatus | null };
+  signInLocations?: { status: GeoIpAdminStatus | null; actorId: string };
   showTestPdfAction?: boolean;
   showTestFreeIpaAction?: boolean;
   showLegacySettings?: boolean;
@@ -723,7 +723,9 @@ export default function CoreSettingsForm(props: Props) {
               ))}
             </Show>
             {renderFieldSections(genericEntries())}
-            <Show when={props.signInLocations}>{(locations) => <SignInLocations initial={locations().status} />}</Show>
+            <Show when={props.signInLocations}>
+              {(locations) => <SignInLocations initial={locations().status} actorId={locations().actorId} />}
+            </Show>
             <Show when={props.showLegacySettings}>
               <CacheNotice area="settings" />
               <LegacySettingsSection />

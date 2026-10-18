@@ -230,7 +230,8 @@ export default ssr<AuthContext>(async (c) => {
   const documentationBase = await coreSettings.get<string>("app.documentation_url");
   const approvalState = tab.id === "user" ? approvalAvailability(await appApproval.config(false).catch(() => null)) : undefined;
   // The block shows its own error with a retry when the status cannot be read; the page still renders.
-  const signInLocations = tab.id === "user" ? { status: await geoip.status(c.get("user")).catch(() => null) } : undefined;
+  const signInLocations =
+    tab.id === "user" ? { status: await geoip.status(c.get("user")).catch(() => null), actorId: c.get("user").id } : undefined;
   const operationsFreeIpaEnabled = tab.id === "account-operations" && (await coreSettings.get<boolean>("freeipa.enable"));
   const showAiJobsLink = hasDedicatedRuntimeRoute(getRuntimeContext(c).apps, "/admin/observability/jobs", "core");
 

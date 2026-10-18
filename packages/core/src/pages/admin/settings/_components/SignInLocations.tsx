@@ -73,6 +73,8 @@ const formatBytes = (bytes: number, locale: string) =>
 
 export default function SignInLocations(props: {
   initial: GeoIpAdminStatus | null;
+  /** The signed-in administrator: only an upload by them can prove that their own unclear upload landed. */
+  actorId: string;
   /** Test seam: the starting phase, for render tests of transient states. */
   initialPhase?: SignInLocationPhase;
 }): JSX.Element {
@@ -150,7 +152,10 @@ export default function SignInLocations(props: {
     const after = await reconcile();
     if (!after) return unknownOutcome();
     const changed = after.databases.find(
-      (database, index) => database.upload?.sha256 !== before?.databases[index]?.upload?.sha256 && database.source === "uploaded",
+      (database, index) =>
+        database.source === "uploaded" &&
+        database.upload?.sha256 !== before?.databases[index]?.upload?.sha256 &&
+        database.upload?.uploadedBy?.id === props.actorId,
     );
     if (changed) {
       setPhase({ kind: "uploaded", type: changed.kind });
