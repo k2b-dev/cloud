@@ -34,3 +34,18 @@ for (const locale of ["en", "de"] as const) {
     expect(html.indexOf('data-app-workspace-resize="detail"')).toBeLessThan(html.indexOf("<aside"));
   });
 }
+
+for (const minWidth of [760, 320, 0, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+  test(`Main emits its scoped minimum rule only for finite widths above 320 (${minWidth})`, () => {
+    const html = renderToString(() => createComponent(AppWorkspace.Main, { minWidth, children: "Main" }));
+    if (minWidth === 760) {
+      expect(html).toContain('data-workspace-main-min="760"');
+      expect(html).toContain("--k2b-workspace-main-min:760px");
+      expect(html).toContain(".k2b-app-workspace:has(> .k2b-app-workspace__content > .k2b-app-workspace__main");
+      expect(html).toContain(":is(solid-island, solid-client)");
+    } else {
+      expect(html).not.toContain("data-workspace-main-min");
+      expect(html).not.toContain("<style");
+    }
+  });
+}

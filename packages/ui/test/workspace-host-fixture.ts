@@ -16,7 +16,7 @@ type Components = {
   createSignal: typeof createSignal;
   Dynamic: typeof Dynamic;
 };
-export type FixtureOptions = { scenario?: string; detailWidth?: AppWorkspaceDetailWidth };
+export type FixtureOptions = { scenario?: string; detailWidth?: AppWorkspaceDetailWidth; mainMin?: number; sidebar?: boolean };
 
 /** One tree for the baseline, narrowed hosts, and source SSR/dist hydration. */
 export function workspaceTree({ AppWorkspace, createComponent, createSignal, Dynamic }: Components, props: FixtureOptions = {}) {
@@ -26,28 +26,31 @@ export function workspaceTree({ AppWorkspace, createComponent, createSignal, Dyn
   return createComponent(AppWorkspace, {
     get children() {
       return [
-        createComponent(AppWorkspace.Sidebar, {
-          id: "folders",
-          label: "Mail folders",
-          get children() {
-            return createComponent(AppWorkspace.SidebarDesktop, {
+        props.sidebar === false
+          ? null
+          : createComponent(AppWorkspace.Sidebar, {
+              id: "folders",
+              label: "Mail folders",
               get children() {
-                return createComponent(AppWorkspace.SidebarBody, {
+                return createComponent(AppWorkspace.SidebarDesktop, {
                   get children() {
-                    return ["Inbox", "Sent", "Archive"].map((label) =>
-                      createComponent(AppWorkspace.SidebarItem, { href: "#" + label, children: label }),
-                    );
+                    return createComponent(AppWorkspace.SidebarBody, {
+                      get children() {
+                        return ["Inbox", "Sent", "Archive"].map((label) =>
+                          createComponent(AppWorkspace.SidebarItem, { href: "#" + label, children: label }),
+                        );
+                      },
+                    });
                   },
                 });
               },
-            });
-          },
-        }),
+            }),
         createComponent(AppWorkspace.Content, {
           get children() {
             return [
               createComponent(AppWorkspace.Main, {
                 level: levels ? "reader" : undefined,
+                minWidth: props.mainMin,
                 get children() {
                   return levels
                     ? ["folders", "messages", "reader"].map((id) =>
@@ -60,7 +63,7 @@ export function workspaceTree({ AppWorkspace, createComponent, createSignal, Dyn
                           surface: "navigation",
                           children: "Message groups",
                         }),
-                        el("button", "Selected message"),
+                        createComponent(Dynamic, { component: "button", children: "Selected message", onClick: () => setOpen(true) }),
                       ];
                 },
               }),

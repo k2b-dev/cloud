@@ -88,12 +88,13 @@ const workspace = (
   root.dataset.k2bAppWorkspace = "";
   // Happy DOM does not evaluate the stylesheet's container queries.
   root.style.setProperty("--k2b-workspace-level-class", (options.width ?? 1000) >= 1280 ? "3" : "2");
-  root.style.setProperty("--k2b-workspace-sidebar-form", "column");
+
   root.dataset.workspaceResizable = options.resizable === false ? "false" : "true";
   setRect(root, { height: options.height ?? 700, width: options.width ?? 1000 });
 
   const sidebar = document.createElement("aside");
   sidebar.className = "k2b-app-workspace__sidebar";
+  sidebar.style.setProperty("--k2b-workspace-sidebar-form", "column");
   sidebar.dataset.workspaceResizable = "true";
   sidebar.dataset.workspaceCollapsible = options.collapsible ? "true" : "false";
   if (options.hideable) sidebar.dataset.workspaceHideable = "true";
@@ -156,6 +157,26 @@ afterEach(() => {
 });
 
 describe("AppWorkspace resize controller behaviour", () => {
+  test("sidebar resizing reserves Main's configured minimum and never sets max below min", () => {
+    const { root, handle, sidebar } = workspace({ width: 1000.75, sidebarWidth: 208 });
+    root.style.setProperty("--k2b-workspace-main-min", "760px");
+    setDynamicRect(sidebar, () => ({
+      width: Number.parseFloat(root.style.getPropertyValue("--k2b-workspace-sidebar-width")) || 208,
+      height: 700,
+    }));
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      for (let i = 0; i < 30; i++) dispatchKey(handle, "ArrowRight");
+      expect(handle.getAttribute("aria-valuemax")).toBe("240");
+      expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("240px");
+      root.style.setProperty("--k2b-workspace-main-min", "980px");
+      dispatchKey(handle, "ArrowRight");
+      expect(handle.getAttribute("aria-valuemax")).toBe(handle.getAttribute("aria-valuemin"));
+    } finally {
+      dispose();
+    }
+  });
+
   test("collapses from the sidebar minimum and restores the remembered width", () => {
     const { handle, root, sidebar } = workspace({ collapsible: true });
     const written: unknown[] = [];
@@ -981,7 +1002,7 @@ describe("floating detail controller", () => {
   test("the overlay sidebar handles Escape before the detail", () => {
     Object.defineProperty(window, "matchMedia", { value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) });
     const { root, sidebar, closed } = detailWorkspace();
-    root.style.setProperty("--k2b-workspace-sidebar-form", "overlay");
+    sidebar.style.setProperty("--k2b-workspace-sidebar-form", "overlay");
     const toggle = document.createElement("button");
     toggle.dataset.appWorkspaceSidebarToggle = "";
     root.prepend(toggle);
@@ -1829,7 +1850,7 @@ describe("floating detail layout changes", () => {
     test(`${mode} touch drags leave controls and owned gestures alone`, () => {
       Object.defineProperty(window, "matchMedia", {
         value: (query: string) => ({
-          matches: mode === "sheet" ? query === "(max-width: 47.999rem)" : query.endsWith("(pointer: coarse)"),
+          matches: mode === "sheet" ? query === "(max-width: 47.999rem)" : query === "(min-width: 48rem)",
           addEventListener() {},
           removeEventListener() {},
         }),
@@ -1860,10 +1881,12 @@ describe("floating detail layout changes", () => {
         expect(closed).toHaveLength(0);
       }
       for (const action of ["auto", "manipulation", "pan-x pan-y"]) {
+        if (mode === "drawer") aside.dataset.workspaceDetailDrawer = "open";
         plain.style.setProperty("touch-action", action);
         expect(swipe(plain).defaultPrevented).toBe(true);
       }
-      expect(closed).toHaveLength(3);
+      expect(closed).toHaveLength(mode === "sheet" ? 3 : 0);
+      if (mode === "drawer") expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
       dispose();
     });
   }
@@ -2083,6 +2106,31 @@ describe("waiting detail drawers", () => {
     return { ...fixture, toggle };
   };
 
+  for (const interaction of ["pointer", "keyboard", "none"] as const) {
+    test(`a waiting detail opened after ${interaction} interaction uses the drawer only for a fresh Main selection`, async () => {
+      const { root, aside, item, title, toggle, content } = waitingWorkspace();
+      aside.hidden = true;
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        if (interaction !== "none") {
+          item.focus();
+          if (interaction === "pointer") rememberPointer(item);
+          else detailKey(item, "Enter");
+        }
+        aside.hidden = false;
+        await window.happyDOM.whenAsyncComplete();
+        expect(aside.dataset.workspaceDetailDrawer).toBe(interaction === "none" ? undefined : "open");
+        expect(toggle.getAttribute("aria-expanded")).toBe(interaction === "none" ? "false" : "true");
+        if (interaction !== "none") {
+          expect(content.style.getPropertyValue("--k2b-detail-space")).toBe("416px");
+          expect(document.activeElement === (interaction === "keyboard" ? title : item)).toBe(true);
+        }
+      } finally {
+        dispose();
+      }
+    });
+  }
+
   test("parking affects only drawers under the requested root, and rescues only focus inside a drawer", () => {
     const first = waitingWorkspace();
     const second = waitingWorkspace();
@@ -2153,6 +2201,32 @@ describe("waiting detail drawers", () => {
     }
   });
 
+  for (const change of ["sidebar resize", "Main minimum"] as const) {
+    test(`${change} refreshes waiting without a root resize`, async () => {
+      const { root, aside, toggle } = waitingWorkspace();
+      const dispose = installAppWorkspaceController({ root });
+      try {
+        flushFrames();
+        flushFrames();
+        toggle.click();
+        expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+        aside.style.removeProperty("--k2b-workspace-detail-waiting");
+        if (change === "sidebar resize") dispatchKey(root.querySelector('[data-app-workspace-resize="sidebar"]')!, "ArrowRight");
+        else root.querySelector(".k2b-app-workspace__main")!.setAttribute("data-workspace-main-min", "760");
+        await window.happyDOM.whenAsyncComplete();
+        // A changed minimum is a DOM change and syncs at once; a drag syncs once per frame.
+        if (change === "sidebar resize") {
+          expect(aside.dataset.workspaceDetailDrawer).toBe("open");
+          flushFrames();
+        }
+        expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
+        expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      } finally {
+        dispose();
+      }
+    });
+  }
+
   test("hidden details and a wider host clear drawer state", async () => {
     const { root, aside, toggle } = waitingWorkspace();
     const dispose = installAppWorkspaceController({ root });
@@ -2168,6 +2242,7 @@ describe("waiting detail drawers", () => {
       toggle.setAttribute("aria-expanded", "true");
       aside.style.removeProperty("--k2b-workspace-detail-waiting");
       resizeObservers.forEach((observer) => observer.trigger());
+      flushFrames();
       expect(aside.dataset.workspaceDetailDrawer).toBeUndefined();
       expect(toggle.getAttribute("aria-expanded")).toBe("false");
     } finally {

@@ -51,14 +51,13 @@ const ROOT_SELECTOR = "[data-k2b-app-workspace]";
 const LAYOUT_REGION_SELECTOR = [
   ROOT_SELECTOR,
   ".k2b-app-workspace__sidebar",
+  ".k2b-app-workspace__main",
   ".k2b-app-workspace__main-pane",
   ".k2b-app-workspace__detail",
   ".k2b-app-workspace__drawer",
   HANDLE_SELECTOR,
 ].join(",");
 const TOGGLE_SELECTOR = "[data-app-workspace-sidebar-toggle]";
-/** Touch-tablet gestures remain viewport decisions. */
-const TOUCH_DRAWER_QUERY = "(min-width: 48rem) and (max-width: 63.999rem) and (pointer: coarse)";
 const DETAIL_TOGGLE_SELECTOR = "[data-app-workspace-detail-toggle]";
 const DETAIL_DRAWER_SELECTOR = '.k2b-app-workspace__detail[data-workspace-detail-drawer="open"]';
 const cssState = (element: HTMLElement, name: string) => getComputedStyle(element).getPropertyValue(name).trim();
@@ -113,6 +112,7 @@ const workspaceResizable = (root: HTMLElement) => root.dataset.workspaceResizabl
 const rootElements = (root: HTMLElement, selector: string) =>
   Array.from(root.querySelectorAll<HTMLElement>(selector)).filter((element) => element.closest(ROOT_SELECTOR) === root);
 const sidebarElement = (root: HTMLElement) => rootElements(root, ".k2b-app-workspace__sidebar")[0] ?? null;
+const sidebarForm = (root: HTMLElement) => cssState(sidebarElement(root) ?? root, "--k2b-workspace-sidebar-form");
 const mainElement = (root: HTMLElement) => rootElements(root, ".k2b-app-workspace__main")[0] ?? null;
 const sidebarCollapsible = (root: HTMLElement) => sidebarElement(root)?.dataset.workspaceCollapsible === "true";
 const sidebarHideable = (root: HTMLElement) => sidebarElement(root)?.dataset.workspaceHideable === "true";
@@ -222,7 +222,9 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
         : kind === "detail"
           ? APP_WORKSPACE_DETAIL_MAX
           : APP_WORKSPACE_DRAWER_MAX;
-  return appWorkspaceResizeLimits({
+  const mainMinValue = cssState(root, "--k2b-workspace-main-min");
+  const mainMin = mainMinValue.endsWith("px") ? Number.parseFloat(mainMinValue) : APP_WORKSPACE_MAIN_MIN;
+  const limits = appWorkspaceResizeLimits({
     kind,
     workspaceSize:
       kind === "drawer"
@@ -231,17 +233,23 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
           ? main.getBoundingClientRect().width
           : content
             ? root.getBoundingClientRect().right - root.clientLeft - content.getBoundingClientRect().left
-            : root.getBoundingClientRect().width,
+            : kind === "sidebar"
+              ? root.getBoundingClientRect().width - 2 * root.clientLeft
+              : root.getBoundingClientRect().width,
     reservedSize:
-      kind === "detail"
-        ? 8
-        : kind === "pane"
-          ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0) + separatorSize
-          : 0,
+      kind === "sidebar"
+        ? Math.max(0, (Number.isFinite(mainMin) ? mainMin : APP_WORKSPACE_MAIN_MIN) - APP_WORKSPACE_MAIN_MIN)
+        : kind === "detail"
+          ? 8
+          : kind === "pane"
+            ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0) + separatorSize
+            : 0,
     min: numberData(handle, "workspaceMinSize", defaultMin),
     max: numberData(handle, "workspaceMaxSize", defaultMax),
     sidebarCollapsible: kind === "sidebar" && sidebarCollapsible(root),
   });
+  // Widths are applied as whole pixels; rounding up must not cross the fit boundary.
+  return kind === "sidebar" ? { min: limits.min, max: Math.max(limits.min, Math.floor(limits.max)) } : limits;
 };
 
 const currentSize = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceResizeKind) =>
@@ -260,7 +268,7 @@ const updateHandleValue = (
   handle.setAttribute("aria-valuenow", String(clamp(size, min, max)));
 };
 
-const applySize = (
+const applyRegionSize = (
   root: HTMLElement,
   handle: HTMLElement,
   kind: AppWorkspaceResizeKind,
@@ -380,7 +388,7 @@ const claimedToggleClicks = new WeakSet<Event>();
 const claimedDetailGestures = new WeakSet<Event>();
 
 /**
- * The compact overlay: from 48 to 64 rem the sidebar opens over the work area
+ * The overlay sidebar opens over the work area when its column does not fit
  * from the button in the workspace's head. While it is open the rest of
  * the workspace is inert, Tab stays in the sidebar, and Escape, the scrim,
  * choosing an item, hiding the sidebar, or leaving the width range close it
@@ -460,9 +468,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       claimedToggleClicks.add(event);
       if (detailDrawer(aside)) parkDetailDrawer(aside);
       else {
-        aside.dataset.workspaceDetailDrawer = "open";
-        detailButton.setAttribute("aria-expanded", "true");
-        syncDetailDrawerSpace(aside);
+        openDetailDrawer(aside);
         if (event.detail === 0) requestTitle(aside);
         else detailButton.focus({ preventScroll: true });
       }
@@ -474,7 +480,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       if (!next || claimedToggleClicks.has(event)) return;
       claimedToggleClicks.add(event);
       if (overlay?.sidebar === next.sidebar) closeOverlay("button");
-      else if (cssState(next.root, "--k2b-workspace-sidebar-form") === "overlay") openOverlay(next);
+      else if (sidebarForm(next.root) === "overlay") openOverlay(next);
       return;
     }
     if (!overlay || !target) return;
@@ -551,8 +557,28 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   // Whether each open detail waited at the last check, so a column that starts
   // waiting under focus hands that focus to its Details button.
   const detailWasWaiting = new WeakMap<HTMLElement, boolean>();
+  const openDetailDrawer = (aside: HTMLElement) => {
+    aside.dataset.workspaceDetailDrawer = "open";
+    detailToggle(aside)?.setAttribute("aria-expanded", "true");
+    syncDetailDrawerSpace(aside);
+  };
+  // A sidebar drag changes the room beside it without resizing the workspace,
+  // so it rechecks waiting once per frame.
+  let hostSyncFrame: number | null = null;
+  const scheduleHostSync = () => {
+    if (hostSyncFrame !== null) return;
+    hostSyncFrame = requestAnimationFrame(() => {
+      hostSyncFrame = null;
+      syncHostState();
+    });
+  };
+  const applySize = (...args: Parameters<typeof applyRegionSize>) => {
+    const size = applyRegionSize(...args);
+    if (args[2] === "sidebar") scheduleHostSync();
+    return size;
+  };
   const syncHostState = () => {
-    if (overlay && cssState(overlay.root, "--k2b-workspace-sidebar-form") !== "overlay") closeOverlay("none");
+    if (overlay && sidebarForm(overlay.root) !== "overlay") closeOverlay("none");
     for (const root of allRoots()) {
       // A drawer removed with its panel leaves no space behind in Content.
       for (const content of rootElements(root, ".k2b-app-workspace__content"))
@@ -579,7 +605,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   };
   const phone = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 47.999rem)") : null;
   const wide = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 48rem)") : null;
-  const touchDrawer = typeof window.matchMedia === "function" ? window.matchMedia(TOUCH_DRAWER_QUERY) : null;
   const detailSelector = ".k2b-app-workspace__detail";
   const grabberSelector = ".k2b-app-workspace__detail-grabber";
   type RememberedItem = {
@@ -746,15 +771,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     delete aside.dataset.workspaceDetailDragging;
   };
   const anchorItem = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem | undefined) => {
-    if (!wide?.matches || (touchDrawer?.matches && closable(aside)) || detailDrawer(aside) || !snapshot?.item.isConnected) return;
+    if (!wide?.matches || detailDrawer(aside) || !snapshot?.item.isConnected) return;
     if (!mainElement(root)?.contains(snapshot.item) || snapshot.item.closest(ROOT_SELECTOR) !== root) return;
     const scroller = snapshot.scroller;
     if (scroller?.isConnected && scroller.scrollTop === snapshot.scrollTop)
       scroller.scrollTop += snapshot.item.getBoundingClientRect().top - snapshot.top;
   };
-  // From 64 rem the workspace does not clip, so the panel's shadow shows on
-  // every edge. A panel sliding in or out would cross a framed workspace's
-  // edge, so the workspace clips while the panel moves (see the stylesheet).
+  // A moving Detail would cross a framed workspace's edge, so the workspace
+  // clips while it slides (see the stylesheet).
   const slide = (root: HTMLElement, aside: HTMLElement) => {
     slides.get(root)?.();
     if (!root.hasAttribute("data-workspace-motion") || prefersReducedMotion() || !wide?.matches) return;
@@ -888,7 +912,10 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       if (detailDrag?.aside === aside) finishDetailDrag(true);
       return;
     }
-    if (detailWaiting(aside) && !detailDrawer(aside)) return;
+    if (detailWaiting(aside) && !detailDrawer(aside)) {
+      if (!followedInteraction) return;
+      openDetailDrawer(aside);
+    }
     anchorItem(root, aside, snapshot);
     if (phone?.matches) setDetent(aside, false);
     if (followedInteraction && snapshot) {
@@ -1028,7 +1055,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     clearDrag(drag.aside);
     if (cancelled || !drag.moved) return;
     if (drag.source === "drawer") {
-      if (drag.dx > 80 || (drag.dx > 30 && drag.velocity > 0.5)) requestClose(drag.aside);
+      if (drag.dx > 80 || (drag.dx > 30 && drag.velocity > 0.5))
+        parkDetailDrawer(drag.aside, drag.aside.contains(ownerDocument.activeElement));
     } else if (drag.dy > 60) {
       setDetent(drag.aside, false);
       if (!drag.full && closable(drag.aside)) requestClose(drag.aside);
@@ -1129,7 +1157,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (phone?.matches && (verticalScroller(target, aside) ?? aside).scrollTop <= 0) {
       if (!ownsTouchGesture(target, aside, "sheet"))
         beginDetailDrag(aside, target, "sheet", touch.clientX, touch.clientY, touch.identifier);
-    } else if (touchDrawer?.matches && closable(aside)) {
+    } else if (wide?.matches && detailDrawer(aside)) {
       if (!ownsTouchGesture(target, aside, "drawer"))
         beginDetailDrag(aside, target, "drawer", touch.clientX, touch.clientY, touch.identifier);
     }
@@ -1436,7 +1464,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     return allRoots().filter((root) => getComputedStyle(root).display !== "none" && root.getBoundingClientRect().width > 0);
   };
   const reconcile = () => {
-    if (detailDrag && (detailDrag.source === "drawer" ? !touchDrawer?.matches : !phone?.matches)) finishDetailDrag(true);
+    if (detailDrag && (detailDrag.source === "drawer" ? !wide?.matches || !detailDrawer(detailDrag.aside) : !phone?.matches))
+      finishDetailDrag(true);
     allRoots().forEach((root) => {
       if (!phone?.matches) {
         for (const aside of rootElements(root, detailSelector)) {
@@ -1626,7 +1655,13 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           if (!changed) return;
           syncObservedRoots();
           // A new width token or a removed panel can end waiting without any box resizing.
-          if (records.some((record) => record.type === "childList" || record.attributeName === "data-width")) syncHostState();
+          if (
+            records.some(
+              (record) =>
+                record.type === "childList" || record.attributeName === "data-width" || record.attributeName === "data-workspace-main-min",
+            )
+          )
+            syncHostState();
           scheduleReconcile();
         });
 
@@ -1660,7 +1695,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   mutationObserver?.observe(eventRoot, {
     attributes: true,
     attributeOldValue: true,
-    attributeFilter: ["hidden", "data-workspace-level-shown", "data-width"],
+    attributeFilter: ["hidden", "data-workspace-level-shown", "data-width", "data-workspace-main-min"],
     childList: true,
     subtree: true,
   });
@@ -1706,6 +1741,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     // torn down, so unmounting during a drag cannot lose the final size.
     stopResize();
     if (reconcileFrame !== null) cancelAnimationFrame(reconcileFrame);
+    if (hostSyncFrame !== null) cancelAnimationFrame(hostSyncFrame);
     mutationObserver?.disconnect();
     resizeObserver?.disconnect();
     observedRoots.clear();
