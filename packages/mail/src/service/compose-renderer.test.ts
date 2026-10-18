@@ -1346,7 +1346,9 @@ describe("mailbox signature logos", () => {
       "{{\nmailbox.logo\n}}",
     ]) {
       expect(validateComposeTemplateSource(tag)).toMatchObject({ ok: true });
-      expect(render({ signature: tag })).toMatchObject({ ok: true, data: { logoUsed: true } });
+      const selected = render({ signature: tag });
+      expect(selected).toMatchObject({ ok: true, data: { logoUsed: true } });
+      if (selected.ok) expect(selected.data.html).toContain(`<img src="${logo.src}"`);
       const segment = markComposeTemplateSegment(tag);
       expect(hasUnrenderedTemplateSyntax(segment)).toBe(false);
       const legacy = render({ signature: null, body: segment });
@@ -1354,6 +1356,32 @@ describe("mailbox signature logos", () => {
       if (legacy.ok) expect(legacy.data.html).toContain(`<img src="${logo.src}"`);
     }
     expect(renderComposeTemplateSource("left  {{- mailbox.logo -}}  right", context, "markdown")).toEqual({ ok: true, data: "leftright" });
+  });
+  test.each([
+    ["{% assign x = '{{ mailbox.logo }}' %}{{ x | slice: 0, 12 }}", "{{ mailbox.l"],
+    ['{% assign x = "{{ mailbox.logo }}" %}{{ x | truncate: 12 }}', "{{ mailbo..."],
+    ['{{ "{{ mailbox.logo }}" | downcase }}', "{{ mailbox.logo }}"],
+    ["{% raw %}{{ mailbox.logo }}{% endraw %}", "{{ mailbox.logo }}"],
+  ])("renders logo syntax inside Liquid literals as text: %s", (signature, literal) => {
+    expect(validateComposeTemplateSource(signature)).toMatchObject({ ok: true });
+    for (const format of ["plain", "markdown"] as const) {
+      const result = render({ signature, format });
+      expect(result).toMatchObject({ ok: true, data: { logoUsed: false, text: `Hello\n\n${literal}` } });
+      if (!result.ok) continue;
+      expect(result.data.html ?? "").not.toContain("<img");
+      if (format === "markdown") expect(result.data.html).toContain(literal);
+      expect(result.data.html ?? "").not.toMatch(/maillogo/i);
+      expect(result.data.text).not.toMatch(/maillogo/i);
+    }
+  });
+  test("replaces only the real output when a string contains identical logo syntax", () => {
+    const result = render({ signature: '{% assign x = "{{ mailbox.logo }}" %}{{ x }} / {{ mailbox.logo }}' });
+    expect(result).toMatchObject({ ok: true, data: { logoUsed: true, text: `Hello\n\n{{ mailbox.logo }} / ${logo.altText}` } });
+    if (!result.ok) return;
+    expect(result.data.html).toContain("{{ mailbox.logo }} / ");
+    expect(result.data.html?.match(/<img /g)).toHaveLength(1);
+    expect(result.data.html).not.toMatch(/maillogo/i);
+    expect(result.data.text).not.toMatch(/maillogo/i);
   });
   test("rejects filters, conditions, assignments and bracket access to the logo", () => {
     for (const signature of [
@@ -1397,8 +1425,11 @@ describe("mailbox signature logos", () => {
     }
     expect(validateComposeTemplateSource("{% capture sig %}Regards{% endcapture %}{{ sig | downcase }}").ok).toBe(true);
     expect(validateComposeTemplateSource("{{ mailbox.logo }} capture {% assign capture = 'text' %}{{ capture }}").ok).toBe(true);
+    expect(validateComposeTemplateSource('{% assign x = "{% capture sig %}" %}{{ mailbox.logo }}').ok).toBe(true);
+    expect(validateComposeTemplateSource("{% raw %}{% capture sig %}{% endraw %}{{ mailbox.logo }}").ok).toBe(true);
+    expect(validateComposeTemplateSource('{% capture sig %}{{ "{{ mailbox.logo }}" }}{% endcapture %}{{ sig }}').ok).toBe(true);
   });
-  test("fails closed when a rendered logo marker is transformed or loses its prefix", () => {
+  test("fails closed when a rendered logo marker is transformed", () => {
     const randomPart = "ABCDEF01234546789ABCDEF012345678";
     const token = `MAILLOGO${randomPart}`;
     const uuid = spyOn(crypto, "randomUUID").mockReturnValue("abcdef01-2345-4678-9abc-def012345678");
@@ -1422,7 +1453,8 @@ describe("mailbox signature logos", () => {
           });
         }
         expect(render({ format, signature: "{{ mailbox.logo }} {{ mailbox.logo }}" })).toMatchObject({ ok: true });
-        expect(render({ format, body: "MAILLOGO11111111222243338444555555555555" })).toMatchObject({ ok: true });
+        // Ordinary text that merely looks like the marker prefix is the writer's own text.
+        expect(render({ format, body: "MailLogo MAILLOGO11112222" })).toMatchObject({ ok: true });
       }
     } finally {
       uuid.mockRestore();

@@ -2,6 +2,7 @@ import { EMAIL_HTML_ALLOWED_ATTRIBUTES, EMAIL_HTML_SANITIZE_OPTIONS, EMAIL_HTML_
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { convert } from "html-to-text";
 import juice from "juice";
+import { Tokenizer, TypeGuards } from "liquidjs";
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import sanitizeHtml from "sanitize-html";
@@ -35,21 +36,34 @@ const COMPOSE_SEGMENT = /\u2063([^\u2063\u2064]*)\u2064/g;
 const COMPOSE_SEGMENT_OR_LEFTOVER_MARK = /(\u2063[^\u2063\u2064]*\u2064)|[\u2063\u2064]/g;
 
 // Logo tags are owned by Mail, never evaluated as Liquid variables or filters.
-const COMPOSE_LOGO_TAG = /{{-?\s*mailbox\.logo\s*-?}}/g;
 const LIQUID_COMPOSE_VARIABLES = Object.keys(composeTemplateVariables).filter((variable) => variable !== "mailbox.logo");
-const replaceLogoTags = (source: string, value: string): string => {
+const replaceLogoTags = (source: string, value: string) => {
   const parts: string[] = [];
   let cursor = 0;
-  for (const match of source.matchAll(COMPOSE_LOGO_TAG)) {
-    const before = source.slice(cursor, match.index);
-    parts.push(match[0].startsWith("{{-") ? before.trimEnd() : before, value);
-    cursor = match.index + match[0].length;
-    if (match[0].endsWith("-}}")) {
+  let hasLogo = false;
+  let hasCapture = false;
+  // Mail's Liquid renderer uses the default delimiters, operators and whitespace options.
+  // Top-level tokens preserve quoted strings and raw blocks as Liquid sees them.
+  for (const token of new Tokenizer(source).readTopLevelTokens()) {
+    if (TypeGuards.isTagToken(token)) {
+      if (
+        token.name === "capture" ||
+        (token.name === "liquid" && token.tokenizer.readLiquidTagTokens().some((line) => line.name === "capture"))
+      ) {
+        hasCapture = true;
+      }
+    }
+    if (!TypeGuards.isOutputToken(token) || token.content !== "mailbox.logo") continue;
+    hasLogo = true;
+    const before = source.slice(cursor, token.begin);
+    parts.push(token.trimLeft ? before.trimEnd() : before, value);
+    cursor = token.end;
+    if (token.trimRight) {
       while (cursor < source.length && /\s/.test(source[cursor] ?? "")) cursor += 1;
     }
   }
   parts.push(source.slice(cursor));
-  return parts.join("");
+  return { source: parts.join(""), hasLogo, hasCapture };
 };
 
 const ALLOWED_TAGS = new Set<string>(EMAIL_HTML_TAGS);
@@ -299,23 +313,22 @@ export const validateComposeTemplateSource = (source: string): Result<void> => {
   if (source.includes(COMPOSE_SEGMENT_START) || source.includes(COMPOSE_SEGMENT_END)) {
     return fail(err.badInput("Email template contains reserved control characters"));
   }
+  let replaced: ReturnType<typeof replaceLogoTags>;
+  try {
+    replaced = replaceLogoTags(source, "");
+  } catch {
+    // Report malformed input through the existing Liquid validation error; a source the tokenizer rejects never renders.
+    const invalid = validateMailLiquidTemplate(source, { allowedVariables: LIQUID_COMPOSE_VARIABLES, output: "markdown" });
+    return invalid.ok ? fail(err.badInput("Email template is invalid")) : invalid;
+  }
   // Liquid validation bounds and parses the source before the URL-context scan.
-  const valid = validateMailLiquidTemplate(replaceLogoTags(source, ""), {
+  const valid = validateMailLiquidTemplate(replaced.source, {
     allowedVariables: LIQUID_COMPOSE_VARIABLES,
     output: "markdown",
   });
-  if (source.match(COMPOSE_LOGO_TAG)) {
-    // Capture turns output into a filterable value, including inside a Liquid block.
-    // Scan linearly even when Liquid rejected malformed input or the liquid tag itself.
-    for (let start = source.indexOf("{%"); start !== -1; ) {
-      const end = source.indexOf("%}", start + 2);
-      if (end === -1) break;
-      const tag = source.slice(start + 2, end).replace(/^-/, "");
-      if (/^\s*capture\b/.test(tag) || (/^\s*liquid\b/.test(tag) && /^\s*capture\b/m.test(tag.replace(/^\s*liquid\b/, "")))) {
-        return fail(err.badInput("{{ mailbox.logo }} cannot be used together with capture"));
-      }
-      start = source.indexOf("{%", end + 2);
-    }
+  // Capture turns output into a filterable value, including inside a Liquid block.
+  if (replaced.hasLogo && replaced.hasCapture) {
+    return fail(err.badInput("{{ mailbox.logo }} cannot be used together with capture"));
   }
   if (!valid.ok) {
     if (valid.error.message.includes('"mailbox.logo" is not available')) {
@@ -483,7 +496,7 @@ const fillComposeTemplate = (
   logoToken = "",
 ): Result<string> => {
   const rendered = renderMailLiquidTemplate(
-    replaceLogoTags(source, logoToken),
+    replaceLogoTags(source, logoToken).source,
     context,
     output === "editable_markdown" ? "editable_markdown" : "markdown",
     {
