@@ -293,6 +293,20 @@ test("shared pointer containers stay bounded during upload probes and lookups", 
   expect(database.get("8.8.8.8")).not.toBe(result);
 });
 
+test("an upload probe decodes a record that every address shares once, while lookups still decode it fresh", () => {
+  const bytes = mmdbFixture("city", { sharedRecordEntries: 20_000 });
+  const started = performance.now();
+  expect(parseGeoIpUpload(bytes).kind).toBe("city");
+  const probeMs = performance.now() - started;
+  console.info(`Shared large record upload probe: ${probeMs.toFixed(2)} ms`);
+  expect(probeMs).toBeLessThan(500);
+  const database = openGeoIpDatabase("city", bytes)!;
+  const [first, second] = database.getMany(["1.2.3.4", "2000::"]);
+  expect(first).toMatchObject({ city: { names: { en: "Vienna" } } });
+  expect(second).toBe(first);
+  expect(database.get("1.2.3.4")).not.toBe(first);
+});
+
 test("shared arrays used as map keys are rejected before decoder coercion", () => {
   const bytes = mmdbFixture("city", { mapKeyPointerDepth: 24 });
   const started = performance.now();

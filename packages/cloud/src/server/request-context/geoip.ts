@@ -148,10 +148,12 @@ const isBoundedMmdbValue = (
   return true;
 };
 
+// The MMDB spec caps the metadata section, marker included, at 128 KiB.
+const METADATA_MAX_BYTES = 128 * 1024;
 const boundedMmdbMetadataStart = (bytes: Buffer): number => {
   // Mirror mmdb-lib's backward marker scan exactly: it can skip a marker after a partial match, and the checked
-  // section must be the one Reader decodes. The MMDB spec caps the section, marker included, at 128 KiB.
-  const floor = bytes.byteLength - 128 * 1024;
+  // section must be the one Reader decodes.
+  const floor = bytes.byteLength - METADATA_MAX_BYTES;
   const last = METADATA_MARKER.length - 1;
   let found = 0;
   let position = bytes.byteLength - 1;
@@ -162,7 +164,8 @@ const boundedMmdbMetadataStart = (bytes: Buffer): number => {
   if (found <= last) return -1;
   const metaStart = position + found;
   // Metadata decoding has no cache: count repeated expansion, in nodes and payload bytes, using memoized target costs.
-  return isBoundedMmdbValue(bytes, metaStart, metaStart, bytes.length, new Set(), bytes.length - metaStart) ? metaStart : -1;
+  // Shared strings may expand beyond the encoded section, up to the size the spec allows for the whole section.
+  return isBoundedMmdbValue(bytes, metaStart, metaStart, bytes.length, new Set(), METADATA_MAX_BYTES) ? metaStart : -1;
 };
 
 export const hasBoundedMmdbMetadata = (bytes: Uint8Array): boolean =>
@@ -203,14 +206,25 @@ export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "b
     if (metadata.ipVersion !== 6 || !metadata.databaseType.toLowerCase().includes(kind)) return null;
     const info: GeoIpDatabaseInfo = { databaseType: metadata.databaseType, buildDate: metadata.buildEpoch, source };
     if (!Number.isFinite(info.buildDate.getTime())) return null;
+    const clear = () => {
+      cursors.clear();
+      checked.clear();
+    };
     return {
       info,
       get(address: string) {
         try {
           return reader.get(address);
         } finally {
-          cursors.clear();
-          checked.clear();
+          clear();
+        }
+      },
+      /** One cache for the whole batch: a record shared by many addresses is checked and decoded once. */
+      getMany(addresses: readonly string[]) {
+        try {
+          return addresses.map((address) => reader.get(address));
+        } finally {
+          clear();
         }
       },
     };

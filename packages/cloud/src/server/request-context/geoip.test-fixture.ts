@@ -45,6 +45,8 @@ export const mmdbFixture = (
     mapKeyPointerDepth?: number;
     metadataPointerDepth?: number;
     metadataDescriptionPointer?: boolean;
+    /** Every address without its own record resolves to the first record, which carries this many extra strings. */
+    sharedRecordEntries?: number;
     /** Null leaves out the optional `languages` metadata key. */
     languages?: string[] | null;
   },
@@ -94,10 +96,19 @@ export const mmdbFixture = (
       }
     }
   };
-  const city = (names: { [key: string]: Value }, country = "at"): Value => ({ city: { names }, country: { iso_code: country } });
+  const city = (names: { [key: string]: Value }, country = "at"): { [key: string]: Value } => ({
+    city: { names },
+    country: { iso_code: country },
+  });
   const network = { autonomous_system_number: 12345, autonomous_system_organization: "Example Net GmbH" };
   // IPv4 lives below ::/96 in the IPv6 search tree.
-  insert("0".repeat(96) + "000010000000100000001000", kind === "city" ? city({ de: "Wien", en: options?.cityName ?? "Vienna" }) : network);
+  const first = kind === "city" ? city({ de: "Wien", en: options?.cityName ?? "Vienna" }) : network;
+  const padding = options?.sharedRecordEntries;
+  const firstRecord = data.reduce((total, bytes) => total + bytes.length, 0);
+  insert(
+    "0".repeat(96) + "000010000000100000001000",
+    padding === undefined ? first : { ...first, padding: Array.from({ length: padding }, (_, i) => `entry ${i}`) },
+  );
   insert("00101010000000010000010011111000", kind === "city" ? city({ en: "Zürich" }, "ch") : network);
   insert(
     "0".repeat(96) + "000000010000000100000001",
@@ -108,7 +119,8 @@ export const mmdbFixture = (
   const tree = Buffer.alloc(nodes.length * 6);
   for (const node of nodes) {
     node.children.forEach((child, side) => {
-      const pointer = child === null ? nodes.length : typeof child === "number" ? nodes.length + 16 + child : child.index;
+      const empty = padding === undefined ? nodes.length : nodes.length + 16 + firstRecord;
+      const pointer = child === null ? empty : typeof child === "number" ? nodes.length + 16 + child : child.index;
       tree.writeUIntBE(pointer, node.index * 6 + side * 3, 3);
     });
   }

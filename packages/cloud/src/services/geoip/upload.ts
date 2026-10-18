@@ -134,9 +134,9 @@ export const parseGeoIpUpload = (bytes: Uint8Array) => {
       throw new GeoIpError("geoip_invalid");
     // Pretty JSON is larger than PostgreSQL jsonb text, including its separator spaces.
     if (Buffer.byteLength(JSON.stringify(subset, null, 1)) > 4096) throw new GeoIpError("geoip_invalid");
-    // A bounded probe catches gross corruption, not every bad record; request lookups still fail closed.
-    for (const address of probeAddresses) {
-      const record: unknown = database.get(address);
+    // A bounded probe catches gross corruption, not every bad record; request lookups still fail closed. One batch
+    // keeps the probe's total work within one pass over the data section, even when every address shares a record.
+    for (const record of database.getMany(probeAddresses)) {
       if (record !== null && (typeof record !== "object" || Array.isArray(record))) throw new GeoIpError("geoip_invalid");
     }
     return { kind, database, metadata: subset };

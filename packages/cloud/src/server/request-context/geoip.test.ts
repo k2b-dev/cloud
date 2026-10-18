@@ -120,6 +120,14 @@ describe("GeoIP", () => {
     expect(hasBoundedMmdbMetadata(metadata(Buffer.from([0x01, 4, 0x20, 4, ...text])))).toBe(true);
   });
 
+  test("metadata may share a string beyond its encoded size, up to the 128 KiB section limit", () => {
+    const twice = (text: number[]) => metadata(Buffer.from([0x02, 4, 0x20, 6, 0x20, 6, ...text]));
+    // Two references to one 480-byte string decode more than the 489 encoded bytes.
+    expect(hasBoundedMmdbMetadata(twice([0x5e, 0, 480 - 285, ...Array(480).fill(0x41)]))).toBe(true);
+    // Two references to one 66,000-byte string fit the section but decode more than 128 KiB.
+    expect(hasBoundedMmdbMetadata(twice([0x5f, 0, 0, 66000 - 65821, ...Array(66000).fill(0x41)]))).toBe(false);
+  });
+
   test("metadata pre-check checks the section mmdb-lib decodes when its scan skips the last marker", () => {
     // mmdb-lib's backward scan misses a marker followed by "Mind.com" and falls back to the earlier section.
     const decoy = metadata(Buffer.from("Mind.comxxxxxx"));
