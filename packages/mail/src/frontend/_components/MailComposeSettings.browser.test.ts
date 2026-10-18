@@ -62,6 +62,8 @@ const server = Bun.serve({
     if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
     if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
     // An image request that never answers: the logo's box while its image is still loading.
+    // No Cloud app offers files here.
+    if (url.pathname === "/api/capabilities/v1/catalog") return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
     if (url.pathname === "/pending-image") return new Promise<Response>(() => undefined);
     if (url.pathname === "/tabler.css" || url.pathname.endsWith(".woff2")) return new Response(Bun.file(uiDist + url.pathname.slice(1)));
     return new Response(
@@ -134,12 +136,16 @@ const controls = async (page: Page) => ({
   }),
 });
 
-/** Picks a file in the device's dialog, which the dropzone opens when no Cloud app offers files. */
+/**
+ * Picks a file from this device. When the page already knows that no Cloud app offers files, the dropzone opens the
+ * device's dialog at once; while it still asks, the shared chooser opens and offers "This device" first.
+ */
 const chooseDeviceFile = async (page: Page, file: { name: string; mimeType: string; buffer: Buffer }) => {
-  // Provider discovery runs when the page is idle; wait for its answer so the click opens the device's dialog.
-  await page.waitForFunction(() => window.providerCatalogAnswered);
-  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.locator(".k2b-dropzone").click()]);
-  await chooser.setFiles(file);
+  const picker = page.waitForEvent("filechooser");
+  await page.locator(".k2b-dropzone").click();
+  const device = page.locator("dialog .k2b-file-grid__name").getByText(/^(This device|Dieses Gerät)$/);
+  if ((await Promise.race([picker.then(() => "device"), device.waitFor().then(() => "chooser")])) === "chooser") await device.click();
+  await (await picker).setFiles(file);
 };
 
 const logoImage = "[data-mail-logo-stage] img";
