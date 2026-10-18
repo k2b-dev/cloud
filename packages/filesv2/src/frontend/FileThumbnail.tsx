@@ -1,7 +1,8 @@
+import { FileTypeIcon } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { FileEntry } from "../contracts";
-import { fileIcon, previewKind } from "./file-preview";
+import { previewKind } from "./file-preview";
 
 /**
  * Filegate renders thumbnails on demand and answers 503 thumbnail_capacity beyond a handful of
@@ -154,7 +155,10 @@ function ThumbnailImage(props: ThumbnailProps) {
       class={`filesv2-thumbnail ${props.large ? "filesv2-thumbnail--large" : ""} ${props.hero ? "filesv2-thumbnail--hero" : ""}`}
       aria-hidden="true"
     >
-      <Show when={url()} fallback={<i class={fileIcon(props.entry)} />}>
+      <Show
+        when={url()}
+        fallback={<FileTypeIcon name={props.entry.name} folder={props.entry.directory} size={props.large || props.hero ? "lg" : "md"} />}
+      >
         {(href) => <img src={href()} alt="" draggable={false} referrerPolicy="no-referrer" crossOrigin="anonymous" />}
       </Show>
     </span>

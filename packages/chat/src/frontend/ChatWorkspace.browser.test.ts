@@ -11,6 +11,7 @@ declare global {
     chatNavigationMarker: string;
     chatSeen: number;
     chatSeenFrame: number;
+    chatReadStarts: { chat: string; at: number }[];
   }
 }
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
@@ -64,6 +65,22 @@ const pinPageClock = (at: number) => {
   }
   globalThis.Date = PinnedDate as DateConstructor;
 };
+/** Records when the page starts each read post, on the page's own clock, so throttle assertions do not depend on event delivery. */
+const recordReadStarts = () => {
+  window.chatReadStarts = [];
+  window.fetch = new Proxy(window.fetch, {
+    apply: (target, self, args: Parameters<typeof fetch>) => {
+      const [input, init] = args;
+      const url = new URL(input instanceof Request ? input.url : input, location.href);
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      const match = /^\/api\/chat\/conversations\/([^/]+)\/read$/.exec(url.pathname);
+      if (method.toUpperCase() === "POST" && match) window.chatReadStarts.push({ chat: match[1]!, at: performance.now() });
+      return Reflect.apply(target, self, args);
+    },
+  });
+};
+const readStarts = (page: Page, chat: string) =>
+  page.evaluate((chat) => window.chatReadStarts.filter((start) => start.chat === chat).map((start) => start.at), chat);
 const load = async (
   options: BrowserContextOptions,
   address: { chat?: string; message?: string; panel?: "info" },
@@ -74,6 +91,7 @@ const load = async (
   const context = await browser.newContext(options);
   try {
     await context.addInitScript(pinPageClock, harness.now().getTime());
+    await context.addInitScript(recordReadStarts);
     const page = await context.newPage();
     page.setDefaultTimeout(5_000);
     const errors: string[] = [];
@@ -125,9 +143,8 @@ describe("ChatWorkspace browser full view", () => {
       const { page, errors } = await load(options, { chat });
       try {
         await page.waitForFunction(() => document.querySelector(".k2b-virtual-feed__viewport")!.scrollTop > 0);
-        // Wait for the live subscriptions rather than depending on a socket-opening delay.
         await page.waitForFunction(() => document.querySelector(".chat-conversation") !== null);
-        await Bun.sleep(100);
+        await until(() => harness.subscribed(chat));
         const sidebar = page.locator(".k2b-app-workspace__sidebar a[href]");
         const order = await sidebar.evaluateAll((rows) => rows.map((row) => row.getAttribute("href")));
         await observeShifts(page);
@@ -272,8 +289,7 @@ describe("ChatWorkspace browser full view", () => {
     const chat = harness.addChat({ members: [viewer, nora], name: "Before rename", count: 4, end: harness.now() });
     const { page, errors } = await load(viewports[0]!.options, { chat });
     try {
-      // Wait for the live subscriptions before the server announces the change.
-      await Bun.sleep(100);
+      await until(() => harness.subscribed(chat));
       harness.rename(chat, "After rename");
       await page.waitForFunction(() => document.title === "After rename");
       await page.locator(".chat-conversation__header", { hasText: "After rename" }).waitFor();
@@ -343,8 +359,10 @@ const readAllAction = async (page: Page, name: string) => {
   await page.getByRole("menuitem", { name: "Mark all read", exact: true }).click();
 };
 const noReportsForBatch = async (page: Page, chat: string, before: number) => {
-  // A pending report gets a full batching interval to run; negative assertions need this window.
-  await page.waitForTimeout(1_050);
+  // Give a pending report a full batching interval on the page's clock and check both fetch starts and server reads.
+  const startsBefore = (await readStarts(page, chat)).length;
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 1_050)));
+  expect(await readStarts(page, chat)).toHaveLength(startsBefore);
   expect(chatReads(chat)).toHaveLength(before);
 };
 
@@ -397,12 +415,7 @@ describe("ChatWorkspace browser read state", () => {
     test(`opening unread history reports only contiguous visible messages and batches on ${name}`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 48, unread: 25, end: harness.now() });
       const start = harness.props({ chat }).open!.conversation.read!.lastReadSeq!;
-      const requests: { seq: number; at: number }[] = [];
       const { page, errors } = await load(options, { chat }, false, async (page) => {
-        page.on("request", (request) => {
-          if (request.url().endsWith(`/conversations/${chat}/read`))
-            requests.push({ seq: request.postDataJSON().seq, at: performance.now() });
-        });
         await page.evaluate((start) => {
           window.chatSeen = start;
           const sample = () => {
@@ -442,7 +455,9 @@ describe("ChatWorkspace browser read state", () => {
         expect(chatReads(chat).map((read) => read.seq)).toEqual(
           [...new Set(chatReads(chat).map((read) => read.seq))].sort((a, b) => a - b),
         );
-        expect(requests.length).toBeLessThanOrEqual(1 + Math.floor((requests.at(-1)!.at - requests[0]!.at + 50) / 1_000));
+        const starts = await readStarts(page, chat);
+        // Page-clock fetch starts: 50 ms covers only the in-page reporter-clock-to-fetch gap and Date.now's whole milliseconds.
+        expect(starts.length).toBeLessThanOrEqual(1 + Math.floor((starts.at(-1)! - starts[0]! + 50) / 1_000));
         expect(errors).toEqual([]);
       } finally {
         await page.context().close();
@@ -690,12 +705,7 @@ describe("ChatWorkspace browser read state", () => {
 
     test(`visible live arrivals keep the one-second read batching bound on ${name}`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 8, end: harness.now() });
-      const requests: number[] = [];
-      const { page, errors } = await load(options, { chat }, false, async (page) => {
-        page.on("request", (request) => {
-          if (request.url().endsWith(`/conversations/${chat}/read`)) requests.push(performance.now());
-        });
-      });
+      const { page, errors } = await load(options, { chat });
       try {
         await until(() => harness.subscribed(chat));
         for (let i = 1; i <= 5; i++) {
@@ -704,7 +714,9 @@ describe("ChatWorkspace browser read state", () => {
           await settle(page);
         }
         await until(() => chatReads(chat).at(-1)?.seq === 13);
-        expect(requests.length).toBeLessThanOrEqual(1 + Math.floor((requests.at(-1)! - requests[0]! + 50) / 1_000));
+        const starts = await readStarts(page, chat);
+        // Page-clock fetch starts: 50 ms covers only the in-page reporter-clock-to-fetch gap and Date.now's whole milliseconds.
+        expect(starts.length).toBeLessThanOrEqual(1 + Math.floor((starts.at(-1)! - starts[0]! + 50) / 1_000));
         expect(chatReads(chat).map((read) => read.seq)).toEqual(
           [...new Set(chatReads(chat).map((read) => read.seq))].sort((a, b) => a - b),
         );

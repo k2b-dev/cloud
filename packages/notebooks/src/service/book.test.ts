@@ -196,6 +196,24 @@ describe("authorized Book documents and server block previews", () => {
     );
   });
 
+  test("PDF queries stop before the next query once the export is cancelled", async () => {
+    const calls = fixture();
+    const controller = new AbortController();
+    calls.queries.mockImplementation(async () => {
+      controller.abort();
+      return { columns: [], items: [], total: 0, limit: 50, truncated: false, diagnostics: [] };
+    });
+    const results = await resolveBookQueries({
+      notebookId: params.notebookId,
+      noteId: note.id,
+      userId: params.userId,
+      markdown: ":::query\nsource: notes\n:::\n\n:::query\nsource: notes\n:::",
+      signal: controller.signal,
+    });
+    expect(calls.queries).toHaveBeenCalledTimes(1);
+    expect([...results.keys()]).toEqual([1]);
+  });
+
   test("invalid directives return localized diagnostics without running a query", async () => {
     const calls = fixture();
     const result = await loadBookBlockPreview({

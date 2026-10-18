@@ -358,7 +358,11 @@ type DialogCore = {
 `undefined` by default; `cancelBehavior="ignore"` disables those dismissals.
 `initialFocus` defaults to `"first-input"` and applies in the next animation
 frame after the dialog opens. Focus that the content or a person moved before
-that frame stays where it went. `setDismissHandler` routes Escape
+that frame stays where it went. Until then, a dialog that opens over the page
+has the browser's own pick: the content's `autofocus` element, or else its
+first focusable element. A target that must take keys as the dialog opens,
+such as a document that Page Down scrolls, carries `autofocus` as well as
+being the `initialFocus` target. `setDismissHandler` routes Escape
 and backdrop through the application's async guard; that handler must call
 `close()` to complete dismissal. `dialogCore.close` addresses the top dialog.
 Opening requires a browser and throws without `document`.

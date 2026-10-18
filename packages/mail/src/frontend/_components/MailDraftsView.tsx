@@ -49,10 +49,7 @@ export default function MailDraftsView(props: {
         </div>
       </header>
       <ScrollArea class="flex-1 p-3">
-        <Show
-          when={!props.error}
-          fallback={<Placeholder icon="ti ti-alert-circle" title={t().draftsUnavailable} description={props.error!} />}
-        >
+        <Show when={!props.error} fallback={<Placeholder state="error" title={t().draftsUnavailable} description={props.error!} />}>
           <Show
             when={props.page.items.length > 0}
             fallback={<Placeholder icon="ti ti-file-pencil" title={t().noDrafts} description={t().noDraftsDescription} />}

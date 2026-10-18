@@ -289,11 +289,11 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
         </div>
         <Switch>
           <Match when={entries.loading && entries() === undefined}>
-            <Placeholder icon="ti ti-loader-2" title={fileBrowserMessages().loadingFiles} />
+            <Placeholder state="loading" title={fileBrowserMessages().loadingFiles} />
           </Match>
           <Match when={entries.error}>
             <Placeholder
-              icon="ti ti-alert-circle"
+              state="error"
               title={fileInputMessages().failedLoadFiles}
               description={String(entries.error?.message ?? entries.error ?? "")}
             />

@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import api from "./index";
 
 describe("Mail API composition", () => {
+  test("exposes mailbox signature logo read, upload and remove routes", () => {
+    for (const method of ["GET", "PUT", "DELETE"]) {
+      expect(api.routes.some((route) => route.method === method && route.path === "/mailboxes/:mailboxId/compose-logo")).toBe(true);
+    }
+  });
   test("exposes bodyless conversation keep read, mark and release routes", () => {
     const path = "/mailboxes/:mailboxId/conversations/:conversationId/keep";
     for (const method of ["GET", "PUT", "DELETE"])

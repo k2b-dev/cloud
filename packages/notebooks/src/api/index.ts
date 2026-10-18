@@ -20,14 +20,19 @@ import {
   getLocale,
   hasPermission,
   jsonResponse,
+  REQUEST_IDLE_TIMEOUT_MAX_SECONDS,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
   rateLimit,
   requiresAuth,
   respond,
+  setRequestTimeout,
 } from "@k2b/cloud/server";
 import { isStandaloneServiceAccountKind, settings, settingsService } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import {
+  type GotenbergConfig,
   GotenbergRenderError,
+  getGotenbergConfig,
   MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES,
   MARKDOWN_PDF_MAX_MARKDOWN_BYTES,
   MARKDOWN_PDF_TEMPLATE_IDS,
@@ -49,8 +54,9 @@ import { loadBookBlockPreview } from "../service/book";
 import { loadBookRoute } from "../service/book-route";
 import { localizeNotebookSnapshotField, notebookServiceMessages } from "../service/messages";
 import type { NotePathCandidate, NotePathProblem } from "../service/note-paths";
-import { renderNotePdf } from "../service/note-pdf";
-import type { NotePlacement } from "../service/notes";
+import { notePdfPhaseMs, renderNotePdf } from "../service/note-pdf";
+import type { Notebook } from "../service/notebooks";
+import type { Note, NotePlacement } from "../service/notes";
 import { loadEditableNoteRouteData } from "../service/route-state";
 import { notebookApiMessages } from "./messages";
 import {
@@ -982,6 +988,12 @@ const notePdfError = (error: unknown, locale?: string): { message: string; statu
 import wsRoutes from "../ws";
 import templatesRoutes from "./templates";
 import widgetRoutes from "./widgets";
+
+// Keyed by the Hono context: bodyLimit replaces c.req.raw before the handler runs.
+const notePdfAdmissions = new WeakMap<
+  Context,
+  { notebook: Notebook; note: Note; raw: Request; config: GotenbergConfig; maxAttachmentBytes: number }
+>();
 
 const app = new Hono<AuthContext>()
   .route("/widget", widgetRoutes)
@@ -1978,7 +1990,7 @@ const app = new Hono<AuthContext>()
       tags: ["Notebooks"],
       summary: "Download note as PDF",
       description:
-        "Render a bounded Markdown snapshot of the note as PDF, with the reader's note blocks and the caller's query results, without storing the input or generated file.",
+        "Render a bounded Markdown snapshot of the note as PDF, with the reader's note blocks and the caller's query results, including attached images. Omitted images are marked in the PDF and listed in X-Notebooks-Pdf-Omissions. The input and generated file are not stored.",
       ...requiresAuth,
       responses: {
         200: {
@@ -2003,21 +2015,32 @@ const app = new Hono<AuthContext>()
         504: jsonResponse(ErrorResponseSchema, "PDF renderer timed out"),
       },
     }),
+    // Admit the caller before reading the body. The conversion slot is taken only after parsing,
+    // so a slowly streamed body cannot hold a slot that no conversion uses.
+    async (c, next) => {
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      const note = await requireNoteInNotebook(notebook!.id, c.req.param("noteId")!, getLocale(c));
+      if (!note.ok) return respond(c, note);
+      const [config, maxAttachmentBytes] = await Promise.all([getGotenbergConfig(), getMaxAttachmentSizeBytes()]);
+      // bodyLimit replaces c.req.raw for a chunked body. Bun's idle timer and the client's abort signal
+      // belong to the original, socket-backed request, so the handler uses it for both.
+      notePdfAdmissions.set(c, { notebook: notebook!, note: note.data, raw: c.req.raw, config, maxAttachmentBytes });
+      try {
+        await next();
+      } finally {
+        notePdfAdmissions.delete(c);
+      }
+    },
     bodyLimit({
       maxSize: NOTE_PDF_MAX_REQUEST_BYTES,
       onError: (c) => respond(c, { ok: false, error: messages(c).requestTooLarge, status: 413 }),
     }),
     v("json", NotePdfRequestSchema),
     async (c) => {
-      let notebookId = c.req.param("id")!;
-      const noteId = c.req.param("noteId")!;
+      const { notebook, note, raw, config, maxAttachmentBytes } = notePdfAdmissions.get(c)!;
+      const notebookId = notebook.id;
       const input = c.req.valid("json");
-
-      const { notebook, error } = await checkNotebookAccess(c, notebookId);
-      if (error) return error;
-      notebookId = notebook!.id;
-      const note = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
-      if (!note.ok) return respond(c, note);
 
       if (byteLength(input.markdown) > MARKDOWN_PDF_MAX_MARKDOWN_BYTES) {
         return respond(c, { ok: false, error: messages(c).markdownTooLarge, status: 413 });
@@ -2030,28 +2053,35 @@ const app = new Hono<AuthContext>()
       }
 
       activeNotePdfConversions += 1;
+      // The body was read under the default idle timeout, so a slow upload cannot keep the socket open longer.
+      // Preparation and rendering each get one phase, plus 10 s for assembly and cleanup.
+      c.req.raw = raw;
       try {
-        const filename = notePdfFilename(note.data.title);
+        setRequestTimeout(c, Math.min(REQUEST_IDLE_TIMEOUT_MAX_SECONDS, Math.ceil((2 * notePdfPhaseMs(config) + 10_000) / 1000)));
+        const filename = notePdfFilename(note.title);
         // Query blocks resolve for the same access subject checkNotebookAccess authorized.
         const subject = getNotebookAccessSubject(c);
-        const rendered = await renderNotePdf({
-          markdown: input.markdown,
-          title: note.data.title.trim() || filename.slice(0, -".pdf".length),
-          templateId: input.templateId,
-          customCss: input.customCss,
-          notebookId,
-          notebookShortId: notebook!.shortId,
-          noteId: note.data.id,
-          noteShortId: note.data.shortId,
-          userId: subject.userId,
-          serviceAccountId: subject.serviceAccountId,
-          // checkNotebookAccess admitted a resource-bound account only for this notebook.
-          boundNotebookId: subject.serviceAccount?.kind === "resource_bound" ? notebookId : null,
-          bypassAccess: subject.user ? hasRole(subject.user, "admin") : false,
-          locale: getLocale(c),
-        });
+        const rendered = await renderNotePdf(
+          {
+            markdown: input.markdown,
+            title: note.title.trim() || filename.slice(0, -".pdf".length),
+            templateId: input.templateId,
+            customCss: input.customCss,
+            notebookId,
+            notebookShortId: notebook.shortId,
+            noteId: note.id,
+            noteShortId: note.shortId,
+            userId: subject.userId,
+            serviceAccountId: subject.serviceAccountId,
+            // checkNotebookAccess admitted a resource-bound account only for this notebook.
+            boundNotebookId: subject.serviceAccount?.kind === "resource_bound" ? notebookId : null,
+            bypassAccess: subject.user ? hasRole(subject.user, "admin") : false,
+            locale: getLocale(c),
+          },
+          { config, maxAttachmentBytes, signal: raw.signal },
+        );
         const omissionsHeader = encodeNotePdfOmissions(rendered.omissions);
-        const buffer = rendered.pdf.buffer.slice(rendered.pdf.byteOffset, rendered.pdf.byteOffset + rendered.pdf.byteLength) as ArrayBuffer;
+        const buffer = new Uint8Array(rendered.pdf);
         return new Response(new Blob([buffer], { type: "application/pdf" }), {
           headers: {
             "Cache-Control": "private, no-store",
@@ -2066,6 +2096,7 @@ const app = new Hono<AuthContext>()
         return respond(c, { ok: false, error: projected.message, status: projected.status });
       } finally {
         activeNotePdfConversions -= 1;
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
       }
     },
   )

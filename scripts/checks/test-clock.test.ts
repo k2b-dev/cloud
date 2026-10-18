@@ -47,6 +47,109 @@ const reason = "// real clock: a string is not a comment"; Date.now();
   expect(check("// real clock: deliberate\n\nnew Date();")).toEqual([3]);
 });
 
+const listenerMessage =
+  "Playwright events reach the test process late under load; measure browser timing in the page (performance.now() in a page or init script) and assert on those times.";
+
+test("reports each clock read in multiline Playwright listeners once with the listener message", () => {
+  const findings = checkTestClockSource(
+    file,
+    `page.on("request", (request) => {
+  performance.now();
+  Date.now();
+  new Date();
+});
+context.once('response', async (response) => {
+  Date.now();
+  performance.now();
+});`,
+  );
+  expect(findings).toEqual([2, 3, 4, 7, 8].map((line) => ({ file, line, message: listenerMessage })));
+});
+
+test("allows duration clocks outside Playwright listeners and in other event listeners", () => {
+  expect(
+    check(`performance.now();
+socket.on("message", () => performance.now());
+page.on(eventName, () => performance.now());
+page.on("request-extra", () => performance.now());`),
+  ).toEqual([]);
+});
+
+test("recognizes all Playwright events and listener methods", () => {
+  const events = [
+    "request",
+    "requestfinished",
+    "requestfailed",
+    "response",
+    "console",
+    "websocket",
+    "framenavigated",
+    "frameattached",
+    "framedetached",
+    "load",
+    "domcontentloaded",
+    "dialog",
+    "popup",
+    "pageerror",
+    "download",
+    "filechooser",
+    "worker",
+    "close",
+    "crash",
+    "page",
+    "serviceworker",
+  ];
+  for (const method of ["on", "once", "addListener"]) {
+    for (const event of events) {
+      expect(checkTestClockSource(file, `target.${method}("${event}", () => performance.now());`)).toEqual([
+        { file, line: 1, message: listenerMessage },
+      ]);
+    }
+  }
+});
+
+test("ends listener calls by counting nested parentheses and skipping quoted and template parentheses", () => {
+  const findings = checkTestClockSource(
+    file,
+    `page.on(/* event */ "request", () => {
+  fn("escaped \\\" )", 'escaped \\\' )', \`template ) (\`, (value) => value());
+  /* ) */ performance.now();
+  context.once('response', () => Date.now());
+});
+performance.now();
+new Date();`,
+  );
+  expect(findings.map(({ line }) => line)).toEqual([3, 4, 7]);
+  expect(findings.slice(0, 2).every(({ message }) => message === listenerMessage)).toBe(true);
+  expect(findings[2]!.message).not.toBe(listenerMessage);
+});
+
+test("counts clock reads inside listener strings consistently with page script strings", () => {
+  const findings = checkTestClockSource(
+    file,
+    `page.on("request", () => {
+  const script = "performance.now(); Date.now(); new Date();";
+});
+const script = "performance.now();";`,
+  );
+  expect(findings).toEqual(Array.from({ length: 3 }, () => ({ file, line: 2, message: listenerMessage })));
+});
+
+test("accepts real-clock reasons for Playwright listener reads on the same or preceding line", () => {
+  expect(
+    check(`page.on("request", () => {
+  performance.now(); // real clock: measures event delivery in the test process
+  // real clock: checks listener wall-clock behavior
+  Date.now(); new Date();
+  // real clock:
+  performance.now();
+  // real clock: a blank line breaks the opt-out
+
+  performance.now();
+});`),
+  ).toEqual([6, 9]);
+});
+
 const workspace = async (files: Record<string, string>, counts?: ReadonlyMap<string, number>) => {
   const root = await mkdtemp(join(tmpdir(), "cloud-test-clock-"));
   if (counts) files[baseline] = formatBaseline(counts);

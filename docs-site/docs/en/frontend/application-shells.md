@@ -101,23 +101,21 @@ keyboard controls, loading, and persistence.
 
 ## Add contextual detail
 
-Below 768 px, Detail is a sheet over the lower 55% of the window, also on pages
-without `fullPage` that grow with their content. Main’s rows scroll above it;
-the grabber switches to full height. From 768 px, it occupies a full-height
-column beside the head and panes, with a 0.5 rem inset at the workspace's top,
-right, and bottom. Main keeps at least 320 px. Give Main 0.5 rem padding so
-its surfaces end one gap before the panel with their own rounded corners.
-From 1024 px the workspace lets the panel's shadow extend beyond its edges.
-On coarse pointers from 768 to 1023 px, a closable detail overlays Main as a
-drawer. The host’s app card from 1024 px surrounds this same workspace geometry.
+Below 768 px, Detail is a sheet over the lower 55% of the window; Main's rows
+scroll above it and the grabber switches to full height. From 768 px it is a
+column if it fits beside Main's minimum, otherwise it waits behind **Details**.
+The column shares the workspace surface, with an 8 px inset. Selecting an
+item opens a waiting Detail directly as a drawer, flush with the app card's
+edge. Escape parks it without closing the selection. Opening Cloud's panel
+parks the drawer; closing the panel restores the column if it fits.
 
-In an island or client component, pass `onClose` the panel’s existing close or
-deselect action. Escape and dismissal gestures then use that action too.
+Pass `onClose` the existing close or deselect action for column Escape and
+phone dismissal gestures. A waiting drawer parks without calling it.
 `onStep` steps through the items for J and K; return the Main element that
 shows the new item so Escape, F6 and the reveal follow it. A detail that
 the page renders on the server only cannot pass a function; mark the panel’s
-own close button or link with `data-workspace-detail-close`, and Escape and
-the gestures click it. Omit both for permanent context. The application still
+own close button or link with `data-workspace-detail-close`; column Escape
+and phone dismissal click it. Omit both for permanent context. The application still
 owns `open` and URL selection. The panel’s Escape, J, K, and F6 run after the
 page’s own keyboard handlers, so a handler that uses one of these keys for
 local state calls `preventDefault()`.
@@ -135,11 +133,11 @@ without extra space. The trail is the clipping scroll viewport and carries
 `scroll={false}` on Main and no vertical scroller around it; a reserved
 scrollbar gutter would widen the gap before the panel beyond
 `--k2b-workspace-detail-inset`. Mark a board's horizontal scroller with
-`k2b-detail-trail` as well: under the tablet drawer, the marked scroller gets
+`k2b-detail-trail` as well: under an open waiting drawer, the marked scroller gets
 the drawer's width as space at its end, so its last column scrolls out from
 under the drawer.
 The week and day views of `Calendar` mark themselves.
-See [AppWorkspace](/en/ui/layout/workspace#floating-detail) for focus, keyboard
+See [AppWorkspace](/en/ui/layout/workspace#detail-and-panel) for focus, keyboard
 shortcuts, gestures, motion, and sizing.
 
 ## Choose a dialog

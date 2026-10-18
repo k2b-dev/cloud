@@ -100,9 +100,19 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
   // The collapsed rail is a narrow column from a 64 rem host, so the panel opens beside it instead of below.
   // The workspace's stylesheet states which form its sidebar has.
   const inRail = () => {
-    const sidebar = trigger?.closest('[data-sidebar-collapsed="true"] .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]');
-    const root = sidebar?.closest<HTMLElement>("[data-k2b-app-workspace]");
-    return Boolean(root && getComputedStyle(root).getPropertyValue("--k2b-workspace-sidebar-form").trim() === "column");
+    const root = trigger?.closest<HTMLElement>("[data-k2b-app-workspace]");
+    const sidebar = root
+      ? Array.from(root.querySelectorAll<HTMLElement>(".k2b-app-workspace__sidebar")).find(
+          (element) => element.closest("[data-k2b-app-workspace]") === root,
+        )
+      : undefined;
+    return Boolean(
+      root?.dataset.sidebarCollapsed === "true" &&
+        sidebar?.dataset.workspaceCollapsible === "true" &&
+        getComputedStyle(sidebar ?? root)
+          .getPropertyValue("--k2b-workspace-sidebar-form")
+          .trim() === "column",
+    );
   };
   /** Whether the panel opens above its trigger; chosen on opening and on a viewport resize only. */
   let above = false;

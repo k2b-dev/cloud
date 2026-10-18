@@ -95,7 +95,7 @@ describe("PDF omission header", () => {
     expect(notePdfOmissionText({ code: "not_rendered", kind: "image", label: "" }, "de-DE")).toEqual({
       kind: "Bild",
       reason: "Es wird noch nicht im PDF gedruckt.",
-      hint: "Das PDF zeigt die Beschreibung. Öffne die Notiz, um das Bild anzusehen.",
+      hint: "Das PDF markiert die Stelle. Öffne die Notiz, um das Bild anzusehen.",
     });
     expect(notePdfOmissionText({ code: "not_rendered", kind: "query", label: "" }, "en").hint).toContain("Book");
     expect(notePdfOmissionText({ code: "not_rendered", kind: "diagram", label: "" }, "en").hint).toContain("source");
