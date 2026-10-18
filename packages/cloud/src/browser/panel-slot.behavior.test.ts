@@ -557,6 +557,27 @@ else {
     expect(post).not.toHaveBeenCalled();
   });
 
+  test("withdrawal cleans a provider address that holds a raw backslash in its query", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 2 })),
+    );
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const shown = new URL(h.frame().src);
+    // Browsers keep a raw backslash in the query, for example a search for C:\\Users built by hand.
+    shown.search = `${shown.search}&q=C:\\Users`;
+    expect(shown.search).toContain("\\");
+    const replaceState = mock((_state: unknown, _title: string, path: string) => {
+      shown.search = new URL(path, location.origin).search;
+    });
+    showDocument(h.frame(), { postMessage: mock(() => {}), location: shown, history: { state: null, replaceState } });
+    ready(h);
+    consent("fixture", false);
+    await tick();
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    expect(shown.searchParams.get("q")).toBe("C:\\Users");
+  });
+
   test("a frame that navigated to another provider's page gets no context", async () => {
     const { publishPageContext } = await import("./panel");
     const h = setupContext(pageContext, false);

@@ -73,8 +73,18 @@ test("URL context replaces reserved input, preserving other query parameters and
   expect(url.searchParams.getAll(PANEL_CONTEXT_PARAM)).toHaveLength(1);
   expect(parsePanelContextParam(url.searchParams.get(PANEL_CONTEXT_PARAM))).toEqual(context);
   expect(withPanelContext(href, null)).toBe("/app/panel?q=hello#article");
-  for (const href of ["https://elsewhere.test/", "//elsewhere.test/", "/\\elsewhere.test/", "relative"])
+  for (const href of [
+    "https://elsewhere.test/",
+    "//elsewhere.test/",
+    "/\\elsewhere.test/",
+    "/\t/elsewhere.test/",
+    "/.//elsewhere.test/",
+    "/app/..//elsewhere.test/",
+    "relative",
+  ])
     expect(() => withPanelContext(href, context)).toThrow();
+  // A browser keeps a raw backslash in the query and fragment; withdrawal must still clean such an address.
+  expect(withPanelContext(`/app/panel?q=C:\\Users&${PANEL_CONTEXT_PARAM}=%7B%7D#a\\b`, null)).toBe("/app/panel?q=C%3A%5CUsers#a\\b");
 });
 
 test("Core alone skips consent; the context message has exactly three keys", () => {

@@ -15,9 +15,11 @@ export const panelProviderNeedsConsent = (appId: string): boolean => appId !== "
  * it from validated parts. Null also removes a caller-supplied reserved parameter.
  */
 export function withPanelContext(href: string, context: PanelPageContext | null): string {
-  if (!href.startsWith("/") || href.startsWith("//") || /[\\\u0000-\u0020\u007f]/.test(href))
-    throw new Error("Expected a same-origin panel path");
-  const url = new URL(href, "https://panel.invalid");
+  // The parsed result decides, not the raw text: a query may hold a raw backslash (browsers keep it), while
+  // `/\\host` or `/\t/host` resolve to another origin and `/.//host` normalises to a protocol-relative path.
+  const base = "https://panel.invalid";
+  const url = href.startsWith("/") ? new URL(href, base) : null;
+  if (!url || url.origin !== base || url.pathname.startsWith("//")) throw new Error("Expected a same-origin panel path");
   url.searchParams.delete(PANEL_CONTEXT_PARAM);
   if (context) url.searchParams.set(PANEL_CONTEXT_PARAM, JSON.stringify(context));
   return `${url.pathname}${url.search}${url.hash}`;
