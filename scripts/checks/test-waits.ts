@@ -79,7 +79,7 @@ export const checkTestWaitsSource = (file: string, source: string): Finding[] =>
 };
 
 export const collectTestWaitsFindings = (workspaceRoot: string): Finding[] =>
-  ["packages", "pwas", "docs-site/src", "scripts"]
+  ["packages", "pwas", "docs-site/src", "scripts", "tests"]
     .flatMap((root) => listFiles(join(workspaceRoot, root), testWaitFiles))
     .sort()
     .flatMap((file) => checkTestWaitsSource(relative(workspaceRoot, file), readFileSync(file, "utf8")));

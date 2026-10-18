@@ -141,7 +141,14 @@ const workspace = async (files: Record<string, string>, counts?: ReadonlyMap<str
 };
 
 test("scopes test files across every source root and skips dependencies and build outputs", async () => {
-  const included = [file, "packages/demo/view.test.tsx", "pwas/demo/view.test.ts", "docs-site/src/view.test.tsx", "scripts/demo.test.ts"];
+  const included = [
+    file,
+    "packages/demo/view.test.tsx",
+    "pwas/demo/view.test.ts",
+    "docs-site/src/view.test.tsx",
+    "scripts/demo.test.ts",
+    "tests/demo.test.ts",
+  ];
   const excluded = [
     "packages/demo/view.ts",
     "packages/demo/view.spec.ts",
