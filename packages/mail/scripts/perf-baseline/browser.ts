@@ -63,6 +63,8 @@ const traceCategories = ["devtools.timeline", "disabled-by-default-devtools.time
  * the host clock because the browser container shares the host kernel clock.
  */
 export function installInteractionProbe(key: string) {
+  // Init scripts also run in child frames; a sandboxed message iframe has no storage access.
+  if (window !== window.top) return;
   const now = () => performance.timeOrigin + performance.now();
   const read = (): WatchState | null => {
     const value = sessionStorage.getItem(key);
@@ -218,16 +220,20 @@ class MailBrowser {
     return item;
   }
   /**
-   * The first Inbox conversation whose newest message has its body. Live arrivals from earlier
-   * scenarios sort above the fixture and are envelopes only, without a body to render.
+   * The fixture's first custom folder: live arrivals land in the Inbox, sort above the fixture
+   * and are envelopes only, so after many runs the Inbox's first page has no body to render.
    */
+  private get readerFolder() {
+    return `${this.base}?folder=${this.setup.plan.shape.mediumFolderId}`;
+  }
+  /** The reader folder's first conversation whose newest message has its body. */
   private async hydratedConversation() {
     const detailSchema = z.object({
       detailMessages: z.array(
         z.object({ id: z.string(), hydrationStatus: z.string(), plainText: z.string().nullable(), sanitizedHtml: z.string().nullable() }),
       ),
     });
-    for (const row of (await this.route(this.inbox)).listItems) {
+    for (const row of (await this.route(this.readerFolder)).listItems) {
       if (!row.conversationId) continue;
       const detail = detailSchema.parse(
         await this.setup.api.request(`/api/mail/mailboxes/${this.setup.mailbox.shortId}/workspace-detail/${row.conversationId}`),
@@ -236,7 +242,7 @@ class MailBrowser {
       if ((newest?.hydrationStatus === "complete" || newest?.hydrationStatus === "body") && (newest.plainText || newest.sanitizedHtml))
         return { row, newest: newest.id };
     }
-    throw new Error("No Inbox conversation on the first page has a message body");
+    throw new Error("No conversation on the reader folder's first page has a message body");
   }
   /**
    * A fresh draft seed: the compose page reads it from the browser's localStorage, where
@@ -310,7 +316,7 @@ class MailBrowser {
       case "conversation-open": {
         const { row, newest } = await this.hydratedConversation();
         return {
-          startPath: this.inbox,
+          startPath: this.readerFolder,
           act: async (page, profile) => {
             const link = page
               .locator(`${rowSelector(row)} a`)

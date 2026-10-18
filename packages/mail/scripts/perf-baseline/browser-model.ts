@@ -20,8 +20,8 @@ export const interactions = [
   },
   {
     id: "conversation-open",
-    start: "Inbox",
-    action: "Click the first Inbox conversation whose newest message has a body (live arrivals are envelopes only)",
+    start: "The fixture's first custom folder, where no live arrivals land",
+    action: "Click its first conversation whose newest message has a body",
     end: "The reader shows the body of the conversation's newest message in the viewport",
   },
   {
