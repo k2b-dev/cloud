@@ -231,6 +231,20 @@ reports after the timeout names what it waited for, not the cleanup in
 kept across tests closes with its browser.
 `packages/ui/test/browser.browser.test.ts` guards this recovery.
 
+`browser.close()` from `launchBrowser()` is bounded. It asks the browser to
+exit and waits up to 2 s, then kills its process group and waits up to 2 s until
+every process is gone. This keeps `afterAll` inside Bun's 5 s hook timeout
+even when exit hangs, so the next file never starts beside a browser still
+shutting down ([#1473](https://github.com/k2b-dev/cloud/issues/1473)). A
+browser from `TEST_BROWSER_ENDPOINT` runs elsewhere and only gets the 2 s
+graceful close.
+A close that needed the kill and a launch still pending after 4 s print a
+`launchBrowser:` line with their durations next to the failure. A failed
+launch carries its duration in the error. A process group still alive after
+the kill fails the hook with those timings.
+`packages/ui/test/browser.browser.test.ts` guards a hung close and the next
+launch.
+
 Open each URL state that a test checks in its own page. Navigate a loaded page
 in place only when the test checks navigation itself: reload, Back, Forward,
 or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place

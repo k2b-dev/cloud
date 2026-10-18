@@ -21,11 +21,161 @@ export const browserName: "chromium" | "webkit" = (() => {
   return name;
 })();
 
-const start = (options: LaunchOptions): Promise<Browser> => {
+// Bun's default hook timeout is 5 s, and most afterAll hooks keep it. Graceful close and kill each get 2 s,
+// which leaves 1 s for the rest of the hook; a launch still pending after 4 s reports before the hook fails (#1473).
+const gracefulCloseMs = 2000;
+const killWaitMs = 2000;
+const slowLaunchMs = 4000;
+const processPollMs = 25;
+
+/** The process of a browser that this test process launched: the leader of its own process group. */
+type BrowserProcess = { pid: number; kill: () => Promise<unknown> };
+
+type StartedBrowser = {
+  browser: Browser;
+  process?: BrowserProcess;
+  closing?: Promise<void>;
+};
+
+const field = (value: unknown, key: string): unknown =>
+  (typeof value === "object" || typeof value === "function") && value !== null ? Reflect.get(value, key) : undefined;
+
+/**
+ * Playwright offers no public handle on the process of a launched browser. Reach it the way Playwright's own
+ * ElectronApplication.process() does, through the in-process connection. A Playwright upgrade that changes this
+ * fails every local launch here, never a close later (#1473).
+ */
+const browserProcessOf = (browser: Browser): BrowserProcess => {
+  const connection = field(browser, "_connection");
+  const toImpl = field(connection, "toImpl");
+  const implementation = typeof toImpl === "function" ? toImpl.call(connection, browser) : undefined;
+  const browserProcess = field(field(implementation, "options"), "browserProcess");
+  const pid = field(field(browserProcess, "process"), "pid");
+  const kill = field(browserProcess, "kill");
+  if (typeof pid !== "number" || typeof kill !== "function") {
+    throw new Error("launchBrowser: Playwright no longer exposes the process of a launched browser; bounded close needs it (#1473).");
+  }
+  return { pid, kill: async () => kill.call(browserProcess) };
+};
+
+let lastClose: { durationMs: number; killed: boolean } | undefined;
+const previousCloseSummary = () =>
+  lastClose
+    ? `previous close took ${lastClose.durationMs} ms, ${lastClose.killed ? "needed a kill" : "no kill needed"}`
+    : "no earlier browser";
+
+/** Bounds a wait while keeping a handler on any late rejection (#1473). */
+const within = async (promise: Promise<unknown>, timeoutMs: number): Promise<boolean> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const processGroupAlive = (pid: number): boolean => {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
+    throw error;
+  }
+};
+
+/** Kills the browser's process group and waits until no process of it is left; its leader exiting alone is not enough (#1473). */
+const killProcessGroup = async (browserProcess: BrowserProcess, gracefulMs: number): Promise<number> => {
+  const { pid } = browserProcess;
+  const started = Date.now();
+  // Playwright sends SIGKILL to the group and waits for the exit; poll even when that wait never settles.
+  const killing = browserProcess.kill().catch(() => {});
+  while (processGroupAlive(pid) && Date.now() - started < killWaitMs) await Bun.sleep(processPollMs);
+  if (processGroupAlive(pid)) {
+    throw new Error(
+      `launchBrowser: ${browserName} process group ${pid} still alive after the kill; graceful wait ${gracefulMs} ms, kill wait ${Date.now() - started} ms`,
+    );
+  }
+  await within(killing, Math.max(0, killWaitMs - (Date.now() - started)));
+  return Date.now() - started;
+};
+
+/** Closes one started browser within the hook budget; concurrent callers share one close (#1473). */
+const closeStarted = (started: StartedBrowser, options?: Parameters<Browser["close"]>[0]): Promise<void> => {
+  started.closing ??= (async () => {
+    const began = Date.now();
+    let killed = false;
+    let failure: { error: unknown } | undefined;
+    try {
+      const finished = await within(started.browser.close(options), gracefulCloseMs).catch((error: unknown) => {
+        failure = { error };
+        return false;
+      });
+      const gracefulMs = Date.now() - began;
+      const browserProcess = started.process;
+      if (browserProcess && (!finished || processGroupAlive(browserProcess.pid))) {
+        killed = true;
+        const killMs = await killProcessGroup(browserProcess, gracefulMs);
+        const reason = failure
+          ? `failed after ${gracefulMs} ms`
+          : finished
+            ? "left a live process group"
+            : `did not finish within ${gracefulCloseMs} ms`;
+        console.error(`launchBrowser: ${browserName} close ${reason}; killed process group ${browserProcess.pid}, gone after ${killMs} ms`);
+      } else if (!finished && !failure) {
+        console.error(`launchBrowser: ${browserName} remote close did not finish within ${gracefulCloseMs} ms`);
+      }
+      if (failure) throw failure.error;
+    } finally {
+      lastClose = { durationMs: Date.now() - began, killed };
+    }
+  })();
+  return started.closing;
+};
+
+const start = async (options: LaunchOptions): Promise<StartedBrowser> => {
   const type = browserName === "webkit" ? webkit : chromium;
   const endpoint = process.env.TEST_BROWSER_ENDPOINT?.trim();
-  if (!endpoint) return type.launch(options);
-  return type.connect(endpoint, { timeout: options.timeout, headers: { "x-playwright-launch-options": JSON.stringify(options) } });
+  const began = Date.now();
+  const previous = previousCloseSummary();
+  let slow = false;
+  const timer = setTimeout(() => {
+    slow = true;
+    console.error(`launchBrowser: ${browserName} launch still pending after ${slowLaunchMs} ms; ${previous}`);
+  }, slowLaunchMs);
+  try {
+    let started: StartedBrowser;
+    if (endpoint) {
+      started = {
+        browser: await type.connect(endpoint, {
+          timeout: options.timeout,
+          headers: { "x-playwright-launch-options": JSON.stringify(options) },
+        }),
+      };
+    } else {
+      const browser = await type.launch(options);
+      try {
+        started = { browser, process: browserProcessOf(browser) };
+      } catch (error) {
+        await browser.close().catch(() => {});
+        throw error;
+      }
+    }
+    if (slow) console.error(`launchBrowser: ${browserName} launch completed after ${Date.now() - began} ms; ${previous}`);
+    return started;
+  } catch (error) {
+    const diagnosis = `launchBrowser: ${browserName} launch failed after ${Date.now() - began} ms; ${previous}`;
+    if (!(error instanceof Error)) throw new Error(`${String(error)}\n\n${diagnosis}`, { cause: error });
+    error.message += `\n\n${diagnosis}`;
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 const tolerateKilledBrowserOnClose = (context: BrowserContext): BrowserContext => {
@@ -205,21 +355,32 @@ const wrapContext = (context: BrowserContext): BrowserContext => {
  * a timed-out test names the step that hung, not its cleanup (#1355).
  * Navigation timeouts and navigations cut off by a closed browser carry document, request, load, and main-thread evidence (#1367).
  * Failed requests carry their error, and WebKit's internal error names a crashed network process as one cause (#1431).
+ * Close waits at most 2 s gracefully and 2 s for a killed local process group; a surviving group fails cleanup.
+ * A forced close, a launch pending after 4 s, and a failed launch carry timing evidence (#1473).
  */
 export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browser> => {
   let current = await start(options);
   let closed = false;
-  let replacement: Promise<Browser> | undefined;
+  let replacement: Promise<StartedBrowser> | undefined;
+  // Closes of replaced browsers run beside the tests; close() waits for them, so no browser outlives the file (#1473).
+  const closes = new Set<Promise<void>>();
+  const retire = (started: StartedBrowser, closeOptions?: Parameters<Browser["close"]>[0]): void => {
+    const closing = closeStarted(started, closeOptions);
+    if (closes.has(closing)) return;
+    closes.add(closing);
+    closing.catch(() => {});
+  };
 
-  const replace = (old: Browser): Promise<Browser> => {
+  const replace = (old: StartedBrowser): Promise<StartedBrowser> => {
     if (closed || old !== current) return Promise.resolve(current);
     replacement ??= start(options)
-      .then(async (browser) => {
-        current = browser;
-        void old.close().catch(() => {});
+      .then((started) => {
+        current = started;
+        // The next page never waits for the old browser's teardown.
+        retire(old);
         // close() may have run while the replacement was starting.
-        if (closed) await browser.close();
-        return browser;
+        if (closed) retire(started);
+        return started;
       })
       .finally(() => {
         replacement = undefined;
@@ -233,13 +394,13 @@ export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browse
    * first, so a failed call alone replaces it and tries once more.
    */
   const open = async <T>(call: (browser: Browser) => Promise<T>): Promise<T> => {
-    let browser = current;
-    if (!closed && !browser.isConnected()) browser = await replace(browser);
+    let started = current;
+    if (!closed && !started.browser.isConnected()) started = await replace(started);
     try {
-      return await call(browser);
+      return await call(started.browser);
     } catch (error) {
       if (closed) throw error;
-      return call(await replace(browser));
+      return call((await replace(started)).browser);
     }
   };
   const newPage: Browser["newPage"] = async (pageOptions) => {
@@ -252,16 +413,19 @@ export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browse
 
   const close: Browser["close"] = async (closeOptions) => {
     closed = true;
-    await current.close(closeOptions);
+    // A replacement still starting retires itself once it is up; give it the graceful budget to get there.
+    if (replacement) await within(replacement, gracefulCloseMs).catch(() => false);
+    retire(current, closeOptions);
+    await Promise.all(closes);
   };
 
-  return new Proxy(current, {
+  return new Proxy(current.browser, {
     get(_target, key) {
       if (key === "newPage") return newPage;
       if (key === "newContext") return newContext;
       if (key === "close") return close;
-      const value: unknown = Reflect.get(current, key, current);
-      return typeof value === "function" ? value.bind(current) : value;
+      const value: unknown = Reflect.get(current.browser, key, current.browser);
+      return typeof value === "function" ? value.bind(current.browser) : value;
     },
   });
 };
