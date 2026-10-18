@@ -89,7 +89,7 @@ function RevisionPreview(props: PreviewProps) {
           <Placeholder icon="ti ti-file" title={t().noPreview} description={t().noPreviewDescription} action={download} />
         </Match>
         <Match when={notPdf()}>
-          <Placeholder icon="ti ti-file-alert" title={t().notPdf} description={t().notPdfDescription} action={download} />
+          <Placeholder state="error" icon="ti ti-file-alert" title={t().notPdf} description={t().notPdfDescription} action={download} />
         </Match>
         <Match when={kind() === "pdf"}>
           {/* The host owns the viewer actions: the dialog header and the details panel offer Open in new tab and

@@ -119,10 +119,7 @@ export default function MailScheduledView(props: {
         </div>
       </header>
       <ScrollArea class="flex-1 p-3">
-        <Show
-          when={!props.error}
-          fallback={<Placeholder icon="ti ti-alert-circle" title={t().scheduledUnavailable} description={props.error!} />}
-        >
+        <Show when={!props.error} fallback={<Placeholder state="error" title={t().scheduledUnavailable} description={props.error!} />}>
           <Show
             when={props.page.items.length > 0}
             fallback={<Placeholder icon="ti ti-calendar-check" title={t().noScheduled} description={t().noScheduledDescription} />}

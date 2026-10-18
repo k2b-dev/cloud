@@ -60,6 +60,9 @@ when reduced motion is requested. An empty state's icon sits in a soft chip of
 the app color; loading and error keep their status colors without a chip,
 and inline placeholders keep a plain glyph. The icon box keeps the same size
 in every state: 2rem for compact, 2.5rem for panel, and 1rem for inline.
+Pass `state="loading"` or `state="error"` for a loading or failure message
+instead of a loader or alert icon on the default empty state; the
+`placeholder-states` repository check reports such a call.
 
 ### NotFoundState
 
