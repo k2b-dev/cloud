@@ -56,6 +56,32 @@ export const validateMailboxLogoImage = (bytes: Uint8Array): Result<MailboxLogoI
       if (offset + 2 > data.length) return damaged();
       const length = data.readUInt16BE(offset);
       if (length < 2 || offset + length > data.length) return damaged();
+      if (marker === 0xe1 && length >= 8 && data.subarray(offset + 2, offset + 8).equals(Buffer.from("Exif\0\0"))) {
+        if (length < 16) return damaged();
+        const tiff = offset + 8;
+        const view = new DataView(data.buffer, data.byteOffset + tiff, offset + length - tiff);
+        const little = view.getUint16(0) === 0x4949;
+        if (!little && view.getUint16(0) !== 0x4d4d) return damaged();
+        if (view.getUint16(2, little) !== 42) return damaged();
+        const ifd = view.getUint32(4, little);
+        if (ifd < 8 || ifd > view.byteLength - 2) return damaged();
+        const count = view.getUint16(ifd, little);
+        if (ifd + 2 + count * 12 > view.byteLength) return damaged();
+        let found = false;
+        for (let i = 0; i < count; i += 1) {
+          const entry = ifd + 2 + i * 12;
+          if (view.getUint16(entry, little) !== 0x0112) continue;
+          if (found || view.getUint16(entry + 2, little) !== 3 || view.getUint32(entry + 4, little) !== 1) return damaged();
+          found = true;
+          if (view.getUint16(entry + 8, little) !== 1) {
+            return fail(
+              err.badInput(
+                "The logo is marked as rotated (EXIF orientation); rotate the image in an editor, save it upright, and upload it again",
+              ),
+            );
+          }
+        }
+      }
       if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(marker) && !size) {
         if (length < 8) return damaged();
         size = dimensions("image/jpeg", data.readUInt16BE(offset + 5), data.readUInt16BE(offset + 3));

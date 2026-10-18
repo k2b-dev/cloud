@@ -15,19 +15,46 @@ describe("mailbox logo byte validation", () => {
   test("accepts real JPEG and PNG layouts before and after metadata stripping", async () => {
     for (const progressive of [false, true]) {
       const jpeg = await tinyJpeg(progressive);
-      for (const orientation of [1, 6]) {
-        const input = imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, cameraExif(orientation)), jpeg.subarray(2));
+      for (const little of [false, true]) {
+        const input = imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, cameraExif(1, little)), jpeg.subarray(2));
         expect(validateMailboxLogoImage(input)).toMatchObject({ ok: true, data: { contentType: "image/jpeg", width: 3, height: 2 } });
         const stripped = stripImageMetadata(input);
         expect(validateMailboxLogoImage(stripped)).toEqual(validateMailboxLogoImage(input));
         expect(Buffer.from(stripped).includes(Buffer.from("Apple"))).toBe(false);
-        if (orientation === 1) {
-          expect(Buffer.from(stripped)).toEqual(Buffer.from(jpeg));
-          expect(Buffer.from(stripped).includes(Buffer.from("Exif"))).toBe(false);
-        }
+        expect(Buffer.from(stripped)).toEqual(Buffer.from(jpeg));
+        expect(Buffer.from(stripped).includes(Buffer.from("Exif"))).toBe(false);
       }
     }
     expect(validateMailboxLogoImage(stripImageMetadata(logoPng()))).toEqual(validateMailboxLogoImage(logoPng()));
+  });
+  test("rejects rotated JPEG logos before and after metadata stripping in either byte order", () => {
+    const jpeg = logoJpeg(1200, 400);
+    for (const little of [false, true]) {
+      for (const orientation of [6, 8]) {
+        const input = imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, cameraExif(orientation, little)), jpeg.subarray(2));
+        for (const bytes of [input, stripImageMetadata(input)]) {
+          expect(validateMailboxLogoImage(bytes)).toMatchObject({ ok: false, error: { message: expect.stringContaining("rotated") } });
+        }
+      }
+      for (const orientation of [0, 2, 3, 4, 5, 7, 9, 65535]) {
+        const input = imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, cameraExif(orientation, little)), jpeg.subarray(2));
+        expect(validateMailboxLogoImage(input)).toMatchObject({ ok: false, error: { message: expect.stringContaining("rotated") } });
+      }
+    }
+  });
+  test("rejects malformed EXIF without reading beyond its JPEG segment", () => {
+    const jpeg = logoJpeg();
+    for (const little of [false, true]) {
+      const exif = cameraExif(1, little);
+      const malformed = [Buffer.from("Exif\0\0xxxx"), ...[6, 13, 14, 15, 16, 17, 51].map((end) => exif.subarray(0, end))];
+      for (const payload of malformed) {
+        const input = imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, payload), jpeg.subarray(2));
+        expect(validateMailboxLogoImage(input)).toMatchObject({
+          ok: false,
+          error: { message: expect.stringContaining("damaged or truncated") },
+        });
+      }
+    }
   });
   test("checks byte size before parsing and reads dimension limits only from headers", () => {
     expect(validateMailboxLogoImage(Buffer.alloc(102401))).toMatchObject({

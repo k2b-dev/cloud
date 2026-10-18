@@ -428,7 +428,7 @@ same preview and send size limit; reduce repeated logos if the message is too la
 
 Upload a PNG or JPEG of at most 100 KiB (102400 bytes) and 1200×400 pixels.
 Mail removes private image metadata, including camera and GPS details, before
-storing the logo. Image orientation is preserved.
+storing the logo. JPEG files marked as rotated are rejected; save the image upright first.
 Display width defaults to 200 px; `--width` accepts 1–600 px. Alt text is
 required and defaults to the trimmed mailbox name; use `--alt` to change it
 (1–200 characters, no control characters). `cld mail compose logo get` shows
