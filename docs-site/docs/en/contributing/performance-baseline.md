@@ -332,7 +332,7 @@ then times one action:
 | `folder-switch` | Click the fixture's first custom folder in the navigation; on the phone, in the opened app menu | The heading names that folder and its first row is on screen |
 | `conversation-open` | In the fixture's first custom folder, click the first conversation whose newest message has a body. Live arrivals land in the Inbox as envelopes without a body, so this folder keeps a body to render after any number of runs | The body of that newest message is on screen in the reader; an HTML body also needs its message frame to report its laid-out height |
 | `list-scroll` | Scroll the list to its end | The first row of page 2 is in the list |
-| `search-submit` | Fill the search field with the fixture's rare word, then press Enter; the timer starts at the Enter keydown | The heading names the search and its first result is on screen |
+| `search-submit` | Type the fixture's rare word into the search field and press Enter in one driver call; the timer starts at the Enter keydown | The heading names the search and its first result is on screen |
 | `live-arrival` | A message is ingested through `ingestEnvelope` against the run's database | The new row is on screen |
 | `compose-open` | Click Compose; on the phone, in the opened app menu | The body editor is mounted, on screen, and writable |
 
@@ -349,7 +349,9 @@ the result is the time until that frame paints, not network idle. Times are
 wall-clock milliseconds; the browser container shares the host clock. An end
 state that already holds before the action fails the sample. After `compose-open`,
 the harness types one character and fails the sample if the editor does not
-take it. An interaction sample also fails on page errors or island errors.
+take it. An interaction sample also fails on an uncaught error or rejection
+in the app's own document, or on an island error. Errors inside the sandboxed
+message frame do not count.
 Each interaction records the requests that started from the
 action until its end state, with their encoded response bytes and content
 encoding (`identity` when the header is absent); a request

@@ -375,7 +375,15 @@ test("--rank reads a result and candidates from files", async () => {
 test("the interaction probe refuses an end state that already holds and times a marked action to the painting frame", async () => {
   setSystemTime(new Date("2026-10-01T00:00:00Z"));
   const dom = createDomTestHarness();
-  const names = ["sessionStorage", "addEventListener", "innerHeight", "innerWidth", "HTMLInputElement", "HTMLTextAreaElement"] as const;
+  const names = [
+    "sessionStorage",
+    "addEventListener",
+    "innerHeight",
+    "innerWidth",
+    "HTMLInputElement",
+    "HTMLTextAreaElement",
+    "ErrorEvent",
+  ] as const;
   const previous = new Map(names.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   const page = dom.window as unknown as Record<string, unknown>;
   for (const name of names) {
@@ -422,6 +430,9 @@ test("the interaction probe refuses an end state that already holds and times a 
     expect(untouched.actionAt).toBeNull();
     expect(untouched.inputAt).toBeNull();
     expect(untouched.hitAt).toBeNull();
+    // Uncaught errors of the app's document fail the sample.
+    dom.window.dispatchEvent(new dom.window.ErrorEvent("error", { message: "boom" }));
+    expect(window.__mailPerfErrors).toEqual(["boom"]);
     // A plain-text body holds at once; an HTML body only after its frame reported a height.
     document.body.insertAdjacentHTML("beforeend", '<div data-plain-body></div><div data-html-body><iframe title="Message"></iframe></div>');
     expect(window.__mailPerfArm?.({ id: "x", action: "mark", conditions: [{ selector: "[data-plain-body]", framesReported: true }] })).toBe(
@@ -435,6 +446,7 @@ test("the interaction probe refuses an end state that already holds and times a 
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);
       else Reflect.deleteProperty(globalThis, name);
     Reflect.deleteProperty(window, "__mailPerfArm");
+    Reflect.deleteProperty(window, "__mailPerfErrors");
     dom.cleanup();
   }
 });

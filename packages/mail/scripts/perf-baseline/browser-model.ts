@@ -33,7 +33,7 @@ export const interactions = [
   {
     id: "search-submit",
     start: "Mailbox",
-    action: "Fill the search field with the fixture's rare word, then press Enter (timer starts at the Enter keydown)",
+    action: "Type the fixture's rare word into the search field and press Enter (timer starts at the Enter keydown)",
     end: "The heading names the search and its first result row is in the viewport",
   },
   {
