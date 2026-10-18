@@ -410,7 +410,7 @@ test("saving an app-opening draft preserves inline references and attachments th
   ]);
 });
 
-test("moving to another chat while the draft saves opens nothing and says why", async () => {
+test("moving to another chat while the draft saves frees the new chat's composer at once and opens nothing", async () => {
   let release!: () => void;
   const saveGate = new Promise<void>((resolve) => {
     release = resolve;
@@ -424,8 +424,10 @@ test("moving to another chat while the draft saves opens nothing and says why", 
   expect(newChat).toBeDefined();
   newChat!.click();
   await waitFor(() => h.window.location.search !== "?conversation=chat01");
+  await waitFor(() => !h.input.readOnly);
   release();
-  await waitFor(() => Boolean(h.status()?.includes("anderen Chat")));
+  await Bun.sleep(50);
+  expect(h.status()).toBeFalsy();
   expect(openCommand).not.toHaveBeenCalled();
 });
 

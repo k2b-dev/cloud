@@ -88,8 +88,8 @@ test("rejects external, malformed, or overlong return paths after saving", async
   expect(openCommand).not.toHaveBeenCalled();
 });
 
-test("menu rows carry localized presentation and forward the token-free draft and composer signal", async () => {
-  const before = mock(async (_draft: ChatCommandDraft, _signal: AbortSignal) => {});
+test("menu rows carry localized presentation and forward the token-free draft, composer signal and follow callback", async () => {
+  const before = mock(async (_draft: ChatCommandDraft, _signal: AbortSignal, _follow: () => void) => {});
   const menu = cloudCommandMenu({ ...options(), commands: [command], state: "ready", section: "apps", before });
   expect(menu.pending).toBe(false);
   expect(menu.commands[0]).toMatchObject({
@@ -104,8 +104,9 @@ test("menu rows carry localized presentation and forward the token-free draft an
   });
   const draft = { value: "Plan ", mentions: [] };
   const signal = new AbortController().signal;
-  await menu.commands[0]!.open!(draft, signal);
-  expect(before).toHaveBeenCalledWith(draft, signal);
+  const follow = mock(() => {});
+  await menu.commands[0]!.open!(draft, signal, follow);
+  expect(before).toHaveBeenCalledWith(draft, signal, follow);
 });
 
 test("closing the list aborts a menu row's opening, alone or together with the opener's signal", async () => {
@@ -119,7 +120,7 @@ test("closing the list aborts a menu row's opening, alone or together with the o
       before: async () => closed.abort(),
       signal: () => left?.signal,
     });
-    expect(await menu.commands[0]!.open!({ value: "", mentions: [] }, closed.signal)).toBe("cancelled");
+    expect(await menu.commands[0]!.open!({ value: "", mentions: [] }, closed.signal, () => {})).toBe("cancelled");
   }
   expect(openCommand).not.toHaveBeenCalled();
 });

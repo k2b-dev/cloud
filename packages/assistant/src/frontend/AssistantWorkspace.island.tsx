@@ -1431,7 +1431,7 @@ export default function AssistantWorkspace(props: Props) {
     });
     // Saves the draft without its "/…" before an app opens, through the revisioned path, with references and
     // attachments. A chat that does not exist yet is created first, as "Assign project" and dictation do.
-    const beforeCommand = async (draft: { value: string; mentions: readonly ChatMention[] }, signal: AbortSignal) => {
+    const beforeCommand = async (draft: { value: string; mentions: readonly ChatMention[] }, signal: AbortSignal, follow: () => void) => {
       if (signal.aborted) return;
       let key = sessionKey();
       // A draft already in conflict says so; the conflict notice offers the way out.
@@ -1447,6 +1447,7 @@ export default function AssistantWorkspace(props: Props) {
           // take the token out there itself.
           const attachments = composerAttachmentsFor(key);
           setCommandCreating(true);
+          if (!projectId) follow();
           const created = await createConversation(false, projectId, projectId ? false : () => !opening.controller.signal.aborted).finally(
             () => setCommandCreating(false),
           );
@@ -1509,7 +1510,7 @@ export default function AssistantWorkspace(props: Props) {
         commands: catalog.commands(),
         state: catalog.state(),
         section: "apps",
-        before: (draft, signal) => trackComposerPicking(beforeCommand(draft, signal)),
+        before: (draft, signal, follow) => trackComposerPicking(beforeCommand(draft, signal, follow)),
         returnTo: () => (commandTarget ? assistantConversationHref(window.location.href, commandTarget) : undefined),
         signal: () => commandOpening?.controller.signal,
       }),

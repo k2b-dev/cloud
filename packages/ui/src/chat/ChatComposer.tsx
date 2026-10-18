@@ -145,9 +145,11 @@ export type ChatCommand = {
    * `busyLabel` (default "Opening …") with a spinner instead of its description, and editing waits. A rejection ends like
    * an action's: the token stays, the list closes and the status line names the reason. Closing the list, such as with
    * Escape, cancels: `signal` aborts and the row ends at once. `signal` also aborts when the opening ends any other way
-   * than by success, so the opener can save the draft with its token again. See `ChatCommandOpenResult`.
+   * than by success, so the opener can save the draft with its token again. A new `draftKey` cancels too, unless the
+   * opener calls `follow()` right before changing it itself: that next change keeps the opening, moves its busy line
+   * to the status line, and Escape still cancels. See `ChatCommandOpenResult`.
    */
-  open?: (draft: ChatCommandDraft, signal: AbortSignal) => Promise<ChatCommandOpenResult>;
+  open?: (draft: ChatCommandDraft, signal: AbortSignal, follow: () => void) => Promise<ChatCommandOpenResult>;
   /** Selecting a reference inserts its display name and retains its opaque payload. */
   mention?: ChatAttachment;
   /**
@@ -334,8 +336,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   /** The `open` row running now, and why `open` rows failed in this opening, by row key. */
   const [openingRow, setOpeningRow] = createSignal<string>();
   const [openFailures, setOpenFailures] = createSignal<Readonly<Record<string, string>>>({});
-  /** Cancels the `open` row running now; `key` is the draft it started in, `label` its busy line. */
-  let openingRun: { controller: AbortController; key: unknown; label: string } | undefined;
+  /** Cancels the `open` row running now; `key` follows announced draft moves, `label` is its busy line. */
+  let openingRun: { controller: AbortController; key: unknown; label: string; follow: boolean; moved: boolean } | undefined;
   // Where the pending native edit starts; a selection replaced as a whole starts at its beginning.
   let inputStart: number | undefined;
   let inputEnd: number | undefined;
@@ -563,13 +565,24 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   );
   // Escape, a press outside, or moving the caret away closes the list; while an `open` row runs, that cancels it, so
   // nothing opens after the person backed out. Success ends the opening and closes the list in one step. A new draft
-  // is the opener's own move, such as a chat it creates to save into, and does not cancel: the busy line moves to the
-  // status line, and Escape still cancels there.
+  // cancels too, unless the opener announced that next move with `follow()`: its busy line moves to the status line,
+  // and Escape still cancels there. Any later unannounced draft change cancels.
   createEffect(() => {
+    const draftKey = props.draftKey;
+    const open = commandsOpen();
+    const row = openingRow();
     const run = openingRun;
-    if (openingRow() === undefined || commandsOpen() || !run) return;
-    if (run.key === props.draftKey) run.controller.abort();
-    else showCommandStatus({ tone: "busy", text: run.label });
+    if (!run || row === undefined) return;
+    if (draftKey !== run.key) {
+      if (run.follow) {
+        run.follow = false;
+        run.key = draftKey;
+        run.moved = true;
+        showCommandStatus({ tone: "busy", text: run.label });
+      } else run.controller.abort();
+      return;
+    }
+    if (!open && !run.moved) run.controller.abort();
   });
   onCleanup(() => openingRun?.controller.abort());
   // An `open` row gives the sheet's Back entry up first, so it never races the navigation it starts.
@@ -1211,7 +1224,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const heldHistory = commandSheetHeld();
     // Closing the list or leaving the composer cancels the opening; the row ends at once, without waiting for it.
     const controller = new AbortController();
-    const run = { controller, key, label: command.busyLabel ?? chatMessages().commandOpening };
+    const run = { controller, key, label: command.busyLabel ?? chatMessages().commandOpening, follow: false, moved: false };
     openingRun = run;
     const cancelled = new Promise<"cancelled">((resolve) =>
       controller.signal.addEventListener("abort", () => resolve("cancelled"), { once: true }),
@@ -1237,7 +1250,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           return;
         }
       }
-      result = await Promise.race([open({ value: nextValue, mentions: nextMentions }, controller.signal), cancelled]);
+      result = await Promise.race([
+        open({ value: nextValue, mentions: nextMentions }, controller.signal, () => {
+          run.follow = true;
+        }),
+        cancelled,
+      ]);
     } catch (error) {
       finish();
       if (disposed) {

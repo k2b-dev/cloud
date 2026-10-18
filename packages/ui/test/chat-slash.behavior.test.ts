@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { batch, createComponent, createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
-import type { ChatCommand, ChatCommandResult, ChatComposerProps } from "../src/chat/ChatComposer";
+import type { ChatCommand, ChatCommandOpenResult, ChatCommandResult, ChatComposerProps } from "../src/chat/ChatComposer";
 import type { ChatMention, ChatSubmitInput } from "../src/chat/types";
 import { createDomTestHarness } from "./dom";
 
@@ -1992,21 +1992,25 @@ test("an open row that rejects keeps the token, closes the list and names the re
 
 test("an open row's failure after its draft moved goes to the status line", async () => {
   let resolve!: (result: { failed: string }) => void;
+  let followDraft!: () => void;
   const h = await slash({
     value: "/task",
     commands: [
       {
         name: "task",
         description: "Opens Spaces",
-        open: () =>
-          new Promise((done) => {
+        open: (_draft, _abort, follow) => {
+          followDraft = follow;
+          return new Promise((done) => {
             resolve = done;
-          }),
+          });
+        },
       },
     ],
   });
   h.key("Enter");
   await flush();
+  followDraft();
   h.setDraftKey("second");
   resolve({ failed: "Spaces is not reachable right now." });
   await flush();
@@ -2050,14 +2054,16 @@ test("Escape while an open row runs cancels it: the signal aborts, editing retur
 
 test("an open row whose draft moved to a new key shows its busy line in the status line, and Escape still cancels it", async () => {
   let signal: AbortSignal | undefined;
+  let followDraft!: () => void;
   const h = await slash({
     value: "Plan /task",
     commands: [
       {
         name: "task",
         description: "Opens Spaces",
-        open: (_draft, abort) => {
+        open: (_draft, abort, follow) => {
           signal = abort;
+          followDraft = follow;
           return new Promise<void>(() => {});
         },
       },
@@ -2066,6 +2072,7 @@ test("an open row whose draft moved to a new key shows its busy line in the stat
   h.key("Enter");
   await flush();
   // The opener saved into a chat it created: the composer now shows that chat's draft, without the token.
+  followDraft();
   h.setDraftKey("created");
   await flush();
   expect(signal?.aborted).toBe(false);
@@ -2076,4 +2083,83 @@ test("an open row whose draft moved to a new key shows its busy line in the stat
   expect(signal?.aborted).toBe(true);
   expect(h.input.readOnly).toBe(false);
   expect(h.status().querySelector('[data-tone="busy"]')).toBeNull();
+});
+
+test.each(["failed", "success", "rejection"] as const)(
+  "a draft key change the opener did not announce cancels the open row at once (%s)",
+  async (outcome) => {
+    let resolve!: (result: ChatCommandOpenResult) => void;
+    let reject!: (error: Error) => void;
+    let signal: AbortSignal | undefined;
+    const h = await slash({
+      value: "Plan /task",
+      commands: [
+        {
+          name: "task",
+          description: "Opens Spaces",
+          open: (_draft, abort) => {
+            signal = abort;
+            return new Promise((done, fail) => {
+              resolve = done;
+              reject = fail;
+            });
+          },
+        },
+      ],
+    });
+    h.key("Enter");
+    await flush();
+    expect(h.input.readOnly).toBe(true);
+    expect(signal?.aborted).toBe(false);
+    batch(() => {
+      h.setValue("Other /task");
+      h.setDraftKey("other");
+    });
+    await flush();
+    expect(signal?.aborted).toBe(true);
+    expect(h.input.readOnly).toBe(false);
+    expect(h.rows()).toHaveLength(0);
+    expect(h.status().querySelector("[data-tone]")).toBeNull();
+    // The destination even contains the same token: a late success must not remove it.
+    if (outcome === "rejection") reject(new Error("x"));
+    else resolve(outcome === "failed" ? { failed: "x" } : undefined);
+    await flush();
+    expect(h.value()).toBe("Other /task");
+    expect(h.rows()).toHaveLength(0);
+    expect(h.status().querySelector("[data-tone]")).toBeNull();
+    expect(h.errors).toEqual([]);
+  },
+);
+
+test("after a followed draft move, a second unannounced draft key change cancels the open row", async () => {
+  let followDraft!: () => void;
+  let signal: AbortSignal | undefined;
+  const h = await slash({
+    value: "Plan /task",
+    commands: [
+      {
+        name: "task",
+        description: "Opens Spaces",
+        open: (_draft, abort, follow) => {
+          signal = abort;
+          followDraft = follow;
+          return new Promise<void>(() => {});
+        },
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  followDraft();
+  h.setDraftKey("created");
+  await flush();
+  expect(signal?.aborted).toBe(false);
+  expect(h.input.readOnly).toBe(true);
+  expect(h.status().querySelector('[data-tone="busy"]')?.textContent).toBe("Opening …");
+  h.setDraftKey("other");
+  await flush();
+  expect(signal?.aborted).toBe(true);
+  expect(h.input.readOnly).toBe(false);
+  expect(h.rows()).toHaveLength(0);
+  expect(h.status().querySelector("[data-tone]")).toBeNull();
 });

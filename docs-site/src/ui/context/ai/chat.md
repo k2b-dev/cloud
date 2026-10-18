@@ -307,7 +307,7 @@ type ChatCommand = {
   section?: string; scope?: string; hiddenUntilSearch?: boolean; app?: string;
   action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
   mention?: ChatAttachment;
-  open?: (draft: ChatCommandDraft, signal: AbortSignal) => Promise<ChatCommandOpenResult>;
+  open?: (draft: ChatCommandDraft, signal: AbortSignal, follow: () => void) => Promise<ChatCommandOpenResult>;
   selected?: boolean; searchAgain?: boolean; persistent?: boolean;
 };
 
@@ -324,7 +324,7 @@ type ChatPasteHandler = (event: ClipboardEvent & { currentTarget: HTMLTextAreaEl
 
 ```
 
-Use `open(draft, signal)` for a row that saves before opening another application.
+Use `open(draft, signal, follow)` for a row that saves before opening another application.
 `draft` contains the value without `/…` and the adjusted mentions. During the
 promise, editing waits, the token and list stay in place, and the row shows
 **Opening …** with a spinner (or `busyLabel`). A `void` result removes the token
@@ -333,11 +333,13 @@ draft unchanged and replaces the row description; choosing it again retries.
 A rejection keeps the token, closes the list, and shows the error message in
 the status line. Escape, a press outside, or moving the caret away closes the
 list and cancels the opening: `signal` aborts, editing returns at once, and
-the token stays; a later result changes nothing. A new `draftKey` that the
-opener sets itself, such as a chat it creates to save into, does not cancel:
-the busy line moves to the status line, and Escape still cancels. `signal`
-also aborts when the opening ends in `{ failed }` or a rejection, so the opener
-can save the draft with its token again; it stays quiet only on success.
+the token stays; a later result changes nothing. A new `draftKey` cancels like
+Escape unless the opener called `follow()` right before changing it itself,
+such as to a chat it creates to save into. Then the next change moves the busy
+line to the status line, and Escape still cancels. Any further unannounced
+change cancels too. `signal` also aborts when the opening ends in `{ failed }`
+or a rejection, so the opener can save the draft with its token again; it stays
+quiet only on success.
 
 Set `ChatCommandSection.pending` while local rows are loading. Put this section
 last. Its heading spins and its end holds three placeholders in the overview,
