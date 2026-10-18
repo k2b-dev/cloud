@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { createComponent } from "solid-js";
+import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { DropdownItem as PublicDropdownItem } from "../index";
 
@@ -13,6 +13,8 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const {
+  AppWorkspace,
+  PageTrailProvider,
   Button,
   ButtonLink,
   ContextMenu,
@@ -29,6 +31,8 @@ const {
   SplitButton,
   SpotlightButton,
   Tabs,
+  ViewTabs,
+  viewTabsLayout,
   Toolbar,
 } = await import("../index");
 const { copyText } = await import("./CopyButton");
@@ -458,6 +462,19 @@ describe("@k2b/ui complete action migrations", () => {
     expect(explicit).toContain('data-variant="primary"');
   });
 
+  test("dropdown links keep quiet trailing counts separate from their labels", () => {
+    const html = renderToString(() =>
+      createComponent(Dropdown.Root, {
+        items: [{ href: "?view=archive", label: "Archive", trailing: "7" }],
+        get children() {
+          return createComponent(Dropdown.Trigger, { label: "More views", children: "More" });
+        },
+      }),
+    );
+    expect(html).toContain('href="?view=archive"');
+    expect(html).toMatch(/class="k2b-dropdown__copy"><span>Archive<\/span>.*?<\/span>7/s);
+  });
+
   test("clamps every dropdown position to the viewport", () => {
     const trigger = { left: 290, right: 310, top: 180, bottom: 200 } as DOMRect;
     const bottom = dropdownPosition(trigger, { width: 120, height: 80 }, "bottom-right", { width: 320, height: 240 });
@@ -643,7 +660,7 @@ describe("@k2b/ui complete action migrations", () => {
     expect(html).toContain("Clear");
   });
 
-  test("renders accessor-based segmented controls with source dividers and full-width layout", () => {
+  test("renders accessor-based segmented controls without dividers", () => {
     const html = renderToString(() =>
       createComponent(SegmentedControl, {
         ariaLabel: "Layout",
@@ -662,10 +679,8 @@ describe("@k2b/ui complete action migrations", () => {
     expect(html).toContain('aria-checked="true"');
     expect(html).toContain("ti ti-table");
     expect(html).toContain("disabled");
-    expect(html).toContain('data-divider="true"');
-    // Layout and dividers belong to the stylesheet: Cloud sizes the segments with
-    // `flex-1` and draws the divider as an inset pseudo element, so no inline
-    // style may leak geometry into the markup.
+    expect(html).not.toContain("data-divider");
+    // Layout belongs to the stylesheet, without inline geometry.
     expect(html).not.toContain("style=");
   });
 
@@ -878,19 +893,18 @@ describe("@k2b/ui complete action migrations", () => {
 });
 
 describe("@k2b/ui action geometry parity", () => {
-  test("segments keep Cloud's control-sized, flex-1 geometry with an inset divider", () => {
+  test("segments keep control-sized, flex-1 geometry", () => {
     const control = rule(".k2b-ui .k2b-segmented-control");
     const option = rule(".k2b-ui .k2b-segmented-control__option");
 
     expect(control).toContain("w-full");
     expect(control).toContain("items-stretch");
-    expect(control).toContain("padding: 0.125rem");
+    expect(control).toContain("background: transparent");
     expect(option).toContain("flex-1");
     expect(option).toContain("min-height: 2rem");
     expect(option).toContain("padding: 0.25rem 0.5rem");
-    expect(option).not.toContain("font-weight");
-    expect(actionsCss).toContain('.k2b-ui .k2b-segmented-control__option[data-divider="true"]::after');
-    expect(actionsCss).toContain(".k2b-ui .k2b-segmented-control__option:not(:disabled):hover");
+    expect(option).toContain("font-weight: 500");
+    expect(actionsCss).toMatch(/\.k2b-segmented-control__option:not\([^)]*\):hover/);
   });
 
   test("menu items and section spacing follow Cloud's menu-item and menu-section metrics", () => {
@@ -915,7 +929,7 @@ describe("@k2b/ui action geometry parity", () => {
     expect(chip).toContain("min-height: 2.25rem");
     expect(chip).toContain("border-radius: var(--k2b-radius-control)");
     expect(chip).not.toContain("999px");
-    expect(chip).toContain("padding: 0.375rem 0.75rem");
+    expect(chip).toContain("border: 0");
     expect(chip).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
     expect(iconOnly).toContain("width: 2.25rem");
     expect(actionsCss).toContain(".k2b-ui .k2b-filter-chip:hover");
@@ -1024,4 +1038,157 @@ test("Toolbar inherits the More label and shortcut tooltip locale without transl
   expect(html).toContain('aria-label="Weitere Aktionen"');
   expect(html).toContain('title="Assistent (Strg+J)"');
   expect(html).toContain('aria-keyshortcuts="Control+J"');
+});
+
+describe("workspace head navigation", () => {
+  const items = Array.from({ length: 8 }, (_, index) => ({
+    id: String(index + 1),
+    label: `View ${index + 1}`,
+    href: `?view=${index + 1}`,
+    count: index,
+  }));
+  test("overflow replaces the last slot with the current view at both levels", () => {
+    expect(viewTabsLayout(items, "7")).toEqual({ wide: [0, 1, 2, 3, 6], compact: [0, 1, 6], wideHidden: 3, compactHidden: 5 });
+    expect(viewTabsLayout(items, "missing").wide).toEqual([0, 1, 2, 3, 4]);
+    expect(viewTabsLayout(items.slice(0, 2), "2")).toEqual({ wide: [0, 1], compact: [0, 1], wideHidden: 0, compactHidden: 0 });
+    expect(viewTabsLayout(items, "8", 2)).toEqual({ wide: [0, 7], compact: [0, 7], wideHidden: 6, compactHidden: 6 });
+    expect(viewTabsLayout([], undefined)).toEqual({ wide: [], compact: [], wideHidden: 0, compactHidden: 0 });
+    for (const max of [0, -1, NaN, Infinity]) expect(viewTabsLayout(items, "7", max).wide).toContain(6);
+  });
+  test("SSR renders ordinary view links and both CSS overflow levels", () => {
+    const html = renderToString(() => createComponent(ViewTabs, { label: "Views", items, current: "7", class: "custom" }));
+    expect(html).toContain('class="k2b-view-tabs custom" aria-label="Views"');
+    expect([...html.matchAll(/data-view-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(["1", "2", "3", "4", "7"]);
+    expect(html.match(/data-compact-hidden=""/g)).toHaveLength(2);
+    expect(html).toContain('data-wide=""');
+    expect(html).toMatch(/data-level="wide">(?:<!--.*?-->)*\+3/);
+    expect(html).toMatch(/data-level="compact">(?:<!--.*?-->)*\+5/);
+    expect(html).toMatch(/href="\?view=7" aria-current="page"/);
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(html.match(/<a /g)).toHaveLength(5);
+    expect(html).not.toContain('role="tab');
+    expect(html).not.toContain("tabindex=");
+    expect(renderToString(() => createComponent(ViewTabs, { label: "Views", items, current: "unknown" }))).not.toContain("aria-current");
+    const de = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(ViewTabs, { label: "Ansichten", items, current: "7" });
+        },
+      }),
+    );
+    expect(de).toContain('aria-label="Weitere Ansichten"');
+    expect(de).toContain(">Weitere<");
+  });
+  test("with showValue, active chips name the first option in section order and show additional values", () => {
+    const chip = (value: string[], isActive?: boolean, showValue = true) =>
+      renderToString(() =>
+        createComponent(FilterChip, {
+          label: "Tags",
+          icon: "ti ti-tag",
+          value,
+          isActive,
+          showValue,
+          onValueChange: () => {},
+          options: [
+            {
+              multiple: true,
+              options: [
+                { value: "customer", label: "Customer", color: "#123456" },
+                { value: "urgent", label: "Urgent" },
+              ],
+            },
+            { options: [{ value: "internal", label: "Internal" }] },
+          ],
+        }),
+      );
+    const one = chip(["customer"]);
+    expect(one).toContain('aria-label="Tags: Customer"');
+    expect(one).toContain('class="k2b-filter-chip__value"');
+    expect(one).toContain('class="k2b-filter-chip__dot" style="--k2b-filter-color:#123456" aria-hidden="true"');
+    expect(chip(["internal", "urgent", "customer"])).toContain('aria-label="Tags: Customer +2"');
+    for (const html of [chip([]), chip(["customer"], false)]) {
+      expect(html).not.toContain('class="k2b-filter-chip__value"');
+      expect(html).toContain('aria-label="Tags"');
+    }
+    // Without showValue an active chip keeps its count, so toolbars built around it keep their geometry.
+    const counted = chip(["customer", "urgent"], undefined, false);
+    expect(counted).not.toContain('class="k2b-filter-chip__value"');
+    expect(counted).toContain("Tags (2)");
+    expect(counted).toContain('aria-label="Tags"');
+  });
+  test("Head slots preserve sibling order at the beginning, middle, and end", () => {
+    for (const position of [0, 1, 2]) {
+      const html = renderToString(() =>
+        createComponent(AppWorkspace, {
+          get children() {
+            const siblings: JSX.Element[] = ["FIRST CHILD", "SECOND CHILD"];
+            siblings.splice(position, 0, createComponent(AppWorkspace.Head, { views: "VIEW SLOT" }));
+            return siblings;
+          },
+        }),
+      );
+      expect(html).toContain('data-row=""');
+      expect(html.indexOf("VIEW SLOT")).toBeLessThan(html.indexOf("FIRST CHILD"));
+      expect(html.indexOf("FIRST CHILD")).toBeLessThan(html.indexOf("SECOND CHILD"));
+    }
+  });
+  const workspace = (filtered: boolean, head = true) =>
+    renderToString(() =>
+      createComponent(PageTrailProvider, {
+        trail: { title: "Project", ancestors: [{ title: "Projects", href: "/projects" }] },
+        get children() {
+          return createComponent(AppWorkspace, {
+            get children() {
+              return [
+                createComponent(AppWorkspace.Content, {
+                  get children() {
+                    return createComponent(AppWorkspace.Main, { children: "Main content" });
+                  },
+                }),
+                head
+                  ? createComponent(AppWorkspace.Head, {
+                      views: "VIEW SLOT",
+                      filters: "FILTER SLOT",
+                      filtered,
+                      resetHref: "?view=list",
+                      count: "12 results",
+                      actions: "SECONDARY",
+                      primary: { label: "New task", icon: "ti ti-plus", href: "/new" },
+                    })
+                  : null,
+              ];
+            },
+          });
+        },
+      }),
+    );
+  test("collects a direct Head slot at any position, with one primary after secondary actions", () => {
+    const html = workspace(true);
+    expect(html).toContain('data-row=""');
+    expect(html.match(/data-workspace-primary=""/g)).toHaveLength(1);
+    const order = [
+      "k2b-app-workspace__head-lead",
+      "k2b-app-workspace__head-toggle",
+      "k2b-page-title",
+      "k2b-app-workspace__head-heading",
+      "VIEW SLOT",
+      "FILTER SLOT",
+      "k2b-app-workspace__head-reset",
+      "12 results",
+      "k2b-app-workspace__head-actions",
+      "SECONDARY",
+      "data-workspace-primary",
+      "Main content",
+    ];
+    const positions = order.map((value) => html.indexOf(value));
+    expect(positions.every((index) => index >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(html).toMatch(/<a [^>]*href="\?view=list"[^>]*class="[^"]*k2b-app-workspace__head-reset/);
+    const unfiltered = workspace(false);
+    expect(unfiltered).not.toContain("k2b-app-workspace__head-reset");
+    expect(unfiltered).not.toContain("12 results");
+    expect(workspace(false, false)).toContain("k2b-app-workspace__head-lead");
+    expect(workspace(false, false)).not.toContain("data-row");
+  });
 });

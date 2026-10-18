@@ -278,8 +278,11 @@ export const followPageTrail = (root: ParentNode = document): (() => void) => {
     // A server-rendered workspace heading carries only the title.
     for (const heading of root.querySelectorAll<HTMLElement>("[data-k2b-page-trail-title][data-k2b-server]"))
       if (trail && !heading.closest("solid-island, solid-client")) heading.textContent = trail.title;
-    // The row's `data-trail` decides whether it shows; it follows the depth.
-    for (const row of root.querySelectorAll<HTMLElement>("[data-trail]:has(> .k2b-page-title[data-fallback])"))
+    // The row's `data-trail` decides whether it shows; it follows the depth. A
+    // workspace head holds its title in its lead.
+    for (const row of root.querySelectorAll<HTMLElement>(
+      "[data-trail]:has(> .k2b-page-title[data-fallback], > .k2b-app-workspace__head-lead > .k2b-page-title[data-fallback])",
+    ))
       if (!row.closest("solid-island, solid-client")) row.dataset.trail = trail?.ancestors.length ? "up" : "title";
   };
   window.addEventListener(PAGE_TRAIL_EVENT, upgrade);

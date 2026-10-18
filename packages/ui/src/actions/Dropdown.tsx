@@ -37,6 +37,8 @@ export type DropdownActionBase = {
    */
   ariaLabel?: string;
   description?: string;
+  /** Quiet trailing information, such as a count. */
+  trailing?: JSX.Element;
   variant?: "danger";
 };
 
@@ -143,6 +145,8 @@ export type DropdownItemProps = {
   icon?: string;
   image?: string;
   description?: string;
+  /** Quiet trailing information, such as a count. */
+  trailing?: JSX.Element;
   disabled?: boolean;
   danger?: boolean;
   variant?: "danger";
@@ -211,7 +215,13 @@ export const dropdownPosition = (
   };
 };
 
-const itemContent = (props: { description?: string; icon?: string; image?: string; children: JSX.Element }): JSX.Element => (
+const itemContent = (props: {
+  description?: string;
+  icon?: string;
+  image?: string;
+  trailing?: JSX.Element;
+  children: JSX.Element;
+}): JSX.Element => (
   <>
     <Show when={props.image} fallback={<Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}>
       {(image) => <img class="k2b-dropdown__image" src={image()} alt="" />}
@@ -220,6 +230,7 @@ const itemContent = (props: { description?: string; icon?: string; image?: strin
       <span>{props.children}</span>
       <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
     </span>
+    {props.trailing}
   </>
 );
 
@@ -334,6 +345,7 @@ function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
         <span>{props.label}</span>
         <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
       </span>
+      {props.trailing}
       {/* Always present for radios, so selecting the widest entry cannot widen a content-sized menu. */}
       <Show when={props.choice === "radio"}>
         <i class="ti ti-check k2b-dropdown__check" data-hidden={checked() ? undefined : "true"} aria-hidden="true" />
@@ -354,6 +366,7 @@ export function DropdownItems(props: { items: readonly DropdownItem[]; close: (r
         icon={item.icon}
         image={item.image}
         description={item.description}
+        trailing={item.trailing}
         variant={item.variant}
         disabled={item.disabled}
         class={item.class}

@@ -21,6 +21,9 @@ user is editing:
 
 See [Select inputs](../input/select) for the controlled selection contracts.
 
+Use an item's optional `trailing` JSX for quiet information such as a view
+count. The link label stays the view name.
+
 ## Import
 
 ```tsx
@@ -142,7 +145,7 @@ something else:
 
 ```ts
 type DropdownActionBase = {
-  class?: string; disabled?: boolean; icon?: string; image?: string; label: string; ariaLabel?: string; description?: string;
+  class?: string; disabled?: boolean; icon?: string; image?: string; label: string; ariaLabel?: string; description?: string; trailing?: JSX.Element;
   variant?: "danger";
 };
 

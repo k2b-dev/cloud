@@ -493,6 +493,35 @@ solid-island {
     background: linear-gradient(to bottom, color-mix(in srgb, var(--k2b-surface) 0%, transparent), var(--k2b-surface) 0.75rem);
     pointer-events: none;
   }
+  /* The app's one primary action (the primary of `AppWorkspace.Head`) is the
+     round button in that free place beside the bar: the bar's height, its end
+     edge, and its shadow. The card keeps the bar's space free at its end and in
+     its scroll padding, so the button never covers the last row or a focused
+     control either. Only the outermost workspace's head offers it. */
+  .cloud-app-canvas[data-layout-authenticated]:has(> .cloud-tab-bar)
+    .k2b-app-workspace:not(.k2b-app-workspace *)
+    > .k2b-app-workspace__head
+    .k2b-app-workspace__head-primary {
+    position: fixed;
+    z-index: 11;
+    right: max(calc(env(safe-area-inset-right, 0px) + 0.75rem), calc((100vw - 33.75rem) / 2));
+    bottom: var(--cloud-tab-bar-end);
+    width: var(--cloud-tab-bar-height);
+    min-width: var(--cloud-tab-bar-height);
+    height: var(--cloud-tab-bar-height);
+    min-height: var(--cloud-tab-bar-height);
+    box-shadow:
+      0 10px 28px -14px rgb(9 9 11 / 0.34),
+      0 0 0 1px rgb(9 9 11 / 0.06);
+  }
+  .dark .cloud-app-canvas[data-layout-authenticated]:has(> .cloud-tab-bar)
+    .k2b-app-workspace:not(.k2b-app-workspace *)
+    > .k2b-app-workspace__head
+    .k2b-app-workspace__head-primary {
+    box-shadow:
+      0 12px 30px -14px rgb(0 0 0 / 0.7),
+      0 0 0 1px var(--k2b-border);
+  }
 }
 
 /* The bar exists only on signed-in phones. Its row keeps the place of the
