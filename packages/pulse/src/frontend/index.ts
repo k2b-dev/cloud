@@ -7,7 +7,6 @@ import page from "./page";
 import publicPage from "./public-page";
 
 const workspacePages = new Hono<AuthContext>()
-  .use("*", middleware.noTransform())
   .get("/dashboards/:dashboardId/edit", auth.requireRole("user", ssr.access), ...basePage)
   .get("/dashboards/:dashboardId", auth.requireRole("user", ssr.access), ...basePage)
   .get("/sources/:sourceId", auth.requireRole("user", ssr.access), ...basePage)
@@ -24,10 +23,9 @@ const workspacePages = new Hono<AuthContext>()
   .get("/signals", auth.requireRole("user", ssr.access), ...basePage)
   .get("/", auth.requireRole("user", ssr.access), ...basePage);
 
+// Every Pulse page embeds event payloads or state strings that ingest-only sources write.
 export default new Hono<AuthContext>()
-  .use("/", middleware.noTransform())
-  .use("/display/:token", middleware.noTransform())
-  .use("/display/:token/*", middleware.noTransform())
+  .use("*", middleware.noTransform())
   .get("/display/:token", ...publicPage)
   .get("/:baseId/query-reference", auth.requireRole("user", ssr.access), ...queryReferencePage)
   .get("/", auth.requireRole("user", ssr.access), ...page)

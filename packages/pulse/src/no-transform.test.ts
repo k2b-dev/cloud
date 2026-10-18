@@ -63,18 +63,13 @@ describe("compression boundaries", () => {
     "/base/dashboards/dashboard",
     "/display/token",
     "/display/token/__new_route__",
+    "/base/query-reference",
+    "/__new_route__",
   ]) {
     test(`pages ${path} opts out`, async () => {
       const response = await pages.request(path);
       expect(response.status).toBeLessThan(500);
       expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
-    });
-  }
-  for (const path of ["/base/query-reference"]) {
-    test(`pages ${path} stays eligible for compression`, async () => {
-      const response = await pages.request(path);
-      expect(response.status).toBeLessThan(500);
-      expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");
     });
   }
 });
