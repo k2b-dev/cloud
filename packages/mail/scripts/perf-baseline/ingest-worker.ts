@@ -1,4 +1,5 @@
-/** Host subprocess: Bun's default sql/redis clients see only the run URLs at startup. */
+/** Host subprocess: the runner passes only the run URLs; Bun's default sql/redis clients connect on first use. */
+import { redis, sql } from "bun";
 import { z } from "zod";
 import { assertRunUrl, monotonicMs } from "./measure";
 
@@ -15,7 +16,6 @@ const input = z
   .parse(await Bun.stdin.json());
 assertRunUrl(process.env.DATABASE_URL ?? "", input.postgresPort, "postgresql:", "cloud_perf_test");
 assertRunUrl(process.env.REDIS_URL ?? "", input.valkeyPort, "redis:");
-const { sql, redis } = await import("bun");
 const { ingestEnvelope } = await import("../../src/service/sync-runtime");
 try {
   // Increasing UIDs must sort ahead of earlier arrivals, including at --runs 50.
