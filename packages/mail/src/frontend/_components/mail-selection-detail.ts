@@ -60,7 +60,7 @@ export const emptyMailSelection = (): MailSelection => ({
 
 /**
  * A row loaded earlier than its conversation's detail, brought up to what actions read from it: the newer revision,
- * and every folder with an unread message in the detail. Returns the same row when nothing is newer.
+ * the message count, and every folder with an unread message in the detail. Returns the same row when nothing is newer.
  */
 export const syncMailRowWithDetail = (
   item: MailListItem,
@@ -79,7 +79,9 @@ export const syncMailRowWithDetail = (
     detail.collaborationState?.revision ?? 0,
     detail.conversationLocalTags?.conversationRevision ?? 0,
   );
-  return revision === item.revision && unreadFolderIds.length === item.unreadFolderIds.length
+  // The detail holds at most the newest 100 messages, so it can only raise the count.
+  const messageCount = Math.max(item.messageCount, detail.detailMessages.length);
+  return revision === item.revision && messageCount === item.messageCount && unreadFolderIds.length === item.unreadFolderIds.length
     ? item
-    : { ...item, revision, unread: item.unread || unseenFolderIds.length > 0, unreadFolderIds };
+    : { ...item, revision, messageCount, unread: item.unread || unseenFolderIds.length > 0, unreadFolderIds };
 };

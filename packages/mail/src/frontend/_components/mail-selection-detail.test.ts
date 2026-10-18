@@ -32,6 +32,11 @@ describe("syncMailRowWithDetail", () => {
     });
   });
 
+  test("a row with fewer messages than the detail takes the detail's count", () => {
+    const row = mailTestRow("one", { unread: false, unreadFolderIds: [], revision: 1, messageCount: 1 });
+    expect(syncMailRowWithDetail(row, detail([message("inbox", true), message("inbox", true)])).messageCount).toBe(2);
+  });
+
   test("an unread row also gains the folders of unread messages it did not know", () => {
     const row = mailTestRow("one", { unread: true, unreadFolderIds: ["inbox"], revision: 1 });
     expect(syncMailRowWithDetail(row, detail([message("inbox", false), message("archive", false)])).unreadFolderIds).toEqual([

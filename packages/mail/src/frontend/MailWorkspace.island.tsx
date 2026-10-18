@@ -551,6 +551,15 @@ function MailWorkspaceView(props: {
         if (!merged.ok) continue;
         next = { ...next, listItems: merged.items, nextListCursor: merged.nextCursor, listError: reconciled.listError };
       }
+      // The kept detail can be newer than the cached rows: its row keeps what actions read from the detail.
+      const kept = otherSelection ? next.selectedConversationId : null;
+      if (kept)
+        next = {
+          ...next,
+          listItems: next.listItems.map((item) =>
+            item.selectionKind === "conversation" && item.conversationId === kept ? syncMailRowWithDetail(item, next) : item,
+          ),
+        };
       batch(() => {
         // Only the page 1 of the requested selection commits its route; an older one keeps the route shown.
         if (!otherSelection) {
