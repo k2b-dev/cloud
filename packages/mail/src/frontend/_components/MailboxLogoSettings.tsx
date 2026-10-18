@@ -1,3 +1,4 @@
+import { chooseFiles } from "@k2b/cloud/browser/files";
 import { toBase64 } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
@@ -25,6 +26,7 @@ type LogoUpload = { content: string; displayWidth?: number; altText?: string };
 /** The largest file the server accepts; larger files are not read or sent. */
 const MAX_LOGO_BYTES = 102_400;
 const DEFAULT_DISPLAY_WIDTH = 200;
+const LOGO_ACCEPT = "image/png,image/jpeg,.png,.jpg,.jpeg";
 
 /** The stored bytes of a logo, as the server sent them: its data URL already carries canonical padded base64. */
 const storedContent = (logo: Logo): string => logo.dataUrl.slice(logo.dataUrl.indexOf(",") + 1);
@@ -243,7 +245,7 @@ export default function MailboxLogoSettings(props: {
           <FileDropzone
             id={dropzoneId}
             aria-label={logo() ? messages().replaceLogo : messages().uploadLogo}
-            accept="image/png,image/jpeg,.png,.jpg,.jpeg"
+            accept={LOGO_ACCEPT}
             multiple={false}
             icon="ti ti-photo-up"
             title={logo() ? messages().replaceLogo : messages().uploadLogo}
@@ -253,6 +255,8 @@ export default function MailboxLogoSettings(props: {
             busy={uploading()}
             disabled={!editable()}
             error={uploadError}
+            // This device or any Cloud app that offers files, such as Files.
+            choose={() => chooseFiles({ accept: LOGO_ACCEPT, maxBytes: MAX_LOGO_BYTES })}
             onDrop={([file]) => chooseFile(file)}
           />
         </div>

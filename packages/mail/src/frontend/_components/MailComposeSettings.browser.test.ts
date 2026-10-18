@@ -134,6 +134,14 @@ const controls = async (page: Page) => ({
   }),
 });
 
+/** Picks a file in the device's dialog, which the dropzone opens when no Cloud app offers files. */
+const chooseDeviceFile = async (page: Page, file: { name: string; mimeType: string; buffer: Buffer }) => {
+  // Provider discovery runs when the page is idle; wait for its answer so the click opens the device's dialog.
+  await page.waitForFunction(() => window.providerCatalogAnswered);
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.locator(".k2b-dropzone").click()]);
+  await chooser.setFiles(file);
+};
+
 const logoImage = "[data-mail-logo-stage] img";
 const loadedLogo = async (page: Page) => {
   await page.locator(logoImage).waitFor();
@@ -189,9 +197,7 @@ describe("Mailbox logo settings", () => {
           const logo = await window.demoLogo(300, 100, 200);
           return logo.dataUrl.slice(logo.dataUrl.indexOf(",") + 1);
         });
-        await page
-          .locator('input[type="file"]')
-          .setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: Buffer.from(file, "base64") });
+        await chooseDeviceFile(page, { name: "logo.png", mimeType: "image/png", buffer: Buffer.from(file, "base64") });
         await loadedLogo(page);
         expect(
           await page.evaluate(() => window.logoRequests.filter((request) => request.method === "PUT").map((request) => request.body)),

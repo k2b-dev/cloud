@@ -23,6 +23,8 @@ declare global {
     /** A demo logo drawn in the page: an app-colored mark and a team name, `width`×`height` pixels. */
     demoLogo: (width: number, height: number, displayWidth: number) => Promise<Logo>;
     logoRequests: { method: string; body: unknown }[];
+    /** Whether the page has asked which Cloud apps offer files. */
+    providerCatalogAnswered: boolean;
   }
 }
 
@@ -94,6 +96,11 @@ window.mountComposeSettings = (options) => {
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(new URL(String(input), location.href), init);
       const path = new URL(request.url).pathname;
+      // No other app offers files here, so choosing a file opens the device's dialog.
+      if (path.startsWith("/api/capabilities/v1/catalog")) {
+        window.providerCatalogAnswered = true;
+        return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
+      }
       if (!path.endsWith("/compose-logo")) throw new Error(`Unexpected request: ${request.method} ${path}`);
       const body = request.method === "PUT" ? await request.json() : null;
       window.logoRequests.push({ method: request.method, body });

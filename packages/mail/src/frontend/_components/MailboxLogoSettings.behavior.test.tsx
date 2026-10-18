@@ -7,11 +7,12 @@ import type { MailboxComposeLogo } from "../../contracts";
 const load = async () => {
   const dom = createDomTestHarness();
   try {
-    const [{ default: MailboxLogoSettings }, { dialogCore, LocaleProvider, toast }] = await Promise.all([
+    const [{ default: MailboxLogoSettings }, { dialogCore, LocaleProvider, toast }, files] = await Promise.all([
       import("./MailboxLogoSettings"),
       import("@k2b/ui"),
+      import("@k2b/cloud/browser/files"),
     ]);
-    return { MailboxLogoSettings, dialogCore, LocaleProvider, toast };
+    return { MailboxLogoSettings, dialogCore, LocaleProvider, toast, files };
   } finally {
     dom.cleanup();
   }
@@ -45,7 +46,10 @@ describe("Mailbox logo settings", () => {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
     return;
   }
-  const { MailboxLogoSettings, dialogCore, LocaleProvider, toast } = modules!;
+  const { MailboxLogoSettings, dialogCore, LocaleProvider, toast, files } = modules!;
+  // The files the next click on the dropzone chooses, from this device or a Cloud app.
+  let chosen: File[] = [];
+  let chooseFiles: ReturnType<typeof spyOn<typeof files, "chooseFiles">>;
   const originalFetch = globalThis.fetch;
   let dom: DomTestHarness;
   let dispose = () => {};
@@ -56,6 +60,8 @@ describe("Mailbox logo settings", () => {
   let unexpected: string[];
 
   beforeEach(() => {
+    chosen = [];
+    chooseFiles = spyOn(files, "chooseFiles").mockImplementation(async () => chosen);
     dom = createDomTestHarness();
     delegateEvents(["click", "input", "change", "focusin", "focusout"], dom.document);
     dispose = () => {};
@@ -68,6 +74,9 @@ describe("Mailbox logo settings", () => {
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
         const path = new URL(request.url).pathname;
+        // Page-idle discovery of Cloud apps that offer files.
+        if (path.startsWith("/api/capabilities/v1/catalog"))
+          return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
         requests.push({ method: request.method, path, body: request.method === "PUT" ? await request.json() : null });
         if (path === endpoint) {
           if (request.method === "GET") return getResponse();
@@ -90,6 +99,7 @@ describe("Mailbox logo settings", () => {
       dispose();
       expect(unexpected).toEqual([]);
     } finally {
+      chooseFiles.mockRestore();
       globalThis.fetch = originalFetch;
       dom.cleanup();
     }
@@ -122,10 +132,8 @@ describe("Mailbox logo settings", () => {
   };
   const writes = () => requests.filter((request) => request.method !== "GET");
   const chooseFile = (base64 = content) => {
-    const input = group().querySelector<HTMLInputElement>('input[type="file"]')!;
-    const file = new File([Buffer.from(base64, "base64")], "logo.png", { type: "image/png", lastModified: 0 });
-    Object.defineProperty(input, "files", { configurable: true, value: [file] });
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    chosen = [new File([Buffer.from(base64, "base64")], "logo.png", { type: "image/png", lastModified: 0 })];
+    dropzone().click();
   };
   const edit = (input: HTMLInputElement, value: string) => {
     input.focus();
@@ -158,6 +166,8 @@ describe("Mailbox logo settings", () => {
     chooseFile();
     await waitFor(() => image() !== null && dom.document.activeElement === dropzone());
     expect(writes()).toEqual([{ method: "PUT", path: endpoint, body: { content } }]);
+    // Files from this device or any Cloud app, limited to what the server accepts.
+    expect(chooseFiles.mock.calls[0]?.[0]).toEqual({ accept: "image/png,image/jpeg,.png,.jpg,.jpeg", maxBytes: 102_400 });
     expectImage(storedLogo);
     expect(text()).not.toContain("No logo yet");
     expect(dropzone().querySelector("strong")?.textContent).toBe("Replace the logo");
@@ -201,9 +211,8 @@ describe("Mailbox logo settings", () => {
     };
     mount();
     await waitFor(() => text().includes("No logo yet"));
-    const input = group().querySelector<HTMLInputElement>('input[type="file"]')!;
-    Object.defineProperty(input, "files", { configurable: true, value: [slowFile] });
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    chosen = [slowFile as unknown as File];
+    dropzone().click();
     await waitFor(() => dropzone().disabled);
     // Nothing else may start while the file is read.
     expect(widthInput().disabled).toBe(true);
@@ -348,7 +357,6 @@ describe("Mailbox logo settings", () => {
     await waitFor(() => text().includes("The logo could not be loaded"));
     expect(text()).toContain("boom");
     expect(dropzone().disabled).toBe(true);
-    expect(group().querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(true);
     expect(image()).toBeNull();
     button("Retry").click();
     await waitFor(() => image() !== null);
@@ -370,7 +378,6 @@ describe("Mailbox logo settings", () => {
     expect(altInput().value).toBe("Company logo");
     expect(text()).toContain("Only mailbox admins can change the logo.");
     expect(dropzone().disabled).toBe(true);
-    expect(group().querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(true);
     expect(widthInput().disabled).toBe(true);
     expect(altInput().disabled).toBe(true);
     expect(button("Remove").disabled).toBe(true);
