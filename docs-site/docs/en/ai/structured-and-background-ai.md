@@ -400,9 +400,17 @@ at or before creation, else the newest personal chat turn in that chat.
 Background turns do not supply this value. This backfill runs only when the
 locale column is first added. Cloud has no stored per-user locale setting.
 
-Archiving a chat pauses its active routines. Restoring the chat resumes only
-routines paused for that reason. If their authority cannot resume, they need
-attention with `rights_changed`.
+Archiving a chat through the AI routes pauses its active routines with
+`chat_archived`. Admission checks what a routine may do before it checks the
+archive, so a routine whose mandate was paused or changed keeps `paused` or
+`rights_changed` instead. Admission also pauses a routine whose chat was
+archived another way. Restoring the chat resumes only routines paused with
+`chat_archived`, and only when their mandate revision is still the one the
+archive paused. Otherwise they need attention with `rights_changed`.
+
+A one-time routine resumes only before its time. Once its time has passed, a
+run at that time already happened or was stopped, so it needs a new time
+first.
 
 Pause and delete request an immediate abort of a running turn. The occurrence
 ends as `stopped`. The chat receives one line:
