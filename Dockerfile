@@ -61,7 +61,9 @@ RUN bun run packages/cloud/scripts/build.ts
 # ──────────────────────────────────────────────────────────────────────
 # Stage 4: geoip-snapshot — archived DB-IP gzip files.
 # ──────────────────────────────────────────────────────────────────────
-FROM ghcr.io/k2b-dev/mirror/dbip-lite:2026-10 AS geoip-snapshot
+# Data only: .github/mirror-images.sh pushes it for linux/amd64, maybe as an
+# index with an attestation, so every target platform takes that manifest.
+FROM --platform=linux/amd64 ghcr.io/k2b-dev/mirror/dbip-lite:2026-10 AS geoip-snapshot
 
 # ──────────────────────────────────────────────────────────────────────
 # Stage 5: geoip — pinned snapshot, independent of application sources.
@@ -69,7 +71,7 @@ FROM ghcr.io/k2b-dev/mirror/dbip-lite:2026-10 AS geoip-snapshot
 FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS geoip
 ARG APP_ID
 # DB-IP Lite, CC BY 4.0; attribution in THIRD_PARTY_NOTICES.md.
-# Only Core reads it; gating on APP_ID keeps other images and their caches small.
+# Only Core reads it; every build mounts the snapshot, but only Core checks and unpacks it.
 # DB-IP keeps only two months; .github/mirror-images.sh keeps every pinned month in the mirror.
 # bun scripts/geoip-snapshot.ts moves the pin.
 RUN --mount=type=bind,from=geoip-snapshot,target=/snapshot set -eu; mkdir -p /geoip; \

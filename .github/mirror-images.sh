@@ -106,7 +106,8 @@ copy_snapshot() {
   printf 'FROM scratch\nCOPY dbip-city-lite.mmdb.gz dbip-asn-lite.mmdb.gz /\n' >"$snapshot_dir/Dockerfile"
   echo "copy     DB-IP $month -> $repository:$month"
   for attempt in 1 2 3 4 5; do
-    if docker build --tag "$repository:$month" "$snapshot_dir" && docker push "$repository:$month"; then break; fi
+    # The Dockerfile takes the linux/amd64 manifest on every platform.
+    if docker build --platform linux/amd64 --tag "$repository:$month" "$snapshot_dir" && docker push "$repository:$month"; then break; fi
     if [[ "$attempt" == 5 ]]; then fail "copying DB-IP snapshot for $month failed"; return; fi
     echo "copy of DB-IP $month failed (attempt $attempt), retrying" >&2
     sleep $((attempt * 5))
