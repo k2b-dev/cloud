@@ -903,7 +903,9 @@ describe("@k2b/ui action geometry parity", () => {
     expect(option).toContain("flex-1");
     expect(option).toContain("min-height: 2rem");
     expect(option).toContain("padding: 0.25rem 0.5rem");
-    expect(option).toContain("font-weight: 500");
+    // The soft look keeps the former box: no added weight, no gap between options.
+    expect(option).not.toContain("font-weight");
+    expect(control).not.toContain("gap");
     expect(actionsCss).toMatch(/\.k2b-segmented-control__option:not\([^)]*\):hover/);
   });
 
