@@ -168,7 +168,7 @@ import { mailLive } from "../service/live";
 import { mailLiveChannels } from "../service/live-channels";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
-import { loadMailboxConversationDetail, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
+import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
 import contactDirectoryRoutes from "./contact-directory";
@@ -866,6 +866,23 @@ const mailOperationsApi = new Hono<MailApiContext>()
     const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
     if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
     const data = await loadMailboxPageData({
+      context: requestContext(c),
+      mailboxId,
+      ...request,
+      listMode: query.listMode,
+      locale: getLocale(c),
+    });
+    return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+  })
+  .get("/mailboxes/:mailboxId/workspace-list", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
+    const mailboxId = internalMailboxId(c);
+    const query = c.req.valid("query");
+    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
+    publicUrl?.searchParams.delete("conversation");
+    publicUrl?.searchParams.delete("message");
+    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+    const data = await loadMailboxListView({
       context: requestContext(c),
       mailboxId,
       ...request,
