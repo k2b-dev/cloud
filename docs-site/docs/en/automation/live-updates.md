@@ -310,6 +310,11 @@ answer from before that update releases nothing published after it.
 | `1012` | The replica stops | reconnects with backoff |
 | `1013` | The client reads too slowly (256 KiB waiting), or too many sockets or messages | reconnects with backoff |
 
+The `1013` close for a slow reader waits behind the frames already buffered.
+A client that does not read it within about 12 seconds loses the connection
+without a close code (`1006`); the browser client reconnects with backoff as
+for `1013`.
+
 A message from the tab is at most 16 KiB, and a socket holds at most 16
 subscriptions. At most 24 messages may wait, so a reconnect can send every
 subscription at once. A replay waits at most 10 seconds in total for a full

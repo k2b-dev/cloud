@@ -1,0 +1,26 @@
+# Known test-waits findings, one per file: <file> | <count>.
+# Migrations lower counts and remove entries; the rule never raises counts or adds lines.
+# `bun scripts/check.ts test-waits --fix` lowers counts whose findings are gone.
+packages/assistant/src/artifacts/runtime/ai.browser.test.ts | 1
+packages/assistant/src/artifacts/runtime/pdf.browser.test.ts | 1
+packages/assistant/src/cli/code-host.test.ts | 4
+packages/assistant/src/frontend/assistant-live.behavior.test.tsx | 1
+packages/chat/src/api/live.integration.test.ts | 1
+packages/cloud/src/ai/openai-api-slots.integration.test.ts | 1
+packages/cloud/src/ai/openai-api.test.ts | 1
+packages/cloud/src/ai/routes.integration.test.ts | 1
+packages/cloud/src/ai/stream.integration.test.ts | 1
+packages/cloud/src/server/ratelimit.test.ts | 1
+packages/cloud/src/server/request-timeout.test.ts | 2
+packages/cloud/src/services/outgoing-mail/enqueue.integration.test.ts | 1
+packages/cloud/test/integration/openai-api.integration.test.ts | 1
+packages/contacts/src/api/book-permission.integration.test.ts | 1
+packages/core/test/app-approval.behavior.test.tsx | 4
+packages/filesv2/test/filegate-transfer.integration.test.ts | 1
+packages/filesv2/test/markdown.behavior.test.tsx | 1
+packages/gateway/src/proxy.test.ts | 1
+packages/mail/src/cli.test.ts | 1
+packages/mail/src/frontend/MailWorkspace.list-actions.behavior.test.tsx | 5
+packages/pulse/src/frontend/workspace/near-realtime-controller.behavior.test.ts | 4
+packages/ui/test/calendar-month-drag.behavior.test.ts | 3
+pwas/pwa-auth/src/vault.behavior.test.ts | 1
