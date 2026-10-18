@@ -363,10 +363,12 @@ export class Browsers {
       const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: measurementTimeoutMs });
       if (!response) throw new Error("No document response");
       validatePage(response.status(), url, page.url(), await response.text());
+      const domContentLoadedMs = Math.round(performance.now() - start);
       let timing:
         | (Pick<Probe, "fcp" | "lcp" | "shifts" | "resources" | "longtasks" | "errors"> & { mountStarts: number[]; mountTimes: number[] })
         | null = null;
-      let untimedScripts = 0;
+      // The last observed state, so a timeout names which TTI condition never held.
+      let last = "no probe read";
       // The scripts that were finished and timed when the observation decided to stop. An idle-time
       // import can start more scripts while the final probe read is in flight; they are after the stop.
       let observedScripts: string[] = [];
@@ -383,11 +385,12 @@ export class Browsers {
             initial: p.initial?.length ?? null,
             mounted: p.initial?.filter((element) => p.mounted.has(element)).length ?? 0,
             untimedScripts: urls.filter((url) => !timed.has(url)).length,
+            timed: p.resources.length,
             errors: p.errors,
           };
         }, urls);
         if (state.errors.length || errors.length) throw new Error([...state.errors, ...errors].join("; "));
-        untimedScripts = state.untimedScripts;
+        last = `${state.initial === null ? "islands not collected" : `${state.mounted}/${state.initial} islands mounted`}, ${pendingScripts.size} scripts pending, ${state.untimedScripts}/${urls.length} scripts without timing, ${state.timed} resource entries, quiet ${Math.round(performance.now() - lastScript)} ms`;
         if (
           state.initial !== null &&
           interactive({
@@ -430,7 +433,7 @@ export class Browsers {
       }
       if (timing === null)
         throw new Error(
-          `TTI timed out after ${measurementTimeoutMs} ms (initial islands did not mount, scripts did not become quiet, or script resource timings did not arrive; ${untimedScripts} scripts without timing)`,
+          `TTI timed out after ${measurementTimeoutMs} ms (initial islands did not mount, scripts did not become quiet, or script resource timings did not arrive); DOMContentLoaded after ${domContentLoadedMs} ms; last state: ${last}`,
         );
       collecting = false;
       await Promise.all(sizeJobs);

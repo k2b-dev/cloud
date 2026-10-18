@@ -161,6 +161,8 @@ part of TTI. The probe observes the existing synchronous `innerHTML = ""`
 followed by `render()` in the SSR mount runtime and records the time in a
 microtask after that stack. An island-error event fails the load. The
 45-second deadline fails the profile; it never becomes a numeric TTI result.
+Its error names the time to `DOMContentLoaded` and the last observed state:
+mounted islands, pending scripts, scripts without timing, and the quiet time.
 
 The probe and static inspector depend on today's SSR internals:
 clear-and-render mounting, the inline `const p=` loader, and
@@ -384,8 +386,12 @@ The `metric` names a measured time in that result, for example
 `server.search-common.totalMs.median`. The command prints the five entries
 with the largest measured times as a Markdown table. It refuses an entry
 whose location is not an existing file and line, or whose metric has no
-number in the result, and it needs at least five entries. It starts no
-Docker and takes no lock.
+number in the result, and it needs at least five entries. It also refuses
+a list that mixes `server.` metrics with browser metrics: a server request
+time and a throttled browser time do not measure the same thing. Pick the
+metric that isolates the named cost, for example the island render time
+rather than the whole TTI for a render cost. It starts no Docker and takes
+no lock.
 
 ### Limits
 

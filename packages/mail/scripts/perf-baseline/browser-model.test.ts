@@ -295,7 +295,7 @@ const candidate = (title: string, metric: string, location = "packages/mail/scri
   slice: "mail-perf-fix",
 });
 
-test("bottlenecks rank by the measured number and refuse entries without file:line or a measured number", () => {
+test("bottlenecks rank by the measured number and refuse entries without file:line, a measured number or one metric family", () => {
   const metrics = new Map([
     ["a", 100],
     ["b", 900],
@@ -338,6 +338,10 @@ test("bottlenecks rank by the measured number and refuse entries without file:li
     "no measured number",
   );
   expect(() => rankBottlenecks(metrics, four, repository)).toThrow("at least 5");
+  const mixed = new Map([...metrics, ["server.detail-large.totalMs.median", 140]]);
+  expect(() => rankBottlenecks(mixed, [...four, candidate("server", "server.detail-large.totalMs.median")], repository)).toThrow(
+    "mix server and browser metrics",
+  );
   expect(() => rankBottlenecks(metrics, [{ title: "x" }], repository)).toThrow();
 });
 

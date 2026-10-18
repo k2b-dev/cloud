@@ -442,7 +442,8 @@ export type BottleneckCandidate = z.infer<typeof bottleneckCandidateSchema>;
 /**
  * Validates candidates against the repository and this run, then ranks them by the
  * measured time of their metric. Refuses a candidate without a real file:line or
- * without a measured number, and fewer than `top` candidates.
+ * without a measured number, fewer than `top` candidates, and a list that mixes
+ * server and browser metrics.
  */
 export function rankBottlenecks(metrics: Map<string, number>, candidates: unknown, repository: string, top = 5) {
   const list = z.array(bottleneckCandidateSchema).parse(candidates);
@@ -463,6 +464,9 @@ export function rankBottlenecks(metrics: Map<string, number>, candidates: unknow
     return { ...candidate, value };
   });
   if (ranked.length < top) throw new Error(`Need at least ${top} bottleneck candidates, got ${ranked.length}`);
+  // A server request time and a throttled browser time do not measure the same thing; one list ranks one family.
+  if (new Set(ranked.map((entry) => entry.metric.startsWith("server."))).size > 1)
+    throw new Error("Bottleneck candidates mix server and browser metrics; rank one metric family at a time");
   return ranked.toSorted((a, b) => b.value - a.value).slice(0, top);
 }
 
