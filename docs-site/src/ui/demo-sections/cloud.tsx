@@ -1,6 +1,6 @@
-import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance.ts";
 import type { AiPublicModelProfile } from "@k2b/cloud/ai";
 import { AiChatActionsProvider, aiChatModelOptions, createAiChatTimeline } from "@k2b/cloud/ai/ui";
+import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance.ts";
 import { Chat, type ChatCommand, Widget, WidgetHero, WidgetList, WidgetPills, WidgetStat, WidgetStatus } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { DemoCard } from "../DemoCard";

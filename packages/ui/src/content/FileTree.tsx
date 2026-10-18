@@ -9,8 +9,8 @@ import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import ContextMenu from "../actions/ContextMenu";
 import Dropdown, { type DropdownItem } from "../actions/Dropdown";
 import { useUiMessages } from "../intl/messages";
-import { useFileBrowserMessages } from "./file-browser-messages";
 import { FileTypeIcon } from "./FileTypeIcon";
+import { useFileBrowserMessages } from "./file-browser-messages";
 import { allFolderPaths, buildTree, type FileTreeEntry, flattenVisible, parentOf, type TreeNode } from "./file-tree";
 
 export type { FileTreeEntry } from "./file-tree";
