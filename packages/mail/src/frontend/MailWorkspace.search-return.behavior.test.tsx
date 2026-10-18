@@ -176,6 +176,8 @@ describe("Mail workspace search return", () => {
   let dom: DomTestHarness;
   let dispose = () => {};
   let workspaceRequests: string[];
+  /** Pages from 2 on load only their list page. */
+  let listRequests: string[];
   let emptyResults: boolean;
   let invalidSearch: boolean;
   let heldSearchResponse: Promise<Response> | undefined;
@@ -232,6 +234,7 @@ describe("Mail workspace search return", () => {
     Object.defineProperty(globalThis, "CSS", { value: dom.window.CSS, configurable: true });
     Reflect.set(globalThis, "WebSocket", FakeWebSocket);
     workspaceRequests = [];
+    listRequests = [];
     emptyResults = false;
     invalidSearch = false;
     heldSearchResponse = undefined;
@@ -244,7 +247,12 @@ describe("Mail workspace search return", () => {
           const href = url.searchParams.get("href") ?? "";
           workspaceRequests.push(href);
           if (new URL(href, "http://localhost").searchParams.has("q") && heldSearchResponse) return heldSearchResponse;
-          if (new URL(href, "http://localhost").searchParams.has("cursor") && heldCursorResponse) return heldCursorResponse;
+          return Response.json(snapshotFor(href));
+        }
+        if (url.pathname.endsWith("/workspace-list")) {
+          const href = url.searchParams.get("href") ?? "";
+          listRequests.push(href);
+          if (heldCursorResponse) return heldCursorResponse;
           return Response.json(snapshotFor(href));
         }
         if (url.pathname.endsWith("/activity")) return Response.json({ items: [], nextCursor: null });
@@ -493,11 +501,13 @@ describe("Mail workspace search return", () => {
       scroller().scrollTop = 480;
       await search();
       workspaceRequests = [];
+      listRequests = [];
       scroller().scrollTop = 20;
       if (method === "clear") clearButton().click();
       else history.back();
       await settle();
-      expect(workspaceRequests).toEqual([`${path}?view=needs_action`, `${path}?view=needs_action&cursor=needs-action-next`]);
+      expect(workspaceRequests).toEqual([`${path}?view=needs_action`]);
+      expect(listRequests).toEqual([`${path}?view=needs_action&cursor=needs-action-next`]);
       expect(title()).toBe("Needs action");
       expect(dom.root.querySelector('[data-conversation-id="page-two"]')).not.toBeNull();
       // Happy DOM does not clamp scrollTop, so the page request and rendered row guard the list's height too.
@@ -513,20 +523,19 @@ describe("Mail workspace search return", () => {
     const response = Promise.withResolvers<Response>();
     heldCursorResponse = response.promise;
     workspaceRequests = [];
+    listRequests = [];
     clearButton().click();
     await settle();
-    expect(workspaceRequests).toEqual([`${path}?view=needs_action`, `${path}?view=needs_action&cursor=needs-action-next`]);
+    expect(workspaceRequests).toEqual([`${path}?view=needs_action`]);
+    expect(listRequests).toEqual([`${path}?view=needs_action&cursor=needs-action-next`]);
     scroller().scrollTop = 35;
     await clickLink("view=done");
     assertRoute("view=done", "Done");
     expect(scroller().scrollTop).toBe(35);
     response.resolve(Response.json(snapshotFor(`${path}?view=needs_action&cursor=needs-action-next`)));
     await settle();
-    expect(workspaceRequests).toEqual([
-      `${path}?view=needs_action`,
-      `${path}?view=needs_action&cursor=needs-action-next`,
-      `${path}?view=done`,
-    ]);
+    expect(workspaceRequests).toEqual([`${path}?view=needs_action`, `${path}?view=done`]);
+    expect(listRequests).toEqual([`${path}?view=needs_action&cursor=needs-action-next`]);
     expect(title()).toBe("Done");
     expect(dom.root.querySelector('[data-conversation-id="page-two"]')).toBeNull();
     expect(scroller().scrollTop).toBe(35);
