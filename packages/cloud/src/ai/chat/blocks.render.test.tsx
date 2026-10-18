@@ -1584,7 +1584,7 @@ describe("scheduled result presentation", () => {
 
   test("a stop before any change says so", () => {
     const html = routineLine("x", { ...run, stop: { cause: "deleted", done: [] } }, "en");
-    expect(html).toContain("Stopped while the routine was running. It had not changed anything yet.");
+    expect(html).toContain("Stopped while the routine was running. Nothing was undone.");
   });
 
   test("a run that needs the person shows the reason sentence, not the raw error", () => {

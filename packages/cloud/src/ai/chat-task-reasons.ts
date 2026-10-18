@@ -32,7 +32,7 @@ const messages = i18n.define({
       stopped: ({ list }: { list: string }) =>
         list
           ? `Stopped while the routine was running. Already done: ${list}. Nothing was undone.`
-          : "Stopped while the routine was running. It had not changed anything yet.",
+          : "Stopped while the routine was running. Nothing was undone.",
     },
     de: {
       paused: ({ time }) => `Von dir pausiert am ${time}. Was in der Pause passiert, wird nicht von selbst nachgeholt.`,
@@ -44,7 +44,7 @@ const messages = i18n.define({
       stopped: ({ list }) =>
         list
           ? `Angehalten, während die Routine lief. Schon erledigt: ${list}. Nichts wurde rückgängig gemacht.`
-          : "Angehalten, während die Routine lief. Bis dahin hat sie nichts geändert.",
+          : "Angehalten, während die Routine lief. Nichts wurde rückgängig gemacht.",
     },
   },
 });

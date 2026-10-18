@@ -915,6 +915,12 @@ export const aiChatTasks = {
         WHERE task.conversation_id = ${input.conversationId}::uuid AND task.state = 'active'
           AND (${input.userId ?? null}::uuid IS NULL OR task.sponsor_user_id = ${input.userId ?? null}::uuid)
         ORDER BY task.id FOR UPDATE OF task`;
+      if (!tasks.length) return;
+      // Locks in admission order (tasks, then chat). A restore that committed first leaves its routines running;
+      // one that comes later waits for this pause and then resumes them.
+      const [archived] = await tx`SELECT 1 FROM ai.conversations WHERE id = ${input.conversationId}::uuid
+        AND archived_at IS NOT NULL FOR SHARE`;
+      if (!archived) return;
       for (const task of tasks) {
         const mandate = await loadTaskMandate(task, tx);
         const revision =
@@ -942,7 +948,10 @@ export const aiChatTasks = {
         if (!(error instanceof AiChatTaskAuthorityError)) throw error;
         await sql.begin(async (tx) => {
           const [current] = await tx<TaskRow[]>`${taskSelect()} WHERE task.id = ${task.id}::uuid FOR UPDATE OF task`;
-          if (current?.reason_code === "chat_archived") await stopTaskAdmission(current, "rights_changed", error.message, tx);
+          // Archived again meanwhile: the routine stays paused for that reason.
+          const [restored] = await tx`SELECT 1 FROM ai.conversations WHERE id = ${input.conversationId}::uuid
+            AND archived_at IS NULL FOR SHARE`;
+          if (current?.reason_code === "chat_archived" && restored) await stopTaskAdmission(current, "rights_changed", error.message, tx);
         });
       }
     }

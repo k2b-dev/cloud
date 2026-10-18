@@ -409,13 +409,15 @@ ends as `stopped`. The chat receives one line:
 
 > Stopped while the routine was running. Already done: {list}. Nothing was undone.
 
-With no successful write call, the line is:
+With no write call it can name, the line leaves the list out:
 
-> Stopped while the routine was running. It had not changed anything yet.
+> Stopped while the routine was running. Nothing was undone.
 
-The list comes from stored successful write calls and their Action sentences.
-It never comes from the model's prose. Reads, failed calls and rejected calls
-are excluded. The line's metadata stores the stop cause and the done list.
+It does not claim that nothing changed, because a call without wording can
+still have changed something. The list comes from stored successful calls that
+the chat words as changes: app Actions with their done sentence, or their title
+when the Action has none, and Cloud tools with a done sentence. It never comes
+from the model's prose. Reads, failed calls and rejected calls are excluded. The line's metadata stores the stop cause and the done list.
 Deleting the routine does not delete this receipt. Recovery can deliver the
 line once from a terminal deleted-routine turn completed within the last day.
 It does not deliver into an archived chat.

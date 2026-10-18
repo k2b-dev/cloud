@@ -842,7 +842,12 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
         <For each={resultIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => actions().has(id)} />}</For>
         <Show when={props.segment().scheduledTask?.stop}>
           {(stop) => (
-            <Chat.Activity class="ai-turn__routine-line" icon="ti ti-player-stop" label={chatTaskStopSentence(stop().done, locale())} />
+            <Chat.Activity
+              class="ai-turn__routine-line"
+              wrap
+              icon="ti ti-player-stop"
+              label={chatTaskStopSentence(stop().done, locale())}
+            />
           )}
         </Show>
         <Show when={layout().text.length > 0 && !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly}>
@@ -858,6 +863,7 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           {(reason) => (
             <Chat.Activity
               class="ai-turn__routine-line"
+              wrap
               icon={chatTaskReasonState(reason().code) === "paused" ? "ti ti-player-pause" : "ti ti-alert-triangle"}
               tone={chatTaskReasonState(reason().code) === "paused" ? "neutral" : "warning"}
               label={chatTaskReasonSentence(reason(), { locale: locale(), timeZone })}

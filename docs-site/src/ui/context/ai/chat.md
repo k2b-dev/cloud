@@ -36,6 +36,9 @@ three-dot indicator. Applications should not add another spinner or visible
 generating label.
 Activity bodies are inset beneath their row by default. Set `bodyInset={false}`
 when the body is a peer list that should align with the activity row itself.
+Labels and descriptions end in an ellipsis on one line. Set `wrap` on a system
+line whose whole sentence matters, such as why a background run stopped; its
+label and description wrap and its icon stays on the first line.
 An expandable row opens on a press anywhere in it, also while its label or
 trailing text re-renders, such as a ticking clock: presses land on the row, and
 only links, buttons, and other controls inside it stay their own targets. With
@@ -537,7 +540,7 @@ type ChatMessageProps = {
 
 type ChatActivityProps = {
   label: JSX.Element; ariaLabel?: string; description?: string; icon?: string; leading?: JSX.Element; accent?: string;
-  tone?: ChatActivityTone; busy?: boolean; trailing?: JSX.Element; open?: boolean;
+  tone?: ChatActivityTone; busy?: boolean; wrap?: boolean; trailing?: JSX.Element; open?: boolean;
   onOpenChange?: (open: boolean) => void; defaultOpen?: boolean; bodyInset?: boolean;
   anchorId?: string | number; children?: JSX.Element; class?: string;
 };

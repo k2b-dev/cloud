@@ -57,7 +57,7 @@ Open **Context** in the sidebar **In this chat** and select a routine to adjust,
 
 Archiving a chat pauses its routines. Restoring it resumes those routines. If their permissions cannot resume, they need your confirmation again.
 
-Pause and delete stop a running routine at once. The chat says “Stopped while the routine was running” and lists successful changes already made. If there were none, it says so. Nothing is undone.
+Pause and delete stop a running routine at once. The chat says “Stopped while the routine was running” and lists successful changes already made. Nothing is undone. **Background run** shows the whole run.
 
 :::info When Assistant is unavailable
 If AI is disabled, misconfigured, or has no selectable streaming model, the composer is disabled and the page shows the current status error.

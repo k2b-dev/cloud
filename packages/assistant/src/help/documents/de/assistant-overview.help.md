@@ -57,7 +57,7 @@ Eine einmalige Routine verwendet einen genauen lokalen Zeitpunkt in der Zeitzone
 
 Archivierst du einen Chat, pausieren seine Routinen. Stellst du ihn wieder her, werden diese Routinen fortgesetzt. Können ihre Freigaben nicht fortgesetzt werden, musst du sie neu bestätigen.
 
-Pausieren und Löschen halten eine laufende Routine sofort an. Im Chat steht „Angehalten, während die Routine lief“ und was sie schon erfolgreich geändert hat. Hat sie nichts geändert, steht das dort. Nichts wird rückgängig gemacht.
+Pausieren und Löschen halten eine laufende Routine sofort an. Im Chat steht „Angehalten, während die Routine lief“ und was sie schon erfolgreich geändert hat. Nichts wird rückgängig gemacht. Den ganzen Lauf siehst du unter **Hintergrundlauf**.
 
 :::info Wenn der Assistent nicht verfügbar ist
 Wenn KI deaktiviert oder falsch konfiguriert ist oder kein auswählbares Streaming-Modell bereitsteht, ist das Eingabefeld deaktiviert und die Seite zeigt den aktuellen Statusfehler.

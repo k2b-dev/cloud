@@ -45,8 +45,8 @@ describe("routine reason sentences", () => {
     );
   });
   test("stop frame with and without completed writes", () => {
-    expect(chatTaskStopSentence([], "de")).toBe("Angehalten, während die Routine lief. Bis dahin hat sie nichts geändert.");
-    expect(chatTaskStopSentence([], "en")).toBe("Stopped while the routine was running. It had not changed anything yet.");
+    expect(chatTaskStopSentence([], "de")).toBe("Angehalten, während die Routine lief. Nichts wurde rückgängig gemacht.");
+    expect(chatTaskStopSentence([], "en")).toBe("Stopped while the routine was running. Nothing was undone.");
     expect(chatTaskStopSentence(["Rechnung gespeichert."], "de")).toBe(
       "Angehalten, während die Routine lief. Schon erledigt: Rechnung gespeichert. Nichts wurde rückgängig gemacht.",
     );

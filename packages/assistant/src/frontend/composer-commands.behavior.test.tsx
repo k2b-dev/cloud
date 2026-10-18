@@ -471,7 +471,7 @@ test("task running status appears only after the deferred server acceptance", as
   expect(h.value()).toBe("");
 });
 
-test.each(["completed", "failed", "running", "queued"] as const)(
+test.each(["completed", "failed", "stopped", "running", "queued"] as const)(
   "a successful replay with state %s reports its outcome and settles the key",
   async (state) => {
     const { assistantCopyFor } = await import("./ui-copy");
@@ -505,7 +505,9 @@ test.each(["completed", "failed", "running", "queued"] as const)(
             ? copy.commandTaskAlreadyRan
             : state === "failed"
               ? copy.commandTaskAlreadyFailed
-              : copy.commandTaskRunning)({ title: "Bericht 6" }),
+              : state === "stopped"
+                ? copy.commandTaskAlreadyStopped
+                : copy.commandTaskRunning)({ title: "Bericht 6" }),
         );
       }
     }

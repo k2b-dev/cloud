@@ -1235,6 +1235,9 @@ suite("AI chat tasks", () => {
         reasonAt: null,
       });
       expect(await aiChatTasks.get({ userId: user!.id, taskId: manual.shortId })).toMatchObject({ state: "paused", reasonCode: "paused" });
+      // An archive follow-up that arrives after the chat was restored again leaves its routines running.
+      await aiChatTasks.pauseForArchivedChat({ conversationId: conversation.id, userId: user!.id });
+      expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({ state: "active", reasonCode: null });
       // Simulate an archive whose follow-up failed. Admission narrows authority without creating a failed run or message.
       await sql`UPDATE ai.conversations SET archived_at = now() WHERE id = ${conversation.id}::uuid`;
       expect(
@@ -1425,7 +1428,7 @@ suite("AI chat tasks", () => {
         const messages = await aiConversations.listMessages({ conversationId: conversation.id });
         expect(messages).toHaveLength(1);
         expect(messages[0]?.meta?.scheduledTask?.stop).toEqual({ cause, done: [] });
-        expect(JSON.stringify(messages[0]?.message)).toContain("Stopped while the routine was running. It had not changed anything yet.");
+        expect(JSON.stringify(messages[0]?.message)).toContain("Stopped while the routine was running. Nothing was undone.");
         await aiChatTasks.finalizeTurn({ turnId: turn.turnId, status: "aborted" });
         expect(await aiConversations.listMessages({ conversationId: conversation.id })).toHaveLength(1);
       } finally {
