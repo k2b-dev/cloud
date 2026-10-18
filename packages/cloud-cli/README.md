@@ -37,6 +37,18 @@ and approve the code:
 cld login --server https://cloud.example.com --device
 ```
 
+To approve the sign-in on your phone instead, use `--user <username-or-email>`.
+cld shows a code; compare it in Cloud Login and confirm:
+
+```bash
+cld login portal --server https://cloud.example.com --user alice --ttl 8h
+```
+
+`--ttl` ends any login after a duration such as `30m`, `8h`, or `2d` (a number
+without a unit means seconds). Cloud may shorten it; cld prints the actual end,
+and `cld auth status` shows it later. Without `--ttl`, a `--user` login lasts
+the Cloud's session length, and browser and `--device` logins last 90 days.
+
 In an SSH session or with `--no-open`, the normal `cld login` suggests
 `--device`. Run `cld login --help` for all options.
 
