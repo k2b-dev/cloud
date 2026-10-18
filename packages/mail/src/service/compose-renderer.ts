@@ -218,6 +218,7 @@ export type ComposeRenderContext = {
   mailbox: {
     name: string;
     description: string;
+    logo: string;
   };
   sender: {
     display_name: string;
@@ -235,6 +236,7 @@ export type RenderedComposeContent = {
   formattingWarnings: ComposeFormattingWarning[];
   html: string | null;
   text: string;
+  logoUsed: boolean;
 };
 
 const isMarkdownLinkDestination = (source: string, offset: number, length: number): boolean =>
@@ -461,7 +463,11 @@ export const renderComposeTemplateSource = (
 ): Result<string> => {
   const valid = validateComposeTemplateSource(source);
   if (!valid.ok) return valid;
-  return fillComposeTemplate(source, context, format === "markdown" ? "editable_markdown" : "plain");
+  return fillComposeTemplate(
+    source,
+    { ...context, mailbox: { ...context.mailbox, logo: "" } },
+    format === "markdown" ? "editable_markdown" : "plain",
+  );
 };
 
 const renderComposeTemplateSegments = (
@@ -520,10 +526,13 @@ export const renderComposeContent = (params: {
   context: ComposeRenderContext;
   renderLiquid: boolean;
   signature?: string | null;
+  logo?: { src: string; altText: string; displayWidth: number } | null;
 }): Result<RenderedComposeContent> => {
+  const token = `MAILLOGO${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;
+  const context = { ...params.context, mailbox: { ...params.context.mailbox, logo: token } };
   const budget = { remainingMs: MAX_COMPOSE_RENDER_MS };
   const renderedSource = params.renderLiquid
-    ? renderComposeTemplateSegments(params.body, params.context, params.format, budget)
+    ? renderComposeTemplateSegments(params.body, context, params.format, budget)
     : ok(params.body.replace(COMPOSE_SEGMENT_MARKS, ""));
   if (!renderedSource.ok) return renderedSource;
   let source = renderedSource.data;
@@ -532,14 +541,22 @@ export const renderComposeContent = (params: {
     const valid = validateComposeTemplateSource(params.signature);
     if (!valid.ok) return fail(composeRenderFailure("signatureFailed"));
     const start = performance.now();
-    const signature = fillComposeTemplate(params.signature, params.context, params.format, Math.max(0, budget.remainingMs));
+    const signature = fillComposeTemplate(params.signature, context, params.format, Math.max(0, budget.remainingMs));
     budget.remainingMs -= performance.now() - start;
     if (!signature.ok) return "composeRender" in signature.error ? signature : fail(composeRenderFailure("signatureFailed"));
     parts = { ...splitQuotedHistory(source), signature: signature.data.replace(COMPOSE_SEGMENT_MARKS, "") };
     source = [parts.reply, parts.signature, parts.history].filter(Boolean).join("\n\n");
   }
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
-  if (params.format === "plain") return ok({ html: null, text: source, formattingWarnings: [] });
+  const requestedLogo = source.includes(token);
+  const logoWarnings: ComposeFormattingWarning[] = requestedLogo && !params.logo ? [{ code: "missing_mailbox_logo" }] : [];
+  if (params.format === "plain")
+    return ok({
+      html: null,
+      text: requestedLogo ? source.replaceAll(token, () => params.logo?.altText ?? "").trimEnd() : source,
+      formattingWarnings: logoWarnings,
+      logoUsed: requestedLogo,
+    });
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
 
@@ -561,14 +578,35 @@ export const renderComposeContent = (params: {
       formattingWarnings = [{ code: "ignored_mailbox_css" }];
     }
     if (!inlined.ok) return inlined;
-    const html = inlined.data;
+    let html = inlined.data;
+    if (requestedLogo) {
+      // Strip tokens from parsed attributes before replacing text nodes. User HTML
+      // and Markdown images have already been rejected by the final sanitizer.
+      const stripToken = (attribs: sanitizeHtml.Attributes) =>
+        Object.fromEntries(Object.entries(attribs).map(([key, value]) => [key, value.replaceAll(token, "")]));
+      html = sanitizeHtml(html, {
+        ...INLINED_EMAIL_SANITIZE_OPTIONS,
+        transformTags: {
+          "*": (tagName, attribs) => ({ tagName, attribs: stripToken(attribs) }),
+          a: (tagName, attribs) => EMAIL_HTML_SANITIZE_OPTIONS.transformTags.a(tagName, stripToken(attribs)),
+        },
+      });
+    }
+    const logoUsed = requestedLogo && html.includes(token);
+    const image = params.logo
+      ? `<img src="${escapeAttribute(params.logo.src)}" alt="${escapeAttribute(params.logo.altText)}" width="${params.logo.displayWidth}" style="display:block;border:0;height:auto;max-width:100%">`
+      : "";
+    const text = convert(html, {
+      wordwrap: false,
+      selectors: [{ selector: "a", options: { hideLinkHrefIfSameAsText: true } }],
+    })
+      .trimEnd()
+      .replaceAll(token, () => params.logo?.altText ?? "");
     return ok({
-      formattingWarnings,
-      html,
-      text: convert(html, {
-        wordwrap: false,
-        selectors: [{ selector: "a", options: { hideLinkHrefIfSameAsText: true } }],
-      }).trimEnd(),
+      formattingWarnings: [...formattingWarnings, ...logoWarnings].slice(0, MAX_COMPOSE_FORMATTING_WARNINGS),
+      html: html.replaceAll(token, () => image),
+      text: requestedLogo && !params.logo ? text.trimEnd() : text,
+      logoUsed,
     });
   } catch {
     return fail(composeRenderFailure("conversionFailed"));
@@ -659,7 +697,7 @@ const formattingWarnings = (body: string): ComposeFormattingWarning[] => {
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES || !validateMarkdownSourceComplexity(source).ok) return [];
 
   const warnings = new Map<string, ComposeFormattingWarning>();
-  const add = (warning: Exclude<ComposeFormattingWarning, { code: "ignored_mailbox_css" }>) => {
+  const add = (warning: Exclude<ComposeFormattingWarning, { code: "ignored_mailbox_css" | "missing_mailbox_logo" }>) => {
     const key = `${warning.code}:${warning.element}:${warning.attribute ?? ""}`;
     if (warnings.size < MAX_COMPOSE_FORMATTING_WARNINGS && !warnings.has(key)) warnings.set(key, warning);
   };

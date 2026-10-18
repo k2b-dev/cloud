@@ -5,6 +5,7 @@ import { sql } from "bun";
 import type { FetchMessageObject, MessageAddressObject } from "imapflow";
 import { type AddressObject, simpleParser } from "mailparser";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { logoPng } from "../../test/mailbox-logo-fixtures";
 import { type ConnectorVerification, type RemoteFolder, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -14,7 +15,13 @@ import { rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
 import { executeOutboxSubmission, executeOutboxSubmissionWithHeartbeat, recoverStaleExecutions } from "./command-runtime";
 import { createActorCommand, createMailCommand } from "./commands";
-import { archiveComposeTemplate, createComposeTemplate } from "./compose-templates";
+import {
+  archiveComposeTemplate,
+  createComposeTemplate,
+  previewComposeDraft,
+  removeMailboxComposeLogo,
+  updateMailboxComposeLogo,
+} from "./compose-templates";
 import { imapSmtpConnector } from "./connectors";
 import { mapFetchedEnvelope } from "./connectors/imap-smtp";
 import { mergeConversations } from "./conversations";
@@ -29,6 +36,7 @@ import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraft
 import { createDraft, discardDraft, materializeDraftSeed, prepareDraftSeed, updateDraft } from "./drafts";
 import { setFolderRole } from "./folders";
 import { pauseDeletedMailboxExecution } from "./mailbox-lifecycle";
+import { deleteUnusedMailboxLogoVersions, loadInlineLogoContent } from "./mailbox-logos";
 import { createMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
 import { listConversations, listFolders } from "./messages";
@@ -1119,6 +1127,125 @@ suite("mail sent message projection", () => {
     `;
     return outbox!;
   };
+
+  test("scheduled new, reply, forward and legacy sends keep frozen inline logo bytes across replacement and removal", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const inbound = await receive(provider, mailbox, "inline-logo");
+      const original = logoPng();
+      const replacement = logoPng(1, 1, 255);
+      const signature = await createComposeTemplate({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          kind: "signature",
+          scope: "mailbox",
+          name: "Inline logo",
+          shortcut: "inlinelogo",
+          body: "Regards\n\n{{ mailbox.logo }}",
+        },
+      });
+      if (!signature.ok) throw new Error(signature.error.message);
+      for (const intent of ["new", "reply", "forward", "legacy"] as const) {
+        const uploaded = await updateMailboxComposeLogo({
+          context,
+          mailboxId: mailbox.mailboxId,
+          input: { content: original.toString("base64"), altText: "Frozen logo", displayWidth: 220 },
+        });
+        if (!uploaded.ok) throw new Error(uploaded.error.message);
+        const draft = await createDraft({
+          context,
+          mailboxId: mailbox.mailboxId,
+          input: {
+            senderIdentityId: mailbox.identityId,
+            subject: `Inline ${intent}`,
+            to: [{ name: "Customer", address: CUSTOMER }],
+            cc: [],
+            bcc: [{ name: null, address: "audit@example.test" }],
+            format: "markdown",
+            body: intent === "legacy" ? `Answer\n\n${markComposeTemplateSegment(signature.data.body)}` : "Answer",
+            signatureTemplateId: intent === "legacy" ? null : signature.data.id,
+            ...(intent === "reply" || intent === "forward"
+              ? { intent, conversationId: inbound.conversation_id, sourceMessageId: inbound.id }
+              : {}),
+          },
+        });
+        if (!draft.ok) throw new Error(draft.error.message);
+        const preview = await previewComposeDraft({
+          context,
+          mailboxId: mailbox.mailboxId,
+          input: { draft: draft.data, conversationId: null },
+        });
+        expect(preview.ok).toBe(true);
+        if (preview.ok) expect(preview.data.html).toContain(`src="data:image/png;base64,${original.toString("base64")}"`);
+        const outbox = await schedule(mailbox, draft.data.id, draft.data.revision, `inline-logo-${intent}`);
+        const [frozen] = await sql<{ draft_snapshot: unknown; inline_logo_version_id: string | null }[]>`
+          SELECT draft_snapshot, inline_logo_version_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid
+        `;
+        const snapshot = outboundDraftSnapshotSchema.parse(frozen?.draft_snapshot);
+        const logo = snapshot.inlineLogo;
+        expect(logo).not.toBeNull();
+        if (!logo) throw new Error("Send did not freeze the logo");
+        expect(frozen?.inline_logo_version_id).toBe(logo.versionId);
+        expect(snapshot.renderedHtml).toContain(`src="cid:${logo.contentId}"`);
+        expect(snapshot.renderedHtml).not.toContain('src="http');
+        expect(snapshot.renderedHtml).not.toContain("data:image");
+        expect(snapshot.renderedText).toContain("Frozen logo");
+        expect(
+          await updateMailboxComposeLogo({
+            context,
+            mailboxId: mailbox.mailboxId,
+            input: { content: replacement.toString("base64"), altText: "Replacement" },
+          }),
+        ).toMatchObject({ ok: true });
+        expect(await loadInlineLogoContent(logo)).toEqual(original);
+        expect(await removeMailboxComposeLogo({ context, mailboxId: mailbox.mailboxId })).toMatchObject({ ok: true });
+        for (const state of ["scheduled", "undo_window", "sending", "accepted", "sent_sync_pending", "unknown", "needs_attention"]) {
+          await sql`UPDATE mail.outbox_submissions SET state = ${state} WHERE id = ${outbox.id}::uuid`;
+          await deleteUnusedMailboxLogoVersions({ mailboxId: mailbox.mailboxId, limit: 10 });
+          expect(await loadInlineLogoContent(logo)).toEqual(original);
+        }
+        await expect(loadInlineLogoContent({ ...logo, sha256: "0".repeat(64) })).rejects.toMatchObject({ code: "INLINE_LOGO_UNAVAILABLE" });
+        await expect(loadInlineLogoContent({ ...logo, byteLength: logo.byteLength + 1 })).rejects.toMatchObject({
+          code: "INLINE_LOGO_UNAVAILABLE",
+        });
+        await sql`UPDATE mail.outbox_submissions SET state = 'scheduled', scheduled_at = now() - interval '1 second', undo_until = NULL WHERE id = ${outbox.id}::uuid`;
+        if (intent === "new") {
+          provider.failNextSubmission("ESOCKET", false);
+          expect(await executeOutboxSubmission(outbox.id)).toBe("scheduled");
+          await deleteUnusedMailboxLogoVersions({ mailboxId: mailbox.mailboxId, limit: 10 });
+          expect(await loadInlineLogoContent(logo)).toEqual(original);
+          await sql`UPDATE mail.outbox_submissions SET scheduled_at = now() - interval '1 second' WHERE id = ${outbox.id}::uuid`;
+        }
+        expect(await executeOutboxSubmission(outbox.id)).toBe("sent");
+        const stored = provider.messagesWithId(provider.sentPath, outbox.stable_message_id)[0];
+        if (!stored) throw new Error("Sent copy missing");
+        const mime = await simpleParser(stored.source, { skipImageLinks: true });
+        expect(mime.html).toContain(`src="cid:${logo.contentId}"`);
+        expect(mime.attachments).toHaveLength(1);
+        expect(mime.attachments[0]).toMatchObject({
+          content: original,
+          contentType: "image/png",
+          contentDisposition: "inline",
+          contentId: `<${logo.contentId}>`,
+        });
+        // A pending Sent copy keeps the version even after a terminal delivery outcome.
+        await sql`UPDATE mail.outbox_submissions SET sent_copy_pending = true WHERE id = ${outbox.id}::uuid`;
+        expect(await deleteUnusedMailboxLogoVersions({ mailboxId: mailbox.mailboxId, limit: 10 })).toBe(0);
+        await sql`UPDATE mail.outbox_submissions SET sent_copy_pending = false WHERE id = ${outbox.id}::uuid`;
+        expect(await deleteUnusedMailboxLogoVersions({ mailboxId: mailbox.mailboxId, limit: 10 })).toBe(1);
+        expect(await sql`SELECT id FROM mail.mailbox_logo_versions WHERE id = ${logo.versionId}::uuid`).toHaveLength(0);
+        const [cleared] = await sql<
+          { inline_logo_version_id: string | null }[]
+        >`SELECT inline_logo_version_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
+        expect(cleared?.inline_logo_version_id).toBeNull();
+        await expect(loadInlineLogoContent(logo)).rejects.toMatchObject({ code: "INLINE_LOGO_UNAVAILABLE" });
+      }
+    } finally {
+      provider.restore();
+    }
+  });
 
   test("derived seeds keep selectable signatures and reject another user's private signature", async () => {
     const provider = createProvider("imap");

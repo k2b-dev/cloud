@@ -259,6 +259,8 @@ The mailbox CSS comes after the built-in design. Each of its rules wins over the
 
 Mail checks the CSS when you save it. If a saved design contains a value that a later Cloud version no longer accepts, the mailbox keeps sending. Mail leaves out only those values and keeps the rest of the design. If Mail cannot read the saved design at all, it uses the built-in design until the design is fixed. **Settings → Writing** shows which values are left out, and the composer **Preview** lists them below the message. Remove or replace them in the design. Saving still needs CSS that passes the check. For a very long message, Mail uses the built-in design if the mailbox design would make the message too complex to render. The composer **Preview** shows this.
 
+Mailbox admins manage one signature logo with `cld mail compose logo get`, `cld mail compose logo set --file logo.png [--width 200] [--alt "Team"]`, and `cld mail compose logo remove --yes`. Browser logo settings come later. Upload PNG or JPEG only, at most 100 KiB and 1200×400 pixels. Display width is 1–600 px (default 200). Alt text defaults to the trimmed mailbox name and requires 1–200 characters without control characters. Signatures place the logo with `{{ mailbox.logo }}`; Mail sends it inline and previews show it. Without a logo, preview warns and leaves the placeholder empty. Queued and scheduled sends retain the original logo; provider Drafts copies have no signature or logo.
+
 ## Configure automatic responses and references {icon="settings"}
 
 Open **Mailbox tools → Automations**:

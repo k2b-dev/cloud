@@ -555,6 +555,21 @@ has the same effect for drafts saved after the update. After the rollout, open
 a new message in a mailbox with a default signature and check that the preview
 shows the signature below the text.
 
+### Mail mailbox logos
+
+On its next start, Mail adds `mail.mailbox_logo_versions`,
+`mail.mailboxes.logo_version_id`, and
+`mail.outbox_submissions.inline_logo_version_id`. No configuration change is
+needed. Roll all Mail replicas together: an older replica ignores the frozen
+logo in a queued message and sends HTML whose `cid:` image has no inline part.
+A rollback has the same limitation for messages queued with logos.
+
+Logos count toward the Mail database share, at most 100 KiB per immutable
+version. Unused versions are removed hourly; current logos and versions still
+needed by queued messages or Sent-copy retries are retained. After upgrading,
+upload a test logo, preview a signature containing `{{ mailbox.logo }}`, and
+send it. Check that it arrives as an inline image without a remote image link.
+
 ### Mail storage for kept conversations
 
 Mail adds the table `mail.conversation_keeps` and a trigger on

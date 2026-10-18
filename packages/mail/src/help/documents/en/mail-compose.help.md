@@ -59,7 +59,7 @@ Open **Message options** and choose the format for the current draft:
 
 Mail sends Markdown as readable HTML with the mailbox email design and a text alternative. Plain text sends no HTML alternative. If the Preview cannot show the message, for example because it is too long, it says why and offers **Retry**. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
 
-Markdown can also contain simple HTML. Email keeps the elements `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` to `h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul`, and the table elements. It removes other elements, such as `small`, but keeps their text. It also removes `class`, inline `style`, and most other attributes. Links can open web pages, email addresses (`mailto:`), and phone numbers, for example `[+49 731 000000](tel:+49731000000)`. Email does not show images or horizontal lines. It shows Markdown quotes with a line on the left. Code blocks keep their line breaks but not their language label. When Mail removes HTML or an image, the Preview lists it below the message. The Preview also lists values of the mailbox email design that email ignores. For a very long message, Mail uses the built-in design if the mailbox email design would make it too complex to render. The Preview says so, and the message still sends. To change the look of every message, a mailbox manager edits the mailbox email design. Inline styles cannot do this.
+Markdown can also contain simple HTML. Email keeps the elements `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` to `h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul`, and the table elements. It removes other elements, such as `small`, but keeps their text. It also removes `class`, inline `style`, and most other attributes. Links can open web pages, email addresses (`mailto:`), and phone numbers, for example `[+49 731 000000](tel:+49731000000)`. Email removes images written directly into the body and horizontal lines. A signature can show the mailbox logo with `{{ mailbox.logo }}`. It shows Markdown quotes with a line on the left. Code blocks keep their line breaks but not their language label. When Mail removes HTML or an image, the Preview lists it below the message. The Preview also lists values of the mailbox email design that email ignores. For a very long message, Mail uses the built-in design if the mailbox email design would make it too complex to render. The Preview says so, and the message still sends. To change the look of every message, a mailbox manager edits the mailbox email design. Inline styles cannot do this.
 
 History loads only when you open it. Mail first expands the newest message. You can expand or collapse several messages independently, and Mail loads earlier summaries page by page. Mail loads a complete message only when you expand it. Links and attachments have the same security protection as in the conversation reader.
 
@@ -110,6 +110,10 @@ The action bar at the bottom of the composer has a **Signature** button between 
 
 Signatures stay separate from the editable text. Preview and the sent message show the signature after your text. When you write above a quoted reply or a forwarded message, the signature goes between your text and that message. The copy in the provider's Drafts folder contains only your text, so add a signature yourself if you send the draft from another mail program. When you open an older draft that still has its signature in the text, Mail moves the signature into the signature choice.
 
+Put `{{ mailbox.logo }}` in a signature to show the mailbox logo in new messages, replies, and forwards. Preview shows it too. Mail sends it as an inline image, never a remote link. Plain text uses its alt text; snippets leave it empty. If no logo is uploaded, the placeholder stays empty and preview warns you. A queued or scheduled message keeps its original logo even after it is replaced or removed. The provider's Drafts copy has no signature or logo.
+
+A mailbox admin uploads a PNG or JPEG with `cld mail compose logo set --file logo.png`. It can be at most 100 KiB and 1200×400 pixels. Display width defaults to 200 px and accepts 1–600 px with `--width`. Alt text defaults to the trimmed mailbox name; `--alt` accepts 1–200 characters without control characters. Browser logo settings come later.
+
 Type `/` in the body to search snippets only. Mail inserts the chosen snippet into the text, where you can edit or remove it.
 
 - **Snippet:** Inserts reusable text with its values already filled in. Values such as `{{ actor.email }}` appear as plain text. In Markdown messages, Mail adds a backslash only before characters that would change the formatting, for example `\*`.
@@ -126,6 +130,7 @@ Use these Liquid variables in your template:
 | `sender.display_name` | Display name of the sender identity, or its address when it has no name |
 | `sender.email` | From address of the sender identity |
 | `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
+| `mailbox.logo` | The mailbox logo as an inline image in signatures; empty when the mailbox has no logo and in snippets |
 | `mailbox.name` | Mailbox name |
 | `mailbox.description` | Mailbox description; empty when not set |
 | `message.subject` | Subject of the draft |

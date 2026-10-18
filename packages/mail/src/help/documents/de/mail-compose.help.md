@@ -58,7 +58,7 @@ Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausf�
 
 Mail sendet Markdown als lesbares HTML mit dem E-Mail-Design des Postfachs und einer Textalternative. Nur Text sendet keine HTML-Alternative. Kann die **Vorschau** die Nachricht nicht zeigen, etwa weil sie zu lang ist, nennt sie den Grund und bietet **Erneut versuchen** an. Du kannst die verfügbaren Bereiche anordnen. Mail hält das Layout passend, wenn ein anderer Entwurf andere Bereiche anbietet.
 
-Markdown kann auch einfaches HTML enthalten. Die E-Mail behält die Elemente `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` bis `h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul` und die Tabellenelemente. Andere Elemente wie `small` entfernt sie, ihr Text bleibt erhalten. Außerdem entfernt sie `class`, Inline-`style` und die meisten anderen Attribute. Links können Webseiten, E-Mail-Adressen (`mailto:`) und Telefonnummern öffnen, zum Beispiel `[+49 731 000000](tel:+49731000000)`. Die E-Mail zeigt keine Bilder oder Trennlinien. Sie zeigt Markdown-Zitate mit einer Linie links. Codeblöcke behalten ihre Zeilenumbrüche, aber nicht ihre Sprachbezeichnung. Entfernt Mail HTML oder ein Bild, listet die **Vorschau** es unter der Nachricht auf. Die **Vorschau** listet auch Werte des E-Mail-Designs des Postfachs auf, die E-Mails ignorieren. Bei einer sehr langen Nachricht verwendet Mail das eingebaute Design, wenn das E-Mail-Design des Postfachs die Darstellung zu komplex machen würde. Das siehst du in der **Vorschau**, und die Nachricht wird trotzdem gesendet. Das Aussehen aller Nachrichten ändert, wer das Postfach verwaltet, im E-Mail-Design des Postfachs. Inline-Stile können das nicht.
+Markdown kann auch einfaches HTML enthalten. Die E-Mail behält die Elemente `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` bis `h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul` und die Tabellenelemente. Andere Elemente wie `small` entfernt sie, ihr Text bleibt erhalten. Außerdem entfernt sie `class`, Inline-`style` und die meisten anderen Attribute. Links können Webseiten, E-Mail-Adressen (`mailto:`) und Telefonnummern öffnen, zum Beispiel `[+49 731 000000](tel:+49731000000)`. Die E-Mail entfernt direkt in den Text geschriebene Bilder und Trennlinien. Eine Signatur kann das Postfachlogo mit `{{ mailbox.logo }}` anzeigen. Sie zeigt Markdown-Zitate mit einer Linie links. Codeblöcke behalten ihre Zeilenumbrüche, aber nicht ihre Sprachbezeichnung. Entfernt Mail HTML oder ein Bild, listet die **Vorschau** es unter der Nachricht auf. Die **Vorschau** listet auch Werte des E-Mail-Designs des Postfachs auf, die E-Mails ignorieren. Bei einer sehr langen Nachricht verwendet Mail das eingebaute Design, wenn das E-Mail-Design des Postfachs die Darstellung zu komplex machen würde. Das siehst du in der **Vorschau**, und die Nachricht wird trotzdem gesendet. Das Aussehen aller Nachrichten ändert, wer das Postfach verwaltet, im E-Mail-Design des Postfachs. Inline-Stile können das nicht.
 
 Der Verlauf lädt erst, wenn du ihn öffnest. Mail klappt zuerst die neueste Nachricht auf. Du kannst mehrere Nachrichten unabhängig auf- und zuklappen, und Mail lädt frühere Zusammenfassungen seitenweise. Eine vollständige Nachricht lädt Mail erst, wenn du sie aufklappst. Links und Anhänge haben denselben Sicherheitsschutz wie in der Leseansicht.
 
@@ -116,6 +116,10 @@ Tippe im Text `/`, um ausschließlich Textbausteine zu suchen. Mail fügt den ge
 - **Privat:** Nur die Person, der die Vorlage gehört, sieht sie.
 - **Postfach:** Die Vorlage ist mit anderen im Team geteilt.
 
+Setze `{{ mailbox.logo }}` in eine Signatur, um das Postfachlogo in neuen Nachrichten, Antworten und Weiterleitungen anzuzeigen. Die Vorschau zeigt es ebenfalls. Mail sendet es als eingebettetes Bild, nie als entfernten Link. Im Klartext steht der Alternativtext; in Textbausteinen bleibt der Platzhalter leer. Ohne hochgeladenes Logo bleibt er leer und die Vorschau warnt dich. Eingereihte und geplante Nachrichten behalten ihr ursprüngliches Logo auch nach dem Ersetzen oder Entfernen. Die Entwurfskopie beim Anbieter hat keine Signatur und kein Logo.
+
+Ein Postfachadmin lädt ein PNG oder JPEG mit `cld mail compose logo set --file logo.png` hoch: höchstens 100 KiB und 1200×400 Pixel. Die Anzeigebreite beträgt standardmäßig 200 px; `--width` erlaubt 1–600 px. Der Alternativtext ist standardmäßig der getrimmte Postfachname. `--alt` erlaubt 1–200 Zeichen ohne Steuerzeichen. Logo-Einstellungen im Browser folgen später.
+
 Nutze diese Liquid-Variablen in deiner Vorlage:
 
 | Variable | Wert |
@@ -125,6 +129,7 @@ Nutze diese Liquid-Variablen in deiner Vorlage:
 | `sender.display_name` | Anzeigename der Absenderidentität. Ohne Namen erscheint ihre E-Mail-Adresse. |
 | `sender.email` | Von-Adresse der Absenderidentität. |
 | `sender.reply_to` | Antwortadresse der Absenderidentität. Leer, wenn keine gesetzt ist. |
+| `mailbox.logo` | Postfachlogo als eingebettetes Bild in Signaturen; ohne Logo und in Textbausteinen leer |
 | `mailbox.name` | Name des Postfachs. |
 | `mailbox.description` | Beschreibung des Postfachs. Leer, wenn keine gesetzt ist. |
 | `message.subject` | Betreff des Entwurfs. |

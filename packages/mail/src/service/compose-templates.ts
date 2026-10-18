@@ -17,14 +17,18 @@ import {
   type DraftEditableContent,
   type DraftEditableContentInput,
   draftEditableContentInputSchema,
+  type MailboxComposeLogo,
   type MailboxComposeStyle,
+  mailboxLogoAltTextSchema,
   type RenderComposeSnippetInput,
   renderComposeSnippetInputSchema,
   type SetComposeSignatureDefaultInput,
   setComposeSignatureDefaultInputSchema,
   type UpdateComposeTemplateInput,
+  type UpdateMailboxComposeLogoInput,
   type UpdateMailboxComposeStyleInput,
   updateComposeTemplateInputSchema,
+  updateMailboxComposeLogoInputSchema,
   updateMailboxComposeStyleInputSchema,
 } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
@@ -43,6 +47,17 @@ import {
   validateComposeTemplateSource,
   withoutSignatureSegments,
 } from "./compose-renderer";
+import { validateMailboxLogoImage } from "./mailbox-logo-image";
+import {
+  currentMailboxLogo,
+  type DbMailboxLogo,
+  deleteUnusedMailboxLogoVersions,
+  mailboxLogoContentId,
+  mailboxLogoDataUrl,
+  mailboxLogoSha256,
+  mapMailboxLogo,
+} from "./mailbox-logos";
+import type { OutboundDraftSnapshot } from "./outbound-mime";
 
 type SqlClient = typeof sql;
 
@@ -662,6 +677,89 @@ export const updateMailboxComposeStyle = async (params: {
   }
 };
 
+export const getMailboxComposeLogo = async (context: MailRequestContext, mailboxId: string): Promise<Result<MailboxComposeLogo>> => {
+  const allowed = await requireMailboxAccess(context, mailboxId, "write");
+  if (!allowed.ok) return allowed;
+  return ok(mapMailboxLogo(await currentMailboxLogo(sql, mailboxId, false)));
+};
+
+export const updateMailboxComposeLogo = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  input: UpdateMailboxComposeLogoInput;
+}): Promise<Result<MailboxComposeLogo>> => {
+  const parsed = updateMailboxComposeLogoInputSchema.safeParse(params.input);
+  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid mailbox logo"));
+  const content = Buffer.from(parsed.data.content, "base64");
+  if (content.toString("base64") !== parsed.data.content) return fail(err.badInput("Logo content must be valid padded base64"));
+  const image = validateMailboxLogoImage(content);
+  if (!image.ok) return image;
+  try {
+    return await sql.begin(async (tx) => {
+      const allowed = await requireMailboxPermission(params.context, params.mailboxId, "admin", tx);
+      if (!allowed.ok) return allowed;
+      const actor = actorRefFromRequest(params.context);
+      const actorId = actorDatabaseId(actor);
+      if (!actorId || actor.kind === "workflow" || actor.kind === "system") return fail(err.forbidden("Logo editor is invalid"));
+      const [mailbox] = await tx<{ name: string }[]>`
+        SELECT name FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL FOR UPDATE
+      `;
+      if (!mailbox) return fail(err.notFound("Mailbox"));
+      const alt = mailboxLogoAltTextSchema.safeParse(parsed.data.altText ?? mailbox.name);
+      if (!alt.success) return fail(err.badInput(alt.error.issues[0]?.message ?? "Invalid logo alt text"));
+      const [row] = await tx<DbMailboxLogo[]>`
+        INSERT INTO mail.mailbox_logo_versions (mailbox_id, content, content_type, pixel_width, pixel_height, display_width, alt_text, sha256, created_by_actor_kind, created_by_actor_id)
+        VALUES (${params.mailboxId}::uuid, ${content}, ${image.data.contentType}, ${image.data.width}, ${image.data.height}, ${parsed.data.displayWidth ?? 200}, ${alt.data}, ${mailboxLogoSha256(content)}, ${actor.kind}, ${actorId}::uuid)
+        RETURNING *
+      `;
+      if (!row) throw new Error("Logo insert returned no row");
+      await tx`UPDATE mail.mailboxes SET logo_version_id = ${row.id}::uuid WHERE id = ${params.mailboxId}::uuid`;
+      await writeAudit(
+        params.context,
+        "mail.compose_logo.update",
+        params.mailboxId,
+        null,
+        {
+          sha256: row.sha256,
+          byteLength: content.byteLength,
+          pixelWidth: row.pixel_width,
+          pixelHeight: row.pixel_height,
+          displayWidth: row.display_width,
+        },
+        tx,
+      );
+      await deleteUnusedMailboxLogoVersions({ mailboxId: params.mailboxId, limit: 100 }, tx);
+      return ok(mapMailboxLogo(row));
+    });
+  } catch {
+    return fail(err.internal("Failed to update mailbox logo"));
+  }
+};
+
+export const removeMailboxComposeLogo = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+}): Promise<Result<MailboxComposeLogo>> => {
+  try {
+    return await sql.begin(async (tx) => {
+      const allowed = await requireMailboxPermission(params.context, params.mailboxId, "admin", tx);
+      if (!allowed.ok) return allowed;
+      const actor = actorRefFromRequest(params.context);
+      if (!actorDatabaseId(actor) || actor.kind === "workflow" || actor.kind === "system")
+        return fail(err.forbidden("Logo editor is invalid"));
+      const [mailbox] = await tx<{ id: string }[]>`
+        UPDATE mail.mailboxes SET logo_version_id = NULL WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL RETURNING id
+      `;
+      if (!mailbox) return fail(err.notFound("Mailbox"));
+      await writeAudit(params.context, "mail.compose_logo.remove", params.mailboxId, null, {}, tx);
+      await deleteUnusedMailboxLogoVersions({ mailboxId: params.mailboxId, limit: 100 }, tx);
+      return ok({ logo: null });
+    });
+  } catch {
+    return fail(err.internal("Failed to remove mailbox logo"));
+  }
+};
+
 const composeRenderContext = async (params: {
   db: SqlClient;
   mailboxId: string;
@@ -711,7 +809,7 @@ const composeRenderContext = async (params: {
 
   return ok({
     actor,
-    mailbox: { name: base.mailbox_name, description: base.mailbox_description ?? "" },
+    mailbox: { name: base.mailbox_name, description: base.mailbox_description ?? "", logo: "" },
     sender: {
       display_name: base.sender_name || base.sender_email,
       email: base.sender_email,
@@ -738,7 +836,8 @@ export const renderComposeDraft = async (params: {
   draft: DraftEditableContentInput;
   actor: ActorRef;
   renderLiquid: boolean;
-}): Promise<Result<RenderedComposeContent>> => {
+  logoSource: "cid" | "data";
+}): Promise<Result<RenderedComposeContent & { inlineLogo: OutboundDraftSnapshot["inlineLogo"] }>> => {
   const db = params.db ?? sql;
   const parsed = internalDraftEditableContentSchema.safeParse(params.draft);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid draft"));
@@ -757,13 +856,36 @@ export const renderComposeDraft = async (params: {
           AND kind = 'signature' AND archived_at IS NULL
       `
     : [];
-  return renderComposeContent({
+  const logo = await currentMailboxLogo(db, params.mailboxId, params.logoSource === "cid");
+  const contentId = logo ? mailboxLogoContentId(logo.id, context.data.sender.email) : "";
+  const rendered = renderComposeContent({
+    logo: logo
+      ? {
+          src: params.logoSource === "cid" ? `cid:${contentId}` : mailboxLogoDataUrl(logo),
+          altText: logo.alt_text,
+          displayWidth: logo.display_width,
+        }
+      : null,
     signature: signature?.body_template ?? null,
     body: signature ? withoutSignatureSegments(parsed.data.body, signature.body_template) : parsed.data.body,
     format: parsed.data.format,
     customCss: await mailboxStyleSource(db, params.mailboxId),
     context: context.data,
     renderLiquid: params.renderLiquid,
+  });
+  if (!rendered.ok) return rendered;
+  return ok({
+    ...rendered.data,
+    inlineLogo:
+      params.logoSource === "cid" && logo && rendered.data.html && rendered.data.logoUsed
+        ? {
+            versionId: logo.id,
+            sha256: logo.sha256,
+            contentType: logo.content_type,
+            byteLength: logo.content.byteLength,
+            contentId,
+          }
+        : null,
   });
 };
 
@@ -796,6 +918,7 @@ export const previewComposeDraft = async (params: {
     draft: parsed.data,
     actor: actorRefFromRequest(params.context),
     renderLiquid: true,
+    logoSource: "data",
   });
   if (!rendered.ok) return rendered;
   return ok({
