@@ -101,6 +101,12 @@ suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
     expect(images.filter(({ type }) => type === "smask")).toHaveLength(1);
   }, 60000);
 
+  test("an escaped attachment address that Book shows also prints", async () => {
+    const result = await render(`![escaped](attach\\://${ids[0]})`);
+    expect(result.omissions).toEqual([]);
+    expect((await pdfImages(result.pdf)).filter(({ type }) => type === "image")).toHaveLength(1);
+  }, 60000);
+
   test("foreign and missing IDs print the same not_found reason without a private filename", async () => {
     const foreignId = await insert(jpeg, "image/jpeg", "secret-name.jpg", foreign.id);
     const result = await render(`![foreign](attach://${foreignId}) ![missing](attach://ZZZZZZ)`);

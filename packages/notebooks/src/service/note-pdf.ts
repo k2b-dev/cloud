@@ -156,6 +156,7 @@ export const renderNotePdf = async (
   const preparation = new AbortController();
   const timer = setTimeout(() => preparation.abort(), phaseMs);
   const signal = options.signal ? AbortSignal.any([options.signal, preparation.signal]) : preparation.signal;
+  const list = options.imageDependencies?.list ?? attachments.listByShortIds;
   // Started work finishes before the route releases its conversion slot; the signal only stops the next step.
   const closed = () => {
     if (options.signal?.aborted) throw new GotenbergRenderError("timeout", "Note PDF preparation aborted.");
@@ -164,7 +165,7 @@ export const renderNotePdf = async (
     closed();
     const [queryResults, attachmentMetadata] = await Promise.all([
       resolveBookQueries({ ...params, signal }),
-      (options.imageDependencies?.list ?? attachments.listByShortIds)({
+      list({
         shortIds: attachments.extractIds(params.markdown),
         notebookId: params.notebookId,
       }),
@@ -183,7 +184,15 @@ export const renderNotePdf = async (
         signal,
         locale: params.locale,
       },
-      { ...options.imageDependencies, list: async () => attachmentMetadata },
+      {
+        ...options.imageDependencies,
+        // The raw-text scan misses escaped forms such as `attach\://…` that Markdown still parses; load only those.
+        list: async ({ shortIds, notebookId }) => {
+          const known = new Set(attachmentMetadata.map((row) => row.shortId));
+          const missing = shortIds.filter((id) => !known.has(id));
+          return missing.length ? [...attachmentMetadata, ...(await list({ shortIds: missing, notebookId }))] : attachmentMetadata;
+        },
+      },
     );
     closed();
     clearTimeout(timer);
