@@ -8,10 +8,11 @@ import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { app } from "../config";
 import { newShortId } from "../lib/short-id";
 import { storeAdmin } from "../store/service";
+import pulseApi from ".";
 import adminRoutes from "./routes/admin";
 
 const suite = databaseSuite();
-const api = new Hono<AuthContext>().route("/api/pulse", adminRoutes);
+const api = new Hono<AuthContext>().route("/api/pulse/admin/store", adminRoutes);
 const password = "obviously-fake-admin-store-fixture-password",
   marker = "REMOTE_CLICKHOUSE_BODY_MUST_NEVER_LEAK";
 const asUser = (id: string, admin = false): User => ({
@@ -242,5 +243,38 @@ suite("Pulse store admin API", () => {
     } finally {
       storedState = "readable";
     }
+  });
+  test("an admin's OAuth token without the admin scope cannot use any store route", async () => {
+    // Stands in for the OAuth layer: the caller is a Cloud admin, but the token carries only `read`.
+    const scoped = new Hono<AuthContext>()
+      .use(async (c, next) => {
+        c.set("oauthScopes", ["read"]);
+        await next();
+      })
+      .route("/api/pulse/admin/store", adminRoutes);
+    received = 0;
+    for (const [method, path] of paths) {
+      const response = await scoped.request(path, {
+        method,
+        headers: { cookie: "session_token=admin-fixture", "content-type": "application/json" },
+        ...(method === "GET" ? {} : { body: JSON.stringify({ url: saved.url, user: saved.user, password }) }),
+      });
+      expect(response.status).toBe(403);
+    }
+    expect(received).toBe(0);
+  });
+  test("the store routes' middleware stays inside /admin/store", async () => {
+    // Mounted like production: a read-scoped OAuth caller still reads its bases, uncached rules untouched.
+    const scoped = new Hono<AuthContext>()
+      .use(async (c, next) => {
+        c.set("oauthScopes", ["read"]);
+        await next();
+      })
+      .route("/", pulseApi);
+    const bases = await scoped.request("/bases", { headers: { cookie: "session_token=person-fixture" } });
+    expect(bases.status).toBe(200);
+    expect(bases.headers.get("cache-control")).not.toBe("no-store");
+    const store = await scoped.request("/admin/store", { headers: { cookie: "session_token=admin-fixture" } });
+    expect(store.status).toBe(403);
   });
 });

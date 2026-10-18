@@ -23,6 +23,7 @@ const metadata = (summary: string, schema: z.ZodType, input?: z.ZodType) =>
     },
   });
 
+// Mounted at /admin/store: the middleware below must never reach the rest of the Pulse API.
 const routes = new Hono<AuthContext>()
   .use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
@@ -30,32 +31,29 @@ const routes = new Hono<AuthContext>()
     await next();
     setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
   })
+  // A Cloud admin's OAuth token with only read or write scope must not administer store credentials.
+  .use("*", auth.requireOAuthScope("admin"))
   .onError((error, c) => {
     if (error instanceof StoreAdminError) return c.json({ code: error.code }, error.status);
     // Do not serialize setting, transport, SQL, or validation errors with input values.
     return c.json({ code: "STORE_REQUEST_FAILED" }, 500);
   })
-  .get("/admin/store", auth.requireRole("admin"), metadata("Read Pulse store status", StoreStatusSchema), async (c) =>
+  .get("/", auth.requireRole("admin"), metadata("Read Pulse store status", StoreStatusSchema), async (c) =>
     c.json(await storeAdmin.status({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.raw.signal)),
   )
-  .put(
-    "/admin/store",
-    auth.requireRole("admin"),
-    metadata("Check and save the Pulse store", StoreStatusSchema, StoreSaveInput),
-    async (c) => {
-      const parsed = StoreSaveInput.safeParse(await c.req.json().catch(() => null));
-      if (!parsed.success) return c.json({ code: "INVALID_INPUT" }, 400);
-      const value = await storeAdmin.save({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, parsed.data, c.req.raw.signal);
-      return value.status?.ok ? c.json(value) : c.json({ code: "STORE_CHECK_FAILED", status: value.status }, 422);
-    },
-  )
+  .put("/", auth.requireRole("admin"), metadata("Check and save the Pulse store", StoreStatusSchema, StoreSaveInput), async (c) => {
+    const parsed = StoreSaveInput.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ code: "INVALID_INPUT" }, 400);
+    const value = await storeAdmin.save({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, parsed.data, c.req.raw.signal);
+    return value.status?.ok ? c.json(value) : c.json({ code: "STORE_CHECK_FAILED", status: value.status }, 422);
+  })
   // A diagnostic failure is a successful check request: HTTP 200, status.ok=false.
-  .post("/admin/store/check", auth.requireRole("admin"), metadata("Check the Pulse store", StoreCheckSchema), async (c) =>
+  .post("/check", auth.requireRole("admin"), metadata("Check the Pulse store", StoreCheckSchema), async (c) =>
     c.json(await storeAdmin.check({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.raw.signal)),
   )
   // POST keeps the chosen password (and its verifier) out of gateway/proxy URL logs.
   .post(
-    "/admin/store/setup-sql",
+    "/setup-sql",
     auth.requireRole("admin"),
     metadata("Build the Pulse store setup script", z.object({ sql: z.string() }), StoreSetupInput),
     async (c) => {
