@@ -238,89 +238,69 @@ the reported range as inconclusive.
 
 ## Measure Mail at mailbox scale
 
-The separate server/API harness seeds 20,000 messages in 3,000 conversations
-and 30 folders, then measures through the isolated Caddy HTTPS origin:
+`packages/mail/scripts/perf-baseline.ts` measures the Mail server and its APIs
+at a realistic mailbox size. It reuses this page's isolated production stack
+but starts no browsers:
 
 ```bash
 bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 5
 ```
 
-It requires installed dependencies and Docker, takes the machine-wide heavy
-lock, and starts/removes only run-owned labelled resources on free loopback
-ports. It never uses port 3000 or the development database. Allow about
-5–15 minutes for builds/startup and 2–5 minutes for measurements; no browsers run.
+The script needs Docker and takes the machine-wide heavy lock. It creates and
+removes only its own labelled containers, publishes them on free loopback
+ports, and never uses port 3000 or the development database. Builds and
+startup take 5–15 minutes; seeding and measuring take another 5–10 minutes on
+a busy host. `--help` lists every flag without starting Docker.
 
-Use `--messages N` (1–100,000), `--conversations N` (1–messages), `--folders N`
-(6–1000), `--runs N` (1–50 warm runs after one cold run), and `--seed N`.
-`--folders 350` covers the folder scale reported in #1268. Small custom
-fixtures may lack a fifth list page or a thread over 100 messages.
-`--skip-build` reuses bundles, `--keep` prints cleanup commands, and `--help`
-prints usage without Docker or the lock.
+### Fixture
 
-Scenarios cover mailbox/thread SSR, cursor pages 2–5 through both APIs,
-small/large/HTML details, rare/common/structured search, large/medium/sparse
-folders, counts, live arrival, and new/reply compose opening. Each scenario
-records cold, warm median and p95 timings, response sizes, island props,
-Server-Timing, statement counts, database time, and an untimed explain pass.
+`packages/mail/test/fixtures/large-mailbox.ts` builds the mailbox from a fixed
+seed and a frozen anchor date (`2026-10-01T00:00:00Z`), so two runs with the
+same flags seed the same rows. The defaults are 20,000 messages, 3,000
+conversations, and 30 folders; `--messages` (up to 100,000),
+`--conversations`, `--folders`, and `--seed` change them. Use
+`--folders 350` for the folder scale reported in #1268.
 
-At defaults, 70% of threads contain 1–3 messages. The others draw from a
-truncated power law (`k^-1.7`, 4–99), plus one designated 180-message thread
-for the detail limit. Seeded adjustments preserve the exact message count.
-Custom shapes that cannot fit the bounds lower thread minima to one when
-sparse or grow only the designated thread when dense. Histograms separate
-1–3, 4–9, 10–49, 50–100, and >100 messages.
+The shape follows a real shared mailbox: large Inbox and Archive, many small
+folders in a tree, 70% of threads with 1–3 messages, a tail up to 99, and one
+180-message thread that exceeds the detail limit of 100. About 5% of messages
+are unread, 10% have an attachment, and 30% are HTML-only with 2–50 KB bodies.
+Every date lies before the anchor, and snoozes lie in 2099, so results do not
+depend on the day of the run.
 
-Conversation starts span roughly three years before the frozen anchor,
-skewed recent; the sparse folder stays roughly three years old. Messages
-advance by deterministic gaps of minutes to days, with long threads spanning
-weeks, and all precede the anchor minus one day.
+The fixture writes the same tables as real ingest and hydration through the
+persistence boundary. An integration test ingests one message through
+`ingestEnvelope` and fails if the fixture leaves a table or column empty that
+real ingest fills.
 
-The output is `.local/mail-perf/<UTC timestamp>/result.json` and `summary.md`.
-`--out <dir>` must stay inside this worktree and use fresh filenames.
-Failures retain partial results. `--compare <earlier result.json>` adds median
-deltas per scenario and metric; page-baseline results are rejected.
+### Scenarios and results
 
-Explain selection prefers the slowest plan whose Query Identifier matches a
-statement's `queryid` in that scenario's statistics window, including statements
-outside the displayed top 20. IDs are recorded as strings to preserve bigint
-precision; literals normalized by PostgreSQL do not affect matching.
-JSON records `matched: true`. Without a match, it keeps
-the slowest logged plan with `matched: false`, labelled "unmatched (may be
-background)" in the summary. The run-owned Postgres uses the logging collector
-and one fixed JSON log file with rotation disabled. Each explain pass reads
-from the byte offset recorded before that pass. Entries from the observer role
-are excluded; corrupt entries are skipped and counted as `unparsedPlans`.
-A failed capture or a pass without plans records `planError` in JSON and the
-summary, while successful timings and database attribution keep status `ok`.
-JSON keeps full statement text; the summary shows the top 20 statements with
-text truncated for display.
+Each scenario runs once cold and then `--runs` times warm: SSR of the mailbox
+and of the large thread, list pages 2–5 through `workspace-route` and the
+public conversation list, conversation detail for a small, the large, and an
+HTML-heavy thread, rare, common, and structured search, three folder switches,
+view counts, a message arriving live, and opening compose for a new message
+and a reply.
 
-Draft-seed and search bodies come from pure builders tested against the public
-request schemas. Replies use a compose origin with reply intent and the medium
-thread's source message and conversation IDs. HTTP 200 workspace responses
-with list or detail errors fail the scenario, including SSR island props at
-`MailWorkspace.data` and `MailOverview.initialDetail`. The harness decodes these
-as seroval JSON data without evaluating scripts. Brotli compression and props
-inspection run after each action and its database snapshot, outside request
-and live timing windows. Database attribution sums these action windows and
-excludes finalization between runs. Retained response bodies are then released.
-Live commit and arrival times
-use `performance.timeOrigin + performance.now()` in both host processes.
-Fixture bodies use seeded offsets into a deterministic 256 KiB word corpus,
-with sentence and paragraph structure, instead of repeating a short phrase.
-The corpus is part of the fixture digest and transfers to PostgreSQL once;
-body expansion stays in PostgreSQL. Planned byte sizes, HTML wrapping, and
-rare/common search prefixes are preserved. Fixture seeding stores each part's
-SHA-256 once and reuses it for blob joins; HTML bodies reuse the expanded
-plain text.
+For each scenario the run records cold, median, and p95 times, response and
+island props bytes, Server-Timing phases, and the statement count and
+database time from `pg_stat_statements`. It also keeps the `auto_explain`
+plan of the slowest statement, from one extra pass that is not timed.
 
-SIGINT or SIGTERM during seeding closes the run-owned observer connection
-immediately to interrupt the transaction and continue cleanup.
+The result is `.local/mail-perf/<UTC timestamp>/result.json` and
+`summary.md`; existing files are never overwritten. Pass
+`--compare <earlier result.json>` to add median deltas to the summary.
 
-No provider connection is made. The persistence fixture uses example.test
-addresses and disables sync. BM25 is optional; plain Postgres uses fallback
-search and the report records availability. Background loops remain active,
-so inspect the five-second idle statement rate, scenario window, and host
-load. Live arrival includes the app dispatcher's polling delay. Cold does not
-flush shared database or OS caches. These local emulations support repeated
-comparisons on a quiet host, not production latency estimates.
+### Limits
+
+- No provider connection: IMAP fetch and hydration time are not measured.
+  The Mail connector accepts only public hosts with verified TLS.
+- Plain PostgreSQL has no BM25 index, so search uses the fallback path. The
+  summary records whether the index exists.
+- Core and Mail background work keeps running. The summary shows its
+  statement rate from an idle window; scenario counts include it.
+- Live arrival is ingested from the harness process, which cannot wake the
+  Mail dispatcher, so the socket event waits for the 1-second reconcile.
+  Real sync wakes the dispatcher right after commit.
+- Cold means the first request of a scenario; caches are not flushed. Compare
+  runs on the same quiet host rather than reading absolute numbers.
