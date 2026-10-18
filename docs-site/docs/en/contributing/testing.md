@@ -673,6 +673,12 @@ A new integration test needs no configuration of its own: import nothing
 special, use the resolved runtime variables, and name the file
 `*.integration.test.ts`.
 
+bun:test does not stop a timed-out test body. An integration test ends the
+work it starts: teardown cancels and awaits every sync, job, or loop the test
+started before it restores shared stand-ins. A stand-in shared by several
+tests routes calls to the test that owns them and rejects calls from an ended
+test; see `packages/mail/src/service/remote-changes-fixture.ts`.
+
 Keep a test that needs one of these targets out of the Playwright suites
 (`*.browser.test.ts`): the nightly browser job sets no `CLOUD_TEST_*`
 variables, so the test would only ever be skipped there.
