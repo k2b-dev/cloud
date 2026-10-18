@@ -7,10 +7,12 @@ import { installInteractionProbe, watchKey } from "./browser";
 import {
   type BrowserSection,
   interactionIds,
+  interactionRequestSchema,
   interactionResultSchema,
   interactionSample,
   interactionSampleSchema,
   islandRenderMs,
+  loadSampleSchema,
   rankBottlenecks,
   renderBottlenecks,
   summarizeInteraction,
@@ -44,7 +46,25 @@ test("browser flags: engines, runs and the rank mode", () => {
   expect(() => parseArgs(["--rank", "r.json", "--bottlenecks", "b.json", "--browser", "chromium"])).toThrow("starts nothing");
 });
 
-const request = (path: string, bytes: number) => ({ method: "GET", path, type: "fetch", status: 200, bytes, failure: null });
+const request = (path: string, bytes: number) => ({
+  method: "GET",
+  path,
+  type: "fetch",
+  status: 200,
+  encoding: "identity",
+  bytes,
+  failure: null,
+});
+
+test("interaction requests require an encoding string or null", () => {
+  const entry = request("/api/mail/x", 1000);
+  expect(interactionRequestSchema.parse(entry).encoding).toBe("identity");
+  expect(interactionRequestSchema.parse({ ...entry, encoding: "gzip" }).encoding).toBe("gzip");
+  expect(interactionRequestSchema.parse({ ...entry, status: null, encoding: null, bytes: 0, failure: "failed" }).encoding).toBeNull();
+  const { encoding: _, ...missing } = entry;
+  expect(interactionRequestSchema.safeParse(missing).success).toBe(false);
+  expect(interactionRequestSchema.safeParse({ ...entry, encoding: 1 }).success).toBe(false);
+});
 
 test("interaction samples count API requests and bytes and reject incomplete entries", () => {
   const sample = interactionSample(123.456, [request("/api/mail/x", 1000), request("/_ssr/a.js", 500), request("/api/mail/y", 24)]);
@@ -129,6 +149,7 @@ test("trace breakdown aligns trace time with page time and reads only the page's
 function browserSection(): BrowserSection {
   const loadSample = {
     documentBytes: 1000,
+    documentTransferMs: 120,
     jsBytes: 300_000,
     cssBytes: 1000,
     otherBytes: 0,
@@ -165,6 +186,7 @@ function browserSection(): BrowserSection {
             profile: "phone",
             status: "ok",
             reason: null,
+            documentEncoding: ["identity"],
             samples: [loadSample],
             metrics: summarizeLoads([loadSample]),
             trace: {
@@ -183,6 +205,7 @@ function browserSection(): BrowserSection {
             profile: "desktop",
             status: "skipped",
             reason: "connect ECONNREFUSED",
+            documentEncoding: [],
             samples: [],
             metrics: null,
             trace: null,
@@ -210,6 +233,20 @@ function browserSection(): BrowserSection {
   };
 }
 
+test("load samples require document transfer time and summarize its distribution", () => {
+  const sample = browserSection().pages[0]!.profiles[0]!.samples[0]!;
+  expect(loadSampleSchema.parse(sample).documentTransferMs).toBe(120);
+  const { documentTransferMs: _, ...missing } = sample;
+  expect(loadSampleSchema.safeParse(missing).success).toBe(false);
+  for (const documentTransferMs of [-1, Number.NaN, Number.POSITIVE_INFINITY])
+    expect(loadSampleSchema.safeParse({ ...sample, documentTransferMs }).success).toBe(false);
+  expect(summarizeLoads([sample, { ...sample, documentTransferMs: 240 }]).documentTransferMs).toEqual({
+    median: 180,
+    min: 120,
+    max: 240,
+  });
+});
+
 test("results without a browser part still parse; browser sections render in the summary", () => {
   const { browser: _, ...old } = exampleResult();
   expect(resultSchema.parse(old).browser).toBeNull();
@@ -218,12 +255,22 @@ test("results without a browser part still parse; browser sections render in the
   const summary = renderSummary(result);
   expect(summary).toContain("## Browser: page loads");
   expect(summary).toContain("| chromium phone | 400 | 500 | 1,800 |");
+  expect(summary).toContain("| Document transfer |");
+  expect(summary).toContain("| 120 ms, 1.0 KB identity |");
+  expect(summary).toContain("| — ms, — — |");
+  const pageRows = summary
+    .split("## Browser: page loads")[1]!
+    .split("## Browser: interactions")[0]!
+    .split("\n")
+    .filter((line) => line.startsWith("|"));
+  expect(pageRows).toHaveLength(5);
+  expect(new Set(pageRows.map((line) => line.split("|").length))).toEqual(new Set([13]));
   expect(summary).toContain("25.0%");
   expect(summary).toContain("webkit desktop **SKIPPED**");
   expect(summary).toContain("connect ECONNREFUSED");
   expect(summary).toContain("### folder-switch");
   expect(summary).toContain("| chromium phone | 640 | 640 | 640 / 640 | 1 | 46.9 KB |");
-  expect(summary).toContain("GET /api/mail/mailboxes/Mbx001/workspace-route 46.9 KB");
+  expect(summary).toContain("GET /api/mail/mailboxes/Mbx001/workspace-route 46.9 KB identity");
 });
 
 test("time metrics index server, load, trace and interaction numbers by stable ids", () => {
@@ -234,6 +281,7 @@ test("time metrics index server, load, trace and interaction numbers by stable i
   expect(metrics.get("server.detail-small.totalMs.median")).toBe(30);
   expect(metrics.get("server.detail-small.dbMsPerRun")).toBe(2);
   expect(metrics.get("load.mailbox.chromium.phone.ttiMs")).toBe(1800);
+  expect(metrics.get("load.mailbox.chromium.phone.documentTransferMs")).toBe(120);
   expect(metrics.get("trace.mailbox.chromium.phone.islandRenderMs")).toBe(250);
   expect(metrics.get("interaction.folder-switch.chromium.phone.median")).toBe(640);
   expect(metrics.has("load.mailbox.webkit.desktop.ttiMs")).toBe(false);
@@ -362,6 +410,18 @@ test("the interaction probe refuses an end state that already holds and times a 
       await new Promise((resolve) => requestAnimationFrame(resolve));
     const hit = JSON.parse(sessionStorage.getItem(watchKey) ?? "null");
     expect(hit.hitAt).toBeGreaterThanOrEqual(hit.actionAt);
+    expect(window.__mailPerfArm?.({ id: "search-submit", action: "enter", conditions: [{ selector: '[data-conversation-id="C"]' }] })).toBe(
+      true,
+    );
+    const keydown = new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true });
+    const input = new dom.window.Event("input", { bubbles: true });
+    // Events constructed by happy-dom are untrusted and must not start either clock.
+    dom.window.dispatchEvent(keydown);
+    dom.window.dispatchEvent(input);
+    const untouched = JSON.parse(sessionStorage.getItem(watchKey) ?? "null");
+    expect(untouched.actionAt).toBeNull();
+    expect(untouched.inputAt).toBeNull();
+    expect(untouched.hitAt).toBeNull();
   } finally {
     for (const [name, descriptor] of previous)
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);

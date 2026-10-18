@@ -33,7 +33,7 @@ export const interactions = [
   {
     id: "search-submit",
     start: "Mailbox",
-    action: "Enter the fixture's rare word into the search field (timer starts at its input event) and press Enter",
+    action: "Fill the search field with the fixture's rare word, then press Enter (timer starts at the Enter keydown)",
     end: "The heading names the search and its first result row is in the viewport",
   },
   {
@@ -65,6 +65,8 @@ const count = z.number().int().nonnegative();
 const distributionSchema = z.object({ median: z.number(), min: z.number(), max: z.number() });
 
 export const loadSampleSchema = metricsSchema.extend({
+  /** HTML body download time, responseEnd - responseStart, ms. */
+  documentTransferMs: ms,
   /** Latest end of an initial island's clear-and-render, page ms. */
   islandMountEndMs: ms,
   /** Union of the initial islands' clear-and-render windows until TTI, ms. */
@@ -96,6 +98,7 @@ const engineStatus = {
 };
 export const loadProfileSchema = z.object({
   ...engineStatus,
+  documentEncoding: z.array(z.string()),
   samples: z.array(loadSampleSchema),
   metrics: z.record(z.string(), distributionSchema.nullable()).nullable(),
   /** One extra traced Chromium load, excluded from samples because tracing slows the page. */
@@ -116,6 +119,7 @@ export const interactionRequestSchema = z.object({
   path: z.string().min(1),
   type: z.string().min(1),
   status: z.number().int().nullable(),
+  encoding: z.string().nullable(),
   /** Encoded response body plus headers, from Playwright request sizes; 0 for a failed request. */
   bytes: count,
   /** The browser's error text when the request failed, for example when a navigation cancelled it. */
@@ -317,8 +321,8 @@ export function renderBrowserSummary(section: BrowserSection) {
     }
     for (const error of page.errors) lines.push(`- Error: ${cell(error)}`);
     lines.push(
-      "| Engine / profile | FCP | LCP | TTI | Island mount end | Island render | Long tasks (n / ms) | TBT | JS transfer | Trace: busy / island / style+layout / parse+compile |",
-      "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+      "| Engine / profile | FCP | LCP | TTI | Island mount end | Island render | Long tasks (n / ms) | TBT | JS transfer | Document transfer | Trace: busy / island / style+layout / parse+compile |",
+      "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
     );
     for (const profile of page.profiles) {
       const m = (name: string) => profile.metrics?.[name]?.median;
@@ -329,9 +333,9 @@ export function renderBrowserSummary(section: BrowserSection) {
           ? `error: ${cell(profile.traceError.slice(0, 200))}`
           : "—";
       lines.push(
-        `| ${profile.browser} ${profile.profile}${status} | ${fmt(m("fcpMs"))} | ${fmt(m("lcpMs"))} | ${fmt(m("ttiMs"))} | ${fmt(m("islandMountEndMs"))} | ${fmt(m("islandRenderMs"))} | ${fmt(m("longTaskCount"))} / ${fmt(m("longTaskMs"))} | ${fmt(m("totalBlockingTimeMs"))} | ${kb(m("jsBytes"))} | ${trace} |`,
+        `| ${profile.browser} ${profile.profile}${status} | ${fmt(m("fcpMs"))} | ${fmt(m("lcpMs"))} | ${fmt(m("ttiMs"))} | ${fmt(m("islandMountEndMs"))} | ${fmt(m("islandRenderMs"))} | ${fmt(m("longTaskCount"))} / ${fmt(m("longTaskMs"))} | ${fmt(m("totalBlockingTimeMs"))} | ${kb(m("jsBytes"))} | ${fmt(m("documentTransferMs"))} ms, ${kb(m("documentBytes"))} ${cell(profile.documentEncoding.join("/") || "—")} | ${trace} |`,
       );
-      if (profile.reason) lines.push(`| ↳ reason: ${cell(profile.reason.slice(0, 500))} | | | | | | | | | |`);
+      if (profile.reason) lines.push(`| ↳ reason: ${cell(profile.reason.slice(0, 500))} | | | | | | | | | | |`);
     }
     lines.push("");
   }
@@ -364,7 +368,7 @@ export function renderBrowserSummary(section: BrowserSection) {
       lines.push(
         "",
         `Requests in the last ${result?.profiles.find((profile) => profile.samples.length)?.browser} sample: ${requests
-          .map((request) => `${request.method} ${request.path.split("?")[0]} ${kb(request.bytes)}`)
+          .map((request) => `${request.method} ${request.path.split("?")[0]} ${kb(request.bytes)} ${request.encoding ?? "—"}`)
           .join("; ")}.`,
       );
     lines.push("");
@@ -398,7 +402,16 @@ export function timeMetrics(result: {
   for (const page of result.browser?.pages ?? [])
     for (const profile of page.profiles) {
       if (profile.status !== "ok") continue;
-      for (const key of ["fcpMs", "lcpMs", "ttiMs", "totalBlockingTimeMs", "islandMountEndMs", "islandRenderMs", "longTaskMs"]) {
+      for (const key of [
+        "fcpMs",
+        "lcpMs",
+        "ttiMs",
+        "totalBlockingTimeMs",
+        "islandMountEndMs",
+        "islandRenderMs",
+        "longTaskMs",
+        "documentTransferMs",
+      ]) {
         const value = profile.metrics?.[key]?.median;
         if (typeof value === "number") index.set(`load.${page.id}.${profile.browser}.${profile.profile}.${key}`, value);
       }

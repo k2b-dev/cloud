@@ -319,6 +319,10 @@ shares of island rendering, style and layout, and JavaScript parse and
 compile. The shares can overlap; for example, an island render can force a
 layout.
 
+The Document transfer column shows the HTML body download time
+(`responseEnd - responseStart`), its transferred bytes, and its content
+encoding. An absent `content-encoding` header is recorded as `identity`.
+
 Six interactions share one definition for both engines and both profiles.
 Each sample opens its start page in its own fresh page, waits for TTI, and
 then times one action:
@@ -328,15 +332,15 @@ then times one action:
 | `folder-switch` | Click the fixture's first custom folder in the navigation; on the phone, in the opened app menu | The heading names that folder and its first row is on screen |
 | `conversation-open` | Click the first Inbox row | The newest message of that conversation is on screen in the reader |
 | `list-scroll` | Scroll the list to its end | The first row of page 2 is in the list |
-| `search-submit` | Enter the fixture's rare word in the search field and press Enter | The heading names the search and its first result is on screen |
+| `search-submit` | Fill the search field with the fixture's rare word, then press Enter; the timer starts at the Enter keydown | The heading names the search and its first result is on screen |
 | `live-arrival` | A message is ingested through `ingestEnvelope` against the run's database | The new row is on screen |
 | `compose-open` | Click Compose; on the phone, in the opened app menu | The body editor is mounted, on screen, and writable |
 
 The expected rows and messages come from the same workspace API the client
 calls, read just before each sample. The timer starts at the trusted input
-event in the page: the pointer press, or for `search-submit` the input event
-of the whole query, because the field already searches after a short pause
-and a busy phone can reach that pause before Enter. For `list-scroll` it
+event in the page: the pointer press, or for `search-submit` the Enter
+keydown. A search sample fails if Enter comes 300 ms or more after the typed
+input, because the debounced search may have started first. For `list-scroll` it
 starts when the page sets the list's scroll position. For `live-arrival` it
 starts at the ingest commit, and the page waits for its live subscription
 before the message arrives. The
@@ -345,10 +349,13 @@ the result is the time until that frame paints, not network idle. Times are
 wall-clock milliseconds; the browser container shares the host clock. An end
 state that already holds before the action fails the sample. After `compose-open`,
 the harness types one character and fails the sample if the editor does not
-take it. Each interaction also records the requests that started from the
-action until its end state, with their encoded response bytes; a request
+take it. An interaction sample also fails on page errors or island errors.
+Each interaction records the requests that started from the
+action until its end state, with their encoded response bytes and content
+encoding (`identity` when the header is absent); a request
 that a navigation cancels counts with its error and no bytes. The summary
-shows the API requests and bytes.
+shows the API requests and bytes, and lists request encodings. Failed or
+unsettled requests have `null` encoding.
 
 Every sample uses a fresh browser context, so each start page loads cold.
 The interaction then reuses what that load cached, as for a person who just

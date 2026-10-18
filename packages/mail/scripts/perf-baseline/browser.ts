@@ -36,9 +36,9 @@ import { draftSeedBodies } from "./requests";
 
 type Profile = (typeof profiles)[number];
 type Condition = { selector: string; text?: string; visible?: boolean; writable?: boolean; mounted?: boolean };
-/** pointerdown/input: the trusted input event; mark: the page calls __mailPerfMark; external: the host supplies t0. */
-type Watch = { id: string; conditions: Condition[]; action: "pointerdown" | "input" | "mark" | "external" };
-type WatchState = Watch & { actionAt: number | null; hitAt: number | null };
+/** pointerdown/enter: the trusted input event; mark: the page calls __mailPerfMark; external: the host supplies t0. */
+type Watch = { id: string; conditions: Condition[]; action: "pointerdown" | "enter" | "mark" | "external" };
+type WatchState = Watch & { actionAt: number | null; inputAt: number | null; hitAt: number | null };
 declare global {
   interface Window {
     __mailPerfArm?: (watch: Watch) => boolean;
@@ -50,6 +50,8 @@ export const watchKey = "cloud-mail-perf-watch";
 const interactionTimeoutMs = 30_000;
 const sampleTimeoutMs = 120_000;
 const unsettledMs = 10_000;
+/** Mirrors the quick-search debounce in packages/mail/src/frontend/_components/MailConversationList.tsx. */
+const searchDebounceMs = 300;
 /** Host request events trail the browser; candidates come from this margin around the window. */
 const clockSlackMs = 1_000;
 const traceCategories = ["devtools.timeline", "disabled-by-default-devtools.timeline", "v8", "blink.user_timing", "toplevel"];
@@ -100,22 +102,43 @@ export function installInteractionProbe(key: string) {
         write(state);
       } else requestAnimationFrame(tick);
     });
-  for (const type of ["pointerdown", "input"] as const)
-    addEventListener(
-      type,
-      (event) => {
-        if (!event.isTrusted) return;
-        const state = read();
-        if (!state || state.action !== type || state.actionAt !== null || state.hitAt !== null) return;
-        state.actionAt = performance.timeOrigin + event.timeStamp;
-        write(state);
-      },
-      { capture: true },
-    );
+  addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!event.isTrusted) return;
+      const state = read();
+      if (!state || state.action !== "pointerdown" || state.actionAt !== null || state.hitAt !== null) return;
+      state.actionAt = performance.timeOrigin + event.timeStamp;
+      write(state);
+    },
+    { capture: true },
+  );
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (!event.isTrusted || event.key !== "Enter") return;
+      const state = read();
+      if (!state || state.action !== "enter" || state.actionAt !== null || state.hitAt !== null) return;
+      state.actionAt = performance.timeOrigin + event.timeStamp;
+      write(state);
+    },
+    { capture: true },
+  );
+  addEventListener(
+    "input",
+    (event) => {
+      if (!event.isTrusted) return;
+      const state = read();
+      if (!state || state.actionAt !== null) return;
+      state.inputAt = performance.timeOrigin + event.timeStamp;
+      write(state);
+    },
+    { capture: true },
+  );
   window.__mailPerfArm = (watch) => {
     // An end state that already holds cannot be caused by the coming action.
     if (matches(watch)) return false;
-    write({ ...watch, actionAt: null, hitAt: null });
+    write({ ...watch, actionAt: null, inputAt: null, hitAt: null });
     loop();
     return true;
   };
@@ -325,7 +348,7 @@ class MailBrowser {
             await input.waitFor({ timeout: interactionTimeoutMs });
             await this.arm(page, {
               id,
-              action: "input",
+              action: "enter",
               conditions: [
                 { selector: "[data-mail-list-heading]", text: shape.rareWord },
                 { selector: rowSelector(row), visible: true },
@@ -438,6 +461,8 @@ class MailBrowser {
         );
       },
       afterLoad: async (page, _timing, cdp) => {
+        const pageErrors: string[] = [];
+        page.on("pageerror", (error) => pageErrors.push(error.message));
         // The person just loaded the start page: like WebKit's fresh context, the interaction
         // reuses what that load cached instead of the cold load's disabled Chromium cache.
         await cdp?.send("Network.setCacheDisabled", { cacheDisabled: false });
@@ -455,6 +480,11 @@ class MailBrowser {
         const state = await this.outcome(page);
         const actionAt = external ?? state.actionAt;
         if (actionAt === null || state.hitAt === null) throw new Error(`${id}: the action was not observed in the page`);
+        if (id === "search-submit") {
+          const gap = state.inputAt === null ? "unknown" : (actionAt - state.inputAt).toFixed(0);
+          if (state.inputAt === null || actionAt - state.inputAt >= searchDebounceMs)
+            throw new Error(`search-submit: Enter came ${gap} ms after the typed input; the debounced search may have started first`);
+        }
         if (state.hitAt < actionAt && external === null) throw new Error(`${id}: end state painted before the action`);
         const hitAt = state.hitAt;
         if (id === "compose-open") {
@@ -463,6 +493,8 @@ class MailBrowser {
           await editor.pressSequentially("x", { timeout: interactionTimeoutMs });
           if (!(await editor.inputValue()).includes("x")) throw new Error("compose-open: the editor did not accept input");
         }
+        const probeErrors = await page.evaluate(() => window.__cloudPerf?.errors ?? []);
+        if (pageErrors.length || probeErrors.length) throw new Error(`${id}: ${[...pageErrors, ...probeErrors].join("; ")}`);
         // Candidates by host event time, then the browser's own start time decides: only requests
         // started between the action and the painted end state belong to the timed window.
         const candidates = recorded.filter((entry) => entry.at >= actionAt - clockSlackMs && entry.at <= hitAt + clockSlackMs);
@@ -482,11 +514,13 @@ class MailBrowser {
             .map(async ({ request, failed }) => {
               const target = new URL(request.url());
               const sizes = failed === null ? await request.sizes() : null;
+              const response = failed === null ? await request.response() : null;
               return {
                 method: request.method(),
                 path: `${target.pathname}${target.search}`.slice(0, 300),
                 type: request.resourceType(),
-                status: failed === null ? ((await request.response())?.status() ?? null) : null,
+                status: response?.status() ?? null,
+                encoding: response ? (response.headers()["content-encoding"] ?? "identity") : null,
                 bytes: sizes ? sizes.responseBodySize + sizes.responseHeadersSize : 0,
                 failure: failed,
               };
@@ -500,24 +534,41 @@ class MailBrowser {
     return after;
   }
 
-  async load(browser: Browser, engine: Engine, profile: Profile, page: LoadPage): Promise<LoadSample> {
+  async load(browser: Browser, engine: Engine, profile: Profile, page: LoadPage): Promise<{ sample: LoadSample; encoding: string }> {
     const target = await this.target(page);
     const url = new URL(target.path, this.setup.api.origin).href;
+    let encoding: string | null = null;
     const { metrics, after } = await this.browsers.sample(browser, engine, profile, url, this.setup.api.cookie, {
-      beforeLoad: (tab) => MailBrowser.prepareLoad(tab, target),
+      beforeLoad: async (tab) => {
+        await MailBrowser.prepareLoad(tab, target);
+        tab.on("response", (response) => {
+          if (encoding === null && response.request().isNavigationRequest() && response.frame() === tab.mainFrame())
+            encoding = response.headers()["content-encoding"] ?? "identity";
+        });
+      },
       afterLoad: async (tab, timing) => {
         await MailBrowser.requireReady(tab, target);
-        return timing;
+        const documentTransferMs = await tab.evaluate(() => {
+          const nav = performance.getEntriesByType("navigation")[0];
+          if (!(nav instanceof PerformanceNavigationTiming)) throw new Error("Missing navigation timing");
+          return nav.responseEnd - nav.responseStart;
+        });
+        return { ...timing, documentTransferMs };
       },
     });
     if (!after) throw new Error("Missing load timing");
+    if (encoding === null) throw new Error("Missing document response encoding");
     const tasks = after.longtasks.filter((task) => task.start < after.tti);
     return {
-      ...metrics,
-      islandMountEndMs: Math.round(Math.max(0, ...after.mountTimes)),
-      islandRenderMs: Number(islandRenderMs(after).toFixed(1)),
-      longTaskCount: engine === "chromium" ? tasks.length : null,
-      longTaskMs: engine === "chromium" ? Math.round(tasks.reduce((sum, task) => sum + task.duration, 0)) : null,
+      sample: {
+        ...metrics,
+        documentTransferMs: Number(after.documentTransferMs.toFixed(1)),
+        islandMountEndMs: Math.round(Math.max(0, ...after.mountTimes)),
+        islandRenderMs: Number(islandRenderMs(after).toFixed(1)),
+        longTaskCount: engine === "chromium" ? tasks.length : null,
+        longTaskMs: engine === "chromium" ? Math.round(tasks.reduce((sum, task) => sum + task.duration, 0)) : null,
+      },
+      encoding,
     };
   }
 
@@ -632,6 +683,7 @@ export async function measureBrowsers(setup: Setup, section: BrowserSection, sav
             profile,
             status: "ok",
             reason: null,
+            documentEncoding: [],
             samples: [],
             metrics: null,
             trace: null,
@@ -639,7 +691,9 @@ export async function measureBrowsers(setup: Setup, section: BrowserSection, sav
           };
           page.profiles.push(result);
           await each(engine, profile, result, async (browser) => {
-            result.samples.push(await mail.load(browser, engine, profile, id));
+            const { sample, encoding } = await mail.load(browser, engine, profile, id);
+            result.samples.push(sample);
+            result.documentEncoding = [...new Set([...result.documentEncoding, encoding])].sort();
           });
           if (result.status === "ok") result.metrics = summarizeLoads(result.samples);
           const chromium = browsers.engines.get("chromium");
