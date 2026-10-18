@@ -54,6 +54,9 @@ export const buildSetupSql = ({
     return `CREATE SETTINGS PROFILE OR REPLACE ${quoteIdentifier(prefix + suffix)} SETTINGS\n  ${settings};`;
   });
   const who = quoteIdentifier(user);
+  // ClickHouse reads a quoted `pulse_*` as one literal database name, so the wildcard stays bare; the
+  // prefix is validated to lowercase letters, digits and underscores above.
+  const databases = `${prefix}*.*`;
   return `-- Run as the ClickHouse admin with clickhouse-client --multiquery (or equivalent).
 -- Creates Pulse read profiles (klein/normal/groß), a maintenance profile and service user.
 -- Contains only a salted hash of the chosen password. Re-running updates the password and profiles.
@@ -69,9 +72,9 @@ ALTER USER ${who} IDENTIFIED WITH sha256_hash BY '${passwordSha256Hex}' SALT '${
 GRANT CREATE USER, ALTER USER, DROP USER ON *.* TO ${who};
 -- CREATE/DROP DATABASE: base lifecycle; CREATE/DROP/ALTER TABLE: owned schema lifecycle;
 -- INSERT: ingest; TRUNCATE: clear base data; OPTIMIZE: maintenance.
-GRANT ${DATABASE_RIGHTS.join(", ")} ON ${quoteIdentifier(prefix + "*")}.* TO ${who};
+GRANT ${DATABASE_RIGHTS.join(", ")} ON ${databases} TO ${who};
 -- Delegate SELECT to base read users.
-GRANT SELECT ON ${quoteIdentifier(prefix + "*")}.* TO ${who} WITH GRANT OPTION;
+GRANT SELECT ON ${databases} TO ${who} WITH GRANT OPTION;
 -- Storage accounting and free-space checks, limited to these two system tables.
 GRANT SELECT ON system.parts TO ${who};
 GRANT SELECT ON system.disks TO ${who};

@@ -43,7 +43,12 @@ suite("Pulse store admin API", () => {
   let server: ReturnType<typeof Bun.serve>;
   let failAuth = false;
   let received = 0;
-  const current = { "pulse.clickhouse_url": "", "pulse.clickhouse_user": "fixture_service", "pulse.clickhouse_password": password };
+  // The saved connection is one encrypted tuple; the fixture keeps it as the JSON the service writes.
+  const saved = { url: "", user: "fixture_service", password };
+  const current: Record<"pulse.clickhouse_connection", string> = { "pulse.clickhouse_connection": "" };
+  const store = () => {
+    current["pulse.clickhouse_connection"] = JSON.stringify(saved);
+  };
   let personId: string, agentId: string, baseId: string;
   const accessIds: string[] = [];
   let get: ReturnType<typeof spyOn<typeof app.settings, "get">>;
@@ -80,7 +85,8 @@ suite("Pulse store admin API", () => {
           : Response.json({ data: [{ version: "26.9.19.9" }] }, { headers: { "X-ClickHouse-Query-Id": "fixture" } });
       },
     });
-    current["pulse.clickhouse_url"] = server.url.origin;
+    saved.url = server.url.origin;
+    store();
     get = spyOn(app.settings, "get").mockImplementation(async (key) => current[key]);
     set = spyOn(app.settings, "set").mockImplementation(async (key, value) => {
       current[key] = value;
@@ -203,8 +209,8 @@ suite("Pulse store admin API", () => {
     const before = { ...current };
     received = 0;
     for (const body of [
-      { url: "http://127.0.0.1:9", user: before["pulse.clickhouse_user"] },
-      { url: before["pulse.clickhouse_url"], user: "other_fixture" },
+      { url: "http://127.0.0.1:9", user: saved.user },
+      { url: saved.url, user: "other_fixture" },
     ]) {
       const response = await call("admin", "PUT", "/api/pulse/admin/store", body);
       expect(response.status).toBe(400);

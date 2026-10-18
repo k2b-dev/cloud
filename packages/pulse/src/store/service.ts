@@ -1,6 +1,7 @@
 import { hasRole } from "@k2b/cloud/contracts";
 import { type AuthContext, userFromActor } from "@k2b/cloud/server";
 import { sql } from "bun";
+import { z } from "zod";
 import { app } from "../config";
 import { checkStore } from "./check";
 import type { StoreConfig, StoreStatus } from "./contracts";
@@ -21,11 +22,21 @@ const admin = (identity: StoreIdentity) => {
   if (!user || identity.accessSubject.type !== "user" || identity.accessSubject.userId !== user.id || !hasRole(user, "admin"))
     throw new StoreAdminError("ACCESS_DENIED", 403);
 };
-const config = async () => ({
-  url: await app.settings.get("pulse.clickhouse_url"),
-  user: await app.settings.get("pulse.clickhouse_user"),
-  password: await app.settings.get("pulse.clickhouse_password"),
-});
+const DEFAULT_USER = "pulse_service";
+const Connection = z.object({ url: z.string(), user: z.string(), password: z.string() }).strict();
+type Connection = z.infer<typeof Connection>;
+const notConnected = (): Connection => ({ url: "", user: DEFAULT_USER, password: "" });
+/** The saved connection as one tuple; a value this version cannot read counts as not set up, and saving replaces it. */
+const config = async (): Promise<Connection> => {
+  const raw = await app.settings.get("pulse.clickhouse_connection");
+  if (!raw) return notConnected();
+  try {
+    const parsed = Connection.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : notConnected();
+  } catch {
+    return notConnected();
+  }
+};
 const publicConfig = (value: Awaited<ReturnType<typeof config>>): StoreConfig => ({
   configured: Boolean(value.url && value.user && value.password),
   url: value.url,
@@ -66,10 +77,8 @@ export const createStoreAdmin = ({ prefix = "pulse_", clock = () => new Date() }
       const candidate = { ...next, password };
       const status = await checkStore({ ...candidate, prefix, clock, signal, mode: "full" });
       if (!status.ok) return { ...publicConfig(current), status };
-      // Complete explicit admin input; never merge over an unreadable secret.
-      await app.settings.set("pulse.clickhouse_url", next.url, { replaceUnreadable: true });
-      await app.settings.set("pulse.clickhouse_user", next.user, { replaceUnreadable: true });
-      await app.settings.set("pulse.clickhouse_password", password, { replaceUnreadable: true });
+      // One write of complete explicit admin input: readers see the old tuple or the new one, never a mix.
+      await app.settings.set("pulse.clickhouse_connection", JSON.stringify(candidate satisfies Connection), { replaceUnreadable: true });
       return { ...publicConfig(candidate), status };
     });
   },
@@ -77,7 +86,7 @@ export const createStoreAdmin = ({ prefix = "pulse_", clock = () => new Date() }
     admin(identity);
     const parsed = StoreSetupInput.safeParse(input);
     if (!parsed.success) throw new StoreAdminError("INVALID_INPUT");
-    const user = parsed.data.user ?? (await app.settings.get("pulse.clickhouse_user"));
+    const user = parsed.data.user ?? (await config()).user;
     const hash = await hashServicePassword(parsed.data.password);
     return { sql: buildSetupSql({ prefix, user, passwordSha256Hex: hash.sha256Hex, saltHex: hash.saltHex }) };
   },

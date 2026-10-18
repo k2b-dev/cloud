@@ -80,6 +80,8 @@ type FormProps = {
   locale: string;
   config: StoreConfig;
   submitLabel: string;
+  /** A password the setup script was just built with; the form checks and saves it with the connection. */
+  initialPassword?: string;
   onSaved: (value: StoreStatus) => void;
   onCancel?: () => void;
   signal: AbortSignal;
@@ -89,7 +91,7 @@ type FormProps = {
 const ConnectionForm = (props: FormProps) => {
   const [url, setUrl] = createSignal(props.config.url);
   const [user, setUser] = createSignal(props.config.user);
-  const [password, setPassword] = createSignal("");
+  const [password, setPassword] = createSignal(props.initialPassword ?? "");
   const [busy, setBusy] = createSignal(false);
   const [failed, setFailed] = createSignal<StoreCheckResult | null>(null);
   const [error, setError] = createSignal("");
@@ -374,13 +376,14 @@ export default function StoreAdmin(props: { initial: StoreConfig }) {
       );
     return <p class="text-sm text-secondary">{latest?.ok ? t().checkConnectionOk : t().checkPending}</p>;
   };
-  const changeConnection = () =>
+  const changeConnection = (initialPassword?: string) =>
     prompts.dialog<void>(
       (close) => (
         <ConnectionForm
           t={t()}
           locale={locale()}
           config={config()}
+          initialPassword={initialPassword}
           submitLabel={t().saveConnection}
           signal={controller.signal}
           onSaved={(value) => {
@@ -411,7 +414,15 @@ export default function StoreAdmin(props: { initial: StoreConfig }) {
         </div>
         <Show when={config().configured}>
           <div class="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => void openSetupScript(t(), locale(), config().user, "")}>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                // A script with a new password rotates it in ClickHouse; carry that password into the
+                // connection form so Pulse checks and saves it instead of keeping the old one.
+                const chosen = await openSetupScript(t(), locale(), config().user, "");
+                if (chosen) await changeConnection(chosen);
+              }}
+            >
               <i class="ti ti-file-code" aria-hidden="true" />
               {t().setupScript}
             </Button>

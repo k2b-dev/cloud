@@ -159,7 +159,9 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
       try {
         await run(query, extra);
       } catch (error) {
-        if (error instanceof StoreQueryError && error.code === 164) return;
+        // 164 READONLY for read users (readonly=1); 452 SETTING_CONSTRAINT_VIOLATION for the service user,
+        // whose maintenance limit is a READONLY constraint without readonly mode.
+        if (error instanceof StoreQueryError && (error.code === 164 || error.code === 452)) return;
         if (!(error instanceof StoreQueryError) || error.kind !== "clickhouse" || error.code === 516) throw error;
       }
       fail(`PROFILE_MISSING:${profile}`);

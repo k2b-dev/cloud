@@ -31,30 +31,22 @@ export const app = defineApp({
   adminHref: "/admin/pulse",
   adminNav: [{ id: "pulse", label: "Pulse", links: [{ label: "Data store", href: "/admin/pulse", icon: "ti ti-database" }] }],
   settings: {
-    "pulse.clickhouse_url": {
-      kind: "url",
-      default: "",
-      label: "ClickHouse address",
-      description: "HTTP or HTTPS address of the dedicated Pulse data store.",
-      presentation: {
-        translations: { de: { label: "ClickHouse-Adresse", description: "HTTP- oder HTTPS-Adresse des eigenen Pulse-Datenspeichers." } },
-      },
-    },
-    "pulse.clickhouse_user": {
-      kind: "string",
-      default: "pulse_service",
-      label: "ClickHouse service user",
-      description: "Service user created by the setup script.",
-      presentation: {
-        translations: { de: { label: "ClickHouse-Dienstbenutzer", description: "Dienstbenutzer aus dem Einrichtungsskript." } },
-      },
-    },
-    "pulse.clickhouse_password": {
+    // Address, service user and password are one encrypted value, written and read as a whole: three
+    // separate settings would let a reader combine a new address with the old password.
+    "pulse.clickhouse_connection": {
       kind: "secret",
       default: "",
-      label: "ClickHouse service password",
-      description: "Password of the Pulse service user.",
-      presentation: { translations: { de: { label: "ClickHouse-Dienstpasswort", description: "Passwort des Pulse-Dienstbenutzers." } } },
+      label: "ClickHouse connection",
+      description: "Address, service user and password of the dedicated Pulse data store. Set under Administration -> Pulse -> Data store.",
+      presentation: {
+        translations: {
+          de: {
+            label: "ClickHouse-Verbindung",
+            description:
+              "Adresse, Dienst-Zugang und Passwort des eigenen Pulse-Datenspeichers. Einstellen unter Administration -> Pulse -> Datenspeicher.",
+          },
+        },
+      },
     },
   },
   openapi: "/api/pulse/openapi.json",

@@ -14,8 +14,9 @@ test("setup contains exactly the allowed grants and READONLY constraints on ever
   const grants = sql.split("\n").filter((line) => line.startsWith("GRANT "));
   expect(grants).toEqual([
     "GRANT CREATE USER, ALTER USER, DROP USER ON *.* TO `pulse_fixture`;",
-    `GRANT ${DATABASE_RIGHTS.join(", ")} ON \`pulse_*\`.* TO \`pulse_fixture\`;`,
-    "GRANT SELECT ON `pulse_*`.* TO `pulse_fixture` WITH GRANT OPTION;",
+    // Bare wildcard: ClickHouse treats a quoted `pulse_*` as a literal database name.
+    `GRANT ${DATABASE_RIGHTS.join(", ")} ON pulse_*.* TO \`pulse_fixture\`;`,
+    "GRANT SELECT ON pulse_*.* TO `pulse_fixture` WITH GRANT OPTION;",
     "GRANT SELECT ON system.parts TO `pulse_fixture`;",
     "GRANT SELECT ON system.disks TO `pulse_fixture`;",
     "GRANT KILL QUERY ON *.* TO `pulse_fixture`;",
