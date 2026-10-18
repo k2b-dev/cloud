@@ -54,6 +54,13 @@ describe("routine reason sentences", () => {
     expect(chatTaskStopSentence(["Saved invoice", "Sent mail"], "en")).toBe(
       "Stopped while the routine was running. Already done: Saved invoice; Sent mail. Nothing was undone.",
     );
+    expect(chatTaskStopSentence(["Saved?!..", "Wow! Sent"], "en")).toBe(
+      "Stopped while the routine was running. Already done: Saved; Wow! Sent. Nothing was undone.",
+    );
+    // Linear in the input: a long run of punctuation that does not close the text stays fast.
+    const started = performance.now();
+    chatTaskStopSentence([`${"!".repeat(50_000)}x`], "en");
+    expect(performance.now() - started).toBeLessThan(500);
   });
   test("locale order and canonical tags", () => {
     expect(chatTaskLocale("DE-ch", "en")).toBe("de-CH");

@@ -81,5 +81,12 @@ export const chatTaskReasonSentence = (reason: ChatTaskReason, context: { locale
   return sentences[reason.code]();
 };
 
+// A scan from the end instead of /[.!?]+$/, which backtracks quadratically on long runs of punctuation.
+const withoutClosingPunctuation = (text: string): string => {
+  let end = text.length;
+  while (end > 0 && ".!?".includes(text[end - 1]!)) end -= 1;
+  return text.slice(0, end);
+};
+
 export const chatTaskStopSentence = (done: readonly string[], locale: string): string =>
-  messages.resolve([locale]).t.stopped({ list: done.map((item) => item.replace(/[.!?]+$/u, "")).join("; ") });
+  messages.resolve([locale]).t.stopped({ list: done.map(withoutClosingPunctuation).join("; ") });
