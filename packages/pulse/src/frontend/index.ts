@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { ssr } from "../config";
 import basePage from "./[baseId]/page";
 import queryReferencePage from "./[baseId]/query-reference/page";
+import { pulseNotSetUpGate } from "./not-set-up";
 import page from "./page";
 import publicPage from "./public-page";
 
@@ -26,7 +27,8 @@ const workspacePages = new Hono<AuthContext>()
 // Every Pulse page embeds event payloads or state strings that ingest-only sources write.
 export default new Hono<AuthContext>()
   .use("*", middleware.noTransform())
-  .get("/display/:token", ...publicPage)
+  .get("/display/:token", pulseNotSetUpGate({ publicDisplay: true }), ...publicPage)
+  .use("*", pulseNotSetUpGate())
   .get("/:baseId/query-reference", auth.requireRole("user", ssr.access), ...queryReferencePage)
   .get("/", auth.requireRole("user", ssr.access), ...page)
   .route("/:baseId", workspacePages);

@@ -42,7 +42,7 @@ export const pruneCatalogBatch = async (baseId: string | undefined, limit: numbe
   sql.begin(async (tx) => {
     const [candidate] = await tx<{ base_id: string }[]>`
    SELECT v.base_id FROM (${victims(baseId ?? null)}) v JOIN pulse.bases b ON b.id=v.base_id
-   WHERE b.deletion_started_at IS NULL AND (b.data_clear_started_at IS NULL OR b.data_clear_completed_at IS NOT NULL)
+   WHERE EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active') AND b.deletion_started_at IS NULL AND (b.data_clear_started_at IS NULL OR b.data_clear_completed_at IS NOT NULL)
    LIMIT 1`;
     if (!candidate) return 0;
     const [base] = await tx`SELECT id FROM pulse.bases WHERE id=${candidate.base_id}::uuid

@@ -1,6 +1,7 @@
 import { CapabilitySemanticLinkSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { METRIC_TYPES, SOURCE_KINDS } from "./contracts";
+import { BaseStoreStatusSchema } from "./store/admin-schemas";
 
 const TimestampSchema = z.string().datetime({ offset: true });
 const CursorSchema = z.string().min(1).max(256).optional().describe("Opaque cursor returned by the previous page.");
@@ -17,6 +18,7 @@ const resourceRef = <Type extends string>(type: Type, id: z.ZodType = ShortIdSch
 
 export const BaseDataSchema = z
   .object({
+    store: BaseStoreStatusSchema,
     id: ShortIdSchema,
     name: z.string().min(1).max(120),
     description: z.string().max(1_000).nullable(),

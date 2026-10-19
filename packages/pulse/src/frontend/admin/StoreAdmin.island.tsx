@@ -433,7 +433,7 @@ export default function StoreAdmin(props: { initial: StoreConfig }) {
     <div class="flex max-w-4xl flex-col gap-6">
       <header class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0 flex-1 basis-72">
-          <h1 class="text-base font-semibold text-primary">{t().title}</h1>
+          <h2 class="text-base font-semibold text-primary">{t().title}</h2>
           <p class="mt-1 text-xs text-dimmed">{t().description}</p>
         </div>
         <Show when={config().configured}>

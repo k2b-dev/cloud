@@ -2,8 +2,9 @@ import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { decryptSecret, logger } from "@k2b/cloud/services";
 import { sql, type TransactionSQL } from "bun";
 import type { MetricType, PulseIngestBatch, PulseMetric } from "../contracts";
-import { requireBaseActive } from "./access-control";
+import { requireBaseWritable } from "./access-control";
 import { type MetricsHttpDeps, requestMetrics } from "./metrics-http";
+import { baseScrapeAllowlist } from "./scrape-target";
 
 const MAX_SCRAPE_SAMPLES = 50_000;
 const PROMETHEUS_TYPE_LINE = /^# TYPE\s+(\S+)\s+(\S+)/;
@@ -251,7 +252,7 @@ const loadMetricsSourceConfig = async (
       AND s.base_id = ${params.baseId}::uuid
       AND s.kind = 'metrics'::pulse.source_kind
       AND s.enabled = TRUE
-      AND b.deletion_started_at IS NULL
+      AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active' AND store.write_block_reason IS NULL) AND b.deletion_started_at IS NULL
       AND (
         b.data_clear_started_at IS NULL
         OR b.data_clear_completed_at IS NOT NULL
@@ -341,7 +342,10 @@ const scrapeSource = async (
   // body) are scrape outcomes: recorded on the source and returned as `fail`.
   let metricsResult: Result<ParsedMetrics>;
   try {
-    metricsResult = await fetchPrometheusMetrics(source, 15_000, deps.http);
+    metricsResult = await fetchPrometheusMetrics(source, 15_000, {
+      ...deps.http,
+      readAllowlist: () => baseScrapeAllowlist(params.baseId, db),
+    });
   } catch (scrapeError) {
     metricsResult = fail(err.internal(metricsScrapeErrorMessage(scrapeError)));
   }
@@ -382,7 +386,7 @@ export const runMetricsSourceScrape = async (
       { claimed: boolean }[]
     >`SELECT pg_try_advisory_xact_lock(hashtextextended(${`pulse.scrape:${params.sourceId}`}, 0)) AS claimed`;
     if (!claim?.claimed) return fail(err.conflict("A scrape for this source is already running"));
-    const active = await requireBaseActive(params.baseId, tx);
+    const active = await requireBaseWritable(params.baseId, tx);
     if (!active.ok) return active;
     return scrapeSource(params, deps, tx);
   });

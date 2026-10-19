@@ -16,8 +16,7 @@ service credentials and choose **Check and connect**. Failed checks explain
 what to fix and leave the saved connection unchanged.
 
 The same workflow is available through `cld pulse admin store`. Provide
-passwords only with `--password-file` or `--password-stdin`. Existing features
-keep working without this connection in this release; later releases require it.
+passwords only with `--password-file` or `--password-stdin`. Without this connection, only Pulse administration stays available.
 
 ## Check a base routinely {icon="route"}
 
@@ -42,10 +41,28 @@ keep working without this connection in this release; later releases require it.
 ## Fix common problems {icon="lifebuoy"}
 
 :::reference
-- **A metrics source is refused:** Pulse scrapes only public endpoints by default. Ask an operator to allow the internal target with `PULSE_SCRAPE_ALLOWED_TARGETS`. Then retry the source.
+- **A metrics source is refused:** Pulse scrapes only public endpoints by default. Ask a Cloud administrator to release the host, host:port or CIDR for this base under Administration → Pulse → Internal targets. Then retry the source.
 - **No data appears:** Check the source first. It must report a successful update before resources, signals, or dashboards can show data.
 - **A query matches too much:** Open **Inventory** or the signal page. Then add `source`, `resource`, `resource_type`, or `where` filters.
 - **A chart is empty:** Check the time range and the aggregation. Counters usually need `rate` or `increase`. Gauges usually need `avg` or `latest`.
 - **Rows look duplicated:** Open the resource or signal page. Repeated rows are usually variants with different resources or dimensions.
 - **A metric has too many variants:** Inspect its dimensions. Keep stable grouping labels. Move unique identities or event details into the identity fields, attributes, sensitive fields, or payload of an event.
 :::
+
+## Recover a base {icon="database"}
+
+A new base provisions its own database and becomes active before accepting
+changes. Clearing keeps sources, tokens, dashboards and queries. Deletion
+revokes tokens, public links and SQL access first. If an operation fails,
+choose **Retry**. A Cloud administrator can also retry it under Administration → Pulse
+→ Bases, where profiles, limits and measured storage appear without contents.
+
+Shorter retention needs confirmation of the cutoff, affected rows and estimated
+bytes. Raw data allows 1–730 days by default (up to 3,650 by policy), rollups
+1–3,650 days, and sensitive fields 1–8,760 hours. Sensitive fields expire by
+column TTL during ClickHouse merges; current states do not expire.
+
+A checkpoint mismatch or missing database blocks measurement writes. After
+restoring matching backups, a Cloud administrator chooses **Recheck**. **Recreate**
+discards measurements and starts empty. Other Cloud apps keep working
+when Pulse is not configured.

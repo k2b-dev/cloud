@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { EventQuery } from "../contracts";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { queryEventMapData } from "./event-map-query";
 import { withEventQuerySnapshot } from "./event-query-window";
 
@@ -19,6 +20,7 @@ describe("Pulse event map Postgres smoke", () => {
   postgresTest("aggregates valid event coordinates without exposing sensitive fields", async () => {
     const baseId = crypto.randomUUID();
     await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${newShortId()}, 'Event map smoke')`;
+    await seedActiveBaseStore(baseId);
     try {
       const longCity = "M".repeat(300);
       const events = [
@@ -82,6 +84,7 @@ describe("Pulse event map Postgres smoke", () => {
   postgresTest("a window ending now includes every event visible in the snapshot", async () => {
     const baseId = crypto.randomUUID();
     await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${newShortId()}, 'Event window end')`;
+    await seedActiveBaseStore(baseId);
     try {
       const query: EventQuery = {
         kind: "events",

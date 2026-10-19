@@ -16,7 +16,7 @@ import {
   validateEventSensitive,
   validateResourceIdentity,
 } from "../telemetry-contract";
-import { requireBaseActive } from "./access-control";
+import { requireBaseWritable } from "./access-control";
 import { type PulseSqlClient, prepareIngestBatch, writePreparedIngestBatchInTransaction } from "./ingest-bulk";
 import { MetricSeriesLimitError } from "./metric-cardinality";
 import { PULSE_INGEST_SCOPE, resolveIngestSourceForServiceAccount } from "./source-management";
@@ -121,7 +121,7 @@ const validateBatch = (batch: PulseIngestBatch): Result<void> => {
 type IngestCounts = { metrics: number; events: number; states: number };
 
 const lockIngestScope = async (params: { baseId: string; sourceId: string; db: PulseSqlClient }): Promise<void> => {
-  const active = await requireBaseActive(params.baseId, params.db);
+  const active = await requireBaseWritable(params.baseId, params.db);
   if (!active.ok) throw new IngestTransactionFailure(active.error);
   if (!params.sourceId) throw new IngestTransactionFailure(err.badInput("An ingest source is required"));
   const [source] = await params.db`

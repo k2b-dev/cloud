@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { runRetentionBatch } from "./runtime";
 import { pruneEmptyTimescaleChunk } from "./timescale-chunk-retention";
 
@@ -34,6 +35,7 @@ dbTest(
       for (let index = 0; index < bases.length; index++) {
         const base = bases[index]!;
         await sql`INSERT INTO pulse.bases(id,short_id,name,retention_days) VALUES(${base}::uuid,${newShortId()},'Chunk retention test',${index === 0 ? 1 : 365})`;
+        await seedActiveBaseStore(base);
         const [metric] = await sql`INSERT INTO pulse.metric_defs(base_id,name) VALUES(${base}::uuid,'chunk.test') RETURNING id`;
         const [variant] =
           await sql`INSERT INTO pulse.metric_series(base_id,metric_id,series_key,dimensions_hash) VALUES(${base}::uuid,${metric.id}::uuid,'test','test') RETURNING id`;

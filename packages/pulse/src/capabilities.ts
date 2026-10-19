@@ -53,6 +53,8 @@ import {
   resolvePublicId,
   shortIds,
 } from "./service/public-resources";
+import { PULSE_NOT_CONFIGURED } from "./store/gate";
+import { pulseStoreConfigured } from "./store/service";
 
 const QUERY_ROW_LIMIT = 100;
 const QUERY_POINT_LIMIT = 500;
@@ -81,6 +83,7 @@ const internalId = async (table: "bases" | "sources" | "saved_queries", id: stri
 };
 
 const mapBase = (base: PulseBase) => ({
+  store: base.store,
   id: base.id,
   name: base.name.slice(0, 120),
   description: base.description?.slice(0, 1_000) ?? null,
@@ -118,6 +121,7 @@ const pageResult = <T>(items: T[], offset: number, limit: number) => {
 };
 
 const runBaseSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const { t } = resolvePulseMessages(context.locale);
   const scope = scopeFor(context);
   if (!scope.ok) return ok({ data: [] });
@@ -137,6 +141,7 @@ const runBaseSearch = async (input: UniversalSearchInput, context: CapabilityExe
 };
 
 const runBaseList = async (input: z.infer<typeof BaseListInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const cursor = decodeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const scope = scopeFor(context);
@@ -159,6 +164,7 @@ const runBaseList = async (input: z.infer<typeof BaseListInputSchema>, context: 
 };
 
 const runBaseRead = async (input: z.infer<typeof BaseReadInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
   const id = await internalId("bases", input.id, context.locale);
@@ -175,6 +181,7 @@ const runBaseRead = async (input: z.infer<typeof BaseReadInputSchema>, context: 
 };
 
 const runSourceList = async (input: z.infer<typeof SourceListInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const cursor = decodeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const scope = scopeFor(context);
@@ -202,6 +209,7 @@ const runSourceList = async (input: z.infer<typeof SourceListInputSchema>, conte
 };
 
 const runSourceRead = async (input: z.infer<typeof SourceReadInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
   const id = await internalId("sources", input.id, context.locale);
@@ -218,6 +226,7 @@ const runSourceRead = async (input: z.infer<typeof SourceReadInputSchema>, conte
 };
 
 const runResourceSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const { t } = resolvePulseMessages(context.locale);
   const scope = scopeFor(context);
   if (!scope.ok) return ok({ data: [] });
@@ -250,6 +259,7 @@ const runResourceSearch = async (input: UniversalSearchInput, context: Capabilit
 };
 
 const runResourceRead = async (input: z.infer<typeof ResourceReadInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
   const ref = parseResourceRefId(input.id);
@@ -278,6 +288,7 @@ const runResourceRead = async (input: z.infer<typeof ResourceReadInputSchema>, c
 };
 
 const runMetricSearch = async (input: z.infer<typeof MetricSearchInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const cursor = decodeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const scope = scopeFor(context);
@@ -305,6 +316,7 @@ const runMetricSearch = async (input: z.infer<typeof MetricSearchInputSchema>, c
 };
 
 const runSavedQueryRead = async (input: z.infer<typeof SavedQueryReadInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
   const id = await internalId("saved_queries", input.id, context.locale);
@@ -321,6 +333,7 @@ const runSavedQueryRead = async (input: z.infer<typeof SavedQueryReadInputSchema
 };
 
 const runFieldSearch = async (input: z.infer<typeof FieldSearchInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const cursor = decodeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const scope = scopeFor(context);
@@ -349,6 +362,7 @@ const runFieldSearch = async (input: z.infer<typeof FieldSearchInputSchema>, con
 };
 
 const runQueryCompile = async (input: z.infer<typeof QueryTextInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
   const baseId = await internalId("bases", input.baseId, context.locale);
@@ -466,6 +480,7 @@ const executeQuery = async (
   resolvedBaseId?: string,
   savedQueryName?: string,
 ) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
   const baseId = resolvedBaseId ? ok(resolvedBaseId) : await internalId("bases", input.baseId, context.locale);
@@ -506,6 +521,7 @@ const executeQuery = async (
 };
 
 const runSavedQueryList = async (input: z.infer<typeof SavedQueryListInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const cursor = decodeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const scope = scopeFor(context);
@@ -534,6 +550,7 @@ const runSavedQueryList = async (input: z.infer<typeof SavedQueryListInputSchema
 };
 
 const runSavedQueryExecute = async (input: z.infer<typeof SavedQueryExecuteInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
   const baseId = await internalId("bases", input.baseId, context.locale);

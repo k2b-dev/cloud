@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { ingestBatch } from "./ingest-writer";
 import { listResources } from "./signal-catalog";
 
@@ -17,6 +18,7 @@ dbTest(
     const [access] = await sql`INSERT INTO auth.access(user_id,permission) VALUES(${user.id}::uuid,'admin') RETURNING id`;
     try {
       await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,${newShortId()},'Resource counts test')`;
+      await seedActiveBaseStore(baseId);
       await sql`INSERT INTO pulse.base_access(base_id,access_id) VALUES(${baseId}::uuid,${access.id}::uuid)`;
       for (const source of sources)
         await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${source}::uuid,${newShortId()},${baseId}::uuid,'http_ingest','Count source')`;

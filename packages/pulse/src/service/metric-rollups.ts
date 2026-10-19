@@ -1,6 +1,6 @@
 import { err } from "@k2b/cloud/server";
 import { sql } from "bun";
-import { requireBaseActive } from "./access-control";
+import { requireBaseWritable } from "./access-control";
 
 const HOUR_MS = 3_600_000;
 
@@ -35,11 +35,11 @@ export const runHourlyRollup = async (baseId?: string): Promise<{ buckets: numbe
    SELECT h.base_id,h.hour FROM pulse.metric_hours h JOIN pulse.bases b ON b.id=h.base_id
    WHERE h.state='dirty' AND h.hour<date_bin('1 hour',now(),'1970-01-01'::timestamptz)
      AND (${baseId ?? null}::uuid IS NULL OR h.base_id=${baseId ?? null}::uuid)
-     AND b.deletion_started_at IS NULL AND (b.data_clear_started_at IS NULL OR b.data_clear_completed_at IS NOT NULL)
+     AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active' AND store.write_block_reason IS NULL) AND b.deletion_started_at IS NULL AND (b.data_clear_started_at IS NULL OR b.data_clear_completed_at IS NOT NULL)
    ORDER BY h.hour,h.base_id LIMIT 1
  `;
     if (!candidate) return { buckets: 0, done: true };
-    const active = await requireBaseActive(candidate.base_id, tx);
+    const active = await requireBaseWritable(candidate.base_id, tx);
     if (!active.ok) return { buckets: 0, done: false };
     const [claimed] =
       await tx`SELECT hour FROM pulse.metric_hours WHERE base_id=${candidate.base_id}::uuid AND hour=${candidate.hour} AND state='dirty' FOR UPDATE`;
@@ -65,11 +65,11 @@ export const sealExpiredMetricHour = async (baseId?: string): Promise<number> =>
    SELECT h.base_id,h.hour FROM pulse.metric_hours h JOIN pulse.bases b ON b.id=h.base_id
    WHERE h.state='clean' AND h.hour<date_bin('1 hour',now()-(b.retention_days*interval '1 day'),'1970-01-01'::timestamptz)
      AND (${baseId ?? null}::uuid IS NULL OR h.base_id=${baseId ?? null}::uuid)
-     AND b.deletion_started_at IS NULL AND (b.data_clear_started_at IS NULL OR b.data_clear_completed_at IS NOT NULL)
+     AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active' AND store.write_block_reason IS NULL) AND b.deletion_started_at IS NULL AND (b.data_clear_started_at IS NULL OR b.data_clear_completed_at IS NOT NULL)
    ORDER BY h.hour,h.base_id LIMIT 1
  `;
     if (!candidate) return 0;
-    const active = await requireBaseActive(candidate.base_id, tx);
+    const active = await requireBaseWritable(candidate.base_id, tx);
     if (!active.ok) return 0;
     const [claimed] =
       await tx`SELECT hour FROM pulse.metric_hours WHERE base_id=${candidate.base_id}::uuid AND hour=${candidate.hour} AND state='clean' AND hour<(SELECT date_bin('1 hour',now()-retention_days*interval '1 day','1970-01-01'::timestamptz) FROM pulse.bases WHERE id=${candidate.base_id}::uuid) FOR UPDATE`;

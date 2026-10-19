@@ -49,25 +49,29 @@ export const createDashboard = async (params: {
 }): Promise<Result<PulseDashboard>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
-  const active = await requireBaseActive(params.baseId);
-  if (!active.ok) return fail(active.error);
-  const name = params.name.trim();
-  if (!name) return fail(err.badInput("Dashboard name is required"));
-  const configResult = compileDashboardConfigForSave(params.baseId, params.config ?? {});
-  if (!configResult.ok) return fail(configResult.error);
-  const validated = await validateDashboardSources(params.baseId, configResult.data);
-  if (!validated.ok) return fail(validated.error);
-  const config = validated.data;
-  const row = await withShortId("dashboard", async (shortId) => {
-    const [created] = await sql<DashboardRow[]>`
+  return sql.begin(async (db) => {
+    const active = await requireBaseActive(params.baseId, db);
+    if (!active.ok) return fail(active.error);
+    const name = params.name.trim();
+    if (!name) return fail(err.badInput("Dashboard name is required"));
+    const configResult = compileDashboardConfigForSave(params.baseId, params.config ?? {});
+    if (!configResult.ok) return fail(configResult.error);
+    const validated = await validateDashboardSources(params.baseId, configResult.data);
+    if (!validated.ok) return fail(validated.error);
+    const config = validated.data;
+    const row = await withShortId("dashboard", async (shortId) =>
+      db.savepoint(async (insert) => {
+        const [created] = await insert<DashboardRow[]>`
       INSERT INTO pulse.dashboards (short_id, base_id, name, config, created_by)
       VALUES (${shortId}, ${params.baseId}::uuid, ${name}, (${JSON.stringify(dashboardSource(config))}::jsonb #>> '{}')::jsonb, ${userIdForScope(params.user)}::uuid)
       RETURNING *
     `;
-    return created;
+        return created;
+      }),
+    );
+    if (!row) return fail(err.internal("Failed to create Pulse dashboard"));
+    return ok(mapDashboard(row));
   });
-  if (!row) return fail(err.internal("Failed to create Pulse dashboard"));
-  return ok(mapDashboard(row));
 };
 
 export const updateDashboard = async (params: {
@@ -84,22 +88,24 @@ export const updateDashboard = async (params: {
   if (!existing) return fail(err.notFound("Pulse dashboard"));
   const access = await requireBaseAccess(existing.base_id, params.user, "write");
   if (!access.ok) return fail(access.error);
-  const active = await requireBaseActive(existing.base_id);
-  if (!active.ok) return fail(active.error);
-  const name = params.name?.trim() || existing.name;
-  const configResult = compileDashboardConfigForSave(existing.base_id, params.config ?? existing.config);
-  if (!configResult.ok) return fail(configResult.error);
-  const validated = await validateDashboardSources(existing.base_id, configResult.data);
-  if (!validated.ok) return fail(validated.error);
-  const config = validated.data;
-  const [row] = await sql<DashboardRow[]>`
+  return sql.begin(async (db) => {
+    const active = await requireBaseActive(existing.base_id, db);
+    if (!active.ok) return fail(active.error);
+    const name = params.name?.trim() || existing.name;
+    const configResult = compileDashboardConfigForSave(existing.base_id, params.config ?? existing.config);
+    if (!configResult.ok) return fail(configResult.error);
+    const validated = await validateDashboardSources(existing.base_id, configResult.data);
+    if (!validated.ok) return fail(validated.error);
+    const config = validated.data;
+    const [row] = await db<DashboardRow[]>`
     UPDATE pulse.dashboards
     SET name = ${name}, config = (${JSON.stringify(dashboardSource(config))}::jsonb #>> '{}')::jsonb, updated_at = now()
     WHERE id = ${params.dashboardId}::uuid
     RETURNING *
   `;
-  if (!row) return fail(err.internal("Failed to update Pulse dashboard"));
-  return ok(mapDashboard(row));
+    if (!row) return fail(err.internal("Failed to update Pulse dashboard"));
+    return ok(mapDashboard(row));
+  });
 };
 
 export const deleteDashboard = async (params: { dashboardId: string; user: AccessScope }): Promise<Result<void>> => {
@@ -111,11 +117,13 @@ export const deleteDashboard = async (params: { dashboardId: string; user: Acces
   if (!existing) return fail(err.notFound("Pulse dashboard"));
   const access = await requireBaseAccess(existing.base_id, params.user, "write");
   if (!access.ok) return fail(access.error);
-  const active = await requireBaseActive(existing.base_id);
-  if (!active.ok) return fail(active.error);
-  const deleted = await sql`DELETE FROM pulse.dashboards WHERE id = ${params.dashboardId}::uuid`;
-  if ((deleted.count ?? 0) === 0) return fail(err.notFound("Pulse dashboard"));
-  return ok();
+  return sql.begin(async (db) => {
+    const active = await requireBaseActive(existing.base_id, db);
+    if (!active.ok) return fail(active.error);
+    const deleted = await db`DELETE FROM pulse.dashboards WHERE id = ${params.dashboardId}::uuid`;
+    if ((deleted.count ?? 0) === 0) return fail(err.notFound("Pulse dashboard"));
+    return ok();
+  });
 };
 
 export const enablePublicDashboard = async (params: {
@@ -130,14 +138,15 @@ export const enablePublicDashboard = async (params: {
   if (!existing) return fail(err.notFound("Pulse dashboard"));
   const access = await requireBaseAccess(existing.base_id, params.user, "write");
   if (!access.ok) return fail(access.error);
-  const active = await requireBaseActive(existing.base_id);
-  if (!active.ok) return fail(active.error);
+  return sql.begin(async (db) => {
+    const active = await requireBaseActive(existing.base_id, db);
+    if (!active.ok) return fail(active.error);
 
-  const publicToken = await resolvePublicDashboardToken({
-    publicEnabled: existing.public_enabled,
-    encryptedToken: existing.public_token_encrypted,
-  });
-  const [row] = await sql<DashboardRow[]>`
+    const publicToken = await resolvePublicDashboardToken({
+      publicEnabled: existing.public_enabled,
+      encryptedToken: existing.public_token_encrypted,
+    });
+    const [row] = await db<DashboardRow[]>`
     UPDATE pulse.dashboards
     SET public_enabled = TRUE,
         public_token_encrypted = ${publicToken.encryptedToken},
@@ -146,8 +155,9 @@ export const enablePublicDashboard = async (params: {
     WHERE id = ${params.dashboardId}::uuid
     RETURNING *
   `;
-  if (!row) return fail(err.internal("Failed to publish Pulse dashboard"));
-  return ok({ dashboard: mapDashboard(row), token: publicToken.token });
+    if (!row) return fail(err.internal("Failed to publish Pulse dashboard"));
+    return ok({ dashboard: mapDashboard(row), token: publicToken.token });
+  });
 };
 
 export const disablePublicDashboard = async (params: { dashboardId: string; user: AccessScope }): Promise<Result<PulseDashboard>> => {
@@ -159,15 +169,17 @@ export const disablePublicDashboard = async (params: { dashboardId: string; user
   if (!existing) return fail(err.notFound("Pulse dashboard"));
   const access = await requireBaseAccess(existing.base_id, params.user, "write");
   if (!access.ok) return fail(access.error);
-  const active = await requireBaseActive(existing.base_id);
-  if (!active.ok) return fail(active.error);
+  return sql.begin(async (db) => {
+    const active = await requireBaseActive(existing.base_id, db);
+    if (!active.ok) return fail(active.error);
 
-  const [row] = await sql<DashboardRow[]>`
+    const [row] = await db<DashboardRow[]>`
     UPDATE pulse.dashboards
     SET public_enabled = FALSE, public_token_encrypted = NULL, public_token_hash = NULL, updated_at = now()
     WHERE id = ${params.dashboardId}::uuid
     RETURNING *
   `;
-  if (!row) return fail(err.internal("Failed to unpublish Pulse dashboard"));
-  return ok(mapDashboard(row));
+    if (!row) return fail(err.internal("Failed to unpublish Pulse dashboard"));
+    return ok(mapDashboard(row));
+  });
 };

@@ -28,7 +28,7 @@ export const createImapBounceMailbox = (profile: ImapMailProfile, signal: AbortS
   return {
     async open(folder, options) {
       signal.throwIfAborted();
-      const target = await resolveMailHost(profile.imap.host, signal);
+      const target = await resolveMailHost(profile.imap.host, signal, undefined, profile.imap.port);
       const password = await resolveImapMailCredentials(profile);
       signal.throwIfAborted();
       client = new ImapFlow({

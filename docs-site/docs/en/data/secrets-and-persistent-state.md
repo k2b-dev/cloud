@@ -311,21 +311,29 @@ the connection on the checked addresses; never call `fetch()` with the URL.
 
 When an application must reach internal services, declare an explicit allowlist
 in its environment registry. Only operators may set it. Never accept allowlist
-entries from a person, a base editor, or remote content.
+entries from an ordinary person, a base editor, or remote content. Pulse instead
+uses Cloud-admin-managed internal targets per base; its editors cannot widen them.
 
 `parseNetworkAllowlist(entries)` from `@k2b/cloud/shared` accepts exact DNS host
 names, strict dotted-quad IPv4, IPv6 literals (optionally bracketed), and CIDR
-networks. Host names are lowercased and lose their trailing dot. Wildcards,
-schemes, ports, paths, userinfo, IPv6 zone IDs, and legacy IPv4 forms are invalid.
+networks. `host:port` and `[ipv6]:port` restrict a DNS name or IP to one port,
+from 1 to 65535 without leading zeros. Host names are lowercased and lose their
+trailing dot. Wildcards, schemes, paths, userinfo, IPv6 zone IDs, legacy IPv4
+forms, and CIDRs with ports are invalid.
 CIDR prefixes must be between 1 and the address family's width, with no host
 bits set; a `/0` network would allow every address and is refused. An invalid
 entry throws an error naming the entry and, for host bits, the correct network.
-Entries carry no port or path, so an entry allows every service on that host or
-in that range; keep them as narrow as the use case allows.
+Bare hosts, IPs and CIDRs allow every port; port-restricted entries apply only
+when the caller supplies that effective port. Entries never restrict paths.
+Keep releases as narrow as the use case allows.
 
 Use `parseNetworkAllowlistEnv(variable, entries)` from `@k2b/cloud/shared`
 for env registry values. It applies the same parser and prefixes errors with
 the variable name, so invalid operator configuration is clear at startup.
+
+For other transports, call `resolveAllowedNetworkAddresses(hostname, allowlist,
+lookup?, port?)`. Without `port`, only bare entries apply. SMTP, IMAP and
+Notebooks snapshots pass their selected port.
 
 For HTTP targets, use `createAllowedNetworkFetch(allowlist, deps?)` from
 `@k2b/cloud/services`. It returns `(input: string | URL | Request, init?: RequestInit)
@@ -334,7 +342,8 @@ and supports streaming uploads and responses, including SSE and exports.
 A body of known size goes out with `Content-Length`, like `fetch()`; only a
 `ReadableStream` body is sent chunked.
 Only HTTP and HTTPS are accepted; URL user information is refused before I/O.
-Each request resolves once through the guard and connects through
+Each request passes its effective port (80 or 443 when omitted), resolves once
+through the guard and connects through
 `pinnedNetworkLookup` with `agent: false`, preserving the URL Host header and
 HTTPS server name. A `NetworkTargetBlockedError` propagates unchanged; failed
 and empty DNS lookups also refuse.
@@ -351,7 +360,7 @@ body. Optional `deps.lookup`, `deps.resolve` and `deps.request` support focused
 tests without changing the transport policy.
 
 Pass the parsed `NetworkAllowlist` to
-`resolveAllowedNetworkAddresses(hostname, allowlist, lookup?)` from
+`resolveAllowedNetworkAddresses(hostname, allowlist, lookup?, port?)` from
 `@k2b/cloud/services/network-security`, then connect through
 `pinnedNetworkLookup` with `agent: false`. An exact host entry trusts every
 validated address returned for that name, including internal addresses. Without
@@ -363,17 +372,18 @@ refuse, including for listed names; they throw an ordinary error rather than
 `NetworkTargetBlockedError`. Invalid addresses and unsupported families refuse
 even for listed names.
 
-`isAllowlistedNetworkAddress(allowlist, address)` performs pure IP network
+`isAllowlistedNetworkAddress(allowlist, address, port?)` performs pure IP network
 matching without DNS. IPv4-mapped IPv6 addresses also match their embedded IPv4
 against IPv4 entries. Other embeddings, including NAT64 `64:ff9b::/96`, 6to4,
 Teredo, and IPv4-compatible IPv6, require an IPv6 entry. Network entries never
 trust host names. `resolvePublicNetworkAddresses` retains the empty-allowlist
 policy. Pulse uses this contract for metrics sources and rechecks every
-redirect with the same operator allowlist. Notebooks uses it for S3 snapshots:
+redirect using a fresh read of the base’s Cloud-admin-managed targets and the
+hop’s effective port. Notebooks uses it for S3 snapshots:
 Bun signs locally, and a pinned transport sends the presigned PUT requests.
 
 For a save-time policy check, use
-`isNetworkTargetBlocked(hostname, allowlist, { resolve?, timeoutMs? })` from
+`isNetworkTargetBlocked(hostname, allowlist, { resolve?, timeoutMs?, port? })` from
 `@k2b/cloud/services/network-security` (also exported by `@k2b/cloud/services`).
 It returns `true` only for `NetworkTargetBlockedError`. A failed lookup or the
 five-second default timeout returns `false`, so an unavailable service can be

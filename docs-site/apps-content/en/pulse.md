@@ -30,8 +30,43 @@ workflow. Password input uses a private file or stdin. See
 [Provide ClickHouse for Pulse](/en/docs/operations/deployment-requirements#provide-clickhouse-for-pulse)
 for memory, isolation and backup requirements.
 
-This release prepares the connection only. Existing Pulse features continue
-using Postgres and work without ClickHouse; later releases require the store.
+Without a saved connection, Pulse shows “not set up” and its data API returns
+`PULSE_STORE_NOT_CONFIGURED`. Cloud and the Pulse administration pages remain available.
+
+## Bases and administration
+
+Each base is a tenant with its own ClickHouse database, read user and six SQL
+views. Read access excludes internal tables, sensitive fields, payloads and
+other bases. Base admins manage members, sources, tokens, queries, dashboards
+and retention; they do not need the Cloud admin role. By default, people and
+agents with write credentials can create a base and become its admin. A Cloud
+admin can restrict creation to people or Cloud admins and set the maximum
+(default 200) under **Administration → Pulse → Bases**.
+
+New bases are `provisioning`, then `active`. Only active bases accept changes.
+Clearing (`clearing`) keeps sources, tokens, dashboards and queries. Deleting
+(`deleting`) revokes source tokens, public links and read access before removing
+the store. After five failed runs, the operation is `failed`; a base admin can
+choose **Retry**, and a Cloud admin can retry from the Bases page.
+
+Cloud admins see state, amounts and limits, without measurement contents. They
+choose a read profile (small: 1 GB/10 s; normal: 2 GB/10 s; large: 4 GB/30 s),
+each limited to 10,000 rows and 4 MiB per query. Defaults per base are 2,000
+values/minute, 5 MiB/minute, 5 GB storage, 50,000 series, 2,000 event kinds and
+2,000 state keys. Pulse measures each base's storage every five minutes and
+shows it, with the free space of the store, to base admins and Cloud admins.
+
+Raw retention is 1–730 days by default (Cloud admins can raise the maximum to
+3,650); rollups allow 1–3,650 days and sensitive fields 1–8,760 hours. Shortening
+any period returns a cutoff and affected-row preview with estimated bytes.
+Confirm it to apply the change. Sensitive fields use column TTL; physical
+removal follows ClickHouse merges. Current states have no TTL.
+
+Hourly checkpoints compare Postgres and ClickHouse. A missing database or a
+mismatch blocks measurement writes. After restoring matching backups, a Cloud
+admin chooses **Recheck** to verify and recreate read access, or **Recreate**
+to discard measurements and start empty. Databases without a base appear as
+orphans and can be deleted separately.
 
 ## Use Pulse
 
@@ -106,15 +141,13 @@ Metrics support gauges and nonnegative counters. Type and unit are fixed per met
 
 Prometheus sources accept declared gauge/counter families and expose skipped samples in source diagnostics. Scrapes use whole-minute intervals (minimum 60 seconds), one collection timestamp, and a 15-second timeout covering lookup, connection, headers, and body. Sources with no instance, host, or node label use the endpoint host and port as their target resource.
 
-Pulse scrapes only public endpoints by default. It refuses internal addresses,
-reserved names, and redirects to them. An operator can allow internal targets
-with `PULSE_SCRAPE_ALLOWED_TARGETS`. Exact host entries trust every address that
-name resolves to; IP and CIDR entries allow addresses in that range. Reserved
-names such as `localhost` and names under `.internal` require an exact host entry.
-An entry covers every port and path on that host or range, and `/0` entries are
-refused. Scrapes request uncompressed responses and refuse a compressed body.
-Existing internal sources remain stored, but scrapes fail with this reason until
-the operator allows the target.
+Public endpoints work for every base. A Cloud admin releases internal targets per
+base under **Administration → Pulse → Internal targets**: a host or IP for all
+ports, `host:port` or `[ipv6]:port` for one port, or a CIDR range for all ports.
+`/0` is refused. Reserved names need an exact host entry. Pulse checks on save,
+every scrape and every redirect (at most three), resolves again and pins the
+connection. Revoking an entry blocks the next scrape and names the repair path.
+Responses must use identity encoding.
 
 The initial operator scenario is 20–50 servers, approximately ten websites, 60-second sampling and 30-day raw retention. Website backends send events using secret source tokens. This is a test scenario, not a measured production capacity guarantee.
 

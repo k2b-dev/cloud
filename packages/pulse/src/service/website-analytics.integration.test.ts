@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import type { EventQuery } from "../contracts";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { queryEventMapData } from "./event-map-query";
 import { ingestBatch } from "./ingest-writer";
 import { queryEventAggregateData, queryEventsData } from "./query-execution";
@@ -15,6 +16,7 @@ dbTest(
     const baseId = crypto.randomUUID(),
       sources = [crypto.randomUUID(), crypto.randomUUID()];
     await sql`INSERT INTO pulse.bases(id,short_id,name,retention_days) VALUES(${baseId}::uuid,${newShortId()},'Website proof',3650)`;
+    await seedActiveBaseStore(baseId);
     for (const sourceId of sources)
       await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${sourceId}::uuid,${newShortId()},${baseId}::uuid,'http_ingest','Website')`;
     const from = "2026-03-28T23:00:00Z",
@@ -115,6 +117,7 @@ dbTest(
     const baseId = crypto.randomUUID(),
       sourceId = crypto.randomUUID();
     await sql`INSERT INTO pulse.bases(id,short_id,name,retention_days) VALUES(${baseId}::uuid,${newShortId()},'Calendar proof',3650)`;
+    await seedActiveBaseStore(baseId);
     await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name) VALUES(${sourceId}::uuid,${newShortId()},${baseId}::uuid,'http_ingest','Website')`;
     try {
       expect(

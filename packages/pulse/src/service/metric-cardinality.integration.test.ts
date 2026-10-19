@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { PulseMetric } from "../contracts";
 import { newShortId } from "../lib/short-id";
+import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { ingestBatch } from "./ingest-writer";
 import { PULSE_METRIC_SERIES_LIMIT } from "./metric-cardinality";
 
@@ -24,6 +25,7 @@ describe("Pulse metric cardinality Postgres smoke", () => {
       const otherSourceId = crypto.randomUUID();
       const metricName = "cardinality.concurrent";
       await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${newShortId()}, 'Metric cardinality smoke')`;
+      await seedActiveBaseStore(baseId);
       await sql`
       INSERT INTO pulse.sources (id, short_id, base_id, kind, name)
       VALUES (${sourceId}::uuid, ${newShortId()}, ${baseId}::uuid, 'http_ingest'::pulse.source_kind, 'Metric cardinality source')

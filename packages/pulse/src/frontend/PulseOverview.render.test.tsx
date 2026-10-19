@@ -30,6 +30,23 @@ const base = (id: string, name: string, description: string | null): PulseBase =
   dataClearError: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
+  store: {
+    state: "active",
+    operation: null,
+    errorCode: null,
+    errorAt: null,
+    writeBlockReason: null,
+    profile: "normal",
+    limits: {
+      valuesPerMinute: 2000,
+      bytesPerMinute: 5_242_880,
+      storageBytes: 5_000_000_000,
+      maxSeries: 50_000,
+      maxEventKinds: 2000,
+      maxStateKeys: 2000,
+    },
+    usage: null,
+  },
 });
 
 const render = (bases: PulseBase[], capabilities: PulseCapabilitySnapshot | null = null) =>
