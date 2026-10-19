@@ -5,7 +5,7 @@ section: Frontend
 order: 870
 description: Update an open page from its application's live channels while preserving reload and recovery behavior.
 tags: [realtime, websocket, cursors]
-updated: 2026-10-04
+updated: 2026-10-19
 ---
 
 # Realtime UI
@@ -54,6 +54,11 @@ onMount(() => {
   for it, they collapse into one `resync`.
 - `resync` loads the canonical state again. Events that arrive meanwhile are
   applied after it. A reconnect while it runs resumes after its cursor.
+- `caughtUp` reports whether the subscription has applied every update the
+  server sent. It starts `false` and is `true` while the socket is open, the
+  server has confirmed the subscription, and no event or `resync` waits or
+  runs. Keep state that only live updates refresh, such as counts, without
+  loading it again only while it is `true`; otherwise load it.
 - `revoked` ends the subscription: the resource is gone or no longer readable.
 - `unavailable` reports that live updates stopped: the session ended, the
   socket was refused, or `apply` or `resync` failed four times (after 1, 3,
