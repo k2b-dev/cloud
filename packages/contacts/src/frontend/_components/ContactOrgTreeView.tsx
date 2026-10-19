@@ -23,7 +23,7 @@ function ContactOrgTreeNode(props: { node: ContactTreeNode; selectedId: string; 
       <button
         type="button"
         class={`group relative flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
-          selected() ? "bg-[var(--ui-selected)] text-primary" : "text-primary hover:bg-[var(--ui-hover)]"
+          selected() ? "bg-[var(--ui-app-selected)] app-accent-text" : "text-primary hover:bg-[var(--ui-hover)]"
         }`}
         onClick={() => props.onSelect(props.node)}
         aria-current={selected() ? "true" : undefined}

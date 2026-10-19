@@ -5,11 +5,8 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* The avatar is an app chip: the AA-checked app ink on the icon-tile fill rule, round instead of a tile. */
 .contact-avatar {
-  background: color-mix(in srgb, var(--app-accent) 10%, var(--ui-surface-muted));
-  color: color-mix(in srgb, var(--app-accent) 76%, var(--color-zinc-900));
-}
-
-.dark .contact-avatar {
-  color: color-mix(in srgb, var(--app-accent) 56%, white);
+  background: color-mix(in srgb, currentColor var(--k2b-icon-tile-fill), transparent);
+  color: var(--ui-app-accent-text);
 }

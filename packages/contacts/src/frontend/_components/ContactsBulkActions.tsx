@@ -231,7 +231,7 @@ export default function ContactsBulkActions(props: {
   const busy = () => preparing() || runMutation.loading();
 
   return (
-    <div class="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-selected)] p-2">
+    <div class="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-muted)] p-2">
       <span class="mr-auto text-xs font-medium text-primary tabular-nums">{t().selectedCount({ count: props.selectedIds().length })}</span>
       <Button variant="ghost" size="sm" onClick={props.onSelectVisible} disabled={props.visibleIds().length === 0}>
         {t().selectPage}
