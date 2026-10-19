@@ -1,5 +1,7 @@
-export type BrowserCode = "firefox" | "chrome" | "safari" | "edge" | "samsung" | "opera" | "other";
-export type OsCode = "windows" | "macos" | "mac-or-ipad" | "ios" | "android" | "linux" | "chromeos" | "other";
+import type { AppLoginContext } from "../../contracts/app-approval";
+
+export type BrowserCode = AppLoginContext["browser"];
+export type OsCode = AppLoginContext["os"];
 
 // Bound work on untrusted headers before parsing; normal browser headers fit these budgets.
 const USER_AGENT_BUDGET = 512;

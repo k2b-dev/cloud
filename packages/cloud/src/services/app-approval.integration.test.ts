@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { type Server, sql } from "bun";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
+import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { withActiveIdentitySigner } from "./identity";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -20,6 +21,7 @@ import {
   type AppDeviceRequest,
   AppDeviceResponseSchema,
   AppDevicesPageSchema,
+  AppLoginContextSchema,
   AppLoginStartResultSchema,
   AppLoginStatusSchema,
   AppPairingClaimResultSchema,
@@ -41,6 +43,10 @@ import {
 import { approvals } from "./approvals";
 import { createIdentityPublicRoutes } from "./identity";
 import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
+import { browserHash, countryHistory } from "./known-browsers";
+import { type AppLoginAddressStore, appLoginAddressKey, valkeyAppLoginAddressStore } from "./login-address-store";
+import type { AppLoginRequestContext } from "./login-context";
+import { requestCacheRedis } from "./request-cache-redis";
 import { session } from "./session";
 import { createTestSession } from "./session/session.test-fixture";
 import * as settings from "./settings";
@@ -48,7 +54,7 @@ import * as settings from "./settings";
 const deviceActions = createDeviceActions((id, _locale) => id);
 
 // Never migrate or mutate the development installation.
-const suite = suiteFor("database");
+const suite = suiteFor("database", "valkey");
 const sign = async (key: CryptoKey, message: string) =>
   Buffer.from(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(message))).toString("base64url");
 const keys = async () => {
@@ -56,6 +62,50 @@ const keys = async () => {
   const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
   return { privateKey: pair.privateKey, publicKey: AppDevicePublicKeySchema.parse({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y }) };
 };
+
+const contextRequest = (overrides: Partial<AppLoginRequestContext> = {}): AppLoginRequestContext => ({
+  browser: "firefox",
+  os: "linux",
+  country: "AT",
+  city: "Vienna",
+  network: "Operator",
+  cookie: null,
+  prefix: null,
+  ...overrides,
+});
+// Frozen copy of the old strict wire schema, independent of the current contract.
+const oldPlainText = (max: number) =>
+  z
+    .string()
+    .refine((value) => Array.from(value).length <= max)
+    .regex(/^[^\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u);
+const OldPendingLoginSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    challenge: z.string().regex(/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/),
+    comparison: z.string().regex(/^\d{6}$/),
+    createdAt: z.string().datetime(),
+    expiresAt: z.string().datetime(),
+    terminal: z
+      .object({
+        client: z
+          .object({
+            id: oldPlainText(256)
+              .min(1)
+              .refine((value) => new TextEncoder().encode(JSON.stringify(value)).length <= 258),
+            name: oldPlainText(60).min(1),
+          })
+          .strict(),
+        scopes: z
+          .array(z.string().regex(/^[a-z][a-z0-9_:.-]{0,39}$/))
+          .min(1)
+          .max(16),
+        lifetimeSeconds: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 suite("isolated app approval protocol", () => {
   let server: Server<unknown>;
@@ -151,7 +201,7 @@ suite("isolated app approval protocol", () => {
   beforeAll(async () => {
     // Public, deterministic fixture material: never used outside the guarded DB.
     process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = "a1".repeat(32);
-    for (const name of ["auth", "settings", "audit", "logging", "app-approval"])
+    for (const name of ["auth", "settings", "audit", "logging", "device-trust", "app-approval"])
       await (await import(`../../../core/src/migrate/core/${name}.ts`)).migrate();
     // Rerunning additive migration must be safe.
     await (await import("../../../core/src/migrate/core/app-approval")).migrate();
@@ -324,7 +374,9 @@ suite("isolated app approval protocol", () => {
     };
     pushes.length = 0;
     pushStatus = 202;
-    const started = await service.startLogin(owner.uid, "login");
+    const started = await service.startLogin(owner.uid, "login", contextRequest());
+    const [storedContext] = await sql`SELECT context FROM auth.app_logins WHERE id=${started.requestId}::uuid`;
+    expect(AppLoginContextSchema.safeParse(storedContext.context).success).toBe(true);
     await until(() => pushes.length > 0);
     await Bun.sleep(50);
     expect(pushes).toEqual([
@@ -943,6 +995,297 @@ suite("isolated app approval protocol", () => {
     });
   });
 
+  const readContextLogins = async (
+    device: Awaited<ReturnType<typeof enroll>>,
+    operation: "pending" | "inbox",
+    address?: string,
+    target = service,
+  ) => {
+    const response = AppDeviceResponseSchema.parse(
+      await target.deviceCommand(await proof(device, { operation, accept: ["login-context"] }), noActions, undefined, { address }),
+    );
+    if ("requests" in response) return response.requests;
+    if ("logins" in response) return response.logins;
+    throw new Error("Expected a login list");
+  };
+
+  test("context upgrade matrix preserves old response bytes and old strict parsing on both commands", async () => {
+    const owner = await account(),
+      device = await enroll(owner);
+    const started = await service.startLogin(owner.uid, "login", contextRequest());
+    const [row] = await sql`SELECT context FROM auth.app_logins WHERE id=${started.requestId}::uuid`;
+    expect(AppLoginContextSchema.safeParse(row.context).success).toBe(true);
+    const read = async (operation: "pending" | "inbox", optedIn = false) => {
+      const response = await post(
+        "/device",
+        await proof(device, { operation, ...(optedIn ? { accept: ["login-context"] as ["login-context"] } : {}) }),
+        undefined,
+        cfg.appOrigin,
+      );
+      expect(response.status).toBe(200);
+      return response.text();
+    };
+    await sql`UPDATE auth.app_logins SET context=NULL WHERE id=${started.requestId}::uuid`;
+    const pendingBefore = await read("pending"),
+      inboxBefore = await read("inbox");
+    // A pre-upgrade request remains readable by an opted-in app too.
+    expect(JSON.parse(await read("pending", true)).requests[0].context).toBeUndefined();
+    await sql`UPDATE auth.app_logins SET context=${JSON.stringify(row.context)}::text::jsonb WHERE id=${started.requestId}::uuid`;
+    for (const [operation, before] of [
+      ["pending", pendingBefore],
+      ["inbox", inboxBefore],
+    ] as const) {
+      const legacy = await read(operation);
+      expect(legacy).toBe(before);
+      const key = operation === "pending" ? "requests" : "logins";
+      for (const login of JSON.parse(legacy)[key]) expect(OldPendingLoginSchema.safeParse(login).success).toBe(true);
+      const opted = JSON.parse(await read(operation, true));
+      expect(AppLoginContextSchema.parse(opted[key][0].context)).toEqual(row.context);
+      expect(OldPendingLoginSchema.safeParse(opted[key][0]).success).toBe(false);
+    }
+    await sql`UPDATE auth.app_logins SET context=${JSON.stringify({ invalid: true })}::text::jsonb WHERE id=${started.requestId}::uuid`;
+    for (const operation of ["pending", "inbox"] as const) expect((await readContextLogins(device, operation))[0]?.context).toBeUndefined();
+  });
+
+  test("real and decoy HTTP starts have equal shapes and headers, even with browser cookies", async () => {
+    const owner = await account();
+    for (const cookie of [undefined, `cloud_browser=${"C".repeat(43)}; __Host-cloud_browser=${"C".repeat(43)}`]) {
+      const start = (identifier: string) =>
+        routes.request("/login/start", {
+          method: "POST",
+          headers: {
+            origin: cfg.issuer,
+            "content-type": "application/json",
+            "user-agent": "Firefox/130.0 (X11; Linux)",
+            "x-forwarded-for": "8.8.8.8",
+            ...(cookie ? { cookie } : {}),
+          },
+          body: JSON.stringify({ identifier, category: "login" }),
+        });
+      const real = await start(owner.uid),
+        decoy = await start(`missing-${crypto.randomUUID()}`);
+      expect(real.status).toBe(202);
+      expect(decoy.status).toBe(real.status);
+      // The shared per-IP rate-limit budget counts down between the two calls; every other header is equal.
+      const headers = (response: Response) => [...response.headers].filter(([name]) => name !== "x-ratelimit-remaining");
+      expect([...decoy.headers.keys()]).toEqual([...real.headers.keys()]);
+      expect(headers(decoy)).toEqual(headers(real));
+      expect(real.headers.has("set-cookie")).toBe(false);
+      expect(decoy.headers.has("set-cookie")).toBe(false);
+      const realBody = await real.json(),
+        decoyBody = await decoy.json();
+      const shape = (body: Record<string, unknown>) => Object.entries(body).map(([key, value]) => [key, typeof value]);
+      expect(shape(decoyBody)).toEqual(shape(realBody));
+      const [realRow] = await sql`SELECT context FROM auth.app_logins WHERE id=${realBody.requestId}::uuid`;
+      const [decoyRow] = await sql`SELECT user_id,context FROM auth.app_logins WHERE id=${decoyBody.requestId}::uuid`;
+      expect(realRow.context).toMatchObject({ browser: "firefox", os: "linux" });
+      expect(decoyRow.user_id).toBeNull();
+      expect(decoyRow.context).toBeNull();
+      const redis = await requestCacheRedis();
+      expect(await redis.exists(appLoginAddressKey(realBody.requestId))).toBe(true);
+      expect(await redis.exists(appLoginAddressKey(decoyBody.requestId))).toBe(true);
+      await valkeyAppLoginAddressStore.forget(realBody.requestId);
+      await valkeyAppLoginAddressStore.forget(decoyBody.requestId);
+    }
+  });
+
+  test("country history returns both facts inside one account's 90-day window", async () => {
+    const owner = await account(),
+      other = await account(),
+      now = new Date();
+    const cutoff = new Date(now.getTime() - 90 * 86_400_000);
+    await sql`INSERT INTO auth.sign_in_countries(user_id,country,last_seen_at) VALUES
+      (${owner.id}::uuid,'AT',${new Date(cutoff.getTime() + 1)}),
+      (${owner.id}::uuid,'DE',${cutoff}),(${other.id}::uuid,'DE',${now})`;
+    expect(await countryHistory(sql, { userId: owner.id, country: "AT", now })).toEqual({ seen: true, any: true });
+    expect(await countryHistory(sql, { userId: owner.id, country: "DE", now })).toEqual({ seen: false, any: true });
+    expect(await countryHistory(sql, { userId: owner.id, country: null, now })).toEqual({ seen: false, any: true });
+    expect(await countryHistory(sql, { country: "DE", now })).toEqual({ seen: false, any: false });
+    await sql`DELETE FROM auth.sign_in_countries WHERE user_id=${owner.id}::uuid AND country='AT'`;
+    expect(await countryHistory(sql, { userId: owner.id, country: "DE", now })).toEqual({ seen: false, any: false });
+  });
+
+  test("phone sees the Core level table and introduction suppresses history", async () => {
+    const [saved] = await sql<
+      { started_at: Date; geoip_since: Date | null }[]
+    >`SELECT started_at,geoip_since FROM auth.device_trust_state WHERE id=true`;
+    const at = new Date(),
+      past = (days: number) => new Date(at.getTime() - days * 86_400_000);
+    try {
+      await sql`UPDATE auth.device_trust_state SET started_at=${past(30)},geoip_since=${past(30)} WHERE id=true`;
+      const rows = [
+        [true, true, true, "info"],
+        [true, false, true, "hint"],
+        [false, true, true, "hint"],
+        [false, false, false, "hint"],
+        [false, false, true, "warn"],
+      ] as const;
+      for (const [known, seen, any, level] of rows) {
+        const owner = await account(),
+          device = await enroll(owner),
+          cookie = "K".repeat(43);
+        if (known)
+          await sql`INSERT INTO auth.known_browsers(user_id,browser_hash,browser,os,first_seen_at,last_seen_at)
+          VALUES (${owner.id}::uuid,${browserHash(owner.id, cookie)},'firefox','linux',${past(7)},${at})`;
+        if (any)
+          await sql`INSERT INTO auth.sign_in_countries(user_id,country,last_seen_at) VALUES (${owner.id}::uuid,${seen ? "AT" : "DE"},${at})`;
+        await service.startLogin(owner.uid, "login", contextRequest({ cookie }));
+        for (const operation of ["pending", "inbox"] as const)
+          expect((await readContextLogins(device, operation))[0]?.context).toMatchObject({
+            level,
+            history: { knownSince: known ? past(7).toISOString() : null, newCountry: !seen, countriesSince: past(30).toISOString() },
+          });
+      }
+      await sql`UPDATE auth.device_trust_state SET started_at=${at} WHERE id=true`;
+      const owner = await account(),
+        device = await enroll(owner);
+      await service.startLogin(owner.uid, "login", contextRequest());
+      expect((await readContextLogins(device, "pending"))[0]?.context).toMatchObject({ level: "info", history: null });
+    } finally {
+      await sql`UPDATE auth.device_trust_state SET started_at=${saved!.started_at},geoip_since=${saved!.geoip_since} WHERE id=true`;
+    }
+  });
+
+  test("S5 expires with the request, matches only the public prefix, and is deleted on either decision", async () => {
+    const owner = await account(),
+      device = await enroll(owner),
+      redis = await requestCacheRedis();
+    for (const [prefix, same, different, decision] of [
+      ["8.8.8.8", "8.8.8.8", "8.8.4.4", "approve"],
+      ["2606:4700:4700:1::/64", "2606:4700:4700:1::abcd", "2606:4700:4700:2::1", "deny"],
+    ] as const) {
+      const started = await service.startLogin(owner.uid, "login", contextRequest({ prefix }));
+      const key = appLoginAddressKey(started.requestId);
+      const ttl = Number(await redis.send("PTTL", [key]));
+      expect(ttl).toBeGreaterThan(0);
+      expect(ttl).toBeLessThanOrEqual(APP_APPROVAL_LIMITS.loginSeconds * 1000);
+      expect(ttl).toBeLessThanOrEqual(Date.parse(started.expiresAt) - Date.now() + 100);
+      const stored = JSON.parse((await redis.get(key))!);
+      expect(Object.keys(stored)).toEqual(["salt", "digest"]);
+      expect(stored.salt).toMatch(/^[a-f0-9]{32}$/);
+      expect(JSON.stringify(stored)).not.toContain(prefix);
+      for (const operation of ["pending", "inbox"] as const) {
+        expect((await readContextLogins(device, operation, same))[0]?.context?.sameNetwork).toBe(true);
+        expect((await readContextLogins(device, operation, different))[0]?.context?.sameNetwork).toBeUndefined();
+        expect((await readContextLogins(device, operation, "192.168.1.1"))[0]?.context?.sameNetwork).toBeUndefined();
+      }
+      // Route forwards the phone address too.
+      const response = await routes.request("/device", {
+        method: "POST",
+        headers: { origin: cfg.appOrigin, "content-type": "application/json", "x-forwarded-for": same },
+        body: JSON.stringify(await proof(device, { operation: "pending", accept: ["login-context"] })),
+      });
+      expect((await response.json()).requests[0].context.sameNetwork).toBe(true);
+      const [row] = await sql`SELECT context FROM auth.app_logins WHERE id=${started.requestId}::uuid`;
+      expect(row.context.sameNetwork).toBeUndefined();
+      await approve(device, started.requestId, service, decision);
+      expect(await redis.exists(key)).toBe(false);
+      const [event] =
+        await sql`SELECT metadata FROM audit.events WHERE action=${`auth.app.login.${decision}`} AND metadata->>'requestId'=${started.requestId}`;
+      expect(event.metadata).toEqual({ requestId: started.requestId, level: row.context.level });
+    }
+  });
+
+  test("every failing address-store operation is best effort, outside the SQL transaction", async () => {
+    const calls: string[] = [];
+    let requestId: string | undefined;
+    const fail = async (operation: string, id?: string): Promise<never> => {
+      calls.push(operation);
+      if (id) {
+        const [committed] = await sql`SELECT state FROM auth.app_logins WHERE id=${id}::uuid`;
+        expect(committed).toBeDefined();
+        expect(committed.state).toBe(operation === "forget" ? "denied" : "pending");
+      }
+      throw new Error("cache unavailable");
+    };
+    const addresses: AppLoginAddressStore = {
+      remember: (id) => fail("remember", id),
+      read: () => fail("read", requestId),
+      forget: (id) => fail("forget", id),
+    };
+    const target = createAppApprovalService(sql, async () => cfg, hints, pushSender, addresses);
+    const owner = await account(),
+      device = await enroll(owner, target);
+    const started = await target.startLogin(owner.uid, "login", contextRequest({ prefix: "8.8.8.8" }));
+    requestId = started.requestId;
+    const legacy = AppDeviceResponseSchema.parse(
+      await target.deviceCommand(await proof(device, { operation: "pending" }), noActions, undefined, { address: "8.8.8.8" }),
+    );
+    expect("requests" in legacy && legacy.requests[0]?.context).toBeUndefined();
+    expect(calls).toEqual(["remember"]);
+    for (const operation of ["pending", "inbox"] as const) {
+      const context = (await readContextLogins(device, operation, "8.8.8.8", target))[0]?.context;
+      expect(context).toBeDefined();
+      expect(context?.sameNetwork).toBeUndefined();
+    }
+    await approve(device, requestId, target, "deny");
+    expect(calls).toEqual(["remember", "read", "read", "forget"]);
+  });
+
+  test("context and terminal consent share the five-request budget and the unchanged inbox byte budget", async () => {
+    const owner = await account(),
+      device = await enroll(owner);
+    const browserIds: string[] = [];
+    for (let i = 0; i < 5; i++)
+      browserIds.push(
+        (await service.startLogin(owner.uid, "login", contextRequest({ city: "界".repeat(32), network: '"\\'.repeat(48) }))).requestId,
+      );
+    expect((await terminalStart(owner.uid)).user_id).toBeNull();
+    const five = await readContextLogins(device, "pending");
+    expect(five).toHaveLength(5);
+    expect(five.every((row) => row.context)).toBe(true);
+    for (const id of browserIds.slice(3)) await approve(device, id, service, "deny");
+    const terminals = [await terminalStart(owner.uid), await terminalStart(owner.uid)];
+    const action = {
+      actionId: crypto.randomUUID(),
+      app: { id: "a".repeat(60), name: "😀".repeat(60) },
+      requester: { app: { id: "assistant", name: "😀".repeat(60) }, title: "😀".repeat(80) },
+      assurance: "confirm" as const,
+      sentence: "😀".repeat(120),
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    };
+    const actions = { ...noActions, inbox: async () => ({ actions: Array.from({ length: 5 }, () => ({ ...action })), moreActions: 0 }) };
+    const response = await service.deviceCommand(
+      await proof(device, { operation: "inbox", accept: ["terminal-logins", "login-context"] }),
+      actions,
+      terminal,
+    );
+    expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThanOrEqual(8192);
+    const inbox = AppDeviceInboxSchema.parse(response);
+    expect(inbox.logins.map((row) => row.requestId).sort()).toEqual([...browserIds.slice(0, 3), ...terminals.map((row) => row.id)].sort());
+    expect(inbox.actions.length + inbox.moreActions).toBe(5);
+    for (const login of inbox.logins) expect(login.context !== undefined).toBe(login.terminal === undefined);
+    for (const id of terminals.map((row) => row.id)) {
+      const [stored] = await sql`SELECT context FROM auth.app_logins WHERE id=${id}::uuid`;
+      expect(stored.context).toBeNull();
+    }
+    const [stored] = await sql`SELECT accepts FROM auth.app_devices WHERE id=${device.id}::uuid`;
+    expect(stored.accepts).toEqual(["terminal-logins", "login-context"]);
+  });
+
+  test("context migration is idempotent and PostgreSQL rejects more than 512 JSONB text bytes", async () => {
+    const { migrate } = await import("../../../core/src/migrate/core/app-approval");
+    await migrate();
+    await migrate();
+    // An INSERT exercises the CHECK independently of the service's safe builder. A Bun SQL query is lazy:
+    // `expect(...).rejects` needs the promise from `.execute()`, or it never runs and never settles.
+    await expect(
+      sql`INSERT INTO auth.app_logins(id,issuer,category,browser_hash,challenge,comparison,expires_at,context)
+      VALUES (${crypto.randomUUID()}::uuid,${cfg.issuer},'login','test','test','000123',${new Date(Date.now() + 300_000)},${JSON.stringify({ city: "界".repeat(180) })}::text::jsonb)`.execute(),
+    ).rejects.toMatchObject({ constraint: "app_logins_context_bytes" });
+    const owner = await account();
+    for (const name of ["界".repeat(32), '"\\'.repeat(48)]) {
+      const started = await service.startLogin(owner.uid, "login", contextRequest({ city: name, network: name }));
+      const [row] =
+        await sql`SELECT context,jsonb_typeof(context) AS type,octet_length(context::text) AS bytes FROM auth.app_logins WHERE id=${started.requestId}::uuid`;
+      // A double-encoded value is a jsonb string scalar: it reads back as text and the CHECK measures its escapes.
+      expect(row.type).toBe("object");
+      expect(row.bytes).toBeLessThanOrEqual(512);
+      expect(AppLoginContextSchema.safeParse(row.context).success).toBe(true);
+    }
+  });
+
   test("legacy pending/inbox bytes omit terminal logins; opted-in inbox describes only live authorizations", async () => {
     const owner = await account(),
       device = await enroll(owner);
@@ -1249,7 +1592,10 @@ suite("isolated app approval protocol", () => {
       const login = await service.startLogin(owner.uid, "login");
       const discovery = await routes.request("/info");
       expect(discovery.status).toBe(200);
-      expect(await discovery.json()).toMatchObject({ features: ["actions", "terminal-logins"], limits: APP_APPROVAL_LIMITS });
+      expect(await discovery.json()).toMatchObject({
+        features: ["actions", "terminal-logins", "login-context"],
+        limits: APP_APPROVAL_LIMITS,
+      });
       const inboxResponse = await devicePost(device, { operation: "inbox" });
       expect(inboxResponse.status).toBe(200);
       const inbox = AppDeviceInboxSchema.parse(await inboxResponse.json());
