@@ -25,11 +25,20 @@ export default function SpaceHeadFilters(props: {
     searchReset: 0,
     total: props.initialTotal,
   });
+  // Until the route island in Main answers, a change is an ordinary document navigation, so a choice made before
+  // it hydrates is never lost.
+  let routeReady = false;
+  const request = (change: { href: string; resetSearch?: boolean }) => {
+    if (routeReady) requestSpacesFilterChange(change);
+    else window.location.assign(change.href);
+  };
   onMount(() => {
     const receive = (event: Event) => {
       if (!(event instanceof CustomEvent)) return;
       const next: SpacesRouteFilterState = event.detail;
-      if (next.view === props.currentView) setState(next);
+      if (next.view !== props.currentView) return;
+      routeReady = true;
+      setState(next);
     };
     window.addEventListener(SPACES_ROUTE_FILTER_EVENT, receive);
     onCleanup(() => window.removeEventListener(SPACES_ROUTE_FILTER_EVENT, receive));
@@ -42,7 +51,7 @@ export default function SpaceHeadFilters(props: {
       : filter;
   };
   const change = (patch: Partial<FilterState>) =>
-    requestSpacesFilterChange({
+    request({
       href: buildFilterUrl(state().requestedSource, { ...patch, page: 1 }, filterAt(state().requestedSource)),
     });
   return (
@@ -60,7 +69,7 @@ export default function SpaceHeadFilters(props: {
       onFilterChange={change}
       onSearchChange={(search) => change({ search })}
       onClearFilters={() =>
-        requestSpacesFilterChange({
+        request({
           href: buildFilterUrl(state().requestedSource, defaultFilter, defaultFilter),
           resetSearch: true,
         })

@@ -1,12 +1,34 @@
 import { markHintSeen } from "@k2b/cloud/browser/hints";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { NavigationItem } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import type { overviewMessages } from "../../../overview-messages";
 
 export type SidebarSpace = { id: string; name: string; color: string; description: string | null; openItemCount: number };
 export type SpacesSidebarCurrent = { kind: "overview" } | { kind: "space"; id: string };
 export type SpacesSidebarData = { spaces: SidebarSpace[]; pinnedSpaceIds: string[]; myWorkCount: number };
+
+const PINS_CHANGED_EVENT = "spaces-pins-changed";
+
+/**
+ * The pins this page shows, shared by the sidebar and the phone title menu, which live in different islands: a pin
+ * changed in one shows in the other at once. The cookie keeps them for the next page.
+ */
+export function createPinnedSpaces(initial: string[]) {
+  const [pinned, setPinned] = createSignal(initial);
+  onMount(() => {
+    const changed = (event: Event) => {
+      if (event instanceof CustomEvent && Array.isArray(event.detail)) setPinned(event.detail);
+    };
+    window.addEventListener(PINS_CHANGED_EVENT, changed);
+    onCleanup(() => window.removeEventListener(PINS_CHANGED_EVENT, changed));
+  });
+  const update = (next: string[]) => {
+    setPinned(next);
+    window.dispatchEvent(new CustomEvent(PINS_CHANGED_EVENT, { detail: next }));
+  };
+  return [pinned, update] as const;
+}
 
 /** Pin order is shared by the desktop rows and the phone title menu. */
 export const orderSidebarSpaces = (spaces: SidebarSpace[], pinnedSpaceIds: string[]) =>

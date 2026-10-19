@@ -6,6 +6,7 @@ import { useSpaceMessages } from "../../messages";
 import { setPinnedSpaceIds } from "../settings/SpaceSettingsStore";
 import {
   createNewSpace,
+  createPinnedSpaces,
   orderSidebarSpaces,
   type SidebarSpace,
   type SpacesSidebarCurrent,
@@ -23,7 +24,7 @@ export default function SpacesSidebarList(props: SpacesSidebarProps) {
   const locale = useLocale();
   const { t } = overviewMessages.resolve([locale()]);
   const messages = useSpaceMessages();
-  const [pinned, setPinned] = createSignal(props.pinnedSpaceIds);
+  const [pinned, setPinned] = createPinnedSpaces(props.pinnedSpaceIds);
   const [announcement, setAnnouncement] = createSignal("");
   const [hintOpen, setHintOpen] = createSignal(Boolean(props.hint?.open));
   const spaces = createMemo(() => orderSidebarSpaces(props.spaces, pinned()));

@@ -9,7 +9,13 @@ import { createSpaceCommands } from "../../../space-commands";
 import { useSpaceMessages } from "../../messages";
 import { createItemController } from "./CreateItemButton";
 import { interceptSpacePrimaryClick, spacePrimaryHref } from "./space-primary";
-import { createNewSpace, createSpacesNavigationItems, listenSpacesNavigationHints, type SpacesSidebarData } from "./spaces-navigation";
+import {
+  createNewSpace,
+  createPinnedSpaces,
+  createSpacesNavigationItems,
+  listenSpacesNavigationHints,
+  type SpacesSidebarData,
+} from "./spaces-navigation";
 import type { SpaceContext } from "./types";
 
 export default function SpaceNavigation(props: { ctx: SpaceContext; sidebar: SpacesSidebarData; dateConfig?: DateContext }) {
@@ -58,10 +64,12 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; sidebar: Spa
   });
   const { t: overview } = overviewMessages.resolve([locale()]);
   const createSpace = createNewSpace(overview);
+  const [pinned] = createPinnedSpaces(props.sidebar.pinnedSpaceIds);
   const navigation = createNavigation({
     items: () =>
       createSpacesNavigationItems({
         ...props.sidebar,
+        pinnedSpaceIds: pinned(),
         current: { kind: "space", id: props.ctx.space.id },
         canCreate: Boolean(props.ctx.userId),
         myWorkLabel: overview.myWork,

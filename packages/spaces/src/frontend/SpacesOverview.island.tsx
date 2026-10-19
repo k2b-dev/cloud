@@ -25,6 +25,7 @@ import type { OverviewView, OverviewWork } from "../overview-contracts";
 import SpacesSidebarList from "./[id]/_components/sidebar/SpacesSidebarList";
 import {
   createNewSpace,
+  createPinnedSpaces,
   createSpacesNavigationItems,
   listenSpacesNavigationHints,
   type SidebarSpace,
@@ -116,11 +117,12 @@ export default function SpacesOverview(props: Props) {
   const [initialActivityError, setInitialActivityError] = createSignal(props.initialActivityError);
   const canCreate = () => props.canCreate ?? true;
   const create = createNewSpace(t);
+  const [pinned] = createPinnedSpaces(props.initialPinnedSpaceIds);
   const navigation = createNavigation({
     items: () =>
       createSpacesNavigationItems({
         spaces: props.spaces,
-        pinnedSpaceIds: props.initialPinnedSpaceIds,
+        pinnedSpaceIds: pinned(),
         current: { kind: "overview" },
         canCreate: canCreate(),
         myWorkLabel: t.myWork,

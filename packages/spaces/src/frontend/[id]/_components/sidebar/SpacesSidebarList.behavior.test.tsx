@@ -10,7 +10,7 @@ if (isServer) {
   afterAll(() => dom.cleanup());
   const { default: SpacesSidebarList } = await import("./SpacesSidebarList");
   const { default: SpaceNavigation } = await import("./SpaceNavigation.island");
-  const { listenSpacesNavigationHints } = await import("./spaces-navigation");
+  const { createPinnedSpaces, createSpacesNavigationItems, listenSpacesNavigationHints } = await import("./spaces-navigation");
   const { LocaleProvider } = await import("@k2b/ui");
   let dispose: (() => void) | undefined;
   afterEach(() => {
@@ -43,6 +43,42 @@ if (isServer) {
       dom.root,
     );
   };
+
+  test("a pin set in the sidebar reorders the phone title menu of the page at once", () => {
+    let menu: () => string[] = () => [];
+    dispose = render(
+      () =>
+        createComponent(LocaleProvider, {
+          locale: "en",
+          get children() {
+            // The phone menu lives in another island; it reads the same page pins.
+            const [pinned] = createPinnedSpaces([]);
+            menu = () =>
+              createSpacesNavigationItems({
+                spaces,
+                pinnedSpaceIds: pinned(),
+                current: { kind: "space", id: "Space1" },
+                canCreate: false,
+                myWorkLabel: "My work",
+                newSpaceLabel: "New space",
+              }).map((item) => `${item.label}${item.icon === "ti ti-flag" ? " (pinned)" : ""}`);
+            return createComponent(SpacesSidebarList, {
+              spaces,
+              pinnedSpaceIds: [],
+              myWorkCount: 3,
+              canCreate: true,
+              current: { kind: "space", id: "Space1" },
+            });
+          },
+        }),
+      dom.root,
+    );
+    expect(menu()).toEqual(["My work", "Launch", "Ideas"]);
+    const pin = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Pin Ideas"]');
+    expect(pin).not.toBeNull();
+    pin!.click();
+    expect(menu()).toEqual(["My work", "Ideas (pinned)", "Launch"]);
+  });
 
   describe("sidebar moved hints", () => {
     for (const id of ["spaces.sidebar-switch", "spaces.overview-sidebar"] as const) {

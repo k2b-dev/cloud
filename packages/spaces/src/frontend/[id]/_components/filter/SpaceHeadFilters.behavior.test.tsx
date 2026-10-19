@@ -11,6 +11,44 @@ import {
 
 if (isServer) test.skip("head filter bridge uses browser conditions", () => {});
 else {
+  test("before the route island hydrates, Reset is a document navigation and nothing is lost", async () => {
+    const dom = createDomTestHarness();
+    const source = "/app/spaces/Space1?view=list&q=ship";
+    dom.window.history.replaceState(null, "", source);
+    const assigned: string[] = [];
+    const assign = dom.window.location.assign;
+    dom.window.location.assign = (href: string | URL) => void assigned.push(String(href));
+    const changes: unknown[] = [];
+    const listen = (event: Event) => changes.push((event as CustomEvent).detail);
+    window.addEventListener("spaces-filter-change", listen);
+    const { default: SpaceHeadFilters } = await import("./SpaceHeadFilters.island");
+    const dispose = render(
+      () =>
+        createComponent(SpaceHeadFilters, {
+          spaceId: "Space1",
+          columns: [],
+          tags: [],
+          currentView: "list",
+          initialSource: source,
+          initialTotal: 0,
+        }),
+      dom.root,
+    );
+    try {
+      const reset = Array.from(dom.root.querySelectorAll("a")).find((link) => link.textContent?.includes("Reset"));
+      expect(reset).toBeDefined();
+      reset!.click();
+      expect(changes).toEqual([]);
+      expect(assigned).toHaveLength(1);
+      expect(new URL(assigned[0]!, "http://localhost").searchParams.get("q")).toBeNull();
+    } finally {
+      dispose();
+      window.removeEventListener("spaces-filter-change", listen);
+      dom.window.location.assign = assign;
+      dom.cleanup();
+    }
+  });
+
   for (const currentView of ["list", "kanban"] as const) {
     for (const routeFirst of [true, false]) {
       test(`${currentView}: head and route handshake and apply/reset filters (${routeFirst ? "route" : "head"} hydrates first)`, async () => {
