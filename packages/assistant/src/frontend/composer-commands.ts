@@ -275,16 +275,34 @@ export function assistantBuiltInCommands(input: {
 
 /** Slice 7 replaces this overview selection with personal use counts. */
 export const OVERVIEW_SKILL_COUNT = 4;
-/** Skills the overview already shows under "Recent" do not repeat under "Skills"; the section still shows four. */
-export const overviewSkills = (skills: readonly AiSkillSummary[], shownShortIds: ReadonlySet<string> = new Set()) =>
-  skills.filter((skill) => skill.enabled && !shownShortIds.has(skill.shortId)).slice(0, OVERVIEW_SKILL_COUNT);
+const SKILL_TYPE = "core.ai.skill";
+/**
+ * The overview's Skills: the first four enabled ones besides those "Recent" may show. Those stay in the list too, with
+ * the row key of their "Recent" row: when this opening shows "Recent", the composer keeps them only there; when it
+ * opened before "Recent" arrived, they stay under Skills, so a Skill is never missing from both.
+ */
+export const overviewSkills = (skills: readonly AiSkillSummary[], recentShortIds: ReadonlySet<string> = new Set()) => {
+  const shown: AiSkillSummary[] = [];
+  let others = 0;
+  for (const skill of skills) {
+    if (others === OVERVIEW_SKILL_COUNT) break;
+    if (!skill.enabled) continue;
+    shown.push(skill);
+    if (!recentShortIds.has(skill.shortId)) others++;
+  }
+  return shown;
+};
+/** One row key per Skill reference, the same under "Recent" and under "Skills", so the composer shows it once. */
+const skillRowId = (shortId: string) => `resource:${SKILL_TYPE}:${shortId}`;
 
 /** "Recent" in the overview: the server checks up to eight, the overview shows the four sent most often. */
 export const RECENT_OVERVIEW_COUNT = 4;
-const SKILL_TYPE = "core.ai.skill";
 
-/** The budget of one Capability query, under which the server checks every reference. */
-const RECENT_LOAD_TIMEOUT_MS = 15_000;
+/**
+ * The server checks every reference within one Capability query budget (15 seconds) and then answers with what it
+ * has; the extra time lets that answer travel back, so one stalled app does not hide the others.
+ */
+const RECENT_LOAD_TIMEOUT_MS = 20_000;
 const recentLoads = new Map<string, Promise<readonly AiRecentResource[]>>();
 
 /**
@@ -654,13 +672,16 @@ export async function assistantComposerCommands(input: {
     });
   for (const skill of overview ? overviewSkills(allSkills ?? [], shownRecentSkills) : fullSkillScope ? (allSkills ?? []) : searchedSkills) {
     if (!skill.enabled) continue;
-    const row = reference("skills", skill.name, `Skill · ${skill.description}`, {
-      kind: "resource",
-      id: `skill:${skill.id}`,
-      name: skill.name,
-      ref: { type: SKILL_TYPE, id: skill.shortId },
-      icon: "ti ti-sparkles",
-    });
+    const row = {
+      ...reference("skills", skill.name, `Skill · ${skill.description}`, {
+        kind: "resource",
+        id: `skill:${skill.id}`,
+        name: skill.name,
+        ref: { type: SKILL_TYPE, id: skill.shortId },
+        icon: "ti ti-sparkles",
+      }),
+      id: skillRowId(skill.shortId),
+    };
     results.push(!overview && recentSkills.has(skill.shortId) ? { ...row, recent: true } : row);
   }
   const enabledCount = (allSkills ?? []).filter((skill) => skill.enabled).length;

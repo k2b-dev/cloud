@@ -1136,3 +1136,33 @@ test("a failed load shows no Recent and no error row; only a new opening asks ag
   expect(h.headings()[0]).toBe("Zuletzt");
   expect(h.recentGets()).toHaveLength(3);
 });
+
+test("an answer between opening and the first search keeps a recent Skill under Skills, so it is never missing", async () => {
+  let answer!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const h = await mount({ value: "", recent: recentItems, recentGate: () => gate });
+  h.type("/");
+  // The list opened without Recent; the answer arrives before the Skills search runs.
+  answer();
+  await flush();
+  await settled();
+  await settled();
+  expect(h.headings()[0]).toBe("Einfügen");
+  const labels = h.labels();
+  expect(labels.slice(labels.indexOf("Datei anhängen") + 1, labels.indexOf("Modell wählen"))).toEqual([
+    "Skill 0",
+    "Skill 1",
+    "Skill 2",
+    "Skill 3",
+    "Skill 4",
+    "Alle 6 Skills",
+  ]);
+  // The next opening shows it once, under Recent.
+  h.type("Bitte /");
+  await settled();
+  await settled();
+  expect(h.headings()[0]).toBe("Zuletzt");
+  expect(h.labels().filter((label) => label === "Skill 1")).toHaveLength(1);
+});
