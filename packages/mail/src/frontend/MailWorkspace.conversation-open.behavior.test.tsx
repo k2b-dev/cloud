@@ -686,6 +686,16 @@ describe("Mail workspace conversation open", () => {
     expect(routeRequests[0]).toBe(`${folderPath}&conversation=${rowId(12)}`);
   });
 
+  test("a flag removed elsewhere after the list loaded refreshes the row", async () => {
+    flagged.add(rowId(20));
+    mount();
+    flagged.delete(rowId(20));
+    open(rowId(20));
+    await until(() => shows(rowId(20)), "the opened conversation");
+    await until(() => routeRequests.length === 1, "the list refresh");
+    await until(() => dom.root.querySelector('[aria-label="Flagged conversation"]') === null, "the flag gone from the reader");
+  });
+
   test("a message in another folder does not make the folder's row look older", async () => {
     mount();
     // The detail names Archive for this message, which is unread and flagged there; the Inbox list states read and

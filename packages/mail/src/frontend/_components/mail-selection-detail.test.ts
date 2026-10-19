@@ -30,6 +30,13 @@ describe("mailRowOlderThanDetail", () => {
     expect(mailRowOlderThanDetail(fresh, detail([message("archive", false)], 3), all)).toBe(true);
   });
 
+  test("a flag or unread state no message has anymore makes it older only when the detail holds every message", () => {
+    const flaggedRow = mailTestRow("one", { unread: false, unreadFolderIds: [], flagged: true, revision: 3, messageCount: 2 });
+    expect(mailRowOlderThanDetail(flaggedRow, detail([message("inbox", true), message("inbox", true)], 3), all)).toBe(true);
+    expect(mailRowOlderThanDetail({ ...flaggedRow, messageCount: 150 }, detail([message("inbox", true)], 3), all)).toBe(false);
+    expect(mailRowOlderThanDetail(fresh, detail([message("inbox", true), message("inbox", true)], 3), all)).toBe(true);
+  });
+
   test("messages in folders the list leaves out do not count", () => {
     const listed = (folderId: string | null) => folderId !== "trash";
     expect(mailRowOlderThanDetail(fresh, detail([message("trash", false, true)], 3), listed)).toBe(false);

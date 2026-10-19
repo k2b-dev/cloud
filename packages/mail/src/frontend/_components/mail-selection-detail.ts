@@ -60,11 +60,12 @@ export const emptyMailSelection = (): MailSelection => ({
 
 /**
  * Whether the detail shows that the row is older: a newer revision, more messages, or a flag or an unread message in a
- * folder the row does not know. Only messages in folders the list covers count (`listed`), because the row leaves the
- * others out. A missing row (not loaded) is never older.
+ * folder the row does not know. When the detail holds every message, a flag or unread state the row shows but no
+ * message has anymore counts too. Only messages in folders the list covers count (`listed`), because the row leaves
+ * the others out. A missing row (not loaded) is never older.
  */
 export const mailRowOlderThanDetail = (
-  item: Pick<MailListItem, "revision" | "messageCount" | "flagged" | "unreadFolderIds"> | undefined,
+  item: Pick<MailListItem, "revision" | "messageCount" | "flagged" | "unread" | "unreadFolderIds"> | undefined,
   detail: {
     detailMessages: ReadonlyArray<{ flags: readonly string[]; folderId: string | null }>;
     collaborationState: { revision: number } | null;
@@ -76,8 +77,15 @@ export const mailRowOlderThanDetail = (
   const revision = Math.max(detail.collaborationState?.revision ?? 0, detail.conversationLocalTags?.conversationRevision ?? 0);
   if (revision > item.revision || detail.detailMessages.length > item.messageCount) return true;
   const messages = detail.detailMessages.filter((message) => listed(message.folderId));
-  if (!item.flagged && messages.some((message) => message.flags.includes("\\Flagged"))) return true;
-  return messages.some(
-    (message) => !message.flags.includes("\\Seen") && message.folderId !== null && !item.unreadFolderIds.includes(message.folderId),
-  );
+  const flagged = messages.some((message) => message.flags.includes("\\Flagged"));
+  const unread = messages.some((message) => !message.flags.includes("\\Seen"));
+  if (!item.flagged && flagged) return true;
+  if (
+    messages.some(
+      (message) => !message.flags.includes("\\Seen") && message.folderId !== null && !item.unreadFolderIds.includes(message.folderId),
+    )
+  )
+    return true;
+  const complete = detail.detailMessages.length >= item.messageCount;
+  return complete && ((item.flagged && !flagged) || (item.unread && !unread));
 };
