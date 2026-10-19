@@ -155,9 +155,13 @@ export const registerIngestBatch = async (params: {
   }
   const series = await loadBatchSeries(baseId, batch, db);
   const seriesByKey = new Map(series.map((s) => [JSON.stringify([s.name, s.series_key]), s]));
+  const touched = batch.metrics.map((m) => m.ts);
   const late = batch.metrics.flatMap((m) => {
     const s = seriesByKey.get(JSON.stringify([m.name, m.seriesKey]));
-    return s?.last_sample_at && Date.parse(m.ts) < s.last_sample_at.getTime() ? [{ series_id: s.id, ts: m.ts }] : [];
+    if (!s?.last_sample_at || Date.parse(m.ts) >= s.last_sample_at.getTime()) return [];
+    // The newest sample may still be in another T2 and invisible to the ASOF lookup.
+    touched.push(s.last_sample_at.toISOString());
+    return [{ series_id: s.id, ts: m.ts }];
   });
   // Commit the high-water mark in T1: ClickHouse samples survive a later T2 rollback.
   // Compare against the previous mark above; an ahead-of-store mark only adds a bounded lookup.
@@ -165,7 +169,6 @@ export const registerIngestBatch = async (params: {
     await db`UPDATE pulse.metric_series s SET last_sample_at=greatest(s.last_sample_at,i.ts)
     FROM (SELECT name,"seriesKey",max(ts) AS ts FROM jsonb_to_recordset((${JSON.stringify(batch.metrics)}::jsonb #>> '{}')::jsonb) AS i(name text,"seriesKey" text,ts timestamptz) GROUP BY name,"seriesKey") i,pulse.metric_defs d
     WHERE d.base_id=${baseId}::uuid AND d.name=i.name AND s.metric_id=d.id AND s.series_key=i."seriesKey"`;
-  const touched = batch.metrics.map((m) => m.ts);
   if (late.length) {
     const database = assertStoreName(params.database, store.prefix);
     // ASOF chooses the next observation across empty hours, at most one row per pair in each bounded request.
@@ -211,6 +214,7 @@ export type PlannedStates = {
   source_id: string;
   version: string;
   updated_at: string;
+  changed_at: string;
   change_id: string | null;
 }[];
 
@@ -227,7 +231,17 @@ export const planIngestStates = async (
     db,
   );
   const prior = batch.states.length
-    ? await db<{ state_key: string; variant_key: string; updated_at: Date; value_hash: string; version: string }[]>`
+    ? await db<
+        {
+          state_key: string;
+          variant_key: string;
+          updated_at: Date;
+          value_hash: string;
+          version: string;
+          pending_change_id: string | null;
+          pending_change_at: Date | null;
+        }[]
+      >`
     SELECT v.*,v.version::text AS version FROM pulse.state_variants v JOIN
     (SELECT DISTINCT key,"variantKey" FROM jsonb_to_recordset((${JSON.stringify(batch.states)}::jsonb #>> '{}')::jsonb) AS i(key text,"variantKey" text)) i
     ON v.state_key=i.key AND v.variant_key=i."variantKey" WHERE v.base_id=${baseId}::uuid`
@@ -235,11 +249,29 @@ export const planIngestStates = async (
   const current = new Map(
     prior.map((s) => [
       JSON.stringify([s.state_key, s.variant_key]),
-      { ts: s.updated_at.toISOString(), hash: s.value_hash, version: s.version },
+      {
+        ts: s.updated_at.toISOString(),
+        hash: s.value_hash,
+        version: s.version,
+        pendingChangeId: s.pending_change_id,
+        pendingChangeAt: s.pending_change_at?.toISOString() ?? null,
+      },
     ]),
   );
   const planned: PlannedStates = [];
-  const updates = new Map<string, { key: string; variantKey: string; ts: string; hash: string; version: string }>();
+  const updates = new Map<
+    string,
+    {
+      key: string;
+      variantKey: string;
+      ts: string;
+      hash: string;
+      version: string;
+      pendingChangeId: string | null;
+      pendingChangeAt: string | null;
+    }
+  >();
+  const plannedChanges = new Set<string>();
   // Plan transitions in time order (acceptance order on equal timestamps), so an earlier observation sent after a
   // later one in the same batch still records its value and the change that follows it.
   const chronological = [...batch.states].sort((a, b) =>
@@ -259,14 +291,23 @@ export const planIngestStates = async (
       source_id: sourceId,
       version: s.version,
     };
-    planned.push({ ...row, updated_at: clickhouseTime(s.ts), change_id: !prev || prev.hash !== hash ? s.id : null });
-    current.set(key, { ts: s.ts, hash, version: s.version });
-    updates.set(key, { key: s.key, variantKey: s.variantKey, ts: s.ts, hash, version: s.version });
+    const pendingChangeId = !prev || prev.hash !== hash ? s.id : prev.pendingChangeId;
+    const pendingChangeAt = !prev || prev.hash !== hash ? s.ts : prev.pendingChangeAt;
+    planned.push({
+      ...row,
+      updated_at: clickhouseTime(s.ts),
+      // Replays retain the original change time as part of the history ordering key.
+      changed_at: clickhouseTime(pendingChangeAt ?? s.ts),
+      change_id: pendingChangeId && !plannedChanges.has(pendingChangeId) ? pendingChangeId : null,
+    });
+    if (pendingChangeId) plannedChanges.add(pendingChangeId);
+    current.set(key, { ts: s.ts, hash, version: s.version, pendingChangeId, pendingChangeAt });
+    updates.set(key, { key: s.key, variantKey: s.variantKey, ts: s.ts, hash, version: s.version, pendingChangeId, pendingChangeAt });
   }
   if (updates.size)
-    await db`INSERT INTO pulse.state_variants(base_id,state_key,variant_key,updated_at,value_hash,version)
-    SELECT ${baseId}::uuid,key,"variantKey",ts,hash,version FROM jsonb_to_recordset((${JSON.stringify([...updates.values()])}::jsonb #>> '{}')::jsonb) AS i(key text,"variantKey" text,ts timestamptz,hash text,version bigint)
-    ON CONFLICT(base_id,state_key,variant_key) DO UPDATE SET updated_at=EXCLUDED.updated_at,value_hash=EXCLUDED.value_hash,version=EXCLUDED.version`;
+    await db`INSERT INTO pulse.state_variants(base_id,state_key,variant_key,updated_at,value_hash,version,pending_change_id,pending_change_at)
+    SELECT ${baseId}::uuid,key,"variantKey",ts,hash,version,"pendingChangeId","pendingChangeAt" FROM jsonb_to_recordset((${JSON.stringify([...updates.values()])}::jsonb #>> '{}')::jsonb) AS i(key text,"variantKey" text,ts timestamptz,hash text,version bigint,"pendingChangeId" uuid,"pendingChangeAt" timestamptz)
+    ON CONFLICT(base_id,state_key,variant_key) DO UPDATE SET updated_at=EXCLUDED.updated_at,value_hash=EXCLUDED.value_hash,version=EXCLUDED.version,pending_change_id=EXCLUDED.pending_change_id,pending_change_at=EXCLUDED.pending_change_at`;
   return planned;
 };
 
@@ -340,13 +381,15 @@ export const writePreparedIngestBatchInTransaction = async (params: {
     store,
     database,
     "_states_current",
-    plannedStates.map(({ change_id, ...row }) => row),
+    plannedStates.map(({ change_id, changed_at, ...row }) => row),
   );
   await insertStoreRows(
     store,
     database,
     "_state_changes",
-    plannedStates.flatMap(({ change_id, updated_at, ...row }) => (change_id ? [{ ...row, id: change_id, changed_at: updated_at }] : [])),
+    plannedStates.flatMap(({ change_id, changed_at, updated_at, ...row }) =>
+      change_id ? [{ ...row, id: change_id, changed_at: changed_at ?? updated_at }] : [],
+    ),
   );
   if (batch.metrics.length)
     await db`UPDATE pulse.metric_series s SET mirrored=true,last_seen_at=greatest(s.last_seen_at,${now}::timestamptz)

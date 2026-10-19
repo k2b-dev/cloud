@@ -106,6 +106,27 @@ suiteFor(
     }
   }, 60000);
 
+  for (const budget of ["values", "bytes"] as const)
+    test(`a batch larger than the ${budget} minute budget is admitted and repays its debt`, async () => {
+      const quota = createIngestQuota(requireInfraUrl("valkey"));
+      const input = {
+        baseId: crypto.randomUUID(),
+        valuesPerMinute: 2000,
+        bytesPerMinute: 2000,
+        values: budget === "values" ? 2500 : 0,
+        bytes: budget === "bytes" ? 2500 : 0,
+      };
+      try {
+        expect(await quota.consume(input)).toBeNull();
+        const throttled = await quota.consume(input);
+        expect(throttled).toMatchObject({ status: 429, code: "PULSE_BASE_THROTTLED" });
+        expect(throttled?.retryAfter).toBeGreaterThanOrEqual(70);
+        expect(throttled?.retryAfter).toBeLessThanOrEqual(75);
+      } finally {
+        quota.close();
+      }
+    });
+
   test("#6 storage crossings commit one outbox row per user admin; reads and caps remain available", async () => {
     const f = await writeFixture("storage-crossing");
     const adminIds = ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002"];

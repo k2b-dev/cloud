@@ -139,7 +139,9 @@ value and subsequent value changes, while equal values update the current
 snapshot without adding history.
 
 A keyed retry completes its original state history even if newer batches have
-arrived. Their newer current states remain current.
+arrived. Their newer current states remain current. An unkeyed resend of a
+failed state batch still records its change once, at the time Pulse first
+accepted it.
 
 Hourly metric values keep count, sum, minimum, maximum, last value and its
 timestamp, and counter increase. A counter reset contributes its new value;
@@ -191,7 +193,9 @@ Values and bytes share a token bucket per base across replicas, HTTP ingest,
 CLI ingest, and scrapes. Buckets hold one minute's allowance and refill
 continuously. HTTP ingest counts original body bytes; other paths count their
 serialized batch. Completed keyed retries return their stored counts without
-using quota again. Batches larger than the allowance need splitting.
+using quota again. A batch larger than one minute's allowance can use a full
+bucket. Its full cost is charged, so later batches wait until enough quota has
+refilled.
 
 | Condition | Response and recovery |
 | --- | --- |
@@ -224,7 +228,8 @@ Raw metric samples use daily partitions. The nightly retention job at 03:17
 UTC removes a partition only when its whole day is past raw retention and all
 recorded metric hours in that day are sealed. Late data and corrections inside
 retention mark hours dirty again; the hourly job resumes unfinished hours
-after downtime. **Hourly values are lagging** under
+after downtime. An hour whose calculation fails waits one hour before its next
+attempt, so other bases continue. **Hourly values are lagging** under
 **Administration → Pulse → Bases** indicates dirty hours more than three hours
 old awaiting processing, or sealing that delays partition removal by more than
 a day. Check the hourly and retention jobs before discarding data.

@@ -31,7 +31,7 @@ Send an `Idempotency-Key` from the first attempt. Keep the body and key unchange
 - **Request key:** Pulse reserves it before writing. The same key and batch return the same successful result for 24 hours.
 - **Pending batch:** Retry with the same key to write the same rows. Different content with that key returns 409.
 - **No key:** A failed batch can already be partly stored; the error says so. Sending it again can store those parts twice. Adding a key afterwards cannot deduplicate the first attempt. Send every batch with an `Idempotency-Key` from the first attempt to retry safely.
-- **Quota:** Values and bytes share a per-base allowance across sources and replicas. A 429 response includes `Retry-After`.
+- **Quota:** Values and bytes share a per-base allowance across sources and replicas. A batch larger than one minute's allowance can use a full bucket; its full cost delays later batches until enough quota has refilled. A 429 response includes `Retry-After`.
 - **Store outage:** A 503 response includes `Retry-After`. Scrapes record the failure; Cloud administrators receive one notification per outage.
 :::
 

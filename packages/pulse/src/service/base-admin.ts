@@ -69,7 +69,7 @@ const adminBaseRow = async (baseId: string, now = new Date()) => {
       rollup_lag: boolean;
     }[]
   >`SELECT b.*,EXISTS(SELECT 1 FROM pulse.metric_hours h WHERE h.base_id=b.id AND (
-    (h.state='dirty' AND (h.lease_until IS NULL OR h.lease_until<${now}::timestamptz) AND h.hour<${now}::timestamptz-interval '3 hours') OR
+    (h.state='dirty' AND h.hour<${now}::timestamptz-interval '3 hours') OR
     (h.state<>'sealed' AND date_trunc('day',h.hour,'UTC')+interval '1 day'<${now}::timestamptz-(b.retention_days+1)*interval '1 day')
   )) AS rollup_lag FROM pulse.bases b WHERE b.id=${baseId}::uuid`;
   if (!base) throw new BaseAdminError("NOT_FOUND", 404);

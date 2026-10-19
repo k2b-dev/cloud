@@ -138,8 +138,9 @@ retry safely.
 | Instance disk below 10% free | `503 PULSE_STORE_DISK_LOW`, `Retry-After: 300`; reads continue |
 
 Wait for `Retry-After` before retrying an unchanged keyed batch. Fix other
-client errors first. Split batches that exceed the base's allowance; a bucket
-cannot accumulate more than one minute's quota.
+client errors first. A batch larger than one minute's allowance can use a full
+bucket. Its full cost is charged, so later batches wait until enough quota has
+refilled.
 
 Values and bytes use continuously refilled token buckets per base, shared
 across replicas and HTTP, CLI, and scrape paths. HTTP counts original request

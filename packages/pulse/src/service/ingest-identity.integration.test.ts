@@ -77,7 +77,82 @@ suiteFor(
         expect((await sql`SELECT value_hash FROM pulse.state_variants WHERE base_id=${f.base.id}::uuid`)[0]?.value_hash).toBe(
           valueHash("planned"),
         );
+        expect(
+          (await sql`SELECT pending_change_id FROM pulse.state_variants WHERE base_id=${f.base.id}::uuid`)[0]?.pending_change_id,
+        ).toBeTruthy();
+        f.recover();
+        assertWrite(await f.write({ states: [{ key: "door", value: "planned" }] }, keyed ? "planned" : undefined));
+        expect(
+          (await sql`SELECT pending_change_id FROM pulse.state_variants WHERE base_id=${f.base.id}::uuid`)[0]?.pending_change_id,
+        ).toBeNull();
+        expect(await f.read("_state_changes", "count() AS n", "FINAL")).toEqual([{ n: 1 }]);
       } finally {
+        await f.cleanup();
+      }
+    }, 60000);
+  for (const historyLanded of [false, true])
+    test(`an unkeyed resend preserves one transition when history ${historyLanded ? "landed before failure" : "failed to insert"}`, async () => {
+      const f = await writeFixture(`unkeyed-state-history-${historyLanded}`);
+      const query = f.store.query;
+      try {
+        await f.stopMerges();
+        assertWrite(await f.write({ states: [{ key: "status", value: "up" }] }));
+        f.setTime("2026-10-17T12:01:00Z");
+        if (historyLanded) {
+          f.store.query = async (statement, params) => {
+            const result = await query(statement, params);
+            if (statement.startsWith("INSERT INTO") && statement.includes("._state_changes"))
+              throw new Error("Failure after history insert");
+            return result;
+          };
+        } else f.failInsert(2);
+        const down = { states: [{ key: "status", value: "down" }] };
+        expect(await f.write(down)).toMatchObject({ ok: false, error: { status: 503 } });
+        const [pending] = await sql<
+          { pending_change_id: string; pending_change_at: Date }[]
+        >`SELECT pending_change_id,pending_change_at FROM pulse.state_variants WHERE base_id=${f.base.id}::uuid`;
+        expect(pending?.pending_change_id).toBeTruthy();
+        expect(pending?.pending_change_at.toISOString()).toBe("2026-10-17T12:01:00.000Z");
+        f.recover();
+        f.store.query = query;
+        f.setTime("2026-10-17T12:02:00Z");
+        assertWrite(await f.write(down));
+        expect(
+          await f
+            .read("states", "value,toUnixTimestamp64Milli(updated_at) AS updated_at")
+            .then((rows) => rows.map((r) => ({ value: r.value, updated_at: Number(r.updated_at) }))),
+        ).toEqual([{ value: '"down"', updated_at: Date.parse("2026-10-17T12:02:00Z") }]);
+        expect(await f.read("_state_changes", "value", "FINAL ORDER BY changed_at")).toEqual([{ value: '"up"' }, { value: '"down"' }]);
+        expect(
+          await f
+            .read("_state_changes", "id,toUnixTimestamp64Milli(changed_at) AS changed_at", "FINAL WHERE value='\"down\"'")
+            .then((rows) => rows.map((r) => ({ id: r.id, changed_at: Number(r.changed_at) }))),
+        ).toEqual([{ id: pending?.pending_change_id, changed_at: Date.parse("2026-10-17T12:01:00Z") }]);
+        expect(
+          (await sql`SELECT pending_change_id,pending_change_at FROM pulse.state_variants WHERE base_id=${f.base.id}::uuid`)[0],
+        ).toEqual({ pending_change_id: null, pending_change_at: null });
+        const history = await f.read("_state_changes", "count() AS n");
+        // With merges stopped, a landed history row and its replay remain separate physical rows.
+        expect(Number(history[0]?.n)).toBe(historyLanded ? 3 : 2);
+        f.setTime("2026-10-17T12:03:00Z");
+        assertWrite(await f.write(down));
+        expect(await f.read("_state_changes", "count() AS n")).toEqual(history);
+        for (const suffix of ["", "FINAL"]) {
+          const [count] = await f.read(
+            "_state_changes",
+            suffix ? "count() AS n" : "uniqExact(tuple(state_key,variant_key,changed_at,id)) AS n",
+            suffix,
+          );
+          expect(Number(count?.n)).toBe(2);
+          expect(
+            await f
+              .read("_state_changes", "toUnixTimestamp64Milli(changed_at) AS changed_at", `${suffix} WHERE value='\"down\"'`)
+              .then((rows) => rows.map((r) => Number(r.changed_at))),
+          ).toEqual(Array(historyLanded && !suffix ? 2 : 1).fill(Date.parse("2026-10-17T12:01:00Z")));
+        }
+        expect(await f.read("_state_changes", "value", "FINAL ORDER BY changed_at")).toEqual([{ value: '"up"' }, { value: '"down"' }]);
+      } finally {
+        f.store.query = query;
         await f.cleanup();
       }
     }, 60000);

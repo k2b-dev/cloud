@@ -316,6 +316,10 @@ export const createIngestWriter = ({
           },
           now: clock(),
         });
+        const changeIds = plannedStates.flatMap((s) => (s.change_id ? [s.change_id] : []));
+        if (changeIds.length)
+          await tx`UPDATE pulse.state_variants SET pending_change_id=NULL,pending_change_at=NULL
+            WHERE base_id=${params.baseId}::uuid AND pending_change_id=ANY(${sql.array(changeIds, "UUID")})`;
         if (key)
           await tx`UPDATE pulse.ingest_idempotency SET state='done',response=(${JSON.stringify(counts)}::jsonb #>> '{}')::jsonb WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key}`;
         return ok(counts);

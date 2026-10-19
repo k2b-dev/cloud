@@ -150,6 +150,7 @@ export const installBaseline = async (sql: TransactionSQL): Promise<void> => {
   await sql`CREATE TABLE pulse.state_variants (
     base_id UUID NOT NULL, state_key TEXT NOT NULL, variant_key TEXT NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL, value_hash TEXT NOT NULL, version BIGINT NOT NULL,
+    pending_change_id UUID, pending_change_at TIMESTAMPTZ,
     PRIMARY KEY(base_id,state_key,variant_key),
     FOREIGN KEY(base_id,state_key) REFERENCES pulse.state_keys(base_id,state_key) ON DELETE CASCADE
   )`.simple();

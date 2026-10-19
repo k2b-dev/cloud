@@ -11,10 +11,11 @@ local prev=redis.call('HMGET',KEYS[1],'at','values','bytes')
 local elapsed=math.max(0,now-tonumber(prev[1] or now))
 local v=math.min(vcap,tonumber(prev[2] or vcap)+elapsed*vcap/60000)
 local b=math.min(bcap,tonumber(prev[3] or bcap)+elapsed*bcap/60000)
-local wait=math.max(0,(values-v)*60000/vcap,(bytes-b)*60000/bcap)
+local wait=math.max(0,(math.min(values,vcap)-v)*60000/vcap,(math.min(bytes,bcap)-b)*60000/bcap)
 if wait>0 then return math.max(1,math.ceil(wait/1000)) end
 redis.call('HSET',KEYS[1],'at',now,'values',v-values,'bytes',b-bytes)
-redis.call('PEXPIRE',KEYS[1],120000)
+-- Keep debt until both buckets could have refilled completely.
+redis.call('PEXPIRE',KEYS[1],math.ceil(math.max(120000,(vcap-v+values)*60000/vcap,(bcap-b+bytes)*60000/bcap)))
 return 0`;
 
 export type QuotaError = {
