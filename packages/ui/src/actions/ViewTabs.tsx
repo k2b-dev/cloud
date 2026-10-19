@@ -72,7 +72,15 @@ function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTa
     const focus = (event: FocusEvent) => {
       if (event.target instanceof HTMLElement && event.target.matches(".k2b-view-tabs__tab")) settle(list, edges, event.target);
     };
-    watch = { resize: new ResizeObserver(() => settle(list, edges)), focus };
+    watch = {
+      resize: new ResizeObserver(() => {
+        const focused = document.activeElement;
+        if (focused instanceof HTMLElement && list.contains(focused) && focused.matches(".k2b-view-tabs__tab"))
+          settle(list, edges, focused);
+        else settle(list, edges);
+      }),
+      focus,
+    };
     Object.defineProperty(list, "__k2bViewTabsWatch", { value: watch, configurable: true });
     list.addEventListener("focusin", focus);
   }

@@ -440,3 +440,26 @@ test("resizing a narrow workspace host settles the current view again before pai
     await page.close();
   }
 });
+
+test("resizing a narrow workspace host keeps the focused More trigger visible", async () => {
+  const page = await browser!.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  try {
+    await load(page, { width: "640", primary: "true", current: "1" });
+    const moreLabel = await page.locator(".k2b-view-tabs__more-trigger").getAttribute("aria-label");
+    expect(moreLabel).not.toBeNull();
+    let reachedMore = false;
+    for (let press = 0; press < 10; press++) {
+      await page.keyboard.press("Tab");
+      reachedMore = await page.evaluate(() => document.activeElement?.matches(".k2b-view-tabs__more-trigger") ?? false);
+      if (reachedMore) break;
+    }
+    expect(reachedMore, "More trigger was not reached after 10 Tab presses").toBe(true);
+    await page.locator("#app").evaluate((app) => (app.style.width = "390px"));
+    await frames(page);
+    const resized = await snapshot(page, undefined, true);
+    expect(resized.id).toBe(moreLabel);
+    expectVisible(resized);
+  } finally {
+    await page.close();
+  }
+});
