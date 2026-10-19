@@ -1,5 +1,14 @@
 import { AccessEntrySchema, hasRole } from "@k2b/cloud/contracts";
-import { type AuthContext, getLocale, jsonResponse, respond, respondMessage, v } from "@k2b/cloud/server";
+import {
+  type AuthContext,
+  getLocale,
+  jsonResponse,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
+  respond,
+  respondMessage,
+  setRequestTimeout,
+  v,
+} from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -92,7 +101,11 @@ const routes = new Hono<AuthContext>()
     async (c) => {
       const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
       if (!baseId.ok) return respond(c, baseId.result);
-      const result = await pulseService.base.update({ baseId: baseId.value, user: requestAccessScope(c), ...c.req.valid("json") });
+      // A shorter retention first previews what it removes: a few ClickHouse scans in sequence, each bounded to 30 s.
+      setRequestTimeout(c, 240);
+      const result = await pulseService.base
+        .update({ baseId: baseId.value, user: requestAccessScope(c), ...c.req.valid("json") })
+        .finally(() => setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS));
       if (!result.ok && result.error.code === "PULSE_RETENTION_CONFIRMATION_REQUIRED" && "preview" in result.error)
         return c.json({ code: result.error.code, message: result.error.message, preview: result.error.preview }, 409);
       return respond(
