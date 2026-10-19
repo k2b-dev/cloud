@@ -1063,7 +1063,7 @@ Action without retry safety retains the unknown-outcome behavior. Validation
 also checks:
 
 - Placeholders use `{name}` matching `^[a-z][A-Za-z0-9]{0,31}$`; other braces
-  are invalid. Every placeholder names a slot; `action`, `running`, and `done`
+  are invalid. Every `{name}` names a slot; `action`, `running`, and `done`
   each name every slot.
 - At most six slots and three chip occurrences in `action`. Templates have at
   most 200 characters; `short` has at most 60. Each button names at most one
