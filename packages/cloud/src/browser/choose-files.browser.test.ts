@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { z } from "zod";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import { type CapabilityInvocationResult, type CapabilityQueryDefinition, defineCapabilities } from "../contracts/capabilities";
 import {
@@ -428,6 +428,7 @@ describe("choosing files in a browser", () => {
         await page.keyboard.press("ArrowDown");
         expect(await focusedRow(page)).toContain("notes.txt");
         const fileRow = rows(page).nth(1);
+        await settled(page);
         const before = await fileRow.boundingBox();
         expect(before).not.toBeNull();
         await page.keyboard.press("Space");

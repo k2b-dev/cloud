@@ -359,6 +359,8 @@ describe("account pages in a browser", () => {
       for (const path of tabs) {
         const tab = await open(desktop, path, "en", dark);
         try {
+          // The page renders without JavaScript and open() waits for its fonts; the current section is the condition.
+          await tab.locator('.account-tabs [aria-current="page"]').first().waitFor();
           const colors = await tab.evaluate(() => {
             const canvas = document.querySelector(".cloud-app-canvas")!;
             const probe = document.createElement("span");
