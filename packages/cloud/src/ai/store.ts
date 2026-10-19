@@ -1259,15 +1259,17 @@ export const aiConversations: AiConversationService = {
       );
       const target = rows[0];
       if (!target) throw new Error("Failed to fork conversation.");
+      // Copies keep their original send time because Recent orders by it.
       await tx`
         INSERT INTO ai.messages (
           short_id, conversation_id, seq, kind, role, message, search_text, loop_id,
-          model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason, meta
+          model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason, meta, created_at
         )
         SELECT
           short_id, ${target.id}::uuid, seq, kind, role, message, search_text, loop_id,
           model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason,
-          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END
+          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END,
+          created_at
         FROM ai.messages
         WHERE conversation_id = ${input.sourceConversationId}::uuid
           AND compacted_at IS NULL
@@ -2559,6 +2561,7 @@ export const aiConversations: AiConversationService = {
 
     await sql.begin(async (tx) => {
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.targetConversationId} FOR UPDATE`;
+      // Copies keep their original send time because Recent orders by it.
       await tx`
         INSERT INTO ai.messages (
           short_id,
@@ -2575,7 +2578,8 @@ export const aiConversations: AiConversationService = {
           stop_reason,
           loop_aggregate,
           loop_done_reason,
-          meta
+          meta,
+          created_at
         )
         SELECT
           short_id,
@@ -2592,7 +2596,8 @@ export const aiConversations: AiConversationService = {
           stop_reason,
           loop_aggregate,
           loop_done_reason,
-          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END
+          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END,
+          created_at
         FROM ai.messages
         WHERE conversation_id = ${input.sourceConversationId}
           AND compacted_at IS NULL

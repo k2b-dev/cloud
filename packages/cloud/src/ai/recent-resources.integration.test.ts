@@ -120,6 +120,21 @@ suite("recent sent resources: real store and current reader authorization", () =
     }
   });
 
+  test("a forked chat's copied messages keep their original send time and recency order", async () => {
+    const f = await fixture();
+    try {
+      await f.append([marker("old")]);
+      await f.append([marker("new")]);
+      await aiConversations.forkConversation({ sourceConversationId: f.chat.id, ownerUserId: f.userId, throughSeq: 1 });
+      expect(await aiConversations.listRecentSentResourceRefs({ ownerUserId: f.userId })).toEqual([
+        expect.objectContaining({ ref: { type: "demo.item", id: "new" }, count: 1, lastSentAt: "2026-10-01T00:00:02.000Z" }),
+        expect.objectContaining({ ref: { type: "demo.item", id: "old" }, count: 1, lastSentAt: "2026-10-01T00:00:01.000Z" }),
+      ]);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
   test("returns exactly the latest eight distinct refs with counts across messages", async () => {
     const f = await fixture();
     try {
