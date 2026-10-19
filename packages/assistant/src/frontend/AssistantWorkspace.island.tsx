@@ -35,7 +35,6 @@ import { cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser
 import { chooseFiles } from "@k2b/cloud/browser/files";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
-import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
 import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
@@ -1324,32 +1323,6 @@ export default function AssistantWorkspace(props: Props) {
     void addComposerFiles(sessionKey, [createAiPastedTextFile(text)]);
   };
 
-  const addComposerResource = async (sessionKey: string) => {
-    if (!requireComposerAttachmentsAvailable(sessionKey)) return;
-    if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
-      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
-      return;
-    }
-    const existing = composerAttachmentsFor(sessionKey).filter((item) => item.kind === "resource");
-    const selected = await openCloudResourcePicker({
-      title: t().attachResource,
-      excludeRefs: existing.map((item) => item.ref),
-      requireReader: true,
-    });
-    if (!selected) return;
-    setComposerAttachmentsFor(sessionKey, [
-      ...composerAttachmentsFor(sessionKey),
-      {
-        kind: "resource",
-        id: `resource:${selected.ref.type}:${selected.ref.id}`,
-        name: selected.title,
-        ref: selected.ref,
-        icon: selected.icon ?? selected.appIcon ?? "ti ti-cloud",
-        href: selected.href,
-      },
-    ]);
-  };
-
   const dictationKey = () => (activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey());
   const dictationTarget = () => (activeProject() ? (pendingProjectChats()[activeProject()!.id]?.id ?? null) : chat.activeConversationId());
   const dictation = createAssistantDictation({
@@ -1601,6 +1574,7 @@ export default function AssistantWorkspace(props: Props) {
           </div>
         </Show>
         <Chat.Composer
+          addOpensCommands
           accessory={
             <Show when={!projectComposer() && (hasOpenTodos() || showCompletedTodos())}>
               <Chat.Tasks
@@ -1827,25 +1801,6 @@ export default function AssistantWorkspace(props: Props) {
               : undefined
           }
           onError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
-          menuActions={[
-            {
-              id: "attach-resource",
-              label: t().attachResource,
-              icon: "ti ti-cloud-plus",
-              disabled: composerAttachmentsBlocked(sessionKey()),
-              onSelect: () => addComposerResource(sessionKey()),
-            },
-            ...(!projectComposer() && activeConversation()
-              ? [
-                  {
-                    id: "search-chat",
-                    label: t().searchThisChat,
-                    icon: "ti ti-search",
-                    onSelect: searchChat,
-                  },
-                ]
-              : []),
-          ]}
           contextActions={
             !projectComposer() && todoItems().length > 0 && !hasOpenTodos()
               ? [

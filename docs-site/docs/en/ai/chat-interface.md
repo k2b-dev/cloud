@@ -1152,7 +1152,8 @@ tasks restore the plan automatically; switching chats resets the disclosure.
 
 ## Select commands and inline context
 
-Assistant recognizes `/` at a word boundary anywhere in the composer. Its
+Assistant recognizes `/` at a word boundary anywhere in the composer. **+**
+opens the same list with a search field on top, including on phones. Its
 sections stay in this order: **Recent**, **Insert**, **Skills**, **Files in this
 chat**, **This chat**, **Routines**, **Open in apps** (German: **Zuletzt** and
 **In Apps öffnen**).
@@ -1198,8 +1199,12 @@ Switching lists clears previous results. Screen readers announce the number
 of suggestions once the search settles.
 
 **Insert** (**Einfügen**) starts with **Insert from Cloud** and **Attach file**.
-The file row uses the same device and app selection as the **+** menu. Search
-tags such as Notes appear here only while typing. In German, `/notiz q3` narrows
+Choose **+**, then **Attach file** to use the device and app file selection.
+**Insert from Cloud** (**Aus Cloud einfügen**) inserts a reference into the text
+at the caret stored when **+** was pressed. It replaces the former resource
+attachment from the **+** menu; the model receives the same resource.
+A space separates the reference from a preceding word. Search tags such as
+Notes appear here only while typing. In German, `/notiz q3` narrows
 the list to **Notizen aus Notebooks**; Enter opens Notes in the resource picker
 with `q3` already entered. `/app q` narrows to Studio apps from Assistant, even
 before the catalog loads.
@@ -1209,6 +1214,10 @@ row for a tag scope. An unmatched `/xylo` shows **Nothing found for “xylo”**
 that Cloud search row. The picker previews resources you can read. Choosing one
 inserts its name as a reference where `/…` was; Ctrl/⌘+Z restores the token in
 one step. Escape in the picker keeps `/…` and returns focus to the composer.
+From **+**, cancelling the picker restores the stored caret or selection.
+Escape, **+** again, Back on a phone, or a press outside closes the list;
+an outside press with any pointer type does not activate what lies beneath it.
+**Search this chat** is a row in **This chat** in the same list.
 References remain available while a response runs. File attachment waits for
 the response to finish. Cloud insert rows explain when the message has reached its
 16-item limit, counting attachments and inline references together. If the

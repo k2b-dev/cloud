@@ -102,9 +102,10 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).toContain("track: trackComposerPicking");
     expect(workspace).toContain("commandFallback={insert().fallback}");
     expect(workspace).not.toContain("type / ...");
-    expect(workspace).toContain('id: "attach-resource"');
+    expect(workspace).toMatch(/<Chat\.Composer\s+addOpensCommands\b/);
+    expect(workspace).not.toMatch(/menuActions\s*=/);
+    expect(workspace).not.toContain("addComposerResource");
     expect(workspace).toContain("onPaste={(event) => pasteComposerContent");
-    expect(workspace).toContain("openCloudResourcePicker");
     expect(workspace).toContain("cloudResourceClipboard.parse(structured, props.cloudUrl)");
     expect(workspace).toContain("createAiPastedTextFile(text)");
     expect(workspace).toContain("onShowText:");
@@ -113,7 +114,6 @@ describe("Assistant frontend contracts", () => {
     // The server counts references in the text with attachments, so every limit check does too.
     expect(workspace).toContain("composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS");
     expect(workspace).not.toMatch(/composerAttachmentsFor\([^)]*\)\.length >= AI_TURN_ATTACHMENT_MAX_ITEMS/);
-    expect(workspace).toContain('id: "search-chat"');
     expect(workspace).toContain('id: "compact-context"');
     expect(workspace).toContain("openGlobalSearch(assistantSearchOptions(locale(), conversation))");
     expect(workspace).toContain("loadHistoryThroughSeq");

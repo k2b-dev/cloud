@@ -211,11 +211,14 @@ available when the work continues later.
 - Start a chat from a suggested task or write your own request. Before the first
   message, optionally choose a Project below the composer to use its shared
   context.
-- Attach source files or Cloud resources when the answer must use material
-  beyond the message. **Attach files** takes files from this device or, when
-  Cloud apps offer files, a copy from one of them, such as Files; **Choose
-  resource** links the resource itself. Files and screenshots can also be
-  dropped or pasted directly into the composer. A long plain-text paste becomes a durable **Pasted text** attachment;
+- Choose **+** to open the same list as `/`, with a search field on top.
+  **Attach file** takes files from this device or, when Cloud apps offer files,
+  a copy from one of them, such as Files. **Insert from Cloud** inserts a
+  reference at the text caret; the model receives the same resource as an
+  attachment. **Search this chat** searches messages in the open chat.
+  Escape, **+** again, Back on a phone, or an outside press closes the list.
+  An outside press only closes it and does not activate the control underneath.
+  Files and screenshots can also be dropped or pasted directly into the composer. A long plain-text paste becomes a durable **Pasted text** attachment;
   **Show in text field** moves a bounded text attachment back into the draft.
   You can attach up to 16 items.
 - Ask Assistant to read supported PDF, Office, OpenDocument, RTF, EPUB, or CSV

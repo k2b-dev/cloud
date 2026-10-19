@@ -138,6 +138,7 @@ const installPopoverStub = () => {
 
 const mount = async (
   options: {
+    add?: boolean;
     host?: ReturnType<typeof createDomTestHarness>;
     value?: string;
     locale?: string;
@@ -241,7 +242,7 @@ const mount = async (
     },
   });
   cleanups.push(() => loader.dispose());
-  const [value, setValue] = createSignal(options.value ?? "/");
+  const [value, setValue] = createSignal(options.value ?? (options.add ? "Hello world" : "/"));
   const [selectedModel, setSelectedModel] = createSignal("alpha");
   const [state, setState] = createSignal<"idle" | "running">("idle");
   const [mentions, setMentions] = createSignal<readonly ChatMention[]>(options.mentions ?? []);
@@ -276,6 +277,7 @@ const mount = async (
   const dispose = render(
     () => (
       <Chat.Composer
+        addOpensCommands={options.add}
         value={value()}
         state={state()}
         onValueChange={setValue}
@@ -352,7 +354,10 @@ const mount = async (
       input.setSelectionRange(text.length, text.length);
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-  const key = (key: string) => input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+  const key = (key: string) =>
+    (dom.root.querySelector('input[role="combobox"]') ?? input).dispatchEvent(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+    );
   const rows = () => [...dom.root.querySelectorAll<HTMLButtonElement>('[role="option"]')];
   const row = (label: string) => rows().find((row) => row.querySelector("strong")?.textContent === label)!;
   const mark = (label: string) => {
@@ -368,6 +373,15 @@ const mount = async (
   await settled();
   return {
     ...dom,
+    openPlus: (start = 5, end = start) => {
+      input.focus();
+      input.setSelectionRange(start, end);
+      input.click();
+      const plus = dom.root.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]');
+      expect(plus).not.toBeNull();
+      plus!.click();
+      expect(dom.root.querySelector('input[role="combobox"]')).not.toBeNull();
+    },
     input,
     type,
     key,
@@ -1220,4 +1234,110 @@ test("a recent search row checks the live part count when chosen, so a full mess
   expect(h.mentions()).toEqual([]);
   expect(h.value()).toBe("/q3");
   expect(h.status()).toContain("Eine Nachricht kann höchstens 16 Elemente enthalten.");
+});
+
+test.each([false, true])("Plus starts with Insert after Recent when present (recent=%s)", async (recent) => {
+  const h = await mount({ add: true, recent: recent ? recentItems : [] });
+  h.openPlus();
+  await settled();
+  await settled();
+  expect(h.headings()).toEqual([...(recent ? ["Zuletzt"] : []), "Einfügen", "Skills", "Dieser Chat", "Routinen"]);
+  expect(h.labels().slice(recent ? 4 : 0, recent ? 6 : 2)).toEqual(["Aus Cloud einfügen", "Datei anhängen"]);
+});
+
+test("Plus Attach file uses fileSelection.choose and cancellation returns to the caret", async () => {
+  const choose = mock(async () => []);
+  const h = await mount({ add: true, choose });
+  h.openPlus();
+  h.mark("Datei anhängen");
+  h.key("Enter");
+  expect(choose).toHaveBeenCalledTimes(1);
+  await flush();
+  expect(h.value()).toBe("Hello world");
+  expect(h.document.activeElement === h.input).toBe(true);
+  expect(h.input.selectionStart).toBe(5);
+});
+
+test.each(["item", "app"])("Plus Cloud picker inserts the same model resource at the stored caret (icon=%s)", async (icon) => {
+  const chosen = { ...chosenNote, icon: icon === "item" ? "ti ti-note" : undefined, appIcon: chosenNote.appIcon };
+  picker.mockResolvedValueOnce(chosen);
+  const h = await mount({ add: true });
+  h.openPlus();
+  h.mark("Aus Cloud einfügen");
+  h.key("Enter");
+  await flush();
+  expect(picker).toHaveBeenCalledTimes(1);
+  expect(picker).toHaveBeenLastCalledWith(expect.objectContaining({ requireReader: true }));
+  expect(h.value()).toBe("Hello Q3 plan  world");
+  expect(h.mentions()).toEqual([{ start: 6, end: 13, attachment: expect.objectContaining({ name: chosen.title, href: chosen.href }) }]);
+  expect(h.document.activeElement === h.input).toBe(true);
+  expect(h.input.selectionStart).toBe(14);
+  const { aiChatAttachments, aiComposerSendInput } = await import("@k2b/cloud/ai/ui");
+  const oldAttachment: AiComposerAttachment = {
+    kind: "resource",
+    id: `resource:${chosen.ref.type}:${chosen.ref.id}`,
+    ref: chosen.ref,
+    name: chosen.title,
+    icon: chosen.icon ?? chosen.appIcon ?? "ti ti-cloud",
+    href: chosen.href,
+  };
+  const oldDraft = aiComposerSendInput({ intent: "send", text: "Hello world", attachments: aiChatAttachments([oldAttachment]) });
+  const newDraft = aiComposerSendInput({ intent: "send", text: h.value(), mentions: h.mentions(), attachments: [] });
+  const oldPart = oldDraft.resources![0]!;
+  const newPart = newDraft.draftContent!.find((part) => part.type === "resource")!;
+  expect(oldPart).toEqual({ ref: chosen.ref, title: chosen.title, icon: oldAttachment.icon, href: chosen.href });
+  expect(newPart).toEqual({ type: "resource", ...oldPart, inline: true });
+  expect(newDraft.draftContent!.indexOf(newPart)).toBe(1);
+  h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+  expect(h.value()).toBe("Hello world");
+  expect(h.mentions()).toEqual([]);
+});
+
+test("Plus Search this chat calls the existing searchChat action", async () => {
+  const h = await mount({ add: true });
+  h.openPlus();
+  h.mark("In diesem Chat suchen");
+  h.key("Enter");
+  await flush();
+  expect(h.searches()).toBe(1);
+  expect(h.value()).toBe("Hello world");
+});
+
+test("Plus insert rows retain the attachment limit reason", async () => {
+  const { AI_TURN_ATTACHMENT_MAX_ITEMS } = await import("@k2b/cloud/ai/ui");
+  const choose = mock(async () => []);
+  const h = await mount({
+    add: true,
+    choose,
+    attachments: Array.from({ length: AI_TURN_ATTACHMENT_MAX_ITEMS }, (_, i) => ({
+      kind: "resource",
+      id: `resource:${i}`,
+      name: `Note ${i}`,
+      icon: "ti ti-note",
+      ref: { type: "notebooks.note", id: `Note${i}` },
+    })),
+  });
+  h.openPlus();
+  for (const label of ["Aus Cloud einfügen", "Datei anhängen"]) {
+    expect(h.row(label).getAttribute("aria-disabled")).toBe("true");
+    expect(h.row(label).querySelector("small")?.textContent).toBe(
+      `Eine Nachricht kann höchstens ${AI_TURN_ATTACHMENT_MAX_ITEMS} Elemente enthalten.`,
+    );
+    h.mark(label);
+    h.key("Enter");
+  }
+  expect(choose).not.toHaveBeenCalled();
+  expect(picker).not.toHaveBeenCalled();
+});
+
+test("Plus Attach file retains the running-answer reason", async () => {
+  const choose = mock(async () => []);
+  const h = await mount({ add: true, choose });
+  h.setState("running");
+  h.openPlus();
+  expect(h.row("Datei anhängen").getAttribute("aria-disabled")).toBe("true");
+  expect(h.row("Datei anhängen").querySelector("small")?.textContent).toBe("Geht, sobald die Antwort fertig ist");
+  h.mark("Datei anhängen");
+  h.key("Enter");
+  expect(choose).not.toHaveBeenCalled();
 });

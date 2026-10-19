@@ -29,7 +29,7 @@ Die Seitenleiste zeigt deine aktiven Chats als schlichte Zeilen: angeheftete Cha
 - **Kontext:** Das Projekt mit Anweisungen, Wissen, Dateien und Referenzen, die Skills, die der Chat verwendet hat, was aus ihm gemerkt wurde, seine Routinen und Secrets. Ein Projekt-Chat enthält seinen geerbten Projektkontext ohne Aktionen zur Projektbearbeitung.
 - **Suchen:** Über die Suchschaltfläche im Kopf der Seitenleiste findest du Ergebnisse, Dateien und Quellen dieses Chats. Escape schließt die Suche.
 - **Chatdateien löschen:** Zeige auf einen Upload, eine Sprachaufnahme oder eine Arbeitsdatei oder erreiche sie mit der Tab-Taste und wähle rechts das Papierkorbsymbol; bei einem Ergebnis nutzt du sein Menü. Auf Touch-Geräten ist das Symbol immer sichtbar. Nach deiner Bestätigung entfernt der Assistent die Datei aus diesem Chat und schließt ihren geöffneten Tab. Frühere Nachrichten bleiben erhalten, ihre Verweise öffnen die Datei aber nicht mehr. Projektdateien verwaltest du auf der Projektseite.
-- **Cloud-Ressourcen:** Hänge über das Plus-Menü eine unterstützte Cloud-Ressource an, ohne ihren Inhalt in den Chat zu kopieren. Ein Chat, der aus Mail oder einer anderen Anwendung geöffnet wurde, kann bereits eine oder mehrere Ressourcen enthalten. Ressourcenlinks öffnen die zuständige Anwendung in einem neuen Tab. Jeder Lesezugriff und jede Aktion prüft weiterhin deine aktuelle Berechtigung in dieser Anwendung.
+- **Cloud-Ressourcen:** Wähle **+ → Aus Cloud einfügen**, um einen Verweis auf eine unterstützte Cloud-Ressource an der Textposition einzufügen. Das Modell erhält dieselbe Ressource wie bei einem Anhang, ohne ihren Inhalt in den Chat zu kopieren. Ein Chat, der aus Mail oder einer anderen Anwendung geöffnet wurde, kann bereits eine oder mehrere Ressourcen enthalten. Ressourcenlinks öffnen die zuständige Anwendung in einem neuen Tab. Jeder Lesezugriff und jede Aktion prüft weiterhin deine aktuelle Berechtigung in dieser Anwendung.
 Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Als Nutzung zählen eine gesendete Nachricht, ein Lauf und das Wiederöffnen; Öffnen und Lesen markieren einen Chat nur als gelesen, und automatische Metadatenänderungen zählen ebenfalls nicht. Laufende Chats und Chats, die auf eine Bestätigung warten, bleiben aktiv. **Chat wieder öffnen** hält einen Chat aktiv, bis du ihn erneut als fertig markierst. Die Sidebar zeigt alle aktiven Chats und direkt darunter **Fertig** mit dem Zugang zu **Alle Chats**.
 
 - **Abschließen oder fortsetzen:** Markiere einen Chat als fertig, um ihn unter **Fertig** abzulegen. Stoppe vorher eine laufende Antwort. Öffne ihn wieder oder sende eine neue Nachricht; Dateien, Apps und Anheftung bleiben erhalten.
@@ -100,7 +100,15 @@ erreichbar.
 
 ## Slash-Befehle und Kontext auswählen {icon="command"}
 
-Tippe `/` an einer Wortgrenze im Eingabefeld, auch mitten im Text. Suche nach
+Wähle **+**, um die Befehlsliste mit einem Suchfeld darüber zu öffnen.
+**Datei anhängen** öffnet die Dateiauswahl, **In diesem Chat suchen** durchsucht
+die Nachrichten des geöffneten Chats. Escape, **+** erneut, Zurück auf dem
+Handy oder ein Druck außerhalb schließt die Liste. Ein Druck außerhalb
+schließt sie nur und löst das Bedienelement darunter nicht aus. Das Textfeld
+erhält Fokus und Auswahl zurück.
+
+Tippe `/` an einer Wortgrenze im Eingabefeld, auch mitten im Text, um dieselbe
+Liste zu öffnen. Suche nach
 einem Namen oder grenze mit `/skill`, `/app`, `/file` oder `/project` ein.
 Pfeiltasten und Enter oder Tab wählen einen Treffer aus; Escape schließt die
 Vorschläge und erhält deinen Entwurf. Die Vorschläge ersetzen vorübergehend
