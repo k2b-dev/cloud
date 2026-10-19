@@ -197,7 +197,7 @@ for (const navigationApi of [true, false]) {
       await remaining;
     });
 
-    test("traversing a dead entry beside a live history dialog neither closes nor hides popstate", async () => {
+    test("a dead entry beside a live history dialog counts as a page entry above it", async () => {
       const core = createDialogCore();
       const application = mock(() => {});
       window.addEventListener("popstate", application);
@@ -211,19 +211,43 @@ for (const navigationApi of [true, false]) {
       expect(core.isOpen()).toBe(true);
       expect(document.body.textContent).not.toContain("Disposed history");
       expect(await upper).toBeUndefined();
+      // A dialog opened on the dead entry is removed by one Back onto it; the live dialog below stays.
+      b.button.focus();
+      const next = core.open(view("Next"), { history: true });
+      history.back();
+      expect(await next).toBeUndefined();
+      expect(document.body.textContent).toContain("Live history");
+      expect(document.body.textContent).not.toContain("Next");
+      // Back off the dead entry reaches the live dialog's entry: the dialog stays open.
       history.back();
       await settle();
-      expect(application).toHaveBeenCalledTimes(1);
       expect(core.isOpen()).toBe(true);
+      // Forward onto the dead entry closes nothing either.
       history.forward();
       await settle();
-      expect(application).toHaveBeenCalledTimes(2);
       expect(core.isOpen()).toBe(true);
-      // Remove the remaining level through its signal-free close path, away from the dead entry.
-      history.back();
-      await settle();
+      expect(application).toHaveBeenCalledTimes(navigationApi ? 0 : 3);
       core.close();
       await lower;
+    });
+
+    test("a dialog opened after an await belongs to the island of the latest press", async () => {
+      const core = createDialogCore();
+      const { parent, button } = trigger("a");
+      const outside = trigger();
+      outside.button.focus();
+      button.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
+      await Promise.resolve();
+      const result = core.open(view("Loaded on demand"));
+      dispose(parent);
+      expect(core.isOpen()).toBe(false);
+      expect(await result).toBeUndefined();
+      // Disposal forgets the press, so a later dialog without a trigger belongs to no island.
+      const unowned = core.open(view("Unowned"));
+      dispose(parent);
+      expect(core.isOpen()).toBe(true);
+      core.close();
+      await unowned;
     });
 
     test.each(["wrapper", "window"])("holder release on %s during disposal never schedules Back", async (target) => {

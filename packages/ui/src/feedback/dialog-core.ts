@@ -90,7 +90,7 @@ const HISTORY_MARKER = "k2bDialog";
 const historyRecord = (): Record<string, unknown> =>
   typeof history.state === "object" && history.state !== null ? { ...history.state } : {};
 const historyMarker = (): unknown => historyRecord()[HISTORY_MARKER];
-const historySnapshot = () => ({ href: location.href, length: history.length, marker: historyMarker() });
+const historySnapshot = () => ({ href: location.href, length: history.length });
 
 const resolveInitialFocusTarget = (entry: DialogStackEntry, dialog: HTMLDialogElement): HTMLElement | null => {
   const { initialFocus } = entry;
@@ -146,8 +146,11 @@ export const createDialogCore = () => {
   /** Markers of this core's entries in the browser history, oldest first. */
   let historyIds: number[] = [];
   const issued = new Set<number>();
-  /** Only disposed markers: foreign history keeps its existing behavior. */
+  /** Markers forgotten during island disposal. Their entries count as page entries above the dialogs opened before them. */
   const forgotten = new Set<number>();
+  const deadMarker = (marker: unknown): marker is number => typeof marker === "number" && forgotten.has(marker);
+  /** The target of the latest pointer or key press, for dialogs that open after an await. */
+  let lastInteraction: Element | undefined;
   const ownMarker = (marker: unknown): marker is number => typeof marker === "number" && issued.has(marker);
   let seen: ReturnType<typeof historySnapshot> | undefined;
   let traversalFrom: { href: string; marker: unknown } | undefined;
@@ -214,17 +217,16 @@ export const createDialogCore = () => {
     resolveReturning = undefined;
     try {
       const marker = historyMarker();
-      // An island's forgotten entry is ordinary same-URL history, even next to a still-open dialog's marker.
-      // Without the Navigation API, the last observed marker identifies departure from that dead entry.
-      const departure = from ?? seen;
-      const dead = (value: unknown) => typeof value === "number" && forgotten.has(value);
-      if (departure?.href === location.href && (dead(departure.marker) || dead(marker))) return;
       if (from && from.href === location.href && from.marker !== marker && (ownMarker(from.marker) || ownMarker(marker))) {
         event.stopImmediatePropagation();
       }
       // Own entries are ordered by id. A retired entry reached by Forward stays tracked, so closing the dialogs
-      // beneath it also removes it.
-      historyIds = ownMarker(marker) ? [...historyIds.filter((id) => id < marker), marker] : [];
+      // beneath it also removes it. A forgotten entry keeps the dialogs opened before it, like the page keeps none.
+      historyIds = ownMarker(marker)
+        ? [...historyIds.filter((id) => id < marker), marker]
+        : deadMarker(marker)
+          ? historyIds.filter((id) => id < marker)
+          : [];
       const gone = (entry: DialogStackEntry) => entry.historyId !== undefined && !historyIds.includes(entry.historyId);
       while (state.stack.some(gone)) popTop(undefined);
       for (const holder of [...historyHolders].reverse()) {
@@ -248,9 +250,14 @@ export const createDialogCore = () => {
     }
     const target = event.target;
     if (!(target instanceof Element)) return;
+    if (lastInteraction && target.contains(lastInteraction)) lastInteraction = undefined;
     const lowest = state.stack.findIndex((entry) => entry.island && target.contains(entry.island));
     if (lowest < 0) return;
     while (state.stack.length > lowest) popTop(undefined);
+  };
+
+  const onInteraction = (event: Event) => {
+    if (event.target instanceof Element) lastInteraction = event.target;
   };
 
   const onNavigate = (event: NavigateEvent) => {
@@ -262,10 +269,14 @@ export const createDialogCore = () => {
     if (listening?.window === window) return;
     listening?.window.removeEventListener("popstate", onPopState, { capture: true });
     listening?.window.removeEventListener("ssr:island-dispose", onIslandDispose, { capture: true });
+    listening?.window.removeEventListener("pointerdown", onInteraction, { capture: true });
+    listening?.window.removeEventListener("keydown", onInteraction, { capture: true });
     listening?.navigation?.removeEventListener("navigate", onNavigate);
     window.addEventListener("popstate", onPopState, { capture: true });
     // Capture opens the disposal window before target listeners can release history holders.
     window.addEventListener("ssr:island-dispose", onIslandDispose, { capture: true });
+    window.addEventListener("pointerdown", onInteraction, { capture: true });
+    window.addEventListener("keydown", onInteraction, { capture: true });
     const current = typeof navigation !== "undefined" ? navigation : undefined;
     current?.addEventListener("navigate", onNavigate);
     listening = { window, navigation: current };
@@ -516,9 +527,10 @@ export const createDialogCore = () => {
     const previousTop = state.stack[state.stack.length - 1];
     if (previousTop) previousTop.container.style.display = "none";
     const activeElement = document.activeElement;
-    // The island around the element that opened this dialog. WebKit does not focus a clicked button, so the target of
-    // the event being dispatched comes first. A level opened from inside a dialog closes with the level below it.
-    const trigger = window.event?.target instanceof Element ? window.event.target : activeElement;
+    // The island around the element that opened this dialog: the target of the event being dispatched, else of the
+    // latest pointer or key press (WebKit does not focus a clicked button, and a dialog may open after an await),
+    // else focus. A level opened from inside a dialog closes with the level below it.
+    const trigger = window.event?.target instanceof Element ? window.event.target : (lastInteraction ?? activeElement);
     const island =
       trigger instanceof Element && !dialog.contains(trigger) ? (trigger.closest("solid-island,solid-client") ?? undefined) : undefined;
 
