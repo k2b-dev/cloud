@@ -261,6 +261,11 @@ describe("answering", () => {
         expect(await page.$eval(".k2b-chat-decision", (node) => node.getBoundingClientRect().top)).toBe(cardTop);
         expect(await page.$eval(".ai-turn__text", (node) => node.getBoundingClientRect().top)).toBe(aboveBox);
         expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(true);
+        // The fixture holds the answer until release(). The line fills its live region 40 ms after it changes, a timer
+        // that settled() does not wait for, so wait for the words while the answer is still held.
+        await page.waitForFunction(() =>
+          document.querySelector(".k2b-chat-outcome [role='status']")?.textContent?.includes("wird gesendet …"),
+        );
         expect(await page.locator(".k2b-chat-outcome [role='status']").textContent()).toContain("wird gesendet …");
 
         await sample(page, { line: ".k2b-chat-outcome", text: ".ai-turn__text" });
