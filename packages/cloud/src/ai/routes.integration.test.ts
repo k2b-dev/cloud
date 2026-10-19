@@ -1285,7 +1285,11 @@ suiteFor(
         // The check runs with the person's session authority; an API key of the same person cannot borrow it.
         const owner = await accounts.users.get({ id: userId });
         if (!owner) throw new Error("Missing fixture user");
-        const apiToken = await serviceAccountCredentials.createUserApiToken({ user: owner, name: "Outcome check" });
+        const apiToken = await serviceAccountCredentials.createUserApiToken({
+          browserSignIn: await createTestBrowserSignIn(owner.id),
+          user: owner,
+          name: "Outcome check",
+        });
         if (!apiToken.ok) throw new Error(apiToken.error.message);
         expect((await post("send", apiToken.data.token)).status).toBe(403);
         expect(dispatch).not.toHaveBeenCalled();
