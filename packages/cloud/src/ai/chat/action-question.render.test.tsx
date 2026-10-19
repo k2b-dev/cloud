@@ -9,6 +9,7 @@ import { capabilityActionReviewIssues } from "../../_internal/capability-reviews
 import { CapabilityActionCallReviewSchema } from "../../contracts/capabilities";
 import type { AiTurnBlock } from "../protocol";
 import type { ActionFixtureLocale } from "./action-question.fixtures";
+import type { AiTurnPhase } from "./turn-layout";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-action-question-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -29,7 +30,7 @@ type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 const renderTurn = (
   block: ToolBlock,
   locale: ActionFixtureLocale,
-  phase: "waiting" | "completed" | "running" = "waiting",
+  phase: AiTurnPhase = "waiting",
   actions: Record<string, unknown> = { onApproval: async () => undefined, onContinueTurn: () => undefined },
 ) =>
   renderToString(() =>
@@ -358,7 +359,7 @@ describe("older reviews", () => {
 
 describe("card v4 outcome line", () => {
   const de = actionFixtures("de");
-  const outcome = (block: ToolBlock, phase: "completed" | "running" = "completed") => {
+  const outcome = (block: ToolBlock, phase: AiTurnPhase = "completed") => {
     const html = renderTurn(block, "de", phase);
     const start = html.indexOf('data-current="true"');
     const current = start < 0 ? html : html.slice(start, html.indexOf('role="status"', start));
@@ -396,6 +397,24 @@ describe("card v4 outcome line", () => {
     expect(failed.current).toContain("nicht gesendet. Der Mailserver kennt lea.berg@exmaple.com nicht.");
     expect(failed.current).not.toContain("BAD_INPUT");
     expect(failed.html).toContain('data-tone="error"');
+    // Cloud's own transport code says the call failed, never that the app refused it.
+    const unavailable = outcome(
+      decided(de.mail!.block, { status: "failed", isError: true, result: "APP_UNAVAILABLE: Mail ist gerade nicht erreichbar." }),
+    );
+    expect(unavailable.current).toContain("Fehlgeschlagen: ");
+    expect(unavailable.current).toContain("Mail ist gerade nicht erreichbar.");
+    expect(unavailable.current).not.toMatch(/nicht gesendet|weiß ich/);
+  });
+
+  test("an approved call the turn ended without a stop is open, not stopped", () => {
+    const running = decided(de.mail!.block, { status: "running", at: undefined });
+    const failedTurn = outcome(running, "failed");
+    expect(failedTurn.current).toContain("Ob Mail Wartungsfenster Dienstag an Lea Berg senden passiert ist, weiß ich noch nicht.");
+    expect(failedTurn.current).toContain("Die Antwort endete, während das lief.");
+    expect(failedTurn.all).not.toContain("Die Antwort wurde angehalten.");
+    expect(failedTurn.all).not.toContain("Noch einmal prüfen");
+    const stopped = outcome(running, "stopped");
+    expect(stopped.current).toContain("Die Antwort wurde angehalten.");
   });
 
   test("an unknown outcome says so, the check settles it, and nothing offers to run it again", () => {

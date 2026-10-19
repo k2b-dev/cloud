@@ -3031,13 +3031,25 @@ export const aiConversations: AiConversationService = {
     `;
     if (!rows[0]) return null;
     // The waits let a reconnecting client show work time without time spent waiting for the user.
-    const [waits, messages] = await Promise.all([
+    const [waits, metadata] = await Promise.all([
       activeTurnWaits(rows[0].id),
-      aiConversations.listTurnMessages({ conversationId: input.conversationId, loopId: rows[0].id, includeCompacted: true }),
+      sql<{ tool_reviews: Record<string, AiStoredActionReview> | null; tool_checks: Record<string, AiActionCheck> | null }[]>`
+        SELECT meta->'toolReviews' AS tool_reviews, meta->'toolChecks' AS tool_checks
+        FROM (
+          SELECT meta, seq, conversation_id, loop_id, role FROM ai.messages
+          UNION ALL
+          SELECT meta, seq, conversation_id, loop_id, role FROM ai.task_messages
+        ) messages
+        WHERE conversation_id = ${input.conversationId}
+          AND loop_id = ${rows[0].id}
+          AND role = 'assistant'
+          AND (meta ? 'toolReviews' OR meta ? 'toolChecks')
+        ORDER BY seq ASC
+      `,
     ]);
     // A person may re-check while the model continues. Durable checks outrank the worker's earlier live snapshot.
-    const reviews = new Map(messages.flatMap((message) => Object.entries(message.meta?.toolReviews ?? {})));
-    const checks = new Map(messages.flatMap((message) => Object.entries(message.meta?.toolChecks ?? {})));
+    const reviews = new Map(metadata.flatMap((row) => Object.entries(row.tool_reviews ?? {})));
+    const checks = new Map(metadata.flatMap((row) => Object.entries(row.tool_checks ?? {})));
     return {
       turn: rowToTurn(rows[0]),
       liveBlocks: rowToLiveBlocks(rows[0]).map((block) => {

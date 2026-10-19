@@ -1025,6 +1025,16 @@ suiteFor(
           role: "assistant",
           content: ["send", "no-check", "legacy"].map((id) => ({ type: "tool_call", id, name: "demo__action__send", args: {} })),
         });
+        // Exercise durable metadata in both message tables while the foreground turn remains live.
+        const messageTable = state === "failed" ? "ai.task_messages" : "ai.messages";
+        if (state === "failed") {
+          await sql`
+            WITH moved AS (
+              DELETE FROM ai.messages WHERE conversation_id=${conversation.id}::uuid AND role='assistant' RETURNING *
+            )
+            INSERT INTO ai.task_messages SELECT * FROM moved
+          `;
+        }
         const target = { conversationId: conversation.id, turnId: turn.id, callId: "send" };
         await recordAiToolReview({
           ...target,
@@ -1104,10 +1114,17 @@ suiteFor(
         expect(replay.status).toBe(200);
         expect(await replay.json()).toMatchObject({ state: "done", receipt: { text: "Saved" } });
         expect(queryCount).toBe(2);
+        // Compaction must not hide durable review/check metadata from a live snapshot.
+        await sql`UPDATE ${sql(messageTable)} SET compacted_at=now() WHERE conversation_id=${conversation.id}::uuid AND role='assistant'`;
         expect((await aiConversations.getActiveTurn({ conversationId: conversation.id }))?.liveBlocks[0]).toMatchObject({
+          review: { ...reviewFixture(), ask: "sends", check: { query: "check", input: { id: "original" } } },
           check: { state: "done", receipt: { text: "Saved" } },
         });
-        const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+        const messages = await aiConversations.listTurnMessages({
+          conversationId: conversation.id,
+          loopId: turn.id,
+          includeCompacted: true,
+        });
         expect(buildBlocksFromMessages(messages).find((block) => block.kind === "tool" && block.callId === "send")).toMatchObject({
           check: { state: "done", receipt: { text: "Saved" } },
         });

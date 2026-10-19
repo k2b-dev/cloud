@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
+import { sql } from "bun";
+import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
 import { compileReviewFixture, outcomeCheckCases } from "../_internal/capability-review.test-fixture";
 import type { dispatchCapability } from "../api/capabilities";
+import * as executionStore from "../capabilities/executions";
 import { defineCapabilities } from "../contracts/capabilities";
 import * as categoryPolicy from "../services/account-category-policy";
 import { buildAiCapabilityCatalog } from "./capabilities";
@@ -322,6 +325,47 @@ describe("AI capability authority", () => {
       ).rejects.toEqual(new AiCapabilityExecutionError(failure.code, failure.status, failure.message));
     }
   });
+
+  test.each(["registry unavailable", "not registered", "upstream 503", "upstream 504", "upstream 500"])(
+    "tracks whether the app was attempted: %s",
+    async (failure) => {
+      spyOn(executionStore, "recordCapabilityExecution").mockResolvedValue(crypto.randomUUID());
+      const current = user("11111111-1111-4111-8111-111111111111");
+      const registered = app();
+      // Avoid idempotency storage: this test exercises the dispatch boundary itself.
+      registered.manifest.actions[0]!.idempotency = "none";
+      const upstream = failure.startsWith("upstream");
+      const status = upstream ? Number(failure.slice(-3)) : 503;
+      const fetch = mock(async () => Response.json({ code: "APP_UNAVAILABLE", message: "Unavailable" }, { status }));
+      const { privateKey } = await generateKeyPair("RS256");
+      await expect(
+        executeAiCapability({
+          conversationId: "conversation-1",
+          authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+          entry: buildAiCapabilityCatalog([registered])[0]!,
+          args: { title: "Test" },
+          context: {
+            signal: new AbortController().signal,
+            requestApproval: async () => true,
+            requestClientTool: async <T>() => undefined as T,
+          },
+          dependencies: {
+            getCapability: async () => {
+              if (failure === "registry unavailable") throw new Error("Registry offline");
+              return upstream ? registered : null;
+            },
+            withActiveSigner: async (_purpose, callback) =>
+              callback(
+                { kid: "test", key: privateKey, issuer: "https://cloud.example.test", signUntil: new Date("2099-01-01T00:00:00Z") },
+                sql,
+              ),
+            fetch,
+          },
+        }),
+      ).rejects.toMatchObject({ code: "APP_UNAVAILABLE", status, dispatched: upstream });
+      expect(fetch).toHaveBeenCalledTimes(upstream ? 1 : 0);
+    },
+  );
 
   test("surfaces bounded validation issue paths without rejected values", async () => {
     const current = user("11111111-1111-4111-8111-111111111111");

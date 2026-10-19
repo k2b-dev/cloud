@@ -4002,18 +4002,22 @@ suiteFor(
   });
 
   test.each([
-    { outcome: "done", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: true },
-    { outcome: "not_done", code: "IDEMPOTENCY_UNCERTAIN", status: 409, legacy: false, withCheck: true },
-    { outcome: "pending", code: "IDEMPOTENCY_IN_PROGRESS", status: 409, legacy: false, withCheck: true },
-    { outcome: "failed", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: true },
+    { outcome: "done", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "not_done", code: "IDEMPOTENCY_UNCERTAIN", status: 409, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "pending", code: "IDEMPOTENCY_IN_PROGRESS", status: 409, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "failed", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: true, dispatched: false },
     // A timeout after dispatch proves nothing either: it is checked like a lost answer.
-    { outcome: "not_done", code: "DEADLINE_EXCEEDED", status: 504, legacy: false, withCheck: true },
-    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: false },
-    { outcome: "pending", code: "APP_UNAVAILABLE", status: 503, legacy: false, withCheck: false },
-    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: true, withCheck: false },
+    { outcome: "not_done", code: "DEADLINE_EXCEEDED", status: 504, legacy: false, withCheck: true, dispatched: true },
+    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: false, dispatched: true },
+    { outcome: "pending", code: "APP_UNAVAILABLE", status: 503, legacy: false, withCheck: false, dispatched: true },
+    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: true, withCheck: false, dispatched: true },
+    { outcome: "pending", code: "APP_UNAVAILABLE", status: 503, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "pending", code: "APP_UNAVAILABLE", status: 503, legacy: false, withCheck: true, dispatched: true },
+    { outcome: "pending", code: "INTERNAL", status: 500, legacy: false, withCheck: true, dispatched: true },
+    { outcome: "pending", code: "REQUEST_CANCELLED", status: 499, legacy: false, withCheck: true, dispatched: true },
   ] as const)(
-    "lost Action answer after $code: $outcome, check=$withCheck, legacy=$legacy",
-    async ({ outcome, code, status, legacy, withCheck }) => {
+    "Action failure $code: $outcome, check=$withCheck, legacy=$legacy, dispatched=$dispatched",
+    async ({ outcome, code, status, legacy, withCheck, dispatched }) => {
       const userId = await insertUser();
       const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["demo.send"] });
       const compiled = compileReviewFixture(legacy ? null : { silent: "you" });
@@ -4035,7 +4039,10 @@ suiteFor(
       const dispatch = spyOn(capabilityDispatch, "dispatchCapability").mockImplementation(async (input) => {
         calls.push({ kind: input.kind, capabilityId: input.capabilityId, review: input.review });
         if (input.review) return Response.json(liveReview);
-        if (input.kind === "actions") return Response.json({ code, message: "Lost Action response" }, { status });
+        if (input.kind === "actions") {
+          if (dispatched) input.onUpstreamAttempt?.();
+          return Response.json({ code, message: "Action failed" }, { status });
+        }
         expect(input).toMatchObject({ kind: "queries", capabilityId: "check", input: { id: "original" }, origin: "assistant" });
         expect(input.authority?.actor).toMatchObject({ kind: "user", user: { id: userId } });
         // The review is already durable before either dispatch, including a call auto-approved by an old always row.
@@ -4083,7 +4090,8 @@ suiteFor(
           signal: new AbortController().signal,
         });
         expect(calls.filter((call) => call.kind === "actions" && !call.review)).toHaveLength(1);
-        expect(calls.filter((call) => call.kind === "queries")).toHaveLength(withCheck ? 1 : 0);
+        const preDispatchFailure = !dispatched && code === "APP_UNAVAILABLE";
+        expect(calls.filter((call) => call.kind === "queries")).toHaveLength(withCheck && !preDispatchFailure ? 1 : 0);
         expect(await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).toEqual([]);
         liveReview = legacy
           ? { message: "Changed draft?" }
@@ -4091,7 +4099,7 @@ suiteFor(
         const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
         const block = buildBlocksFromMessages(messages).find((block) => block.kind === "tool" && block.callId === "send-1");
         expect(block).toMatchObject({ review: legacy ? { legacy: { question: "Original draft?", rows: [] } } : originalReview });
-        if (withCheck) {
+        if (withCheck && !preDispatchFailure) {
           expect(block).toMatchObject({ check: { state: outcome }, status: outcome === "done" ? "completed" : "failed" });
           if (outcome === "done")
             expect(block).toMatchObject({ check: { receipt }, result: { receipt, data: null, outcomeCheck: "done" }, isError: false });
@@ -4100,7 +4108,8 @@ suiteFor(
           if (block?.kind !== "tool") throw new Error("Expected tool block");
           expect(block.check).toBeUndefined();
           expect(block).toMatchObject({ status: "failed" });
-          expect(JSON.stringify(block)).toContain("ACTION_OUTCOME_UNKNOWN");
+          expect(JSON.stringify(block)).toContain(preDispatchFailure ? "APP_UNAVAILABLE" : "ACTION_OUTCOME_UNKNOWN");
+          if (preDispatchFailure) expect(JSON.stringify(block)).not.toContain("ACTION_OUTCOME_UNKNOWN");
         }
       } finally {
         dispatch.mockRestore();

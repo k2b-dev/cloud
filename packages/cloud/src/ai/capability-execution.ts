@@ -51,6 +51,7 @@ export class AiCapabilityExecutionError extends Error {
     readonly code: string,
     readonly status: number,
     message: string,
+    readonly dispatched: boolean = false,
   ) {
     super(`${code}: ${message}`);
     this.name = "AiCapabilityExecutionError";
@@ -79,13 +80,13 @@ const validationIssueText = (details: unknown): string => {
   return issues.length > 0 ? ` Input issues: ${issues.join("; ")}` : "";
 };
 
-const parseCapabilityResponse = async (response: Response): Promise<unknown> => {
+const parseCapabilityResponse = async (response: Response, dispatched: boolean): Promise<unknown> => {
   const body = (await response.json().catch(() => null)) as { code?: unknown; message?: unknown; details?: unknown } | null;
   if (response.ok) return body;
   const code = typeof body?.code === "string" ? body.code : "CAPABILITY_FAILED";
   const message = typeof body?.message === "string" ? body.message : "Capability execution failed";
   const issueText = code === "VALIDATION_FAILED" ? validationIssueText(body?.details) : "";
-  throw new AiCapabilityExecutionError(code, response.status, `${message}${issueText}`);
+  throw new AiCapabilityExecutionError(code, response.status, `${message}${issueText}`, dispatched);
 };
 
 type AiCapabilityCall = {
@@ -139,32 +140,35 @@ const dispatchAiCapability = async (
     headers,
     signal: input.context.signal,
   });
-  return await parseCapabilityResponse(
-    await dispatch({
-      request,
-      kind: input.entry.kind === "query" ? "queries" : "actions",
-      origin: "assistant",
-      review,
-      appId: input.entry.appId,
-      capabilityId: input.entry.operation.localId,
-      input: input.args,
-      authority: {
-        actor: input.authority.actor,
-        accessSubject: input.authority.accessSubject,
-        credentialKind: "session",
-        scopes: [],
-      },
-      mandate: input.mandate
-        ? {
-            mandateId: input.mandate.id,
-            mandateRevision: input.mandate.revision,
-            ownerAppId: "core",
-            ...(!review && input.actionApproval ? { actionApproval: input.actionApproval } : {}),
-          }
-        : undefined,
-      dependencies: input.dependencies,
-    }),
-  );
+  let dispatched = false;
+  const response = await dispatch({
+    request,
+    kind: input.entry.kind === "query" ? "queries" : "actions",
+    origin: "assistant",
+    review,
+    appId: input.entry.appId,
+    capabilityId: input.entry.operation.localId,
+    input: input.args,
+    authority: {
+      actor: input.authority.actor,
+      accessSubject: input.authority.accessSubject,
+      credentialKind: "session",
+      scopes: [],
+    },
+    mandate: input.mandate
+      ? {
+          mandateId: input.mandate.id,
+          mandateRevision: input.mandate.revision,
+          ownerAppId: "core",
+          ...(!review && input.actionApproval ? { actionApproval: input.actionApproval } : {}),
+        }
+      : undefined,
+    dependencies: input.dependencies,
+    onUpstreamAttempt: () => {
+      dispatched = true;
+    },
+  });
+  return await parseCapabilityResponse(response, dispatched);
 };
 
 export const reviewAiCapability = async (input: AiCapabilityCall): Promise<CapabilityActionReviewData | null> => {

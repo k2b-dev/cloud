@@ -1336,13 +1336,13 @@ export class AiTurnExecutor {
                     }).catch(async (error: unknown) => {
                       const review = context.callId ? storedReviews.get(context.callId) : undefined;
                       if (entry.kind !== "action" || !(error instanceof AiCapabilityExecutionError)) throw error;
-                      // Only an answer from the app about the request itself (a 4xx) proves that nothing happened. A lost
-                      // response, a timeout, a cancelled or a server-side failure after dispatch leaves the outcome open,
-                      // and a same-key retry would only answer IDEMPOTENCY_UNCERTAIN: the call is unknown, not failed.
+                      // Only an answer from the app about the request itself (a 4xx) proves that nothing happened. A 5xx,
+                      // a timeout, or a cancellation leaves the outcome open only once Cloud sent the request to the app;
+                      // before that, nothing ran and the error stays as it is. The idempotency codes speak of an earlier
+                      // attempt with the same key, so they leave it open even when this one sent nothing.
                       const uncertain =
                         ["ACTION_OUTCOME_UNKNOWN", "IDEMPOTENCY_UNCERTAIN", "IDEMPOTENCY_IN_PROGRESS"].includes(error.code) ||
-                        error.status >= 500 ||
-                        error.status === 499;
+                        (error.dispatched && (error.status >= 500 || error.status === 499));
                       if (!uncertain) throw error;
                       const unknown =
                         error.code === "ACTION_OUTCOME_UNKNOWN"
@@ -1351,6 +1351,7 @@ export class AiTurnExecutor {
                               "ACTION_OUTCOME_UNKNOWN",
                               error.status,
                               `The outcome is unknown after ${error.code}; do not retry automatically.`,
+                              error.dispatched,
                             );
                       if (!review || !("sentence" in review) || !review.check || !context.callId) throw unknown;
                       // Durable first: the claim stores `checking` before the Query runs. If this worker stops, the

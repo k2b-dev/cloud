@@ -18,13 +18,14 @@ import type { AiTurnActionState, AiTurnPhase } from "./turn-layout";
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 
 /**
- * Codes that say Cloud could not see whether the Action happened; nothing may repeat it blindly. Core reports them as
- * ACTION_OUTCOME_UNKNOWN now; older history still carries the transport codes, which prove nothing either.
+ * Codes that say Cloud could not see whether the Action happened; nothing may repeat it blindly. Core rewrites a
+ * failure after it reached the app to ACTION_OUTCOME_UNKNOWN, so a bare transport code such as APP_UNAVAILABLE failed
+ * before the app saw anything, or comes from older history; either way it reads as a failure with its message.
  */
-const UNKNOWN_CODES = new Set([
-  "ACTION_OUTCOME_UNKNOWN",
-  "IDEMPOTENCY_UNCERTAIN",
-  "IDEMPOTENCY_IN_PROGRESS",
+const UNKNOWN_CODES = new Set(["ACTION_OUTCOME_UNKNOWN", "IDEMPOTENCY_UNCERTAIN", "IDEMPOTENCY_IN_PROGRESS"]);
+
+/** Cloud's own transport codes: they say the call failed, not that the app refused it, so they never claim "not run". */
+const TRANSPORT_CODES = new Set([
   "DEADLINE_EXCEEDED",
   "APP_UNAVAILABLE",
   "REQUEST_CANCELLED",
@@ -87,7 +88,10 @@ type Flow =
   | { flow: "error" }
   | { flow: "failed" }
   | { flow: "lost" }
-  | { flow: "check"; current: "checking" | "checkedDone" | "checkedNotDone" | "pending" | "checkFailed" | "noCheck" };
+  | {
+      flow: "check";
+      current: "checking" | "checkedDone" | "checkedNotDone" | "pending" | "checkFailed" | "noCheck" | "cutOff";
+    };
 
 const flowOf = (input: {
   block: ToolBlock;
@@ -115,16 +119,20 @@ const flowOf = (input: {
   if (check?.state === "pending") return { flow: "check", current: "pending" };
   if (check?.state === "failed") return { flow: "check", current: "checkFailed" };
   if (input.state === "rejected") return { flow: "rejected" };
-  // A question nobody answered expired; one the person's stop left open, or a call it cut off, was stopped.
-  if (input.state === "not_run") return block.approved === false && input.phase !== "stopped" ? { flow: "expired" } : { flow: "stopped" };
+  // The person's stop ends an open question or a call it cut off; a question nobody answered expired. A call that was
+  // still running when the turn ended any other way may have reached the app, so its outcome is open.
+  if (input.state === "not_run") {
+    if (input.phase === "stopped") return { flow: "stopped" };
+    return block.approved === false ? { flow: "expired" } : { flow: "check", current: "cutOff" };
+  }
   if (input.state === "failed") {
     const code = toolErrorCode(block.result);
     if (code === "ACTION_NOT_DONE") return { flow: "check", current: "checkedNotDone" };
     if (code && UNKNOWN_CODES.has(code)) {
       return { flow: "check", current: "noCheck" };
     }
-    // A failure with an app's code was refused before anything happened; one without a code proves nothing.
-    return code ? { flow: "error" } : { flow: "failed" };
+    // A failure with an app's code was refused before anything happened; a transport code or none proves nothing.
+    return code && !TRANSPORT_CODES.has(code) ? { flow: "error" } : { flow: "failed" };
   }
   if (input.state === "done") return { flow: "run", current: "done" };
   return { flow: "run", current: "running" };
@@ -371,6 +379,13 @@ export function ToolActionView(props: {
             detail: words.noCheck,
             ...(c.open ? { actions: unknownActions(false) } : {}),
           },
+          cutOff: {
+            tone: "warning",
+            icon: "ti ti-help-circle",
+            text: c.forms.unknown,
+            detail: words.cutOff,
+            ...(c.open ? { actions: unknownActions(false) } : {}),
+          },
         };
         const reachable: Record<typeof current.current, (keyof typeof all)[]> = {
           checking: ["checking", "checkedDone", "checkedNotDone", "pending", "checkFailed"],
@@ -379,6 +394,7 @@ export function ToolActionView(props: {
           checkedDone: ["checkedDone"],
           checkedNotDone: ["checkedNotDone"],
           noCheck: ["noCheck"],
+          cutOff: ["cutOff"],
         };
         return Object.fromEntries(reachable[current.current].map((key) => [key, all[key]!]));
       }
