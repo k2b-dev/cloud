@@ -34,7 +34,7 @@ const user = {
   managesGroupIds: [],
 } satisfies User;
 
-const delivery = (id: string, outgoingMailStatus: "sent" | "bounced" | "queued" | null) => ({
+const delivery = (id: string, outgoingMailStatus: "sent" | "bounced" | "queued" | null, channel = "email") => ({
   id,
   eventId: id,
   definitionId: "core.fixture",
@@ -45,7 +45,7 @@ const delivery = (id: string, outgoingMailStatus: "sent" | "bounced" | "queued" 
   targetHref: null,
   recipientLabel: "Book Reader",
   recipientReference: "reader@example.test",
-  channel: "email",
+  channel,
   destinationLabel: "r***@example.test",
   required: false,
   routePriority: 1,
@@ -59,15 +59,23 @@ const delivery = (id: string, outgoingMailStatus: "sent" | "bounced" | "queued" 
   updatedAt: new Date("2026-09-14T00:00:00Z"),
   deliveredAt: null,
 });
-/** A delivered mail that bounced later, a queued mail, and a plain sent mail. */
-const deliveries = [delivery("1", "bounced"), delivery("2", "queued"), delivery("3", "sent")];
+/** Mail delivery states and a channel without a dedicated color. */
+const deliveries = [delivery("1", "bounced"), delivery("2", "queued"), delivery("3", "sent"), delivery("4", null, "webhook")];
+
+const expectNeutralChip = (chip: string | undefined) => {
+  expect(chip).toBeDefined();
+  const classes = /class="([^"]*)"/.exec(chip ?? "")?.[1] ?? "";
+  expect(classes).toContain("bg-[var(--ui-surface-muted)]");
+  expect(classes).toContain("text-secondary");
+  expect(classes).not.toMatch(/bg-blue-(?:50|100)|text-zinc-/);
+};
 
 test("notification delivery page renders charts inside the SSR and request-locale context", async () => {
   const spies = [
     stubRailSnapshot(),
     spyOn(cloud, "listApps").mockResolvedValue([]),
     spyOn(notificationsService, "facets").mockResolvedValue({ appIds: [], channels: [] }),
-    spyOn(notificationsService.delivery, "list").mockResolvedValue({ items: deliveries, page: 1, perPage: 100, total: 3, hasNext: false }),
+    spyOn(notificationsService.delivery, "list").mockResolvedValue({ items: deliveries, page: 1, perPage: 100, total: 4, hasNext: false }),
     spyOn(notificationsService.delivery, "summary").mockResolvedValue({ total: 0, active: 0, delivered: 0, suppressed: 0, failed: 0 }),
     spyOn(notificationsService.delivery, "timeseries").mockResolvedValue([
       { at: new Date("2026-09-14T00:00:00Z"), total: 3, active: 0, delivered: 3, suppressed: 0, failed: 0 },
@@ -76,6 +84,14 @@ test("notification delivery page renders charts inside the SSR and request-local
     spyOn(notificationsService.registry, "summary").mockResolvedValue({ total: 0, active: 0, apps: 0, required: 0 }),
     spyOn(notificationsService.notification, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false }),
     spyOn(notificationsService.notification, "summary").mockResolvedValue({ sent: 0, pending: 0, error: 0 }),
+    spyOn(notificationsService.notification, "searchSummary").mockResolvedValue({
+      total: 0,
+      sent: 0,
+      pending: 0,
+      error: 0,
+      system: 0,
+      latestCreatedAt: null,
+    }),
   ];
   try {
     const server = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -99,10 +115,20 @@ test("notification delivery page renders charts inside the SSR and request-local
       expect(html).toContain(locale === "de" ? "E-Mail: In Warteschlange" : "Mail: Queued");
       expect(html).not.toContain(locale === "de" ? "E-Mail: Gesendet" : "Mail: Sent");
       expect(html).toContain('title="00000000-0000-4000-8000-000000000001"');
+      const channel = [...html.matchAll(/<span\b[^>]*>[\s\S]*?<\/span>/g)].find((match) => match[0].includes("ti ti-route"))?.[0];
+      expectNeutralChip(channel);
       for (const view of ["registry", "legacy"]) {
         const other = await server.request(`/admin/observability/notifications?view=${view}`, { headers: { "Accept-Language": locale } });
         expect(other.status, await other.text()).toBe(200);
       }
+      const searched = await server.request("/admin/observability/notifications?view=legacy&search=fixture", {
+        headers: { "Accept-Language": locale },
+      });
+      const searchedHtml = await searched.text();
+      expect(searched.status, searchedHtml).toBe(200);
+      const chips = [...searchedHtml.matchAll(/<span\b[^>]*>[\s\S]*?<\/span>/g)].map((match) => match[0]);
+      expectNeutralChip(chips.find((chip) => chip.includes('class="ti ti-search text-sm"')));
+      expectNeutralChip(chips.find((chip) => chip.includes('class="ti ti-alert-circle text-sm"')));
     }
   } finally {
     for (const spy of spies) spy.mockRestore();

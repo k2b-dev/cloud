@@ -14,7 +14,7 @@ export function MemberAvatar(props: { principal: MemberPrincipal; displayName: s
       when={props.principal.type === "user" ? props.principal.userId : undefined}
       fallback={
         <span
-          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300"
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-secondary dark:bg-zinc-700"
           aria-hidden="true"
         >
           <i class="ti ti-users-group text-sm" />
