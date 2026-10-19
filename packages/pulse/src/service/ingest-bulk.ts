@@ -240,7 +240,12 @@ export const planIngestStates = async (
   );
   const planned: PlannedStates = [];
   const updates = new Map<string, { key: string; variantKey: string; ts: string; hash: string; version: string }>();
-  for (const s of batch.states) {
+  // Plan transitions in time order (acceptance order on equal timestamps), so an earlier observation sent after a
+  // later one in the same batch still records its value and the change that follows it.
+  const chronological = [...batch.states].sort((a, b) =>
+    a.ts === b.ts ? (BigInt(a.version) < BigInt(b.version) ? -1 : 1) : a.ts < b.ts ? -1 : 1,
+  );
+  for (const s of chronological) {
     const key = JSON.stringify([s.key, s.variantKey]),
       prev = current.get(key),
       hash = valueHash(s.value);

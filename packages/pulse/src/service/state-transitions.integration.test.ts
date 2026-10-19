@@ -39,6 +39,24 @@ suiteFor(
       await f.cleanup();
     }
   }, 60000);
+  test("a batch that lists a later state first still records the earlier value and the change after it", async () => {
+    const f = await writeFixture("state-batch-order");
+    try {
+      await f.stopMerges();
+      assertWrite(
+        await f.write({
+          states: [
+            { key: "door", value: "open", ts: "2026-10-17T10:01:00Z" },
+            { key: "door", value: "closed", ts: "2026-10-17T10:00:00Z" },
+          ],
+        }),
+      );
+      expect(await f.read("states", "value")).toEqual([{ value: '"open"' }]);
+      expect(await f.read("_state_changes", "value", "ORDER BY changed_at")).toEqual([{ value: '"closed"' }, { value: '"open"' }]);
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
   test("a stale pending acceptance cannot rewind an equal-timestamp state, even with a frozen millisecond", async () => {
     const f = await writeFixture("state-acceptance-order");
     try {

@@ -53,6 +53,9 @@ const enqueue = async (db: typeof sql, ids: string[], notice: Notice, locale: st
 
 /** Called only after the failed store transaction has rolled back. The singleton row serializes replicas. */
 export const recordStoreOutage = async (now: Date, database = sql, locale?: string) => {
+  // During an ongoing outage every failed write lands here: answer from the open outage without scanning users.
+  const [open] = await database`SELECT 1 FROM pulse.store_instance WHERE singleton AND outage_started_at IS NOT NULL`;
+  if (open) return;
   const language = await notificationLocale(locale);
   const admins = await cloudAdmins();
   return database.begin(async (tx) => {
@@ -65,7 +68,9 @@ export const recordStoreOutage = async (now: Date, database = sql, locale?: stri
 
 export const recordInstanceDisk = async (free: number, total: number, now: Date, database = sql, locale?: string) => {
   const language = await notificationLocale(locale);
-  const admins = total > 0 && free / total < 0.1 ? await cloudAdmins() : [];
+  // Recipients are only needed for a new crossing; a disk that stays low keeps its first notification.
+  const [prior] = await database<{ disk_low_at: Date | null }[]>`SELECT disk_low_at FROM pulse.store_instance WHERE singleton`;
+  const admins = total > 0 && free / total < 0.1 && !prior?.disk_low_at ? await cloudAdmins() : [];
   const recovered = await database.begin(async (tx) => {
     await tx`INSERT INTO pulse.store_instance(singleton) VALUES(true) ON CONFLICT DO NOTHING`;
     const [prior] = await tx<
