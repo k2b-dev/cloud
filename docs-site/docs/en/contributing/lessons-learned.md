@@ -98,8 +98,24 @@ convention still needs a check or a test.
 | Theme in print | The screen theme reaches paper: dark-theme text and surfaces print on white paper, or print rules show what the screen hides on purpose. | Test: the Mail printing browser test in `MailConversationList.browser.test.ts` prints a dark and a light conversation through Print conversation in Chromium and WebKit. It checks contrast against the printed surface, the sender rows, and the single quote label ([#1175](https://github.com/k2b-dev/cloud/issues/1175)). No shared guard yet: native printing still prints the dark theme on every other page ([#1274](https://github.com/k2b-dev/cloud/issues/1274)). |
 | Preference change escapes its audit transaction | A remembered approval changes without audit evidence, or global SQL inside a transaction callback commits the change despite an audit failure. | Test: `packages/cloud/src/ai/approvals.integration.test.ts` checks exact event metadata, no-op revocations, and rollback of remember, replacement, revoke, forget, and system changes when audit insertion fails. |
 | Inert server-rendered interaction | Interactive markup is rendered without an island, or browser inspection receives drawing labels instead of display labels. | Tests: Grids `page.render.test.tsx` checks display-only chart islands and SVG parity; `chart-tooltip.test.ts` checks named, formatted tooltips; `chart-tooltips.browser.test.ts` checks inspection and layout across mounting. Check: `chart-rendering` fails on raw stdlib chart renderers outside the allow-list and on charts outside islands. |
+| User navigation mistaken for an async action's own navigation | Every draft-key change keeps an app opening active, leaving another chat's composer read-only. | Tests: `chat-slash.behavior.test.ts` requires `follow()` for one draft move and cancels unannounced changes; Assistant's `composer-app-commands.behavior.test.tsx` checks that editing returns before the previous save finishes. |
+| Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
 
 ## Lessons
+
+### Changing chats kept the destination composer read-only
+
+- **What happened:** Moving to another chat while an app-opening draft save waited kept the destination composer read-only until the save finished or Escape was pressed.
+- **Root cause:** Every draft-key change was treated as the opener's own move to a newly created chat.
+- **Error class:** User navigation mistaken for an async action's own navigation.
+- **Guard:** `chat-slash.behavior.test.ts` checks immediate cancellation on unannounced draft changes, ignores late results, and consumes `follow()` for one move. `composer-app-commands.behavior.test.tsx` checks that navigating during a save frees the destination composer before the save finishes and still allows the opener to create a plain chat.
+
+### A Command whose code could not load counted as opened
+
+- **What happened:** When the code for opening an app Command could not load, the Assistant removed the slash and kept the draft saved without it, although nothing opened.
+- **Root cause:** `openCommand` resolved the same way after showing its reload notice as after opening.
+- **Error class:** Nothing-opened outcome read as success.
+- **Guard:** `openCommand` resolves `false` when nothing opened, tested in `commands.behavior.test.tsx`; `composer-app-commands.behavior.test.tsx` checks that the slash and the live draft stay.
 
 ### A throttled Mail provider looked like a missing message
 

@@ -1588,8 +1588,19 @@ onMount(() => {
 });
 ```
 
+Pass an `AbortSignal` as the fourth argument when the request may outlive its
+reason, for example `openCommand(id, input, { returnTo }, signal)` from a view
+the person can leave. `openCommand` resolves `true` after a mounted handler
+accepted the request and its promise resolved, or navigation started. It
+resolves `false` when nothing opened because the signal aborted or its code
+could not load; Cloud shows a reload notice when code cannot load.
+The signal covers loading the code and resolving the link; an accepting mounted
+handler takes over at once and runs its own interaction without receiving the signal.
+
 `openCommand` offers the request to mounted handlers synchronously. Exactly one
 accepting handler owns it; with no owner Cloud resolves the link and navigates.
+If resolution fails, it throws an error with the resolver's message and the
+capability error (`{ code, message, status }`) in `cause`.
 Overlapping owners produce an error before either runs; use `accepts` to keep ownership unambiguous.
 A rejected handler surfaces an error and never triggers fallback navigation.
 Document events connect independent islands without a shared Solid context.
@@ -1616,6 +1627,23 @@ Localize titles, descriptions, and input field descriptions under
 `presentation.translations.<locale>.commands`, keyed by local Command ID.
 Follow the palette's [action wording guidance](/en/docs/platform/search#write-distinct-action-titles-and-useful-descriptions)
 so users can distinguish actions by scope and understand what each one opens.
+
+### Where Commands appear
+
+The global palette and the composer's slash menu discover Commands that accept
+an empty input (`{}`), from apps in the person's navigation. The slash menu
+lists them in its last section, **Open in apps**, and leaves out its own app's
+Commands. Navigation controls discoverability; the target page still checks
+access.
+
+Write a title with a verb and an object, such as **New task**. The description
+is one sentence about what opens. Include German and English search words in
+`keywords`; translate titles, descriptions, and keywords in
+`presentation.translations.<locale>.commands`.
+
+Before opening an app, the composer saves the draft, including references and
+attachments. A failed save opens nothing. It supplies `returnTo` for the saved
+chat, but the target app decides whether and when to use it and may ignore it.
 
 ### Calendar Command entry points
 

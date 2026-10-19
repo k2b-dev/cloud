@@ -1,12 +1,17 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, mock, test } from "bun:test";
 import { currentLibrary } from "../../test/future-capability-manifest";
 import type { CapabilityCatalog, CapabilitySearchTagManifest } from "../contracts/capabilities";
 import { LOCALE_HEADER } from "../shared/locale";
-import { type CloudComposerCatalog, createCloudComposerCatalog, loadCloudComposerCatalog } from "./composer-catalog";
+import type { CloudComposerCatalog } from "./composer-catalog";
+
+let navigation: { apps: { id: string }[]; appId?: string } | undefined;
+mock.module("../ssr/shell-data", () => ({ readShellData: () => navigation }));
+const { createCloudComposerCatalog, loadCloudComposerCatalog } = await import("./composer-catalog");
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  navigation = undefined;
 });
 const note = { tag: "note", title: "Notizen", description: "Notizen durchsuchen", aliases: ["notiz", "markdown"] };
 const app = (appId: string, tags: CapabilitySearchTagManifest[] = [note], readers = true): CapabilityCatalog["apps"][number] => {
@@ -137,19 +142,19 @@ test("a composer catalog loads once per opening and lets only typed unscoped tex
   expect(loads).toHaveLength(1);
   expect(waited).toBe(false);
   const tag = { appId: "library", appName: "Library", appIcon: "ti ti-book", tag: "note", title: "Notizen", description: "", aliases: [] };
-  loads[0]!({ tags: [tag] });
+  loads[0]!({ tags: [tag], commands: [] });
   await typed;
   expect(catalog.tags()).toEqual([tag]);
   const next = catalog.ready("notiz", { opening: 2 }, "de");
   expect(loads).toHaveLength(2);
-  loads[1]!({ tags: [tag] });
+  loads[1]!({ tags: [tag], commands: [] });
   await next;
 });
 
 test("after a failed load no search waits again, and the tags it had stay", async () => {
   const tag = { appId: "library", appName: "Library", appIcon: "ti ti-book", tag: "note", title: "Notizen", description: "", aliases: [] };
   const answers: Array<() => Promise<CloudComposerCatalog>> = [
-    () => Promise.resolve({ tags: [tag] }),
+    () => Promise.resolve({ tags: [tag], commands: [] }),
     () => Promise.reject(new Error("Offline")),
     // A stalled retry must not hold the list.
     () => new Promise(() => {}),
@@ -160,4 +165,98 @@ test("after a failed load no search waits again, and the tags it had stay", asyn
   expect(catalog.tags()).toEqual([tag]);
   await catalog.ready("notiz", { opening: 3 }, "de");
   expect(answers).toHaveLength(0);
+});
+
+const commandApp = (appId: string, required = false) => {
+  const entry = app(appId, [], false);
+  entry.manifest.commands = [
+    {
+      localId: "task.compose",
+      title: "Neue Aufgabe",
+      description: "Eine Aufgabe öffnen.",
+      icon: "ti ti-checkbox",
+      keywords: ["task", "Aufgabe"],
+      path: `/app/${appId}`,
+      inputSchema: {
+        type: "object",
+        properties: { title: { type: "string" } },
+        ...(required ? { required: ["title"] } : {}),
+        additionalProperties: false,
+      },
+    },
+  ];
+  return entry;
+};
+
+test("two composers share every catalog page across openings; Commands require navigation and empty input, exclude this app, and need no reader", async () => {
+  navigation = { apps: [{ id: "spaces" }, { id: "assistant" }, { id: "required" }], appId: "assistant" };
+  let requests = 0;
+  stubFetch(async () => {
+    requests++;
+    return Response.json(
+      requests === 1
+        ? page([commandApp("assistant"), commandApp("hidden"), commandApp("required", true)], "required")
+        : page([commandApp("spaces")]),
+    );
+  });
+  const one = createCloudComposerCatalog(),
+    two = createCloudComposerCatalog();
+  await Promise.all([one.ready("task", { opening: 1 }, "de-AT"), two.ready("task", { opening: 1 }, "de-AT")]);
+  await one.ready("task", { opening: 2 }, "de-AT");
+  await two.ready("task", { opening: 3 }, "de-AT");
+  expect(requests).toBe(2);
+  expect(one.state()).toBe("ready");
+  expect(one.commands()).toEqual(two.commands());
+  expect(one.commands()).toEqual([
+    {
+      id: "spaces.task.compose",
+      appId: "spaces",
+      appName: "App spaces",
+      appIcon: "ti ti-notebook",
+      title: "Neue Aufgabe",
+      description: "Eine Aufgabe öffnen.",
+      icon: "ti ti-checkbox",
+      keywords: ["task", "Aufgabe"],
+      input: {},
+    },
+  ]);
+  expect(one.tags()).toEqual([]);
+});
+
+test("catalog retry opening moves failed → loading → ready and sends exactly one fresh request", async () => {
+  let requests = 0;
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  stubFetch(async () => {
+    requests++;
+    if (requests === 1) return Response.json({ message: "Offline" }, { status: 503 });
+    await gate;
+    return Response.json(page([]));
+  });
+  const catalog = createCloudComposerCatalog();
+  expect(catalog.state()).toBe("loading");
+  await catalog.ready("task", { opening: 1 }, "en-AU");
+  expect(catalog.state()).toBe("failed");
+  await catalog.ready("", { opening: 2 }, "en-AU");
+  await catalog.ready("task", { opening: 2 }, "en-AU");
+  expect(catalog.state()).toBe("loading");
+  expect(requests).toBe(2);
+  release();
+  for (let n = 0; n < 20; n++) await Promise.resolve();
+  expect(catalog.state()).toBe("ready");
+  expect(requests).toBe(2);
+});
+
+test("global Commands use the same navigation and empty-input rule, retaining the current app", async () => {
+  const { loadSearchCommands } = await import("./search-commands");
+  navigation = { apps: [{ id: "assistant" }, { id: "spaces" }, { id: "required" }], appId: "assistant" };
+  stubFetch(async () =>
+    Response.json(page([commandApp("hidden"), commandApp("required", true), commandApp("spaces"), commandApp("assistant")])),
+  );
+  const commands = await loadSearchCommands("de", new AbortController().signal);
+  expect(commands.map((command) => command.id)).toEqual(["spaces.task.compose", "assistant.task.compose"]);
+  navigation = undefined;
+  expect(await loadSearchCommands("de", new AbortController().signal)).toEqual([]);
 });

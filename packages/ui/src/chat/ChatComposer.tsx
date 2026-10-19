@@ -6,7 +6,9 @@ import {
   createSignal,
   createUniqueId,
   For,
+  Index,
   type JSX,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -77,6 +79,15 @@ export type ChatCommandContext = {
  */
 export type ChatCommandResult = void | "cancelled" | { done: string } | { mention: ChatAttachment };
 
+/** The draft as a successful `open` leaves it: without the `/…` token, with its references moved along. Save this one. */
+export type ChatCommandDraft = { value: string; mentions: readonly ChatMention[] };
+
+/**
+ * How an `open` row ends: on success (`void`) the token leaves as for an action; `"cancelled"` changes nothing; `failed`
+ * keeps the list open and the draft unchanged, and its text replaces the row's description until the row runs again.
+ */
+export type ChatCommandOpenResult = void | "cancelled" | { failed: string };
+
 /** A fixed place in the slash list. Sections keep the given order, also while searching. */
 export type ChatCommandSection = {
   id: string;
@@ -85,6 +96,12 @@ export type ChatCommandSection = {
   searched?: boolean;
   /** Only while searching or narrowed: absent from the overview (empty query), including its loading placeholder. */
   searchOnly?: boolean;
+  /**
+   * Local rows still on their way, such as Commands from a catalog: the section ends with placeholder rows, three in
+   * the overview and one while searching, and its heading shows a spinner. Make it the last section, so rows that
+   * arrive only fill the end of the list and no visible row moves.
+   */
+  pending?: boolean;
 };
 /** First-word narrowing; Tab writes `words[0]` followed by a space. */
 export type ChatCommandScope = { id: string; title: string; words: readonly string[] };
@@ -106,6 +123,8 @@ export type ChatCommand = {
   selected?: boolean;
   /** Retry discovery in a new opening, retaining the token and currently displayed rows. */
   searchAgain?: boolean;
+  /** Stays in every search of its section, after the matches, such as a row that retries loading the section. */
+  persistent?: boolean;
   /** Application name, searchable but not displayed. */
   app?: string;
   /** Stable row key for option ids, marking and de-duplication. Defaults to `name`. */
@@ -121,6 +140,16 @@ export type ChatCommand = {
   busyLabel?: string;
   /** Failures restore an unchanged draft and appear once in the status line, without calling `onError`. */
   action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
+  /**
+   * Leaves the composer, such as opening another app. Runs with the token and the list in place: the row shows
+   * `busyLabel` (default "Opening …") with a spinner instead of its description, and editing waits. A rejection ends like
+   * an action's: the token stays, the list closes and the status line names the reason. Closing the list, such as with
+   * Escape, cancels: `signal` aborts and the row ends at once. `signal` also aborts when the opening ends any other way
+   * than by success, so the opener can save the draft with its token again. A new `draftKey` cancels too, unless the
+   * opener calls `follow()` right before changing it itself: that next change keeps the opening, moves its busy line
+   * to the status line, and Escape still cancels. See `ChatCommandOpenResult`.
+   */
+  open?: (draft: ChatCommandDraft, signal: AbortSignal, follow: () => void) => Promise<ChatCommandOpenResult>;
   /** Selecting a reference inserts its display name and retains its opaque payload. */
   mention?: ChatAttachment;
   /**
@@ -304,6 +333,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     return `${commandListId}-c${commandIds.get(key)}`;
   };
   const [closedAt, setClosedAt] = createSignal<number>();
+  /** The `open` row running now, and why `open` rows failed in this opening, by row key. */
+  const [openingRow, setOpeningRow] = createSignal<string>();
+  const [openFailures, setOpenFailures] = createSignal<Readonly<Record<string, string>>>({});
+  /** Cancels the `open` row running now; `key` follows announced draft moves, `label` is its busy line. */
+  let openingRun: { controller: AbortController; key: unknown; label: string; follow: boolean; moved: boolean } | undefined;
   // Where the pending native edit starts; a selection replaced as a whole starts at its beginning.
   let inputStart: number | undefined;
   let inputEnd: number | undefined;
@@ -438,6 +472,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const start = openingStart();
     if (start !== undefined) setCommandOpening((opening) => opening + 1);
   });
+  // A failed `open` row says so for the rest of its list opening.
+  createEffect(() => {
+    props.draftKey;
+    commandOpening();
+    setOpenFailures({});
+  });
   const parsedCommandQuery = createMemo(() => parseChatCommandQuery(commandQuery()?.query ?? "", props.commandScopes ?? []));
   const commandFallbackRow = createMemo(() => {
     const parsed = parsedCommandQuery();
@@ -477,7 +517,76 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   });
   const commandsOpen = () =>
     Boolean(!emojiOpen() && commandQuery() && (localCommands().length || props.searchCommands || commandFallbackRow()));
-  const commandSheetHeld = createMemo(() => commandsOpen() && isTouchOnly());
+  // Rows that arrive for a pending section never move a visible row of the overview: until the person types, the list
+  // keeps the height it had with its placeholders and scrolls what does not fit. A list below its maximum height grows
+  // upward from the field, so a change of height alone would move its first row. While searching, the rows arrive
+  // with the search's own answer, which changes the list anyway.
+  const commandsPending = createMemo(
+    () =>
+      commandsOpen() &&
+      !parsedCommandQuery().scope &&
+      !parsedCommandQuery().query.trim() &&
+      commandModel().groups.some((group) => group.pendingRows > 0),
+  );
+  // Typing, another opening or closing the list lets it size itself again.
+  const commandListSizeKey = createMemo(() => (commandsOpen() ? `${commandOpening()}\u0000${caretCommandToken()?.query}` : undefined));
+  // The list's height with its placeholders, for the size key it was measured under.
+  let pendingList: { height: number; key: string | undefined } | undefined;
+  createEffect(() => {
+    const list = commandListRef;
+    if (!commandsPending() || !list || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      pendingList = { height: list.getBoundingClientRect().height, key: untrack(commandListSizeKey) };
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    onCleanup(() => observer.disconnect());
+  });
+  createEffect(
+    on(commandsPending, (pending, wasPending) => {
+      const held = pendingList;
+      pendingList = undefined;
+      // Only rows arriving hold the list; the person's typing or closing it does not.
+      if (pending || !wasPending || !held || held.key !== commandListSizeKey() || !commandListRef?.isConnected) return;
+      commandListRef.style.height = `${held.height}px`;
+      commandListRef.setAttribute("data-held", "");
+    }),
+  );
+  createEffect(
+    on(
+      commandListSizeKey,
+      () => {
+        commandListRef?.style.removeProperty("height");
+        commandListRef?.removeAttribute("data-held");
+      },
+      { defer: true },
+    ),
+  );
+  // Escape, a press outside, or moving the caret away closes the list; while an `open` row runs, that cancels it, so
+  // nothing opens after the person backed out. Success ends the opening and closes the list in one step. A new draft
+  // cancels too, unless the opener announced that next move with `follow()`: its busy line moves to the status line,
+  // and Escape still cancels there. Any later unannounced draft change cancels.
+  createEffect(() => {
+    const draftKey = props.draftKey;
+    const open = commandsOpen();
+    const row = openingRow();
+    const run = openingRun;
+    if (!run || row === undefined) return;
+    if (draftKey !== run.key) {
+      if (run.follow) {
+        run.follow = false;
+        run.key = draftKey;
+        run.moved = true;
+        showCommandStatus({ tone: "busy", text: run.label });
+      } else run.controller.abort();
+      return;
+    }
+    if (!open && !run.moved) run.controller.abort();
+  });
+  onCleanup(() => openingRun?.controller.abort());
+  // An `open` row gives the sheet's Back entry up first, so it never races the navigation it starts.
+  const commandSheetHeld = createMemo(() => commandsOpen() && isTouchOnly() && openingRow() === undefined);
   createEffect(() => {
     if (!commandSheetHeld()) return;
     onCleanup(holdDialogHistory(() => setClosedAt(commandQuery()?.start)));
@@ -672,6 +781,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setDismissed(false);
   };
   const restoreHistory = (direction: -1 | 1) => {
+    // A field that only stays enabled to keep focus, while an `open` row runs, is not edited by undo either.
+    if (editBlocked()) return;
     record();
     const next = history[historyIndex + direction];
     if (!next) return;
@@ -1004,6 +1115,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       attachFilesFromCommand(token);
       return;
     }
+    if (command.open) {
+      await openFromCommand(command, command.open, token);
+      return;
+    }
     const previous = snapshot();
     const key = props.draftKey;
     const replacement = command.mention ? command.mention.name + " " : "";
@@ -1094,6 +1209,90 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     });
   };
 
+  /**
+   * Runs an `open` row with the token and the list in place. Success removes the token in one undo step; `failed`
+   * stays in the row while the list is still there, otherwise the status line says it, so it never ends in silence.
+   */
+  const openFromCommand = async (command: ChatCommand, open: NonNullable<ChatCommand["open"]>, token: { start: number; end: number }) => {
+    const key = props.draftKey;
+    const row = chatCommandKey(command);
+    const value = props.value;
+    const nextValue = value.slice(0, token.start) + value.slice(token.end);
+    const nextMentions = reconcileChatMentions(value, nextValue, mentions());
+    // Still the same draft and `/…`, so the row is where the person chose it.
+    const inPlace = () => !disposed && props.draftKey === key && props.value === value && commandQuery()?.start === token.start;
+    const heldHistory = commandSheetHeld();
+    // Closing the list or leaving the composer cancels the opening; the row ends at once, without waiting for it.
+    const controller = new AbortController();
+    const run = { controller, key, label: command.busyLabel ?? chatMessages().commandOpening, follow: false, moved: false };
+    openingRun = run;
+    const cancelled = new Promise<"cancelled">((resolve) =>
+      controller.signal.addEventListener("abort", () => resolve("cancelled"), { once: true }),
+    );
+    setOpenFailures(({ [row]: _, ...rest }) => rest);
+    setOpeningRow(row);
+    setExecuting(true);
+    // An opening that ends without leaving, by failure, rejection or cancelling, also aborts `signal`, so the opener
+    // can put back what it saved without the token.
+    const finish = (left = false) => {
+      if (!left) controller.abort();
+      if (openingRun === run) openingRun = undefined;
+      if (commandStatus()?.tone === "busy") showCommandStatus();
+      setOpeningRow(undefined);
+      setExecuting(false);
+    };
+    let result: ChatCommandOpenResult;
+    try {
+      if (heldHistory) {
+        await dialogHistorySettled();
+        if (!inPlace()) {
+          finish();
+          return;
+        }
+      }
+      result = await Promise.race([
+        open({ value: nextValue, mentions: nextMentions }, controller.signal, () => {
+          run.follow = true;
+        }),
+        cancelled,
+      ]);
+    } catch (error) {
+      finish();
+      if (disposed) {
+        props.onError?.(error);
+        return;
+      }
+      if (inPlace()) setClosedAt(token.start);
+      showCommandStatus({ tone: "error", text: error instanceof Error && error.message ? error.message : chatMessages().commandFailed });
+      return;
+    }
+    if (!result) {
+      // Success: the token leaves and the list closes in the same step that ends the opening, so a phone sheet never
+      // takes its Back entry again while the page navigates.
+      batch(() => {
+        if (!disposed && props.draftKey === key && props.value === value) {
+          edit(nextValue, nextMentions);
+          setDismissed(true);
+        }
+        finish(true);
+      });
+      queueMicrotask(() => {
+        if (disposed || props.draftKey !== key || props.value !== nextValue) return;
+        textareaRef?.setSelectionRange(token.start, token.start);
+        syncCaret();
+        autoResize();
+      });
+      return;
+    }
+    finish();
+    if (result === "cancelled") return;
+    if (inPlace()) {
+      setOpenFailures((failures) => ({ ...failures, [row]: result.failed }));
+      setAnnouncement({ text: result.failed });
+    } else if (disposed) props.onError?.(new Error(result.failed));
+    else showCommandStatus({ tone: "error", text: result.failed });
+  };
+
   /** Replaces `start`–`end` with the emoji through the editing path, so the browser's undo restores the shortcode. */
   const insertEmoji = (start: number, end: number, emoji: string) => {
     if (!textareaRef || editBlocked()) return;
@@ -1138,6 +1337,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const onKeyDown = (event: KeyboardEvent) => {
     // WebKit ends the composition before the keydown of the Enter that confirms it; that keydown keeps keyCode 229.
     if (event.isComposing || event.keyCode === 229 || composing()) return;
+    // Escape cancels a running `open` row, also once its list is gone because the draft moved to a new chat.
+    if (event.key === "Escape" && openingRun) {
+      event.preventDefault();
+      openingRun.controller.abort();
+      if (commandsOpen()) setClosedAt(commandQuery()?.start);
+      return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
       event.preventDefault();
       restoreHistory(event.shiftKey ? 1 : -1);
@@ -1195,6 +1401,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const format = props.formatting && textareaRef ? formatShortcut(event) : undefined;
     if (format && textareaRef) {
       event.preventDefault();
+      if (editBlocked()) return;
       format.run(textareaRef);
       return;
     }
@@ -1543,7 +1750,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 }}
         rows={1}
         value={props.value}
-        disabled={editBlocked()}
+        // An `open` row keeps the field focused, so the list stays, and only read-only while it runs.
+        disabled={editBlocked() && openingRow() === undefined}
+        readOnly={openingRow() !== undefined}
         enterkeyhint={conversation() ? "enter" : undefined}
         placeholder={
           props.placeholder ??
@@ -1567,6 +1776,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           if (input.inputType === "insertText" && input.data === ":") queueMicrotask(completeShortcode);
         }}
         onPaste={(event) => {
+          // Read-only while an `open` row runs: nothing may join the draft after it was saved.
+          if (editBlocked()) {
+            event.preventDefault();
+            return;
+          }
           const clipboardData = event.clipboardData;
           if (canSelectFiles() && clipboardData?.files.length) {
             event.preventDefault();
@@ -1612,6 +1826,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const renderCommandRow = (command: ChatCommand) => {
     const highlight = () => commandRowMap().get(command)?.highlight;
     const title = () => command.label ?? command.name;
+    const opening = () => openingRow() === chatCommandKey(command);
+    const failure = () => openFailures()[chatCommandKey(command)];
     return (
       <button
         class="k2b-chat-composer__command"
@@ -1621,6 +1837,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         tabIndex={-1}
         aria-selected={selectedCommand() === command}
         aria-disabled={Boolean(command.disabled || command.reason)}
+        aria-busy={opening() ? "true" : undefined}
         aria-describedby={command.reason ? `${commandOptionId(command)}-reason` : undefined}
         data-reason={command.reason ? "true" : undefined}
         data-active={selectedCommand() === command ? "true" : undefined}
@@ -1643,8 +1860,24 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               )}
             </Show>
           </strong>
-          <Show when={command.reason ?? command.description}>
-            <small id={command.reason ? `${commandOptionId(command)}-reason` : undefined}>{command.reason ?? command.description}</small>
+          <Show
+            when={command.open && !command.reason}
+            fallback={
+              <Show when={command.reason ?? command.description}>
+                <small id={command.reason ? `${commandOptionId(command)}-reason` : undefined}>
+                  {command.reason ?? command.description}
+                </small>
+              </Show>
+            }
+          >
+            {/* The busy line shares the description's place, so the row keeps its height while it opens. */}
+            <span class="k2b-chat-composer__command-detail" data-state={opening() ? "busy" : failure() ? "failed" : undefined}>
+              <small aria-hidden={opening() ? "true" : undefined}>{failure() ?? command.description}</small>
+              <small aria-hidden={opening() ? undefined : "true"}>
+                <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
+                {command.busyLabel ?? chatMessages().commandOpening}
+              </small>
+            </span>
           </Show>
         </span>
         <Show when={command.selected}>
@@ -1723,15 +1956,17 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                             </Show>
                           </div>
                           <For each={rows()}>{renderCommandRow}</For>
-                          <Show when={group()?.placeholder}>
-                            <div class="k2b-chat-composer__command-placeholder" aria-hidden="true">
-                              <span />
-                              <span>
+                          <Index each={Array.from({ length: Math.max(group()?.placeholder ? 1 : 0, group()?.pendingRows ?? 0) })}>
+                            {() => (
+                              <div class="k2b-chat-composer__command-placeholder" aria-hidden="true">
                                 <span />
-                                <span />
-                              </span>
-                            </div>
-                          </Show>
+                                <span>
+                                  <span />
+                                  <span />
+                                </span>
+                              </div>
+                            )}
+                          </Index>
                         </div>
                       </Show>
                     );
@@ -1752,7 +1987,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     <i class="ti ti-alert-circle" /> {messages().error}
                   </div>
                 </Show>
-                <Show when={!searching() && !searchError() && foundCommandCount() === 0}>
+                <Show
+                  when={
+                    !searching() && !searchError() && foundCommandCount() === 0 && !commandModel().groups.some((group) => group.pendingRows)
+                  }
+                >
                   <div role="status">
                     {!parsedCommandQuery().query.trim()
                       ? messages().noResults

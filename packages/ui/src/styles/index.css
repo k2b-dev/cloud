@@ -10639,6 +10639,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: var(--k2b-shadow-float);
 }
 
+/* A list held at its height while late rows arrive keeps its rows at the top instead of stretching them. */
+.k2b-ui .k2b-chat-composer__commands[data-held] { align-content: start; }
+
 .k2b-ui .k2b-chat-composer__commands button,
 .k2b-ui .k2b-chat-composer__commands > [role="status"] {
   display: flex;
@@ -10718,6 +10721,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-composer__commands .k2b-chat-composer__command-text { display: grid; flex: 1; min-width: 0; gap: 0.125rem; }
 .k2b-ui .k2b-chat-composer__command-text > strong { color: var(--k2b-text); }
 .k2b-ui .k2b-chat-composer__command-text > strong > b { font-weight: 600; }
+/* An `open` row: the description and the busy line share one cell, so the row keeps its height while it opens; a
+   failure replaces the description in the same place. */
+.k2b-ui .k2b-chat-composer__command-detail { display: grid; min-width: 0; }
+.k2b-ui .k2b-chat-composer__command-detail > small { grid-area: 1 / 1; }
+.k2b-ui .k2b-chat-composer__command-detail > small:last-child { display: flex; align-items: center; gap: 0.25rem; visibility: hidden; }
+.k2b-ui .k2b-chat-composer__command-detail > small:last-child > i { font-size: 0.875rem; }
+.k2b-ui .k2b-chat-composer__command-detail[data-state="busy"] > small:first-child { visibility: hidden; }
+.k2b-ui .k2b-chat-composer__command-detail[data-state="busy"] > small:last-child { visibility: visible; }
+.k2b-ui .k2b-chat-composer__command-detail[data-state="failed"] > small:first-child { color: var(--k2b-danger-text); }
 /* The chosen value of a list, such as the current model: a check at the row's end, beside the name. */
 .k2b-ui .k2b-chat-composer__commands .k2b-chat-composer__command-end {
   display: flex;
@@ -10792,7 +10804,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     font-size: 0.9375rem;
     line-height: 1.25rem;
   }
-  .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-text > small {
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-text > small,
+  .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-detail > small {
     font-size: 0.8125rem;
     line-height: 1.125rem;
   }
