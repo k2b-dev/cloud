@@ -119,9 +119,15 @@ unchanged. Images built with the default `CLOUD_RELEASE=local` link the shared
 stylesheets without a version, so browsers revalidate them on each page.
 Set `CLOUD_RELEASE` to one immutable `sha-<commit>` value per build.
 
-During the first upgrade to a Cloud version with this behavior, run one Core
-replica. An older Core replica answers every `/public` file `immutable`, also
-under a version that names the new build.
+During the first upgrade to a Cloud version with this behavior, stop every
+old instance of Core and of each application before a new instance receives
+traffic. Use stop-then-start, such as the Compose default or the Kubernetes
+`Recreate` strategy, because a rolling or surge update overlaps old and new
+instances even with one replica. An old instance answers every `/public` file
+`immutable`, also under a version that names the new build. A browser that
+gets the old file this way keeps it until the file changes in a later release.
+Later upgrades can roll, because new instances answer only their own versions
+`immutable`.
 
 Island URLs are `/inventory/_ssr/<content-hash>/<island>.js`. The hash covers
 built island JavaScript, so it stays stable across restarts and releases that

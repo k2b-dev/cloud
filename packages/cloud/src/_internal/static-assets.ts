@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import type { Context } from "hono";
 
 const publicRoot = resolve(process.cwd(), "public");
-const versions = new Map<string, string>();
+const versions = new Map<string, { size: number; mtimeMs: number; version: string }>();
 
 /**
  * Version of Core's shared stylesheets: the release, which names one build. `local` and `development` are the
@@ -15,17 +15,19 @@ export function sharedStylesheetVersion(release: string | undefined): string | u
 }
 
 /**
- * Content version of a file below `public/`: hashed on first use and kept for the process, since production files
- * never change under a running process. An unreadable file has no version and is tried again on the next call.
+ * Content version of a file below `public/`: hashed on first use and re-hashed only when the file's size or
+ * modification time changes; a missing or unreadable file has no version.
  */
 export function publicFileVersion(pathname: string): string | undefined {
   const path = resolvePublicAsset(pathname);
   if (!path) return undefined;
-  const cached = versions.get(path);
-  if (cached) return cached;
   try {
+    const stat = statSync(path, { throwIfNoEntry: false });
+    if (!stat?.isFile()) return undefined;
+    const cached = versions.get(path);
+    if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached.version;
     const version = createHash("sha256").update(readFileSync(path)).digest("hex").slice(0, 16);
-    versions.set(path, version);
+    versions.set(path, { size: stat.size, mtimeMs: stat.mtimeMs, version });
     return version;
   } catch {
     return undefined;

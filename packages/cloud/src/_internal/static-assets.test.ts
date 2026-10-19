@@ -127,13 +127,17 @@ describe("public assets", () => {
     }
   });
 
-  test("a missing file has no version until it exists; a successful hash stays cached", () => {
+  test("a missing file has no version until it exists; an in-place change gets a new version", () => {
     const pathname = "/public/later.css";
     expect(publicFileVersion(pathname)).toBeUndefined();
     writeFileSync(join(root, pathname), "later{}");
+    utimesSync(join(root, pathname), new Date("2026-01-01T00:00:00Z"), new Date("2026-01-01T00:00:00Z"));
     expect(publicFileVersion(pathname)).toBe(hash("later{}"));
     writeFileSync(join(root, pathname), "changed{}");
-    expect(publicFileVersion(pathname)).toBe(hash("later{}"));
+    utimesSync(join(root, pathname), new Date("2026-01-01T00:00:00Z"), new Date("2026-01-01T00:00:10Z"));
+    expect(publicFileVersion(pathname)).toBe(hash("changed{}"));
+    mkdirSync(join(root, "public", "dir.css"));
+    expect(publicFileVersion("/public/dir.css")).toBeUndefined();
     expect(publicFileVersion("/public/../outside.css")).toBeUndefined();
   });
 
