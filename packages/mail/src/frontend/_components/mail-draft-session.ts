@@ -112,6 +112,8 @@ export const createMailDraftSession = (options: {
   let heartbeatGeneration = 0;
   let initializePromise: Promise<MailDraft | null> | null = null;
   let regainPromise: Promise<AcquiredDraftLease | null> | null = null;
+  // A retried acquire whose answer was lost gets this instance's lease back instead of reading it as another tab.
+  const editorId = crypto.randomUUID();
   const seedBaseline = options.initialSeed ? serializeMailDraftContent(options.initialSeed.content) : null;
   let lastSavedContent = seedBaseline ?? "";
   const serializeMutation = createSerializedDraftMutationQueue();
@@ -302,7 +304,7 @@ export const createMailDraftSession = (options: {
               const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].lease.$post(
                 {
                   param: { mailboxId: options.mailboxId, draftId: currentDraft.id },
-                  json: { takeover },
+                  json: { takeover, editorId },
                 },
                 { init: { signal: controller.signal } },
               );

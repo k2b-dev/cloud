@@ -379,6 +379,26 @@ suite("mail draft limits", () => {
     } finally {
       await releaseDraftLease({ ...target, context: owner, token: acquired.data.token });
     }
+
+    // A repeated acquire from the same editor instance, e.g. after its answer was lost, returns its own lease.
+    const editorId = crypto.randomUUID();
+    const first = await acquireDraftLease({ ...target, context: owner, editorId });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    try {
+      expect(await acquireDraftLease({ ...target, context: owner, editorId })).toMatchObject({
+        ok: true,
+        data: { token: first.data.token },
+      });
+      for (const retry of [{ context: owner, editorId: crypto.randomUUID() }, { context: owner }, { context: collaborator, editorId }]) {
+        expect(await acquireDraftLease({ ...target, ...retry })).toMatchObject({
+          ok: false,
+          error: { code: DRAFT_LEASE_ERROR_CODES.HELD, status: 409 },
+        });
+      }
+    } finally {
+      await releaseDraftLease({ ...target, context: owner, token: first.data.token });
+    }
   });
 
   test("lets only the current lease holder change a shared draft", async () => {

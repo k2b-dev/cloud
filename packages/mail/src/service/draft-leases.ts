@@ -21,6 +21,8 @@ export const DRAFT_LEASE_HEARTBEAT_INTERVAL_MS = 10_000;
 type DraftLeaseEntry = {
   holder: DraftLeaseHolder;
   token: string;
+  /** Chosen by one editor instance so a retried acquire whose answer was lost gets its own lease back. */
+  editorId?: string;
   lock: { resource: string; ownerToken: string; fence: string; expiresAt: string };
   acquiredAt: number;
 };
@@ -172,6 +174,7 @@ export const acquireDraftLease = async (params: {
   mailboxId: string;
   draftId: string;
   takeover?: boolean;
+  editorId?: string;
 }): Promise<Result<AcquiredDraftLease>> => {
   const holder = holderFromContext(params.context);
   const draft = await resolveAuthorizedDraft({ ...params, permission: "write" });
@@ -179,6 +182,10 @@ export const acquireDraftLease = async (params: {
   return withLeaseState(draft.data, async () => {
     const current = await currentValidEntry(params.mailboxId, draft.data);
     if (current) {
+      // Only the same holder and the same editor instance get the token back; another tab still has to ask.
+      if (params.editorId && current.value.editorId === params.editorId && sameHolder(current.value.holder, holder)) {
+        return ok({ ...mapLease(current), token: current.value.token });
+      }
       if (!params.takeover) {
         return leaseError(
           DRAFT_LEASE_ERROR_CODES.HELD,
@@ -199,7 +206,7 @@ export const acquireDraftLease = async (params: {
       const entry = await leaseStore().upsert({
         tenantId: draft.data,
         key: "lease",
-        value: { holder, token, lock: storeLock(lock), acquiredAt },
+        value: { holder, token, ...(params.editorId ? { editorId: params.editorId } : {}), lock: storeLock(lock), acquiredAt },
       });
       stored = true;
       if (current) {

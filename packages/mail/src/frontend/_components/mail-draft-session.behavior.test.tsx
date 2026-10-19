@@ -349,7 +349,7 @@ describe("Mail draft session", () => {
       return { session, current, setCurrent, trace };
     };
     let heartbeatAnswers: Response[];
-    let acquireAnswer: (() => Response | Promise<Response>) | undefined;
+    let acquireAnswer: ((body: unknown) => Response | Promise<Response>) | undefined;
     let saveAnswer: ((body: { expectedRevision: number; draft: DraftEditableContent }) => Response | Promise<Response>) | undefined;
     let stored: MailDraft;
     let heldLease: typeof lease | null;
@@ -361,7 +361,7 @@ describe("Mail draft session", () => {
       heldLease = lease;
       respondWith((method, url, body) => {
         if (url.endsWith("/lease")) {
-          if (method === "POST") return acquireAnswer?.() ?? Response.json({ ...lease, token: "local-token" });
+          if (method === "POST") return acquireAnswer?.(body) ?? Response.json({ ...lease, token: "local-token" });
           if (method === "GET") return Response.json(heldLease);
           if (method === "PUT") return heartbeatAnswers.shift() ?? Response.json({ ...lease, token: "local-token" });
           return Response.json({ ok: true });
@@ -425,6 +425,30 @@ describe("Mail draft session", () => {
       editableThroughout(state.trace);
       expect(state.session.lease()?.token).toBe("regained-token");
       expect(requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease"))).toHaveLength(2);
+    });
+
+    test("a re-acquire whose granted answer was lost gets its own lease back on retry", async () => {
+      const state = await mountSession();
+      state.trace.length = 0;
+      // The fake server keeps the editor id of the lease it granted, like the lease service.
+      const grants: Array<{ editorId: unknown; token: string }> = [];
+      acquireAnswer = (body) => {
+        const editorId = (body as { editorId?: unknown } | null)?.editorId;
+        const granted = grants[0];
+        if (granted) {
+          return granted.editorId === editorId
+            ? Response.json({ ...lease, token: granted.token })
+            : Response.json({ code: "DRAFT_LEASE_HELD" }, { status: 409 });
+        }
+        grants.push({ editorId, token: "granted-token" });
+        throw new TypeError("Failed to fetch");
+      };
+      heartbeatAnswers.push(Response.json({ code: "DRAFT_LEASE_NOT_OWNED" }, { status: 409 }));
+      await advance(10_000);
+      await advance(2_000);
+      healthy(state);
+      expect(state.session.lease()?.token).toBe("granted-token");
+      expect(typeof grants[0]?.editorId).toBe("string");
     });
 
     test.each([

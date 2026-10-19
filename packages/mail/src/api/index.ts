@@ -361,7 +361,13 @@ const conversationKeepResponseSchema = z.object({
   }),
 });
 const conversationKeepReleaseResponseSchema = z.object({ conversationId: ResourceShortIdSchema, released: z.boolean() });
-const acquireDraftLeaseSchema = z.object({ takeover: z.boolean().default(false) }).strict();
+const acquireDraftLeaseSchema = z
+  .object({
+    takeover: z.boolean().default(false),
+    /** One editor instance; a repeated acquire with the same id returns that instance's own lease. */
+    editorId: z.string().uuid().optional(),
+  })
+  .strict();
 const notificationTargetParamSchema = z.object({
   mailboxId: ResourceShortIdSchema,
   kind: z.literal("reminder"),
@@ -2813,7 +2819,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         draftLeases.acquireDraftLease({
           context: requestContext(c),
           ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
-          takeover: (await internalInput(c, c.req.valid("json"))).takeover,
+          ...(await internalInput(c, c.req.valid("json"))),
         }),
       ),
   )

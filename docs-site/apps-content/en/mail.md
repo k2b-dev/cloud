@@ -655,6 +655,10 @@ and release. Keep it out of logs. All three lease errors return HTTP 409:
 | `DRAFT_LEASE_NOT_OWNED` | The token expired, was released, or was replaced by a takeover. | Acquire a lease again. |
 | `DRAFT_LEASE_BUSY` | Lease state is being updated. | Retry shortly. |
 
+An editor may send its own `editorId` (a UUID per editor instance) with
+acquire. A repeated acquire with the same `editorId` returns that editor's own
+lease, so a retry after a lost answer does not look like another session.
+
 A lease does not replace revision checks. Keep the local expected revision
 when acquiring again so a concurrent change becomes a recovery copy.
 
