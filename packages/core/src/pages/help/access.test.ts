@@ -12,7 +12,7 @@ const { createPagesRouter } = await import("../create");
 
 test("Help pages send anonymous visitors to sign-in without content", async () => {
   const pages = createPagesRouter();
-  for (const path of ["/help/apps/grids", "/help/apps/grids/grids-permissions"]) {
+  for (const path of ["/help/panel", "/help/apps/grids", "/help/apps/grids/grids-permissions"]) {
     const response = await pages.request(path);
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toStartWith("/auth/login");

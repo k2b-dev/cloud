@@ -13,7 +13,7 @@ import { appWorkspaceCookieName, readAppWorkspaceLayoutCookie } from "../_intern
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
 import { navigationSearchItems } from "../browser/navigation-search";
-import type { PanelRequest } from "../browser/panel";
+import { openPanel, type PanelRequest } from "../browser/panel";
 import { importOnDemand } from "../browser/reload";
 import { registerGlobalSearchHost } from "../browser/search-bridge";
 import { attachShellFocusControls, readShellFocus, SHELL_FOCUS_CHANGE_EVENT, toggleShellFocus } from "../browser/shell-focus";
@@ -215,7 +215,10 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
                 : command.id === "cloud.search"
                   ? { search: {} }
                   : // Returning the load keeps the Command busy until the dialog is open; a second press opens no second dialog.
-                    () => importOnDemand(() => import("./LayoutHelp")).then((help) => help?.openLayoutHelpDialog()),
+                    () => {
+                      if (openPanel("core")) return;
+                      return importOnDemand(() => import("./LayoutHelp")).then((help) => help?.openLayoutHelpDialog());
+                    },
           }),
         );
       }

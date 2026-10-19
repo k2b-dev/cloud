@@ -572,6 +572,29 @@ else {
     }
   });
 
+  test("modal: slash focuses search and Escape clears only a nonempty query", async () => {
+    const reader = await setup("modal", undefined, "/app/spaces");
+    try {
+      await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
+      const input = search(reader);
+      const slash = new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true });
+      reader.dom.document.body.dispatchEvent(slash);
+      expect(slash.defaultPrevented).toBe(true);
+      expect(reader.dom.document.activeElement).toBe(input);
+      type(input, "second");
+      const escape = () => {
+        const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+        input.dispatchEvent(event);
+        return event;
+      };
+      expect(escape().defaultPrevented).toBe(true);
+      expect(input.value).toBe("");
+      expect(escape().defaultPrevented).toBe(false);
+    } finally {
+      await reader.cleanup();
+    }
+  });
+
   for (const helpFailed of [false, true]) {
     test(`modal: an app without articles ${helpFailed ? "offers a reload after a failed Help read" : "says so without a reload"}`, async () => {
       const reader = await setup("modal", undefined, "/app/spaces", html, { documents: [], helpFailed });

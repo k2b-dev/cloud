@@ -370,11 +370,17 @@ for (const [surface, viewport] of [
       await page.locator('[data-help-tiles] [data-help-topic="share-space"]').click();
       await page.locator(".help-document #section-0").waitFor();
       expect(await input.boundingBox()).toEqual(start);
+      const answered = await page.evaluate(() => Number(document.documentElement.dataset.helpSearches ?? 0));
       await input.fill("share");
       await page.locator('[data-help-search-results] [data-help-topic="share-space"]').waitFor();
-      // Wait for the debounced request to start and finish, including its final layout.
-      await page.waitForFunction(() => !!document.querySelector("[data-help-search-results] .animate-spin"));
-      await page.waitForFunction(() => !document.querySelector("[data-help-search-results] .animate-spin"));
+      // Wait for the debounced request to be answered and its results to settle; a spinner can come and go between
+      // two polls, so the test never waits for it to appear (#1403).
+      await page.waitForFunction(
+        (before) =>
+          Number(document.documentElement.dataset.helpSearches ?? 0) > before &&
+          !document.querySelector("[data-help-search-results] .animate-spin"),
+        answered,
+      );
       expect(await input.boundingBox()).toEqual(start);
       expect(await page.locator(".help-article").count()).toBe(0);
       expect(await input.count()).toBe(1);
