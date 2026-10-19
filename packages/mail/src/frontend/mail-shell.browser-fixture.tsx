@@ -35,7 +35,7 @@ export const focusView = (url: URL): MailFocusView => {
 const mailbox = (id: string, name: string): MailboxPageData["mailbox"] => ({
   id,
   name,
-  description: "Invented browser fixture",
+  description: null,
   health: "active",
   healthReason: null,
   syncEnabled: true,

@@ -59,7 +59,7 @@ const pageHtml = (url: URL) => {
   const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
   const locale = url.searchParams.get("locale") === "de" ? "de" : "en";
   const html = renderToString(() => createComponent(Fixture, { source: `${url.pathname}${url.search}`, locale, theme }));
-  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" style="margin:0"><main style="container-type:inline-size;container-name:k2b-app-area;display:flex;flex-direction:column;height:100dvh">${html}</main><script>${controller}</script><script type="module">
+  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" style="margin:0"><main style="container-type:inline-size;container-name:k2b-app-area;display:flex;flex-direction:column;height:100dvh">${html}</main><script>${controller}</script><script type="module">
     const geometry=${geometrySource};
     await document.fonts.ready;
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
@@ -241,473 +241,475 @@ const clickTab = async (page: Page, href: string) => {
   await settled(page);
 };
 
-describe(`Mail SSR and hydration shell in ${browserName}`, () => {
-  test("Focus and mailbox share the ordered navigation; switching mailbox takes one link", async () => {
-    let label: string | null = null;
-    let rows: string[] = [];
-    for (const path of ["/app/mail", boxPath]) {
-      const page = await open(path);
-      try {
-        // Focus stacks its sidebar as chips below 64 rem and is a nav landmark; a mailbox's sidebar is the same rows.
-        const currentLabel = await page.locator(".mail-sidebar").getAttribute("aria-label");
-        expect(currentLabel).toBe("Mailboxes");
-        const ids = await sidebar(page)
-          .locator('.mail-sidebar-mailbox:not([data-hidden="true"])')
-          .evaluateAll((elements) => elements.map((e) => e.getAttribute("data-mailbox")!));
-        expect(ids).toEqual(["Box002", "Box001", "Box003", "Box004"]);
-        if (label) {
-          expect(currentLabel).toBe(label);
-          expect(ids).toEqual(rows);
+/** The shell tests. `screenshots` is a directory for optional synthetic review screenshots. */
+export const defineMailShellTests = (screenshots: string | undefined) =>
+  describe(`Mail SSR and hydration shell in ${browserName}`, () => {
+    test("Focus and mailbox share the ordered navigation; switching mailbox takes one link", async () => {
+      let label: string | null = null;
+      let rows: string[] = [];
+      for (const path of ["/app/mail", boxPath]) {
+        const page = await open(path);
+        try {
+          // Focus stacks its sidebar as chips below 64 rem and is a nav landmark; a mailbox's sidebar is the same rows.
+          const currentLabel = await page.locator(".mail-sidebar").getAttribute("aria-label");
+          expect(currentLabel).toBe("Mailboxes");
+          const ids = await sidebar(page)
+            .locator('.mail-sidebar-mailbox:not([data-hidden="true"])')
+            .evaluateAll((elements) => elements.map((e) => e.getAttribute("data-mailbox")!));
+          expect(ids).toEqual(["Box002", "Box001", "Box003", "Box004"]);
+          if (label) {
+            expect(currentLabel).toBe(label);
+            expect(ids).toEqual(rows);
+          }
+          label = currentLabel;
+          rows = ids;
+          expect(await sidebar(page).locator(`a[href="${path}"][aria-current="page"]`).count()).toBe(1);
+          const groups = sidebar(page).getByRole("group", { name: /^Folders of / });
+          expect(await groups.count()).toBe(path === boxPath ? 1 : 0);
+          if (path === boxPath) expect(await groups.getAttribute("aria-label")).toBe("Folders of Example support");
+          expect(await page.locator(".k2b-app-workspace__sidebar-switcher").count()).toBe(0);
+          expect(await page.getByRole("button", { name: "Switch mailbox" }).count()).toBe(0);
+          const other = sidebar(page).locator('[data-mailbox="Box002"] a').first();
+          expect(await other.getAttribute("href")).toBe("/app/mail/Box002");
+          expect(await other.evaluate((e) => e.tagName)).toBe("A");
+          const countSlot = other.locator(".mail-sidebar-needs-action");
+          expect(await countSlot.count()).toBe(1);
+          expect(await countSlot.textContent()).toBe(path === boxPath ? "" : "4");
+          expect(await other.locator(".mail-sidebar-unread-dot").count()).toBe(path === boxPath ? 0 : 1);
+        } finally {
+          await close(page);
         }
-        label = currentLabel;
-        rows = ids;
-        expect(await sidebar(page).locator(`a[href="${path}"][aria-current="page"]`).count()).toBe(1);
-        const groups = sidebar(page).getByRole("group", { name: /^Folders of / });
-        expect(await groups.count()).toBe(path === boxPath ? 1 : 0);
-        if (path === boxPath) expect(await groups.getAttribute("aria-label")).toBe("Folders of Example support");
-        expect(await page.locator(".k2b-app-workspace__sidebar-switcher").count()).toBe(0);
-        expect(await page.getByRole("button", { name: "Switch mailbox" }).count()).toBe(0);
-        const other = sidebar(page).locator('[data-mailbox="Box002"] a').first();
-        expect(await other.getAttribute("href")).toBe("/app/mail/Box002");
-        expect(await other.evaluate((e) => e.tagName)).toBe("A");
-        const countSlot = other.locator(".mail-sidebar-needs-action");
-        expect(await countSlot.count()).toBe(1);
-        expect(await countSlot.textContent()).toBe(path === boxPath ? "" : "4");
-        expect(await other.locator(".mail-sidebar-unread-dot").count()).toBe(path === boxPath ? 0 : 1);
-      } finally {
-        await close(page);
-      }
-    }
-  });
-
-  for (const path of ["/app/mail", boxPath]) {
-    test(`${path}: default first tab, exact fixture counts, no Paper`, async () => {
-      const page = await open(path);
-      try {
-        const first = tabs(page).locator("a").first();
-        expect(await first.getAttribute("href")).toBe(path);
-        expect(await first.getAttribute("aria-current")).toBe("page");
-        expect(await first.textContent()).toBe(path === boxPath ? "All" : `For me${focusCounts.mine}`);
-        const entries =
-          path === boxPath ? Object.entries(viewCounts).filter(([id]) => id !== "send_problems") : Object.entries(focusCounts);
-        for (const [id, count] of entries) {
-          const href = path === "/app/mail" && id === "mine" ? path : `${path}?view=${id}`;
-          let link = tabs(page).locator(`a[href="${href}"]`);
-          if (!(await link.count())) {
-            await tabs(page).getByRole("button", { name: /More/ }).click();
-            // Dropdown document links carry the menuitem role themselves.
-            link = page.locator(`[role="menuitem"][href="${href}"]`);
-            expect(await link.textContent()).toMatch(new RegExp(`${count}$`));
-            await page.keyboard.press("Escape");
-          } else expect(await link.textContent()).toMatch(new RegExp(`${count}$`));
-        }
-        expect(await page.locator(".k2b-app-workspace .k2b-paper").count()).toBe(0);
-      } finally {
-        await close(page);
       }
     });
-  }
 
-  const tag = mailTagSearch("Tag001");
-  if (!tag.ok) throw new Error("Invalid synthetic tag ID");
-  const routes = [
-    { query: "view=needs_action", selected: `${boxPath}?view=needs_action` },
-    { query: "view=snoozed", selected: `${boxPath}?view=snoozed` },
-    { query: "folder=Filed1", selected: null },
-    { query: "savedView=Saved1", selected: `${boxPath}?savedView=Saved1` },
-    { query: new URLSearchParams({ search: tag.value }).toString(), selected: boxPath },
-    { query: "scheduled=1", selected: null },
-  ];
-  for (const route of routes)
-    test(`${route.query}: SSR, in-place switch, Back, Forward and reload keep URL state`, async () => {
-      const start = `${boxPath}?${route.query}`;
-      const page = await open(start);
-      const assertRoute = async () => {
-        expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe(start);
-        if (route.selected) expect(await currentHref(page)).toBe(route.selected);
-        else expect(await tabs(page).locator("a").count()).toBe(0);
-        if (route.query.startsWith("folder="))
-          expect(await sidebar(page).locator('a[href$="folder=Filed1"]').getAttribute("aria-current")).toBe("page");
-        if (route.query.startsWith("search=")) {
-          const chip = page.locator(".k2b-app-workspace__head-filters .k2b-filter-chip");
-          expect(await chip.textContent()).toContain("Tag");
-          expect(await chip.textContent()).toContain("Priority");
+    for (const path of ["/app/mail", boxPath]) {
+      test(`${path}: default first tab, exact fixture counts, no Paper`, async () => {
+        const page = await open(path);
+        try {
+          const first = tabs(page).locator("a").first();
+          expect(await first.getAttribute("href")).toBe(path);
+          expect(await first.getAttribute("aria-current")).toBe("page");
+          expect(await first.textContent()).toBe(path === boxPath ? "All" : `For me${focusCounts.mine}`);
+          const entries =
+            path === boxPath ? Object.entries(viewCounts).filter(([id]) => id !== "send_problems") : Object.entries(focusCounts);
+          for (const [id, count] of entries) {
+            const href = path === "/app/mail" && id === "mine" ? path : `${path}?view=${id}`;
+            let link = tabs(page).locator(`a[href="${href}"]`);
+            if (!(await link.count())) {
+              await tabs(page).getByRole("button", { name: /More/ }).click();
+              // Dropdown document links carry the menuitem role themselves.
+              link = page.locator(`[role="menuitem"][href="${href}"]`);
+              expect(await link.textContent()).toMatch(new RegExp(`${count}$`));
+              await page.keyboard.press("Escape");
+            } else expect(await link.textContent()).toMatch(new RegExp(`${count}$`));
+          }
+          expect(await page.locator(".k2b-app-workspace .k2b-paper").count()).toBe(0);
+        } finally {
+          await close(page);
         }
-        if (route.query === "view=snoozed") {
-          expect(await tabs(page).getByRole("button", { name: /More/ }).isVisible()).toBe(true);
-          expect(await tabs(page).locator('a[aria-current="page"]').isVisible()).toBe(true);
-        }
-      };
-      try {
-        expect(await page.locator("html").getAttribute("data-server-current")).toBe(route.selected ?? "");
-        await assertRoute();
-        await page.reload();
-        await ready(page);
-        await assertRoute();
-        // Places have no tabs; use the mailbox root link to get back to the strip first.
-        if (!route.selected) {
-          await sidebar(page).locator(`[data-mailbox="Box001"] a[href="${boxPath}"]`).click();
-          await page.waitForURL(new URL(boxPath, server.url).href);
+      });
+    }
+
+    const tag = mailTagSearch("Tag001");
+    if (!tag.ok) throw new Error("Invalid synthetic tag ID");
+    const routes = [
+      { query: "view=needs_action", selected: `${boxPath}?view=needs_action` },
+      { query: "view=snoozed", selected: `${boxPath}?view=snoozed` },
+      { query: "folder=Filed1", selected: null },
+      { query: "savedView=Saved1", selected: `${boxPath}?savedView=Saved1` },
+      { query: new URLSearchParams({ search: tag.value }).toString(), selected: boxPath },
+      { query: "scheduled=1", selected: null },
+    ];
+    for (const route of routes)
+      test(`${route.query}: SSR, in-place switch, Back, Forward and reload keep URL state`, async () => {
+        const start = `${boxPath}?${route.query}`;
+        const page = await open(start);
+        const assertRoute = async () => {
+          expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe(start);
+          if (route.selected) expect(await currentHref(page)).toBe(route.selected);
+          else expect(await tabs(page).locator("a").count()).toBe(0);
+          if (route.query.startsWith("folder="))
+            expect(await sidebar(page).locator('a[href$="folder=Filed1"]').getAttribute("aria-current")).toBe("page");
+          if (route.query.startsWith("search=")) {
+            const chip = page.locator(".k2b-app-workspace__head-filters .k2b-filter-chip");
+            expect(await chip.textContent()).toContain("Tag");
+            expect(await chip.textContent()).toContain("Priority");
+          }
+          if (route.query === "view=snoozed") {
+            expect(await tabs(page).getByRole("button", { name: /More/ }).isVisible()).toBe(true);
+            expect(await tabs(page).locator('a[aria-current="page"]').isVisible()).toBe(true);
+          }
+        };
+        try {
+          expect(await page.locator("html").getAttribute("data-server-current")).toBe(route.selected ?? "");
+          await assertRoute();
+          await page.reload();
           await ready(page);
-        }
-        await clickTab(page, `${boxPath}?view=waiting`);
-        expect(await currentHref(page)).toBe(`${boxPath}?view=waiting`);
-        await page.goBack();
-        await ready(page);
-        if (!route.selected) {
+          await assertRoute();
+          // Places have no tabs; use the mailbox root link to get back to the strip first.
+          if (!route.selected) {
+            await sidebar(page).locator(`[data-mailbox="Box001"] a[href="${boxPath}"]`).click();
+            await page.waitForURL(new URL(boxPath, server.url).href);
+            await ready(page);
+          }
+          await clickTab(page, `${boxPath}?view=waiting`);
+          expect(await currentHref(page)).toBe(`${boxPath}?view=waiting`);
           await page.goBack();
           await ready(page);
-        }
-        await assertRoute();
-        await page.goForward();
-        await ready(page);
-        if (!route.selected) {
+          if (!route.selected) {
+            await page.goBack();
+            await ready(page);
+          }
+          await assertRoute();
           await page.goForward();
           await ready(page);
-        }
-        expect(new URL(page.url()).search).toBe("?view=waiting");
-        expect(await currentHref(page)).toBe(`${boxPath}?view=waiting`);
-        await page.reload();
-        await ready(page);
-        expect(await currentHref(page)).toBe(`${boxPath}?view=waiting`);
-      } finally {
-        await close(page);
-      }
-    }, 30_000);
-
-  test("Focus waiting URL survives in-place navigation and history", async () => {
-    const page = await open("/app/mail?view=waiting");
-    try {
-      expect(await currentHref(page)).toBe("/app/mail?view=waiting");
-      await clickTab(page, "/app/mail?view=unassigned");
-      await page.goBack();
-      await ready(page);
-      expect(new URL(page.url()).search).toBe("?view=waiting");
-      expect(await currentHref(page)).toBe("/app/mail?view=waiting");
-      await page.goForward();
-      await ready(page);
-      expect(await currentHref(page)).toBe("/app/mail?view=unassigned");
-      await page.reload();
-      await ready(page);
-      expect(await currentHref(page)).toBe("/app/mail?view=unassigned");
-    } finally {
-      await close(page);
-    }
-  });
-
-  for (const permission of ["write", "read", "admin", "assigned-only"])
-    test(`${permission}: head and sidebar share the authorized mailbox menu`, async () => {
-      const page = await open(`${boxPath}?permission=${permission}`);
-      try {
-        const head = page.locator(".k2b-app-workspace__head-actions").getByRole("button", { name: "Options for Example support" });
-        const row = sidebar(page).getByRole("button", { name: "Options for Example support" });
-        // The open row's "…" also holds its own pin and hide, which need no mailbox-wide access. The fixture pins it.
-        const rowOnly = ["Unpin Example support", "Hide Example support"];
-        const expected =
-          permission === "assigned-only"
-            ? []
-            : [
-                permission === "read" ? "About this mailbox" : "Mailbox details",
-                "Automations",
-                "Mailing lists",
-                "Remote images",
-                "Email link setup",
-                "Settings",
-                ...(permission === "admin" ? ["Sync mailbox", "Mailbox health", "Shared links"] : []),
-              ];
-        if (permission === "assigned-only") {
-          expect(await head.count()).toBe(0);
-          expect(await page.getByRole("link", { name: "Compose", exact: true }).count()).toBe(0);
-        } else expect(await head.count()).toBe(1);
-        expect(await row.count()).toBe(1);
-        for (const [trigger, items] of [
-          ...(permission === "assigned-only" ? [] : [[head, expected] as const]),
-          [row, [...expected, ...rowOnly]] as const,
-        ]) {
-          await trigger.click();
-          await page.getByRole("menu").waitFor();
-          expect((await page.getByRole("menuitem").allTextContents()).map((text) => text.trim()).sort()).toEqual([...items].sort());
-          await page.keyboard.press("Escape");
-          await page.getByRole("menu").waitFor({ state: "hidden" });
-        }
-      } finally {
-        await close(page);
-      }
-    });
-
-  test("dragging a list row to a custom folder submits its move; unread counts and More persist", async () => {
-    const page = await open(boxPath);
-    try {
-      const destination = sidebar(page).locator('a[href$="folder=Filed1"]');
-      expect(await destination.textContent()).toContain("7 unread");
-      const action = page.waitForRequest(
-        (request) => request.method() === "POST" && request.url().endsWith("/conversations/Conv01/actions"),
-      );
-      await page.locator('[data-conversation-id="Conv01"] [draggable="true"]').dragTo(destination);
-      const request = await action;
-      expect(request.postDataJSON()).toMatchObject({ kind: "move_to_folder", sourceFolderId: "Inbox1", destinationFolderId: "Filed1" });
-      await sidebar(page).getByRole("button", { name: "More", exact: true }).click();
-      for (const id of ["Archive1", "Trash1", "Junk1"])
-        expect(await sidebar(page).locator(`a[href$="folder=${id}"]`).isVisible()).toBe(true);
-      await sidebar(page).locator('a[href$="folder=Archive1"]').click();
-      await page.waitForURL(new URL(`${boxPath}?folder=Archive1`, server.url).href);
-      await settled(page);
-      await sidebar(page).getByRole("button", { name: "More", exact: true }).click();
-      expect(await sidebar(page).locator('a[href$="folder=Archive1"]').isVisible()).toBe(true);
-      await page.reload();
-      await ready(page);
-      expect(await sidebar(page).locator('a[href$="folder=Archive1"]').getAttribute("aria-current")).toBe("page");
-      expect(await sidebar(page).locator('a[href$="folder=Junk1"]').isVisible()).toBe(true);
-    } finally {
-      await close(page);
-    }
-  }, 30_000);
-
-  test("hidden mailboxes have a link and a working Show action", async () => {
-    const page = await open(boxPath);
-    try {
-      const section = sidebar(page).locator(".mail-sidebar-hidden-mailboxes");
-      await section.getByRole("button", { name: /Hidden mailboxes/ }).click();
-      const hidden = section.locator('[data-mailbox="Box005"]');
-      expect(await hidden.locator("a").getAttribute("href")).toBe("/app/mail/Box005");
-      const saved = page.waitForRequest((request) => request.method() === "PATCH" && request.url().endsWith("/Box005/preference"));
-      await hidden.hover();
-      await hidden.getByRole("button", { name: /Show/ }).click();
-      expect((await saved).postDataJSON()).toEqual({ hidden: false });
-      await sidebar(page).locator('[data-mailbox="Box005"]:not([data-hidden="true"])').waitFor();
-    } finally {
-      await close(page);
-    }
-  });
-
-  for (const path of ["/app/mail", boxPath]) {
-    test(`${path}: sidebar resizes with pointer and ArrowLeft/ArrowRight/Home`, async () => {
-      const page = await open(path);
-      try {
-        const handle = page.getByRole("separator", { name: "Resize navigation", exact: true });
-        const before = Number(await handle.getAttribute("aria-valuenow"));
-        const box = await handle.boundingBox();
-        if (!box) throw new Error("Missing navigation resize handle");
-        await page.mouse.move(box.x + box.width / 2, box.y + 60);
-        await page.mouse.down();
-        await page.mouse.move(box.x + box.width / 2 + 48, box.y + 60, { steps: 5 });
-        await page.mouse.up();
-        await page.waitForFunction(
-          (before) => Number(document.querySelector('[data-app-workspace-resize="sidebar"]')?.getAttribute("aria-valuenow")) > before,
-          before,
-        );
-        await settled(page);
-        expect((await page.locator(".mail-sidebar").boundingBox())!.width).toBeGreaterThan(before);
-        for (const key of ["ArrowLeft", "ArrowRight", "Home"]) {
-          const previous = Number(await handle.getAttribute("aria-valuenow"));
-          await handle.focus();
-          await page.keyboard.press(key);
-          await page.waitForFunction(
-            ({ key, previous }) => {
-              const handle = document.querySelector('[data-app-workspace-resize="sidebar"]')!;
-              const value = Number(handle.getAttribute("aria-valuenow"));
-              return key === "Home"
-                ? value === Number(handle.getAttribute("aria-valuemin"))
-                : key === "ArrowLeft"
-                  ? value < previous
-                  : value > previous;
-            },
-            { key, previous },
-          );
-          await settled(page);
-          expect((await page.locator(".mail-sidebar").boundingBox())!.width).toBeCloseTo(
-            Number(await handle.getAttribute("aria-valuenow")),
-            0,
-          );
-        }
-      } finally {
-        await close(page);
-      }
-    });
-    test(`${path}: phone tabs are the card's first row`, async () => {
-      const page = await open(path, 390);
-      try {
-        const views = await tabs(page).boundingBox();
-        const workspace = await page.locator(".k2b-app-workspace").boundingBox();
-        expect(views).not.toBeNull();
-        expect(workspace).not.toBeNull();
-        if (!views || !workspace) throw new Error("Missing phone frame");
-        const filters =
-          (await page.locator(".k2b-app-workspace__head-filters").count()) > 0
-            ? await page.locator(".k2b-app-workspace__head-filters").boundingBox()
-            : null;
-        if (filters) expect(views.y + views.height).toBeLessThanOrEqual(filters.y + 0.5);
-        const rows = await page.locator(".mail-focus-row,.mail-list-entry").first().boundingBox();
-        expect(views.y + views.height).toBeLessThanOrEqual(rows!.y);
-        if (path === "/app/mail") {
-          expect(await page.locator('.mail-sidebar[data-mobile="stacked"]').count()).toBe(1);
-          const chip = await page.locator('.mail-sidebar [data-mailbox="Box002"] a:visible').first().boundingBox();
-          expect(chip).not.toBeNull();
-          // The shared workspace puts the head first on phones: the tabs are the card's top row, the chips follow.
-          expect(chip!.y).toBeGreaterThanOrEqual(views.y + views.height);
-        }
-        const firstRowY = await page.locator(".k2b-app-workspace__head").evaluate((head) => {
-          const style = getComputedStyle(head);
-          return head.getBoundingClientRect().y + Number.parseFloat(style.paddingTop) + Number.parseFloat(style.borderTopWidth);
-        });
-        // The tabs share the head's first row with the actions, which may be taller and center the row.
-        expect(views.y - firstRowY, "Tabs occupy the head's first content row").toBeLessThan(8);
-      } finally {
-        await close(page);
-      }
-    });
-    test(`${path}: selecting a tab moves no neighboring tab, chip or head action`, async () => {
-      const page = await open(path);
-      try {
-        const neighbors = page.locator(
-          `${tabsSelector} [data-view-tab],.k2b-app-workspace__head-filters,.k2b-filter-chip,.k2b-app-workspace__head-actions,.k2b-app-workspace__head-actions button,[data-workspace-primary]`,
-        );
-        const boxes = () =>
-          neighbors.evaluateAll((elements) =>
-            elements.map((e) => {
-              const r = e.getBoundingClientRect();
-              return { part: e.getAttribute("data-view-tab") ?? e.className, x: r.x, y: r.y, width: r.width, height: r.height };
-            }),
-          );
-        const before = await boxes();
-        expect(before.length).toBeGreaterThan(3);
-        await clickTab(page, `${path}?view=waiting`);
-        await settled(page);
-        expect(await boxes()).toEqual(before);
-      } finally {
-        await close(page);
-      }
-    });
-  }
-
-  for (const width of [1440, 834, 390] as const)
-    test(`${width}: a folder is named where the person sees it`, async () => {
-      const page = await open(`${boxPath}?folder=Filed1`, width);
-      try {
-        const heading = page.locator("[data-mail-list-heading]");
-        expect(await heading.textContent()).toBe("Filed");
-        const box = await heading.boundingBox();
-        if (width === 1440) {
-          // Beside the sidebar its marked row names the folder; the heading stays for assistive technology.
-          expect(await sidebar(page).locator('a[href$="folder=Filed1"]').getAttribute("aria-current")).toBe("page");
-          expect(box?.width ?? 0).toBeLessThanOrEqual(1);
-        } else {
-          // Below 64 rem the sidebar is out of view and folders have no tab: the list heading names the folder.
-          expect(await sidebar(page).isVisible()).toBe(false);
-          expect(box?.width ?? 0).toBeGreaterThan(20);
-          expect(await heading.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-        }
-      } finally {
-        await close(page);
-      }
-    });
-
-  test("the open mailbox's name stays readable beside its row actions at the default width", async () => {
-    const page = await open(boxPath);
-    try {
-      const row = sidebar(page).locator('.mail-sidebar-mailbox[data-mailbox="Box001"]');
-      // The open row shows its actions without hover; only "…" stays there, with pin and hide inside it.
-      // The menu renders inside the actions; its items are not row buttons.
-      const buttons = row.locator('.k2b-app-workspace__sidebar-item-actions button:not([role="menuitem"])');
-      expect(await buttons.count()).toBe(1);
-      expect(await buttons.getAttribute("aria-label")).toBe("Options for Example support");
-      const fit = await row.evaluate((element) => {
-        const label = element.querySelector(".k2b-app-workspace__sidebar-item-label")!;
-        const range = document.createRange();
-        range.selectNodeContents(label);
-        // The leftmost row action: the name may run into its padding, where the label fades, but not past its middle.
-        const actions = Array.from(
-          element.querySelectorAll('.k2b-app-workspace__sidebar-item-actions button:not([role="menuitem"])'),
-          (button) => button.getBoundingClientRect(),
-        ).filter((box) => box.width > 0);
-        const first = actions.reduce((left, box) => (box.x < left.x ? box : left));
-        return { textEnd: range.getBoundingClientRect().right, actionMiddle: first.x + first.width / 2 };
-      });
-      expect(fit.textEnd).toBeLessThanOrEqual(fit.actionMiddle);
-    } finally {
-      await close(page);
-    }
-  });
-
-  // One browser, one context per viewport/theme; Focus and mailbox share that context.
-  for (const theme of ["light", "dark"] as const)
-    for (const [width, height] of sizes)
-      test(`${theme} ${width}x${height}: server = hydrated = settled = reload within 0.5px`, async () => {
-        const page = await open(`/app/mail?theme=${theme}`, width, height);
-        const differences: string[] = [];
-        try {
-          for (const path of ["/app/mail", boxPath]) {
-            if (path === boxPath) {
-              await page.goto(new URL(`${path}?theme=${theme}`, server.url).href);
-              await ready(page);
-            }
-            const serverFrame = await recordedFrame(page, "server");
-            expect(serverFrame.some((part) => part.part.includes("head"))).toBe(true);
-            expect(
-              serverFrame.filter((part) => part.part.includes("mail-focus-row") || part.part.includes("mail-list-entry")).length,
-            ).toBeGreaterThan(0);
-            const compare = async (label: string, expected: Frame, actual: Frame) => {
-              try {
-                assertFrame(expected, actual, `${path} ${label}`);
-              } catch (error) {
-                differences.push(String(error));
-              }
-            };
-            // List rows change height for one frame after hydration on main too (#1545); the shell must not move.
-            const shell = (frame: Frame) => frame.filter((part) => !/mail-focus-row|mail-list-entry/.test(part.part));
-            await compare("hydrated", shell(serverFrame), shell(await recordedFrame(page, "hydrated")));
-            await compare("settled", serverFrame, await geometry(page));
-            await page.reload();
+          if (!route.selected) {
+            await page.goForward();
             await ready(page);
-            await compare("reload SSR", serverFrame, await recordedFrame(page, "server"));
-            await compare("reload hydrated", shell(serverFrame), shell(await recordedFrame(page, "hydrated")));
-            await compare("reload settled", serverFrame, await geometry(page));
           }
-          expect(differences).toEqual([]);
+          expect(new URL(page.url()).search).toBe("?view=waiting");
+          expect(await currentHref(page)).toBe(`${boxPath}?view=waiting`);
+          await page.reload();
+          await ready(page);
+          expect(await currentHref(page)).toBe(`${boxPath}?view=waiting`);
         } finally {
           await close(page);
         }
       }, 30_000);
 
-  test("German locale uses the same hydrated sidebar and head", async () => {
-    for (const path of ["/app/mail", boxPath]) {
-      const page = await open(`${path}?locale=de`);
+    test("Focus waiting URL survives in-place navigation and history", async () => {
+      const page = await open("/app/mail?view=waiting");
       try {
-        expect(await page.locator("html").getAttribute("lang")).toBe("de");
-        expect(await tabs(page).locator('a[aria-current="page"]').textContent()).toBe(
-          path === boxPath ? "Alle" : `Für mich${focusCounts.mine}`,
-        );
-        expect(await page.locator(".mail-sidebar").getAttribute("aria-label")).toBe("Postfächer");
+        expect(await currentHref(page)).toBe("/app/mail?view=waiting");
+        await clickTab(page, "/app/mail?view=unassigned");
+        await page.goBack();
+        await ready(page);
+        expect(new URL(page.url()).search).toBe("?view=waiting");
+        expect(await currentHref(page)).toBe("/app/mail?view=waiting");
+        await page.goForward();
+        await ready(page);
+        expect(await currentHref(page)).toBe("/app/mail?view=unassigned");
+        await page.reload();
+        await ready(page);
+        expect(await currentHref(page)).toBe("/app/mail?view=unassigned");
       } finally {
         await close(page);
       }
-    }
-  });
+    });
 
-  if (process.env.MAIL_SHELL_SCREENSHOTS)
-    test("optional synthetic review screenshots", async () => {
-      const directory = resolve(process.env.MAIL_SHELL_SCREENSHOTS!);
-      mkdirSync(directory, { recursive: true });
-      for (const theme of ["light", "dark"] as const)
-        for (const [width, height] of sizes) {
-          if (theme === "dark" && width !== 1440 && width !== 390) continue;
-          for (const [name, state, path] of [
-            ["focus", "tabs", "/app/mail"],
-            ["mailbox", "tabs", boxPath],
-            ...(theme === "light"
-              ? [
-                  ["mailbox", "folder", `${boxPath}?folder=Filed1`],
-                  ["mailbox", "details", `${boxPath}?conversation=Conv01&details=1`],
-                ]
-              : []),
+    for (const permission of ["write", "read", "admin", "assigned-only"])
+      test(`${permission}: head and sidebar share the authorized mailbox menu`, async () => {
+        const page = await open(`${boxPath}?permission=${permission}`);
+        try {
+          const head = page.locator(".k2b-app-workspace__head-actions").getByRole("button", { name: "Options for Example support" });
+          const row = sidebar(page).getByRole("button", { name: "Options for Example support" });
+          // The open row's "…" also holds its own pin and hide, which need no mailbox-wide access. The fixture pins it.
+          const rowOnly = ["Unpin Example support", "Hide Example support"];
+          const expected =
+            permission === "assigned-only"
+              ? []
+              : [
+                  permission === "read" ? "About this mailbox" : "Mailbox details",
+                  "Automations",
+                  "Mailing lists",
+                  "Remote images",
+                  "Email link setup",
+                  "Settings",
+                  ...(permission === "admin" ? ["Sync mailbox", "Mailbox health", "Shared links"] : []),
+                ];
+          if (permission === "assigned-only") {
+            expect(await head.count()).toBe(0);
+            expect(await page.getByRole("link", { name: "Compose", exact: true }).count()).toBe(0);
+          } else expect(await head.count()).toBe(1);
+          expect(await row.count()).toBe(1);
+          for (const [trigger, items] of [
+            ...(permission === "assigned-only" ? [] : [[head, expected] as const]),
+            [row, [...expected, ...rowOnly]] as const,
           ]) {
-            const page = await open(`${path}${path!.includes("?") ? "&" : "?"}theme=${theme}`, width, height);
-            try {
-              await page.screenshot({ path: join(directory, `${name}-${state}-${theme}-${width}.png`) });
-            } finally {
-              await close(page);
+            await trigger.click();
+            await page.getByRole("menu").waitFor();
+            expect((await page.getByRole("menuitem").allTextContents()).map((text) => text.trim()).sort()).toEqual([...items].sort());
+            await page.keyboard.press("Escape");
+            await page.getByRole("menu").waitFor({ state: "hidden" });
+          }
+        } finally {
+          await close(page);
+        }
+      });
+
+    test("dragging a list row to a custom folder submits its move; unread counts and More persist", async () => {
+      const page = await open(boxPath);
+      try {
+        const destination = sidebar(page).locator('a[href$="folder=Filed1"]');
+        expect(await destination.textContent()).toContain("7 unread");
+        const action = page.waitForRequest(
+          (request) => request.method() === "POST" && request.url().endsWith("/conversations/Conv01/actions"),
+        );
+        await page.locator('[data-conversation-id="Conv01"] [draggable="true"]').dragTo(destination);
+        const request = await action;
+        expect(request.postDataJSON()).toMatchObject({ kind: "move_to_folder", sourceFolderId: "Inbox1", destinationFolderId: "Filed1" });
+        await sidebar(page).getByRole("button", { name: "More", exact: true }).click();
+        for (const id of ["Archive1", "Trash1", "Junk1"])
+          expect(await sidebar(page).locator(`a[href$="folder=${id}"]`).isVisible()).toBe(true);
+        await sidebar(page).locator('a[href$="folder=Archive1"]').click();
+        await page.waitForURL(new URL(`${boxPath}?folder=Archive1`, server.url).href);
+        await settled(page);
+        await sidebar(page).getByRole("button", { name: "More", exact: true }).click();
+        expect(await sidebar(page).locator('a[href$="folder=Archive1"]').isVisible()).toBe(true);
+        await page.reload();
+        await ready(page);
+        expect(await sidebar(page).locator('a[href$="folder=Archive1"]').getAttribute("aria-current")).toBe("page");
+        expect(await sidebar(page).locator('a[href$="folder=Junk1"]').isVisible()).toBe(true);
+      } finally {
+        await close(page);
+      }
+    }, 30_000);
+
+    test("hidden mailboxes have a link and a working Show action", async () => {
+      const page = await open(boxPath);
+      try {
+        const section = sidebar(page).locator(".mail-sidebar-hidden-mailboxes");
+        await section.getByRole("button", { name: /Hidden mailboxes/ }).click();
+        const hidden = section.locator('[data-mailbox="Box005"]');
+        expect(await hidden.locator("a").getAttribute("href")).toBe("/app/mail/Box005");
+        const saved = page.waitForRequest((request) => request.method() === "PATCH" && request.url().endsWith("/Box005/preference"));
+        await hidden.hover();
+        await hidden.getByRole("button", { name: /Show/ }).click();
+        expect((await saved).postDataJSON()).toEqual({ hidden: false });
+        await sidebar(page).locator('[data-mailbox="Box005"]:not([data-hidden="true"])').waitFor();
+      } finally {
+        await close(page);
+      }
+    });
+
+    for (const path of ["/app/mail", boxPath]) {
+      test(`${path}: sidebar resizes with pointer and ArrowLeft/ArrowRight/Home`, async () => {
+        const page = await open(path);
+        try {
+          const handle = page.getByRole("separator", { name: "Resize navigation", exact: true });
+          const before = Number(await handle.getAttribute("aria-valuenow"));
+          const box = await handle.boundingBox();
+          if (!box) throw new Error("Missing navigation resize handle");
+          await page.mouse.move(box.x + box.width / 2, box.y + 60);
+          await page.mouse.down();
+          await page.mouse.move(box.x + box.width / 2 + 48, box.y + 60, { steps: 5 });
+          await page.mouse.up();
+          await page.waitForFunction(
+            (before) => Number(document.querySelector('[data-app-workspace-resize="sidebar"]')?.getAttribute("aria-valuenow")) > before,
+            before,
+          );
+          await settled(page);
+          expect((await page.locator(".mail-sidebar").boundingBox())!.width).toBeGreaterThan(before);
+          for (const key of ["ArrowLeft", "ArrowRight", "Home"]) {
+            const previous = Number(await handle.getAttribute("aria-valuenow"));
+            await handle.focus();
+            await page.keyboard.press(key);
+            await page.waitForFunction(
+              ({ key, previous }) => {
+                const handle = document.querySelector('[data-app-workspace-resize="sidebar"]')!;
+                const value = Number(handle.getAttribute("aria-valuenow"));
+                return key === "Home"
+                  ? value === Number(handle.getAttribute("aria-valuemin"))
+                  : key === "ArrowLeft"
+                    ? value < previous
+                    : value > previous;
+              },
+              { key, previous },
+            );
+            await settled(page);
+            expect((await page.locator(".mail-sidebar").boundingBox())!.width).toBeCloseTo(
+              Number(await handle.getAttribute("aria-valuenow")),
+              0,
+            );
+          }
+        } finally {
+          await close(page);
+        }
+      });
+      test(`${path}: phone tabs are the card's first row`, async () => {
+        const page = await open(path, 390);
+        try {
+          const views = await tabs(page).boundingBox();
+          const workspace = await page.locator(".k2b-app-workspace").boundingBox();
+          expect(views).not.toBeNull();
+          expect(workspace).not.toBeNull();
+          if (!views || !workspace) throw new Error("Missing phone frame");
+          const filters =
+            (await page.locator(".k2b-app-workspace__head-filters").count()) > 0
+              ? await page.locator(".k2b-app-workspace__head-filters").boundingBox()
+              : null;
+          if (filters) expect(views.y + views.height).toBeLessThanOrEqual(filters.y + 0.5);
+          const rows = await page.locator(".mail-focus-row,.mail-list-entry").first().boundingBox();
+          expect(views.y + views.height).toBeLessThanOrEqual(rows!.y);
+          if (path === "/app/mail") {
+            expect(await page.locator('.mail-sidebar[data-mobile="stacked"]').count()).toBe(1);
+            const chip = await page.locator('.mail-sidebar [data-mailbox="Box002"] a:visible').first().boundingBox();
+            expect(chip).not.toBeNull();
+            // The shared workspace puts the head first on phones: the tabs are the card's top row, the chips follow.
+            expect(chip!.y).toBeGreaterThanOrEqual(views.y + views.height);
+          }
+          const firstRowY = await page.locator(".k2b-app-workspace__head").evaluate((head) => {
+            const style = getComputedStyle(head);
+            return head.getBoundingClientRect().y + Number.parseFloat(style.paddingTop) + Number.parseFloat(style.borderTopWidth);
+          });
+          // The tabs share the head's first row with the actions, which may be taller and center the row.
+          expect(views.y - firstRowY, "Tabs occupy the head's first content row").toBeLessThan(8);
+        } finally {
+          await close(page);
+        }
+      });
+      test(`${path}: selecting a tab moves no neighboring tab, chip or head action`, async () => {
+        const page = await open(path);
+        try {
+          const neighbors = page.locator(
+            `${tabsSelector} [data-view-tab],.k2b-app-workspace__head-filters,.k2b-filter-chip,.k2b-app-workspace__head-actions,.k2b-app-workspace__head-actions button,[data-workspace-primary]`,
+          );
+          const boxes = () =>
+            neighbors.evaluateAll((elements) =>
+              elements.map((e) => {
+                const r = e.getBoundingClientRect();
+                return { part: e.getAttribute("data-view-tab") ?? e.className, x: r.x, y: r.y, width: r.width, height: r.height };
+              }),
+            );
+          const before = await boxes();
+          expect(before.length).toBeGreaterThan(3);
+          await clickTab(page, `${path}?view=waiting`);
+          await settled(page);
+          expect(await boxes()).toEqual(before);
+        } finally {
+          await close(page);
+        }
+      });
+    }
+
+    for (const width of [1440, 834, 390] as const)
+      test(`${width}: a folder is named where the person sees it`, async () => {
+        const page = await open(`${boxPath}?folder=Filed1`, width);
+        try {
+          const heading = page.locator("[data-mail-list-heading]");
+          expect(await heading.textContent()).toBe("Filed");
+          const box = await heading.boundingBox();
+          if (width === 1440) {
+            // Beside the sidebar its marked row names the folder; the heading stays for assistive technology.
+            expect(await sidebar(page).locator('a[href$="folder=Filed1"]').getAttribute("aria-current")).toBe("page");
+            expect(box?.width ?? 0).toBeLessThanOrEqual(1);
+          } else {
+            // Below 64 rem the sidebar is out of view and folders have no tab: the list heading names the folder.
+            expect(await sidebar(page).isVisible()).toBe(false);
+            expect(box?.width ?? 0).toBeGreaterThan(20);
+            expect(await heading.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+          }
+        } finally {
+          await close(page);
+        }
+      });
+
+    test("the open mailbox's name stays readable beside its row actions at the default width", async () => {
+      const page = await open(boxPath);
+      try {
+        const row = sidebar(page).locator('.mail-sidebar-mailbox[data-mailbox="Box001"]');
+        // The open row shows its actions without hover; only "…" stays there, with pin and hide inside it.
+        // The menu renders inside the actions; its items are not row buttons.
+        const buttons = row.locator('.k2b-app-workspace__sidebar-item-actions button:not([role="menuitem"])');
+        expect(await buttons.count()).toBe(1);
+        expect(await buttons.getAttribute("aria-label")).toBe("Options for Example support");
+        const fit = await row.evaluate((element) => {
+          const label = element.querySelector(".k2b-app-workspace__sidebar-item-label")!;
+          const range = document.createRange();
+          range.selectNodeContents(label);
+          // The leftmost row action: the name may run into its padding, where the label fades, but not past its middle.
+          const actions = Array.from(
+            element.querySelectorAll('.k2b-app-workspace__sidebar-item-actions button:not([role="menuitem"])'),
+            (button) => button.getBoundingClientRect(),
+          ).filter((box) => box.width > 0);
+          const first = actions.reduce((left, box) => (box.x < left.x ? box : left));
+          return { textEnd: range.getBoundingClientRect().right, actionMiddle: first.x + first.width / 2 };
+        });
+        expect(fit.textEnd).toBeLessThanOrEqual(fit.actionMiddle);
+      } finally {
+        await close(page);
+      }
+    });
+
+    // One browser, one context per viewport/theme; Focus and mailbox share that context.
+    for (const theme of ["light", "dark"] as const)
+      for (const [width, height] of sizes)
+        test(`${theme} ${width}x${height}: server = hydrated = settled = reload within 0.5px`, async () => {
+          const page = await open(`/app/mail?theme=${theme}`, width, height);
+          const differences: string[] = [];
+          try {
+            for (const path of ["/app/mail", boxPath]) {
+              if (path === boxPath) {
+                await page.goto(new URL(`${path}?theme=${theme}`, server.url).href);
+                await ready(page);
+              }
+              const serverFrame = await recordedFrame(page, "server");
+              expect(serverFrame.some((part) => part.part.includes("head"))).toBe(true);
+              expect(
+                serverFrame.filter((part) => part.part.includes("mail-focus-row") || part.part.includes("mail-list-entry")).length,
+              ).toBeGreaterThan(0);
+              const compare = async (label: string, expected: Frame, actual: Frame) => {
+                try {
+                  assertFrame(expected, actual, `${path} ${label}`);
+                } catch (error) {
+                  differences.push(String(error));
+                }
+              };
+              // List rows change height for one frame after hydration on main too (#1545); the shell must not move.
+              const shell = (frame: Frame) => frame.filter((part) => !/mail-focus-row|mail-list-entry/.test(part.part));
+              await compare("hydrated", shell(serverFrame), shell(await recordedFrame(page, "hydrated")));
+              await compare("settled", serverFrame, await geometry(page));
+              await page.reload();
+              await ready(page);
+              await compare("reload SSR", serverFrame, await recordedFrame(page, "server"));
+              await compare("reload hydrated", shell(serverFrame), shell(await recordedFrame(page, "hydrated")));
+              await compare("reload settled", serverFrame, await geometry(page));
+            }
+            expect(differences).toEqual([]);
+          } finally {
+            await close(page);
+          }
+        }, 30_000);
+
+    test("German locale uses the same hydrated sidebar and head", async () => {
+      for (const path of ["/app/mail", boxPath]) {
+        const page = await open(`${path}?locale=de`);
+        try {
+          expect(await page.locator("html").getAttribute("lang")).toBe("de");
+          expect(await tabs(page).locator('a[aria-current="page"]').textContent()).toBe(
+            path === boxPath ? "Alle" : `Für mich${focusCounts.mine}`,
+          );
+          expect(await page.locator(".mail-sidebar").getAttribute("aria-label")).toBe("Postfächer");
+        } finally {
+          await close(page);
+        }
+      }
+    });
+
+    if (screenshots)
+      test("optional synthetic review screenshots", async () => {
+        const directory = resolve(screenshots);
+        mkdirSync(directory, { recursive: true });
+        for (const theme of ["light", "dark"] as const)
+          for (const [width, height] of sizes) {
+            if (theme === "dark" && width !== 1440 && width !== 390) continue;
+            for (const [name, state, path] of [
+              ["focus", "tabs", "/app/mail"],
+              ["mailbox", "tabs", boxPath],
+              ...(theme === "light"
+                ? [
+                    ["mailbox", "folder", `${boxPath}?folder=Filed1`],
+                    ["mailbox", "details", `${boxPath}?conversation=Conv01&details=1`],
+                  ]
+                : []),
+            ]) {
+              const page = await open(`${path}${path!.includes("?") ? "&" : "?"}theme=${theme}`, width, height);
+              try {
+                await page.screenshot({ path: join(directory, `${name}-${state}-${theme}-${width}.png`) });
+              } finally {
+                await close(page);
+              }
             }
           }
-        }
-    }, 120_000);
-});
+      }, 120_000);
+  });

@@ -3,7 +3,8 @@ import { browserName } from "../../../ui/test/browser";
 
 // The island plugin owns its child process so SSR IDs and browser bundles agree.
 if (process.env.MAIL_SHELL_BROWSER_CHILD === "1") {
-  await import("./mail-shell.browser-suite");
+  const { defineMailShellTests } = await import("./mail-shell.browser-suite");
+  defineMailShellTests(process.env.MAIL_SHELL_SCREENSHOTS);
 } else {
   // Two children, so each stays well inside its time budget in WebKit: the geometry matrix and everything else.
   const GEOMETRY = "server = hydrated = settled";

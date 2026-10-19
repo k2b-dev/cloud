@@ -7,6 +7,7 @@ import { openMailboxDetailsDialog } from "./MailboxDetailsDialog";
 import { createMailboxMenu, MailboxMenuButton } from "./MailboxMenu";
 import MailSidebar from "./MailSidebar";
 import { mailboxMenuOptions, mailSidebarFixture, openMailboxFixture } from "./mail-sidebar.fixture";
+import { mailSidebarMessages } from "./mail-sidebar-messages";
 
 export type MailboxDetailsHarnessOptions = {
   locale: "en" | "de";
@@ -82,7 +83,7 @@ window.mountMailboxDetails = (options) => {
                     onOpenDetails: () => void openDetails(),
                   }),
                 )}
-                label={options.locale === "de" ? "Optionen für Support" : "Options for Support"}
+                label={mailSidebarMessages.resolve([options.locale]).t.mailboxMenu({ name: "Support" })}
               />
             }
             primary={
