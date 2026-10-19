@@ -1,9 +1,10 @@
 import { sql } from "bun";
+import { storedActionReview } from "../../ai/action-review";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals } from "../../ai/approvals";
 import type { AiTurnRunConfig } from "../../ai/types";
 import type { RuntimeAppMeta } from "../../contracts/app";
 import { APPROVALS_PAGE_SIZE, type ApprovalCounts, type PendingApproval } from "../../contracts/approvals";
-import { CapabilityActionReviewDataSchema } from "../../contracts/capabilities";
+import { type CapabilityActionPolicy, CapabilityActionReviewDataSchema } from "../../contracts/capabilities";
 import type { ApprovalAssurance } from ".";
 import { decodeApprovalCursor, encodeApprovalCursor } from "./cursor";
 
@@ -93,9 +94,12 @@ export const countPending = async (input: { approverUserId: string }): Promise<A
 export const presentPendingApproval = (
   row: PendingApprovalRow,
   apps: readonly Pick<RuntimeAppMeta, "id" | "name" | "icon">[],
+  policy?: CapabilityActionPolicy,
 ): PendingApproval => {
   const app = apps.find((entry) => entry.id === row.appId);
   const review = CapabilityActionReviewDataSchema.nullable().safeParse(row.details);
+  const originalReview = review.success ? review.data : null;
+  const displayReview = originalReview && "sentence" in originalReview ? storedActionReview(originalReview, policy) : originalReview;
   const remember = row.assurance === "standard" && aiTurnAllowsRememberedApprovals(row.runConfig);
   return {
     id: row.id,
@@ -103,7 +107,7 @@ export const presentPendingApproval = (
     action: row.action,
     assurance: row.assurance,
     sentence: row.sentence,
-    review: review.success ? review.data : null,
+    review: displayReview && "legacy" in displayReview ? originalReview : displayReview,
     requester: {
       kind: "chat",
       appId: row.requesterAppId,

@@ -4,13 +4,15 @@ import { openAICompatible } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
-import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { compileCapabilities } from "../_internal/capabilities";
+import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";
 import * as registry from "../_internal/registry";
 import { approvalRoutes } from "../api/approvals";
+import * as capabilityDispatch from "../api/capabilities";
 import type { User } from "../contracts";
-import { defineCapabilities } from "../contracts/capabilities";
+import { type CapabilityActionReviewData, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { approvals } from "../services/approvals";
@@ -469,6 +471,10 @@ suite("AI executor integration", () => {
       const onApprovalRequested = async ({ approvalId }: { approvalId: string }) => {
         expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("waiting_for_action");
         expect(await approvals.get(approvalId)).toMatchObject({ status: "pending" });
+        const stored = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+        expect(buildBlocksFromMessages(stored).find((block) => block.kind === "tool" && block.callId === "write-1")).toMatchObject({
+          review: { legacy: { question: "Original effect", rows: [] } },
+        });
         approvalEvents.push(approvalId);
         if (mode === "unchanged") throw new Error("Notification unavailable");
       };
@@ -920,6 +926,14 @@ suite("AI executor integration", () => {
         expect(reviewSpy.mock.calls[0]?.[0]).toMatchObject({ entry: action, args, locale, mandate: { id: task.mandateId } });
       }
       if (mode === "scoped") {
+        const stored = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: delivered.turnId });
+        expect(buildBlocksFromMessages(stored).find((block) => block.kind === "tool" && block.name === "demo.write")).toMatchObject({
+          review: { legacy: { question: "Write one item.", rows: [] } },
+        });
+        const [message] = await sql<
+          { meta: unknown }[]
+        >`SELECT meta FROM ai.task_messages WHERE loop_id=${delivered.turnId} AND role='assistant' AND meta ? 'toolReviews'`;
+        expect(message?.meta).toMatchObject({ toolReviews: { "write-1": { legacy: { question: "Write one item." } } } });
         expect(executeSpy).toHaveBeenCalledTimes(1);
         expect(executeSpy.mock.calls[0]?.[0]).toMatchObject({ entry: action, args, actionApproval: "approved" });
       } else {
@@ -3976,4 +3990,117 @@ suite("local client in-lease results", () => {
       }
     },
   );
+});
+
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("stored Assistant Action outcomes", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
+
+  test.each([
+    { outcome: "done", code: "ACTION_OUTCOME_UNKNOWN", legacy: false, withCheck: true },
+    { outcome: "not_done", code: "IDEMPOTENCY_UNCERTAIN", legacy: false, withCheck: true },
+    { outcome: "pending", code: "IDEMPOTENCY_IN_PROGRESS", legacy: false, withCheck: true },
+    { outcome: "failed", code: "ACTION_OUTCOME_UNKNOWN", legacy: false, withCheck: true },
+    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", legacy: false, withCheck: false },
+    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", legacy: true, withCheck: false },
+  ] as const)("lost Action answer: $outcome, check=$withCheck, legacy=$legacy", async ({ outcome, code, legacy, withCheck }) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["demo.send"] });
+    const compiled = compileReviewFixture(legacy ? null : { silent: "you" });
+    const entry: CapabilityRegistryEntry = {
+      appId: "demo",
+      appName: "Demo",
+      appDescription: "Test outcomes",
+      appIcon: "ti ti-box",
+      endpoint: "http://demo.invalid/api/_internal/capabilities/v1",
+      manifest: compiled.manifest,
+    };
+    let liveReview: CapabilityActionReviewData = legacy
+      ? { message: "Original draft?", approvalScope: "one" }
+      : { ...reviewFixture(), scope: "one", ...(withCheck ? { check: { query: "check", input: { id: "original" } } } : {}) };
+    const originalReview = structuredClone(liveReview);
+    const receipt = { text: "Queued the original draft" };
+    const calls: Array<{ kind: string; capabilityId: string; review?: boolean }> = [];
+    const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([entry]);
+    const dispatch = spyOn(capabilityDispatch, "dispatchCapability").mockImplementation(async (input) => {
+      calls.push({ kind: input.kind, capabilityId: input.capabilityId, review: input.review });
+      if (input.review) return Response.json(liveReview);
+      if (input.kind === "actions") return Response.json({ code, message: "Lost Action response" }, { status: 409 });
+      expect(input).toMatchObject({ kind: "queries", capabilityId: "check", input: { id: "original" }, origin: "assistant" });
+      expect(input.authority?.actor).toMatchObject({ kind: "user", user: { id: userId } });
+      // The review is already durable before either dispatch, including a call auto-approved by an old always row.
+      const stored = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(buildBlocksFromMessages(stored).find((block) => block.kind === "tool" && block.callId === "send-1")).toMatchObject({
+        review: originalReview,
+      });
+      return outcome === "failed"
+        ? Response.json({ data: { outcome: "invalid" } })
+        : Response.json({ data: { outcome, ...(outcome === "done" ? { receipt } : {}) } });
+    });
+    try {
+      // Existing global approvals continue to apply, even though new cards no longer offer that choice.
+      await rememberAiToolApproval({ actorUserId: userId }, { toolName: "demo.send", approvalScope: "one" });
+      completionQueue = [toolCallCompletion("send-1", "demo__action__send", {}), textCompletion("Checked the result")];
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Send the draft",
+          locale: "en",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default", appTools: true },
+          toolApprovalContext: { actorUserId: userId },
+        },
+        userMessage: userMessage("Send the draft"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "outcome-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected claimed turn");
+      await createExecutor("outcome-exec", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim,
+        signal: new AbortController().signal,
+      });
+      expect(calls.filter((call) => call.kind === "actions" && !call.review)).toHaveLength(1);
+      expect(calls.filter((call) => call.kind === "queries")).toHaveLength(withCheck ? 1 : 0);
+      expect(await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).toEqual([]);
+      liveReview = legacy
+        ? { message: "Changed draft?" }
+        : { ...reviewFixture(), sentence: { ...reviewFixture().sentence, action: "Changed {subject} to {to}" } };
+      const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+      const block = buildBlocksFromMessages(messages).find((block) => block.kind === "tool" && block.callId === "send-1");
+      expect(block).toMatchObject({ review: legacy ? { legacy: { question: "Original draft?", rows: [] } } : originalReview });
+      if (withCheck) {
+        expect(block).toMatchObject({ check: { state: outcome }, status: outcome === "done" ? "completed" : "failed" });
+        if (outcome === "done")
+          expect(block).toMatchObject({ check: { receipt }, result: { receipt, data: null, outcomeCheck: "done" }, isError: false });
+        else expect(JSON.stringify(block)).toContain(outcome === "not_done" ? "ACTION_NOT_DONE" : "ACTION_OUTCOME_UNKNOWN");
+      } else {
+        if (block?.kind !== "tool") throw new Error("Expected tool block");
+        expect(block.check).toBeUndefined();
+        expect(block).toMatchObject({ status: "failed" });
+        expect(JSON.stringify(block)).toContain("ACTION_OUTCOME_UNKNOWN");
+      }
+    } finally {
+      dispatch.mockRestore();
+      registrySpy.mockRestore();
+      completionQueue = [];
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
 });

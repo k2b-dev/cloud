@@ -90,6 +90,7 @@ const words = i18n.define({
       question: ({ sentence }: { sentence: string }) => `${sentence}?`,
       rejected: ({ action }: { action: string }) => `Not done: ${action}`,
       unknown: ({ action }: { action: string }) => `Not known yet whether this happened: ${action}`,
+      unknownStill: ({ action }: { action: string }) => `Still not known whether this happened: ${action}`,
       people: ({ count }: { count: number }) => `${count} ${new Intl.PluralRules("en").select(count) === "one" ? "person" : "people"}`,
       sends: "I'm asking because this leaves Cloud.",
       deletes: "I'm asking because you can't bring it back afterwards.",
@@ -108,6 +109,7 @@ const words = i18n.define({
       question: ({ sentence }) => `${sentence}?`,
       rejected: ({ action }) => `Nicht ausgeführt: ${action}`,
       unknown: ({ action }) => `Ob ${action} passiert ist, weiß ich noch nicht.`,
+      unknownStill: ({ action }) => `Ob ${action} passiert ist, weiß ich weiterhin nicht.`,
       people: ({ count }) => `${count} ${new Intl.PluralRules("de").select(count) === "one" ? "Person" : "Personen"}`,
       sends: "Ich frage, weil das Cloud verlässt.",
       deletes: "Ich frage, weil du das danach nicht zurückholen kannst.",
@@ -537,6 +539,7 @@ export const capabilitySentenceText = (
 ): string => sentenceText(text, slots, context, "plain");
 export type CapabilityReviewSentenceForm =
   | "question"
+  | "unknownStill"
   | "running"
   | "done"
   | "rejected"
@@ -555,6 +558,7 @@ export const capabilityReviewSentence = (
   const action = () => capabilitySentenceText(review.sentence.action, review.slots, rendering);
   if (form === "question") return plain(t.question({ sentence: action() }), 400);
   if (form === "unknown") return plain(t.unknown({ action: action() }), 400);
+  if (form === "unknownStill") return plain(t.unknownStill({ action: action() }), 400);
   if (form === "confirm" || form === "decline")
     return sentenceText(review.sentence[form], review.slots, rendering, "button", Number.MAX_SAFE_INTEGER);
   const template = form === "notRun" ? (review.sentence.notRun ?? review.sentence.rejected) : review.sentence[form];
@@ -575,3 +579,50 @@ export const capabilityAskReasonText = (reason: CapabilityAskReason, context: { 
   const t = words.resolve([context.locale]).t;
   return reason === "app_asks" ? t.app_asks({ app: context.appName }) : t[reason];
 };
+
+/** Splits a Cloud frame such as "Ob {action} passiert ist, weiß ich noch nicht." around the inserted sentence. */
+const framed = (frame: (input: { action: string }) => string, inner: CapabilitySentencePart[]): CapabilitySentencePart[] => {
+  const marker = "\u0000";
+  const [before = "", after = ""] = frame({ action: marker }).split(marker);
+  return [
+    ...(before ? [{ kind: "text" as const, text: before }] : []),
+    ...inner,
+    ...(after ? [{ kind: "text" as const, text: after }] : []),
+  ];
+};
+
+/**
+ * One form of a review as parts for chips: the same words as `capabilityReviewSentence`, with Cloud's frames (the
+ * question mark, "not known yet", the default rejection) around the app's sentence. Buttons and `short` stay text.
+ */
+export const capabilityReviewSentenceParts = (
+  review: CapabilityActionCallReview,
+  form: Exclude<CapabilityReviewSentenceForm, "short" | "confirm" | "decline">,
+  context: { timeZone: string },
+): CapabilitySentencePart[] => {
+  const rendering = { locale: review.locale, timeZone: context.timeZone };
+  const t = words.resolve([review.locale]).t;
+  const action = () => capabilitySentenceParts(review.sentence.action, review.slots, rendering);
+  if (form === "question") return framed(({ action: sentence }) => t.question({ sentence }), action());
+  if (form === "unknown") return framed(t.unknown, action());
+  if (form === "unknownStill") return framed(t.unknownStill, action());
+  const template = form === "notRun" ? (review.sentence.notRun ?? review.sentence.rejected) : review.sentence[form];
+  if (template) return capabilitySentenceParts(template, review.slots, rendering);
+  return framed(t.rejected, action());
+};
+
+/** The parts of a receipt the app returned, in the review's language. */
+export const capabilityReceiptParts = (
+  receipt: CapabilityActionReceipt,
+  context: { locale: string; timeZone: string },
+): CapabilitySentencePart[] => capabilitySentenceParts(receipt.text, receipt.slots ?? {}, context);
+
+/** Cloud's frame for an outcome it could not see, around any plain sentence. */
+export const capabilityUnknownText = (action: string, locale: string, still = false): string => {
+  const t = words.resolve([locale]).t;
+  return plain(still ? t.unknownStill({ action }) : t.unknown({ action }), 400);
+};
+
+/** Cloud's question frame around a plain sentence, such as Cloud's own sentence for a call without a review. */
+export const capabilityQuestionText = (sentence: string, locale: string): string =>
+  plain(words.resolve([locale]).t.question({ sentence }), 400);

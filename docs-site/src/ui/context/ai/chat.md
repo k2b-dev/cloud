@@ -130,7 +130,10 @@ rejected answer callbacks with `onAnswerError` and show a recoverable outcome.
 Pass `Chat.Outcome` only the lines this flow can reach. Every supplied line
 occupies the same grid cell, including hidden alternatives, so the longest line
 reserves the height. This keeps running-to-done transitions still without
-reserving space for unrelated outcomes. Only the current line is visible and
+reserving space for unrelated outcomes. A part that arrives later, such as the
+time a call finished, needs its room from the start too: give the hidden line a
+stand-in of the same width, such as the widest time of the day, until the real
+value is known, so the line cannot wrap when it arrives. Only the current line is visible and
 accessible; inactive action links leave the tab order. `actions` under a line
 stay in the cell while the line is hidden, so a line with buttons reserves
 their row from the start. When a line's own action switches `current`, such

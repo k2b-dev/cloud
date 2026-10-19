@@ -1197,7 +1197,9 @@ describe("AI capability catalog", () => {
           ],
           links: [{ rel: "open", href: "/app/contacts" }],
         }),
-        onReview: (callId, review) => actionReviews.push({ callId, review }),
+        onReview: (callId, review) => {
+          actionReviews.push({ callId, review });
+        },
         execute: async () => {
           actionExecutions += 1;
           return { data: { id: "created" } };
@@ -1462,6 +1464,7 @@ describe("AI capability catalog", () => {
     expect(execute).not.toHaveBeenCalled();
     expect(markNeedsApproval).toHaveBeenCalledTimes(1);
     expect(requests[0]?.tools?.[0]?.description).toContain("Never retry ACTION_OUTCOME_UNKNOWN or NEEDS_APPROVAL.");
+    expect(requests[0]?.tools?.[0]?.description).toContain("After ACTION_NOT_DONE, ask the person before trying again.");
   });
 
   test("background discovery keeps loaded tool names isolated with the existing eviction contract", async () => {

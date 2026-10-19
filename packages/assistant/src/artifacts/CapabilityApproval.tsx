@@ -1,5 +1,4 @@
 import { AiChatActionsProvider, AiTurnBlockView } from "@k2b/cloud/ai/ui";
-import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import { NoticeCard, prompts, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { artifactMessages } from "./messages";
@@ -15,9 +14,9 @@ function Approval(props: { request: CapabilityApproval; respond: (value: Capabil
       </Show>
       <AiChatActionsProvider
         actions={{
-          // This card names no chat, so it offers no chat reach: its decision is once or always.
-          onApproval: (_request, input) =>
-            props.respond({ approved: input.approved, ...(input.remember === "always" ? { remember: "always" } : {}) }),
+          // This card names no chat, so it offers nothing to remember: the answer applies to this call. Choices to always
+          // approve that a person made earlier still apply before the card asks (capability-runtime).
+          onApproval: (_request, input) => props.respond({ approved: input.approved }),
         }}
       >
         <AiTurnBlockView
@@ -40,12 +39,11 @@ function Approval(props: { request: CapabilityApproval; respond: (value: Capabil
               ...(props.request.sentences ? { sentences: props.request.sentences } : {}),
               ...(props.request.fields ? { fields: [...props.request.fields] } : {}),
             },
+            // The same question card as the chat, from the app's review of exactly this call.
             approval: {
-              message:
-                (props.request.review ? capabilityReviewView(props.request.review, { timeZone: "UTC" }).message : undefined) ??
-                `${props.request.appName}: ${props.request.title}`,
+              message: `${props.request.appName}: ${props.request.title}`,
               review: props.request.review ?? undefined,
-              allowAlways: props.request.allowAlways,
+              allowAlways: false,
             },
           }}
         />

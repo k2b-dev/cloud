@@ -4,6 +4,7 @@ import { type SQL, sql } from "bun";
 import { type CapabilityActionReviewData, CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
+import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
@@ -968,6 +969,48 @@ export const recordAiWebsiteReceipts = async (input: {
       AND message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', ${input.callId}::text))
   `;
 };
+
+/** Reviews and outcome checks belong to the assistant message containing the call, including scheduled turns. */
+const recordAiToolMeta = async (
+  input: { conversationId: string; turnId: string; callId: string },
+  key: "toolReviews" | "toolChecks",
+  value: AiStoredActionReview | AiActionCheck,
+  db = sql,
+): Promise<void> => {
+  let written = false;
+  for (const table of ["ai.messages", "ai.task_messages"]) {
+    const rows = await db<{ id: string }[]>`
+      UPDATE ${db(table)}
+      SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
+        ${key}::text, COALESCE(meta->${key}::text, '{}'::jsonb) ||
+          jsonb_build_object(${input.callId}::text, ${JSON.stringify(value)}::text::jsonb)
+      )
+      WHERE conversation_id = ${input.conversationId}::uuid AND loop_id = ${input.turnId}::text
+        AND role = 'assistant'
+        AND message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', ${input.callId}::text))
+      RETURNING id`;
+    written ||= rows.length > 0;
+  }
+  if (!written) throw new Error("AI tool call message is unavailable.");
+};
+
+export const recordAiToolReview = (input: { conversationId: string; turnId: string; callId: string; review: AiStoredActionReview }) =>
+  recordAiToolMeta(input, "toolReviews", input.review);
+
+export const recordAiToolCheck = (input: { conversationId: string; turnId: string; callId: string; check: AiActionCheck }, db = sql) =>
+  recordAiToolMeta(input, "toolChecks", input.check, db);
+
+/** A transaction-scoped lock rejects overlapping re-checks across Core replicas and releases on failure or process exit. */
+export const withAiToolCheckLock = <T>(
+  input: { conversationId: string; turnId: string; callId: string },
+  run: (db: typeof sql) => Promise<T>,
+): Promise<T | null> =>
+  sql.begin(async (db) => {
+    const [lock] = await db<{ acquired: boolean }[]>`SELECT pg_try_advisory_xact_lock(
+    hashtextextended(${`ai-tool-check:${input.conversationId}:${input.turnId}:${input.callId}`}, 0)
+  ) AS acquired`;
+    return lock?.acquired ? run(db) : null;
+  });
 
 /** Insert a message inside an open conversation-lock transaction and bump the conversation. */
 const insertMessageLocked = async (
@@ -2919,10 +2962,21 @@ export const aiConversations: AiConversationService = {
     `;
     if (!rows[0]) return null;
     // The waits let a reconnecting client show work time without time spent waiting for the user.
-    const waits = await activeTurnWaits(rows[0].id);
+    const [waits, messages] = await Promise.all([
+      activeTurnWaits(rows[0].id),
+      aiConversations.listTurnMessages({ conversationId: input.conversationId, loopId: rows[0].id, includeCompacted: true }),
+    ]);
+    // A person may re-check while the model continues. Durable checks outrank the worker's earlier live snapshot.
+    const reviews = new Map(messages.flatMap((message) => Object.entries(message.meta?.toolReviews ?? {})));
+    const checks = new Map(messages.flatMap((message) => Object.entries(message.meta?.toolChecks ?? {})));
     return {
       turn: rowToTurn(rows[0]),
-      liveBlocks: rowToLiveBlocks(rows[0]),
+      liveBlocks: rowToLiveBlocks(rows[0]).map((block) => {
+        if (block.kind !== "tool") return block;
+        const review = reviews.get(block.callId);
+        const check = checks.get(block.callId);
+        return { ...block, ...(review ? { review } : {}), ...(check ? { check } : {}) };
+      }),
       liveSeq: Number(rows[0].live_seq ?? 0),
       actionWaitMs: Math.max(0, Math.round(waits.actionWaitMs)),
       waitingSince: waits.waitingSince,

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { reviewFixture } from "../../_internal/capability-review.test-fixture";
 import {
   APPROVALS_PAGE_SIZE,
   ApprovalCountsSchema,
@@ -78,4 +79,18 @@ test("the supplied approval contract bounds pages and validates decisions and co
   expect(ApprovalDecisionInputSchema.safeParse({ approved: true, remember: "website" }).success).toBe(false);
   expect(ApprovalCountsSchema.safeParse({ total: 2, apps: { mail: 2, assistant: 2 } }).success).toBe(true);
   expect(ApprovalCountsSchema.safeParse({ total: 2, apps: { mail: 0 } }).success).toBe(false);
+});
+
+test("fills only the returned new review reason from policy, keeping the approval snapshot and legacy review intact", () => {
+  const review = reviewFixture();
+  const before = JSON.stringify(review);
+  const presented = presentPendingApproval({ ...row, details: review }, [], { ask: "sends" });
+  expect(presented.review).toEqual({ ...review, ask: "sends" });
+  expect(JSON.stringify(review)).toBe(before);
+  expect(ApprovalPageSchema.safeParse({ items: [presented], nextCursor: null, count: 1, elsewhere: 0 }).success).toBe(true);
+  expect(presentPendingApproval({ ...row, details: { ...review, ask: "sensitive" } }, [], { ask: "sends" }).review).toEqual({
+    ...review,
+    ask: "sensitive",
+  });
+  expect(presentPendingApproval(row, [], { ask: "sends" }).review).toEqual({ message: "Send it?" });
 });
