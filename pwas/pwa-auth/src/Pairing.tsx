@@ -29,6 +29,17 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
     try {
       const p = appApproval.parsePairingLink(link, location.origin);
       if (Date.parse(p.expiresAt) <= Date.now()) {
+        // A claimed pairing can wait for approval on a paired device past the link's deadline; its saved
+        // enrollment resumes it. A fresh claim still needs an unexpired link.
+        void storage
+          .enrollment(bindingId(p.issuer, p.pairingId))
+          .then((saved) => {
+            if (!saved?.comparison) return;
+            setError("");
+            setText("");
+            setPayload(p);
+          })
+          .catch(() => {});
         setError(t().expiredLink);
         return false;
       }
@@ -52,7 +63,8 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
     const p = payload();
     if (!p || !enrollment || stopped || busy() || document.visibilityState !== "visible" || !navigator.onLine || Date.now() < nextPoll)
       return;
-    if (Date.parse(p.expiresAt) <= Date.now()) {
+    // A claimed pairing can wait past the link's deadline for approval on a paired device; Cloud says when it ends.
+    if (Date.parse(p.expiresAt) <= Date.now() && !comparison()) {
       stopped = true;
       setError(t().pairingExpired);
       return;
@@ -101,7 +113,8 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
     } catch (e) {
       if (!abort.signal.aborted) {
         const reason = failure(e);
-        setError(reason === "unavailable" ? t().pairingRetrying : t()[reason]);
+        const ended = reason === "forbidden" && Date.parse(p.expiresAt) <= Date.now();
+        setError(ended ? t().pairingExpired : reason === "unavailable" ? t().pairingRetrying : t()[reason]);
         if (reason === "forbidden" || reason === "stale") stopped = true;
         delay = Math.min(delay * 2, appApproval.limits.proofSeconds * 1000);
       }

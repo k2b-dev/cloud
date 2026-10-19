@@ -13,7 +13,13 @@ import {
   AppActionViewSchema,
   type AppApprovalAccept,
   type AppApprovalPendingAccept,
+  type AppDeviceChange,
+  AppDeviceChangeSchema,
   AppDeviceCommandSchema,
+  type AppDeviceInbox,
+  AppDeviceInboxSchema,
+  type AppDeviceInboxWithChanges,
+  AppDeviceInboxWithChangesSchema,
   AppDeviceProofSchema,
   type AppDevicePublicKey,
   AppDevicePublicKeySchema,
@@ -199,7 +205,8 @@ const connect = async (options: {
       );
     },
     pairingResult: (payload: AppPairingPayload, key: AppApprovalKey, signal?: AbortSignal) => {
-      const p = pairing(payload);
+      const p = AppPairingPayloadSchema.parse(payload);
+      if (p.issuer !== issuer) throw new AppApprovalClientError("INVALID_INPUT");
       return request(
         "/pairings/result",
         AppPairingResultSchema,
@@ -232,12 +239,39 @@ const connect = async (options: {
     terminalLogins: info.features?.includes("terminal-logins") === true,
     /** Whether this Cloud serves sign-in context through a signed opt-in. */
     loginContext: info.features?.includes("login-context") === true,
+    /** Whether this Cloud lists requests to pair or remove a device in an inbox that accepts `device-changes`. */
+    deviceChanges: info.features?.includes("device-changes") === true,
     /** Pending sign-ins and the newest open Action approvals in one call; use it instead of `pending` where `actions` is true. */
-    inbox: async (device: AppApprovalDevice, signal?: AbortSignal, options?: { accept?: AppApprovalAccept[] }) => {
+    inbox: async (
+      device: AppApprovalDevice,
+      signal?: AbortSignal,
+      options?: { accept?: AppApprovalAccept[] },
+    ): Promise<AppDeviceInbox | AppDeviceInboxWithChanges> => {
       // SDK upgrades alone must not expose consent the app cannot show. Old Clouds never see the new key.
       const accept = options?.accept?.filter((entry) => info.features?.includes(entry));
       const result = await command(device, { operation: "inbox", ...(accept?.length ? { accept } : {}) }, signal);
-      if (!("actions" in result)) throw new AppApprovalClientError("INVALID_RESPONSE");
+      if (!("actions" in result) || (accept?.includes("device-changes") && (!("changes" in result) || !("moreChanges" in result))))
+        throw new AppApprovalClientError("INVALID_RESPONSE");
+      return "changes" in result ? AppDeviceInboxWithChangesSchema.parse(result) : AppDeviceInboxSchema.parse(result);
+    },
+    decideChange: async (device: AppApprovalDevice, change: AppDeviceChange, decision: "approve" | "deny", signal?: AbortSignal) => {
+      const parsed = AppDeviceChangeSchema.safeParse(change);
+      if (!parsed.success || Date.parse(parsed.data.expiresAt) <= Date.now()) throw new AppApprovalClientError("INVALID_INPUT");
+      change = parsed.data;
+      const result = await command(
+        device,
+        {
+          operation: "change",
+          changeId: change.changeId,
+          kind: change.kind,
+          targetId: change.device.id,
+          endSessions: change.endSessions,
+          decision,
+        },
+        signal,
+      );
+      if (!("state" in result) || result.state !== (decision === "approve" ? "approved" : "denied"))
+        throw new AppApprovalClientError("INVALID_RESPONSE");
       return result;
     },
     /** One open Action approval. The digest is recomputed here, so a view that does not match it is never returned. */
