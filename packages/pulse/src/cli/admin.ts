@@ -1,4 +1,4 @@
-import { arg, type CloudCliContext, command, flag, readCliInput } from "@k2b/cloud/cli";
+import { arg, type CloudCliContext, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
 import { z } from "zod";
 import { storeFixHint } from "../frontend/admin/messages";
 import { ADMIN_ERROR_CODES } from "../store/admin-contracts";
@@ -218,7 +218,7 @@ adminCommands.push(
       show(ctx, await adminRequest(ctx, `/bases/${encodeURIComponent(args.baseId)}/limits`, jsonRequest("PUT", body)));
     },
   }),
-  ...(["retry", "recheck", "recreate"] as const).map((action) =>
+  ...(["retry", "recheck"] as const).map((action) =>
     command(`admin bases ${action}`, {
       summary: `${action} a base store`,
       args: baseArg,
@@ -227,6 +227,15 @@ adminCommands.push(
       },
     }),
   ),
+  command("admin bases recreate", {
+    summary: "Discard a base's measurements and recreate its store empty",
+    args: baseArg,
+    flags: { yes: confirmFlag("Discard this base's measurements") },
+    async run({ ctx, args, flags }) {
+      if (!flags.yes) throw new Error("Refusing to recreate without --yes.");
+      show(ctx, await adminRequest(ctx, `/bases/${encodeURIComponent(args.baseId)}/recreate`, jsonRequest("POST")));
+    },
+  }),
   command("admin orphans list", {
     summary: "List databases without a base",
     flags: {
@@ -240,7 +249,9 @@ adminCommands.push(
   command("admin orphans delete", {
     summary: "Delete a database without a base",
     args: { database: arg.required({ valueLabel: "database" }) },
-    async run({ ctx, args }) {
+    flags: { yes: confirmFlag("Delete this database") },
+    async run({ ctx, args, flags }) {
+      if (!flags.yes) throw new Error("Refusing to delete without --yes.");
       show(ctx, await adminRequest(ctx, `/orphans/${encodeURIComponent(args.database)}`, jsonRequest("DELETE")));
     },
   }),

@@ -1016,7 +1016,7 @@ describe("Pulse base administration CLI", () => {
     },
     ...["retry", "recheck", "recreate"].map((action) => ({
       args: ["admin", "bases", action, "Base01"],
-      flags: {},
+      flags: action === "recreate" ? { yes: true } : {},
       path: `/api/pulse/admin/bases/Base01/${action}`,
       method: "POST",
     })),
@@ -1027,7 +1027,12 @@ describe("Pulse base administration CLI", () => {
       path: "/api/pulse/admin/orphans?limit=3&after=pulse_00000000000040008000000000000000",
       method: undefined,
     },
-    { args: ["admin", "orphans", "delete", "pulse_fixture"], flags: {}, path: "/api/pulse/admin/orphans/pulse_fixture", method: "DELETE" },
+    {
+      args: ["admin", "orphans", "delete", "pulse_fixture"],
+      flags: { yes: true },
+      path: "/api/pulse/admin/orphans/pulse_fixture",
+      method: "DELETE",
+    },
     { args: ["admin", "targets", "list"], flags: { base: "Base01" }, path: "/api/pulse/admin/targets?baseId=Base01", method: undefined },
     { args: ["admin", "targets", "add", "web-01:9100"], flags: { base: "Base01" }, path: "/api/pulse/admin/targets", method: "POST" },
     { args: ["admin", "targets", "remove", "target-id"], flags: {}, path: "/api/pulse/admin/targets/target-id", method: "DELETE" },
@@ -1039,6 +1044,14 @@ describe("Pulse base administration CLI", () => {
     expect(calls[0]?.path).toBe(path);
     expect(calls[0]?.init?.method).toBe(method);
   });
+  test.each([{ args: ["admin", "bases", "recreate", "Base01"] }, { args: ["admin", "orphans", "delete", "pulse_fixture"] }])(
+    "refuses the destructive $args without --yes",
+    async ({ args }) => {
+      const { ctx, calls } = createContext([...args], {}, [jsonResponse({ ok: true })]);
+      await expect(pulseCli.run(ctx)).rejects.toThrow("without --yes");
+      expect(calls).toHaveLength(0);
+    },
+  );
   test("fixed admin denial names the repair path without reflecting remote messages", async () => {
     const { ctx } = createContext(["admin", "policy", "get"], {}, [
       jsonResponse({ code: "ACCESS_DENIED", message: "REMOTE_MUST_NOT_LEAK" }, 403),

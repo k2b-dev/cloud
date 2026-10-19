@@ -1,4 +1,4 @@
-import { type AuthContext, auth, jsonResponse, requiresAdmin } from "@k2b/cloud/server";
+import { type AuthContext, auth, jsonResponse, REQUEST_IDLE_TIMEOUT_SECONDS, requiresAdmin, setRequestTimeout } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { z } from "zod";
@@ -62,7 +62,10 @@ const metadata = (summary: string, schema: z.ZodType, input?: z.ZodType, success
 const routes = new Hono<AuthContext>()
   .use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
+    // Recheck, recreate and orphan deletion run several store queries in sequence; each is bounded to 30 s.
+    setRequestTimeout(c, 60);
     await next();
+    setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
     if (c.res.status === 403) c.res = c.json({ code: "ACCESS_DENIED" }, 403);
   })
   .use("*", auth.requireOAuthScope("admin"))

@@ -79,9 +79,9 @@ cld pulse admin bases limits Base01
 cld pulse admin bases limits Base01 --profile small --values-per-minute 2000 --bytes-per-minute 5242880 --storage-bytes 5000000000 --max-series 50000 --max-event-kinds 2000 --max-state-keys 2000
 cld pulse admin bases retry Base01
 cld pulse admin bases recheck Base01
-cld pulse admin bases recreate Base01
+cld pulse admin bases recreate Base01 --yes
 cld pulse admin orphans list --limit 50
-cld pulse admin orphans delete pulse_00000000000040008000000000000000
+cld pulse admin orphans delete pulse_00000000000040008000000000000000 --yes
 cld pulse admin targets list --base Base01
 cld pulse admin targets add --base Base01 web-01:9100
 cld pulse admin targets remove <targetId>
@@ -92,7 +92,7 @@ Policy defaults use `--default-values-per-minute`, `--default-bytes-per-minute`,
 and `--default-max-state-keys`. Creation allows `everyone` (people and agents),
 `people`, or `admins`. Resource-bound credentials never create bases.
 
-**Recreate discards measurements.** It keeps sources, tokens, dashboards and
+**Recreate discards measurements** and, like orphan deletion, needs `--yes`. It keeps sources, tokens, dashboards and
 queries. Retry resumes a failed operation. Recheck verifies matching backups
 and recreates read access after restore. Orphan deletion rechecks that no base
 references the database. Administration shows amounts and state, never contents.
