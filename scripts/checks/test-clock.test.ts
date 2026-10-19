@@ -7,6 +7,63 @@ import { checkTestClockSource, formatBaseline, rule } from "./test-clock";
 const file = "packages/demo/src/view.behavior.test.tsx";
 const baseline = "scripts/checks/test-clock.baseline";
 const check = (source: string) => checkTestClockSource(file, source).map(({ line }) => line);
+const browserFile = "packages/demo/src/view.browser.test.ts";
+const pin = 'await page.clock.setFixedTime(new Date("2026-10-09T08:00:00Z"));';
+const playwrightClockMessage =
+  "Playwright's clock.setFixedTime/setSystemTime also installs its fake clock (timers, animation frames, performance); pin only Date with a page script (see pinPageClock in packages/chat/src/frontend/ChatWorkspace.browser.test.ts), or add // playwright clock: <reason> when fake timers are the subject of the test.";
+
+test("flags Playwright date pins on any receiver with a fake-clock explanation", () => {
+  expect(checkTestClockSource(browserFile, pin)).toEqual([{ file: browserFile, line: 1, message: playwrightClockMessage }]);
+  expect(check('context.clock.setSystemTime(new Date("2026-10-09T08:00:00Z"));')).toEqual([1]);
+  expect(check("await  page . clock . setFixedTime (0);\ncontext\n . clock\n . setSystemTime\n (0);")).toEqual([1, 3]);
+  expect(check("tab /* receiver */ . clock /* method */ . setFixedTime /* args */ (0);")).toEqual([1]);
+});
+
+test("accepts Playwright clock reasons only in adjacent line comments and keeps opt-outs separate", () => {
+  expect(check(`${pin} // playwright clock: drives fake timers`)).toEqual([]);
+  expect(check(`// playwright clock: drives fake timers\n${pin}`)).toEqual([]);
+  for (const comment of ["// playwright clock:", "// playwright clock:   ", "// real clock: drives fake timers"]) {
+    expect(check(`${pin} ${comment}`)).toEqual([1]);
+    expect(check(`${comment}\n${pin}`)).toEqual([2]);
+  }
+  expect(check(`// playwright clock: drives fake timers\n\n${pin}`)).toEqual([3]);
+  expect(check(`/* playwright clock: drives fake timers */\n${pin}`)).toEqual([2]);
+  expect(check(`${pin} /* playwright clock: drives fake timers */`)).toEqual([1]);
+  expect(check(`const reason = "// playwright clock: drives fake timers"; ${pin}`)).toEqual([1]);
+  expect(check("new Date(); // playwright clock: drives fake timers\nDate.now();")).toEqual([1, 2]);
+});
+
+test("allows bun clock pins and deliberate Playwright timer controls", () => {
+  expect(
+    check(`setSystemTime(new Date("2026-10-09T08:00:00Z"));
+setSystemTime();
+page.clock.install();
+page.clock.runFor(1000);
+page.clock.fastForward("30:00");
+page.clock.pauseAt(0);
+page.clock.resume();
+page.clock.setTimezone("UTC");`),
+  ).toEqual([]);
+});
+
+test("ignores Playwright pins in strings and comments while preserving real code line numbers", () => {
+  expect(
+    check(`"page.clock.setFixedTime(0)";
+'context.clock.setSystemTime(0)';
+page.addInitScript(\`page.clock.setFixedTime(0);\`);
+// page.clock.setFixedTime(0)
+/* context.clock.setSystemTime(0)
+page.clock.setFixedTime(0) */
+${pin}`),
+  ).toEqual([7]);
+  expect(check(String.raw`"escaped \" // page.clock.setFixedTime(0)"; 'escaped \' /* context.clock.setSystemTime(0)';`)).toEqual([]);
+});
+
+test("regular-expression quotes neither hide later pins nor create Playwright opt-outs", () => {
+  expect(check(`const font = /url\\((\\.\\/[^)"']+\\.woff2)[^)]*\\)/;\n${pin}`)).toEqual([2]);
+  expect(check("const pattern = /.clock.setFixedTime(0)/;")).toEqual([]);
+  expect(check(`const pattern = /["'// playwright clock: not a comment]/; ${pin}`)).toEqual([1]);
+});
 
 test("finds both clock reads, including whitespace and multiple reads per line", () => {
   expect(check("new Date(); Date.now();\nnew  Date ( );\nDate . now (\n );\nnew\nDate(\n);")).toEqual([1, 1, 2, 3, 5]);
@@ -162,6 +219,24 @@ const workspace = async (files: Record<string, string>, counts?: ReadonlyMap<str
     (await run(fix)).map((finding) => `${relative(root, finding.file!)}${finding.line ? `:${finding.line}` : ""}`);
   return { root, run, locations };
 };
+
+test("baseline counts Playwright pins together with clock reads without raising allowances", async () => {
+  const counts = new Map([[browserFile, 2]]);
+  const { root, locations } = await workspace({ [browserFile]: `Date.now();\n${pin}` }, counts);
+  try {
+    expect(await locations()).toEqual([]);
+    await writeFile(join(root, browserFile), `Date.now();\n${pin}\ncontext.clock.setSystemTime(0);`);
+    expect(await locations()).toEqual([1, 2, 3].map((line) => `${browserFile}:${line}`));
+    expect(await locations(true)).toEqual([1, 2, 3].map((line) => `${browserFile}:${line}`));
+    expect(await readFile(join(root, baseline), "utf8")).toBe(formatBaseline(counts));
+    await writeFile(join(root, browserFile), pin);
+    expect(await locations()).toEqual([baseline]);
+    expect(await locations(true)).toEqual([]);
+    expect(await readFile(join(root, baseline), "utf8")).toBe(formatBaseline(new Map([[browserFile, 1]])));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("scopes UI tests, fixtures, harnesses and suites across every source root", async () => {
   const included = [
