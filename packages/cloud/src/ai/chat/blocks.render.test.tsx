@@ -967,7 +967,7 @@ describe("capability tool presentation", () => {
     failed.result = {};
     const failedHtml = render(failed, "de");
     expect(failedHtml).toContain("Nicht ausgeführt: Mail-Entwurf erstellen");
-    expect(failedHtml).toContain("Es ist nichts passiert.");
+    expect(failedHtml).toContain("Die Aktion konnte nicht abgeschlossen werden.");
     expect(failedHtml).toContain('data-tone="error"');
 
     const rejected = german("awaiting_approval");

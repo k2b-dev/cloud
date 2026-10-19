@@ -103,6 +103,9 @@ const flowOf = (input: {
   if (check?.state === "checking") return { flow: "check", current: "checking" };
   if (check?.state === "done") return { flow: "check", current: "checkedDone" };
   if (check?.state === "not_done") return { flow: "check", current: "checkedNotDone" };
+  // An open check stays open whatever the call's own end looked like, such as a turn stopped while it checked.
+  if (check?.state === "pending") return { flow: "check", current: "pending" };
+  if (check?.state === "failed") return { flow: "check", current: "checkFailed" };
   if (input.state === "rejected") return { flow: "rejected" };
   // A question nobody answered expired; one the person's stop left open, or a call it cut off, was stopped.
   if (input.state === "not_run") return block.approved === false && input.phase !== "stopped" ? { flow: "expired" } : { flow: "stopped" };
@@ -110,8 +113,6 @@ const flowOf = (input: {
     const code = toolErrorCode(block.result);
     if (code === "ACTION_NOT_DONE") return { flow: "check", current: "checkedNotDone" };
     if (code && UNKNOWN_CODES.has(code)) {
-      if (check?.state === "pending") return { flow: "check", current: "pending" };
-      if (check?.state === "failed") return { flow: "check", current: "checkFailed" };
       return { flow: "check", current: "noCheck" };
     }
     return { flow: "error" };
@@ -274,7 +275,12 @@ export function ToolActionView(props: {
         return { stopped: { tone: "off", text: c.forms.notRun, detail: words.stopped } };
       case "error":
         return {
-          error: { tone: "error", text: c.forms.notRun, detail: errorDetail(props.block.result) || words.notRunDetail, time: time() },
+          error: {
+            tone: "error",
+            text: c.forms.notRun,
+            detail: errorDetail(props.block.result) || aiChatMessages(c.locale).actionNotCompleted,
+            time: time(),
+          },
         };
       case "lost":
         return {

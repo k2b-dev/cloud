@@ -151,7 +151,7 @@ domTest("an answer that did not arrive says so and asks again with the focus on 
     view.button("Code ausführen").click();
     await settle();
     expect(view.line()).toContain("Deine Antwort zu Code ausführen kam nicht an.");
-    expect(view.line()).toContain("Es ist nichts passiert.");
+    expect(view.line()).toContain("Kam sie doch an, siehst du das Ergebnis gleich hier.");
     view.button("Noch einmal antworten").click();
     await settle();
     expect(view.question()).not.toBeNull();
@@ -279,6 +279,21 @@ domTest("code that asks again gets a new question in the same place after each d
     await settle();
     expect(view.question()?.textContent).toContain("Step 2");
     expect(view.place()).toBe(place);
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a turn stopped while it checked keeps the open outcome and its check", async () => {
+  const { actionFixtures } = await import("./action-question.fixtures");
+  const mail = actionFixtures("en").mail!.block;
+  const view = await mountTurn([{ ...mail, approval: undefined, approved: true, status: "running", check: { state: "failed" } }], {
+    phase: "stopped",
+    check: async () => ({ state: "done", at: "2026-10-17T12:03:00.000Z" }),
+  });
+  try {
+    expect(view.line()).toContain("Still not known whether this happened");
+    expect(view.button("Check again")).toBeDefined();
   } finally {
     view.cleanup();
   }
