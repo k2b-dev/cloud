@@ -643,6 +643,21 @@ To clean up existing mail from one sender or domain, check the count with `cld m
 
 To find commands that did not complete, run `cld mail command list --state failed` or `--state needs_attention`. A full page ends with the `--before` value for the next page. Mailbox admins resolve an unclear provider result with `cld mail operator run reconcile --command <id>`; `operator run retry` repeats only failed maintenance reads, not moves or sends.
 
+### Coordinate draft editing
+
+Use `cld mail draft lease get|acquire|heartbeat|release` to inspect, acquire,
+renew, or release a draft editing lease. Acquire returns a token for heartbeat
+and release. Keep it out of logs. All three lease errors return HTTP 409:
+
+| Code | Meaning | Client action |
+| --- | --- | --- |
+| `DRAFT_LEASE_HELD` | Another session holds the draft, including another tab of the same person. | Ask before taking over with `draft lease acquire --takeover`. |
+| `DRAFT_LEASE_NOT_OWNED` | The token expired, was released, or was replaced by a takeover. | Acquire a lease again. |
+| `DRAFT_LEASE_BUSY` | Lease state is being updated. | Retry shortly. |
+
+A lease does not replace revision checks. Keep the local expected revision
+when acquiring again so a concurrent change becomes a recovery copy.
+
 ## Agent-oriented capabilities
 
 Use `mailbox.browse` to select a mailbox: it returns permissions and unread/needs-action

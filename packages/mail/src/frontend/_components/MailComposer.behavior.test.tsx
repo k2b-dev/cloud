@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
+import { setImmediate } from "node:timers";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { contactDirectory, defineCapabilities } from "@k2b/cloud/contracts";
 import { delegateEvents, isServer, render } from "solid-js/web";
@@ -86,14 +87,25 @@ const initialDraft: MailDraft = {
   updatedAt: now,
 };
 
-// Live notifications stay offline; the lease and preview requests use the same mocked HTTP boundary as other composer tests.
+// Sockets stay offline unless a test explicitly opens one.
 class OfflineWebSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 3;
+  static instances: OfflineWebSocket[] = [];
   readyState = OfflineWebSocket.CONNECTING;
-  onopen = null;
-  onmessage = null;
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  constructor() {
+    OfflineWebSocket.instances.push(this);
+  }
+  open() {
+    this.readyState = OfflineWebSocket.OPEN;
+    this.onopen?.();
+  }
+  message(frame: unknown) {
+    this.onmessage?.({ data: JSON.stringify(frame) });
+  }
   onclose = null;
   onerror = null;
   send() {}
@@ -143,6 +155,7 @@ describe("MailComposer signature choice", () => {
     Object.defineProperty(globalThis, "WebSocket", { configurable: true, value: OfflineWebSocket });
     installPopover();
     delegateEvents(["click"]);
+    OfflineWebSocket.instances = [];
     saves = [];
     previews = [];
     globalThis.fetch = Object.assign(
@@ -166,6 +179,7 @@ describe("MailComposer signature choice", () => {
           saves.push(json.draft);
           return Response.json({ ...initialDraft, ...json.draft });
         }
+        if (path.endsWith("/drafts/Draft1") && request.method === "GET") return Response.json(initialDraft);
         if (path.endsWith("/drafts/Draft1") && request.method === "PUT") {
           const json = z
             .object({ expectedRevision: z.number().int().positive(), draft: draftEditableContentInputSchema })
@@ -200,6 +214,7 @@ describe("MailComposer signature choice", () => {
       { id: "Sign03", name: "Sales signature" },
     ],
     seed?: MailDraftSeed,
+    settle?: () => Promise<void>,
   ) => {
     const [{ default: MailComposer }, { LocaleProvider }] = await Promise.all([import("./MailComposer"), import("@k2b/ui")]);
     dispose = render(
@@ -212,7 +227,7 @@ describe("MailComposer signature choice", () => {
             signatures={{ templates, personalDefaults: [{ senderIdentityId: "Send02", templateId: "Sign03" }] }}
             initialDraft={seed ? undefined : draft}
             initialSeed={seed}
-            initialPanes={{ version: 2, root: { type: "group", items: ["editor", "preview"], active: "preview" } }}
+            initialPanes={{ version: 2, root: { type: "group", items: ["editor", "preview"], active: settle ? "editor" : "preview" } }}
             returnHref="/app/mail/Box001"
             dateConfig={{ locale, timeZone: "UTC" }}
           />
@@ -220,7 +235,8 @@ describe("MailComposer signature choice", () => {
       ),
       dom.root,
     );
-    await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>("footer button.mail-compose-action:not(:disabled)")));
+    if (settle) await settle();
+    else await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>("footer button.mail-compose-action:not(:disabled)")));
   };
   const trigger = () => dom.root.querySelector<HTMLButtonElement>("footer button.mail-composer-signature")!;
   const choose = (label: string, role: "menuitemradio" | "menuitem" = "menuitemradio") => {
@@ -230,6 +246,58 @@ describe("MailComposer signature choice", () => {
     expect(option).toBeDefined();
     option!.click();
   };
+
+  test("an own live invalidation keeps the focused body editor enabled", async () => {
+    jest.useFakeTimers();
+    setSystemTime(Date.parse(now));
+    const flush = async () => {
+      for (let i = 0; i < 80; i++) await Promise.resolve();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    };
+    const fetchWithFixtures = globalThis.fetch;
+    let finishHeartbeat: ((response: Response) => void) | undefined;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        if (request.method === "PUT" && new URL(request.url).pathname.endsWith("/lease")) {
+          return new Promise<Response>((resolve) => {
+            finishHeartbeat = resolve;
+          });
+        }
+        return fetchWithFixtures(request);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount("en", initialDraft, undefined, undefined, flush);
+      const editor = dom.root.querySelector<HTMLTextAreaElement>("textarea");
+      expect(editor).not.toBeNull();
+      expect(editor!.disabled).toBe(false);
+      editor!.focus();
+      expect(dom.document.activeElement).toBe(editor);
+      const socket = OfflineWebSocket.instances.at(-1)!;
+      socket.open();
+      socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+      socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: null } });
+      await flush();
+      expect(finishHeartbeat).toBeDefined();
+      expect(editor!.disabled).toBe(false);
+      expect(dom.document.activeElement).toBe(editor);
+      finishHeartbeat?.(
+        Response.json({
+          token: "local-token",
+          holder: { kind: "user", id: "Usr001", displayName: "Ada Example", avatarHash: null },
+          acquiredAt: now,
+          expiresAt: now,
+        }),
+      );
+      await flush();
+      expect(editor!.disabled).toBe(false);
+      expect(dom.document.activeElement).toBe(editor);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 
   test("Attach files passes localized context and resolves the click-time To, Cc and Bcc snapshot lazily", async () => {
     const files = await import("@k2b/cloud/browser/files");

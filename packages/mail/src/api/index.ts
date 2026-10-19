@@ -23,6 +23,7 @@ import { requestContactDirectory } from "../contact-directory-settings";
 import {
   type AttachmentLink,
   type AttachmentLinkPage,
+  acquiredDraftLeaseSchema,
   archiveComposeTemplateInputSchema,
   automaticReplyManagementPermissionSchema,
   cancelConversationReminderSchema,
@@ -54,6 +55,7 @@ import {
   deriveDraftFromMessageInputSchema,
   draftContentInputSchema,
   draftEditableContentInputSchema,
+  draftLeaseSchema,
   draftLeaseTokenSchema,
   draftSchema,
   folderDisplayChangeSchema,
@@ -2765,17 +2767,44 @@ const mailOperationsApi = new Hono<MailApiContext>()
         }),
       ),
   )
-  .get("/mailboxes/:mailboxId/drafts/:draftId/lease", v("param", mailboxAndIdParamSchema("draftId")), async (c) =>
-    respondPublic(
-      c,
-      draftLeases.getDraftLease({
-        context: requestContext(c),
-        ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
-      }),
-    ),
+  .get(
+    "/mailboxes/:mailboxId/drafts/:draftId/lease",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Read the current draft editing lease",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(draftLeaseSchema.nullable(), "Read the current draft editing lease"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Editable draft not found"),
+        409: jsonResponse(ErrorResponseSchema, "DRAFT_LEASE_BUSY"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    async (c) =>
+      respondPublic(
+        c,
+        draftLeases.getDraftLease({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+        }),
+      ),
   )
   .post(
     "/mailboxes/:mailboxId/drafts/:draftId/lease",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Acquire the draft editing lease",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(acquiredDraftLeaseSchema, "Acquire the draft editing lease"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Editable draft not found"),
+        409: jsonResponse(ErrorResponseSchema, "DRAFT_LEASE_HELD or DRAFT_LEASE_BUSY"),
+      },
+    }),
     v("param", mailboxAndIdParamSchema("draftId")),
     v("json", acquireDraftLeaseSchema),
     async (c) =>
@@ -2790,6 +2819,18 @@ const mailOperationsApi = new Hono<MailApiContext>()
   )
   .put(
     "/mailboxes/:mailboxId/drafts/:draftId/lease",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Renew the draft editing lease",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(acquiredDraftLeaseSchema, "Renew the draft editing lease"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Editable draft not found"),
+        409: jsonResponse(ErrorResponseSchema, "DRAFT_LEASE_NOT_OWNED or DRAFT_LEASE_BUSY"),
+      },
+    }),
     v("param", mailboxAndIdParamSchema("draftId")),
     v("json", draftLeaseTokenSchema),
     async (c) =>
@@ -2804,6 +2845,18 @@ const mailOperationsApi = new Hono<MailApiContext>()
   )
   .delete(
     "/mailboxes/:mailboxId/drafts/:draftId/lease",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Release the draft editing lease",
+      ...requiresAuth,
+      responses: {
+        200: { description: "Lease released" },
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Editable draft not found"),
+        409: jsonResponse(ErrorResponseSchema, "DRAFT_LEASE_NOT_OWNED or DRAFT_LEASE_BUSY"),
+      },
+    }),
     v("param", mailboxAndIdParamSchema("draftId")),
     v("json", draftLeaseTokenSchema),
     async (c) =>

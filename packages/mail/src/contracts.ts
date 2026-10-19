@@ -3037,6 +3037,14 @@ export const updateMailboxComposeStyleInputSchema = z
   .strict();
 export type UpdateMailboxComposeStyleInput = z.infer<typeof updateMailboxComposeStyleInputSchema>;
 
+/** Stable lease outcomes shared by interactive and automated editors. */
+export const DRAFT_LEASE_ERROR_CODES = {
+  HELD: "DRAFT_LEASE_HELD",
+  NOT_OWNED: "DRAFT_LEASE_NOT_OWNED",
+  BUSY: "DRAFT_LEASE_BUSY",
+} as const;
+export type DraftLeaseErrorCode = (typeof DRAFT_LEASE_ERROR_CODES)[keyof typeof DRAFT_LEASE_ERROR_CODES];
+
 export const draftLeaseHolderSchema = z.object({
   kind: z.enum(["user", "service_account"]),
   id: z.string().uuid(),

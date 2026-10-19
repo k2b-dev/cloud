@@ -1,13 +1,16 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
+import { lazySync } from "@k2b/cloud";
+import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { DRAFT_LEASE_ERROR_CODES } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { reviewDraftComposeSafety, validateDraftComposeSafety } from "./compose-safety";
-import { acquireDraftLease, releaseDraftLease } from "./draft-leases";
+import { acquireDraftLease, heartbeatDraftLease, releaseDraftLease, withOwnedDraftLease } from "./draft-leases";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
 import { createDraft, prepareDraftSeed, updateDraft } from "./drafts";
 import { createMailbox } from "./mailboxes";
@@ -298,6 +301,84 @@ suite("mail draft limits", () => {
     expect(draft.ok).toBe(true);
     if (!draft.ok) return;
     expect(draft.data.cc).toEqual([{ name: "Ops", address: "Ops@Example.com" }]);
+  });
+
+  test("lease answers distinguish live holders, stale tokens, and state mutex contention", async () => {
+    const [grace] = await sql<{ id: string; uid: string; display_name: string; mail: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name, mail)
+      VALUES (${`lease-codes-${suffix}`}, 'local', 'user', 'Grace Example', ${`lease-codes-${suffix}@example.test`})
+      RETURNING id, uid, display_name, mail
+    `;
+    if (!grace) throw new Error("Lease codes collaborator was not created");
+    userIds.push(grace.id);
+    const collaborator = userContext(grace.id, grace.uid, grace.display_name, grace.mail);
+    const granted = await grantMailboxAccess({
+      context: owner,
+      mailboxId,
+      principal: { type: "user", userId: grace.id },
+      permission: "write",
+    });
+    expect(granted.ok).toBe(true);
+    if (granted.ok) accessIds.push(granted.data.id);
+    const created = await createDraft({
+      context: owner,
+      mailboxId,
+      input: {
+        senderIdentityId: identityId,
+        to: [{ name: "Ada Example", address: "ada@example.test" }],
+        cc: [],
+        bcc: [],
+        subject: "Lease codes",
+        body: "Local text",
+        format: "plain",
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const target = { mailboxId, draftId: created.data.id };
+    const acquired = await acquireDraftLease({ ...target, context: owner });
+    expect(acquired.ok).toBe(true);
+    if (!acquired.ok) return;
+    try {
+      for (const context of [collaborator, owner]) {
+        expect(await acquireDraftLease({ ...target, context })).toMatchObject({
+          ok: false,
+          error: { code: DRAFT_LEASE_ERROR_CODES.HELD, status: 409 },
+        });
+      }
+      const stale = { ...target, context: owner, token: crypto.randomUUID() };
+      expect(await heartbeatDraftLease(stale)).toMatchObject({
+        ok: false,
+        error: { code: DRAFT_LEASE_ERROR_CODES.NOT_OWNED, status: 409 },
+      });
+      expect(await releaseDraftLease(stale)).toMatchObject({ ok: false, error: { code: DRAFT_LEASE_ERROR_CODES.NOT_OWNED, status: 409 } });
+      let ran = false;
+      expect(
+        await withOwnedDraftLease({
+          ...stale,
+          operation: async () => {
+            ran = true;
+            return ok();
+          },
+        }),
+      ).toMatchObject({ ok: false, error: { code: DRAFT_LEASE_ERROR_CODES.NOT_OWNED, status: 409 } });
+      expect(ran).toBe(false);
+      const mutex = lazySync((sync) => sync.mutex({ id: "mail:draft-lease-state", ttlMs: 30_000, retry: { maxAttempts: 4, delayMs: 25 } }));
+      const lock = await mutex().acquire({ resource: created.data.id, ttlMs: 30_000 });
+      expect(lock).not.toBeNull();
+      if (lock) {
+        try {
+          expect(await heartbeatDraftLease({ ...target, context: owner, token: acquired.data.token })).toMatchObject({
+            ok: false,
+            error: { code: DRAFT_LEASE_ERROR_CODES.BUSY, status: 409 },
+          });
+        } finally {
+          await mutex().release(lock);
+        }
+      }
+    } finally {
+      await releaseDraftLease({ ...target, context: owner, token: acquired.data.token });
+    }
   });
 
   test("lets only the current lease holder change a shared draft", async () => {

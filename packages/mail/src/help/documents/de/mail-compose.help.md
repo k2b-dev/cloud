@@ -74,6 +74,8 @@ Nur die Sitzung mit der aktuellen Bearbeitungssperre kann den Entwurf ändern. M
 
 Bearbeitet ein anderer Tab oder eine andere Person den Entwurf, nennt Mail diese Sitzung nach Möglichkeit. Du kannst schreibgeschützt weiterarbeiten oder die Bearbeitung gezielt in diesen Tab holen. Nach dem Schließen des Dialogs zeigt der Editor einen ruhigen Hinweis.
 
+Nach einem ausgeblendeten Tab, dem Ruhezustand oder einer langsamen Antwort setzt Mail die Bearbeitung selbst fort. Mail fragt nur nach, wenn ein anderer Tab, ein anderes Gerät oder eine andere Person den Entwurf gerade hält.
+
 :::warning Bearbeitung übernehmen macht die andere Sitzung schreibgeschützt
 Wähle **Bearbeitung übernehmen** nur, wenn die andere Sitzung die Bearbeitung verlieren soll.
 :::

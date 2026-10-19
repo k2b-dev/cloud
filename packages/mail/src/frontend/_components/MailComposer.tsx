@@ -205,6 +205,7 @@ export default function MailComposer(props: {
   };
   const draftSession = createMailDraftSession({
     mailboxId: props.mailboxId,
+    currentActor: props.currentActor,
     initialDraft: props.initialDraft,
     initialSeed: props.initialSeed,
     hasVerifiedIdentity: () => verifiedIdentities().length > 0,
