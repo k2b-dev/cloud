@@ -113,7 +113,11 @@ export function installPageSwap(): () => void {
     } catch {
       return;
     }
-    if (hashJump(url)) return;
+    if (hashJump(url)) {
+      // A native jump on this page is still a newer navigation than a pending swap.
+      abort(state);
+      return;
+    }
     const context = shellContext(document);
     const eligible =
       (!target || target === "_self") && !/(^|\s)external(\s|$)/i.test(anchor.rel) && !anchor.hasAttribute("data-nav-document");

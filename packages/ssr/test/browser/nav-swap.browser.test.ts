@@ -989,3 +989,14 @@ test("a relative <base> that resolves elsewhere on the fetched page loads the do
   expect(assign).toHaveBeenCalledWith("https://example.test/app/sub/new");
   expect(document.title).toBe("old");
 });
+
+test("a same-page hash link stays native and aborts a pending swap", async () => {
+  install();
+  const requests = deferredFetch();
+  const pending = swapPage("/app/A");
+  expect(click("/app/old#heading").defaultPrevented).toBe(false);
+  await pending;
+  expect(requests[0]!.aborted).toBe(true);
+  expect(document.title).toBe("old");
+  expect(assign).not.toHaveBeenCalled();
+});
