@@ -1,4 +1,4 @@
-import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, requiresAdmin, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, middleware, rateLimit, requiresAdmin, respond, v } from "@k2b/cloud/server";
 import { get, set } from "@k2b/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
@@ -46,6 +46,7 @@ const LogIdParamSchema = z.object({
 import widgetRoutes from "./widgets";
 
 const app = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .route("/widget", widgetRoutes)
   .use(rateLimit())
   .use(auth.requireRole("admin"))

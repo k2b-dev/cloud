@@ -1114,7 +1114,7 @@
 }
 
 .file-tree > li > div[data-state="selected"] {
-  background: var(--ui-selected) !important;
+  background: var(--ui-app-selected) !important;
   box-shadow: none !important;
 }
 

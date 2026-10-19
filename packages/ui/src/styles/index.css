@@ -52,8 +52,11 @@
   --k2b-surface-muted: var(--k2b-neutral-100);
   --k2b-surface-elevated: #ffffff;
   --k2b-text: var(--k2b-neutral-950);
-  --k2b-text-secondary: var(--k2b-neutral-700);
-  --k2b-text-muted: var(--k2b-neutral-600);
+  /* Ink hierarchy: text for content and titles, secondary for labels and
+     supporting lines, muted for metadata and quiet hints. Secondary keeps
+     at least 10:1 and muted 7:1 on the surface and the muted surface. */
+  --k2b-text-secondary: var(--k2b-neutral-800);
+  --k2b-text-muted: #45454e;
   --k2b-placeholder-color: var(--k2b-neutral-500);
   --k2b-border: var(--k2b-neutral-200);
   --k2b-border-strong: var(--k2b-neutral-300);
@@ -62,9 +65,15 @@
   --k2b-action: var(--k2b-accent-700);
   --k2b-action-hover: var(--k2b-accent-800);
   --k2b-app-workspace-active: var(--k2b-action);
-  /* The fill of a selected object chip on the workspace surface; an optional
-     host hook like the active color. */
+  /* `--k2b-app-workspace-selected` is the fill of a selected navigation row
+     or object chip, beside the selected ink above; the soft tabs, view tabs,
+     segments, and active filter chips share it. `--k2b-row-selected` fills a
+     selected content row. Optional host hooks: standalone both keep the
+     platform selection fill; Cloud maps them to the active app's navigation
+     and row selection fills. Other control options and pressed states keep
+     `--k2b-selected`. */
   --k2b-app-workspace-selected: var(--k2b-selected);
+  --k2b-row-selected: var(--k2b-selected);
   /* Neutral and translucent, so sidebar hover shows on any sidebar surface and
      never sits in the platform blue beside an app's accent. */
   --k2b-app-workspace-hover: color-mix(in srgb, var(--k2b-text) 5%, transparent);
@@ -221,8 +230,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-surface-muted: #20242a;
   --k2b-surface-elevated: #181d24;
   --k2b-text: var(--k2b-neutral-50);
-  --k2b-text-secondary: var(--k2b-neutral-200);
-  --k2b-text-muted: var(--k2b-neutral-400);
+  --k2b-text-secondary: #f1f1f3;
+  --k2b-text-muted: #bdbdc6;
   --k2b-placeholder-color: color-mix(in srgb, var(--k2b-neutral-400) 70%, var(--k2b-neutral-500));
   --k2b-border: #29313a;
   --k2b-border-strong: #3a4552;
@@ -1144,9 +1153,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-app-workspace__sidebar-section-header > h2 {
   min-width: 0;
   margin: 0;
-  color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
-  font-weight: 500;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
   line-height: 1rem;
   letter-spacing: normal;
   text-transform: none;
@@ -1166,9 +1175,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-inline-start: calc(0.5625rem + var(--k2b-sidebar-item-depth, 0) * 0.75rem);
   border: 0;
   border-radius: var(--k2b-radius-control);
-  color: var(--k2b-text-secondary);
+  color: var(--k2b-text);
   background: transparent;
-  font-size: 0.75rem;
+  /* The line height holds the 2rem row and two-line labels at their height. */
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
   text-decoration: none;
   cursor: pointer;
 }
@@ -1258,12 +1269,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-app-workspace__sidebar-item.is-active {
   color: var(--k2b-app-workspace-active);
-  background: transparent;
+  background: var(--k2b-app-workspace-selected);
   font-weight: 600;
 }
 
+/* The current row keeps its selection fill under the pointer. */
 .k2b-ui .k2b-app-workspace__sidebar-item.is-active:hover {
-  background: var(--k2b-app-workspace-hover);
+  background: var(--k2b-app-workspace-selected);
+}
+
+/* Secondary text on a selection fill steps up one ink level, so descriptions,
+   counts and context lines keep AA contrast on any app's navigation fill. */
+.k2b-ui :is(.k2b-app-workspace__sidebar-item.is-active, .k2b-navigation__row[data-active] > .k2b-navigation__control) {
+  --k2b-text-muted: var(--k2b-text-secondary);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item:disabled {
@@ -1389,7 +1407,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: var(--k2b-text);
   background: color-mix(in srgb, var(--k2b-text) 10%, transparent);
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   line-height: 1rem;
@@ -1727,8 +1745,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: #ffffff;
   background: var(--k2b-action-solid);
-  font-size: 0.75rem;
-  font-weight: 500;
+  /* Each size sets its line height, so the larger type keeps the button's
+     height whatever line height the host page inherits. */
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.125rem;
   text-decoration: none;
   cursor: pointer;
   user-select: none;
@@ -1743,20 +1764,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-button[data-size="sm"] {
   min-height: 1.75rem;
   padding: 0.25rem 0.625rem;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 .k2b-ui .k2b-button[data-size="xs"] {
   min-height: 1.5rem;
   padding: 0.125rem 0.375rem;
   gap: 0.25rem;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 .k2b-ui .k2b-button[data-size="lg"] {
   min-height: 2.5rem;
   padding: 0.5rem 1rem;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 .k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"]):hover {
@@ -2233,8 +2257,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-check__label,
 .k2b-ui .k2b-switch__label {
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 600;
+  line-height: 1.125rem;
 }
 
 .k2b-ui .k2b-field__required {
@@ -2245,9 +2270,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-field__description,
 .k2b-ui .k2b-field__error {
   margin: 0;
-  color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
-  line-height: 1.4;
+  color: var(--k2b-text-secondary);
+  /* The line box of the former 11px text, so help lines keep their height. */
+  font-size: 0.75rem;
+  line-height: 0.9625rem;
 }
 
 .k2b-ui .k2b-field__error {
@@ -2621,6 +2647,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panel-header__title.is-medium {
   font-size: 1rem;
   line-height: 1.5;
+  letter-spacing: -0.018em;
 }
 
 /* The subtitle is size-dependent in Cloud too — `text-[10px]` with no top
@@ -2644,7 +2671,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panel-header__title.is-large {
   font-size: 1.375rem;
   line-height: 1.2;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.018em;
 }
 
 .k2b-ui .k2b-panel-header[data-size="lg"] .k2b-panel-header__subtitle {
@@ -2942,6 +2969,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 0.875rem;
   font-weight: 650;
   line-height: 1.25rem;
+  letter-spacing: -0.018em;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -4008,7 +4036,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 1.25rem;
   font-weight: 600;
   line-height: 1.3;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.018em;
   overflow-wrap: anywhere;
 }
 
@@ -5261,12 +5289,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-app-workspace__sidebar-icon-action.is-active {
   color: var(--k2b-app-workspace-active);
-  background: transparent;
+  background: var(--k2b-app-workspace-selected);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-icon-action.is-active:hover {
   color: var(--k2b-app-workspace-active);
-  background: var(--k2b-app-workspace-hover);
+  background: var(--k2b-app-workspace-selected);
 }
 
 /* The collapsed rail exists only beside the work area from 64 rem. Narrower,
@@ -7789,7 +7817,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__row[data-selected="true"] {
-  background: var(--k2b-selected);
+  background: var(--k2b-row-selected);
 }
 
 .k2b-ui .k2b-data-table__row[data-selected="true"] > td[data-highlighted="true"] {
@@ -8180,8 +8208,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-settings__tabs button[data-active="true"] {
-  color: var(--k2b-action);
-  background: var(--k2b-selected);
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-selected);
 }
 
 .k2b-ui .k2b-settings__tabs button[data-tone="danger"] {
@@ -13071,8 +13099,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
   line-height: 1.125rem;
   font-weight: 400;
 }
@@ -13089,9 +13117,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border: 0;
   padding: 0.25rem 0;
   text-align: start;
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-secondary);
   font: inherit;
   font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
   cursor: pointer;
 }
 .k2b-ui .k2b-app-workspace__sidebar-section-toggle > i { margin-inline-start: auto; }
@@ -13202,7 +13232,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui [data-scroll-fade], .k2b-ui [data-scroll-fade][data-scroll-fade-axis="horizontal"] { mask-image: none; }
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"].is-active {
-  background: var(--k2b-app-workspace-hover);
+  background: var(--k2b-app-workspace-selected);
   border-color: color-mix(in srgb, var(--k2b-app-workspace-active) 25%, var(--k2b-border));
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.has-action),
@@ -13232,6 +13262,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.625rem;
   padding: 0.375rem 0.5625rem;
   color: var(--k2b-text);
+}
+/* The current object row reads the selected ink, as every current row does. */
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"].is-active:not(.has-action),
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"].is-active .k2b-app-workspace__sidebar-item-main {
+  color: var(--k2b-app-workspace-active);
 }
 /* A fixed 2rem box beside the two-line copy; a plain glyph gets the shared
    `k2b-icon-tile` chip, custom icon content keeps the same box. */
@@ -13417,7 +13452,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border: 0; border-radius: var(--k2b-radius-control); text-decoration: none; cursor: pointer;
 }
 .k2b-ui .k2b-navigation__row[data-active] > .k2b-navigation__control {
-  color: var(--k2b-app-workspace-active); font-weight: 600; background: var(--k2b-surface-muted);
+  color: var(--k2b-app-workspace-active); font-weight: 600; background: var(--k2b-app-workspace-selected);
 }
 .k2b-ui .k2b-navigation__control:hover { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-navigation__control:focus-visible,

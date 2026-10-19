@@ -167,7 +167,11 @@ standalone `@k2b/ui` APIs and not general action or status colors.
 `app-accent-text` uses `--ui-app-accent-text`, the app ink that meets WCAG AA
 contrast on Cloud's theme and selection surfaces. `--ui-app-selected` and
 `--ui-app-selected-nav` provide the app's selection fills on the main surface
-and the sidebar.
+and the sidebar. Cloud maps these fills to `--k2b-row-selected` and
+`--k2b-app-workspace-selected`, with `--k2b-app-workspace-active` for
+navigation ink. Tabs, view tabs, segmented controls, and active filter chips
+share the navigation fill; other controls and options retain their platform
+colors.
 
 When app-owned CSS is necessary, use the semantic theme variables already
 provided by the host. The host's `--ui-focus` is a complete `box-shadow`: use

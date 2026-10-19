@@ -261,7 +261,7 @@ describe("Notebook sidebar homepage in the tree", () => {
           });
           expect(home!.color).toBe(other.color);
         }
-        await expect(page.getByRole("treeitem", { name: "Homepage Overview", exact: true }).count()).resolves.toBe(1);
+        expect(await page.getByRole("treeitem", { name: "Homepage Overview", exact: true }).count()).toBe(1);
       } finally {
         await page.context().close();
       }
@@ -275,10 +275,10 @@ describe("Notebook sidebar homepage in the tree", () => {
       await page.keyboard.press("ArrowUp");
       // A focused row also shows its menu button, which joins its accessible name.
       const home = page.locator('[data-k2b-nav-tree-id="Home01"]');
-      await expect(home.evaluate((element) => element === document.activeElement)).resolves.toBe(true);
+      expect(await home.evaluate((element) => element === document.activeElement)).toBe(true);
       await page.keyboard.press("Enter");
-      await expect(page.evaluate(() => window.openedNotes)).resolves.toEqual(["/app/notebooks/Book01/notes/Home01"]);
-      await expect(home.getAttribute("aria-selected")).resolves.toBe("true");
+      expect(await page.evaluate(() => window.openedNotes)).toEqual(["/app/notebooks/Book01/notes/Home01"]);
+      expect(await home.getAttribute("aria-selected")).toBe("true");
     } finally {
       await page.context().close();
     }
@@ -288,7 +288,7 @@ describe("Notebook sidebar homepage in the tree", () => {
     const page = await open(desktop, ctx(), "de");
     try {
       expect((await rowIcons(page)).map((row) => row.glyph)).toEqual(["ti ti-home", "ti ti-files", "ti ti-file-text", "ti ti-file-text"]);
-      await expect(page.getByRole("treeitem", { name: "Startseite Overview", exact: true }).count()).resolves.toBe(1);
+      expect(await page.getByRole("treeitem", { name: "Startseite Overview", exact: true }).count()).toBe(1);
     } finally {
       await page.context().close();
     }
@@ -299,7 +299,7 @@ describe("Notebook sidebar homepage in the tree", () => {
     try {
       await page.evaluate(() => window.mountPhoneMenu("en"));
       const link = page.locator("#phone-menu").getByRole("link", { name: "Homepage Overview", exact: true });
-      await expect(link.count()).resolves.toBe(1);
+      expect(await link.count()).toBe(1);
       const rows = await page.evaluate(() =>
         Array.from(document.querySelectorAll<HTMLElement>('#phone-menu a.k2b-navigation__control[href*="/notes/"]')).map((row) => ({
           text: row.textContent,
@@ -360,18 +360,18 @@ describe("One notebook sidebar with quick filters", () => {
         const favorites = page.getByRole("button", { name: "Favorites" });
         const idle = await favorites.evaluate((element) => getComputedStyle(element).backgroundColor);
         await favorites.click();
-        await expect(favorites.getAttribute("aria-pressed")).resolves.toBe("true");
+        expect(await favorites.getAttribute("aria-pressed")).toBe("true");
         expect(await favorites.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(idle);
         expect((await listed(page)).map((row) => row.id)).toEqual(["Reels1", "Exam01"]);
         // At most two tags follow the date.
         expect((await listed(page))[0]!.meta).toMatch(/ · #video #social$/);
-        await expect(page.locator(".notebook-sidebar-filter__label").textContent()).resolves.toBe("Favorites 2 notes");
+        expect(await page.locator(".notebook-sidebar-filter__label").textContent()).toBe("Favorites 2 notes");
         expect(await frame(page)).toEqual(before);
 
         await page.getByRole("button", { name: "Tags" }).click();
         await page.getByRole("menuitemradio", { name: new RegExp(LONG_TAG) }).click();
-        await expect(page.getByRole("button", { name: `Tags: ${LONG_TAG}` }).getAttribute("aria-current")).resolves.toBe("true");
-        await expect(favorites.getAttribute("aria-pressed")).resolves.toBe("false");
+        expect(await page.getByRole("button", { name: `Tags: ${LONG_TAG}` }).getAttribute("aria-current")).toBe("true");
+        expect(await favorites.getAttribute("aria-pressed")).toBe("false");
         expect((await listed(page)).map((row) => row.id)).toEqual(["Lang01", "Exam01"]);
         // A long tag in the chip neither wraps the row nor moves the list.
         expect(await frame(page)).toEqual(before);
@@ -394,14 +394,14 @@ describe("One notebook sidebar with quick filters", () => {
       expect((await listed(page)).map((row) => row.id)).toEqual(["Lang01", "Reels1", "Exam01", "Rules1", "Home01"]);
 
       await page.getByRole("treeitem", { name: /Reels/ }).click();
-      await expect(page.evaluate(() => window.openedNotes)).resolves.toEqual(["/app/notebooks/Book01/notes/Reels1?view=recents"]);
-      await expect(page.locator(".notebook-sidebar-filter__label").textContent()).resolves.toBe("Recently changed 5 notes");
-      await expect(page.getByRole("treeitem", { name: /Reels/ }).getAttribute("aria-selected")).resolves.toBe("true");
+      expect(await page.evaluate(() => window.openedNotes)).toEqual(["/app/notebooks/Book01/notes/Reels1?view=recents"]);
+      expect(await page.locator(".notebook-sidebar-filter__label").textContent()).toBe("Recently changed 5 notes");
+      expect(await page.getByRole("treeitem", { name: /Reels/ }).getAttribute("aria-selected")).toBe("true");
 
       await page.getByRole("treeitem", { name: /Reels/ }).focus();
       await page.keyboard.press("ArrowDown");
       const examples = page.getByRole("treeitem", { name: /Examples/ });
-      await expect(examples.evaluate((element) => element === document.activeElement)).resolves.toBe(true);
+      expect(await examples.evaluate((element) => element === document.activeElement)).toBe(true);
       await page.keyboard.press("Shift+F10");
       const remove = page.getByRole("menuitem", { name: "Remove favorite" });
       await remove.waitFor();
@@ -433,10 +433,10 @@ describe("One notebook sidebar with quick filters", () => {
         document.querySelector(".notebook-document-surface")!.append(link);
       });
       await page.locator(".notebook-document-surface a").click();
-      await expect(page.evaluate(() => window.openedNotes.at(-1))).resolves.toBe("/app/notebooks/Book01/notes/Rules1");
+      expect(await page.evaluate(() => window.openedNotes.at(-1))).toBe("/app/notebooks/Book01/notes/Rules1");
       expect(new URL(page.url()).search).toBe("");
       expect((await listed(page)).map((row) => row.id)).toEqual(["Home01", "Rules1", "Exam01", "Reels1"]);
-      await expect(page.locator(".notebook-sidebar-filter").count()).resolves.toBe(0);
+      expect(await page.locator(".notebook-sidebar-filter").count()).toBe(0);
 
       await page.goBack();
       await page.locator(".notebook-sidebar-filter").waitFor();
@@ -514,9 +514,9 @@ describe("One notebook sidebar with quick filters", () => {
 
       await page.getByRole("button", { name: "Social media" }).click();
       await page.getByRole("link", { name: "Recipes", exact: true }).waitFor();
-      await expect(page.getByRole("link", { name: "Recipes", exact: true }).getAttribute("href")).resolves.toBe("/app/notebooks/Book02");
-      await expect(page.locator('[data-switcher-option][aria-current="true"]').getAttribute("href")).resolves.toBe("/app/notebooks/Book01");
-      await expect(page.getByRole("link", { name: "All notebooks", exact: true }).getAttribute("href")).resolves.toBe("/app/notebooks");
+      expect(await page.getByRole("link", { name: "Recipes", exact: true }).getAttribute("href")).toBe("/app/notebooks/Book02");
+      expect(await page.locator('[data-switcher-option][aria-current="true"]').getAttribute("href")).toBe("/app/notebooks/Book01");
+      expect(await page.getByRole("link", { name: "All notebooks", exact: true }).getAttribute("href")).toBe("/app/notebooks");
     } finally {
       await page.context().close();
     }
@@ -527,12 +527,12 @@ describe("One notebook sidebar with quick filters", () => {
     try {
       await page.evaluate(() => window.mountPhoneMenu("de", true));
       const menu = page.locator("#phone-menu");
-      await expect(menu.locator(".k2b-sidebar-switcher__trigger").getAttribute("aria-label")).resolves.toBe("Social media");
-      await expect(menu.locator(".k2b-sidebar-switcher .k2b-sr-only").textContent()).resolves.toContain("Notizbuch wechseln");
-      await expect(menu.locator('a.k2b-navigation__control[href="/app/notebooks"]').count()).resolves.toBe(0);
+      expect(await menu.locator(".k2b-sidebar-switcher__trigger").getAttribute("aria-label")).toBe("Social media");
+      expect(await menu.locator(".k2b-sidebar-switcher .k2b-sr-only").textContent()).toContain("Notizbuch wechseln");
+      expect(await menu.locator('a.k2b-navigation__control[href="/app/notebooks"]').count()).toBe(0);
       await menu.getByRole("button", { name: "Social media", exact: true }).click();
       await menu.getByRole("link", { name: "Recipes", exact: true }).waitFor();
-      await expect(menu.getByRole("link", { name: "Alle Notizbücher", exact: true }).getAttribute("href")).resolves.toBe("/app/notebooks");
+      expect(await menu.getByRole("link", { name: "Alle Notizbücher", exact: true }).getAttribute("href")).toBe("/app/notebooks");
     } finally {
       await page.context().close();
     }
@@ -546,7 +546,7 @@ describe("One notebook sidebar with quick filters", () => {
       // A filter changes only what the menu shows, so the menu stays open with the list.
       await menu.getByRole("button", { name: "Favoriten", exact: true }).click();
       await menu.getByText("Favoriten · 2 Notizen").waitFor();
-      await expect(page.evaluate(() => window.phoneMenuClosed)).resolves.toBe(false);
+      expect(await page.evaluate(() => window.phoneMenuClosed)).toBe(false);
       const rows = await page.evaluate(() =>
         Array.from(document.querySelectorAll<HTMLElement>('#phone-menu a.k2b-navigation__control[href*="/notes/"]')).map((row) => ({
           href: row.getAttribute("href"),
@@ -574,7 +574,7 @@ describe("One notebook sidebar with quick filters", () => {
       await page.waitForFunction(
         () => document.querySelectorAll('#phone-menu a.k2b-navigation__control[href*="/notes/"]')[1]?.textContent === "Reels",
       );
-      await expect(page.evaluate(() => window.phoneMenuClosed)).resolves.toBe(false);
+      expect(await page.evaluate(() => window.phoneMenuClosed)).toBe(false);
     } finally {
       await page.context().close();
     }
@@ -626,7 +626,7 @@ describe("Notebook sidebar order by hand", () => {
       await page.mouse.down();
       await page.mouse.move(target!.x + 40, target!.y + 6, { steps: 8 });
       await page.mouse.move(target!.x + 40, target!.y + 4, { steps: 2 });
-      await expect(page.locator('[data-k2b-nav-tree-drop="before"]').getAttribute("data-k2b-nav-tree-id")).resolves.toBe("Rules1");
+      expect(await page.locator('[data-k2b-nav-tree-drop="before"]').getAttribute("data-k2b-nav-tree-id")).toBe("Rules1");
       expect(await rowBoxes(page)).toEqual(before);
       await page.mouse.up();
       await page.waitForFunction(
@@ -634,7 +634,7 @@ describe("Notebook sidebar order by hand", () => {
       );
       expect(api.requests).toEqual([{ path: "notes/Reels1/move", body: { parentId: null, before: "Rules1" } }]);
       expect(await order(page)).toEqual(["Home01", "Reels1", "Rules1", "Exam01"]);
-      await expect(page.locator("[data-k2b-nav-tree-drop]").count()).resolves.toBe(0);
+      expect(await page.locator("[data-k2b-nav-tree-drop]").count()).toBe(0);
     } finally {
       await page.context().close();
     }
@@ -643,16 +643,16 @@ describe("Notebook sidebar order by hand", () => {
   test("nothing moves above the homepage or into another level", async () => {
     const page = await open(desktop, writable(startTree()));
     try {
-      await expect(page.locator('[data-k2b-nav-tree-id="Home01"]').getAttribute("draggable")).resolves.toBeNull();
+      expect(await page.locator('[data-k2b-nav-tree-id="Home01"]').getAttribute("draggable")).toBeNull();
       const source = await row(page, "Exam01").boundingBox();
       const home = await row(page, "Home01").boundingBox();
       const child = await row(page, "Lang01").boundingBox();
       await page.mouse.move(source!.x + 40, source!.y + source!.height / 2);
       await page.mouse.down();
       await page.mouse.move(home!.x + 40, home!.y + 4, { steps: 8 });
-      await expect(page.locator("[data-k2b-nav-tree-drop]").count()).resolves.toBe(0);
+      expect(await page.locator("[data-k2b-nav-tree-drop]").count()).toBe(0);
       await page.mouse.move(child!.x + 40, child!.y + 4, { steps: 8 });
-      await expect(page.locator("[data-k2b-nav-tree-drop]").count()).resolves.toBe(0);
+      expect(await page.locator("[data-k2b-nav-tree-drop]").count()).toBe(0);
       await page.mouse.up();
       expect(api.requests).toEqual([]);
     } finally {
@@ -670,14 +670,14 @@ describe("Notebook sidebar order by hand", () => {
       );
       expect(api.requests).toEqual([{ path: "notes/Tone01/move", body: { parentId: "Rules1", before: "Lang01" } }]);
       expect(await order(page, "Rules1")).toEqual(["Tone01", "Lang01"]);
-      await expect(page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.k2bNavTreeId)).resolves.toBe("Tone01");
-      await expect(page.locator('[data-k2b-nav-tree-id="Tone01"]').getAttribute("aria-posinset")).resolves.toBe("1");
+      expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.k2bNavTreeId)).toBe("Tone01");
+      expect(await page.locator('[data-k2b-nav-tree-id="Tone01"]').getAttribute("aria-posinset")).toBe("1");
 
       // The first note has no place further up, and plain arrows still only move the focus.
       await page.keyboard.press("Alt+ArrowUp");
       await page.keyboard.press("ArrowDown");
       expect(api.requests.length).toBe(1);
-      await expect(page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.k2bNavTreeId)).resolves.toBe("Lang01");
+      expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.k2bNavTreeId)).toBe("Lang01");
     } finally {
       await page.context().close();
     }
@@ -692,12 +692,10 @@ describe("Notebook sidebar order by hand", () => {
       await page.locator('[data-k2b-nav-tree-id="Tone01"]').focus();
       await page.keyboard.press("Alt+ArrowUp");
       // The toast's screen-reader line ("Fehler: …") carries the same words 100 ms later, so look in the visible toast.
-      await expect(
-        page
-          .locator("[data-k2b-toast]")
-          .getByText("Diese Ebene wurde inzwischen geändert. Sie zeigt jetzt die aktuelle Reihenfolge.", { exact: true })
-          .waitFor(),
-      ).resolves.toBeUndefined();
+      await page
+        .locator("[data-k2b-toast]")
+        .getByText("Diese Ebene wurde inzwischen geändert. Sie zeigt jetzt die aktuelle Reihenfolge.", { exact: true })
+        .waitFor();
       await page.waitForFunction(() => !document.querySelector('[data-k2b-nav-tree-parent-id="Rules1"][data-k2b-nav-tree-id="Lang01"]'));
       expect(api.requests).toEqual([{ path: "notes/Tone01/move", body: { parentId: "Rules1", before: "Lang01" } }]);
       expect(await order(page, "Rules1")).toEqual(["Tone01"]);
@@ -729,7 +727,7 @@ describe("Notebook sidebar order by hand", () => {
   test("readers see the order but cannot change it", async () => {
     const page = await open(desktop, { ...writable(startTree()), permission: "read" });
     try {
-      await expect(page.locator('[role="treeitem"][draggable="true"]').count()).resolves.toBe(0);
+      expect(await page.locator('[role="treeitem"][draggable="true"]').count()).toBe(0);
       await page.locator('[data-k2b-nav-tree-id="Exam01"]').focus();
       await page.keyboard.press("Alt+ArrowUp");
       await page.waitForTimeout(200);
@@ -754,7 +752,7 @@ describe("Notebook sidebar order by hand", () => {
       );
       expect(api.requests).toEqual([{ path: "notes/Exam01/move", body: { parentId: null, before: "Rules1" } }]);
       // A note's action closes the menu before it runs.
-      await expect(page.evaluate(() => window.phoneMenuClosed)).resolves.toBe(true);
+      expect(await page.evaluate(() => window.phoneMenuClosed)).toBe(true);
     } finally {
       await page.context().close();
     }
@@ -776,22 +774,20 @@ describe("Notebook sidebar names the open note", () => {
       });
       await page.evaluate((value) => window.mountNotebookSidebar(value, "en"), { ...ctx(), selectedNoteId: "Exam01" });
       const current = page.locator('.k2b-app-workspace__sidebar [aria-current="page"]');
-      await expect(current.getAttribute("href")).resolves.toBe("/app/notebooks/Book01/notes/Exam01");
+      expect(await current.getAttribute("href")).toBe("/app/notebooks/Book01/notes/Exam01");
       const head = await page.locator('.k2b-app-workspace__head[data-trail="up"]').boundingBox();
       expect(head!.width).toBeLessThanOrEqual(1);
       expect(head!.height).toBeLessThanOrEqual(1);
-      await expect(page.locator(".k2b-page-title__up:visible, .k2b-page-title__title:visible").count()).resolves.toBe(0);
-      await expect(page.locator("h1").allTextContents()).resolves.toEqual(["Examples"]);
+      expect(await page.locator(".k2b-page-title__up:visible, .k2b-page-title__title:visible").count()).toBe(0);
+      expect(await page.locator("h1").allTextContents()).toEqual(["Examples"]);
       // The note's own first heading names it; the head adds no second one.
       await page.evaluate(() => {
         const heading = document.createElement("h1");
         heading.textContent = "Examples";
         document.querySelector(".notebook-document-surface")!.append(heading);
       });
-      await expect(page.getByRole("heading", { level: 1 }).count()).resolves.toBe(1);
-      await expect(page.locator(".k2b-app-workspace__head-heading").evaluate((element) => getComputedStyle(element).display)).resolves.toBe(
-        "none",
-      );
+      expect(await page.getByRole("heading", { level: 1 }).count()).toBe(1);
+      expect(await page.locator(".k2b-app-workspace__head-heading").evaluate((element) => getComputedStyle(element).display)).toBe("none");
     } finally {
       await page.context().close();
     }

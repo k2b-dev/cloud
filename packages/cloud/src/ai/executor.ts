@@ -19,6 +19,7 @@ import {
   hasRememberedAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, isAssistantChatTurn, resolveAssistantAudioModel } from "./assistant-models";
+import { authorizeBackgroundActionWith } from "./background-review";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { type AiCapabilityCatalogEntry, createAiToolResolver, createRunToolStore } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
@@ -1180,7 +1181,7 @@ export class AiTurnExecutor {
       );
       return;
     }
-    const authorizeBackground =
+    const authorizeBackgroundMandate =
       config.background && config.mandate
         ? async (entry: AiCapabilityCatalogEntry, args: unknown) => {
             try {
@@ -1233,7 +1234,37 @@ export class AiTurnExecutor {
                   }),
               }
             : {}),
-          authorizeBackground,
+          authorizeBackground: authorizeBackgroundMandate
+            ? async (entry, args, context) => {
+                await authorizeBackgroundActionWith(
+                  {
+                    turnId,
+                    mandate: config.mandate!,
+                    appId: entry.appId,
+                    capabilityId: entry.operation.localId,
+                    kind: entry.kind,
+                    args,
+                    approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
+                    hasReview: entry.kind === "action" && "review" in entry.operation && entry.operation.review === true,
+                    action: entry.display.title,
+                    review: () =>
+                      capabilityAuthority
+                        ? reviewAiCapability({
+                            conversationId,
+                            authority: capabilityAuthority,
+                            mandate: config.mandate,
+                            locale: promptLocale,
+                            entry,
+                            args,
+                            context,
+                          })
+                        : Promise.resolve(null),
+                    signal: context.signal,
+                  },
+                  () => authorizeBackgroundMandate(entry, args),
+                );
+              }
+            : undefined,
           onReview: (callId, review) => {
             capabilityActionReviews.set(callId, review);
             if (review.approvalScope) rememberableCapabilityApprovals.set(callId, review.approvalScope);
@@ -1242,7 +1273,7 @@ export class AiTurnExecutor {
             ? {
                 execute: async (entry, args, context) => {
                   try {
-                    await authorizeBackground?.(entry, args);
+                    await authorizeBackgroundMandate?.(entry, args);
                     const result = await executeAiCapability({
                       conversationId,
                       turnId,

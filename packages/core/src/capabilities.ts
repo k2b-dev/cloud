@@ -202,7 +202,10 @@ const taskData = (task: AiChatTask, locale: string): z.infer<typeof ChatTaskData
     task.reasonCode && task.reasonAt
       ? {
           code: task.reasonCode,
-          sentence: chatTaskReasonSentence({ code: task.reasonCode, at: task.reasonAt }, { locale, timeZone: task.timezone }),
+          sentence: chatTaskReasonSentence(
+            { code: task.reasonCode, at: task.reasonAt, action: task.reasonAction ?? undefined },
+            { locale, timeZone: task.timezone },
+          ),
         }
       : null,
   id: task.shortId,

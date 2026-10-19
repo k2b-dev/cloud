@@ -46,6 +46,15 @@ layouts and floating UI keep their intended depth.
 
 Override a complete stack when its semantic aliases use several steps for hover, focus, selected, light, and dark states. Changing custom properties at runtime updates the scoped components immediately; the package does not maintain a separate theme store.
 
+`--k2b-app-workspace-active` controls selected navigation ink and defaults to
+`var(--k2b-action)`. The optional `--k2b-app-workspace-selected` hook fills
+selected navigation rows and object chips; `Tabs`, `ViewTabs`,
+`SegmentedControl`, and an active `FilterChip` share it. The optional
+`--k2b-row-selected` hook fills selected content rows. Both default to
+`var(--k2b-selected)`. Cloud maps them to the active app's navigation and row
+selection fills. Other control options and pressed states keep
+`--k2b-selected`.
+
 AI presentation has a separate semantic theme:
 `--k2b-ai-accent`, `--k2b-ai-accent-hover`, `--k2b-ai-border`,
 and `--k2b-ai-surface`. Override these roles when the assistant identity should
@@ -57,6 +66,29 @@ Use `data-theme="dark"` or `k2b-dark` on the scope, or place it inside a host `.
 The library does not read `prefers-color-scheme` itself; the host resolves light
 or dark (for example, from a Cloud Automatic preference) and sets the class or
 attribute.
+
+## Ink hierarchy
+
+- `--k2b-text`: content, titles, and values.
+- `--k2b-text-secondary`: labels, field and sidebar section titles, supporting lines, descriptions, and secondary buttons.
+- `--k2b-text-muted`: metadata, timestamps, and quiet hints.
+
+Secondary ink keeps at least 10:1 contrast and muted ink at least 7:1 on both
+`--k2b-surface` and `--k2b-surface-muted`, in light and dark themes. Placeholder
+color stays separate in `--k2b-placeholder-color`.
+
+Buttons and labels use 13px semibold type, sidebar rows 13px regular type;
+small buttons and sidebar section titles use 12px. Descriptions and supporting
+lines use secondary ink at 12px, sidebar row descriptions 13px. Each primitive
+sets its own line height, so its box keeps its height whatever the host page's
+line height. Buttons inside a `NoticeCard` take the card's line height instead,
+so its actions keep their height (32px for `sm`). Titles use `-0.018em`
+tracking.
+
+Three surfaces keep their own sizes: object sidebar rows keep a compact 11px
+subtitle, sidebar items shown as chips on narrow workspaces use 13px semibold
+labels, and the [mobile shell](../layout/mobile-shell) applies its touch type
+scale.
 
 ## Accessibility
 

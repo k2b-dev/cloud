@@ -3,7 +3,8 @@ import plexPreset from "@k2b/ui/fonts/plex.css" with { type: "text" };
 
 /**
  * Preload tags for the IBM Plex Sans faces that every page sets in its first
- * frame: Latin text at 400, 500 (buttons, labels) and 600 (headings).
+ * frame: Latin text at 400, 500 (list titles, medium text) and 600 (headings,
+ * buttons, labels).
  *
  * The preset declares its faces with `font-display: swap`. Without a preload
  * the browser requests a face only when layout needs it, paints the fallback

@@ -7,10 +7,12 @@ import {
   APP_ACTION_LIMITS,
   APP_APPROVAL_LIMITS,
   APP_APPROVAL_PATH,
+  APP_APPROVAL_PENDING_ACCEPT,
   APP_APPROVAL_PROTOCOL,
   type AppActionView,
   AppActionViewSchema,
   type AppApprovalAccept,
+  type AppApprovalPendingAccept,
   AppDeviceCommandSchema,
   AppDeviceProofSchema,
   type AppDevicePublicKey,
@@ -205,8 +207,10 @@ const connect = async (options: {
         signal,
       );
     },
-    pending: async (device: AppApprovalDevice, signal?: AbortSignal) => {
-      const result = await command(device, { operation: "pending" }, signal);
+    pending: async (device: AppApprovalDevice, signal?: AbortSignal, options?: { accept?: AppApprovalPendingAccept[] }) => {
+      // Untyped callers may reuse their inbox list; drop what pending does not serve instead of failing every poll.
+      const accept = options?.accept?.filter((entry) => APP_APPROVAL_PENDING_ACCEPT.includes(entry) && info.features?.includes(entry));
+      const result = await command(device, { operation: "pending", ...(accept?.length ? { accept } : {}) }, signal);
       if (!("requests" in result)) throw new AppApprovalClientError("INVALID_RESPONSE");
       return result;
     },
@@ -226,6 +230,8 @@ const connect = async (options: {
     actions: info.features?.includes("actions") === true,
     /** Whether this Cloud can include terminal consent in an explicitly opted-in inbox. */
     terminalLogins: info.features?.includes("terminal-logins") === true,
+    /** Whether this Cloud serves sign-in context through a signed opt-in. */
+    loginContext: info.features?.includes("login-context") === true,
     /** Pending sign-ins and the newest open Action approvals in one call; use it instead of `pending` where `actions` is true. */
     inbox: async (device: AppApprovalDevice, signal?: AbortSignal, options?: { accept?: AppApprovalAccept[] }) => {
       // SDK upgrades alone must not expose consent the app cannot show. Old Clouds never see the new key.

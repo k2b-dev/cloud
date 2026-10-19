@@ -4,6 +4,7 @@ import { getCapability } from "../_internal/registry";
 import { CloudResourceRefSchema, cloudResourceRefAppId, resolveCapabilityResourceReader } from "../contracts/capabilities";
 import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import { type AuthContext, auth, err, fail, getLocale, ok, rateLimit, respond, v } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import { ImageMetadataError } from "../services/image-metadata";
 import { aiChatMessages } from "./chat/messages";
 import { decodeAiFileContent } from "./files-store";
@@ -71,6 +72,8 @@ type AiProjectsRouteDependencies = {
 
 const buildAiProjectsRoutes = (dependencies: AiProjectsRouteDependencies = {}) =>
   new Hono<AuthContext>()
+    // The list combines projects from separate grants; the writer of one can rename it next to another project's instructions.
+    .use("*", noTransform())
     .use(dependencies.limit ?? rateLimit())
     .use("*", dependencies.authenticate ?? auth.requireRole("authenticated"))
     .get("/", async (c) => respond(c, ok({ projects: (await aiProjects.list(c.get("accessSubject") ?? null)).map(publicProject) })))

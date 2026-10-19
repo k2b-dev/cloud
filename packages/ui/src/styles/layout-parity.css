@@ -207,6 +207,7 @@
   font-size: 1.0625rem;
   font-weight: 650;
   line-height: 1.3;
+  letter-spacing: -0.018em;
 }
 
 .k2b-ui .k2b-settings-page__heading p {
@@ -305,6 +306,7 @@
   font-size: 0.9375rem;
   font-weight: 600;
   line-height: 1.35;
+  letter-spacing: -0.018em;
 }
 
 .k2b-ui .k2b-settings-section__heading p {
@@ -592,6 +594,7 @@
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.35;
+  letter-spacing: -0.018em;
 }
 
 .k2b-ui .k2b-settings-group__heading p,
@@ -739,11 +742,13 @@
 
 /* Scoped to the description. The bare `.k2b-settings-field p` selector this
    replaces outranked `__error` and also restyled any paragraph a consumer
-   passed as `children`. Cloud: `text-xs text-dimmed`, spacing from the gap. */
+   passed as `children`. Spacing comes from the gap; the line height keeps the
+   18px line whatever the host page inherits. */
 .k2b-ui .k2b-settings-field__copy > p {
   margin: 0;
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-secondary);
   font-size: 0.75rem;
+  line-height: 1.125rem;
 }
 
 /* Cloud: `text-xs text-red-600 flex items-center gap-1`. */
@@ -2866,6 +2871,7 @@ html {
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.25rem;
+  letter-spacing: -0.018em;
 }
 
 .k2b-ui .k2b-app-workspace__level-title > h2 > .k2b-truncate-fade {
@@ -3575,6 +3581,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   overflow: hidden;
   font-size: 1.125rem;
   font-weight: 600;
+  letter-spacing: -0.018em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4037,6 +4044,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.25rem;
+  letter-spacing: -0.018em;
   white-space: nowrap;
 }
 
