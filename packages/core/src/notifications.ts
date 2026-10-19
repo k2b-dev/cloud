@@ -247,11 +247,11 @@ export const NOTIFICATIONS = {
     // A personal preference: email first, a browser notification where email is not set up.
     delivery: { recommended: ["email", "browser"] },
     data: newBrowserData,
-    render: async (data, { locale }) => ({
-      title: text(locale).newBrowserTitle,
-      body: `${browserLine(data, locale)} · ${await installationTime(data.signedInAt, locale)}`,
-      targetHref: "/me/security",
-    }),
+    render: async (data, { locale }) => {
+      // The browser channel shows only `preview` next to the title, also on the lock screen: no place here.
+      const summary = `${browserLine(data, locale)} · ${await installationTime(data.signedInAt, locale)}`;
+      return { title: text(locale).newBrowserTitle, body: summary, preview: summary, targetHref: "/me/security" };
+    },
     email: (data, { locale }) => newBrowserEmail(data, locale),
   }),
   deviceEnrollment: notification({

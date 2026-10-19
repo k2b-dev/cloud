@@ -125,7 +125,7 @@ describe("new-browser sign-in notice", () => {
       const time = de ? "16. Okt. 2026, 09:14 (Europe/Vienna)" : "Oct 16, 2026, 09:14 (Europe/Vienna)";
       const browser = de ? "Chrome auf macOS" : "Chrome on macOS";
       const rendered = await definition.render(data, { locale });
-      expect(rendered).toEqual({ title, body: `${browser} · ${time}`, targetHref: "/me/security" });
+      expect(rendered).toEqual({ title, body: `${browser} · ${time}`, preview: `${browser} · ${time}`, targetHref: "/me/security" });
       expect(JSON.stringify(rendered)).not.toMatch(/Wien|Austria|Österreich/);
       const email = await definition.email!(data, { locale });
       expect(email.subject).toBe(title);
