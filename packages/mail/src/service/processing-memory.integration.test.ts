@@ -88,6 +88,8 @@ suiteFor(
         correctness: summary.correctnessTotals,
       };
       const diagnostic = `${summaryPath}\n${JSON.stringify(numbers)}`;
+      // Every run records its sample, so CI runs can confirm or correct the derived limit.
+      console.info(`Mail memory guard sample: ${JSON.stringify(numbers)}`);
       try {
         expect(timedOut, diagnostic).toBe(false);
         expect(code, diagnostic).toBe(0);

@@ -34,7 +34,9 @@ processing budget of **256 MiB**. Mail estimates the memory of each message or
 attachment from its size before it starts. Work waits in arrival order until it
 fits. A message or attachment larger than the budget runs alone. Mail never
 skips a message because of the budget. Large messages can take longer to
-appear, and the server answers pages and API requests while they wait.
+appear, and the server answers pages and API requests while they wait. A body
+that a workflow or a person opens waits in the same order as background work,
+so it can take longer to load while large messages are processed.
 
 The budget comes on top of the process's own memory. A running Mail process
 uses about 350–450 MiB. One large message can need more than the budget on
