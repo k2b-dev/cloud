@@ -149,6 +149,16 @@ const outcomeLines = (card: ActionCard, words: ReturnType<typeof approvalMessage
   },
 });
 
+/** Answers that arm late, so a click meant for what was there before cannot approve a request that just appeared. */
+function Armed(props: { children: JSX.Element }) {
+  const [armed, setArmed] = createSignal(false);
+  onMount(() => {
+    const timer = setTimeout(() => setArmed(true), ARM_DELAY_MS);
+    onCleanup(() => clearTimeout(timer));
+  });
+  return <div inert={armed() ? undefined : true}>{props.children}</div>;
+}
+
 /** One request as the chat's question card. Its answers arm late, so a click meant for the page cannot approve it. */
 function ApprovalCard(props: {
   item: PendingApproval;
@@ -161,11 +171,6 @@ function ApprovalCard(props: {
   const t = useMessages();
   const locale = useLocale();
   const card = createMemo(() => approvalCard(props.item, locale(), READER_TIME_ZONE));
-  const [armed, setArmed] = createSignal(false);
-  onMount(() => {
-    const timer = setTimeout(() => setArmed(true), ARM_DELAY_MS);
-    onCleanup(() => clearTimeout(timer));
-  });
   const current = () => props.outcome ?? (props.failed ? "failed" : "sending");
   const state = () => (props.outcome || props.busy || props.failed ? "decided" : "open");
   // `confirm` asks every time, whatever the stored options say.
@@ -179,7 +184,7 @@ function ApprovalCard(props: {
   return (
     <article class="cloud-approval" data-decided={props.outcome} aria-label={t().approvalFor({ title: card().questionText })}>
       <Origin item={props.item} />
-      <div inert={armed() ? undefined : true}>
+      <Armed>
         <ActionQuestion
           card={card()}
           state={state()}
@@ -189,7 +194,7 @@ function ApprovalCard(props: {
           onDecline={() => props.decide({ approved: false })}
           outcome={<ActionReceipt card={card()} lines={outcomeLines(card(), t(), props.reopen)} current={current()} />}
         />
-      </div>
+      </Armed>
     </article>
   );
 }
@@ -251,22 +256,24 @@ const openDetails = (item: PendingApproval, locale: string) =>
           />
           <PanelDialog.Body>
             <div class="cloud-approval__sheet">
-              <ActionQuestion
-                card={card}
-                state="open"
-                timeZone={READER_TIME_ZONE}
-                remember={
-                  item.remember.chat && item.assurance === "standard"
-                    ? {
-                        label: item.remember.website ? actionMessages(card.locale).rememberWebsite : actionMessages(card.locale).remember,
-                        onSelect: () => close({ approved: true, remember: "chat" }),
-                      }
-                    : undefined
-                }
-                onConfirm={() => close({ approved: true })}
-                onDecline={() => close({ approved: false })}
-                outcome={null}
-              />
+              <Armed>
+                <ActionQuestion
+                  card={card}
+                  state="open"
+                  timeZone={READER_TIME_ZONE}
+                  remember={
+                    item.remember.chat && item.assurance === "standard"
+                      ? {
+                          label: item.remember.website ? actionMessages(card.locale).rememberWebsite : actionMessages(card.locale).remember,
+                          onSelect: () => close({ approved: true, remember: "chat" }),
+                        }
+                      : undefined
+                  }
+                  onConfirm={() => close({ approved: true })}
+                  onDecline={() => close({ approved: false })}
+                  outcome={null}
+                />
+              </Armed>
               <p class="cloud-approval__callout">
                 <i class="ti ti-info-circle" aria-hidden="true" />
                 {t().exactlyThis}

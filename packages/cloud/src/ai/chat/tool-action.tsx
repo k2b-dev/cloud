@@ -206,18 +206,24 @@ export function ToolActionView(props: {
     if (stored.state === "done" || stored.state === "not_done") return stored;
     return (stored.at ?? "") > (local.at ?? "") ? stored : local;
   };
-  // A stored claim of a running check expires at a known moment; past it the card offers to check again.
+  // A stored claim of a running check expires at a known moment; past it the card offers to check again. The clock is
+  // read again whenever the claim changes, so a claim that arrives late expires on time too.
   const [now, setNow] = createSignal(Date.now());
+  const claimAt = () => (check()?.state === "checking" ? check()?.at : undefined);
+  createEffect(
+    on(claimAt, (at) => {
+      setNow(Date.now());
+      if (!at) return;
+      const remaining = Date.parse(at) + AI_TOOL_CHECK_STALE_MS - Date.now();
+      if (remaining <= 0) return;
+      const timer = setTimeout(() => setNow(Date.now()), remaining + 50);
+      onCleanup(() => clearTimeout(timer));
+    }),
+  );
   const claimAge = () => {
-    const at = check()?.state === "checking" ? check()?.at : undefined;
+    const at = claimAt();
     return at ? now() - Date.parse(at) : null;
   };
-  createEffect(() => {
-    const age = claimAge();
-    if (age === null || age > AI_TOOL_CHECK_STALE_MS) return;
-    const timer = setTimeout(() => setNow(Date.now()), AI_TOOL_CHECK_STALE_MS - age + 50);
-    onCleanup(() => clearTimeout(timer));
-  });
   const flow = createMemo(() =>
     flowOf({
       block: props.block,

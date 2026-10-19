@@ -262,6 +262,11 @@ describe("Approvals in a browser", () => {
         expect(await panel.textContent()).toContain("This approval applies to exactly this Action.");
         expect(await panel.textContent()).toContain("If you have questions, reach out to Alex or to me directly.");
         expect(await panel.locator(".k2b-chat-decision__sentence").textContent()).toBe("Sends the draft after the undo window.");
+        // The panel's answers arm late too, so a quick follow-up click cannot decide the request that just opened.
+        await panel.getByRole("button", { name: "Don't run", exact: true }).click({ force: true });
+        expect(decided).toEqual([]);
+        // fixed wait: the panel's answers arm half a second after it opens.
+        await tab.waitForTimeout(600);
         await panel.getByRole("button", { name: "Don't run", exact: true }).click();
         await tab.locator("article.cloud-approval-band[data-decided]").waitFor();
         expect(decided).toEqual([page.items[1]!.id]);

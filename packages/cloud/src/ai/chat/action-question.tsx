@@ -255,10 +255,11 @@ function ReviewPreviewBody(props: { model: Extract<ActionPreviewModel, { kind: "
           {(event) => (
             <>
               <Chat.Preview.Title>{event().title}</Chat.Preview.Title>
-              {/* When, where, and in which calendar, as one line of text like the person would say it. */}
+              {/* When, where, and in which calendar, as one line of text like the person would say it. Times show in the
+                  reader's zone, the same as the sentence's chips, so the question and the preview never disagree. */}
               <p>
                 {[
-                  `${rangeText(event().start, event().end, locale(), event().timeZone ?? tz(), event().allDay)}${
+                  `${rangeText(event().start, event().end, locale(), tz(), event().allDay)}${
                     event().allDay && !DAY.test(event().start) ? ` · ${t().allDay}` : ""
                   }`,
                   event().location,

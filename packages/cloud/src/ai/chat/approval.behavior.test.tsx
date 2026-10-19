@@ -325,6 +325,24 @@ domTest("a live check whose claim went stale offers to check again", async () =>
   }
 });
 
+domTest("a check claim that arrives long after the card mounted expires on time", async () => {
+  setSystemTime(new Date("2026-10-17T12:00:00.000Z"));
+  const { actionFixtures } = await import("./action-question.fixtures");
+  const mail = actionFixtures("en").mail!.block;
+  const running = { ...mail, approval: undefined, approved: true as const, status: "running" as const };
+  const view = await mountTurn([running], { phase: "running", check: async () => ({ state: "done", at: "2026-10-17T12:06:00.000Z" }) });
+  try {
+    // Five minutes later the reconnect brings a claim that is already two minutes old.
+    setSystemTime(new Date("2026-10-17T12:05:00.000Z"));
+    view.setBlocks([{ ...running, check: { state: "checking", at: "2026-10-17T12:03:00.000Z" } }]);
+    await settle();
+    expect(view.button("Check again")).toBeDefined();
+  } finally {
+    view.cleanup();
+    setSystemTime();
+  }
+});
+
 domTest("an answer given here stays this window's answer when the block returns to its parent call", async () => {
   const child: Extract<AiTurnBlock, { kind: "tool" }> = {
     ...runCode,
