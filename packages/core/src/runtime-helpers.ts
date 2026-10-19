@@ -1,4 +1,5 @@
 import { APP_REGISTRY_TTL_MS, listApps, watchAppRegistry } from "@k2b/cloud";
+import { getGeoIp } from "@k2b/cloud/server/request-context";
 import { logger, superviseRuntimeTask } from "@k2b/cloud/services";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
@@ -33,6 +34,7 @@ import { migrate as migrateAudit } from "./migrate/core/audit";
 import { migrate as migrateAuth } from "./migrate/core/auth";
 import { migrate as migrateDeviceTrust } from "./migrate/core/device-trust";
 import { migrate as migrateEvents } from "./migrate/core/events";
+import { migrate as migrateGeoIp } from "./migrate/core/geoip";
 import { migrate as migrateLogging } from "./migrate/core/logging";
 import { migrate as migrateNotifications } from "./migrate/core/notifications";
 import { migrate as migrateOutgoingMail } from "./migrate/core/outgoing-mail";
@@ -110,6 +112,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "pwa", run: migratePwa },
     { name: "device-trust", run: migrateDeviceTrust },
     { name: "audit", run: migrateAudit },
+    { name: "geoip", run: migrateGeoIp },
     { name: "announcements", run: migrateAnnouncements },
     { name: "notifications", run: migrateNotifications },
     { name: "settings", run: migrateSettings },
@@ -132,6 +135,7 @@ export const startCoreServices = async (
   notificationSender: CoreNotificationSender,
   aiNotifications: ReturnType<typeof createAiNotificationService>,
 ): Promise<void> => {
+  void getGeoIp().refresh();
   outgoingMailAllowlist();
   try {
     await initializeIdentityAuthority();

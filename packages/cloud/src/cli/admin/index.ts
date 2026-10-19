@@ -17,6 +17,7 @@ import { appSignInCommands } from "./app-sign-in";
 import { dataCommands } from "./data";
 import { documentationCommands } from "./documentation";
 import { gatewayCommands } from "./gateway";
+import { geoipCommands } from "./geoip";
 import { instanceCommands } from "./instance";
 import { jobCommands } from "./jobs";
 import { legalCommands } from "./legal";
@@ -49,6 +50,7 @@ export default defineCliCommands({
     "app-sign-in": "Manage app sign-in and pairing.",
     apps: "Inspect and remove registered apps.",
     documentation: "Manage the administration documentation website.",
+    geoip: "Replace and inspect sign-in location databases.",
     jobs: "Inspect background jobs and their runs.",
     logs: "Search, inspect, and clean up retained logs.",
     metrics: "Inspect collectors and manage metrics access.",
@@ -99,6 +101,7 @@ export default defineCliCommands({
     ...telemetryCommands,
     ...jobCommands,
     ...legalCommands,
+    ...geoipCommands,
     ...linuxCommands,
     ...workflowCommands,
     ...dataCommands,

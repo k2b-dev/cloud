@@ -2,14 +2,9 @@
 # Migrations lower counts and remove entries; the rule never raises counts or adds lines.
 # `bun scripts/check.ts selection-tokens --fix` lowers counts whose findings are gone.
 # packages/filesv2 and packages/grids selection entries are tracked in #1430.
-packages/cloud/src/styles/effects.css | accent-mix | 4
-packages/cloud/src/styles/global.css | accent-mix | 2
-packages/cloud/src/styles/utilities-layout.css | accent-mix | 6
-packages/cloud/src/styles/utilities-navigation.css | accent-mix | 13
 packages/contacts/src/frontend/_components/ContactOrgTreeView.tsx | selection | 1
 packages/contacts/src/frontend/_components/ContactsBulkActions.tsx | selection | 1
 packages/contacts/src/styles/app.css | accent-mix | 3
-packages/core/src/pages/admin/page.tsx | accent-mix | 1
 packages/filesv2/src/styles/app.css | selection | 1
 packages/gateway-ops/src/observability/metrics/_components/MetricsCatalogue.island.tsx | selection | 1
 packages/gateway-ops/src/observability/metrics/_components/MetricsTokens.island.tsx | selection | 1

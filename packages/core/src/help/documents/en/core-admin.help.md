@@ -36,6 +36,8 @@ Keep another allowed administrator or your emergency token available.
 
 Disabling an account type denies later requests from existing sessions, user OAuth tokens, personal API keys, and user-bound background work. It does not delete accounts or stop FreeIPA sync. Allowing the type again makes credentials work again if they are otherwise valid. Emergency recovery explicitly allows all local **Login** accounts again. It does not change which types the sign-in page shows.
 
+In **Admin → Settings → Sign-in → Sign-in locations**, check the source and build date of the City and ASN databases. Upload your own `.mmdb` or `.mmdb.gz` file, or reset a type to the bundled snapshot. Uploads remain active until reset. A hint appears when the data is older than about six months. Files must use an IPv6 City or ASN database; follow the provider’s licence. The limits are 192 MiB unpacked and 128 MiB per upload request. DB-IP attribution appears while DB-IP data is active.
+
 ## Find the other settings groups {icon="settings"}
 
 :::reference

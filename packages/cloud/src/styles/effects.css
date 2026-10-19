@@ -341,10 +341,6 @@
 /* App help is a reader, not a generic Markdown preview. Keep the measure,
    hierarchy, and rhythm close to the task-first Help wireframe while reusing
    the same safe server-rendered Markdown pipeline as the rest of Cloud. */
-.help-topic-icon {
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 10%, var(--ui-surface-muted));
-}
-
 /* Help shell: one head (app tile, "Help for <App>", the menu, and the search) above the start, an article, or
    results. The head never changes size between them, so the search stays in one place. The start and the head share
    the article's measure: wide, the article and its contents; narrower, the article column alone. */
@@ -549,7 +545,7 @@
 }
 
 .help-start-tile:hover {
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 6%, var(--ui-surface-subtle));
+  background: var(--ui-surface-muted);
 }
 
 .help-start-tile-icon,
@@ -559,8 +555,6 @@
   height: 2.25rem;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: var(--ui-radius-control);
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 14%, var(--ui-surface-muted));
   font-size: 1.125rem;
 }
 
@@ -1104,7 +1098,7 @@
 }
 
 .help-document :where(ul > li)::marker {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 75%, var(--color-zinc-400));
+  color: var(--ui-text-secondary);
 }
 
 .help-document :where(ol > li)::marker {
