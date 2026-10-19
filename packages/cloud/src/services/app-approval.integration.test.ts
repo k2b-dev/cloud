@@ -132,7 +132,7 @@ suite("isolated app approval protocol", () => {
   };
   const service = createAppApprovalService(sql, async () => cfg, hints, pushSender);
   const cloudB = createAppApprovalService(sql, async () => ({ ...cfg, issuer: "https://second-cloud.example.test" }), hints);
-  const routes = createAppApprovalRoutes(service);
+  const routes = createAppApprovalRoutes({ notify: async () => {} }, service);
   const post = (path: string, body: unknown, token?: string, origin = cfg.issuer) =>
     routes.request(path, {
       method: "POST",
@@ -244,7 +244,7 @@ suite("isolated app approval protocol", () => {
     await settings.set("user.app_approval.enabled", true);
     await settings.set("user.app_approval.origin", "");
     const live = createAppApprovalService(sql);
-    const api = createAppApprovalRoutes(live);
+    const api = createAppApprovalRoutes({ notify: async () => {} }, live);
     try {
       expect((await live.listDevices(owner.actor)).items.map((item) => item.id)).toContain(device.id);
       const read = await api.request("/manage/devices", { headers: { authorization: `Bearer ${owner.token}` } });
@@ -481,7 +481,7 @@ suite("isolated app approval protocol", () => {
     expect(await service.deviceCommand(await proof(stranger, { operation: "pending" }), deviceActions)).toMatchObject({ requests: [] });
     await approve(a, started.requestId);
     await expect(cloudB.consumeLogin(started.requestId, started.browserSecret)).rejects.toMatchObject({ code: "CONFLICT" });
-    expect(await service.consumeLogin(started.requestId, started.browserSecret)).toBe(owner.id);
+    expect(await service.consumeLogin(started.requestId, started.browserSecret)).toEqual({ userId: owner.id, deviceName: "Test device" });
   });
 
   test("signed commands reject replay, body tampering, wrong clock and request mixups", async () => {
@@ -576,7 +576,7 @@ suite("isolated app approval protocol", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     // Other devices keep working, and the owner's own list still shows the revocation.
     await approve(spare, next.requestId);
-    expect(await service.consumeLogin(next.requestId, next.browserSecret)).toBe(owner.id);
+    expect(await service.consumeLogin(next.requestId, next.browserSecret)).toMatchObject({ userId: owner.id });
     expect((await service.listUserDevices(admin.actor, owner.id)).map((item) => item.id)).toEqual([spare.id]);
     expect((await service.listDevices(owner.actor)).items.find((item) => item.id === device.id)?.revokedAt).not.toBeNull();
     expect(await service.deviceCommand(await proof(unrelated, { operation: "pending" }), deviceActions)).toMatchObject({ requests: [] });
@@ -642,7 +642,7 @@ suite("isolated app approval protocol", () => {
     const replacement = await enroll({ ...owner, actor: { ...owner.actor, sid: family!.sid } });
     const again = await service.startLogin(owner.uid, "login");
     await approve(replacement, again.requestId);
-    expect(await service.consumeLogin(again.requestId, again.browserSecret)).toBe(owner.id);
+    expect(await service.consumeLogin(again.requestId, again.browserSecret)).toMatchObject({ userId: owner.id });
   });
 
   test("an assisted pairing started before a sign-out everywhere cannot be confirmed", async () => {
@@ -1291,7 +1291,7 @@ suite("isolated app approval protocol", () => {
       device = await enroll(owner);
     await service.startLogin(owner.uid, "login");
     const read = async (command: AppDeviceProof["command"]) => {
-      const api = createAppApprovalRoutes(service, () => noActions, terminal);
+      const api = createAppApprovalRoutes({ notify: async () => {} }, service, () => noActions, terminal);
       return (
         await api.request("/device", {
           method: "POST",
@@ -1330,7 +1330,7 @@ suite("isolated app approval protocol", () => {
     await service.deviceCommand(await proof(device, { operation: "inbox", accept: ["terminal-logins"] }), noActions, terminal);
     const login = await terminalStart(owner.uid);
     const command = terminalDecision(login);
-    const api = createAppApprovalRoutes(service, () => noActions, terminal);
+    const api = createAppApprovalRoutes({ notify: async () => {} }, service, () => noActions, terminal);
     const decide = async () =>
       api.request("/device", {
         method: "POST",
@@ -1680,7 +1680,7 @@ suite("isolated app approval protocol", () => {
       const device = await enroll(owner);
       const waiting = await askAction(owner);
       const view = AppActionViewSchema.parse(await (await devicePost(device, { operation: "action", actionId: waiting.id })).json());
-      const racingRoutes = createAppApprovalRoutes(service, (appName) => {
+      const racingRoutes = createAppApprovalRoutes({ notify: async () => {} }, service, (appName) => {
         const actions = createDeviceActions(appName);
         return {
           ...actions,
@@ -1734,7 +1734,9 @@ suite("isolated app approval protocol", () => {
         await sql`UPDATE approvals.requests SET requester_title=${"😀".repeat(80)} WHERE id=${action.id}::uuid`;
         await service.startLogin(owner.uid, "login");
       }
-      const largeNames = createAppApprovalRoutes(service, () => createDeviceActions((_id, _locale) => "😀".repeat(60)));
+      const largeNames = createAppApprovalRoutes({ notify: async () => {} }, service, () =>
+        createDeviceActions((_id, _locale) => "😀".repeat(60)),
+      );
       const response = await largeNames.request("/device", {
         method: "POST",
         headers: { "content-type": "application/json", origin: cfg.appOrigin },

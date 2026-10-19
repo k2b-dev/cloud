@@ -24,7 +24,7 @@ databaseSuite()("Core OpenAI API mount order", () => {
       const full = await serviceAccountCredentials.createUserApiToken({ user, name: "Full" });
       if (!models.ok || !full.ok) throw new Error("Key fixtures failed");
       const { api } = createCoreApiRouter({
-        notifications: { sendMagicLink: unused, sendIpaLoginHint: unused, sendPasswordReset: unused },
+        notifications: { sendMagicLink: unused, sendIpaLoginHint: unused, sendPasswordReset: unused, sendNewBrowserSignIn: async () => {} },
       });
       const coreApi = new Hono().route("/ai/openai/v1", createAiOpenAiRoutes()).route("/ai", aiChatTaskRoutes).route("/", api);
       const router = new Hono().route("/api", coreApi);

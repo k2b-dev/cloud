@@ -5,13 +5,26 @@ import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { env } from "../config/env";
 import * as requestContext from "../server/request-context";
+import * as sessionTokens from "./identity/session-token";
 import * as keyRing from "./identity/key-ring";
-import { browserHash, cleanup, countrySeen, findBrowser, newBrowserCookie, rememberSignIn, trustState } from "./known-browsers";
+import {
+  type NewBrowserSignInNotice,
+  type NewBrowserSignInNotifier,
+  browserHash,
+  cleanup,
+  maintainNotices,
+  countrySeen,
+  findBrowser,
+  newBrowserCookie,
+  rememberSignIn,
+  trustState,
+} from "./known-browsers";
 import { session } from "./session";
 import { createTestAppSession } from "./session/session.test-fixture";
 
 const suite = databaseSuite();
 const START = new Date("2026-10-18T12:00:00.000Z");
+const signIn = { firstName: null, method: "password", device: null, locale: null } as const;
 const DAY = 86_400_000;
 const cookieName = () => (env.IS_DEVELOPMENT ? "cloud_browser" : "__Host-cloud_browser");
 const cookieHeader = (cookie: string) => `${cookieName()}=${cookie}`;
@@ -24,8 +37,14 @@ const account = async () => {
   await sql`INSERT INTO auth.users (id, uid, provider, profile) VALUES (${id}::uuid, ${`known-browser-${id}`}, 'local', 'user')`;
   return id;
 };
-const login = async (userId: string, cookie?: string, country = "AT", city: string | null = "Wien") => {
-  const app = new Hono().post("/login", async (c) => c.json({ token: await session.create(c, userId) }));
+const login = async (
+  userId: string,
+  cookie?: string,
+  country = "AT",
+  city: string | null = "Wien",
+  notify: NewBrowserSignInNotifier = async () => {},
+) => {
+  const app = new Hono().post("/login", async (c) => c.json({ token: await session.create(c, userId, { method: "password", notify }) }));
   const response = await app.request("/login", {
     method: "POST",
     headers: {
@@ -48,6 +67,7 @@ const rows = async (id: string) => [
       first_seen_at: Date;
       last_seen_at: Date;
       notified_at: Date | null;
+      notice: unknown;
       browser: string;
       os: string;
       country: string | null;
@@ -65,8 +85,12 @@ const countryCode = (index: number) => String.fromCharCode(65 + Math.floor(index
 suite("known browsers at the web session boundary", () => {
   const describe = requestContext.describeRequest;
   let restoreContext: () => void;
-  beforeEach(() => {
+  let previousStart: Date;
+  beforeEach(async () => {
     setSystemTime(START);
+    const [state] = await sql<{ started_at: Date }[]>`SELECT started_at FROM auth.device_trust_state`;
+    previousStart = state!.started_at;
+    await sql`UPDATE auth.device_trust_state SET started_at = ${new Date(START.getTime() - 15 * DAY)}`;
     // Exercise describeRequest's real browser parsing with a deterministic GeoIP provider.
     const spy = spyOn(requestContext, "describeRequest").mockImplementation((c) =>
       describe(c, {
@@ -86,6 +110,7 @@ suite("known browsers at the web session boundary", () => {
   });
   afterEach(async () => {
     restoreContext();
+    await sql`UPDATE auth.device_trust_state SET started_at = ${previousStart}`;
     setSystemTime();
     for (const id of users.splice(0)) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
   });
@@ -102,7 +127,7 @@ suite("known browsers at the web session boundary", () => {
       os: "windows",
       country: "AT",
       city: "Wien",
-      notified_at: null,
+      notified_at: expect.any(Date),
     });
     expect(Buffer.from(before!.browser_hash).equals(browserHash(id, cookie))).toBe(true);
     await sql`UPDATE auth.known_browsers SET notified_at = ${START} WHERE user_id = ${id}::uuid`;
@@ -129,7 +154,9 @@ suite("known browsers at the web session boundary", () => {
   test("invalid incoming cookies are replaced only when a session succeeds", async () => {
     const id = await account();
     expect(responseCookie(await login(id, "invalid"))).not.toBe("invalid");
-    const app = new Hono().post("/login", async (c) => c.text(await session.create(c, crypto.randomUUID())));
+    const app = new Hono().post("/login", async (c) =>
+      c.text(await session.create(c, crypto.randomUUID(), { method: "password", notify: async () => {} })),
+    );
     const response = await app.request("/login", { method: "POST", headers: { cookie: cookieHeader("invalid") } });
     expect(response.status).toBe(500);
     expect(response.headers.get("set-cookie")).toBeNull();
@@ -184,7 +211,7 @@ suite("known browsers at the web session boundary", () => {
     expect(await countrySeen(sql, { userId: id, country: "AT", now: new Date() })).toBe(false);
     expect(await rows(id)).toHaveLength(1);
     await login(id, cookie);
-    expect(await rows(id)).toMatchObject([{ first_seen_at: later, last_seen_at: later, notified_at: null }]);
+    expect(await rows(id)).toMatchObject([{ first_seen_at: later, last_seen_at: later, notified_at: expect.any(Date) }]);
   });
 
   test("the 101st browser and 51st country evict the oldest; concurrent sign-ins stay bounded", async () => {
@@ -220,7 +247,7 @@ suite("known browsers at the web session boundary", () => {
       VALUES ('00000000-0000-4000-8000-000000000101', ${id}::uuid, ${browserHash(id, cookie)}, 'other', 'other', ${now}, ${now})`;
     await sql.begin(async (tx) => {
       await tx`SELECT id FROM auth.users WHERE id = ${id}::uuid FOR UPDATE`;
-      await rememberSignIn(tx, { userId: id, cookie, browser: "other", os: "other", country: null, city: null, now });
+      await rememberSignIn(tx, { ...signIn, userId: id, cookie, browser: "other", os: "other", country: null, city: null, now });
     });
     expect((await rows(id)).some((row) => row.id === "00000000-0000-4000-8000-000000000001")).toBe(false);
     for (let index = 50; index >= 0; index--) await login(id, cookie, countryCode(index));
@@ -243,11 +270,11 @@ suite("known browsers at the web session boundary", () => {
         const id = await account();
         const input = { userId: id, cookie: newBrowserCookie(), browser: "other", os: "other", city: null, now: START } as const;
         await tx`SELECT id FROM auth.users WHERE id = ${id}::uuid FOR UPDATE`;
-        await rememberSignIn(tx, { ...input, country: null });
+        await rememberSignIn(tx, { ...signIn, ...input, country: null });
         expect((await trustState(tx, START)).geoipSince).toBeNull();
-        await rememberSignIn(tx, { ...input, country: "AT" });
+        await rememberSignIn(tx, { ...signIn, ...input, country: "AT" });
         expect((await trustState(tx, START)).geoipSince).toEqual(START);
-        await rememberSignIn(tx, { ...input, country: "CH", now: new Date(START.getTime() + DAY) });
+        await rememberSignIn(tx, { ...signIn, ...input, country: "CH", now: new Date(START.getTime() + DAY) });
         expect((await trustState(tx, START)).geoipSince).toEqual(START);
         throw new Error("rollback singleton fixture");
       })
@@ -280,7 +307,16 @@ suite("known browsers at the web session boundary", () => {
         issue(id, {
           ttlSeconds: 60,
           // Even an accidentally supplied option cannot turn mobile issuance into web tracking.
-          knownBrowser: { cookie: newBrowserCookie(), browser: "other", os: "other", country: "AT", city: "Wien" },
+          knownBrowser: {
+            method: "password",
+            device: null,
+            locale: null,
+            cookie: newBrowserCookie(),
+            browser: "other",
+            os: "other",
+            country: "AT",
+            city: "Wien",
+          },
         }),
       );
       return c.json({ token: issued.token });
@@ -303,7 +339,7 @@ suite("known browsers at the web session boundary", () => {
     await sql`INSERT INTO auth.sign_in_countries VALUES (${id}::uuid, 'AT', ${expired}), (${id}::uuid, 'CH', ${expired})`;
     await sql.begin(async (tx) => {
       await tx`SELECT id FROM auth.users WHERE id = ${id}::uuid FOR UPDATE`;
-      await rememberSignIn(tx, { userId: id, cookie, browser: "other", os: "other", country: "AT", city: null, now: START });
+      await rememberSignIn(tx, { ...signIn, userId: id, cookie, browser: "other", os: "other", country: "AT", city: null, now: START });
       const cleaning = cleanup(sql, { now: START });
       // fixed wait: an upper bound only; a cleanup that waits for this transaction's row locks never settles.
       const settled = await Promise.race([cleaning.then(() => true), Bun.sleep(3_000).then(() => false)]);
@@ -323,6 +359,7 @@ suite("known browsers at the web session boundary", () => {
         const expired = new Date(START.getTime() - 90 * DAY);
         await tx`SELECT id FROM auth.users WHERE id = ${id}::uuid FOR UPDATE`;
         await rememberSignIn(tx, {
+          ...signIn,
           userId: id,
           cookie: newBrowserCookie(),
           browser: "other",
@@ -351,5 +388,192 @@ suite("known browsers at the web session boundary", () => {
       .catch((error: unknown) => {
         if (!(error instanceof Error) || error.message !== "rollback cleanup fixture") throw error;
       });
+  });
+
+  test("introduction browsers are marked done and never announced later", async () => {
+    const id = await account();
+    await sql`UPDATE auth.device_trust_state SET started_at = ${START}`;
+    const notices: NewBrowserSignInNotice[] = [];
+    const notify: NewBrowserSignInNotifier = async (notice) => {
+      notices.push(notice);
+    };
+    await login(id, undefined, "AT", "Wien", notify);
+    expect(notices).toEqual([]);
+    expect(await rows(id)).toMatchObject([{ notified_at: START, notice: null }]);
+    setSystemTime(new Date(START.getTime() + 15 * DAY));
+    await maintainNotices(sql, notify);
+    expect(notices).toEqual([]);
+  });
+
+  test("one notice per new browser, including the same row after retention", async () => {
+    const id = await account();
+    const notices: NewBrowserSignInNotice[] = [];
+    const notify: NewBrowserSignInNotifier = async (notice) => {
+      notices.push(notice);
+    };
+    const cookie = responseCookie(await login(id, undefined, "AT", "Wien", notify))!;
+    expect(notices).toHaveLength(1);
+    const [row] = await rows(id);
+    expect(row).toMatchObject({ notified_at: expect.any(Date), notice: null });
+    setSystemTime(new Date(START.getTime() + DAY));
+    await login(id, cookie, "CH", "Zürich", notify);
+    expect(notices).toHaveLength(1);
+    setSystemTime(new Date(START.getTime() + 92 * DAY));
+    await login(id, cookie, "CH", "Zürich", notify);
+    expect(notices).toHaveLength(2);
+    expect(notices[1]!.browserId).toBe(notices[0]!.browserId);
+    expect(notices[1]!.signedInAt).not.toBe(notices[0]!.signedInAt);
+  });
+
+  test("failed handoff leaves the original snapshot for a single catch-up, without PII in the log", async () => {
+    const id = await account();
+    const warnings = spyOn(console, "warn").mockImplementation(() => {});
+    let original: NewBrowserSignInNotice | undefined;
+    let attempts = 0;
+    const fail: NewBrowserSignInNotifier = async (notice) => {
+      original ??= notice;
+      attempts++;
+      // A separate connection sees the family: this handoff runs after COMMIT.
+      expect(await sql`SELECT sid FROM auth.session_families WHERE user_id = ${id}::uuid`).toHaveLength(1);
+      throw new TypeError(`Secret ${id} Wien chrome`);
+    };
+    try {
+      const response = await login(id, undefined, "AT", "Wien", fail);
+      expect(response.status).toBe(200);
+      expect(warnings).toHaveBeenCalledWith("[known-browsers]", "New-browser notice failed", { error: "TypeError" });
+      expect(await rows(id)).toMatchObject([{ notified_at: null, notice: { city: "Wien", country: "AT" } }]);
+      setSystemTime(new Date(START.getTime() + DAY));
+      await login(id, responseCookie(response), "CH", "Zürich", fail);
+      expect(attempts).toBe(1);
+      expect(await rows(id)).toMatchObject([
+        { country: "CH", city: "Zürich", notified_at: null, notice: { country: "AT", city: "Wien", signedInAt: START.toISOString() } },
+      ]);
+      const received: NewBrowserSignInNotice[] = [];
+      const notify: NewBrowserSignInNotifier = async (notice) => {
+        received.push(notice);
+      };
+      await maintainNotices(sql, notify);
+      expect(received.filter((notice) => notice.userId === id)).toEqual([original!]);
+      expect(await rows(id)).toMatchObject([{ notified_at: expect.any(Date), notice: null }]);
+      await maintainNotices(sql, notify);
+      expect(received.filter((notice) => notice.userId === id)).toHaveLength(1);
+    } finally {
+      warnings.mockRestore();
+    }
+  });
+
+  test("catch-up is oldest first, bounded, skips invalid and expired snapshots, and continues after failure", async () => {
+    const id = await account();
+    // Isolate a global maintenance batch and roll it back. Its updates must use the supplied DB.
+    const rollback = "rollback notice batch";
+    try {
+      await sql.begin(async (tx) => {
+        await tx`DELETE FROM auth.known_browsers`;
+        const snapshot = {
+          browser: "chrome",
+          os: "macos",
+          country: "AT",
+          city: "Wien",
+          signedInAt: START.toISOString(),
+          method: "password",
+          device: null,
+          locale: "de",
+        };
+        const ids: string[] = [];
+        for (let index = 0; index < 5; index++) {
+          const browserId = crypto.randomUUID();
+          ids.push(browserId);
+          const at = new Date(START.getTime() - (5 - index) * 1000);
+          await tx`INSERT INTO auth.known_browsers (id, user_id, browser_hash, browser, os, first_seen_at, last_seen_at, notice)
+            VALUES (${browserId}::uuid, ${id}::uuid, ${browserHash(id, newBrowserCookie())}, 'chrome', 'macos', ${at}, ${START}, ${JSON.stringify(snapshot)}::text::jsonb)`;
+        }
+        const received: string[] = [];
+        const notify: NewBrowserSignInNotifier = async (notice) => {
+          received.push(notice.browserId);
+        };
+        expect(await maintainNotices(tx, notify, { batchSize: 3 })).toBe(3);
+        expect(received).toEqual(ids.slice(0, 3));
+        expect(await maintainNotices(tx, notify, { batchSize: 3 })).toBe(2);
+        expect(received).toEqual(ids);
+        await tx`UPDATE auth.known_browsers SET notified_at = NULL, notice = ${JSON.stringify(snapshot)}::text::jsonb`;
+        const failing: NewBrowserSignInNotifier = async (notice) => {
+          if (notice.browserId === ids[0]) throw new Error("retry");
+          received.push(notice.browserId);
+        };
+        expect(await maintainNotices(tx, failing, { batchSize: 3 })).toBe(2);
+        expect(await tx`SELECT id FROM auth.known_browsers WHERE id = ${ids[0]!}::uuid AND notified_at IS NULL`).toHaveLength(1);
+        await tx`UPDATE auth.known_browsers SET notice = '{"broken":true}'::jsonb WHERE id = ${ids[0]!}::uuid`;
+        await tx`UPDATE auth.known_browsers SET last_seen_at = ${new Date(START.getTime() - 91 * DAY)} WHERE id = ${ids[3]!}::uuid`;
+        expect(await maintainNotices(tx, notify, { batchSize: 3 })).toBe(1);
+        expect(
+          await tx`SELECT id FROM auth.known_browsers WHERE id = ${ids[0]!}::uuid AND notified_at IS NOT NULL AND notice IS NULL`,
+        ).toHaveLength(1);
+        await expect(maintainNotices(tx, notify, { signal: AbortSignal.abort() })).rejects.toThrow();
+        throw new Error(rollback);
+      });
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== rollback) throw error;
+    }
+  });
+
+  test("a committed first attempt keeps its notice when signing requires a replacement family", async () => {
+    const id = await account();
+    const signer = await keyRing.prepareIdentitySigner("session");
+    // Copy the prepared signer so the fixture cannot change the shared signer cache or real key.
+    const firstSigner = { ...signer };
+    const prepare = spyOn(keyRing, "prepareIdentitySigner").mockResolvedValue(signer).mockResolvedValueOnce(firstSigner);
+    const sign = sessionTokens.signSessionToken;
+    const signing = spyOn(sessionTokens, "signSessionToken").mockImplementationOnce(async (...args) => {
+      const signed = await sign(...args);
+      // Reproduce the inactive-signer check after the first transaction committed.
+      firstSigner.kid = "known-browser-revoked-after-commit-fixture";
+      setSystemTime(new Date(START.getTime() + 1000));
+      return signed;
+    });
+    const received: NewBrowserSignInNotice[] = [];
+    try {
+      await login(id, undefined, "AT", "Wien", async (notice) => {
+        received.push(notice);
+      });
+      expect(prepare).toHaveBeenCalledTimes(2);
+      expect(received).toHaveLength(1);
+      expect(received[0]!.signedInAt).toBe(START.toISOString());
+      expect(await sql`SELECT sid FROM auth.session_families WHERE user_id = ${id}::uuid`).toHaveLength(2);
+      expect(await rows(id)).toMatchObject([{ notified_at: expect.any(Date), notice: null }]);
+    } finally {
+      signing.mockRestore();
+      prepare.mockRestore();
+    }
+  });
+
+  test("snapshot bounds device bytes and locale length, and stores no identity or name", async () => {
+    const id = await account();
+    const rollback = "rollback bounded snapshot";
+    try {
+      await sql.begin(async (tx) => {
+        await tx`SELECT id FROM auth.users WHERE id = ${id}::uuid FOR UPDATE`;
+        const notice = await rememberSignIn(tx, {
+          ...signIn,
+          userId: id,
+          firstName: "Jana",
+          cookie: newBrowserCookie(),
+          browser: "chrome",
+          os: "macos",
+          country: "AT",
+          city: "Wien",
+          now: START,
+          method: "cloud_login",
+          device: "界😀".repeat(40),
+          locale: "x".repeat(36),
+        });
+        expect(notice).toMatchObject({ userId: id, firstName: "Jana", method: "cloud_login", locale: null });
+        expect(Buffer.byteLength(notice!.device!)).toBeLessThanOrEqual(80);
+        const [row] = await tx<{ notice: Record<string, unknown> }[]>`SELECT notice FROM auth.known_browsers WHERE user_id = ${id}::uuid`;
+        expect(Object.keys(row!.notice).sort()).toEqual(["browser", "city", "country", "device", "locale", "method", "os", "signedInAt"]);
+        throw new Error(rollback);
+      });
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== rollback) throw error;
+    }
   });
 });

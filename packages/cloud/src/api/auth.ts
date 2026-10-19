@@ -76,7 +76,10 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         }
 
         // Issue through the configured migration gate (legacy opaque or JWT family).
-        const sessionToken = await auth.session.create(c, loginResult.userId);
+        const sessionToken = await auth.session.create(c, loginResult.userId, {
+          method: "password",
+          notify: notificationSender.sendNewBrowserSignIn,
+        });
 
         log.info("Login successful", { uid: loginResult.user.uid });
         return c.json({
@@ -119,7 +122,10 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
           return c.json({ message: result.error.message, code: result.error.code }, status as 400 | 401 | 403 | 404 | 409 | 500);
         }
 
-        const sessionToken = await auth.session.create(c, result.data.user.id);
+        const sessionToken = await auth.session.create(c, result.data.user.id, {
+          method: "passkey",
+          notify: notificationSender.sendNewBrowserSignIn,
+        });
         log.info("Passkey login successful", { uid: result.data.user.uid });
         return c.json({ session_token: sessionToken, user: result.data.user });
       },
@@ -177,7 +183,10 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
           return jsonError(c, changeResult.message, changeResult.status === 401 ? 401 : 400);
         }
 
-        const sessionToken = await auth.session.create(c, changeResult.userId);
+        const sessionToken = await auth.session.create(c, changeResult.userId, {
+          method: "expired_password",
+          notify: notificationSender.sendNewBrowserSignIn,
+        });
 
         log.info("Password changed via expired flow", { uid: username });
         return c.json({ session_token: sessionToken, user: changeResult.user });
@@ -228,7 +237,10 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         }
 
         // Create session (no IPA session for email-only users)
-        const sessionToken = await auth.session.create(c, verifyResult.userId);
+        const sessionToken = await auth.session.create(c, verifyResult.userId, {
+          method: "email_code",
+          notify: notificationSender.sendNewBrowserSignIn,
+        });
 
         if (verifyResult.createdGuest) {
           log.info("Guest user created", {
@@ -288,7 +300,10 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
           return jsonError(c, result.message, status);
         }
 
-        const sessionToken = await auth.session.create(c, result.userId);
+        const sessionToken = await auth.session.create(c, result.userId, {
+          method: "password_reset",
+          notify: notificationSender.sendNewBrowserSignIn,
+        });
         log.info("Password reset completed", { uid: result.user.uid });
         return c.json({ user: result.user, session_token: sessionToken });
       },
@@ -359,7 +374,10 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         const user = await accounts.users.get({ uid: "admin" });
         if (!user) return jsonError(c, "Failed to resolve admin user.", 500);
 
-        const sessionToken = await auth.session.create(c, user.id);
+        const sessionToken = await auth.session.create(c, user.id, {
+          method: "admin_token",
+          notify: notificationSender.sendNewBrowserSignIn,
+        });
         log.info("Admin login successful");
         return c.json({ session_token: sessionToken, user });
       },

@@ -39,6 +39,7 @@ const sender: AuthNotificationSender = {
     ipaHints.push(email);
     return { id: "test", status: "suppressed" };
   },
+  sendNewBrowserSignIn: async () => {},
   sendPasswordReset: async () => ({ id: "test", status: "suppressed" }),
 };
 

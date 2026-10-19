@@ -51,4 +51,40 @@ suite("Core device-trust migration", () => {
         if (!(error instanceof Error) || error.message !== "rollback missing state") throw error;
       });
   });
+
+  test("adds the notice column once, marks old rows announced, and bounds JSONB to 1024 bytes", async () => {
+    await migrate();
+    // Model the schema shipped before the notice, in this file's fresh database only.
+    await sql`ALTER TABLE auth.known_browsers DROP COLUMN notice`.simple();
+    const id = crypto.randomUUID();
+    const firstSeen = new Date("2026-10-16T07:14:00.000Z");
+    setSystemTime(firstSeen);
+    await sql`INSERT INTO auth.users (id) VALUES (${id}::uuid)`;
+    await sql`INSERT INTO auth.known_browsers (user_id, browser_hash, browser, os, first_seen_at, last_seen_at)
+      VALUES (${id}::uuid, ${Buffer.alloc(32, 1)}, 'chrome', 'macos', ${firstSeen}, ${firstSeen})`;
+    await migrate();
+    expect(
+      await sql<
+        { notified_at: Date | null; notice: unknown }[]
+      >`SELECT notified_at, notice FROM auth.known_browsers WHERE user_id = ${id}::uuid`,
+    ).toEqual([{ notified_at: firstSeen, notice: null }]);
+    const snapshot = { signedInAt: firstSeen.toISOString() };
+    await sql`INSERT INTO auth.known_browsers (user_id, browser_hash, browser, os, first_seen_at, last_seen_at, notice)
+      VALUES (${id}::uuid, ${Buffer.alloc(32, 2)}, 'chrome', 'macos', ${firstSeen}, ${firstSeen}, ${JSON.stringify(snapshot)}::text::jsonb)`;
+    const before = await sql`SELECT id, notified_at, notice FROM auth.known_browsers WHERE user_id = ${id}::uuid ORDER BY browser_hash`;
+    await migrate();
+    expect(await sql`SELECT id, notified_at, notice FROM auth.known_browsers WHERE user_id = ${id}::uuid ORDER BY browser_hash`).toEqual(
+      before,
+    );
+    expect(before[1]).toMatchObject({ notified_at: null, notice: snapshot });
+    // A Bun SQL query runs once awaited; `expect().rejects` alone would never start it.
+    await expect(
+      (async () =>
+        await sql`UPDATE auth.known_browsers SET notice = ${JSON.stringify({ value: "界".repeat(400) })}::text::jsonb WHERE user_id = ${id}::uuid`)(),
+    ).rejects.toThrow();
+    expect(await sql`SELECT indexname FROM pg_indexes WHERE schemaname = 'auth' AND indexname = 'known_browsers_unnotified'`).toHaveLength(
+      1,
+    );
+    await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
+  });
 });

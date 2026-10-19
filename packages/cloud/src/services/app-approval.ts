@@ -886,7 +886,7 @@ export const createAppApprovalService = (
         await record(tx, "login.consume", user.id, device.id, { requestId: id });
         // This commit is the authorization boundary. A later issuance/network
         // failure requires a new login, never replay of the consumed approval.
-        return user.id;
+        return { userId: user.id, deviceName: device.name };
       });
     },
   };

@@ -1,14 +1,57 @@
-import type { SQL } from "bun";
+import { type SQL, sql } from "bun";
 import type { Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
+import { z } from "zod";
+import { APP_LOGIN_CONTEXT_BROWSERS, APP_LOGIN_CONTEXT_OSES } from "../contracts/app-approval";
 import { env } from "../config/env";
 import { type BrowserCode, type OsCode, truncateUtf8 } from "../server/request-context";
+import { logger } from "./logging";
+
+export const SIGN_IN_METHODS = [
+  "password",
+  "passkey",
+  "email_code",
+  "cloud_login",
+  "password_reset",
+  "expired_password",
+  "admin_token",
+] as const;
+export type SignInMethod = (typeof SIGN_IN_METHODS)[number];
+export type NewBrowserSignInNotice = {
+  browserId: string;
+  userId: string;
+  firstName: string | null;
+  browser: BrowserCode;
+  os: OsCode;
+  country: string | null;
+  city: string | null;
+  signedInAt: string;
+  method: SignInMethod;
+  device: string | null;
+  locale: string | null;
+};
+export type NewBrowserSignInNotifier = (notice: NewBrowserSignInNotice) => Promise<unknown>;
+const log = logger("known-browsers");
+const noticeSnapshot = z.object({
+  browser: z.enum(APP_LOGIN_CONTEXT_BROWSERS),
+  os: z.enum(APP_LOGIN_CONTEXT_OSES),
+  country: z
+    .string()
+    .regex(/^[A-Z]{2}$/)
+    .nullable(),
+  city: z.string().max(96).nullable(),
+  signedInAt: z.string().datetime(),
+  method: z.enum(SIGN_IN_METHODS),
+  device: z.string().min(1).max(80).nullable(),
+  locale: z.string().min(1).max(35).nullable(),
+});
 
 export const KNOWN_BROWSER_LIMITS = {
   retentionDays: 90,
   browsersPerAccount: 100,
   countriesPerAccount: 50,
   introDays: 14,
+  noticeBatch: 100,
   cleanupBatch: 1000,
   cleanupBatchesPerRun: 10,
 } as const;
@@ -40,6 +83,10 @@ export const browserHash = (userId: string, cookie: string): Buffer =>
 type SignIn = {
   userId: string;
   cookie: string;
+  firstName: string | null;
+  method: SignInMethod;
+  device: string | null;
+  locale: string | null;
   browser: BrowserCode;
   os: OsCode;
   country: string | null;
@@ -48,12 +95,12 @@ type SignIn = {
 };
 
 /** Caller holds the existing session issuance lock on this account's auth.users row. */
-export const rememberSignIn = async (tx: SQL, input: SignIn): Promise<void> => {
+export const rememberSignIn = async (tx: SQL, input: SignIn): Promise<NewBrowserSignInNotice | null> => {
   const { userId, cookie, browser, os, now } = input;
   const country = input.country?.length === 2 && /^[A-Z]{2}$/.test(input.country) ? input.country : null;
   const city = input.city === null ? null : truncateUtf8(input.city, 96);
   const cutoff = cutoffAt(now);
-  await tx`
+  const [row] = await tx<{ id: string; first_seen_at: Date }[]>`
     INSERT INTO auth.known_browsers (user_id, browser_hash, browser, os, country, city, first_seen_at, last_seen_at)
     VALUES (${userId}::uuid, ${browserHash(userId, cookie)}, ${browser}, ${os}, ${country}, ${city}, ${now}, ${now})
     ON CONFLICT (user_id, browser_hash) DO UPDATE SET
@@ -61,6 +108,7 @@ export const rememberSignIn = async (tx: SQL, input: SignIn): Promise<void> => {
       last_seen_at = EXCLUDED.last_seen_at,
       first_seen_at = CASE WHEN known_browsers.last_seen_at <= ${cutoff} THEN EXCLUDED.first_seen_at ELSE known_browsers.first_seen_at END,
       notified_at = CASE WHEN known_browsers.last_seen_at <= ${cutoff} THEN NULL ELSE known_browsers.notified_at END
+    RETURNING id, first_seen_at
   `;
   await tx`
     DELETE FROM auth.known_browsers WHERE user_id = ${userId}::uuid AND (
@@ -85,6 +133,72 @@ export const rememberSignIn = async (tx: SQL, input: SignIn): Promise<void> => {
     `;
     await tx`UPDATE auth.device_trust_state SET geoip_since = ${now} WHERE id = true AND geoip_since IS NULL`;
   }
+  if (!row || row.first_seen_at.getTime() !== now.getTime()) return null;
+  if ((await trustState(tx, now)).introActive) {
+    await tx`UPDATE auth.known_browsers SET notified_at = ${now}, notice = NULL WHERE id = ${row.id}::uuid`;
+    return null;
+  }
+  const snapshot = {
+    browser,
+    os,
+    country,
+    city,
+    signedInAt: now.toISOString(),
+    method: input.method,
+    device: input.method === "cloud_login" && input.device ? truncateUtf8(input.device, 80) : null,
+    locale: input.locale && input.locale.length <= 35 ? input.locale : null,
+  };
+  await tx`UPDATE auth.known_browsers SET notified_at = NULL, notice = ${JSON.stringify(snapshot)}::text::jsonb WHERE id = ${row.id}::uuid`;
+  return { ...snapshot, browserId: row.id, userId, firstName: input.firstName };
+};
+
+/** A failed handoff stays pending. Only the error class enters logs. */
+export const announceNewBrowser = async (
+  notify: NewBrowserSignInNotifier,
+  notice: NewBrowserSignInNotice,
+  db: SQL = sql,
+): Promise<boolean> => {
+  try {
+    await notify(notice);
+    await db`UPDATE auth.known_browsers SET notified_at = now(), notice = NULL WHERE id = ${notice.browserId}::uuid AND notified_at IS NULL`;
+    return true;
+  } catch (error) {
+    log.warn("New-browser notice failed", { error: error instanceof Error ? error.name : "UnknownError" });
+    return false;
+  }
+};
+
+export const maintainNotices = async (
+  db: SQL,
+  notify: NewBrowserSignInNotifier,
+  { signal, batchSize = KNOWN_BROWSER_LIMITS.noticeBatch }: { signal?: AbortSignal; batchSize?: number } = {},
+): Promise<number> => {
+  if (!Number.isSafeInteger(batchSize) || batchSize < 1) throw new Error("New-browser notices require a positive batch size");
+  signal?.throwIfAborted();
+  const rows = await db<{ id: string; user_id: string; notice: unknown; given_name: string | null }[]>`
+    SELECT kb.id, kb.user_id, kb.notice, u.given_name FROM auth.known_browsers kb JOIN auth.users u ON u.id = kb.user_id
+    WHERE kb.notified_at IS NULL AND kb.notice IS NOT NULL AND kb.last_seen_at > ${cutoffAt(new Date())}
+    ORDER BY kb.first_seen_at, kb.id LIMIT ${batchSize}
+  `;
+  let handedOver = 0;
+  for (const row of rows) {
+    signal?.throwIfAborted();
+    const parsed = noticeSnapshot.safeParse(row.notice);
+    if (!parsed.success) {
+      await db`UPDATE auth.known_browsers SET notified_at = now(), notice = NULL WHERE id = ${row.id}::uuid AND notified_at IS NULL`;
+      log.warn("Invalid new-browser notice discarded", { error: "InvalidSnapshot" });
+      continue;
+    }
+    if (
+      await announceNewBrowser(
+        notify,
+        { ...parsed.data, browserId: row.id, userId: row.user_id, firstName: row.given_name?.trim() || null },
+        db,
+      )
+    )
+      handedOver++;
+  }
+  return handedOver;
 };
 
 export const findBrowser = async (
@@ -181,4 +295,4 @@ export const cleanup = async (
 };
 
 /** Core-internal persistence and maintenance; no request surface. */
-export const knownBrowsers = { findBrowser, countrySeen, countryHistory, trustState, cleanup };
+export const knownBrowsers = { findBrowser, countrySeen, countryHistory, trustState, cleanup, maintainNotices };

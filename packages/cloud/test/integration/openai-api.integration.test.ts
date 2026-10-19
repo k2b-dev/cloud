@@ -92,6 +92,7 @@ suite("models-only API identity and inference boundaries", () => {
           sendMagicLink: unusedNotification,
           sendIpaLoginHint: unusedNotification,
           sendPasswordReset: unusedNotification,
+          sendNewBrowserSignIn: async () => {},
         },
       });
       const core = new Hono().route("/ai/openai/v1", createAiOpenAiRoutes()).route("/", api);
@@ -182,9 +183,12 @@ suite("models-only API identity and inference boundaries", () => {
         sendMagicLink: unusedNotification,
         sendIpaLoginHint: unusedNotification,
         sendPasswordReset: unusedNotification,
+        sendNewBrowserSignIn: async () => {},
       },
     });
-    const router = new Hono<AuthContext>().post("/issue", async (c) => c.json({ token: await session.create(c, id) })).route("/api", api);
+    const router = new Hono<AuthContext>()
+      .post("/issue", async (c) => c.json({ token: await session.create(c, id, { method: "password", notify: async () => {} }) }))
+      .route("/api", api);
     try {
       const sessionBody = z.object({ token: z.string() }).parse(await (await router.request("/issue", { method: "POST" })).json());
       await sql`UPDATE auth.session_families SET legal_pending=false WHERE user_id=${id}::uuid`;
