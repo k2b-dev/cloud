@@ -464,3 +464,12 @@ and context actions in the global palette. `@k2b/cloud/capabilities` exports
 `@k2b/cloud/contracts` also exports `isCommandPath` to check Cloud paths.
 Import it from `@k2b/cloud/contracts/command-path` to use the check without
 loading validators.
+
+## Panel page context
+
+Use `readPanelContext(c)` from `@k2b/cloud/ssr` for a provider's first server
+render. Browser code uses `getContext()` and `onContextChange()` from
+`@k2b/cloud/browser/panel`; host pages with in-document place changes use
+`publishPageContext()`. `PanelPageContext` and its strict schema are exported
+from `@k2b/cloud/contracts`. See [Panels](/en/docs/platform/panels#page-context)
+for consent, ordering, and the rule that refs never grant access.

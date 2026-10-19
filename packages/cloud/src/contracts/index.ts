@@ -9,6 +9,7 @@ export * from "./contact-directory";
 export * from "./file-provider";
 export * from "./notification-types";
 export * from "./outgoing-mail";
+export * from "./panel-context";
 export * from "./posix";
 export * from "./profile";
 export * from "./pwa";

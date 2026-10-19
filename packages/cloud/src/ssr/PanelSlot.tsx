@@ -1,5 +1,6 @@
-import { Button, IconButton, type KeyboardPlatform, Placeholder, ResizeSeparator, useLocale } from "@k2b/ui";
+import { Button, IconButton, type KeyboardPlatform, NoticeCard, Placeholder, ResizeSeparator, useLocale } from "@k2b/ui";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, type PanelCookieState } from "../_internal/panel-cookie";
+import { withPanelContext } from "../contracts/panel-context-plain";
 import { platformMessages } from "./platform-messages";
 import type { ShellData } from "./shell-data";
 
@@ -9,6 +10,10 @@ export default function PanelSlot(props: { panel: NonNullable<ShellData["panel"]
   const t = platformMessages.resolve([locale()]).t;
   const provider = props.panel.providers.find((provider) => provider.id === props.panel.provider) ?? props.panel.providers[0];
   if (!provider) return null;
+  const answer = props.panel.consent?.provider === provider.id ? props.panel.consent.allowed : null;
+  const ask = props.state.open && provider.consent && answer === null;
+  const allowed = !provider.consent || answer === true;
+  const hasConsent = props.panel.providers.some((provider) => provider.consent);
   const tabs = props.panel.providers.length > 1;
   return (
     <aside
@@ -18,6 +23,10 @@ export default function PanelSlot(props: { panel: NonNullable<ShellData["panel"]
       aria-label={t.panel}
       data-state={props.state.open ? "loading" : "closed"}
       data-provider={provider.id}
+      data-app-name={provider.appName}
+      data-provider-consent={String(provider.consent)}
+      data-context-allowed={String(allowed)}
+      data-consent={ask ? "ask" : undefined}
     >
       <ResizeSeparator
         class="cloud-panel__resize"
@@ -58,6 +67,19 @@ export default function PanelSlot(props: { panel: NonNullable<ShellData["panel"]
               <span>{provider.label}</span>
             </h2>
           )}
+          {/* The controller mounts the ⋯ menu over this button; the place stays reserved for Core providers. */}
+          {hasConsent && (
+            <span
+              class="cloud-panel__menu"
+              data-cloud-panel-menu=""
+              style={{ visibility: provider.consent ? "visible" : "hidden" }}
+              inert={!provider.consent}
+            >
+              <IconButton label={t.panelMenu} title={t.panelMenu} aria-haspopup="menu" aria-expanded="false">
+                <i class="ti ti-dots" aria-hidden="true" />
+              </IconButton>
+            </span>
+          )}
           <IconButton
             label={t.closePanel}
             title={`${t.closePanel} (${props.platform === "apple" ? "⌘J" : "Ctrl+J"})`}
@@ -67,6 +89,34 @@ export default function PanelSlot(props: { panel: NonNullable<ShellData["panel"]
           </IconButton>
         </div>
         <div class="cloud-panel__body" id="cloud-panel-body" role={tabs ? "tabpanel" : undefined}>
+          {hasConsent && (
+            // The shell asks, not the provider: the question sits above the provider page, which loads without context.
+            <NoticeCard
+              class="cloud-panel__consent"
+              tone="neutral"
+              data-cloud-panel-consent=""
+              role="region"
+              tabindex="-1"
+              aria-labelledby="cloud-panel-consent-title"
+              title={
+                <span id="cloud-panel-consent-title" data-cloud-panel-consent-title="">
+                  {t.panelConsentTitle({ app: provider.appName })}
+                </span>
+              }
+              detail={<span data-cloud-panel-consent-body="">{t.panelConsentBody({ app: provider.appName })}</span>}
+            >
+              <div class="cloud-panel__consent-actions">
+                <Button size="sm" variant="primary" data-cloud-panel-consent-answer="allow">
+                  {t.panelConsentAllow}
+                </Button>
+                <Button size="sm" variant="secondary" data-cloud-panel-consent-answer="deny">
+                  {t.panelConsentDeny}
+                </Button>
+              </div>
+              {/* A failed save reports in this reserved line, so the question never grows. */}
+              <p class="cloud-panel__consent-error" data-cloud-panel-consent-error="" role="status" />
+            </NoticeCard>
+          )}
           <div class="cloud-panel__skeleton" aria-hidden="true">
             <span />
             <span />
@@ -76,7 +126,7 @@ export default function PanelSlot(props: { panel: NonNullable<ShellData["panel"]
           {props.state.open && (
             <iframe
               class="cloud-panel__frame"
-              src={provider.href}
+              src={withPanelContext(provider.href, allowed ? props.panel.context : null)}
               title={provider.label}
               loading="lazy"
               data-cloud-panel-frame={provider.id}

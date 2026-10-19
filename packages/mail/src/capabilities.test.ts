@@ -9,6 +9,7 @@ import {
   capabilityResultSchema,
   cloudResourceHref,
 } from "@k2b/cloud/contracts";
+import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
 import { err, fail } from "@k2b/stdlib";
 import { mailCapabilities } from "./capabilities";
 import {
@@ -3225,4 +3226,12 @@ test("batch status reviews allow assigned writers, bound subjects and run with i
   ).toBeFalse();
   access.mockResolvedValue(fail(err.forbidden("Forbidden")));
   expect((await action.review({ mailboxId, conversationIds: [conversationId], status: "done" }, context)).ok).toBeFalse();
+});
+
+test("panel place refs select the owning app's public resource reader", () => {
+  const manifest = compileCapabilityManifest("mail", mailCapabilities);
+  const ref = { type: "mail.mailbox", id: mailboxId };
+  const reader = resolveCapabilityResourceReader(manifest, ref);
+  expect(reader?.localId).toBe("mailbox.read");
+  expect(mailCapabilities.queries["mailbox.read"].input.parse({ id: ref.id })).toEqual({ id: ref.id });
 });

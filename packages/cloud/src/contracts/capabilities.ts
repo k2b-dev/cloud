@@ -17,6 +17,7 @@ export const CAPABILITY_MAX_RESULT_BYTES = 256 * 1024;
 export const CAPABILITY_MAX_CATALOG_BYTES = 2 * 1024 * 1024;
 export const CAPABILITY_QUALIFIED_ID_MAX_LENGTH = 180;
 export const CLOUD_RESOURCE_ID_MAX_LENGTH = 512;
+export const CAPABILITY_APP_ID_MAX_LENGTH = 80;
 
 export const CAPABILITY_FRAMEWORK_ERROR_CODES = {
   appUnavailable: "APP_UNAVAILABLE",
@@ -549,7 +550,7 @@ export const CapabilityActionManifestSchema = CapabilityOperationManifestBaseSch
 export const CapabilityAppIdSchema = z
   .string()
   .min(1)
-  .max(80)
+  .max(CAPABILITY_APP_ID_MAX_LENGTH)
   .regex(/^[a-z][a-z0-9-]*$/);
 
 const MAX_MANIFEST_ENTRIES = 200;

@@ -1,5 +1,8 @@
 import { localeFallbackChain } from "./locale";
 
+/** Maximum number of page-specific Help articles shared with the panel. */
+export const HELP_VIEW_LIMIT = 3;
+
 export const HELP_KINDS = ["start", "task", "reference", "troubleshoot"] as const;
 export type HelpKind = (typeof HELP_KINDS)[number];
 /** The glossary's access levels; Help names only these, never app-specific permissions. */

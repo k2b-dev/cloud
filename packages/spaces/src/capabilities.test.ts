@@ -10,6 +10,7 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
+import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
 import { audit } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
 import { decodeSpacesCapabilityCursor, spacesCapabilities } from "./capabilities";
@@ -2475,4 +2476,12 @@ test("reaction actions enforce write permission, use actor identity and preserve
   const read = await spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext);
   expect(read).toMatchObject({ ok: true, data: { data: { reactions: [{ emoji: "👍", count: 1, own: true, people: [] }] } } });
   expect(get).toHaveBeenLastCalledWith({ id: itemUuid, viewer: { kind: "user", id: userId } });
+});
+
+test("panel place refs select the owning app's public resource reader", () => {
+  const manifest = compileCapabilityManifest("spaces", spacesCapabilities);
+  const ref = { type: "spaces.space", id: spaceId };
+  const reader = resolveCapabilityResourceReader(manifest, ref);
+  expect(reader?.localId).toBe("space.read");
+  expect(spacesCapabilities.queries["space.read"].input.parse({ id: ref.id })).toEqual({ id: ref.id });
 });

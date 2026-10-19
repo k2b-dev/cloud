@@ -48,8 +48,8 @@ and durable data.
   process alone does not prove route readiness.
 - Cloud authenticates and resolves access subjects. The application checks
   resource permissions in every service path: `actor` for identity and audit,
-  `accessSubject` for grants; UI visibility is not authorization. Grant
-  changes keep a manager (`ensureManagerRemains()`). Only a `resource_bound`
+  `accessSubject` for grants; UI visibility and page context refs are not
+  authorization. Grant changes keep a manager (`ensureManagerRemains()`). Only a `resource_bound`
   service account carries `appId`, `resourceType`, and `resourceId`;
   `standalone` and `agent` accounts hold their own grants, capped by scopes.
 - Send an interactive credential only to Core. Framework-owned cross-app calls

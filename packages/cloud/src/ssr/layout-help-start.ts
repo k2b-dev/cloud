@@ -1,10 +1,10 @@
-import type { HelpKind } from "../shared/help";
+import { HELP_VIEW_LIMIT, type HelpKind } from "../shared/help";
 import { SHELL_SHORTCUT_ORDER } from "./shell-shortcuts";
 
 /** The concept asks for at most eight tasks as tiles; more task articles follow as a list. */
 export const HELP_START_TILE_LIMIT = 8;
 /** "For this view" shows two or three articles the page names. */
-export const HELP_VIEW_LIMIT = 3;
+export { HELP_VIEW_LIMIT } from "../shared/help";
 export const HELP_START_GROUP_KINDS = ["start", "reference", "troubleshoot"] as const;
 export type HelpStartGroupKind = (typeof HELP_START_GROUP_KINDS)[number];
 export type HelpStartTopic = { id: string; title: string; order?: number; kind?: HelpKind };
