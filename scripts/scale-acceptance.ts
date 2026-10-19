@@ -148,6 +148,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
   let database: SQL | undefined;
   let shuttingDown = false;
   let cleanupPromise: Promise<void> | undefined;
+  let failure: unknown;
   const docker = async (args: string[], timeoutMs = 60_000, duringCleanup = false): Promise<string> => {
     check(!shuttingDown || duringCleanup, "Scale acceptance is shutting down");
     const child = Bun.spawn(["docker", ...args], { cwd: workspaceRoot, env: childEnv, stdout: "pipe", stderr: "pipe" });
@@ -227,7 +228,8 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
         try {
           await docker(["image", "rm", image], 60_000, true);
         } catch (error) {
-          errors.push(message(error));
+          // A build that failed before tagging left nothing to remove.
+          if (!message(error).includes("No such image")) errors.push(message(error));
         }
       }
       await rm(directory, { recursive: true, force: true });
@@ -705,7 +707,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
           contender: "same user, second session",
         });
       } finally {
-        await request("mail", a, `${draftPath}/lease`, token, "DELETE", { token: leaseToken });
+        await http(a.url, `${draftPath}/lease`, "DELETE", { token: leaseToken }, token);
       }
     });
     // Run last: the intentionally killed replica must not invalidate earlier scenario checks.
@@ -771,10 +773,15 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
     } catch (logsError) {
       console.error(`Cannot collect logs: ${message(logsError)}`);
     }
+    failure = error;
     throw error;
   } finally {
     try {
       await cleanup();
+    } catch (error) {
+      // Keep the original failure as the result; a cleanup problem is still reported.
+      if (failure === undefined) throw error;
+      console.error(message(error));
     } finally {
       for (const { signal, handler } of signalHandlers) process.removeListener(signal, handler);
     }

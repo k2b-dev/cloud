@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   assertBothReplicasServed,
   composeEnvironment,
@@ -30,11 +31,14 @@ describe("scale acceptance configuration", () => {
       expect(() => parseOptions(args)).toThrow();
   });
   test("help exits without a heavy slot or Docker", async () => {
-    const child = Bun.spawn([process.execPath, "--no-env-file", "scripts/scale-acceptance.ts", "--help"], {
-      env: { PATH: "", CLOUD_HEAVY_SLOTS: "invalid" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const child = Bun.spawn(
+      [process.execPath, "--no-env-file", fileURLToPath(new URL("./scale-acceptance.ts", import.meta.url)), "--help"],
+      {
+        env: { PATH: "", CLOUD_HEAVY_SLOTS: "invalid" },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [code, output, error] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
     expect({ code, error }).toEqual({ code: 0, error: "" });
     expect(output).toBe(HELP + "\n");
