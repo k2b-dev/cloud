@@ -140,7 +140,9 @@ Use `density="compact"` for dense operational tables. Headers are sticky unless 
 wrapping it in a second scrolling container.
 
 Use `surface="paper"` for a standalone bordered table and `surface="plain"`
-when a surrounding section owns the border. Set it explicitly whenever the
+when a surrounding section owns the border. Inside `AppWorkspace.Main` the
+table sits on Main's surface with `surface="plain"`; see
+[Paper](/en/ui/surfaces/paper). Set it explicitly whenever the
 table also has a custom `class`. The class sizes the outer table shell; the
 component keeps scrolling on its inner viewport. Bound a scrolling table with
 `height`, `max-height`, or a correctly sized `min-h-0 flex-1` region instead of
