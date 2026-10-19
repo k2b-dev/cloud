@@ -49,9 +49,9 @@ test("production adapters preserve one module URL through lazy imports", async (
       const prefix = (await (await createConfig().html(() => "")).text()).match(/const p="([^"]+)"/)[1];
       if (onlyPrefix) { console.log(prefix); process.exit(0); }
       const scanner = new Bun.Transpiler({ loader: "js" });
-      const runLoader = (output, ids) => {
+      const runLoader = async (output, ids) => {
         assert.ok(!output.includes('<link rel="modulepreload"'));
-        const loader = output.match(/<script type="module">([^<]+)<\\/script>/)[1];
+        const loader = output.match(/<script type="module"[^>]*>([^<]+)<\\/script>/)[1];
         assert.ok(loader.startsWith("const p="));
         const links = [];
         const entries = [];
@@ -67,6 +67,23 @@ test("production adapters preserve one module URL through lazy imports", async (
             return ids.map(id => ({ dataset: { id } }));
           },
         }, url => { entries.push(url); });
+        let assets;
+        let preload;
+        let loaders = 0;
+        await new HTMLRewriter().on('script[type="module"][data-ssr-assets]', {
+          element(element) {
+            loaders++;
+            assets = element.getAttribute("data-ssr-assets");
+            preload = element.getAttribute("data-ssr-preload");
+          },
+        }).transform(new Response(output)).text();
+        assert.equal(loaders, 1);
+        assert.ok(loader.startsWith("const p=" + JSON.stringify(assets) + ";"));
+        assert.deepEqual(preload === null ? [] : preload.split(" "), links.map(link => {
+          assert.ok(link.href.startsWith(assets + "/"));
+          return link.href.slice(assets.length + 1);
+        }));
+        if (links.length === 0) assert.equal(preload, null);
         return { loader, hrefs: links.map(link => link.href), entries };
       };
       for (const basePath of ["", "/docs"]) {
@@ -74,9 +91,9 @@ test("production adapters preserve one module URL through lazy imports", async (
         const empty = await (await html(() => "")).text();
         assert.ok(!empty.includes("modulepreload"));
         const assetPath = config.ssrPath + "/" + prefix.split("/").pop();
-        assert.equal(runLoader(empty, []).loader, 'const p=' + JSON.stringify(assetPath) + ";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));");
+        assert.equal((await runLoader(empty, [])).loader, 'const p=' + JSON.stringify(assetPath) + ";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));");
         const output = await (await html(() => ssr('<solid-island data-id="' + id + '" data-props="{}"></solid-island>'))).text();
-        const { hrefs, entries } = runLoader(output, [id]);
+        const { hrefs, entries } = await runLoader(output, [id]);
         assert.equal(entries.length, 1);
         const [entry] = entries;
         assert.match(entry, new RegExp("^" + config.ssrPath + "/[a-f0-9]{16}/" + id + "\\\\.js$"));
@@ -149,7 +166,7 @@ test("production adapters preserve one module URL through lazy imports", async (
             }
             const unionBody = '<solid-client data-id="' + clientId + '"></solid-client><solid-island data-id="' + id + '"></solid-island><solid-island data-id="' + id + '"></solid-island><solid-client data-id="000000000000"></solid-client>';
             const unionOutput = await (await html(() => ssr(unionBody))).text();
-            const { hrefs: unionHrefs, entries: unionEntries } = runLoader(unionOutput, [clientId, id, id, "000000000000"]);
+            const { hrefs: unionHrefs, entries: unionEntries } = await runLoader(unionOutput, [clientId, id, id, "000000000000"]);
             assert.deepEqual(unionEntries, [clientEntry, entry, entry, assetPath + "/000000000000.js"]);
             // Each manifest closure lists its entry first, then its shared files in filename order.
             const sharedPaths = paths => [...paths].filter(path => path !== entry && path !== clientEntry).sort();
@@ -256,6 +273,55 @@ test("production manifests are required, validated, and memoized only after a su
     );
     const child = Bun.spawn([process.execPath, runner], { stdout: "pipe", stderr: "pipe" });
     const [status, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    expect({ status, stderr }).toEqual({ status: 0, stderr: "" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("loader data exposes escaped asset paths and the ordered shared module set without a server", async () => {
+  const root = makeTempRoot(".ssr-loader-data-");
+  try {
+    const runner = join(root, "loader-data.ts");
+    writeFileSync(
+      runner,
+      `
+      import { strict as assert } from "node:assert";
+      import { mkdirSync, writeFileSync } from "node:fs";
+      import { ssr } from "solid-js/web";
+      import { createConfig } from ${JSON.stringify(resolve(import.meta.dir, "../../src/index.ts"))};
+      mkdirSync(import.meta.dir + "/_ssr");
+      const version = "0123456789abcdef";
+      writeFileSync(import.meta.dir + "/_ssr/manifest.json", JSON.stringify({
+        version, entries: {
+          "00000000000a": ["00000000000a.js", "chunk-a.js", "chunk-shared.js"],
+          "00000000000b": ["00000000000b.js", "chunk-b.js", "chunk-shared.js"],
+        },
+      }));
+      for (const dev of [false, true]) {
+        const { config, html } = createConfig({ dev, basePath: '/docs&"quoted' });
+        const assets = config.ssrPath + (dev ? "" : "/" + version);
+        for (const empty of [false, true]) {
+          const body = empty ? "" : '<solid-client data-id="00000000000b"></solid-client><solid-island data-id="00000000000a"></solid-island>';
+          const output = await (await html(() => ssr(body))).text();
+          const shared = dev || empty ? [] : ["chunk-b.js", "chunk-shared.js", "chunk-a.js"];
+          let loaders = 0;
+          await new HTMLRewriter().on('script[data-ssr-assets]', { element(element) {
+            loaders++;
+            assert.equal(element.getAttribute("type"), "module");
+            // HTMLRewriter preserves attribute entities; the browser decodes them.
+            assert.equal(element.getAttribute("data-ssr-assets"), Bun.escapeHTML(assets));
+            assert.equal(element.getAttribute("data-ssr-preload"), shared.length ? shared.join(" ") : null);
+          } }).transform(new Response(output)).text();
+          assert.equal(loaders, 1);
+          assert.ok(output.includes('data-ssr-assets="' + Bun.escapeHTML(assets) + '"'));
+          assert.ok(!output.includes('<link rel="modulepreload"'));
+        }
+      }
+    `,
+    );
+    const child = Bun.spawn([process.execPath, runner], { stdout: "pipe", stderr: "pipe" });
+    const [status, stderr] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()]);
     expect({ status, stderr }).toEqual({ status: 0, stderr: "" });
   } finally {
     rmSync(root, { recursive: true, force: true });

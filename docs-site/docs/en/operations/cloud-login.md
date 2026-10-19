@@ -176,7 +176,8 @@ phone with its own screen lock.
 
 Device credentials are encrypted in browser storage, but the key is stored
 alongside them. Copied browser data is a full credential. After suspected
-compromise, revoke the devices in each Cloud and pair again; removing a PIN
+compromise, revoke the devices in each Cloud and pair again. Without a usable
+paired device, an administrator revokes them. Removing a PIN
 or resetting the app does not secure copies an attacker already obtained.
 
 An existing install that still has a PIN starts with **Remove app PIN**.
@@ -188,8 +189,9 @@ with the existing retry delay of one to thirty seconds, including after reload.
 If you forgot the PIN, or the stored protection method is unsupported, use
 **Reset Cloud Login**. After confirmation, this removes local pairings and
 protection. It does not revoke devices or sessions in your Clouds. Sign in
-there another way, revoke the old devices and pair again. Nothing is deleted
-automatically.
+there another way, revoke the old devices and pair again. Their removal needs
+approval on another paired device; without one, ask an administrator to revoke
+them. Nothing is deleted automatically.
 
 ## Connect a Cloud
 

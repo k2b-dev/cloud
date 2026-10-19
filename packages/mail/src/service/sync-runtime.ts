@@ -2707,6 +2707,7 @@ export const hydrateMessageBatch = async (
                       messageId: source.key,
                       source: source.stream,
                       expectedSize: source.expectedSize,
+                      signal,
                       claimId,
                       transportFence,
                     });

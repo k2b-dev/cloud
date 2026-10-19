@@ -52,7 +52,7 @@ async function openSheet(options: {
   };
   const second: Login = { ...request, requestId: "second", createdAt: "2026-10-24T07:14:30.000Z" };
   const [inbox, setInbox] = createSignal<Record<string, InboxState>>({
-    fixture: { requests: options.queued ? [request, second] : [request], actions: [], moreActions: 0 },
+    fixture: { requests: options.queued ? [request, second] : [request], actions: [], moreActions: 0, changes: [], moreChanges: 0 },
   });
   const [now, setNow] = createSignal(Date.parse("2026-10-24T07:15:00.000Z"));
   const [online, setOnline] = createSignal(true);
@@ -76,6 +76,7 @@ async function openSheet(options: {
       throw new Error("No action in this test");
     },
     act: noop,
+    decideChange: noop,
     decide: async (_binding, decided, decision) => {
       decisions.push(decision);
       if (options.answer === "lost") throw new Error("The response was lost");
@@ -332,7 +333,9 @@ test("the sheet keeps the lines it opened with when a later poll changes the sam
     expect(opened).toContain("Same internet address as this phone");
     // The phone moved from Wi-Fi to mobile data: the next poll no longer finds the same address.
     const { sameNetwork: _gone, ...moved } = decisionStates.known;
-    sheet.setInbox({ fixture: { requests: [{ ...sheet.request, context: moved }], actions: [], moreActions: 0 } });
+    sheet.setInbox({
+      fixture: { requests: [{ ...sheet.request, context: moved }], actions: [], moreActions: 0, changes: [], moreChanges: 0 },
+    });
     await Bun.sleep(30);
     expect(document.querySelector("dialog[open]")).toBe(sheet.dialog);
     expect(sheet.lines()).toEqual(opened);
@@ -343,7 +346,13 @@ test("the sheet keeps the lines it opened with when a later poll changes the sam
   try {
     const opened = quiet.lines();
     quiet.setInbox({
-      fixture: { requests: [{ ...quiet.request, context: { ...decisionStates.first, sameNetwork: true } }], actions: [], moreActions: 0 },
+      fixture: {
+        requests: [{ ...quiet.request, context: { ...decisionStates.first, sameNetwork: true } }],
+        actions: [],
+        moreActions: 0,
+        changes: [],
+        moreChanges: 0,
+      },
     });
     await Bun.sleep(30);
     expect(quiet.lines()).toEqual(opened);
@@ -360,11 +369,11 @@ test("only a poll that answers without the request closes the sheet; a cleared o
     sheet.setInbox({});
     await Bun.sleep(20);
     expect(document.querySelector("dialog[open]")).toBe(sheet.dialog);
-    sheet.setInbox({ fixture: { requests: [], actions: [], moreActions: 0, error: "unavailable" } });
+    sheet.setInbox({ fixture: { requests: [], actions: [], moreActions: 0, changes: [], moreChanges: 0, error: "unavailable" } });
     await Bun.sleep(20);
     expect(document.querySelector("dialog[open]")).toBe(sheet.dialog);
     // Decided in another tab or on the Cloud: the next answered poll no longer lists it.
-    sheet.setInbox({ fixture: { requests: [], actions: [], moreActions: 0 } });
+    sheet.setInbox({ fixture: { requests: [], actions: [], moreActions: 0, changes: [], moreChanges: 0 } });
     await Bun.sleep(20);
     expect(document.querySelector("dialog[open]")).toBeNull();
   } finally {
@@ -375,7 +384,7 @@ test("only a poll that answers without the request closes the sheet; a cleared o
 test("a Cloud that refuses this phone closes the sheet; polling stops for it, so no answer would follow", async () => {
   const sheet = await openSheet({ locale: "en", context: decisionStates.known });
   try {
-    sheet.setInbox({ fixture: { requests: [], actions: [], moreActions: 0, error: "forbidden" } });
+    sheet.setInbox({ fixture: { requests: [], actions: [], moreActions: 0, changes: [], moreChanges: 0, error: "forbidden" } });
     await Bun.sleep(20);
     expect(document.querySelector("dialog[open]")).toBeNull();
   } finally {
@@ -548,6 +557,7 @@ test("no sheet opens while Cloud Login is still looking for requests; it opens w
       throw new Error("No action in this test");
     },
     act: noop,
+    decideChange: noop,
     decide: noop,
     revoke: noop,
     syncPush: noop,
@@ -574,7 +584,7 @@ test("no sheet opens while Cloud Login is still looking for requests; it opens w
       expiresAt,
       context: decisionStates.known,
     };
-    setInbox({ fixture: { requests: [request], actions: [], moreActions: 0 } });
+    setInbox({ fixture: { requests: [request], actions: [], moreActions: 0, changes: [], moreChanges: 0 } });
     await Bun.sleep(30);
     const dialog = document.querySelector<HTMLDialogElement>("dialog[open]")!;
     expect(dialog.querySelectorAll(".auth-decision__details[data-context] dd")).toHaveLength(6);

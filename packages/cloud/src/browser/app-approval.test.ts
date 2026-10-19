@@ -247,6 +247,129 @@ test("terminal consent requires both Cloud support and an explicit app opt-in", 
   }
 });
 
+test("device changes opt in only to advertised features and sign exactly the shown request", async () => {
+  const key = await appApproval.createKey();
+  const device = { issuer, deviceId: id, key };
+  const change = {
+    changeId: id,
+    kind: "revoke",
+    device: { id, name: "Phone" },
+    endSessions: true,
+    createdAt: new Date().toISOString(),
+    expiresAt: expiresAt(),
+  } as const;
+  for (const features of [undefined, ["actions"], ["actions", "device-changes"]]) {
+    const commands: import("../contracts/app-approval").AppDeviceProof["command"][] = [];
+    const client = await appApproval.connect({
+      issuer,
+      authenticatorOrigin,
+      fetch: async (url, init) => {
+        if (url.endsWith("/info")) return Response.json({ ...info, features });
+        const body = AppDeviceRequestSchema.parse(JSON.parse(String(init.body)));
+        await verify(key, appDeviceProofMessage(body.proof), body.signature);
+        commands.push(body.proof.command);
+        if (body.proof.command.operation === "inbox")
+          return Response.json({
+            logins: [],
+            actions: [],
+            moreActions: 0,
+            pollAfterSeconds: 5,
+            ...(body.proof.command.accept?.includes("device-changes") ? { changes: [change], moreChanges: 0 } : {}),
+          });
+        return Response.json({
+          state: body.proof.command.operation === "change" && body.proof.command.decision === "approve" ? "approved" : "denied",
+        });
+      },
+    });
+    expect(client.deviceChanges).toBe(features?.includes("device-changes") === true);
+    await client.inbox(device);
+    expect(JSON.stringify(commands[0])).toBe('{"operation":"inbox"}');
+    const inbox = await client.inbox(device, undefined, { accept: ["device-changes"] });
+    expect(commands[1]).toEqual(
+      features?.includes("device-changes") ? { operation: "inbox", accept: ["device-changes"] } : { operation: "inbox" },
+    );
+    expect("changes" in inbox).toBe(client.deviceChanges);
+    expect("moreChanges" in inbox).toBe(client.deviceChanges);
+    if ("moreChanges" in inbox) expect(inbox.moreChanges).toBe(0);
+    await client.decideChange(device, change, "approve");
+    expect(commands[2]).toEqual({
+      operation: "change",
+      changeId: id,
+      kind: "revoke",
+      targetId: id,
+      endSessions: true,
+      decision: "approve",
+    });
+    await client.decideChange(device, change, "deny");
+    const count = commands.length;
+    await expect(
+      client.decideChange(device, { ...change, expiresAt: new Date(Date.now() - 1_000).toISOString() }, "approve"),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    expect(commands).toHaveLength(count);
+  }
+});
+
+test("device changes require the opted-in inbox and matching decision response", async () => {
+  const key = await appApproval.createKey();
+  const device = { issuer, deviceId: id, key };
+  const client = await appApproval.connect({
+    issuer,
+    authenticatorOrigin,
+    fetch: async (url, init) => {
+      if (url.endsWith("/info")) return Response.json({ ...info, features: ["device-changes"] });
+      const { proof } = AppDeviceRequestSchema.parse(JSON.parse(String(init.body)));
+      return Response.json(
+        proof.command.operation === "inbox" ? { logins: [], actions: [], moreActions: 0, pollAfterSeconds: 5 } : { state: "denied" },
+      );
+    },
+  });
+  await expect(client.inbox(device, undefined, { accept: ["device-changes"] })).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+  await expect(
+    client.decideChange(
+      device,
+      {
+        changeId: id,
+        kind: "pair",
+        device: { id, name: "Phone" },
+        endSessions: false,
+        createdAt: new Date().toISOString(),
+        expiresAt: expiresAt(),
+      },
+      "approve",
+    ),
+  ).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+});
+
+test("device changes require both changes and moreChanges in the inbox", async () => {
+  const key = await appApproval.createKey();
+  const device = { issuer, deviceId: id, key };
+  for (const fields of [{ changes: [] }, { moreChanges: 0 }]) {
+    const client = await appApproval.connect({
+      issuer,
+      authenticatorOrigin,
+      fetch: async (url) =>
+        Response.json(
+          url.endsWith("/info")
+            ? { ...info, features: ["device-changes"] }
+            : { logins: [], actions: [], moreActions: 0, pollAfterSeconds: 5, ...fields },
+        ),
+    });
+    await expect(client.inbox(device, undefined, { accept: ["device-changes"] })).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+  }
+});
+
+test("pairing result reads let the server apply an extended approval deadline", async () => {
+  const key = await appApproval.createKey();
+  const client = await appApproval.connect({
+    issuer,
+    authenticatorOrigin,
+    fetch: async (url) => Response.json(url.endsWith("/info") ? info : { state: "claimed", deviceId: id, comparison: "123456" }),
+  });
+  const old = { ...payload(), expiresAt: new Date(Date.now() - 1_000).toISOString() };
+  expect((await client.pairingResult(old, key)).state).toBe("claimed");
+  await expect(client.claim(old, key, "Phone")).rejects.toMatchObject({ code: "INVALID_INPUT" });
+});
+
 test("context opt-in is signed only when advertised, for pending and inbox", async () => {
   const key = await appApproval.createKey();
   const device = { issuer, deviceId: id, key };

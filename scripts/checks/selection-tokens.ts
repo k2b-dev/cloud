@@ -4,7 +4,7 @@ import { packageIds } from "../workspace";
 import { isTestFile, listFiles } from "./files";
 import type { Finding, Rule, RuleContext } from "./rule";
 
-type Kind = "selection" | "accent-mix";
+type Kind = "selection" | "accent-mix" | "accent-raw";
 export type SelectionFinding = Finding & { file: string; line: number; kind: Kind; subject: string };
 export type SelectionAllowance = { file: string; subject: string; reason: string };
 
@@ -186,6 +186,21 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Data: field type color.",
   },
   {
+    file: "packages/gateway-ops/src/observability/notifications/page.tsx",
+    subject: '? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"',
+    reason: "Data: notification channel color; the chip shows the channel icon and name.",
+  },
+  {
+    file: "packages/oauth/src/frontend/page.tsx",
+    subject: '? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"',
+    reason: "Data: client type color; the chip names the type (public or confidential).",
+  },
+  {
+    file: "packages/tools/src/frontend/tools/WebhookTester.island.tsx",
+    subject: 'if (method === "GET") return "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300";',
+    reason: "Data: HTTP method color; the chip names the method.",
+  },
+  {
     file: "packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx",
     subject: 'isColumnTargetActive(key) ? "bg-[var(--ui-selected)]" : "hover:bg-[var(--ui-hover)]"',
     reason: "Control: drop target under a dragged card.",
@@ -204,6 +219,8 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
 
 const BASELINE = "scripts/checks/selection-tokens.baseline";
 const messages: Record<Kind, string> = {
+  "accent-raw":
+    "Use --ui-app-accent-text (or app-accent-text) for ink, the platform focus (--ui-focus, focus-ui, --k2b-focus-ring) for rings, and --ui-app-accent-border for an app-colored border",
   selection:
     "A selected navigation or object row uses the app fill --ui-app-selected-nav / --ui-app-selected (or the @k2b/ui primitive); an option or control state may keep the platform fill: add it to the allowlist in scripts/checks/selection-tokens.ts with a reason",
   "accent-mix":
@@ -283,6 +300,7 @@ export const checkSelectionSource = (file: string, original: string): SelectionF
   )) {
     report(match.index, "selection");
   }
+  const mixes: { start: number; end: number }[] = [];
   for (const match of source.matchAll(/\bcolor-mix\s*\(/g)) {
     let depth = 1;
     let end = match.index + match[0].length;
@@ -304,7 +322,24 @@ export const checkSelectionSource = (file: string, original: string): SelectionF
       if (char === "(") depth++;
       if (char === ")") depth--;
     }
+    mixes.push({ start: match.index, end });
     if (depth === 0 && /\bvar\(\s*--app-accent\s*(?=[,)])/.test(source.slice(match.index, end))) report(match.index, "accent-mix");
+  }
+  if (file !== "packages/cloud/src/styles/tokens.css") {
+    for (const declaration of declarations) {
+      const text = source.slice(declaration.start, declaration.end);
+      if (!/^\s*(?:color|outline|outline-color|border-color)\s*:/.test(text)) continue;
+      for (const match of text.matchAll(/\bvar\(\s*--app-accent\s*(?=[,)])/g)) {
+        const index = declaration.start + match.index;
+        if (!mixes.some(({ start, end }) => start <= index && index < end)) report(index, "accent-raw");
+      }
+    }
+    // Tailwind ink, ring and border utilities, in markup and in CSS `@apply`.
+    for (const match of source.matchAll(
+      /(?<![\w-])!?(?:text|outline|ring|border(?:-[xytrblse])?)-(?:\[var\(\s*--app-accent\s*(?=[,)])[^\]\r\n]*\]|\(--app-accent\))(?:\/(?:[\w.%-]+|\[[^\]\r\n]+\]))?!?(?![\w/-])/g,
+    )) {
+      report(match.index, "accent-raw");
+    }
   }
   return findings.sort((a, b) => a.line - b.line);
 };
@@ -341,7 +376,7 @@ export const applySelectionAllowlist = (findings: SelectionFinding[], allowances
 };
 
 const BASELINE_HEADER = [
-  "# Known selection-tokens findings: <file> | <selection|accent-mix> | <count>.",
+  "# Known selection-tokens findings: <file> | <selection|accent-mix|accent-raw> | <count>.",
   "# Migrations lower counts and remove entries; the rule never raises counts or adds lines.",
   "# `bun scripts/check.ts selection-tokens --fix` lowers counts whose findings are gone.",
 ];
@@ -354,7 +389,7 @@ const readBaseline = (path: string): Map<string, number> => {
   if (!existsSync(path)) return counts;
   for (const line of readFileSync(path, "utf8").split("\n")) {
     if (!line.trim() || line.startsWith("#")) continue;
-    const match = /^(.+) \| (selection|accent-mix) \| ([1-9]\d*)$/.exec(line);
+    const match = /^(.+) \| (selection|accent-mix|accent-raw) \| ([1-9]\d*)$/.exec(line);
     if (!match) throw new Error(`Invalid selection-tokens baseline entry: ${line}`);
     const key = `${match[1]} | ${match[2]}`;
     if (counts.has(key)) throw new Error(`Duplicate selection-tokens baseline entry: ${key}`);
@@ -403,6 +438,6 @@ export const runSelectionTokens = async (
 
 export const rule: Rule = {
   name: "selection-tokens",
-  description: "App rows use app selection tokens; controls and status keep platform colors",
+  description: "App rows use app selection tokens; ink, borders and focus use semantic colors",
   run: runSelectionTokens,
 };

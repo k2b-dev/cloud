@@ -1,6 +1,6 @@
 import { AppDevicesPageSchema, type AppDeviceView } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
-import { Button, Placeholder, prompts, SettingsSection, TextInput, toast, useLocale } from "@k2b/ui";
+import { Button, Placeholder, SettingsSection, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import ApprovalStatus from "./ApprovalStatus";
@@ -10,6 +10,10 @@ import ApprovalFeedback from "./Feedback";
 import InstallApp from "./InstallApp";
 import { appApprovalMessages } from "./messages";
 import Pairing from "./Pairing";
+import RevokeDevice, { findRemoval, type RevokeRequest, revokeStorageKey, SavedRevokeSchema } from "./RevokeDevice";
+
+// Mirrors the server's readable minute after a device change expires.
+const removalResultGraceMs = 60_000;
 
 export default function Devices(props: {
   initial: z.infer<typeof AppDevicesPageSchema> | null;
@@ -26,6 +30,51 @@ export default function Devices(props: {
   const [editing, setEditing] = createSignal<string>();
   const [name, setName] = createSignal("");
   const [pairingOpen, setPairingOpen] = createSignal(false);
+  const [revoking, setRevoking] = createSignal<{ device: Pick<AppDeviceView, "id" | "name">; resume?: RevokeRequest }>();
+  onMount(() => {
+    // A revocation that was still waiting for approval continues after a reload of this tab.
+    const userId = props.pairing?.userId;
+    if (userId && props.availability === "configured") {
+      try {
+        const raw = window.sessionStorage.getItem(revokeStorageKey(userId));
+        const saved = SavedRevokeSchema.safeParse(JSON.parse(raw || "null"));
+        const forget = () => window.sessionStorage.removeItem(revokeStorageKey(userId));
+        // A newer removal saves its own record meanwhile; a late lookup answer then leaves it alone.
+        const unchanged = () => {
+          try {
+            return window.sessionStorage.getItem(revokeStorageKey(userId)) === raw;
+          } catch {
+            return false;
+          }
+        };
+        if (!saved.success || Date.now() >= Date.parse(saved.data.expiresAt) + removalResultGraceMs) forget();
+        else {
+          const { changeId, ...unsure } = saved.data;
+          const resume = (request: RevokeRequest) => setRevoking({ device: { id: request.deviceId, name: request.name }, resume: request });
+          if (changeId) resume({ ...unsure, changeId });
+          // The answer to the last send was lost: open the dialog only if Cloud holds a request of this session. A send
+          // held up in Cloud may still commit after an empty lookup, so the record stays until it expires and the next
+          // reload looks again.
+          else {
+            // A failed lookup keeps the record, says so, and tries again once the connection is back.
+            const look = () =>
+              void findRemoval(unsure).then(
+                (found) => {
+                  if (!unchanged()) return;
+                  if (found) resume(found);
+                },
+                () => {
+                  if (!unchanged()) return;
+                  toast.error(t().revokeCheckFailed);
+                  window.addEventListener("online", look, { once: true });
+                },
+              );
+            look();
+          }
+        }
+      } catch {}
+    }
+  });
   onMount(() => {
     const url = new URL(window.location.href);
     const requestedUser = url.searchParams.get("pairDevice");
@@ -63,26 +112,14 @@ export default function Devices(props: {
       if (!disposed) setBusy(false);
     }
   };
-  const update = async (device: AppDeviceView, rename: boolean) => {
+  const rename = async (device: AppDeviceView) => {
     if (busy()) return;
     setBusy(true);
     setError(undefined);
     try {
-      if (
-        !rename &&
-        !(await prompts.confirm(t().revokeConfirm({ name: device.name }), {
-          title: t().revoke,
-          variant: "danger",
-          confirmText: t().revoke,
-        }))
-      )
-        return;
-      if (disposed) return;
       await checked(
         await approvalApi.manage.devices.update.$post(
-          {
-            json: rename ? { operation: "rename", deviceId: device.id, name: name().trim() } : { operation: "revoke", deviceId: device.id },
-          },
+          { json: { operation: "rename", deviceId: device.id, name: name().trim() } },
           approvalRequestOptions(),
         ),
       );
@@ -90,14 +127,7 @@ export default function Devices(props: {
       setEditing(undefined);
       setPage((previous) =>
         previous
-          ? {
-              ...previous,
-              items: previous.items.map((item) =>
-                item.id === device.id
-                  ? { ...item, ...(rename ? { name: name().trim() } : { revokedAt: item.revokedAt ?? new Date().toISOString() }) }
-                  : item,
-              ),
-            }
+          ? { ...previous, items: previous.items.map((item) => (item.id === device.id ? { ...item, name: name().trim() } : item)) }
           : previous,
       );
       toast.success(t().saved);
@@ -133,6 +163,23 @@ export default function Devices(props: {
               void load();
             }}
           />
+        )}
+      </Show>
+      <Show when={revoking()}>
+        {(current) => (
+          <Show when={props.pairing}>
+            {(pairing) => (
+              <RevokeDevice
+                userId={pairing().userId}
+                device={current().device}
+                resume={current().resume}
+                onClose={() => {
+                  setRevoking(undefined);
+                  void load();
+                }}
+              />
+            )}
+          </Show>
         )}
       </Show>
       <Show when={props.availability !== "configured"}>
@@ -184,9 +231,12 @@ export default function Devices(props: {
                           >
                             {t().rename}
                           </Button>
-                          <Button size="sm" variant="secondary" disabled={busy()} onClick={() => update(device, false)}>
-                            {t().revoke}
-                          </Button>
+                          {/* Revoking needs approval on a paired device, which only a configured Cloud can ask for. */}
+                          <Show when={props.pairing}>
+                            <Button size="sm" variant="secondary" disabled={busy()} onClick={() => setRevoking({ device })}>
+                              {t().revoke}
+                            </Button>
+                          </Show>
                         </div>
                       </Show>
                       <Show when={editing() === device.id}>
@@ -194,7 +244,7 @@ export default function Devices(props: {
                           class="flex w-full flex-wrap items-end gap-2"
                           onSubmit={(event) => {
                             event.preventDefault();
-                            void update(device, true);
+                            void rename(device);
                           }}
                         >
                           <TextInput label={t().name} value={name} onValueChange={setName} required maxLength={80} />

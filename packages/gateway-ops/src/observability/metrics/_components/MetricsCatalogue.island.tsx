@@ -119,10 +119,10 @@ export default function MetricsCatalogue(props: MetricsCatalogueProps) {
           cellContentClass="whitespace-normal"
           renderCell={({ row, col, value, render }) => {
             if (col.id === "source") {
-              return <span class="tag bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">{row.source}</span>;
+              return <span class="tag bg-[var(--ui-surface-muted)] text-secondary">{row.source}</span>;
             }
             if (col.id === "type") {
-              return <span class="tag bg-blue-50 font-mono text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">{row.type}</span>;
+              return <span class="tag bg-[var(--ui-surface-muted)] text-secondary font-mono">{row.type}</span>;
             }
             if (col.id === "series") return <span class="tabular-nums text-dimmed">{formatNumber(row.series, { locale: locale() })}</span>;
             if (col.id === "status") {
