@@ -552,9 +552,12 @@ export type CapabilityResult<T> = {
   presentation?: CapabilityTablePresentation;
 };
 
-export const capabilityResultSchema = <T extends z.ZodType>(
+// Published JSON schemas (Core's result check, each MCP tool's outputSchema) describe a receipt as an opaque object,
+// so they stay as small as before receipts existed; Core then checks it with the shared receipt rules. Zod readers
+// (the producer, stream results, consumers) keep the full receipt shape.
+const resultSchema = <T extends z.ZodType>(
   data: T,
-  options?: { consumer?: boolean },
+  options: { consumer?: boolean; opaqueReceipt: boolean },
 ): z.ZodType<CapabilityResult<z.output<T>>> =>
   z
     .object({
@@ -562,20 +565,24 @@ export const capabilityResultSchema = <T extends z.ZodType>(
       stream: CapabilityStreamSchema.optional(),
       summary: z.string().trim().min(1).max(500).optional(),
       refs: z
-        .array(options?.consumer ? LinkedCloudResourceReferenceSchema : CloudResourceReferenceSchema)
+        .array(options.consumer ? LinkedCloudResourceReferenceSchema : CloudResourceReferenceSchema)
         .max(100)
         .optional(),
       page: CapabilityPageSchema.optional(),
       links: z.array(CapabilitySemanticLinkSchema).max(20).optional(),
-      receipt: options?.consumer ? CapabilityActionReceiptSchema.optional().catch(undefined) : CapabilityActionReceiptSchema.optional(),
-      presentation: options?.consumer
+      receipt: options.opaqueReceipt
+        ? z.record(z.string(), z.unknown()).optional()
+        : options.consumer
+          ? CapabilityActionReceiptSchema.optional().catch(undefined)
+          : CapabilityActionReceiptSchema.optional(),
+      presentation: options.consumer
         ? CapabilityTablePresentationSchema.optional().catch(undefined)
         : CapabilityTablePresentationSchema.optional(),
     })
     .strict()
     .superRefine((result, context) => {
       if (
-        !options?.consumer &&
+        !options.consumer &&
         result.presentation &&
         !Array.isArray(capabilityDataAtPath(capabilityDataAtPath(result, ["data"]), result.presentation.rowsPath))
       ) {
@@ -587,14 +594,18 @@ export const capabilityResultSchema = <T extends z.ZodType>(
       }
     }) as unknown as z.ZodType<CapabilityResult<z.output<T>>>;
 
+export const capabilityResultSchema = <T extends z.ZodType>(
+  data: T,
+  options?: { consumer?: boolean },
+): z.ZodType<CapabilityResult<z.output<T>>> => resultSchema(data, { consumer: options?.consumer, opaqueReceipt: false });
+
 export const capabilityResultJsonSchema = (
   dataSchema: Record<string, unknown>,
   options?: { consumer?: boolean },
 ): Record<string, unknown> =>
-  z.toJSONSchema(capabilityResultSchema(z.fromJSONSchema(structuredClone(dataSchema)), options), { io: "output" }) as Record<
-    string,
-    unknown
-  >;
+  z.toJSONSchema(resultSchema(z.fromJSONSchema(structuredClone(dataSchema)), { consumer: options?.consumer, opaqueReceipt: true }), {
+    io: "output",
+  }) as Record<string, unknown>;
 
 export const CapabilityErrorSchema = z
   .object({
