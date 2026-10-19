@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { AiActionCheck } from "../action-review";
@@ -300,6 +300,7 @@ domTest("a turn stopped while it checked keeps the open outcome and its check", 
 });
 
 domTest("a live check whose claim went stale offers to check again", async () => {
+  setSystemTime(new Date("2026-10-17T12:10:00.000Z"));
   const { actionFixtures } = await import("./action-question.fixtures");
   const mail = actionFixtures("en").mail!.block;
   const view = await mountTurn(
@@ -309,14 +310,39 @@ domTest("a live check whose claim went stale offers to check again", async () =>
         approval: undefined,
         approved: true,
         status: "running",
-        check: { state: "checking", at: new Date(Date.now() - 120_000).toISOString() },
+        // Two minutes old against the pinned clock: past the stale limit.
+        check: { state: "checking", at: "2026-10-17T12:08:00.000Z" },
       },
     ],
-    { phase: "running", check: async () => ({ state: "done", at: new Date().toISOString() }) },
+    { phase: "running", check: async () => ({ state: "done", at: "2026-10-17T12:10:30.000Z" }) },
   );
   try {
     expect(view.line()).toContain("Not known yet whether this happened");
     expect(view.button("Check again")).toBeDefined();
+  } finally {
+    view.cleanup();
+    setSystemTime();
+  }
+});
+
+domTest("an answer given here stays this window's answer when the block returns to its parent call", async () => {
+  const child: Extract<AiTurnBlock, { kind: "tool" }> = {
+    ...runCode,
+    callId: "run-approval-0",
+    approval: { message: "Step 0", allowAlways: false },
+  };
+  const view = await mountTurn([child]);
+  try {
+    view.button("Run code").click();
+    await settle();
+    // A reconnect snapshot replaces the approval request with the code run it belongs to.
+    view.setBlocks([{ ...runCode, callId: "run", status: "running", approved: true, approval: undefined }]);
+    view.setPhase("running");
+    await settle();
+    view.setBlocks([{ ...runCode, callId: "run", status: "completed", approved: true, approval: undefined, result: { status: "ok" } }]);
+    await settle();
+    expect(view.line()).toBe("Ran code");
+    expect(view.place().textContent).not.toContain("another window");
   } finally {
     view.cleanup();
   }

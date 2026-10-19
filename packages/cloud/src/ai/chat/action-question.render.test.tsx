@@ -307,6 +307,8 @@ describe("older reviews", () => {
       expect(html).toContain('<time datetime="2026-10-20T06:00:00.000Z">');
       expect(html).toMatch(/<h2[^>]*>(Hallo|Hi) Lea<\/h2>/);
       expect(html).toContain("<strong>");
+      // Each Markdown detail keeps its label above its own text.
+      expect(html).toContain("<strong>Text</strong>");
       expect(visible).toContain(
         locale === "de" ? "Ich frage, weil Mail hier jedes Mal fragt." : "I'm asking because Mail always asks for this.",
       );

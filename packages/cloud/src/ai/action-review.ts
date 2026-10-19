@@ -39,10 +39,10 @@ export const isLegacyActionReview = (review: AiStoredActionReview): review is Ai
 /** The old review shape as stored literal text. */
 export const legacyActionReview = (review: CapabilityActionReview): AiLegacyActionReview => {
   const details = review.details ?? [];
+  // One Markdown block, each detail under its own label, so a reader keeps knowing which text belongs where.
   const markdown = details
-    .filter((detail) => detail.format === "markdown")
-    .map((detail) => detail.value)
-    .filter((value) => value.trim())
+    .filter((detail) => detail.format === "markdown" && detail.value.trim())
+    .map((detail) => `**${detail.label.replace(/([\\*_`[\]])/g, "\\$1")}**\n\n${detail.value}`)
     .join("\n\n");
   return {
     legacy: {

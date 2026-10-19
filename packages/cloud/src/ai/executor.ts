@@ -1392,6 +1392,7 @@ export class AiTurnExecutor {
                     });
                     const resources = collectConversationResourceObservations(args, result);
                     if (resources.length) {
+                      // Bookkeeping after a call that ran never turns its outcome into a failure: the effect happened.
                       await Promise.all([
                         indexConversationResources({ conversationId, turnId, callId: context.callId, resources }),
                         recordMemoryWorkflowEvidence({
@@ -1401,7 +1402,14 @@ export class AiTurnExecutor {
                           capabilityId: entry.name,
                           resources,
                         }),
-                      ]);
+                      ]).catch((error: unknown) =>
+                        log.warn("AI capability bookkeeping failed after the call ran", {
+                          code: "capability_bookkeeping_failed",
+                          turnId,
+                          callId: context.callId,
+                          error: error instanceof Error ? error.message : String(error),
+                        }),
+                      );
                     }
                     return result;
                   } catch (error) {

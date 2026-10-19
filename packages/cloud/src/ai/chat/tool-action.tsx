@@ -85,6 +85,7 @@ type Flow =
   | { flow: "expired" }
   | { flow: "stopped" }
   | { flow: "error" }
+  | { flow: "failed" }
   | { flow: "lost" }
   | { flow: "check"; current: "checking" | "checkedDone" | "checkedNotDone" | "pending" | "checkFailed" | "noCheck" };
 
@@ -122,7 +123,8 @@ const flowOf = (input: {
     if (code && UNKNOWN_CODES.has(code)) {
       return { flow: "check", current: "noCheck" };
     }
-    return { flow: "error" };
+    // A failure with an app's code was refused before anything happened; one without a code proves nothing.
+    return code ? { flow: "error" } : { flow: "failed" };
   }
   if (input.state === "done") return { flow: "run", current: "done" };
   return { flow: "run", current: "running" };
@@ -159,6 +161,8 @@ export function ToolActionView(props: {
       (callId) => {
         if (callId === answeredCall) return;
         answeredCall = callId;
+        // Only a new question starts fresh; the block returning to its parent call after this answer keeps it.
+        if (props.block.status !== "awaiting_approval") return;
         setAnswer(null);
         setLost(false);
         setElsewhere(false);
@@ -307,6 +311,15 @@ export function ToolActionView(props: {
           error: {
             tone: "error",
             text: c.forms.notRun,
+            detail: errorDetail(props.block.result) || aiChatMessages(c.locale).actionNotCompleted,
+            time: time(),
+          },
+        };
+      case "failed":
+        return {
+          failed: {
+            tone: "error",
+            text: [{ kind: "text", text: aiChatMessages(c.locale).receiptFailed({ title: c.short }) }],
             detail: errorDetail(props.block.result) || aiChatMessages(c.locale).actionNotCompleted,
             time: time(),
           },

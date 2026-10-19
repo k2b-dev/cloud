@@ -966,7 +966,9 @@ describe("capability tool presentation", () => {
     if (failed.kind !== "tool") throw new Error("tool block missing");
     failed.result = {};
     const failedHtml = render(failed, "de");
-    expect(failedHtml).toContain("Nicht ausgeführt: Mail-Entwurf erstellen");
+    // A failure without an app's code proves nothing about the effect: it reads as failed, never as not run.
+    expect(failedHtml).toContain("Fehlgeschlagen: Mail-Entwurf erstellen");
+    expect(failedHtml).not.toContain("Nicht ausgeführt");
     expect(failedHtml).toContain("Die Aktion konnte nicht abgeschlossen werden.");
     expect(failedHtml).toContain('data-tone="error"');
 
