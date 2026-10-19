@@ -172,6 +172,7 @@ export const installBaseline = async (sql: TransactionSQL): Promise<void> => {
     max_series BIGINT NOT NULL CHECK (max_series > 0),
     max_event_kinds BIGINT NOT NULL CHECK (max_event_kinds > 0),
     max_state_keys BIGINT NOT NULL CHECK (max_state_keys > 0),
+    reset_generation BIGINT NOT NULL DEFAULT 0,
     sealed_before TIMESTAMPTZ,
     usage_bytes BIGINT, usage_rows BIGINT, usage_measured_at TIMESTAMPTZ, storage_exceeded_at TIMESTAMPTZ,
     last_error TEXT CHECK (last_error ~ '^[A-Z0-9_:]{1,64}$'), last_error_at TIMESTAMPTZ,

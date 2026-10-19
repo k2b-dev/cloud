@@ -47,6 +47,22 @@ export const createRetention =
     const bases = await database<{ id: string }[]>`SELECT b.id FROM pulse.bases b JOIN pulse.base_stores s ON s.base_id=b.id
       WHERE s.state='active' AND s.write_block_reason IS NULL AND (${baseId ?? null}::uuid IS NULL OR b.id=${baseId ?? null}::uuid) AND (${after}::uuid IS NULL OR b.id>${after}::uuid) ORDER BY b.id LIMIT 1`;
     for (const base of bases) {
+      // Commit retirement intent before any external tombstone. If the later SQL
+      // transaction rolls back, surviving identities must be mirrored on their next write.
+      const retiring = await database.begin(async (tx) => {
+        await tx`SET LOCAL statement_timeout='30s'`.simple();
+        await tx`SET LOCAL lock_timeout='30s'`.simple();
+        await tx`SELECT id FROM pulse.bases WHERE id=${base.id}::uuid FOR UPDATE`;
+        const active = await requireBaseWritable(base.id, tx);
+        if (!active.ok) return [];
+        return tx<{ id: string }[]>`WITH victims AS (
+          SELECT s.id FROM pulse.metric_series s JOIN pulse.bases b ON b.id=s.base_id
+          WHERE s.base_id=${base.id}::uuid
+            AND coalesce(s.last_seen_at,s.created_at)<${now}::timestamptz-greatest(b.retention_days,b.rollup_retention_days)*interval '1 day'
+            AND (s.last_sample_at IS NULL OR s.last_sample_at<${now}::timestamptz-greatest(b.retention_days,b.rollup_retention_days)*interval '1 day')
+          ORDER BY s.id LIMIT ${BATCH} FOR UPDATE OF s)
+          UPDATE pulse.metric_series s SET mirrored=false FROM victims v WHERE s.id=v.id RETURNING s.id`;
+      });
       await database.begin(async (tx) => {
         await tx`SET LOCAL statement_timeout='30s'`.simple();
         await tx`SET LOCAL lock_timeout='30s'`.simple();
@@ -85,9 +101,13 @@ export const createRetention =
             AND hour<(SELECT sealed_before FROM pulse.base_stores WHERE base_id=${base.id}::uuid) LIMIT ${BATCH})
           DELETE FROM pulse.metric_hours h USING victims v WHERE h.base_id=${base.id}::uuid AND h.hour=v.hour`;
         result.hourRecords += hours.count;
-        // T1 refreshes last_seen_at before any insert, preserving series identities for pending retries.
+        // Recheck under the lifecycle lock: an ingest between the intent and this transaction may have revived a victim.
         const expiredSeries = await tx<{ id: string }[]>`SELECT id FROM pulse.metric_series
-          WHERE base_id=${base.id}::uuid AND coalesce(last_seen_at,created_at)<${registryCutoff}
+          WHERE base_id=${base.id}::uuid AND id=ANY(${sql.array(
+            retiring.map((s) => s.id),
+            "UUID",
+          )})
+          AND coalesce(last_seen_at,created_at)<${registryCutoff}
           AND (last_sample_at IS NULL OR last_sample_at<${registryCutoff}) ORDER BY id LIMIT ${BATCH} FOR UPDATE`;
         const seriesIds = expiredSeries.map((s) => s.id);
         if (seriesIds.length) {
@@ -110,7 +130,8 @@ export const createRetention =
           await tx`WITH victims AS(SELECT state_key FROM pulse.state_keys k WHERE base_id=${base.id}::uuid AND first_seen_at<${registryCutoff} AND NOT EXISTS(SELECT 1 FROM pulse.state_variants v WHERE v.base_id=k.base_id AND v.state_key=k.state_key) LIMIT ${BATCH})
           DELETE FROM pulse.state_keys k USING victims v WHERE k.base_id=${base.id}::uuid AND k.state_key=v.state_key`;
         result.registryRecords += series.count + defs.count + kinds.count + states.count;
-        if ([sealed, keys, scrapes, hours, series, defs, kinds, states].some((r) => r.count >= BATCH)) result.done = false;
+        if (retiring.length >= BATCH || [sealed, keys, scrapes, hours, series, defs, kinds, states].some((r) => r.count >= BATCH))
+          result.done = false;
       });
     }
     if (!baseId && bases[0]) {

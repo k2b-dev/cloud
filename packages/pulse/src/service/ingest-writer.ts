@@ -156,8 +156,8 @@ const lockIngestScope = async (baseId: string, sourceId: string, db: PulseSqlCli
   >`SELECT enabled,last_accepted_at FROM pulse.sources WHERE id=${sourceId}::uuid AND base_id=${baseId}::uuid AND NOT deleted FOR NO KEY UPDATE`;
   if (!source) throw new IngestTransactionFailure(err.notFound("Pulse source"));
   if (!source.enabled) throw new IngestTransactionFailure(err.conflict("Pulse source is disabled"));
-  const [base] = await db<{ database_name: string; retention_days: number; clear_revision: string | null }[]>`
-    SELECT s.database_name,b.retention_days,b.data_clear_started_at::text AS clear_revision
+  const [base] = await db<{ database_name: string; retention_days: number; reset_generation: string }[]>`
+    SELECT s.database_name,b.retention_days,s.reset_generation::text AS reset_generation
     FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id WHERE b.id=${baseId}::uuid`;
   if (!base) throw new IngestTransactionFailure(err.notFound("Pulse base"));
   return { ...base, lastAcceptedAt: source.last_accepted_at };
@@ -270,8 +270,8 @@ export const createIngestWriter = ({
         await tx`SET LOCAL lock_timeout='30s'`.simple();
         const base = await lockIngestScope(params.baseId, params.sourceId, tx);
         // Source and state-variant locks serialize their own identities; lifecycle SHARE locks protect all inserts.
-        if (base.clear_revision !== preflight.base.clear_revision)
-          throw new IngestTransactionFailure(err.conflict("Base was cleared during ingest"));
+        if (base.reset_generation !== preflight.base.reset_generation)
+          throw new IngestTransactionFailure({ code: "CONFLICT", status: 409, message: "Base data was reset during ingest" });
         if (key) {
           const [existing] = await tx<
             KeyRow[]

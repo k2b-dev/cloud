@@ -433,6 +433,9 @@ test("ingests into an explicit source through the authenticated source endpoint"
   await pulseCli.run(ctx);
   expect(calls.at(-1)?.path).toBe(`/api/pulse/bases/${baseId}/sources/${sourceId}/ingest`);
   expect(JSON.parse(String(calls.at(-1)?.init?.body))).toEqual(batch);
+  const { default: api } = await import("./api/index");
+  const path = calls.at(-1)!.path.replace(/^\/api\/pulse/, "");
+  expect(api.router.match("POST", path)[0].some(([[, route]]) => route.method === "POST")).toBe(true);
 });
 
 describe("Pulse data store administration", () => {

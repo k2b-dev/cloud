@@ -481,7 +481,7 @@ export const deleteBase = async (params: { baseId: string; user: AccessScope }):
     const authorized = await requireBaseAccess(params.baseId, params.user, "admin", tx);
     if (!authorized.ok) return authorized;
     await insertBaseStore(params.baseId, await readBasePolicy(), tx);
-    await tx`UPDATE pulse.base_stores SET state='deleting',operation='delete',attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
+    await tx`UPDATE pulse.base_stores SET reset_generation=reset_generation+1,state='deleting',operation='delete',attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
     await tx`
       UPDATE pulse.bases
       SET deletion_started_at = now(),
@@ -526,7 +526,7 @@ export const clearBaseData = async (params: { baseId: string; user: AccessScope 
           "Writes to this base are blocked after a checkpoint mismatch. A Cloud admin decides under Administration -> Pulse -> Bases.",
       });
     // A clear gets a fresh checkpoint identity; retries of this clear keep the one its first run prepared.
-    await tx`UPDATE pulse.base_stores SET state='clearing',operation='clear',pending_checkpoint_id=NULL,attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
+    await tx`UPDATE pulse.base_stores SET reset_generation=reset_generation+1,state='clearing',operation='clear',pending_checkpoint_id=NULL,attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
     await tx`
       UPDATE pulse.bases
       SET data_clear_started_at = now(),

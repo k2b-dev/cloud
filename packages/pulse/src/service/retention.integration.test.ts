@@ -1,5 +1,5 @@
-import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { beforeAll, expect, spyOn, test } from "bun:test";
+import { SQL, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { installFixtureStore } from "../store/base-store.test-fixture";
@@ -36,6 +36,57 @@ suiteFor(
       assertWrite(await f.write(replacement));
       expect(await f.read("series", "dimensions")).toEqual([{ dimensions: JSON.stringify({ host: "new" }) }]);
     } finally {
+      await f.cleanup();
+    }
+  }, 60000);
+  test("an applied tombstone survives a SQL delete failure, and the next write revives the series", async () => {
+    const f = await writeFixture("retirement-rollback");
+    try {
+      await f.stopMerges();
+      assertWrite(await f.write({ metrics: [{ name: "load", value: 1 }] }));
+      const [series] = await sql<{ id: string }[]>`SELECT id FROM pulse.metric_series WHERE base_id=${f.base.id}::uuid`;
+      await sql`UPDATE pulse.metric_series SET last_seen_at='2025-01-01',last_sample_at='2025-01-01' WHERE id=${series!.id}::uuid`;
+      // A real later SQL error, after the external tombstone has succeeded.
+      await sql`CREATE TABLE pulse.retirement_delete_guard (series_id uuid REFERENCES pulse.metric_series(id))`.simple();
+      await sql`INSERT INTO pulse.retirement_delete_guard VALUES(${series!.id}::uuid)`;
+      await expect(createRetention({ store: f.store })(f.base.id)).rejects.toThrow("foreign key constraint");
+      expect(await f.read("series")).toEqual([]);
+      expect(await f.read("_series", "deleted", "FINAL")).toEqual([{ deleted: 1 }]);
+      expect(await sql<{ id: string }[]>`SELECT id FROM pulse.metric_series WHERE base_id=${f.base.id}::uuid`).toEqual([
+        { id: series!.id },
+      ]);
+      // The same frozen clock is sufficient: acceptance is monotonic per source.
+      assertWrite(await f.write({ metrics: [{ name: "load", value: 2 }] }));
+      expect(await f.read("series", "series_id")).toEqual([{ series_id: series!.id }]);
+      expect(await f.read("_series", "deleted", "FINAL")).toEqual([{ deleted: 0 }]);
+      expect(await f.read("samples", "value", "ORDER BY value")).toEqual([{ value: 1 }, { value: 2 }]);
+      expect((await sql`SELECT mirrored FROM pulse.metric_series WHERE id=${series!.id}::uuid`)[0]?.mirrored).toBe(true);
+    } finally {
+      await sql`DROP TABLE IF EXISTS pulse.retirement_delete_guard`.simple();
+      await f.cleanup();
+    }
+  }, 60000);
+  test("ingest between retirement intent and tombstone revives the victim without deleting it", async () => {
+    const f = await writeFixture("retirement-revival");
+    const database = new SQL({ max: 2 });
+    const begin = database.begin.bind(database);
+    let transactions = 0;
+    const boundary = spyOn(database, "begin").mockImplementation(async (run) => {
+      if (++transactions === 2) assertWrite(await f.write({ metrics: [{ name: "load", value: 2 }] }));
+      if (typeof run === "string") throw new Error("Unexpected transaction options in retention fixture");
+      return begin(run);
+    });
+    try {
+      await f.stopMerges();
+      assertWrite(await f.write({ metrics: [{ name: "load", value: 1 }] }));
+      await sql`UPDATE pulse.metric_series SET last_seen_at='2025-01-01',last_sample_at='2025-01-01' WHERE base_id=${f.base.id}::uuid`;
+      expect((await createRetention({ store: f.store, database })(f.base.id)).registryRecords).toBe(0);
+      expect(await f.read("series")).toHaveLength(1);
+      expect(await f.read("_series", "deleted", "FINAL")).toEqual([{ deleted: 0 }]);
+      expect((await sql`SELECT mirrored FROM pulse.metric_series WHERE base_id=${f.base.id}::uuid`)[0]?.mirrored).toBe(true);
+    } finally {
+      boundary.mockRestore();
+      await database.close();
       await f.cleanup();
     }
   }, 60000);

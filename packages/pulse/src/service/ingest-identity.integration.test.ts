@@ -1,7 +1,11 @@
-import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { beforeAll, expect, spyOn, test } from "bun:test";
+import { SQL, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { installFixtureStore } from "../store/base-store.test-fixture";
+import { adminBaseAction } from "./base-admin";
+import * as lifecycle from "./base-lifecycle";
+import { clearBaseData } from "./base-management";
 import { deterministicRowId } from "./ingest-bulk";
 import { createIngestWriter } from "./ingest-writer";
 import { assertWrite, writeFixture } from "./write.test-fixture";
@@ -143,6 +147,74 @@ suiteFor(
       await f.cleanup();
     }
   }, 60000);
+  for (const { reset, keyed } of [
+    { reset: "clear", keyed: false },
+    { reset: "recreate", keyed: false },
+    { reset: "clear", keyed: true },
+    { reset: "recreate", keyed: true },
+  ] as const)
+    test(`${reset} between T1 and T2 refuses a ${keyed ? "keyed mixed" : "unkeyed event"} batch and stores nothing`, async () => {
+      const f = await writeFixture(`reset-between-transactions-${reset}-${keyed}`);
+      const database = new SQL({ max: 2 });
+      const begin = database.begin.bind(database);
+      const submit = spyOn(lifecycle, "submitBaseLifecycleJob").mockResolvedValue(undefined);
+      const userId = "33333333-3333-4333-8333-333333333333";
+      let transactions = 0;
+      // The injectable SQL client supplies the fault boundary, after T1 commits
+      // and before T2 takes its lifecycle locks. The reset uses the real actions.
+      const boundary = spyOn(database, "begin").mockImplementation(async (run) => {
+        if (++transactions === 2) {
+          expect(await sql`SELECT kind FROM pulse.event_kinds WHERE base_id=${f.base.id}::uuid`).toHaveLength(1);
+          if (reset === "clear") {
+            const result = await clearBaseData({ baseId: f.base.id, user: { id: userId } });
+            if (!result.ok) throw new Error(result.error.message);
+          } else {
+            await adminBaseAction(adminFixtureIdentity(userId), f.base.shortId, "recreate");
+          }
+          const clear = lifecycle.createBaseLifecycle(f.store);
+          for (let i = 0; i < 20; i++) if ((await clear(f.base.id)).done) break;
+          expect((await sql`SELECT state FROM pulse.base_stores WHERE base_id=${f.base.id}::uuid`)[0]?.state).toBe("active");
+        }
+        if (typeof run === "string") throw new Error("Unexpected transaction options in ingest fixture");
+        return begin(run);
+      });
+      try {
+        await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${userId}::uuid,${userId},'local','user')`;
+        const [grant] = await sql`INSERT INTO auth.access(user_id,permission) VALUES(${userId}::uuid,'admin') RETURNING id`;
+        await sql`INSERT INTO pulse.base_access VALUES(${f.base.id}::uuid,${grant!.id}::uuid)`;
+        expect(
+          await createIngestWriter({ store: f.store, clock: f.clock, database })({
+            baseId: f.base.id,
+            sourceId: f.sourceId,
+            batch: {
+              events: [{ kind: "must-not-reappear" }],
+              ...(keyed ? { metrics: [{ name: "old-reservation", value: 1 }], states: [{ key: "old-state", value: true }] } : {}),
+            },
+            idempotencyKey: keyed ? "before-reset" : undefined,
+          }),
+        ).toMatchObject({ ok: false, error: { status: 409, message: "Base data was reset during ingest" } });
+        expect(transactions).toBe(2);
+        expect(await f.read("samples", "count() AS n")).toEqual([{ n: 0 }]);
+        expect(await f.read("events", "count() AS n")).toEqual([{ n: 0 }]);
+        expect(await f.read("states", "count() AS n")).toEqual([{ n: 0 }]);
+        expect(await sql`SELECT id FROM pulse.metric_series WHERE base_id=${f.base.id}::uuid`).toHaveLength(0);
+        expect(await sql`SELECT kind FROM pulse.event_kinds WHERE base_id=${f.base.id}::uuid`).toHaveLength(0);
+        expect(await sql`SELECT hour FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid`).toHaveLength(0);
+        expect(await sql`SELECT state_key FROM pulse.state_keys WHERE base_id=${f.base.id}::uuid`).toHaveLength(0);
+        expect(await sql`SELECT idempotency_key FROM pulse.ingest_idempotency WHERE source_id=${f.sourceId}::uuid`).toHaveLength(0);
+        expect(
+          Number((await sql`SELECT reset_generation FROM pulse.base_stores WHERE base_id=${f.base.id}::uuid`)[0]?.reset_generation),
+        ).toBe(1);
+        assertWrite(await f.write({ events: [{ kind: "after-reset" }] }));
+        expect(await f.read("events", "kind")).toEqual([{ kind: "after-reset" }]);
+      } finally {
+        boundary.mockRestore();
+        submit.mockRestore();
+        await database.close();
+        await f.cleanup();
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    }, 60000);
   test("T2 holds lifecycle locks across inserts; later writes see clear/delete state", async () => {
     const f = await writeFixture("write-lifecycle");
     let resume: (() => void) | undefined, entered: (() => void) | undefined;

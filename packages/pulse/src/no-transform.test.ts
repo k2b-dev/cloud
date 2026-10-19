@@ -27,6 +27,8 @@ describe("compression boundaries", () => {
     test(`api POST ${path} opts out`, async () => {
       const response = await api.request(path, { method: "POST" });
       expect(response.status).toBeLessThan(500);
+      expect(response.status).not.toBe(404);
+      expect(api.router.match("POST", path)[0].some(([[, route]]) => route.method === "POST")).toBe(true);
       expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }

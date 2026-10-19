@@ -13,9 +13,11 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { pulseService } from "../../service";
 import { projectPublicRelations, projectSources } from "../../service/public-resources";
+import { ingestResponses, ingestTimeout, respondIngest } from "../ingest-response";
 import {
   CreateSourceApiKeySchema,
   CreateSourceSchema,
+  IngestBatchSchema,
   SourceApiKeySchema,
   SourceSchema,
   SourceScrapeSchema,
@@ -47,6 +49,35 @@ const mirrorTimeout: MiddlewareHandler<AuthContext> = async (c, next) => {
 };
 
 const routes = new Hono<AuthContext>()
+  .post(
+    "/bases/:baseId/sources/:sourceId/ingest",
+    ingestTimeout,
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "Ingest Pulse data into an enabled source",
+      responses: ingestResponses,
+    }),
+    v("json", IngestBatchSchema),
+    async (c) => {
+      const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
+      if (!baseId.ok) return respond(c, baseId.result);
+      const gate = await pulseService.base.access.require(baseId.value, requestAccessScope(c), "write");
+      if (!gate.ok) return respond(c, gate);
+      const sourceId = await requireBaseResourceParam(c.req.param("sourceId"), "source ID", "sources", baseId.value);
+      if (!sourceId.ok) return respond(c, sourceId.result);
+      return respondIngest(
+        c,
+        await pulseService.ingest.batch({
+          baseId: baseId.value,
+          sourceId: sourceId.value,
+          batch: c.req.valid("json"),
+          idempotencyKey: c.req.header("idempotency-key"),
+          requestBytes: new TextEncoder().encode(await c.req.text()).byteLength,
+          locale: getLocale(c),
+        }),
+      );
+    },
+  )
   .get(
     "/bases/:baseId/sources",
     describeRoute({
