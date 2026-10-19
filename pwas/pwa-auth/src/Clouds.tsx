@@ -41,7 +41,8 @@ const SYSTEMS = {
   chromeos: "ChromeOS",
   other: undefined,
 } as const satisfies Record<LoginContext["os"], string | undefined>;
-type Row = { label?: string; icon?: string; values: string[]; time?: string };
+// A browser sign-in's row shows its icon and keeps the label for screen readers.
+type Row = { label: string; icon?: string; values: string[]; time?: string };
 
 function Decision(props: {
   auth: Authenticator;
@@ -78,10 +79,14 @@ function Decision(props: {
     }
   };
   createEffect(() => {
-    // Only a poll that answered can say the request is gone: going offline or hidden clears the list without
-    // an answer, and the sheet then keeps the request with its offline note.
+    // Going offline or hidden clears the list without an answer, and the sheet then keeps the request with its
+    // offline note. It closes once a poll answers without the request, when the Cloud refuses this phone (polling
+    // stops for it), or when the binding is gone, for example after the vault locked.
     const state = props.auth.states()[props.binding.id];
-    const gone = state && !state.error && !state.requests.some((r) => r.requestId === props.request.requestId);
+    const gone =
+      !props.auth.bindings().some((binding) => binding.id === props.binding.id) ||
+      state?.error === "forbidden" ||
+      (state && !state.error && !state.requests.some((r) => r.requestId === props.request.requestId));
     // An expired request stays open with its ending, so the code never vanishes without a word.
     if (!busy() && !error() && !denied() && !expired() && gone) props.close();
   });
@@ -134,22 +139,30 @@ function Decision(props: {
     const browser = BROWSERS[context.browser];
     const name = browser.name ?? t().contextUnknownBrowser;
     const os = context.os === "mac-or-ipad" ? t().contextMacOrIpad : SYSTEMS[context.os];
-    const rows: Row[] = [{ icon: browser.icon, values: [os ? t().contextBrowser({ browser: name, os }) : name] }];
+    const rows: Row[] = [
+      { label: t().contextLabelBrowser, icon: browser.icon, values: [os ? t().contextBrowser({ browser: name, os }) : name] },
+    ];
     // Without a location database the Cloud knows neither place nor network, and both lines stay away.
     if (context.country !== null || context.city !== null || context.network !== null) {
       const place = [context.city, context.country && country(context.country)].filter(Boolean).join(", ");
       rows.push(
-        { icon: "ti ti-map-pin", values: [place ? t().contextPlace({ place }) : t().contextPlaceUnknown] },
+        { label: t().contextLabelPlace, icon: "ti ti-map-pin", values: [place ? t().contextPlace({ place }) : t().contextPlaceUnknown] },
         {
+          label: t().contextLabelNetwork,
           icon: "ti ti-network",
           values: [context.network ? t().contextNetwork({ network: context.network }) : t().contextNetworkUnknown],
         },
       );
     }
-    if (context.sameNetwork) rows.push({ icon: "ti ti-device-mobile", values: [t().contextSameNetwork] });
-    rows.push({ icon: "ti ti-clock", values: [t().loginStarted({ time: started() })], time: props.request.createdAt });
+    if (context.sameNetwork) rows.push({ label: t().contextLabelAddress, icon: "ti ti-device-mobile", values: [t().contextSameNetwork] });
+    rows.push({
+      label: t().contextLabelStarted,
+      icon: "ti ti-clock",
+      values: [t().loginStarted({ time: started() })],
+      time: props.request.createdAt,
+    });
     const since = context.history?.knownSince;
-    if (since) rows.push({ icon: "ti ti-history", values: [t().contextKnown({ date: day(since) })] });
+    if (since) rows.push({ label: t().contextLabelHistory, icon: "ti ti-history", values: [t().contextKnown({ date: day(since) })] });
     return rows;
   });
   // Only Core's level decides whether a note shows; the history only chooses its words.
@@ -200,7 +213,12 @@ function Decision(props: {
           <>
             <dt>
               <Show when={row.icon} fallback={row.label}>
-                {(icon) => <i class={icon()} aria-hidden="true" />}
+                {(icon) => (
+                  <>
+                    <i class={icon()} aria-hidden="true" />
+                    <span class="k2b-sr-only">{row.label}</span>
+                  </>
+                )}
               </Show>
             </dt>
             <dd>

@@ -56,9 +56,10 @@ async function openSheet(options: {
   });
   const [now, setNow] = createSignal(Date.parse("2026-10-24T07:15:00.000Z"));
   const [online, setOnline] = createSignal(true);
+  const [bindings, setBindings] = createSignal([binding]);
   const decisions: string[] = [];
   const auth: Authenticator = {
-    bindings: () => [binding],
+    bindings,
     states: inbox,
     now,
     online,
@@ -114,6 +115,7 @@ async function openSheet(options: {
     setInbox,
     setNow,
     setOnline,
+    setBindings,
     cleanup: async () => {
       closeDialogs();
       await Bun.sleep(20);
@@ -251,6 +253,10 @@ for (const [state, want] of Object.entries(expected) as [Exclude<DecisionState, 
         for (const line of country) expect(line).toMatch(/^(Approximately|Ungefähr) /);
         expect(sheet.note()?.textContent ?? undefined).toBe(want.note?.[locale]);
         expect(sheet.dialog.textContent).not.toMatch(/VPN|data cent|Rechenzentrum/i);
+        // Every row has a term a screen reader can read; the icon alone is hidden from it.
+        const terms = [...sheet.dialog.querySelectorAll(".auth-decision__details[data-context] dt")];
+        expect(terms).toHaveLength(want[locale].length);
+        for (const term of terms) expect(term.querySelector(".k2b-sr-only")?.textContent).toBeTruthy();
         // The rows, the note and the hint stand above the code, and the code is the request's last part.
         const request = sheet.dialog.querySelector(".auth-decision__request")!;
         expect(request.lastElementChild?.matches("output.auth-comparison")).toBe(true);
@@ -359,6 +365,29 @@ test("only a poll that answers without the request closes the sheet; a cleared o
     expect(document.querySelector("dialog[open]")).toBe(sheet.dialog);
     // Decided in another tab or on the Cloud: the next answered poll no longer lists it.
     sheet.setInbox({ fixture: { requests: [], actions: [], moreActions: 0 } });
+    await Bun.sleep(20);
+    expect(document.querySelector("dialog[open]")).toBeNull();
+  } finally {
+    await sheet.cleanup();
+  }
+});
+
+test("a Cloud that refuses this phone closes the sheet; polling stops for it, so no answer would follow", async () => {
+  const sheet = await openSheet({ locale: "en", context: decisionStates.known });
+  try {
+    sheet.setInbox({ fixture: { requests: [], actions: [], moreActions: 0, error: "forbidden" } });
+    await Bun.sleep(20);
+    expect(document.querySelector("dialog[open]")).toBeNull();
+  } finally {
+    await sheet.cleanup();
+  }
+});
+
+test("a sheet whose binding is gone closes, as when the vault locks and clears the list", async () => {
+  const sheet = await openSheet({ locale: "en", context: decisionStates.known });
+  try {
+    sheet.setBindings([]);
+    sheet.setInbox({});
     await Bun.sleep(20);
     expect(document.querySelector("dialog[open]")).toBeNull();
   } finally {
