@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { type Browser, errors } from "playwright";
-import { browserName, launchBrowser } from "../test/browser";
+import { browserName, launchBrowser, settled } from "../test/browser";
 
 if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
   await import("./browser-recovery.browser-suite");
@@ -28,6 +28,96 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
       await server?.stop(true);
     }
   });
+
+  test("settled() waits for transitions and animations to end", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html>
+        <style>
+          #sample { opacity: 0; width: 50px; transition: opacity 200ms linear; }
+          @keyframes grow { from { width: 10px; } to { width: 100px; } }
+        </style>
+        <div id="sample">sample</div>`);
+      // settled: the unsettled start values are the subject; start and read in the same browser task.
+      const before = await page.evaluate(() => {
+        const element = document.querySelector<HTMLDivElement>("#sample")!;
+        void getComputedStyle(element).opacity;
+        element.style.opacity = "1";
+        element.style.animation = "grow 100ms linear";
+        const style = getComputedStyle(element);
+        return { opacity: style.opacity, width: style.width };
+      });
+      expect(before).toEqual({ opacity: "0", width: "10px" });
+      await settled(page);
+      const after = await page.evaluate(() => {
+        const style = getComputedStyle(document.querySelector("#sample")!);
+        return { opacity: style.opacity, width: style.width };
+      });
+      expect(after).toEqual({ opacity: "1", width: "50px" });
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
+  test("settled() returns on a page with a scroll-driven and an infinite animation", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html>
+        <style>
+          @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+          #infinite { animation: spin 100ms linear infinite; }
+          #scroller { height: 100px; overflow: auto; }
+          #scroll { height: 400px; animation: fade 1s linear; animation-timeline: scroll(); }
+        </style>
+        <div id="infinite">infinite</div>
+        <div id="scroller"><div id="scroll">scroll</div></div>`);
+      await settled(page);
+      const animations = await page.evaluate(() =>
+        document.getAnimations().map((animation) => ({
+          documentTimeline: animation.timeline === document.timeline,
+          running: animation.playState === "running",
+          target: animation.effect instanceof KeyframeEffect ? animation.effect.target?.id : null,
+        })),
+      );
+      expect(animations.some((animation) => animation.target === "infinite" && animation.running)).toBe(true);
+      expect(animations.some((animation) => !animation.documentTimeline)).toBe(true);
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
+  test("settled() names the animations of a page that keeps animating", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html><div id="pulse">pulse</div>
+        <script>
+          const el = document.querySelector("#pulse");
+          const run = () => {
+            const a = el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 100 });
+            a.id = "pulse";
+            a.finished.then(run, () => {});
+          };
+          run();
+        </script>`);
+      let error: unknown;
+      try {
+        await settled(page);
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(Error);
+      if (!(error instanceof Error)) throw new Error("Expected settled() to reject the page that keeps animating");
+      expect(error.message).toContain("the page kept animating");
+      expect(error.message).toContain('"name":"pulse"');
+      expect(error.message).toContain("div#pulse");
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
 
   test("a navigation whose document never answers says it did not commit", async () => {
     const context = await browser.newContext();

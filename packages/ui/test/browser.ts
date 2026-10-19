@@ -443,6 +443,52 @@ export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browse
 };
 
 /**
+ * Guards against state sampled before it settled (#1476, #1499).
+ * Waits for fonts, running finite document-timeline animations, then two frames.
+ * Infinite, scroll-driven, and paused animations are not waited for. A page that
+ * keeps starting finite animations is not settled: this throws with their names,
+ * and the test must wait for its own condition instead. Suites not about motion
+ * pass `reducedMotion: "reduce"` to newPage/newContext themselves.
+ */
+export const settled = async (page: Page): Promise<void> => {
+  const remaining = await page.evaluate(async () => {
+    await document.fonts.ready;
+    const running = () =>
+      document
+        .getAnimations()
+        .filter(
+          (animation) =>
+            animation.timeline === document.timeline &&
+            animation.playState === "running" &&
+            Number.isFinite(animation.effect?.getComputedTiming().endTime),
+        );
+    await Promise.allSettled(running().map((animation) => animation.finished));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    return running().map((animation) => {
+      const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+      return {
+        target:
+          target instanceof Element
+            ? `${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ""}${Array.from(target.classList, (name) => `.${name}`).join("")}`
+            : null,
+        name:
+          animation instanceof CSSTransition
+            ? animation.transitionProperty
+            : animation instanceof CSSAnimation
+              ? animation.animationName
+              : animation.id,
+        currentTime: animation.currentTime,
+      };
+    });
+  });
+  if (remaining.length) {
+    throw new Error(
+      `settled: the page kept animating; finite animations started while it settled: ${JSON.stringify(remaining)}. Wait for the test's own condition instead.`,
+    );
+  }
+};
+
+/**
  * Runs `change` and reports whether `locator` keeps its element and how much its height changes.
  * A mutation's refresh must keep the elements of the items it keeps: replacement loses focus and hover,
  * flickers, and can leave a box read detached (#1391). Waits before and after; reads boxes in the page.
