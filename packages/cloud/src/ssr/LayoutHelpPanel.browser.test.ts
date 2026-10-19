@@ -59,7 +59,7 @@ if (helpRoot) {
   helpRoot.innerHTML = "";
   render(() => createComponent(LocaleProvider, { locale: "en", get children() { return createComponent(provider ? LayoutHelpPanel : LayoutHelpPage, props); } }), helpRoot);
 }
-if (provider) render(() => createComponent(PanelRuntime, { provider: "core", scope: "/help/panel" }), document.createElement("div"));
+if (provider) render(() => createComponent(PanelRuntime, { provider: "core", scope: "/panel" }), document.createElement("div"));
 else {
   // Mount the actual Help trigger in each server-rendered shell position, as the shell island does.
   const data = readShellData();
@@ -140,7 +140,7 @@ const ready = (page: Page) =>
   page.waitForFunction(() => document.getElementById("cloud-panel")?.dataset.state === "ready", undefined, { timeout: 10_000 });
 const settled = (page: Page) =>
   page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
-const frame = (page: Page) => page.frames().find((frame) => new URL(frame.url()).pathname === "/help/panel");
+const frame = (page: Page) => page.frames().find((frame) => new URL(frame.url()).pathname === "/panel");
 const railTrigger = (page: Page) => page.locator('.rail-item[aria-label="Open help"]');
 const headerTrigger = (page: Page) => page.locator('.layout-header button[aria-label="Open help"]');
 async function fixture(width: number, height: number, open = true, widthRem?: number) {

@@ -12,7 +12,7 @@ export const app = defineApp({
     apps: { module: "src/cli/apps.ts", references: "src/cli-references/apps" },
     capabilities: { module: "src/cli/capabilities.ts", references: "src/cli-references/capabilities" },
   },
-  panel: { href: "/help/panel", label: "Help", icon: "ti ti-help-circle" },
+  panel: { href: "/panel", label: "Help", icon: "ti ti-help-circle" },
   name: "Core",
   icon: "ti ti-cloud",
   description: "Auth, search, admin, and platform services.",

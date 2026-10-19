@@ -45,7 +45,9 @@ export const app = defineApp({
 
 `href` must be a same-origin path below an application-owned route. External
 URLs, protocol-relative URLs, and paths that escape the route are rejected at
-startup. `label` and `icon` must be nonempty strings. Translate the label with
+startup. `defineApp()` also rejects `panel.href` at or below the app's Help path
+`<basePath>/help`, because the framework answers those paths with Help redirects.
+`label` and `icon` must be nonempty strings. Translate the label with
 `presentation.translations[locale].panelLabel`; the label defaults to the
 application's base locale. Cloud sorts visible providers by localized label,
 then application ID. No provider gets priority.

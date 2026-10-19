@@ -37,6 +37,26 @@ test("rejects empty panel presentation", () => {
   }
 });
 
+test("rejects panel paths reserved for framework Help redirects", () => {
+  for (const basePath of ["/app/inventory", "/app/inventory/"]) {
+    for (const suffix of ["", "/panel", "/x/y", "/panel?topic=stock#details", "/%2e/panel"]) {
+      const href = `/app/inventory/help${suffix}`;
+      expect(() => defineApp({ ...inventory, basePath, panel: { ...panel, href } })).toThrow(
+        `App "inventory" declares panel.href "${href}"; it must not be at or below its Help path "/app/inventory/help", which the framework uses for Help`,
+      );
+    }
+  }
+  expect(() => defineApp({ ...inventory, routes: ["/"], panel: { ...panel, href: "/help/panel" } })).toThrow(
+    'it must not be at or below its Help path "/help"',
+  );
+});
+
+test("accepts panels outside the Help path, including Help-like segments", () => {
+  for (const href of ["/app/inventory/panel", "/app/inventory/helpdesk/panel", "/app/inventory/panel?next=/help#help"]) {
+    expect(defineApp({ ...inventory, basePath: "/app/inventory", panel: { ...panel, href } }).meta.panel?.href).toBe(href);
+  }
+});
+
 test("validates untyped declarations at startup", () => {
   for (const [field, values] of [
     ["label", [null, 1]],

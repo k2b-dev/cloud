@@ -40,7 +40,7 @@ const apps: CloudRuntime["apps"] = [
     icon: "ti ti-cloud",
     description: "Core fixture",
     routes: ["/"],
-    panel: { href: "/help/panel", label: "Help", icon: "ti ti-help-circle" },
+    panel: { href: "/panel", label: "Help", icon: "ti ti-help-circle" },
   },
 ];
 const app = defineApp({
@@ -70,7 +70,7 @@ export const server = new Hono<Environment>()
     )),
   )
   .get(
-    "/help/panel",
+    "/panel",
     ...app.ssr<Environment>((c) => {
       const context = readPanelContext(c);
       const props: LayoutHelpPanelProps = {

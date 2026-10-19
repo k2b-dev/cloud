@@ -582,6 +582,14 @@ else {
       expect(slash.defaultPrevented).toBe(true);
       expect(reader.dom.document.activeElement).toBe(input);
       type(input, "second");
+      const composingEscape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, isComposing: true });
+      input.dispatchEvent(composingEscape);
+      expect(input.value).toBe("second");
+      expect(composingEscape.defaultPrevented).toBe(false);
+      const preventedEscape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+      preventedEscape.preventDefault();
+      input.dispatchEvent(preventedEscape);
+      expect(input.value).toBe("second");
       const escape = () => {
         const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
         input.dispatchEvent(event);

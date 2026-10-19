@@ -27,7 +27,7 @@ const person: User = {
 
 test("Core offers its Help as a panel inside its own routes to every signed-in reader, in their language", () => {
   const meta = app.meta;
-  expect(meta.panel).toEqual({ href: "/help/panel", label: "Help", icon: "ti ti-help-circle" });
+  expect(meta.panel).toEqual({ href: "/panel", label: "Help", icon: "ti ti-help-circle" });
   expect(meta.routes).toContain("/");
   expect(resolveAppPresentation(meta, "de").panel?.label).toBe("Hilfe");
   expect(visiblePanelProviders([meta], undefined, "en")).toEqual([]);

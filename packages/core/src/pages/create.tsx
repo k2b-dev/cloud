@@ -63,7 +63,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
       const configured = await coreSettings.get<string>("app.home_path");
       return c.redirect(resolveHomePath(configured), 302);
     })
-    .get("/help/panel", auth.requireRole("authenticated", ssr.access), ...helpPanelPage)
+    .get("/panel", auth.requireRole("authenticated", ssr.access), ...helpPanelPage)
     .get("/help/apps/:appId", auth.requireRole("authenticated", ssr.access), ...registeredHelpPage)
     .get("/help/apps/:appId/:topic", auth.requireRole("authenticated", ssr.access), ...registeredHelpPage)
     // Serve the installer from the currently deployed Core bundle, rather than

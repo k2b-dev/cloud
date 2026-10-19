@@ -51,7 +51,7 @@ const apps: RuntimeAppMeta[] = ["spaces", "restricted", "admin-only", "core", "e
     : { nav: { href: `/app/${id}`, section: "primary", ...(id === "restricted" ? { requiresRoles: ["admin"] } : {}) } }),
   appearance: { accent: "#16a34a", background: { from: "#16a34a", to: "#0284c7" } },
   ...(id !== "empty" ? { help: { manifestHash: id, pageBase: `/help/apps/${id}`, baseLocale: "en" } } : {}),
-  ...(id === "core" ? { panel: { href: "/help/panel", label: "Help", icon: "ti ti-help-circle" } } : {}),
+  ...(id === "core" ? { panel: { href: "/panel", label: "Help", icon: "ti ti-help-circle" } } : {}),
 }));
 const server = new Hono<{ Variables: AuthContext["Variables"] & { runtime: CloudRuntime } }>()
   .use(async (c, next) => {
@@ -60,9 +60,9 @@ const server = new Hono<{ Variables: AuthContext["Variables"] & { runtime: Cloud
     c.set("runtime", { apps });
     await next();
   })
-  .get("/help/panel", ...page);
+  .get("/panel", ...page);
 const panelUrl = (app: string, help = ["spaces-share", "unknown-id"]) =>
-  withPanelContext("/help/panel", {
+  withPanelContext("/panel", {
     v: 1,
     seq: 0,
     pageId: "22222222-2222-4222-8222-222222222222",
@@ -130,10 +130,10 @@ test("Help panel SSR authorizes selectors and renders the first view without she
     expect(requestedApps).not.toContain("restricted");
     expect(requestedApps).not.toContain("nope");
     expect(requestedApps).not.toContain("admin-only");
-    const core = await (await server.request("/help/panel")).text();
+    const core = await (await server.request("/panel")).text();
     expect(core).toContain("core fixture article");
     expect(core).not.toContain("spaces fixture article");
-    const nullContext = await (await server.request("/help/panel?cloud_panel_context=null")).text();
+    const nullContext = await (await server.request("/panel?cloud_panel_context=null")).text();
     expect(nullContext).toContain("core fixture article");
     const duplicates = await (await server.request(panelUrl("spaces", ["spaces-share", "spaces-share", "unknown-id"]))).text();
     const viewSection = duplicates.match(/data-help-view(?:="")?[\s\S]*?<\/section>/)?.[0] ?? "";

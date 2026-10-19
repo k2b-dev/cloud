@@ -398,6 +398,7 @@ const HelpShell = (props: {
     }
     if (props.surface === "panel" || props.surface === "modal") {
       const key = (event: KeyboardEvent) => {
+        if (event.defaultPrevented || event.isComposing) return;
         const target = event.target;
         if (event.key === "Escape" && target === searchInput && query()) {
           event.preventDefault();
@@ -405,7 +406,7 @@ const HelpShell = (props: {
           return;
         }
         // Some layouts type "/" with Shift (German: Shift+7), so Shift does not disqualify it.
-        if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
         if (
           event.key === "/" &&
           !(target instanceof Element && target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'))
