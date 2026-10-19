@@ -13,6 +13,7 @@ import type {
   AiMemoryKind,
   AiMemoryLearningRunPage,
   AiMemoryPriority,
+  AiRecentResource,
   AiRoutes,
   AiSkill,
   AiSkillAccess,
@@ -291,6 +292,12 @@ export const assistantApi = {
     );
     if (!response.ok) throw new Error(await readError(response, "Failed to load chats"));
     return response.json();
+  },
+
+  listRecentResources: async (signal?: AbortSignal): Promise<AiRecentResource[]> => {
+    const response = await client.resources.recent.$get({}, { init: { signal } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to load recent resources"));
+    return (await response.json()).resources;
   },
 
   listConversationResources: async (input: {

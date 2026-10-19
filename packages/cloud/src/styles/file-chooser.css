@@ -68,8 +68,9 @@
   color: var(--k2b-text-secondary);
 }
 
+/* A picked file is an object row: its check carries the app ink. */
 .cloud-file-chooser__icon[data-selected="true"] {
-  color: var(--k2b-action);
+  color: var(--ui-app-accent-text);
 }
 
 .cloud-file-chooser__meta {

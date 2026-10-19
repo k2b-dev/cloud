@@ -1194,6 +1194,16 @@ No configuration change is needed. The slash menu offers the same Commands in
 **Open in apps**, except those of its own app. Both surfaces require Commands
 that accept an empty input. The target page still checks access.
 
+### Index the messages people sent for Recent
+
+The slash menu's **Recent** section reads the newest messages a person sent.
+The first Core start builds the partial index `idx_ai_messages_sent_by_person`
+on `ai.messages`, covering only people's own chat messages. It needs no
+configuration change. Like the other `ai.messages` indexes, Core builds it
+during its migration: writes to `ai.messages` wait until it is done, so on an
+installation with a large chat history the first start takes longer. A
+rollback keeps the index; an earlier Core ignores it.
+
 ## Coordinate an existing installation's identity upgrade
 
 Use one maintenance window for the gateway, Core, OAuth, applications, and

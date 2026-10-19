@@ -8,6 +8,7 @@ import { auditActorFromRequest, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { imapSmtpConnector } from "./connectors";
 import { logDatabaseFailure } from "./database-errors";
+import { enqueueMailInvalidation, mailLive } from "./live";
 import { getProviderConnection, type loadProviderConnectionRuntime, loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isProviderAuthenticationFailure, isTransientProviderFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
 import { compareProviderEvidence, type EvidenceComparison, providerServerKey } from "./provider-identity";
@@ -145,6 +146,7 @@ const storedIdentities = (row: {
 const canonicalFolderKey = (relativePath: string): string => sha256({ version: 1, relativePath });
 
 type FolderProjectionStats = {
+  changed: boolean;
   discovered: number;
   missing: number;
   ambiguous: number;
@@ -526,6 +528,37 @@ const projectFolders = async (params: {
     ORDER BY folder.id
     FOR UPDATE OF folder
   `;
+  // Match listFolders' visible metadata and display inputs, without reading message counts.
+  const snapshot = () => params.db`
+    SELECT
+      f.id,
+      f.parent_id,
+      f.name,
+      COALESCE(role_override.role, f.role) AS role,
+      f.role AS provider_role,
+      role_override.role AS configured_role,
+      f.selectable,
+      f.display,
+      f.provider_collection,
+      ARRAY(
+        SELECT DISTINCT ref.namespace_kind
+        FROM mail.binding_folder_refs ref
+        WHERE ref.folder_id = f.id AND ref.missing_since IS NULL AND ref.namespace_kind IS NOT NULL
+        ORDER BY ref.namespace_kind
+      ) AS namespace_kinds,
+      f.discovery_state,
+      f.missing_since,
+      f.sync_status
+    FROM mail.folders f
+    JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
+    LEFT JOIN mail.folder_role_overrides role_override
+      ON role_override.mailbox_id = rr.mailbox_id
+     AND role_override.folder_id = f.id
+    WHERE f.remote_resource_id = ${params.remoteResourceId}::uuid
+      AND NOT (f.discovery_state = 'missing' AND f.dismissed_at IS NOT NULL)
+    ORDER BY f.id
+  `;
+  const before = JSON.stringify(await snapshot());
   const indexes = buildFolderProjectionIndexes(existing, params.evidence);
 
   const usedFolderIds = new Set<string>();
@@ -571,7 +604,9 @@ const projectFolders = async (params: {
     discoveryGeneration: params.discoveryGeneration,
     ambiguousFolderIds,
   });
+  const after = JSON.stringify(await snapshot());
   return {
+    changed: before !== after,
     discovered: params.evidence.folders.length,
     missing: stats.missing,
     ambiguous: stats.ambiguous,
@@ -929,6 +964,7 @@ export const rediscoverProviderBinding = async (params: {
       `;
       const rightsSources: BindingRediscoveryResult["rightsSources"] = { acl: 0, select: 0, probe: 0, unknown: 0 };
       for (const folder of folders) rightsSources[folder.rightsSource] += 1;
+      if (projection.changed) await enqueueMailInvalidation(tx, { mailboxId: locked.mailbox_id });
       return {
         bindingId: params.bindingId,
         discoveryGeneration,
@@ -937,6 +973,7 @@ export const rediscoverProviderBinding = async (params: {
         rightsSources,
       } satisfies BindingRediscoveryResult;
     });
+    if (result.changed) mailLive.wake();
     await updateMailboxBindingHealth(current.mailbox_id);
     return result;
   } catch (error) {
@@ -961,6 +998,7 @@ export const attachProviderBinding = async (params: {
 
   try {
     const resourceIds = await listMailboxRemoteResourceIds(params.mailboxId);
+    let foldersChanged = false;
     const barrier = await withMailboxProviderOperationBarrier(params.mailboxId, resourceIds, async (assertLeaseActive) => {
       if (!sameResourceIds(resourceIds, await listMailboxRemoteResourceIds(params.mailboxId))) {
         return fail(err.conflict("Mailbox provider bindings changed before verification; retry the operation"));
@@ -1146,13 +1184,14 @@ export const attachProviderBinding = async (params: {
         if (!binding) throw new Error("Provider binding insert returned no row");
         await tx`DELETE FROM mail.remote_namespaces WHERE binding_id = ${binding.id}::uuid`;
 
-        await projectFolders({
+        const projection = await projectFolders({
           db: tx,
           remoteResourceId: resource.id,
           bindingId: binding.id,
           discoveryGeneration: Number(resource.discovery_generation),
           evidence,
         });
+        foldersChanged = projection.changed;
         if (evidence.namespaces.length > 0) {
           const namespaceRows = evidence.namespaces.map((namespace) => ({
             binding_id: binding.id,
@@ -1191,10 +1230,12 @@ export const attachProviderBinding = async (params: {
           },
           tx,
         );
+        if (projection.changed) await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId });
         await assertLeaseActive();
         return ok(mapBinding(binding));
       });
     });
+    if (barrier.acquired && barrier.value.ok && foldersChanged) mailLive.wake();
     return barrier.acquired ? barrier.value : fail(providerBusy("Provider work is still running; retry binding shortly"));
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST") {

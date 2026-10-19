@@ -95,6 +95,7 @@ import {
   mailOptimisticFields,
   runMailWorkspaceAction,
 } from "./_components/mail-workspace-action-runner";
+import { composeMailListSnapshot, pickMailWorkspaceFrame } from "./_components/mail-workspace-frame";
 import { type MailWorkspacePreferences, updateMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
 import {
   captureMailWorkspaceRefreshError,
@@ -153,6 +154,8 @@ function MailWorkspaceView(props: {
   const [detailsOpening, setDetailsOpening] = createSignal(false);
   const [managementOpening, setManagementOpening] = createSignal<"health" | "links" | "remote-content" | "subscriptions" | null>(null);
   const [liveUnavailable, setLiveUnavailable] = createSignal(false);
+  /** The live subscription has applied every update the server sent, so the counts and folders shown are current. */
+  let liveCaughtUp = false;
   const activeSearch = () => data.search;
   const activeTagId = createMemo(() => {
     const expression = activeSearch().expression;
@@ -396,6 +399,24 @@ function MailWorkspaceView(props: {
   const [routeSource, setRouteSource] = createSignal(initialRouteSource);
   const routeKey = createMemo(() => routeListKey(routeSource()));
   let committedRouteSource = initialRouteSource;
+  /**
+   * Another list without a selection loads only its list view, which also brings the mailbox, access and saved views,
+   * and keeps the folders, counts, identities and tags shown (`MailWorkspaceFrame`): live updates refresh them exactly as
+   * while the person stays in one list. The whole snapshot loads while live
+   * updates are not caught up, when the page started without a live cursor (changes before the subscription would not
+   * reach it), for a change of the list mode, and for a target that opens a conversation or message.
+   */
+  const keepsMailboxFrame = (target: { href: string; listMode: MailboxPageData["listMode"] }): boolean => {
+    if (!liveCaughtUp || liveUnavailable() || props.data.initialLiveCursor === null) return false;
+    const committed = decodeRouteSource(committedRouteSource);
+    const url = mailRouteUrl(target.href);
+    return (
+      target.listMode === committed.listMode &&
+      !url.searchParams.has("conversation") &&
+      !url.searchParams.has("message") &&
+      mailListScope(target.href) !== mailListScope(committed.href)
+    );
+  };
   let workspaceTransition: WorkspaceTransition | null = null;
   /**
    * Counts selection changes and navigations: a reload or a page 1 requested for an earlier generation reports itself as
@@ -455,11 +476,21 @@ function MailWorkspaceView(props: {
     // Later reloads and page loads still use the newest source, so page 1 carries the open conversation.
     isSameSource: sameRouteList,
     initial: { source: initialRouteSource, pages: [{ source: initialRouteSource, snapshot: props.data, generation: 0 }] },
-    loadPage: async (source, { cursor, abortSignal }) => {
+    loadPage: async (source, { cursor, abortSignal, cause }) => {
       const target = decodeRouteSource(source);
       const url = new URL(target.href, window.location.origin);
       if (cursor === undefined) {
         const generation = routeGeneration;
+        // A reload that also covers an invalidation, such as a live event, loads the whole snapshot.
+        if (cause.type === "source" && cause.invalidations.length === 0 && keepsMailboxFrame(target)) {
+          const list = await fetchWorkspaceList(url.toString(), abortSignal, target.listMode);
+          if (!list) throw new Error(t().loadViewFailed);
+          const shown = unwrap(data);
+          // The frame shown when the list arrives: a live refresh queued meanwhile reloads the snapshot after it. Folders
+          // and counts depend on the access scope, so a scope that changed meanwhile loads the whole snapshot.
+          if (list.access.scope === shown.access.scope)
+            return { source, snapshot: composeMailListSnapshot(pickMailWorkspaceFrame(shown), list), generation };
+        }
         const snapshot = await fetchWorkspaceRoute(url.toString(), abortSignal, target.listMode);
         if (!snapshot) throw new Error(t().loadViewFailed);
         return { source, snapshot, generation };
@@ -919,6 +950,9 @@ function MailWorkspaceView(props: {
         parse: (data) => parseMailLiveEvent(data),
         apply: (events) => refreshLiveData(events.map((event) => event.data.conversationId)),
         resync: () => refreshLiveData(null),
+        caughtUp: (caughtUp) => {
+          liveCaughtUp = caughtUp;
+        },
         revoked: () => void documentNavigate("/app/mail", { replace: true }),
         // A reload lets the route policy send an ended session to sign-in. A failure that survives it must not
         // reload in a loop.

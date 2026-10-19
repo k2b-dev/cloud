@@ -95,7 +95,7 @@
 .md-editor-tool {
   @apply inline-flex items-center justify-center;
   @apply w-7 h-7 rounded;
-  @apply text-zinc-500 dark:text-zinc-400;
+  @apply text-dimmed;
   @apply hover:bg-zinc-200 hover:text-zinc-800;
   @apply dark:hover:bg-zinc-700 dark:hover:text-zinc-100;
   @apply transition-colors;
@@ -339,7 +339,7 @@
   pointer-events: none !important;
   user-select: none !important;
   z-index: 0 !important;
-  @apply text-zinc-400 dark:text-zinc-500;
+  @apply text-dimmed;
   white-space: pre-wrap !important;
   word-wrap: break-word !important;
   word-break: normal !important;
@@ -354,7 +354,7 @@
    on-screen but dimmed so prose stands out. */
 .md-syntax,
 .md-marker {
-  @apply text-zinc-400 dark:text-zinc-500;
+  @apply text-dimmed;
 }
 
 /* Bold + headers via `text-shadow` instead of `font-weight`.
@@ -422,7 +422,7 @@
    doesn't affect layout, unlike border-left or padding-left). The bar
    sits visually outside the text column edge so prose stays aligned. */
 .md-quote {
-  @apply text-zinc-600 dark:text-zinc-400;
+  @apply text-dimmed;
   box-shadow: inset 3px 0 0 var(--color-zinc-300);
 }
 
@@ -475,7 +475,7 @@
 /* Horizontal rule (---) — just dim the marker; can't draw an actual
    rule line without inserting layout-shifting elements. */
 .md-hr {
-  @apply text-zinc-400 dark:text-zinc-500;
+  @apply text-dimmed;
 }
 
 /* Completion match — every occurrence of a registered completion
@@ -498,7 +498,7 @@
 .md-editor-stats {
   @apply flex justify-start items-center gap-3;
   @apply px-3 py-1;
-  @apply text-[10px] text-zinc-400 dark:text-zinc-500;
+  @apply text-[10px] text-dimmed;
   @apply font-mono select-none;
   letter-spacing: 0.02em;
 }
