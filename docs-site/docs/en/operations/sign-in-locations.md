@@ -88,7 +88,8 @@ Core stores browser and country history in three Postgres tables:
   time, or the first-seen time for browsers skipped during introduction or
   remembered before this notice existed. `notice` holds the fixed sign-in
   snapshot until handoff, then becomes `NULL`. It is limited to 1,024 bytes
-  of PostgreSQL JSONB text. Cities are limited to 96 UTF-8 bytes.
+  of PostgreSQL JSONB text. `notice_attempted_at` records a failed handoff's
+  last attempt. Cities are limited to 96 UTF-8 bytes.
 - `auth.sign_in_countries` has an account ID, country code, and latest sign-in
   time for each account and country pair.
 
@@ -170,8 +171,11 @@ cannot turn the notice off first.
 A failed handoff does not fail the sign-in. The fixed snapshot stays in
 `notice`, with `notified_at = NULL`. Later sign-ins can update the row's latest
 place, but do not change a pending snapshot. Core's existing per-minute
-maintenance job retries one batch of at most 100 notices, oldest first. A
-failure leaves that notice pending and does not block the rest of the batch.
+maintenance job retries one batch of at most 100 notices: never-retried
+notices first, then the least recently tried, oldest first within each. A
+failure leaves that notice pending, records the attempt time in
+`notice_attempted_at`, and moves it behind the others, so failing notices
+cannot hold back the rest.
 Malformed snapshots are discarded without logging their content.
 
 The idempotency key is `new-browser-sign-in:<browserId>:<signedInAt>`.

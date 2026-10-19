@@ -508,6 +508,27 @@ suite("known browsers at the web session boundary", () => {
         expect(
           await tx`SELECT id FROM auth.known_browsers WHERE id = ${ids[0]!}::uuid AND notified_at IS NOT NULL AND notice IS NULL`,
         ).toHaveLength(1);
+        // Failing notices go to the back of the queue: a full batch of failures cannot starve later notices.
+        await tx`UPDATE auth.known_browsers
+          SET notified_at = NULL, notice = ${JSON.stringify(snapshot)}::text::jsonb, notice_attempted_at = NULL, last_seen_at = ${START}`;
+        const alwaysFailing: NewBrowserSignInNotifier = async () => {
+          throw new Error("down");
+        };
+        expect(await maintainNotices(tx, alwaysFailing, { batchSize: 3 })).toBe(0);
+        const fair: string[] = [];
+        expect(
+          await maintainNotices(
+            tx,
+            async (notice) => {
+              fair.push(notice.browserId);
+            },
+            { batchSize: 3 },
+          ),
+        ).toBe(3);
+        expect(fair).toEqual([ids[3]!, ids[4]!, ids[0]!]);
+        expect(await tx`SELECT id FROM auth.known_browsers WHERE notified_at IS NOT NULL AND notice_attempted_at IS NOT NULL`).toHaveLength(
+          0,
+        );
         await expect(maintainNotices(tx, notify, { signal: AbortSignal.abort() })).rejects.toThrow();
         throw new Error(rollback);
       });
@@ -575,5 +596,14 @@ suite("known browsers at the web session boundary", () => {
     } catch (error) {
       if (!(error instanceof Error) || error.message !== rollback) throw error;
     }
+  });
+  test("an unbounded profile name never makes the notice invalid", async () => {
+    const id = await account();
+    await sql`UPDATE auth.users SET given_name = ${`  ${"J".repeat(300)}  `} WHERE id = ${id}::uuid`;
+    const notices: NewBrowserSignInNotice[] = [];
+    await login(id, undefined, "AT", "Wien", async (notice) => {
+      notices.push(notice);
+    });
+    expect(notices.map((notice) => notice.firstName)).toEqual(["J".repeat(100)]);
   });
 });

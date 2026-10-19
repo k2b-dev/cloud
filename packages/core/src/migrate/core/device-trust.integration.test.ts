@@ -55,7 +55,7 @@ suite("Core device-trust migration", () => {
   test("adds the notice column once, marks old rows announced, and bounds JSONB to 1024 bytes", async () => {
     await migrate();
     // Model the schema shipped before the notice, in this file's fresh database only.
-    await sql`ALTER TABLE auth.known_browsers DROP COLUMN notice`.simple();
+    await sql`ALTER TABLE auth.known_browsers DROP COLUMN notice, DROP COLUMN notice_attempted_at`.simple();
     const id = crypto.randomUUID();
     const firstSeen = new Date("2026-10-16T07:14:00.000Z");
     setSystemTime(firstSeen);

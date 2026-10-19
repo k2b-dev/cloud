@@ -20,6 +20,7 @@ import {
   type NewBrowserSignInNotifier,
   type SignInMethod,
   newBrowserCookie,
+  noticeFirstName,
   readBrowserCookie,
   rememberSignIn,
   setBrowserCookie,
@@ -229,7 +230,7 @@ const insertFamily = async (
       NOT EXISTS (SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${userId}::uuid), ${options.pwaDeviceId ?? null})
   `;
   const notice = options.knownBrowser
-    ? await rememberSignIn(tx, { ...options.knownBrowser, userId, firstName: user.given_name?.trim() || null, now: issuedAt })
+    ? await rememberSignIn(tx, { ...options.knownBrowser, userId, firstName: noticeFirstName(user.given_name), now: issuedAt })
     : null;
   if (options.recordLogin !== false) await tx`UPDATE auth.users SET last_login_local = ${issuedAt} WHERE id = ${userId}::uuid`;
   return { userId, sid, authEpoch: epoch, issuedAt, expiresAt, signer, options, notice };

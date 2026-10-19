@@ -46,6 +46,13 @@ const noticeSnapshot = z.object({
   locale: z.string().min(1).max(35).nullable(),
 });
 
+/** The greeting name, as the notice carries it: trimmed and at most 100 characters; profile names have no length limit. */
+export const noticeFirstName = (name: string | null | undefined): string | null =>
+  Array.from(name?.trim() ?? "")
+    .slice(0, 100)
+    .join("")
+    .trim() || null;
+
 export const KNOWN_BROWSER_LIMITS = {
   retentionDays: 90,
   browsersPerAccount: 100,
@@ -135,7 +142,7 @@ export const rememberSignIn = async (tx: SQL, input: SignIn): Promise<NewBrowser
   }
   if (!row || row.first_seen_at.getTime() !== now.getTime()) return null;
   if ((await trustState(tx, now)).introActive) {
-    await tx`UPDATE auth.known_browsers SET notified_at = ${now}, notice = NULL WHERE id = ${row.id}::uuid`;
+    await tx`UPDATE auth.known_browsers SET notified_at = ${now}, notice = NULL, notice_attempted_at = NULL WHERE id = ${row.id}::uuid`;
     return null;
   }
   const snapshot = {
@@ -148,7 +155,7 @@ export const rememberSignIn = async (tx: SQL, input: SignIn): Promise<NewBrowser
     device: input.method === "cloud_login" && input.device ? truncateUtf8(input.device, 80) : null,
     locale: input.locale && input.locale.length <= 35 ? input.locale : null,
   };
-  await tx`UPDATE auth.known_browsers SET notified_at = NULL, notice = ${JSON.stringify(snapshot)}::text::jsonb WHERE id = ${row.id}::uuid`;
+  await tx`UPDATE auth.known_browsers SET notified_at = NULL, notice = ${JSON.stringify(snapshot)}::text::jsonb, notice_attempted_at = NULL WHERE id = ${row.id}::uuid`;
   return { ...snapshot, browserId: row.id, userId, firstName: input.firstName };
 };
 
@@ -160,10 +167,16 @@ export const announceNewBrowser = async (
 ): Promise<boolean> => {
   try {
     await notify(notice);
-    await db`UPDATE auth.known_browsers SET notified_at = now(), notice = NULL WHERE id = ${notice.browserId}::uuid AND notified_at IS NULL`;
+    await db`UPDATE auth.known_browsers SET notified_at = now(), notice = NULL, notice_attempted_at = NULL WHERE id = ${notice.browserId}::uuid AND notified_at IS NULL`;
     return true;
   } catch (error) {
     log.warn("New-browser notice failed", { error: error instanceof Error ? error.name : "UnknownError" });
+    // The next batch starts with notices tried least recently, so failing ones cannot hold back the others.
+    try {
+      await db`UPDATE auth.known_browsers SET notice_attempted_at = now() WHERE id = ${notice.browserId}::uuid AND notified_at IS NULL`;
+    } catch {
+      // Without the mark the notice keeps its place in the queue; it stays pending either way.
+    }
     return false;
   }
 };
@@ -178,21 +191,21 @@ export const maintainNotices = async (
   const rows = await db<{ id: string; user_id: string; notice: unknown; given_name: string | null }[]>`
     SELECT kb.id, kb.user_id, kb.notice, u.given_name FROM auth.known_browsers kb JOIN auth.users u ON u.id = kb.user_id
     WHERE kb.notified_at IS NULL AND kb.notice IS NOT NULL AND kb.last_seen_at > ${cutoffAt(new Date())}
-    ORDER BY kb.first_seen_at, kb.id LIMIT ${batchSize}
+    ORDER BY kb.notice_attempted_at NULLS FIRST, kb.first_seen_at, kb.id LIMIT ${batchSize}
   `;
   let handedOver = 0;
   for (const row of rows) {
     signal?.throwIfAborted();
     const parsed = noticeSnapshot.safeParse(row.notice);
     if (!parsed.success) {
-      await db`UPDATE auth.known_browsers SET notified_at = now(), notice = NULL WHERE id = ${row.id}::uuid AND notified_at IS NULL`;
+      await db`UPDATE auth.known_browsers SET notified_at = now(), notice = NULL, notice_attempted_at = NULL WHERE id = ${row.id}::uuid AND notified_at IS NULL`;
       log.warn("Invalid new-browser notice discarded", { error: "InvalidSnapshot" });
       continue;
     }
     if (
       await announceNewBrowser(
         notify,
-        { ...parsed.data, browserId: row.id, userId: row.user_id, firstName: row.given_name?.trim() || null },
+        { ...parsed.data, browserId: row.id, userId: row.user_id, firstName: noticeFirstName(row.given_name) },
         db,
       )
     )

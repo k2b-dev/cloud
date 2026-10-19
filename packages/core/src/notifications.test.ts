@@ -114,6 +114,8 @@ describe("new-browser sign-in notice", () => {
     expect(definition.id).toBe("core.newBrowserSignIn");
     expect(definition.recipient).toBe("user");
     expect(definition.delivery).toEqual({ recommended: ["email", "browser"], required: [] });
+    // Cloud bounds the greeting name to 100 characters before the handoff.
+    expect(definition.data.safeParse({ ...data, firstName: "J".repeat(100) }).success).toBe(true);
   });
 
   for (const locale of ["de", "en"] as const) {
