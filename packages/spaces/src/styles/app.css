@@ -137,6 +137,8 @@
 .spaces-kanban-columns { --spaces-kanban-gap: 1rem; gap: var(--spaces-kanban-gap); }
 .spaces-kanban-column { width: 17.5rem; }
 .k2b-ui .spaces-kanban-card {
+  /* KanbanBoard sets the first tag's colour inline on a tinted card. */
+  --spaces-card-tag: transparent;
   --spaces-card-fill: color-mix(in srgb, var(--k2b-text) 4%, var(--k2b-surface));
   --spaces-card-fill-hover: color-mix(in srgb, var(--k2b-text) 7%, var(--k2b-surface));
   --spaces-card-edge: transparent;

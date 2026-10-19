@@ -10,7 +10,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { ItemListResult, SpaceAssignableUser, SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
 import { SpaceSettingsContextSchema } from "@/settings-context";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
 import type { KanbanBucketInitial } from "../kanban/types";
 import { parseSpaceSettings } from "../settings/SpaceSettingsStore";
 import type { SpacesViewSnapshot } from "./workspace-types";
@@ -496,7 +496,7 @@ describe(`Spaces shared head in ${browserName}`, () => {
           await page.reload();
           await ready(page);
           expect(await page.locator(".k2b-moved-hint").count()).toBe(0);
-          expect((await page.context().cookies()).find((cookie) => cookie.name === "cloud_seen_hints")?.value).toContain(id);
+          expect((await storedCookie(page, "cloud_seen_hints"))?.value).toContain(id);
         } finally {
           await page.context().close();
         }

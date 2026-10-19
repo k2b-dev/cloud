@@ -2,10 +2,30 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
-import { person } from "../../../cloud/src/_internal/define-app.test-fixture";
+
+const person = {
+  id: "11111111-1111-4111-8111-111111111111",
+  uid: "reader",
+  roles: ["user"],
+  provider: "local",
+  profile: "user",
+  givenname: "Test",
+  sn: "Reader",
+  displayName: "Test Reader",
+  mail: null,
+  avatarHash: null,
+  ipa: null,
+  accountExpires: null,
+  lastLoginLocal: null,
+  memberofGroup: [],
+  memberofGroupIds: [],
+  manages: [],
+  managesGroupIds: [],
+} satisfies User;
 
 const root = mkdtempSync(join(tmpdir(), "spaces-hints-test-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });

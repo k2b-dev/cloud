@@ -1,7 +1,7 @@
 import { commandPath } from "@k2b/cloud/contracts/commands";
 import { AppWorkspace, LocaleProvider, ViewTabs } from "@k2b/ui";
-import { Match, Switch } from "solid-js";
 import type { ComponentProps } from "solid-js";
+import { Match, Switch } from "solid-js";
 import type { ItemListResult, SpaceAssignableUser, SpaceColumn, SpaceTag } from "@/contracts";
 import SpacesOverview from "../../../SpacesOverview.island";
 import SpaceHeadFilters from "../filter/SpaceHeadFilters.island";
