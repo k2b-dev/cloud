@@ -1,6 +1,6 @@
 # Empty States
 
-`Placeholder` explains an empty, loading, or failed region inside a page.
+`Placeholder` explains an empty, filtered, inaccessible, loading, or failed region inside a page.
 `NotFoundState` handles a whole-page dead end and can provide one route back.
 
 The application owns the message and any recovery action.
@@ -28,6 +28,17 @@ keeps its layout but draws no border, background, or shadow of its own.
 Use `NotFoundState` when a requested page or resource cannot be shown. Display
 a code such as `404` only when it accurately describes the result.
 
+Use `state="empty"` for “Nothing here yet”, `state="no-results"` for “No
+matches” after filtering, and `state="no-access"` for “You do not have access”.
+Keep these states distinct so the next step is clear. They draw no box inside
+`AppWorkspace`, even with `surface="paper"`. `AppOverview.EmptyState` is a plain
+panel placeholder without a paper panel.
+
+Every load error offers **Try again** through `state="error"` and `onRetry`.
+Preserve the person's selection and filters during recovery. For tables, use
+[DataTable loading](/en/ui/content/tables#presentation) placeholders at the real
+row height and keep existing rows while refreshing.
+
 ## Import
 
 ```tsx
@@ -46,9 +57,10 @@ import {
 | --- | --- | --- | --- |
 | `title` | `JSX.Element` | none | Names the state. |
 | `description` | `JSX.Element` | none | Explains the state or next step. |
-| `icon` | `string` | `loading` and `error` only | Overrides the Tabler icon class. `state="empty"` renders no icon unless one is passed. |
+| `icon` | `string` | state-dependent | Overrides the Tabler icon class. `empty` has no default icon; `no-results` uses search-off and `no-access` uses lock. |
 | `action` | `JSX.Element` | none | Adds a recovery or creation action. |
-| `state` | `"empty" \| "loading" \| "error"` | `"empty"` | Selects state semantics and default icon. |
+| `onRetry` | `() => void` | none | Appends a localized Try again button after `action` for errors. |
+| `state` | `"empty" \| "no-results" \| "no-access" \| "loading" \| "error"` | `"empty"` | Selects state semantics and default icon. |
 | `variant` | `"compact" \| "inline" \| "panel"` | `"compact"` | Chooses stacked section spacing, one list row, or a larger work-area treatment. |
 | `surface` | `"none" \| "paper"` | `"none"` | Adds the shared paper surface for a standalone page area. |
 | `align` | `"center" \| "left"` | `"center"` | Aligns the content. |
@@ -56,7 +68,7 @@ import {
 
 An error state uses `role="alert"`. A loading state uses `role="status"`,
 `aria-live="polite"`, and `aria-busy="true"`. The loading icon stops spinning
-when reduced motion is requested. An empty state's icon sits in a soft chip of
+when reduced motion is requested. Empty, no-results, and no-access icons sit in a soft chip of
 the app color; loading and error keep their status colors without a chip,
 and inline placeholders keep a plain glyph. The icon box keeps the same size
 in every state: 2rem for compact, 2.5rem for panel, and 1rem for inline.
@@ -83,8 +95,8 @@ Write titles that distinguish an empty result from a failed request. Show an
 empty state only after a read that succeeded: a failed read shows its error,
 not a claim that nothing is there. While the same region reloads, keep the
 empty state in place instead of swapping in an empty frame. Loading text should
-name what is loading. Recovery actions should name the action rather than say
-only “Retry”.
+name what is loading. The built-in recovery button says **Try again** (**Erneut versuchen** in German).
+Empty, no-results, and no-access have no role or live announcement.
 
 When an action fills the region, such as adding the first record, the
 placeholder and its focused button leave. Move focus to the new content, such
@@ -119,7 +131,8 @@ browser code; an island owns any callback-based action.
   state="error"
   align="left"
   title="Notes unavailable"
-  description="Reload the page to try again."
+  description="Your selection is kept."
+  onRetry={reloadNotes}
 />
 
 <Placeholder

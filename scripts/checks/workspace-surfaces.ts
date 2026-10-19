@@ -43,8 +43,6 @@ export const rule: Rule = {
   run: async ({ workspaceRoot }) => {
     const roots = workspacePackages(workspaceRoot)
       .filter((entry) => /^(?:packages|pwas)\/[^/]+$/.test(entry))
-      // UI owns standalone surface primitives, including AppOverview.EmptyState's paper panel.
-      .filter((entry) => entry !== "packages/ui")
       .map((entry) => join(workspaceRoot, entry, "src"));
     const findings: Finding[] = [];
     for (const file of roots.flatMap((root) => listFiles(root, /\.tsx$/)).sort()) {

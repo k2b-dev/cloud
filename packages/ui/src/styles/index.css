@@ -7590,8 +7590,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   pointer-events: none;
 }
 
-/* The panel already owns the enclosing surface. A directly nested table only
-   contributes its header and row separators, avoiding a doubled frame. */
+/* The panel already owns the enclosing surface, so a directly nested table
+   draws no frame of its own. */
 .k2b-ui .k2b-data-panel > .k2b-table-shell[data-surface="paper"] {
   border: 0;
   border-radius: 0;
@@ -7674,6 +7674,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-data-table {
   @apply w-full text-xs;
   border-collapse: collapse;
+  /* Digits share one width, so amounts, counts, and dates line up down a column. */
+  font-variant-numeric: tabular-nums;
 }
 
 .k2b-ui .k2b-data-table[data-fill="true"] {
@@ -7684,8 +7686,38 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply px-3 py-2 text-left align-middle;
 }
 
+/* The minimal reference table (Grids): rows are read by space and a hover fill,
+   not by lines. A body row is 44 px (40 px compact) and grows only for content
+   that wraps; the header is a quiet 34 px line of muted text. */
+.k2b-ui .k2b-data-table td {
+  height: 2.75rem;
+}
+
+.k2b-ui .k2b-data-table__head-row > th {
+  height: 2.125rem;
+  padding-block: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1rem;
+}
+
+/* The column the rows are sorted by keeps full text color, so the order is legible at a glance. */
+.k2b-ui .k2b-data-table__head-row > th:is([aria-sort="ascending"], [aria-sort="descending"]) {
+  color: var(--k2b-text);
+}
+
+/* Totals stand apart by weight, not by a line above them. */
+.k2b-ui .k2b-data-table__foot-row {
+  font-weight: 500;
+}
+
 .k2b-ui .k2b-table-wrap[data-density="compact"] .k2b-data-table :is(th, td) {
   @apply py-1.5;
+}
+
+.k2b-ui .k2b-table-wrap[data-density="compact"] .k2b-data-table td {
+  height: 2.5rem;
 }
 
 .k2b-ui .k2b-data-table td {
@@ -7721,7 +7753,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-data-table__foot[data-sticky="true"] {
   @apply z-10;
   position: sticky;
-  background: var(--k2b-surface-muted);
+  /* The table's own surface, so a sticky header reads as part of the page, not as a band. */
+  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-data-table__head[data-sticky="true"] {
@@ -7730,14 +7763,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-data-table__foot[data-sticky="true"] {
   bottom: 0;
-}
-
-.k2b-ui .k2b-data-table__head-row {
-  border-bottom: 1px solid var(--k2b-border);
-}
-
-.k2b-ui .k2b-data-table__foot-row {
-  border-top: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-data-table__header-content {
@@ -7773,8 +7798,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__header-title {
-  @apply font-semibold;
-  color: var(--k2b-text);
+  font-weight: inherit;
+  color: inherit;
 }
 
 .k2b-ui .k2b-data-table__header-subtitle {
@@ -7790,13 +7815,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply opacity-30;
 }
 
-.k2b-ui .k2b-data-table__row {
+/* Approved exception for wide editing tables: above 8 columns (`data-wide`)
+   the eye loses the row without a guide, so rows get a hairline. */
+.k2b-ui .k2b-data-table[data-wide="true"] .k2b-data-table__row:not(:last-child) {
   border-bottom: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
-}
-
-/* Cloud writes this as `last:border-0` on the row itself. */
-.k2b-ui .k2b-data-table tbody tr:last-child {
-  border-bottom: 0;
 }
 
 .k2b-ui .k2b-data-table__row[data-hover="true"]:not([data-selected="true"]):hover {
@@ -7835,6 +7857,32 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-data-table__cell-text {
   @apply truncate;
+}
+
+/* Loading rows keep the real row height; a static bar per cell, so nothing moves while it waits. */
+.k2b-ui .k2b-data-table__skeleton {
+  display: block;
+  width: 60%;
+  max-width: 10rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-data-table td:nth-child(3n + 2) > .k2b-data-table__skeleton {
+  width: 42%;
+}
+
+.k2b-ui .k2b-data-table td:nth-child(3n) > .k2b-data-table__skeleton {
+  width: 52%;
+}
+
+.k2b-ui .k2b-data-table td[data-align="right"] > .k2b-data-table__skeleton {
+  margin-inline-start: auto;
+}
+
+.k2b-ui .k2b-data-table td[data-align="center"] > .k2b-data-table__skeleton {
+  margin-inline: auto;
 }
 
 .k2b-ui .k2b-data-table__sentinel {

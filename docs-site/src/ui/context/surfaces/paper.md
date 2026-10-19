@@ -21,6 +21,11 @@ subtle frame shadow; it does not change the border, radius, or content spacing.
 `Paper` has no default padding. This lets the content owner choose its density
 without overriding the surface contract.
 
+`AppWorkspace.Main` carries no inset frames: do not put a Paper box inside the
+workspace surface. This follows the maintainer decision of 16 October 2026
+(“weg damit”), applied per application. See
+[UI-22](/en/docs/conventions/frontend#visual-ui-ui).
+
 ## Import
 
 ```tsx

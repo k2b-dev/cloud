@@ -447,8 +447,10 @@
   line-height: 1rem;
 }
 /* `surface="paper"` frames a standalone page area. Inside a surface that
-   already frames it, the placeholder keeps its layout but draws no second box. */
-.k2b-ui :is(.k2b-paper, .k2b-settings-section, .k2b-panel-dialog, .k2b-dialog, .k2b-detail-panel) .k2b-placeholder[data-surface="paper"] {
+   already frames it, the placeholder keeps its layout but draws no second box.
+   The workspace's Main is one flat surface: empty and error states there stand
+   on it without a box (decision 16.10.2026). */
+.k2b-ui :is(.k2b-paper, .k2b-settings-section, .k2b-panel-dialog, .k2b-dialog, .k2b-detail-panel, .k2b-app-workspace__main) .k2b-placeholder[data-surface="paper"] {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
@@ -507,7 +509,9 @@
 .k2b-ui .k2b-placeholder__title { color: var(--k2b-text-secondary); font-size: 0.75rem; font-weight: 500; line-height: 1rem; }
 .k2b-ui .k2b-placeholder[data-variant="panel"] .k2b-placeholder__title { font-size: 0.875rem; font-weight: 600; line-height: 1.25rem; letter-spacing: -0.018em; }
 .k2b-ui .k2b-placeholder__description { max-width: 24rem; font-size: 0.75rem; line-height: 1rem; }
-.k2b-ui .k2b-placeholder__action { margin-top: 0.5rem; }
+/* An action and "Try again" sit side by side and wrap with the button row gap. */
+.k2b-ui .k2b-placeholder__action { display: flex; flex-wrap: wrap; gap: 0.625rem 0.5rem; margin-top: 0.5rem; }
+.k2b-ui .k2b-placeholder[data-align="center"] .k2b-placeholder__action { justify-content: center; }
 .k2b-ui .k2b-placeholder[data-variant="panel"] .k2b-placeholder__action { margin-top: 0.25rem; }
 .k2b-ui .k2b-placeholder[data-variant="inline"] .k2b-placeholder__action { margin-top: 0; }
 

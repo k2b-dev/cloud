@@ -65,12 +65,12 @@ test.each(["Panel.test.tsx", "Panel.spec.tsx", "Panel.browser-harness.tsx", "Pan
   },
 );
 
-test.each(["packages/ssr/src/Panel.tsx", "pwas/demo/src/Panel.tsx"])("checks source in %s", async (file) => {
+test.each(["packages/ui/src/Panel.tsx", "packages/ssr/src/Panel.tsx", "pwas/demo/src/Panel.tsx"])("checks source in %s", async (file) => {
   expect(await findings('<Paper class="flex-1" />', file)).toEqual([`${file}:1`]);
 });
 
-test("excludes standalone UI primitives", async () => {
-  expect(await findings('<Placeholder surface="paper" variant="panel" />', "packages/ui/src/Panel.tsx")).toEqual([]);
+test("accepts a plain UI placeholder panel", async () => {
+  expect(await findings('<Placeholder variant="panel" />', "packages/ui/src/Panel.tsx")).toEqual([]);
 });
 
 test("a workspace inside a standalone page still owns its surface", async () => {

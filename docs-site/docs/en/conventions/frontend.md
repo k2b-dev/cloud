@@ -5,7 +5,7 @@ section: Conventions
 order: 1284
 description: Look up visual UI, interaction, and accessibility rules with their canonical owners and checks.
 tags: [conventions, ui, interaction, accessibility, audit]
-updated: 2026-10-16
+updated: 2026-10-18
 ---
 
 # Frontend conventions
@@ -45,6 +45,8 @@ patterns with `rg -n` in the application's `src` directory.
 | UI-21 | In a standalone (third-party) application, give each `color-mix()` that references a CSS variable or `currentColor` its own rule in `src/styles/app.css`. | The `@k2b/cloud` build keeps only one such value per rule and shows a fallback color for the others. | Manual: search `src/styles/app.css` for rules with more than one variable `color-mix()` and for `@apply` with several opacity modifiers on variable colors. | [Variable color mixes](/en/docs/frontend/styling-and-accessibility#mix-variable-colors-in-separate-rules) |
 | UI-22 | A view that fills `AppWorkspace.Main` uses Main's surface without its own radius or border; inset cards and table frames with Main's padding only where content needs another level. | A full-area canvas, graph, editor, or empty state must not draw a second card inside the app card. | `bun scripts/check.ts workspace-surfaces`; Manual: open each full-area view and empty state at both widths and check for a second rounded, bordered frame; confirm that inset cards serve a separate content level. | [Workspace surface hierarchy](/en/ui/layout/workspace) |
 | UI-23 | Objects belong in the sidebar; URL-backed views, filter chips, and quiet secondary actions share `AppWorkspace.Head`, with exactly one filled primary action. | Object identity, view selection, and filtering stay distinct at every workspace width. | Manual: narrow the host without changing the window; confirm chips wrap, the quiet filtered count disappears first, the current view stays visible under More, and the phone primary sits beside the bottom bar. | [Objects on the left, views in the head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head) |
+| UI-24 | Follow the minimal Grids table reference: no grid, zebra, or row lines; row hairlines only above 8 columns; numbers right-aligned with tabular figures. | Rows remain quiet and comparable. | Check: use DataTable; no custom row borders. `data-table-minimal.browser.test.ts` pins the threshold. | [Tables](/en/ui/content/tables#presentation) |
+| UI-25 | Load with row-height placeholders; distinguish empty, no results, and no access. Every load error uses `Placeholder` with `state="error"` and `onRetry`. | People see the right next step and keep their selection during recovery. | Manual: search for `state="error"` without `onRetry` or a recovery `action`. | [States](/en/ui/surfaces/empty-states) |
 
 ## Interaction and feedback (IX)
 
@@ -70,6 +72,7 @@ patterns with `rg -n` in the application's `src` directory.
 | IX-18 | Never import an island or client module from another island or client module; share a plain `.tsx` module instead. | Each island keeps its own mount, prop serialization, and error boundary. | `bun run --cwd packages/<app> build` fails on a nested island; Manual: search `*.island.tsx` and `*.client.tsx` files for imports matching `"\.(island\|client)(\.tsx)?[\"']"` and for `import()` with a computed path. | [No nested islands](/en/docs/frontend/islands-and-hydration#do-not-nest-islands) |
 | IX-19 | Leave island failures to the boundary Cloud gives each island, without an `ErrorBoundary` around an island's root, and handle errors in event handlers and async callbacks where they happen. | A failing island shows a notice with **Try again** while the rest of the page keeps working. | Manual: search for `ErrorBoundary` at island roots; read event handlers and async callbacks for a handled error, such as a mutation's `error()` or a toast. | [When an island fails](/en/docs/frontend/islands-and-hydration#when-an-island-fails) |
 | IX-20 | Hide progressive row actions with `k2b-progressive-row` and `k2b-progressive-action`, or under `@media (any-hover: hover)` in custom CSS, never with `(hover: hover)`, `(hover: none)`, `(pointer: fine)`, or Tailwind's `hover:` and `group-hover:` variants. | A tablet's primary pointer stays the finger when a mouse is attached. | `packages/ui/src/styles/css-hygiene-contract.test.ts` covers `@k2b/ui`; Manual: search for `"hover: hover\|hover: none\|pointer: fine\|group-hover:opacity"`; check that row actions always show on a touch-only phone and appear on hover and keyboard focus with a mouse. | [Controls and feedback](/en/docs/frontend/styling-and-accessibility#keep-controls-and-feedback-consistent) |
+| IX-21 | Keep happy paths: a known path that moves keeps working or shows a one-time MovedHint at the old place, only for people who may use the new path. Mail is the exception: no hint at the old place (maintainer decision, 17 October 2026). | Familiar paths still lead people to the result. | Manual: follow the old path, dismiss or use the hint, then reload; a seen hint stays absent from the server render. | [MovedHint](/en/ui/feedback/moved-hint) |
 
 ## Accessibility (A11Y)
 

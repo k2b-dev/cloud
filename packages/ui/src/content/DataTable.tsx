@@ -24,6 +24,8 @@ import Placeholder from "../surfaces/Placeholder";
 import type { CollectionSelection } from "./collection-selection";
 import { useDataTableMessages } from "./data-table-messages";
 
+const WIDE_TABLE_COLUMNS = 8;
+
 export type DataTableColumn<T> = {
   id: string;
   header: JSX.Element | ((ctx: { col: DataTableColumn<T> }) => JSX.Element);
@@ -100,6 +102,9 @@ export type DataTableProps<T> = {
   footer?: DataTableFooter<T>;
   hasMore?: boolean;
   loadingMore?: boolean;
+  loading?: boolean;
+  /** Initial placeholder count, clamped to an integer from 1 to 50. Defaults to 5. */
+  loadingRows?: number;
   onLoadMore?: () => void;
   empty?: JSX.Element;
   density?: "compact" | "normal";
@@ -227,6 +232,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   let previousRowsLength = props.rows.length;
   let previousLoadingMore = !!props.loadingMore;
   let previousHasMore = !!props.hasMore;
+  const loadingRows = () => Math.min(50, Math.max(1, Math.trunc(Number.isNaN(props.loadingRows) ? 5 : (props.loadingRows ?? 5))));
   const rowId = (row: T) => props.getRowId?.(row);
   const isInteractive = () => !!props.selection || !!props.onRowClick || !!props.onRowDoubleClick;
   const shouldHoverRows = () => props.hoverRows ?? isInteractive();
@@ -520,6 +526,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
           role="region"
           aria-label={labelledBy() ? undefined : (props.ariaLabel ?? dataTableMessages().dataTable)}
           aria-labelledby={labelledBy()}
+          aria-busy={props.loading ? "true" : undefined}
           tabIndex={0}
           class={`k2b-table-wrap${props.scrollClass ? ` ${props.scrollClass}` : ""}`}
           data-density={props.density === "compact" ? "compact" : undefined}
@@ -528,7 +535,17 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
           data-scroll-preserve={props.scrollPreserveKey || undefined}
           onScroll={onScroll}
         >
-          <table ref={tableRef} class={tableClass()} data-fill={props.fillHeight ? "true" : undefined}>
+          <table
+            ref={tableRef}
+            class={tableClass()}
+            data-fill={props.fillHeight ? "true" : undefined}
+            data-wide={props.columns.length > WIDE_TABLE_COLUMNS ? "true" : undefined}
+          >
+            <Show when={props.loading}>
+              <caption class="k2b-sr-only" role="status" aria-live="polite">
+                {dataTableMessages().loadingRows}
+              </caption>
+            </Show>
             <thead class="k2b-data-table__head" data-sticky={props.stickyHeader === false ? undefined : "true"}>
               <tr class="k2b-data-table__head-row">
                 <For each={props.columns}>
@@ -551,11 +568,30 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
               <Show
                 when={props.rows.length > 0}
                 fallback={
-                  <tr>
-                    <td class="k2b-data-table__empty" colspan={props.columns.length}>
-                      <Placeholder description={<>{props.empty ?? dataTableMessages().noRecords}</>} />
-                    </td>
-                  </tr>
+                  <Show
+                    when={props.loading}
+                    fallback={
+                      <tr>
+                        <td class="k2b-data-table__empty" colspan={props.columns.length}>
+                          <Placeholder description={<>{props.empty ?? dataTableMessages().noRecords}</>} />
+                        </td>
+                      </tr>
+                    }
+                  >
+                    <For each={Array.from({ length: loadingRows() })}>
+                      {() => (
+                        <tr class="k2b-data-table__row" data-loading="true" aria-hidden="true">
+                          <For each={props.columns}>
+                            {(col) => (
+                              <td data-align={alignAttr(col)}>
+                                <span class="k2b-data-table__skeleton" />
+                              </td>
+                            )}
+                          </For>
+                        </tr>
+                      )}
+                    </For>
+                  </Show>
                 }
               >
                 <For each={props.rows}>
