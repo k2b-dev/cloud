@@ -104,6 +104,12 @@
   border-radius: var(--k2b-radius-control);
 }
 
+/* An open question stands apart from the place before and after it; consecutive outcome lines stay together. */
+.k2b-ui .ai-turn__action:has(.k2b-chat-decision__card) + .ai-turn__action,
+.k2b-ui .ai-turn__action + .ai-turn__action:has(.k2b-chat-decision__card) {
+  margin-top: 1rem;
+}
+
 .k2b-ui .ai-turn__action:focus {
   outline: none;
 }
@@ -111,6 +117,60 @@
 .k2b-ui .ai-turn__action:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: var(--k2b-focus-offset);
+}
+
+/* Assistant questions and outcome lines (card v4), built from @k2b/ui Chat.Decision, Chat.Preview, and Chat.Outcome.
+   Only what an older review needs lives here: values that keep their line breaks, a Markdown block, and the call's
+   raw input on demand. Everything else is the shared primitives' look. */
+.k2b-ui .cloud-action-preview__value {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .cloud-action-preview__markdown {
+  min-width: 0;
+  color: var(--k2b-text-secondary);
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.k2b-ui .cloud-action-preview__input {
+  display: grid;
+  min-width: 0;
+  justify-items: start;
+  gap: 0.5rem;
+}
+
+.k2b-ui .cloud-action-preview__input > [role="region"] {
+  width: 100%;
+  min-width: 0;
+}
+
+.k2b-ui .cloud-action-preview__raw {
+  max-height: 13rem;
+  margin: 0;
+  overflow: auto;
+  border-radius: var(--k2b-radius-control);
+  padding: 0.5rem;
+  color: var(--k2b-text);
+  background: var(--k2b-surface-muted);
+  box-shadow: var(--ui-control-recess);
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+/* The review's other links continue the preview above them instead of starting a new block. */
+.k2b-ui .k2b-chat-decision__card > .k2b-chat-preview + .cloud-action-preview__links {
+  margin-top: 0.25rem;
+}
+
+/* The approvals page: where a request waits stands above its card, quiet, on the card's edge. */
+.k2b-ui .cloud-approvals .cloud-approval {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* A pending approval: a calm tinted card in place 4 that says what will happen. Fields stack on phones and the

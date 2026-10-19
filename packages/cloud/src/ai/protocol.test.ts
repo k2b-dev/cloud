@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
+import type { AiStoredActionReview } from "./action-review";
 import { aiCapabilityToolName } from "./capabilities";
 import { buildBlocksFromMessages } from "./protocol";
 
@@ -76,3 +78,19 @@ test("persisted presentation app ID disambiguates escaped delimiter words", () =
   ]);
   expect(blocks[0]).toMatchObject({ name: "custom_query_app.task_action_create" });
 });
+
+test.each<AiStoredActionReview>([reviewFixture(), { legacy: { question: "Send the original draft?", rows: [] } }])(
+  "restores the stored review and check through a completed result",
+  (review) => {
+    const check = { state: "done" as const, receipt: { text: "Queued" }, at: "2026-10-18T09:00:00.000Z" };
+    const blocks = buildBlocksFromMessages([
+      {
+        seq: 1,
+        message: { role: "assistant", content: [{ type: "tool_call", id: "send", name: "demo.send", args: {} }] },
+        meta: { toolReviews: { send: review }, toolChecks: { send: check } },
+      },
+      { seq: 2, message: { role: "tool_result", callId: "send", name: "demo.send", result: { data: null }, isError: false } },
+    ]);
+    expect(blocks[0]).toMatchObject({ status: "completed", review, check });
+  },
+);

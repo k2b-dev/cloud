@@ -30,6 +30,14 @@ export const aiToolAudit = {
       LIMIT 1`;
     return row?.conversation_id ?? null;
   },
+  hasCapabilityDispatch: async (input: { turnId: string; callId: string }): Promise<boolean> => {
+    const rows = await sql`
+      SELECT 1 FROM ai.tool_calls
+      WHERE turn_id = ${input.turnId} AND call_id = ${input.callId} AND request_id IS NOT NULL
+      LIMIT 1
+    `;
+    return rows.length > 0;
+  },
   noteCapabilityDispatch: async (input: {
     conversationId: string;
     turnId: string;

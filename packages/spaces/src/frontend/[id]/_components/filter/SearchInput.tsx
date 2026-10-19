@@ -83,7 +83,7 @@ export default function SearchInput(props: SearchInputProps) {
         onValueChange={handleInput}
         clearable
         onClear={() => handleInput("")}
-        suffix={pending() || props.busy ? <i class="ti ti-loader-2 animate-spin text-zinc-400" /> : undefined}
+        suffix={pending() || props.busy ? <i class="ti ti-loader-2 animate-spin text-dimmed" /> : undefined}
       />
       <For each={preservedParams()}>{([name, value]) => <input type="hidden" name={name} value={value} />}</For>
     </form>

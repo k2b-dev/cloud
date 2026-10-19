@@ -5,7 +5,7 @@ section: Identity and access
 order: 357
 description: How Cloud records, decides, and uses one approval for exactly the Action a person saw.
 tags: [identity, approvals, capabilities, audit]
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 
 # Action approvals
@@ -65,6 +65,12 @@ A person can decide the same request in these places:
   It shows the request, then asks for an explicit approve or reject choice.
 - **My account → Approvals** at `/me/approvals`, for all apps.
   Use `/me/approvals?app=mail` to filter by app.
+
+The approvals page uses the same card as the chat: a sentence with typed chips,
+Cloud's reason line, the preview, two answers, and one outcome line. The reason
+comes from the app's review or declared policy, not the model's explanation;
+legacy reviews and Actions without a policy use `app_asks`. Filling a missing
+reason in a displayed copy never changes the approval snapshot or its digest.
 
 The lists contain only open, unexpired requests that a chat still waits for.
 They include Assistant chats and Studio code that asked through a chat.
@@ -194,9 +200,11 @@ after they expired.
 
 ## Remembered approvals stay separate
 
-**Approve for this chat**, **Always approve**, and allowed websites are still
-stored as preferences in Assistant and resolve a later call without a new
-request. Only a person in a signed-in browser session can remember a website.
+Where allowed, **Yes, and don't ask again in this chat** remembers the reviewed
+scope for that chat. The browser no longer offers **Always approve**; earlier
+choices still apply until the next major release. These choices and allowed
+websites remain preferences in Assistant and resolve a later matching call
+without a new request. Only a person in a signed-in browser session can remember a website.
 Routines (scheduled tasks) and mandates never ask and never use a remembered approval;
 see [Background mandates](/en/docs/identity/background-mandates).
 Remembering and revoking a preference each write an [audit event](/en/docs/platform/audit-events#remembered-ai-approvals).

@@ -221,6 +221,11 @@ export const runtimeCapabilities = {
       appName: target.appName,
       appIcon: target.appIcon,
       ...prepared,
+      // Only enrich the browser copy. The stored snapshot and approval digest keep the app's original review.
+      review:
+        review && "sentence" in review && !review.ask && target.policy && "ask" in target.policy
+          ? { ...review, ask: target.policy.ask }
+          : review,
       ...(wording?.sentences ? { sentences: wording.sentences } : {}),
       ...(wording?.fields?.length ? { fields: [...wording.fields] } : {}),
     };

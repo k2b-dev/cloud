@@ -19,7 +19,7 @@ import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities } from "@k2b/cloud/contracts";
 import { type AuthContext, accessRevision } from "@k2b/cloud/server";
 import { secrets } from "@k2b/cloud/services";
-import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
+import { approvalReviewDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
@@ -1205,6 +1205,34 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       return (await approvals.get(call.approval_id))!;
     };
     try {
+      const typedReview = {
+        locale: "en",
+        sentence: { action: "Write item", running: "Writing item", done: "Wrote item", confirm: "Write item", decline: "Do not write" },
+        slots: {},
+      };
+      catalog.mockResolvedValueOnce({
+        ok: true,
+        data: {
+          appId: "demo",
+          appName: "Demo",
+          appDescription: "",
+          appIcon: "ti ti-app-window",
+          manifest: { ...manifest, policies: { write: { ask: "cannot_undo" } } },
+        },
+      });
+      review.mockResolvedValueOnce({ ok: true, data: typedReview });
+      const typed = request();
+      expect(await runtimeCapabilities.prepare(typed, owner, caller)).toMatchObject({
+        status: "approval",
+        review: { ...typedReview, ask: "cannot_undo" },
+      });
+      expect((await approvalFor(typed.id)).details).toEqual(typedReview);
+      expect((await approvalFor(typed.id)).reviewDigest).toBe(approvalReviewDigest(typedReview));
+      const [saved] = await sql<
+        { prepared: { review: unknown } }[]
+      >`SELECT prepared FROM assistant.capability_calls WHERE id=${typed.id}::uuid`;
+      expect(saved?.prepared.review).toEqual(typedReview);
+      await runtimeCapabilities.resolve(typed.id, { approved: false }, owner, caller);
       const denied = request();
       // The card gets the Action's wording in the caller's locale, as a chat call of the same Action would.
       expect(await runtimeCapabilities.prepare(denied, owner, caller)).toMatchObject({

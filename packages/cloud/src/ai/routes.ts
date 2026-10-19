@@ -31,9 +31,11 @@ import { ImageMetadataError } from "../services/image-metadata";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
 import { readThemeFromCookieHeader } from "../shared/theme";
+import { isUnknownActionOutcome } from "./action-review";
 import { assistantAiSettingsState, listAssistantAiModels, resolveAssistantAudioModel, selectAssistantAiModelId } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
+import { checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
 import { aiChatTasks } from "./chat-tasks";
@@ -94,9 +96,10 @@ import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
 import { aiSkills } from "./skills";
-import { aiConversations } from "./store";
+import { AI_TOOL_CHECK_STALE_MS, aiConversations, claimAiToolCheck, readAiToolCheck, settleAiToolCheck } from "./store";
 import { createAiConversationStreamResponse, loadAiStreamState } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
+import { aiToolAudit } from "./tool-audit";
 import { aiToolPromptHints } from "./tools";
 import type { AiConversation, AiTurn } from "./types";
 
@@ -1203,6 +1206,101 @@ export const aiRoutes = (() => {
         if (!turn) return notFound(c);
         await abortAiTurn({ conversationId: conversation.id, turnId: turn.id });
         return respond(c, ok({ ok: true }));
+      })
+      .post("/conversations/:conversationId/turns/:turnId/calls/:callId/check", async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        // The check runs with the person's session authority, so a scoped token or another client cannot borrow it.
+        if (ctx.actor.kind !== "user" || !ctx.signedInSession)
+          return respond(c, fail(err.forbidden("Action outcome checks require a signed-in browser session.")));
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation) return notFound(c);
+        const turn = await loadTurn(conversation, c.req.param("turnId"));
+        const callId = c.req.param("callId");
+        if (!turn || !callId) return notFound(c);
+        const target = { conversationId: conversation.id, turnId: turn.id, callId };
+        // The app's Query may take its whole budget; the request must outlast it.
+        setRequestTimeout(c, Math.ceil(QUERY_TIMEOUT_MS / 1000) + REQUEST_IDLE_TIMEOUT_SECONDS);
+        try {
+          const messages = await aiConversations.listTurnMessages({
+            conversationId: conversation.id,
+            loopId: turn.id,
+            includeCompacted: true,
+          });
+          const message = messages.find(
+            ({ message }) =>
+              message.role === "assistant" && message.content.some((block) => block.type === "tool_call" && block.id === callId),
+          );
+          if (!message) return notFound(c);
+          const review = message.meta?.toolReviews?.[callId];
+          const previous = message.meta?.toolChecks?.[callId];
+          if (!review || !("sentence" in review) || !review.check) return respond(c, fail(err.conflict("This call has no outcome check.")));
+          if (!previous) {
+            // An unknown tool result ends executor recovery for this call, even while its turn is live. Without
+            // a result, only a terminal cut-off call may be checked. Both paths require evidence of dispatch.
+            const terminal = turn.status === "completed" || turn.status === "failed" || turn.status === "aborted";
+            const result = messages.find(({ message }) => message.role === "tool_result" && message.callId === callId)?.message;
+            const eligible = result
+              ? result.role === "tool_result" && result.isError === true && isUnknownActionOutcome(result.result)
+              : terminal;
+            if (!eligible || !(await aiToolAudit.hasCapabilityDispatch(target)))
+              return respond(c, fail(err.conflict("This call has no outcome check.")));
+          }
+          // A settled check answers again as it was stored, so a client whose last response got lost can recover
+          // without running the Query again.
+          if (previous?.state === "done" || previous?.state === "not_done") return respond(c, ok(previous));
+          const block =
+            message.message.role === "assistant"
+              ? message.message.content.find((block) => block.type === "tool_call" && block.id === callId)
+              : undefined;
+          const catalog = buildAiCapabilityCatalog(await listCapabilities());
+          const presentation = message.meta?.toolPresentations?.[callId];
+          const entry = catalog.find(
+            (entry) =>
+              entry.kind === "action" &&
+              (entry.name === (block?.type === "tool_call" ? block.name : undefined) ||
+                entry.providerName === (block?.type === "tool_call" ? block.name : undefined)) &&
+              (!presentation || presentation.appId === entry.appId),
+          );
+          if (!entry) return respond(c, fail(err.conflict("The Action's app is unavailable. Try the check again when it returns.")));
+          const authority = await resolveAiCapabilityActor({
+            conversationId: conversation.id,
+            persistedActor: ctx.actor,
+            store: aiConversations,
+          });
+          // One check at a time per call, across Core replicas and the executor: the claim is one conditional write,
+          // and no transaction stays open while the app's Query runs.
+          const claimedAt = new Date().toISOString();
+          const claimed = await claimAiToolCheck({
+            ...target,
+            first: !previous,
+            at: claimedAt,
+            staleBefore: new Date(Date.now() - AI_TOOL_CHECK_STALE_MS).toISOString(),
+          });
+          if (!claimed) {
+            const stored = await readAiToolCheck(target);
+            if (stored?.state === "done" || stored?.state === "not_done") return respond(c, ok(stored));
+            return respond(c, fail(err.conflict("An outcome check is already running for this call.")));
+          }
+          const answered = await checkAiCapability({
+            ...target,
+            entry,
+            check: review.check,
+            catalog,
+            authority,
+            // The receipt joins the stored review's sentence, so it is asked for in that language.
+            locale: review.locale,
+            context: { callId, signal: c.req.raw.signal },
+          });
+          if (await settleAiToolCheck({ ...target, claimedAt, check: answered })) return respond(c, ok(answered));
+          // The claim went stale and a newer check took over; its stored result is the answer.
+          const stored = await readAiToolCheck(target);
+          return stored && stored.state !== "checking"
+            ? respond(c, ok(stored))
+            : respond(c, fail(err.conflict("An outcome check is already running for this call.")));
+        } finally {
+          setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+        }
       })
       .post(
         "/conversations/:conversationId/turns/:turnId/actions/:callId",

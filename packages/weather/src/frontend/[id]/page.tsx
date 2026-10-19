@@ -17,16 +17,17 @@ type Location = {
   lon: number;
 };
 
+/* The measurement's own color tints its chip: sun amber, dew blue, the rest neutral ink. */
 const CONDITION_ICON_CLASSES = {
-  amber: "bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-300",
-  blue: "bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-300",
-  zinc: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800/70 dark:text-zinc-400",
+  amber: "text-amber-600 dark:text-amber-300",
+  blue: "text-blue-600 dark:text-blue-300",
+  zinc: "text-dimmed",
 };
 
 function CurrentConditionStat(props: { label: string; value: string; icon: string; tone: keyof typeof CONDITION_ICON_CLASSES }) {
   return (
     <div class="flex min-w-0 items-start gap-2">
-      <span class={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md ${CONDITION_ICON_CLASSES[props.tone]}`}>
+      <span class={`k2b-icon-tile mt-0.5 size-7 ${CONDITION_ICON_CLASSES[props.tone]}`}>
         <i class={`${props.icon} text-sm`} aria-hidden="true" />
       </span>
       <div class="flex min-w-0 flex-col">

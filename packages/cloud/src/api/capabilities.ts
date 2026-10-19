@@ -245,6 +245,8 @@ export type CapabilityDispatchParams = {
   authority?: RequestAuthority;
   mandate?: MandatedCapabilityAuthority;
   callingAppId?: string;
+  /** Internal observation only: called immediately before attempting the app request. */
+  onUpstreamAttempt?: () => void;
   dependencies?: CapabilityDispatchDependencies;
 };
 
@@ -555,6 +557,7 @@ const runCapabilityDispatch = async (
 
   let response: Response;
   try {
+    params.onUpstreamAttempt?.();
     response = await fetchUpstream(
       `${entry.endpoint}/${params.kind}/${encodeURIComponent(params.capabilityId)}${params.review ? "/review" : ""}`,
       {

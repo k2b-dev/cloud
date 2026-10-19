@@ -665,7 +665,7 @@ export default function ItemForm(props: ItemFormProps) {
                         </Show>
                       </div>
                       <div
-                        class="flex items-start gap-2 rounded-lg bg-zinc-50 px-3 py-2.5 text-sm text-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300"
+                        class="flex items-start gap-2 rounded-lg bg-zinc-50 px-3 py-2.5 text-sm text-secondary dark:bg-zinc-900/50"
                         role="status"
                         aria-live="polite"
                         aria-atomic="true"
@@ -828,7 +828,7 @@ export default function ItemForm(props: ItemFormProps) {
 
               <Show when={templateSummary().length > 0}>
                 <p class="spaces-template-summary text-xs text-dimmed" data-testid="template-summary">
-                  <span>{t.fromTemplate}</span> <span class="text-zinc-700 dark:text-zinc-300">{templateSummary().join(" · ")}</span>
+                  <span>{t.fromTemplate}</span> <span class="text-secondary">{templateSummary().join(" · ")}</span>
                 </p>
               </Show>
 

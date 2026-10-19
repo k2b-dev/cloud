@@ -375,7 +375,7 @@ const HostgroupSearch = (props: { exclude: string[]; adding?: boolean; onSelect:
             <For each={results()}>
               {(hg) => (
                 <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                  <div class="flex shrink-0 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 h-8 w-8 text-xs">
+                  <div class="flex shrink-0 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-700 text-secondary h-8 w-8 text-xs">
                     <i class="ti ti-server text-sm" />
                   </div>
                   <div class="flex-1 min-w-0">

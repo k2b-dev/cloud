@@ -5,7 +5,7 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-10-12
+updated: 2026-10-19
 ---
 
 # Assistant
@@ -379,11 +379,19 @@ personalization, and guidance for better requests. Developers can read
 Assistant adopts.
 
 Open **Assistant settings → Approvals** to review Actions previously accepted with
-**Always approve**. Revoking an entry makes Assistant ask again on the next
+**Always approve**. The browser no longer offers that choice; earlier choices
+still apply until the next major release. Revoking an entry makes Assistant ask again on the next
 matching call. Sending email, deleting data, open-world effects, and other
 Actions with the default approval policy continue to require confirmation every
 time. Code Mode source and execution tools run without confirmation within the
 user's existing permissions; they do not implicitly grant sharing or app deletion.
+
+Approval questions show a sentence with chips, Cloud's reason, a preview, and
+two answers naming the deed and target. Where allowed, **Yes, and don't ask
+again in this chat** remembers the reviewed scope for that chat. The card keeps
+its review after reload. If an outcome is unknown, **Check again** runs only
+the app's outcome check, never the Action; it is available after a pending or
+failed check. Without a check, no repeat button is offered.
 
 ## Use Assistant from the terminal
 

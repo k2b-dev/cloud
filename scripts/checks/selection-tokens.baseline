@@ -1,12 +1,3 @@
-# Known selection-tokens findings: <file> | <selection|accent-mix> | <count>.
+# Known selection-tokens findings: <file> | <selection|accent-mix|accent-raw> | <count>.
 # Migrations lower counts and remove entries; the rule never raises counts or adds lines.
 # `bun scripts/check.ts selection-tokens --fix` lowers counts whose findings are gone.
-packages/gateway-ops/src/observability/metrics/_components/MetricsCatalogue.island.tsx | selection | 1
-packages/gateway-ops/src/observability/metrics/_components/MetricsTokens.island.tsx | selection | 1
-packages/gateway-ops/src/observability/notifications/page.tsx | selection | 1
-packages/ipa-hosts/src/frontend/HostgroupCard.tsx | selection | 1
-packages/oauth/src/frontend/page.tsx | selection | 1
-packages/tools/src/frontend/tools/SpeedTest.island.tsx | selection | 1
-packages/tools/src/frontend/tools/WebhookTester.island.tsx | selection | 1
-packages/venue/src/frontend/_components/venue-workspace/signup.tsx | selection | 1
-packages/weather/src/frontend/[id]/page.tsx | selection | 1

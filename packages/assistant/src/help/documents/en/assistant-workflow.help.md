@@ -51,7 +51,24 @@ Chats automatically move to **Done** after seven days without use. Sending a mes
 :::info Approvals and client actions
 Decide an approval in its chat card or open **Approvals** above **Studio** for the waiting requests. You can also use **My account → Approvals**. For turns started outside a signed-in browser session, the **Pending approvals** notification opens that account list.
 
-Some turns can request an approval or a frontend tool result. Answer those prompts in the message list to let the turn continue. An approval applies once, to exactly what the prompt shows. If that changes before the Action runs, for example because a draft has another recipient, Assistant asks again. Bounded, repeatable Actions offer **Approve for this chat** and **Always approve** in the approval button menu; a chat approval ends when you delete the chat. Deletion, sending, sharing, and other consequential Actions continue to ask every time. When code reads a website, the menu offers **Allow this website for this chat**: later reads from exactly that website no longer ask, and each one shows its full address with a **Revoke** button. Approvals of this kind are listed under **Secrets & approvals** in the chat's context.
+Each question shows a sentence with chips for people and objects, Cloud's reason
+for asking, and a preview of what will change. Two buttons name the deed and
+target: one allows it and one declines. An approval applies once to what the
+card shows. If that changes before the Action runs, Assistant asks again. A
+reload keeps the reviewed sentence and preview.
+
+Where offered, the quiet **Yes, and don't ask again in this chat** link remembers
+this scope until you delete the chat. **Always approve** is no longer offered;
+earlier choices still apply until the next major release. Chat choices appear
+under **Secrets & approvals**. When code reads a website, **Yes, and allow this
+website in this chat** remembers that exact website; each later read shows its full
+address and **Revoke**.
+
+One outcome line says running, done, rejected, not run, or unknown. If the app
+provides an outcome check, Assistant runs it once after a lost answer. A known
+result settles the card; a pending or failed check leaves the outcome unknown.
+**Check again** checks only the outcome, never repeats the Action. Without an
+outcome check, there is no repeat button.
 :::
 
 ## Conversation-aware Assistant {icon="message-forward"}

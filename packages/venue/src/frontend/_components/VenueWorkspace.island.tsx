@@ -985,7 +985,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                                     class={
                                       star <= entry.rating
                                         ? "ti ti-star text-sm text-amber-500 dark:text-amber-400"
-                                        : "ti ti-star text-sm text-zinc-300 dark:text-zinc-600"
+                                        : "ti ti-star text-sm text-dimmed"
                                     }
                                   />
                                 )}
