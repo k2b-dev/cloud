@@ -217,7 +217,7 @@ and `*.browser-harness.tsx` files. A read is `boundingBox()`, or an
 hover, fill, focus, `dispatchEvent`, mouse, keyboard, and touchscreen calls,
 `emulateMedia`, `setViewportSize`, and `newPage`. Settles are `settled()`,
 `waitForFunction`, `expect.poll`, locator `waitFor`, `keptThrough`, and
-`mostAtOnce`. The check reads each function body in source order, nested
+`mostAtOnce`, when the test awaits them. The check reads each function body in source order, nested
 blocks included. A call to a named helper in the same file counts as what the
 helper does: a read before its first action or settle, and its last action or
 settle. A helper whose return type names `Page` counts as an action unless it
