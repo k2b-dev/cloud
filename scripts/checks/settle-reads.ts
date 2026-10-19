@@ -73,12 +73,39 @@ const mentions = (node: ts.Node, names: ReadonlySet<string>): boolean =>
  */
 const readsInBrowser = (callback: BodyFunction | undefined): boolean => Boolean(callback?.body && mentions(callback.body, readApis));
 
-/** A settle counts only when the flow waits for it: awaited, or returned to a caller that does. */
+const promiseCombinator = (expression: ts.Expression): boolean =>
+  ts.isPropertyAccessExpression(expression) &&
+  ts.isIdentifier(expression.expression) &&
+  expression.expression.text === "Promise" &&
+  ["all", "allSettled", "race", "any"].includes(expression.name.text);
+
+/**
+ * A settle counts only when the flow waits for it: awaited, or returned to a caller that does. The promise
+ * passes through parentheses, type assertions, a method chain on it, and Promise.all and its siblings.
+ */
 const joined = (call: ts.CallExpression): boolean => {
-  for (let node: ts.Node = call; ; node = node.parent) {
-    if (ts.isAwaitExpression(node) || ts.isReturnStatement(node)) return true;
-    if (isBodyFunction(node.parent) && node.parent.body === node) return true;
-    if (ts.isStatement(node) || isBodyFunction(node) || ts.isSourceFile(node)) return false;
+  for (let node: ts.Node = call; ; ) {
+    const parent = node.parent;
+    if (ts.isAwaitExpression(parent) || ts.isReturnStatement(parent)) return true;
+    if (isBodyFunction(parent) && parent.body === node) return true;
+    if (
+      ts.isParenthesizedExpression(parent) ||
+      ts.isAsExpression(parent) ||
+      ts.isNonNullExpression(parent) ||
+      ts.isSatisfiesExpression(parent)
+    )
+      node = parent;
+    else if (
+      ts.isPropertyAccessExpression(parent) &&
+      parent.expression === node &&
+      ts.isCallExpression(parent.parent) &&
+      parent.parent.expression === parent
+    )
+      node = parent.parent;
+    else if (ts.isArrayLiteralExpression(parent) && ts.isCallExpression(parent.parent) && promiseCombinator(parent.parent.expression))
+      node = parent.parent;
+    else if (ts.isCallExpression(parent) && parent.expression !== node && promiseCombinator(parent.expression)) node = parent;
+    else return false;
   }
 };
 
@@ -91,35 +118,35 @@ const deviceCall = (expression: ts.Expression): boolean => {
 export const checkSettleReadsSource = (file: string, source: string): Finding[] => {
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const functions: BodyFunction[] = [];
-  // A helper belongs to the block, function, or file that declares it; a name resolves to the nearest one.
-  const declared = new Map<ts.Node, Map<string, BodyFunction>>();
+  // A name belongs to the block, function, or file that declares it and resolves to the nearest declaration.
+  // Parameters and other variables shadow a helper of the same name (null).
+  const declared = new Map<ts.Node, Map<string, BodyFunction | null>>();
   const helpers: BodyFunction[] = [];
-  const declare = (name: string, fn: BodyFunction): void => {
-    let scope = fn.parent;
+  const declare = (name: string, at: ts.Node, fn: BodyFunction | null): void => {
+    let scope = at;
     while (!ts.isBlock(scope) && !ts.isSourceFile(scope) && !ts.isModuleBlock(scope) && !isBodyFunction(scope)) scope = scope.parent;
-    const names = declared.get(scope) ?? new Map<string, BodyFunction>();
+    const names = declared.get(scope) ?? new Map<string, BodyFunction | null>();
     names.set(name, fn);
     declared.set(scope, names);
-    helpers.push(fn);
+    if (fn) helpers.push(fn);
   };
   const resolve = (identifier: ts.Identifier): BodyFunction | undefined => {
     for (let node: ts.Node | undefined = identifier.parent; node; node = node.parent) {
-      const fn = declared.get(node)?.get(identifier.text);
-      if (fn) return fn;
+      const names = declared.get(node);
+      if (names?.has(identifier.text)) return names.get(identifier.text) ?? undefined;
     }
     return undefined;
   };
   const collect = (node: ts.Node): void => {
     if (isBodyFunction(node) && node.body) {
       functions.push(node);
-      if (ts.isFunctionDeclaration(node) && node.name) declare(node.name.text, node);
-      if (
-        (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
-        ts.isVariableDeclaration(node.parent) &&
-        ts.isIdentifier(node.parent.name)
-      ) {
-        declare(node.parent.name.text, node);
-      }
+      if (ts.isFunctionDeclaration(node) && node.name) declare(node.name.text, node.parent, node);
+    }
+    if ((ts.isParameter(node) || ts.isBindingElement(node)) && ts.isIdentifier(node.name)) declare(node.name.text, node.parent, null);
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      const initializer = node.initializer;
+      const helper = initializer && (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) ? initializer : null;
+      declare(node.name.text, node.parent, helper);
     }
     ts.forEachChild(node, collect);
   };

@@ -365,3 +365,21 @@ async function sample() { await open(); await page.click("p"); await ready(); aw
   ).toEqual([]);
   expect(check(`async () => { await page.click("p"); await Promise.all([settled(page)]); ${read} }`)).toEqual([]);
 });
+
+test("a parameter or variable shadows a helper of the same name", () => {
+  expect(
+    check(`const box = (page) => page.locator("p").boundingBox();
+const ready = async () => { await settled(page); };
+async function sample(box: () => string) { await page.click("p"); box(); }
+async function other() { const ready = () => undefined; await page.click("p"); await ready(); await page.locator("p").boundingBox(); }`),
+  ).toEqual([4]);
+});
+
+test("a settle whose promise is discarded does not count", () => {
+  expect(
+    check(`const ready = () => void settled(page);
+const pending = () => { return { pending: settled(page) }; };
+async function sample() { await page.click("p"); await ready(); await pending(); await page.locator("p").boundingBox(); }`),
+  ).toEqual([3]);
+  expect(check(`async () => { await page.click("p"); await expect.poll(() => ready).toBe(true); ${read} }`)).toEqual([]);
+});
