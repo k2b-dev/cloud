@@ -717,6 +717,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       if (addSearch()) {
         if (addButtonRef?.contains(target) && !addButtonRef.disabled) return;
         if (textareaRef?.parentElement?.contains(target)) {
+          // The field takes the focus before the search field goes, so a phone keeps its keyboard; the press itself
+          // then places the caret.
+          textareaRef.focus({ preventScroll: true });
           endAddSearch(false);
           return;
         }
@@ -1521,7 +1524,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       endAddSearch(true);
       return;
     }
-    commandListKey(event);
+    if (commandListKey(event)) return;
+    // Ctrl/⌘+Enter sends from the search field as from the field, with the list closed first.
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      endAddSearch(true);
+      void submit();
+    }
   };
 
   const onKeyDown = (event: KeyboardEvent) => {

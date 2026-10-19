@@ -766,6 +766,7 @@ field on top. This works in both composer variants when `commands` or
 `searchCommands` is provided. The search field takes focus and owns the
 combobox attributes; the textarea keeps its text. Typing filters the same rows,
 and Tab on a scope row writes its narrowing word into the search field.
+Ctrl/⌘+Enter closes the list and sends, as it does from the textarea.
 The panel keeps its opening height while results change.
 
 A reference inserts at the textarea caret stored when **+** was pressed. If

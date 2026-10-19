@@ -307,15 +307,9 @@ test.each(["Enter", "Tab"])("only plain %s chooses, and IME confirmation never c
   const action = mock(() => {});
   const h = await mount({ commands: [{ name: "run", description: "Run", action }] });
   h.open();
-  for (const modifiers of [
-    { shiftKey: true },
-    { altKey: true },
-    { ctrlKey: true },
-    { metaKey: true },
-    { isComposing: true },
-    { keyCode: 229 },
-  ])
-    h.key(key, modifiers);
+  // Ctrl/⌘+Enter sends instead; its own test covers it.
+  const send = key === "Enter" ? [] : [{ ctrlKey: true }, { metaKey: true }];
+  for (const modifiers of [{ shiftKey: true }, { altKey: true }, ...send, { isComposing: true }, { keyCode: 229 }]) h.key(key, modifiers);
   h.search().dispatchEvent(new Event("compositionstart", { bubbles: true }));
   h.key(key);
   expect(action).not.toHaveBeenCalled();
@@ -324,6 +318,33 @@ test.each(["Enter", "Tab"])("only plain %s chooses, and IME confirmation never c
   await flush();
   expect(action).toHaveBeenCalledTimes(1);
   expect(h.ran).not.toHaveBeenCalled();
+});
+
+test.each(["ctrlKey", "metaKey"])("%s+Enter in the search field closes Plus and sends, as in the field", async (modifier) => {
+  const action = mock(() => {});
+  const h = await mount({ commands: [{ name: "run", description: "Run", action }] });
+  h.open(1, 5);
+  h.type("ru");
+  expect(h.key("Enter", { [modifier]: true }).defaultPrevented).toBe(true);
+  await flush();
+  expect(h.root.querySelector('[role="listbox"]')).toBeNull();
+  expect(h.ran).toHaveBeenCalledTimes(1);
+  expect(action).not.toHaveBeenCalled();
+});
+
+test("a press in the field closes Plus and moves the focus there at once", async () => {
+  const action = mock(() => {});
+  const h = await mount({ commands: [{ name: "run", description: "Run", action }] });
+  h.open(1, 5);
+  expect(h.document.activeElement === h.search()).toBe(true);
+  h.textarea.dispatchEvent(Object.assign(new Event("pointerdown", { bubbles: true, cancelable: true }), { pointerType: "touch" }));
+  // No gap without a focused element, in which a phone would drop its keyboard before the tap's own focus.
+  expect(h.document.activeElement === h.textarea).toBe(true);
+  expect(h.root.querySelector('[role="listbox"]')).toBeNull();
+  await flush();
+  expect(h.document.activeElement === h.textarea).toBe(true);
+  expect(h.value()).toBe("Hello world");
+  expect(action).not.toHaveBeenCalled();
 });
 
 test.each([false, true])("Attach files opens choose and cancellation restores selection (range=%s)", async (range) => {
