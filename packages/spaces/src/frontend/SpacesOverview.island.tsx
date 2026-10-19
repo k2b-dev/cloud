@@ -31,6 +31,7 @@ import {
   listenSpacesNavigationHints,
   type SidebarSpace,
 } from "./[id]/_components/sidebar/spaces-navigation";
+import { subscribeToSpacesDataInvalidation } from "./[id]/_components/workspace/workspace-events";
 import { createRetryToasts } from "./lib/feedback";
 import { readResponseError } from "./lib/response";
 import { overviewMessages } from "./overview-messages";
@@ -180,6 +181,11 @@ export default function SpacesOverview(props: Props) {
     navigate(next === "mine" ? "/app/spaces" : `/app/spaces?view=${next}`, { scroll: "preserve" });
   };
   onMount(() => {
+    onCleanup(
+      subscribeToSpacesDataInvalidation(["view"], async () => {
+        await Promise.all([work.refresh(), activity.refresh()]);
+      }),
+    );
     // Delegate native link clicks, including keyboard activation, without changing their semantics.
     const onTabClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -203,13 +209,15 @@ export default function SpacesOverview(props: Props) {
   const retryToast = createRetryToasts();
   /** A failed command (the Space no longer allows it, or the request failed) says so and offers the same step again. */
   const composeTask = (): Promise<void> =>
-    openCommand("spaces.task.compose", {}).catch((error: unknown) =>
-      retryToast(
-        error instanceof Error && error.message ? error.message : spaceCommandMessages.resolve([locale()]).t.failed,
-        t.retry,
-        composeTask,
-      ),
-    );
+    openCommand("spaces.task.compose", {})
+      .then(() => undefined)
+      .catch((error: unknown) =>
+        retryToast(
+          error instanceof Error && error.message ? error.message : spaceCommandMessages.resolve([locale()]).t.failed,
+          t.retry,
+          composeTask,
+        ),
+      );
   const openSearch = () => openGlobalSearch({ scope: { appId: "spaces", label: "Spaces", icon: "ti ti-layout-kanban" } });
 
   const activityFeed = () => (
