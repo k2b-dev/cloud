@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
-import type { Readable } from "node:stream";
+import { pipeline, type Readable, Transform } from "node:stream";
 import { pinnedNetworkLookup } from "@k2b/cloud/services/network-security";
 import {
   type DownloadObject,
@@ -1204,6 +1204,7 @@ type SourceDownloadClient = SelectedMailboxClient &
  * whose partial-source probe answers metadata without a source yields nothing for the caller's
  * missing-source budget. A probe with a source retries the download; an empty retry or an
  * unanswered probe fails transiently without using that budget. A recovered source streams normally.
+ * Source EOF is accepted only while the connection remains usable and the same mailbox stays selected.
  * A consumer that resolves "stop" leaves the remaining sources unfetched.
  */
 export const downloadSelectedSources = async (
@@ -1223,10 +1224,30 @@ export const downloadSelectedSources = async (
       download = await client.download(request.uid, undefined, { uid: true });
       if (!download.content || !download.meta) throw unconfirmedAbsence([request.uid]);
     }
-    const source = { ...request, expectedSize: download.meta.expectedSize ?? null, stream: download.content };
+    const guarded = new Transform({
+      transform(chunk, _encoding, callback) {
+        callback(null, chunk);
+      },
+      flush(callback) {
+        try {
+          // ImapFlow ends the download without an error when the connection closes between chunks,
+          // e.g. while hydration waits for memory. Even a disconnect just after the last chunk
+          // retries rather than risk accepting a truncated source.
+          assertSelectedMailbox(client, request.uidValidity);
+          callback();
+        } catch (error) {
+          callback(error instanceof Error ? error : new Error(String(error)));
+        }
+      },
+    });
+    pipeline(download.content, guarded, () => {
+      // The consumer receives errors on the guarded stream.
+    });
+    const source = { ...request, expectedSize: download.meta.expectedSize ?? null, stream: guarded };
     try {
       if ((await consume(source)) === "stop") break;
     } finally {
+      if (!guarded.destroyed) guarded.destroy();
       if (!download.content.destroyed) download.content.destroy();
     }
   }

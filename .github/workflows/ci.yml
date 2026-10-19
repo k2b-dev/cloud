@@ -174,8 +174,17 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      # Both modes balance measured suite times from scripts/test-weights.json:
+      # longest first; unknown suites use the median. Choose the smallest count
+      # with a predicted slowest shard <= 15 min (half the 30-minute job limit).
+      # Worst of the three newest green merge-queue runs: 5 unit shards, 12.7 min
+      # slowest, 64 min total; the 11.3-min @k2b/ui suite sets a lower bound.
+      # --max-minutes 20 fails above 2/3 of the job limit. The last third covers
+      # setup and GitHub finalization, which counts against timeout-minutes and
+      # took up to about 5 min during the Actions incident of 19 October 2026.
+      # strategy.job-total keeps the --shard divisor in sync with the matrix.
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5]
     # API-level unit tests go through the rate limiter, whose Bun redis client
     # waits for a server; a throwaway Valkey keeps them honest and fast.
     services:
@@ -205,7 +214,7 @@ jobs:
         # instead of the test's 60 s budget.
         timeout-minutes: 3
         run: CLD_TARGETS=linux_x64 CLD_OUTPUT_DIR="$RUNNER_TEMP/cld-runtime" bun run packages/cloud-cli/scripts/build.ts
-      - run: bun run test --shard ${{ matrix.shard }}/3
+      - run: bun run test --shard ${{ matrix.shard }}/${{ strategy.job-total }} --max-minutes 20
         env:
           # Unit tests of encrypted settings and grants derive keys from the application secret.
           APP_SECRET: ${{ env.TEST_SECRET }}
@@ -213,9 +222,10 @@ jobs:
   # The browser tests again in WebKit, the engine of Safari and of every
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
-  # locally. Three shards keep headroom under the 30-minute job timeout:
-  # two shards took 15.8 + 22.1 minutes of WebKit test time; round-robin over
-  # the same 146 files in three gives about 14.9 / 13.9 / 9.1 minutes.
+  # locally. The same measured-time rule as unit gives 5 shards: about 14.5 min
+  # slowest, 72 min total, at the worst of the three newest green merge-queue runs.
+  # Round-robin over 3 shards took up to 27.5 min. The 20-min guard reserves
+  # the last third for setup and finalization; strategy.job-total is the divisor.
   webkit:
     needs: [changes, setup]
     if: needs.changes.outputs.webkit == 'true'
@@ -224,7 +234,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5]
     env:
       TEST_BROWSER: webkit
       TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/
@@ -248,7 +258,7 @@ jobs:
           path: packages/ui/dist
       - name: Wait for the Playwright server
         run: timeout 120s bash -c 'until docker logs playwright 2>&1 | grep -q "Listening on"; do sleep 1; done'
-      - run: bun run test --browser --shard ${{ matrix.shard }}/3
+      - run: bun run test --browser --shard ${{ matrix.shard }}/${{ strategy.job-total }} --max-minutes 20
       - if: always()
         run: |
           "$GITHUB_WORKSPACE/.github/process-crashes.sh" report
