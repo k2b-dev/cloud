@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
+import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
+import { appColors } from "@k2b/cloud/ssr/app-color";
 import type { Browser } from "playwright";
-import { appAccentStyle } from "../../../cloud/src/ssr/app-appearance";
-import { appColors } from "../../../cloud/src/ssr/app-color";
 import { appHostCss } from "../../../ui/test/app-host-fixture";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 

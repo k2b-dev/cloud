@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
+import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
+import { appColors } from "@k2b/cloud/ssr/app-color";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { appAccentStyle } from "../../../../../../cloud/src/ssr/app-appearance";
-import { appColors } from "../../../../../../cloud/src/ssr/app-color";
 import { launchBrowser, settled } from "../../../../../../ui/test/browser";
 import { compareNoteOrder } from "../../../../lib/note-order";
 import type { NotebookContext, NoteTreeNode } from "./types";

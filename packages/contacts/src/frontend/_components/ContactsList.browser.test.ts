@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { resolve } from "node:path";
+import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
+import { appColors } from "@k2b/cloud/ssr/app-color";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { appAccentStyle } from "../../../../cloud/src/ssr/app-appearance";
-import { appColors } from "../../../../cloud/src/ssr/app-color";
 import { appHostCss } from "../../../../ui/test/app-host-fixture";
 import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { Contact, ContactTreeNode } from "../../service";
