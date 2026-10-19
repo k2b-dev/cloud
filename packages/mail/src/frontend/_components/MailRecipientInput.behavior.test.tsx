@@ -233,9 +233,20 @@ if (!isServer)
       expect(recipients).toEqual(["grace@example.test"]);
       expect(dom.root.querySelector('[role="listbox"]')).toBeNull();
       await typeQuery(input);
+      // An IME composition keeps its keys: no highlight, no commit.
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", isComposing: true, bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }));
+      expect(input.getAttribute("aria-activedescendant")).toBeNull();
+      expect(recipients).toEqual(["grace@example.test"]);
       press(input, "Escape");
       expect(dom.root.querySelector('[role="listbox"]')).toBeNull();
       expect(input.value).toBe("ex");
+      // Escape during a pending lookup ends it, so its answer never reopens the list.
+      input.value = "exa";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      press(input, "Escape");
+      await Bun.sleep(300);
+      expect(dom.root.querySelector('[role="listbox"]')).toBeNull();
       expect(recipients).toEqual(["grace@example.test"]);
     } finally {
       dispose();

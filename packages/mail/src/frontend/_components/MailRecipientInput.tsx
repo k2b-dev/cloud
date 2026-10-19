@@ -58,9 +58,24 @@ export default function MailRecipientInput(props: {
   const pick = (suggestion: RecipientSuggestion) =>
     add(suggestion.label === suggestion.address ? suggestion.address : `${suggestion.label} <${suggestion.address}>`);
 
+  /** Closes the list and ends a pending lookup, so its answer cannot reopen the list without new input. */
+  const dismissSuggestions = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    controller?.abort();
+    controller = null;
+    setLoading(false);
+    setSuggestions([]);
+  };
+
   /** Arrow keys move through the open list, Enter takes the highlighted entry, Escape closes the list. */
   const handleSuggestionKey = (event: KeyboardEvent): boolean => {
     const count = suggestions().length;
+    if (event.key === "Escape" && count === 0 && (timer || controller)) {
+      event.preventDefault();
+      dismissSuggestions();
+      return true;
+    }
     if (count === 0) return false;
     if (event.key !== "Escape" && suggestionsQuery !== query().trim()) return false;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -78,7 +93,7 @@ export default function MailRecipientInput(props: {
     }
     if (event.key === "Escape") {
       event.preventDefault();
-      setSuggestions([]);
+      dismissSuggestions();
       return true;
     }
     return false;
@@ -162,6 +177,7 @@ export default function MailRecipientInput(props: {
     }
     setLoading(true);
     timer = setTimeout(async () => {
+      timer = null;
       const request = new AbortController();
       controller = request;
       try {
@@ -281,6 +297,8 @@ export default function MailRecipientInput(props: {
                   setValidationError(null);
                 }}
                 onKeyDown={(event) => {
+                  // An IME composition owns its keys until it ends.
+                  if (event.isComposing) return;
                   if (handleSuggestionKey(event)) return;
                   if (shouldCommitMailRecipient(query(), event.key)) {
                     event.preventDefault();
@@ -319,6 +337,8 @@ export default function MailRecipientInput(props: {
               setValidationError(null);
             }}
             onKeyDown={(event) => {
+              // An IME composition owns its keys until it ends.
+              if (event.isComposing) return;
               if (handleSuggestionKey(event)) return;
               if (shouldCommitMailRecipient(query(), event.key)) {
                 event.preventDefault();
