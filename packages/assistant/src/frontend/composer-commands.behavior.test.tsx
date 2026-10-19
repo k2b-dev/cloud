@@ -314,10 +314,11 @@ const mount = async (
         ]}
         searchCommands={(query, signal, search) => {
           // As the workspace does: typed text outside a scope waits for the opening's catalog answer.
-          recent.opened(search, locale);
+          const recentAtOpening = recent.opened(search, locale);
           return Promise.all([
             assistantComposerCommands({
               recent: recent.items(),
+              recentAtOpening,
               excludeRefs: draftRefs(),
               partCount,
               query,
@@ -1167,6 +1168,33 @@ test("an answer between opening and the first search keeps a recent Skill under 
   await settled();
   expect(h.headings()[0]).toBe("Zuletzt");
   expect(h.labels().filter((label) => label === "Skill 1")).toHaveLength(1);
+});
+
+test("an answer after the first search never adds a Skill row to the same open list", async () => {
+  let answer!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const h = await mount({ value: "", recent: recentItems, recentGate: () => gate });
+  const skillRows = () => {
+    const labels = h.labels();
+    return labels.slice(labels.indexOf("Datei anhängen") + 1, labels.indexOf("Modell wählen"));
+  };
+  h.type("/");
+  await settled();
+  await settled();
+  const first = skillRows();
+  expect(first).toEqual(["Skill 0", "Skill 1", "Skill 2", "Skill 3", "Alle 6 Skills"]);
+  answer();
+  await settled();
+  // Typing and deleting in the same opening runs the overview search again, now with the answer loaded.
+  h.type("/a");
+  await settled();
+  h.type("/");
+  await settled();
+  await settled();
+  expect(h.headings()[0]).toBe("Einfügen");
+  expect(skillRows()).toEqual(first);
 });
 
 test("a recent search row checks the live part count when chosen, so a full message gets no reference", async () => {

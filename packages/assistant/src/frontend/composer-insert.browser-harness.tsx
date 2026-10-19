@@ -141,7 +141,7 @@ render(
           searchCommands={async (query, signal, search) => {
             if (params.has("commands")) await catalog.ready(query, search, locale);
             if (!withRecent) return [];
-            recent.opened(search, locale);
+            const recentAtOpening = recent.opened(search, locale);
             return assistantComposerCommands({
               query,
               scope: search.scope,
@@ -158,6 +158,7 @@ render(
               assignProject: async () => {},
               running,
               recent: recent.items(),
+              recentAtOpening,
               excludeRefs: draftRefs(),
               partCount,
             });

@@ -316,13 +316,20 @@ export function createAssistantRecentResources(
   const [items, setItems] = createSignal<readonly AiRecentResource[]>();
   let current: string | undefined;
   let opening: number | undefined;
+  let openedWith: readonly AiRecentResource[] | undefined;
   return {
     items: items as Accessor<readonly AiRecentResource[] | undefined>,
-    /** Call at every `searchCommands` run: only a new list opening asks again after a failure, no keystroke does. */
+    /**
+     * Call at every `searchCommands` run: only a new list opening asks again after a failure, no keystroke does.
+     * Returns the references this opening had at its first search, for the overview's Skills: an answer that arrives
+     * later must not change which Skills the same open list shows.
+     */
     opened(search: { opening: number }, locale: string) {
-      if (opening === search.opening) return;
+      if (opening === search.opening) return openedWith;
       opening = search.opening;
+      openedWith = items();
       this.ensure(locale);
+      return openedWith;
     },
     /** Starts or reuses the page's load for `locale`. Call when the composer mounts. */
     ensure(locale: string) {
@@ -596,6 +603,11 @@ export async function assistantComposerCommands(input: {
   running: boolean;
   /** Checked recent references, once loaded; they rank first while searching and fill tag scopes. */
   recent?: readonly AiRecentResource[];
+  /**
+   * The recent references of this list opening, as `opened` returns them; the overview's Skills follow these, so a
+   * later answer never adds a Skill row to the open list. `recent` when left out.
+   */
+  recentAtOpening?: readonly AiRecentResource[];
   /** References the draft already holds; recent rows leave them out. */
   excludeRefs?: readonly CloudResourceRef[];
   /** Attachments plus references in the text, for the insert limit; read again when a recent row is chosen. */
@@ -670,8 +682,12 @@ export async function assistantComposerCommands(input: {
         const row = recentRow(item, "insert", recentLimit, true);
         if (matchesChatCommand(row, query)) results.push(row);
       }
+  // An opening that had no answer yet passes `undefined`, which must not fall back to the live answer.
+  const recentAtOpening = (("recentAtOpening" in input ? input.recentAtOpening : input.recent) ?? []).filter(
+    (item) => !excluded.has(recentKey(item.ref)),
+  );
   const shownRecentSkills = overview
-    ? new Set(assistantRecentOverview(recent).flatMap((item) => (item.ref.type === SKILL_TYPE ? [item.ref.id] : [])))
+    ? new Set(assistantRecentOverview(recentAtOpening).flatMap((item) => (item.ref.type === SKILL_TYPE ? [item.ref.id] : [])))
     : new Set<string>();
   if ((overview || fullSkillScope) && allSkills === null)
     results.push({

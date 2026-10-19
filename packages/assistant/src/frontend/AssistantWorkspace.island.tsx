@@ -1697,10 +1697,11 @@ export default function AssistantWorkspace(props: Props) {
           ]}
           searchCommands={async (query, signal, search) => {
             // A new opening asks again after a failed load; it never waits for the answer.
-            recentResources.opened(search, locale());
+            const recentAtOpening = recentResources.opened(search, locale());
             const [rows] = await Promise.all([
               assistantComposerCommands({
                 recent: recentResources.items(),
+                recentAtOpening,
                 excludeRefs: draftRefs(),
                 partCount: () => attachmentCount() + mentionCount(),
                 query,
