@@ -1,5 +1,11 @@
 import { isPanelContextMessage } from "../contracts/panel-context-plain";
-import { PANEL_CONTEXT_CHANGED, PANEL_CONTEXT_ELEMENT, readProviderContext } from "./panel-context-bridge";
+import {
+  PANEL_CONTEXT_CHANGED,
+  PANEL_CONTEXT_ELEMENT,
+  PANEL_SHORTCUTS_CHANGED,
+  PANEL_SHORTCUTS_ELEMENT,
+  readProviderContext,
+} from "./panel-context-bridge";
 
 /** Installed only by an embedded PanelRuntime; the public page publisher never imports validation. */
 export function installPanelContextReceiver(): () => void {
@@ -10,6 +16,14 @@ export function installPanelContextReceiver(): () => void {
     element.setAttribute("type", "application/json");
     element.textContent = "null";
     document.body.append(element);
+  }
+  let shortcutsElement = document.getElementById(PANEL_SHORTCUTS_ELEMENT);
+  if (!shortcutsElement) {
+    shortcutsElement = document.createElement("script");
+    shortcutsElement.id = PANEL_SHORTCUTS_ELEMENT;
+    shortcutsElement.setAttribute("type", "application/json");
+    shortcutsElement.textContent = "[]";
+    document.body.append(shortcutsElement);
   }
   const first = readProviderContext();
   let pageId = first?.pageId;
@@ -23,8 +37,14 @@ export function installPanelContextReceiver(): () => void {
       seq = context.seq;
     }
     // Null revokes the current context without forgetting document identity or ordering.
-    element.textContent = JSON.stringify(context);
-    window.dispatchEvent(new Event(PANEL_CONTEXT_CHANGED));
+    const contextJson = JSON.stringify(context);
+    const contextChanged = element.textContent !== contextJson;
+    element.textContent = contextJson;
+    const shortcuts = JSON.stringify(context ? (event.data.shortcuts ?? []) : []);
+    const shortcutsChanged = shortcutsElement.textContent !== shortcuts;
+    shortcutsElement.textContent = shortcuts;
+    if (shortcutsChanged) window.dispatchEvent(new Event(PANEL_SHORTCUTS_CHANGED));
+    if (contextChanged || !shortcutsChanged) window.dispatchEvent(new Event(PANEL_CONTEXT_CHANGED));
   };
   window.addEventListener("message", receive);
   return () => window.removeEventListener("message", receive);

@@ -10477,6 +10477,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   mask-image: linear-gradient(#000 1.86em, transparent 4.65em);
 }
 
+.k2b-ui .k2b-chat-preview__excerpt[data-expanded="true"] {
+  max-height: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.k2b-ui button.k2b-chat-preview__more {
+  margin: 0;
+  border: 0;
+  padding-inline: 0;
+  background: none;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
 .k2b-ui .k2b-chat-preview__more {
   align-self: flex-start;
   padding-block: 0.125rem;

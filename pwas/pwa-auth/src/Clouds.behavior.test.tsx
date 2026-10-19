@@ -46,7 +46,7 @@ for (const scenario of [
     const noop = async () => {};
     const auth: Authenticator = {
       bindings: () => [binding],
-      states: () => ({ fixture: { requests: requests(), actions: [], moreActions: 0 } }),
+      states: () => ({ fixture: { requests: requests(), changes: [], actions: [], moreChanges: 0, moreActions: 0 } }),
       now: Date.now,
       online: () => true,
       storageError: () => false,
@@ -62,6 +62,7 @@ for (const scenario of [
         throw new Error("No action in this test");
       },
       act: noop,
+      decideChange: noop,
       decide: async (_binding, _request, decision) => {
         decisions.push(decision);
         await Bun.sleep(10);
@@ -198,7 +199,7 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "expired", "loa
     const noop = async () => {};
     const auth: Authenticator = {
       bindings: () => [binding],
-      states: () => ({ fixture: { requests: [], actions: actions(), moreActions: 2 } }),
+      states: () => ({ fixture: { requests: [], changes: [], actions: actions(), moreChanges: 0, moreActions: 2 } }),
       now,
       online: () => true,
       storageError: () => false,
@@ -223,6 +224,7 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "expired", "loa
         if (scenario === "stale" || scenario === "uncertain") throw new Error(scenario);
         setActions([]);
       },
+      decideChange: noop,
       revoke: noop,
       syncPush: noop,
       forget: noop,

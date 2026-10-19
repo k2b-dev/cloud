@@ -1,5 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { HELP_START_TILE_LIMIT, HELP_VIEW_LIMIT, type HelpStartTopic, helpShortcutGroups, helpStart } from "./layout-help-start";
+import {
+  HELP_SHORTCUT_DESCRIPTION_MAX_LENGTH,
+  HELP_SHORTCUT_ID_MAX_LENGTH,
+  HELP_SHORTCUT_KEYS_MAX_LENGTH,
+  HELP_SHORTCUT_TITLE_MAX_LENGTH,
+  HELP_START_SHORTCUT_LIMIT,
+  HELP_START_TILE_LIMIT,
+  HELP_VIEW_LIMIT,
+  type HelpStartTopic,
+  helpShortcutGroups,
+  helpStart,
+} from "./layout-help-start";
 import { platformMessages } from "./platform-messages";
 import { SHELL_SHORTCUT_ORDER, shellShortcuts } from "./shell-shortcuts";
 
@@ -84,4 +95,47 @@ test("shell shortcuts share localized labels and stable ids without actions", ()
     // Pages without a panel slot list no panel shortcut.
     expect(shellShortcuts(t).map((command) => command.id)).toEqual(["cloud.search", "cloud.help"]);
   }
+});
+
+test("shortcut rows are capped across groups in everywhere, app, selection order", () => {
+  expect(HELP_START_SHORTCUT_LIMIT).toBe(3 * HELP_START_TILE_LIMIT);
+  const commands = Array.from({ length: HELP_START_SHORTCUT_LIMIT }, (_, i) => ({ id: `app.${i}`, title: `Row ${i}`, shortcut: "e" }));
+  const shell = { id: "cloud.search", title: "Search", shortcut: "mod+k" };
+  const selected = { id: "app.selected", title: "Edit selected", shortcut: "s", scope: "selection" as const };
+  const groups = helpShortcutGroups([selected, ...commands, shell]);
+  expect(groups.map(({ scope }) => scope)).toEqual(["everywhere", "app"]);
+  expect(groups.flatMap(({ shortcuts }) => shortcuts)).toEqual([shell, ...commands.slice(0, HELP_START_SHORTCUT_LIMIT - 1)]);
+  const withSelection = helpShortcutGroups([selected, ...commands.slice(0, HELP_START_SHORTCUT_LIMIT - 2), shell]);
+  expect(withSelection.map(({ scope }) => scope)).toEqual(["everywhere", "app", "selection"]);
+  expect(withSelection.flatMap(({ shortcuts }) => shortcuts)).toHaveLength(HELP_START_SHORTCUT_LIMIT);
+  const everywhere = commands.map((command) => ({ ...command, id: `cloud.${command.id}` }));
+  expect(helpShortcutGroups([selected, ...everywhere, shell]).flatMap((group) => group.shortcuts)).toEqual([
+    shell,
+    ...everywhere.slice(0, HELP_START_SHORTCUT_LIMIT - 1),
+  ]);
+});
+
+test("shortcut bounds drop invalid rows before the cap and accept exact length boundaries", () => {
+  const command = { id: "app.edit", title: "Edit", description: "", shortcut: "e" };
+  const longest = { ...command, shortcut: "ctrl+alt+shift+meta+mod+TVAudioDescriptionMixDown" };
+  expect(longest.shortcut).toHaveLength(HELP_SHORTCUT_KEYS_MAX_LENGTH);
+  expect(helpShortcutGroups([longest]).flatMap((g) => g.shortcuts)).toEqual([longest]);
+  const limits = [
+    ["id", HELP_SHORTCUT_ID_MAX_LENGTH],
+    ["title", HELP_SHORTCUT_TITLE_MAX_LENGTH],
+    ["description", HELP_SHORTCUT_DESCRIPTION_MAX_LENGTH],
+    ["shortcut", HELP_SHORTCUT_KEYS_MAX_LENGTH],
+  ] as const;
+  for (const [key, limit] of limits) {
+    const exact = { ...command, [key]: "x".repeat(limit) };
+    expect(helpShortcutGroups([exact]).flatMap((g) => g.shortcuts)).toEqual([exact]);
+    expect(helpShortcutGroups([{ ...exact, [key]: "x".repeat(limit + 1) }])).toEqual([]);
+  }
+  for (const key of ["id", "title", "shortcut"]) expect(helpShortcutGroups([{ ...command, [key]: "" }])).toEqual([]);
+  expect(helpShortcutGroups([command]).flatMap((g) => g.shortcuts)).toEqual([command]);
+  const oversized = Array.from({ length: HELP_START_SHORTCUT_LIMIT }, () => ({
+    ...command,
+    title: "t".repeat(HELP_SHORTCUT_TITLE_MAX_LENGTH + 1),
+  }));
+  expect(helpShortcutGroups([...oversized, command]).flatMap((g) => g.shortcuts)).toEqual([command]);
 });

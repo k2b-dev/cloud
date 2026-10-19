@@ -63,16 +63,42 @@ export const appApprovalMessages = i18n.define({
       more: "Load more",
       cancel: "Cancel pairing",
       description:
-        "These devices can approve sign-ins to your Cloud account. Revoking a device prevents new sign-ins; existing sessions stay signed in.",
+        "These devices can approve sign-ins to your Cloud account. Once a device is paired, you approve pairing or revoking another one on a paired device.",
       empty: "No paired devices yet.",
-      disabled: "App sign-in is disabled. You can still manage previously paired devices.",
+      disabled: "App sign-in is disabled. You can still rename previously paired devices; an administrator can revoke them.",
       rename: "Rename",
       name: "Device name",
       save: "Save name",
       revoke: "Revoke",
       revoked: "Revoked",
-      revokeConfirm: ({ name }: { name: string }) =>
-        `Revoke “${name}”? This device will no longer be able to approve new sign-ins. Existing sessions remain signed in.`,
+      revokeDevice: "Revoke device",
+      revokeIntro:
+        "This device will no longer be able to approve sign-ins. One of your paired devices approves the revocation, this one included.",
+      endSessions: "Also end the sign-ins this device approved",
+      endSessionsHint:
+        "Browsers signed in with this device are signed out at once. This browser stays signed in. Older sign-ins that Cloud cannot assign to a device stay signed in.",
+      revokeOffline: "You are offline. Revoking works again once you are connected.",
+      approvalTitle: "Approve on a paired device",
+      revokeApprovalHint: ({ name }: { name: string }) =>
+        `Open Cloud Login on one of your paired devices and approve revoking “${name}”. It stays paired until then. The request expires after five minutes.`,
+      revokeApprovalHelp: "Lost the device and have no other? Ask an administrator to revoke it.",
+      revokeDone: ({ name }: { name: string }) => `“${name}” was revoked. It can no longer approve sign-ins.`,
+      revokeDoneSessions: "The sign-ins it approved have ended.",
+      revokeDenied: ({ name }: { name: string }) => `The revocation was denied on one of your devices. “${name}” stays paired.`,
+      revokeExpired: ({ name }: { name: string }) => `The request expired. “${name}” stays paired.`,
+      revokeGone: ({ name }: { name: string }) =>
+        `Cloud no longer has this request, so its result is unknown. Check in the device list whether “${name}” was revoked.`,
+      tryAgain: "Try again",
+      close: "Close",
+      cancelRequest: "Cancel request",
+      cancelFailed: "The request could not be cancelled. Reload the page to see it again and cancel it.",
+      revokeCheckFailed:
+        "A revocation request could not be checked. It is checked again once you are connected, or when you reload the page.",
+      pairApprovalHint: ({ name }: { name: string }) =>
+        `Open Cloud Login on a device that is already paired with your account and approve “${name}”. Nothing is paired until then. The request expires after five minutes.`,
+      pairApprovalHelp: "No paired device at hand? An administrator can pair this device together with you.",
+      pairDenied: "The pairing was denied on one of your paired devices. Nothing was paired.",
+      pairCancelFailed: "The pairing could not be cancelled. Choose Pair a device again to cancel it.",
       saved: "Device updated",
       paired: "Device paired",
       assisted: "Paired with administrator assistance",
@@ -163,16 +189,43 @@ export const appApprovalMessages = i18n.define({
       more: "Weitere laden",
       cancel: "Kopplung abbrechen",
       description:
-        "Diese Geräte können Anmeldungen an deinem Cloud-Account bestätigen. Ein Widerruf verhindert neue Anmeldungen; bestehende Sitzungen bleiben angemeldet.",
+        "Diese Geräte können Anmeldungen an deinem Cloud-Account bestätigen. Sobald ein Gerät gekoppelt ist, bestätigst du weitere Kopplungen und Widerrufe auf einem gekoppelten Gerät.",
       empty: "Noch keine Geräte gekoppelt.",
-      disabled: "Die App-Anmeldung ist deaktiviert. Bereits gekoppelte Geräte kannst du weiterhin verwalten.",
+      disabled:
+        "Die App-Anmeldung ist deaktiviert. Bereits gekoppelte Geräte kannst du weiterhin umbenennen; die Administration kann sie widerrufen.",
       rename: "Umbenennen",
       name: "Gerätename",
       save: "Namen speichern",
       revoke: "Widerrufen",
       revoked: "Widerrufen",
-      revokeConfirm: ({ name }) =>
-        `„${name}“ widerrufen? Dieses Gerät kann danach keine neuen Anmeldungen mehr bestätigen. Bestehende Sitzungen bleiben angemeldet.`,
+      revokeDevice: "Gerät widerrufen",
+      revokeIntro:
+        "Dieses Gerät kann danach keine Anmeldungen mehr bestätigen. Eines deiner gekoppelten Geräte bestätigt den Widerruf, auch dieses selbst.",
+      endSessions: "Auch die Anmeldungen beenden, die dieses Gerät bestätigt hat",
+      endSessionsHint:
+        "Browser, die mit diesem Gerät angemeldet wurden, werden sofort abgemeldet. Dieser Browser bleibt angemeldet. Ältere Anmeldungen, die Cloud keinem Gerät zuordnen kann, bleiben bestehen.",
+      revokeOffline: "Du bist offline. Widerrufen geht wieder, sobald du verbunden bist.",
+      approvalTitle: "Auf einem gekoppelten Gerät bestätigen",
+      revokeApprovalHint: ({ name }) =>
+        `Öffne Cloud Login auf einem deiner gekoppelten Geräte und bestätige den Widerruf von „${name}“. Bis dahin bleibt es gekoppelt. Die Anfrage läuft nach fünf Minuten ab.`,
+      revokeApprovalHelp: "Gerät verloren und kein anderes zur Hand? Bitte die Administration, es zu widerrufen.",
+      revokeDone: ({ name }) => `„${name}“ wurde widerrufen. Es kann keine Anmeldungen mehr bestätigen.`,
+      revokeDoneSessions: "Die Anmeldungen, die es bestätigt hat, sind beendet.",
+      revokeDenied: ({ name }) => `Der Widerruf wurde auf einem deiner Geräte abgelehnt. „${name}“ bleibt gekoppelt.`,
+      revokeExpired: ({ name }) => `Die Anfrage ist abgelaufen. „${name}“ bleibt gekoppelt.`,
+      revokeGone: ({ name }) =>
+        `Cloud hat diese Anfrage nicht mehr, deshalb ist ihr Ergebnis unbekannt. Prüfe in der Geräteliste, ob „${name}“ widerrufen wurde.`,
+      tryAgain: "Erneut versuchen",
+      close: "Schließen",
+      cancelRequest: "Anfrage abbrechen",
+      cancelFailed: "Die Anfrage konnte nicht abgebrochen werden. Lade die Seite neu, um sie wieder zu sehen und abzubrechen.",
+      revokeCheckFailed:
+        "Eine Widerrufsanfrage konnte nicht geprüft werden. Sie wird erneut geprüft, sobald du verbunden bist oder die Seite neu lädst.",
+      pairApprovalHint: ({ name }) =>
+        `Öffne Cloud Login auf einem Gerät, das schon mit deinem Account gekoppelt ist, und bestätige „${name}“. Bis dahin wird nichts gekoppelt. Die Anfrage läuft nach fünf Minuten ab.`,
+      pairApprovalHelp: "Kein gekoppeltes Gerät zur Hand? Die Administration kann dieses Gerät gemeinsam mit dir koppeln.",
+      pairDenied: "Die Kopplung wurde auf einem deiner gekoppelten Geräte abgelehnt. Es wurde nichts gekoppelt.",
+      pairCancelFailed: "Die Kopplung konnte nicht abgebrochen werden. Wähle erneut „Gerät koppeln“, um sie abzubrechen.",
       saved: "Gerät aktualisiert",
       paired: "Gerät gekoppelt",
       assisted: "Mit Unterstützung der Administration gekoppelt",

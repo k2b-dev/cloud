@@ -10,6 +10,13 @@ export {
 
 import { HELP_VIEW_LIMIT } from "../shared/help";
 import {
+  HELP_SHORTCUT_DESCRIPTION_MAX_LENGTH,
+  HELP_SHORTCUT_ID_MAX_LENGTH,
+  HELP_SHORTCUT_KEYS_MAX_LENGTH,
+  HELP_SHORTCUT_TITLE_MAX_LENGTH,
+  HELP_START_SHORTCUT_LIMIT,
+} from "../ssr/layout-help-start";
+import {
   CAPABILITY_APP_ID_MAX_LENGTH,
   CAPABILITY_QUALIFIED_ID_MAX_LENGTH,
   CapabilityAppIdSchema,
@@ -65,7 +72,22 @@ export function parsePanelContextParam(value: string | null | undefined): PanelP
   }
 }
 
-export const PanelContextMessageSchema = z
-  .object({ type: z.literal("cloud.panel.context"), v: z.literal(1), context: PanelPageContextSchema.nullable() })
+const PanelShortcutSchema = z
+  .object({
+    id: z.string().min(1).max(HELP_SHORTCUT_ID_MAX_LENGTH),
+    title: z.string().min(1).max(HELP_SHORTCUT_TITLE_MAX_LENGTH),
+    description: z.string().max(HELP_SHORTCUT_DESCRIPTION_MAX_LENGTH).optional(),
+    shortcut: z.string().min(1).max(HELP_SHORTCUT_KEYS_MAX_LENGTH),
+    scope: z.enum(["selection", "page"]).optional(),
+  })
   .strict();
+export const PanelContextMessageSchema = z
+  .object({
+    type: z.literal("cloud.panel.context"),
+    v: z.literal(1),
+    context: PanelPageContextSchema.nullable(),
+    shortcuts: z.array(PanelShortcutSchema).max(HELP_START_SHORTCUT_LIMIT).optional(),
+  })
+  .strict()
+  .refine((message) => message.context !== null || message.shortcuts === undefined);
 export type PanelContextMessage = z.infer<typeof PanelContextMessageSchema>;

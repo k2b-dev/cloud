@@ -130,7 +130,10 @@ rejected answer callbacks with `onAnswerError` and show a recoverable outcome.
 Pass `Chat.Outcome` only the lines this flow can reach. Every supplied line
 occupies the same grid cell, including hidden alternatives, so the longest line
 reserves the height. This keeps running-to-done transitions still without
-reserving space for unrelated outcomes. Only the current line is visible and
+reserving space for unrelated outcomes. A part that arrives later, such as the
+time a call finished, needs its room from the start too: give the hidden line a
+stand-in of the same width, such as the widest time of the day, until the real
+value is known, so the line cannot wrap when it arrives. Only the current line is visible and
 accessible; inactive action links leave the tab order. `actions` under a line
 stay in the cell while the line is hidden, so a line with buttons reserves
 their row from the start. When a line's own action switches `current`, such
@@ -153,7 +156,14 @@ low tap on either answer never reaches it.
 Compose the actual content with `Chat.Preview`: header fields stand immediately
 before their values; `emphasis` identifies a Bcc label; `note` can say when a mail
 will be sent. `Excerpt` preserves line breaks and fades after about three lines.
-`ReadMore` should open the exact version being reviewed. `Lines` names a list of
+`ReadMore` should open the exact version being reviewed. When there is no such
+page, `ShowAll` shows the rest of an excerpt in place: give the `Excerpt` an
+`id`, pass it as `controls`, set `expanded` on show, and remove the button. The
+focus then moves to the text. Decide whether to offer it from the text itself,
+not from a measurement, so the server and the first browser frame agree, and
+set `expanded` on every text without a page that you do not offer it for, so an
+estimate that is too short never clips anything.
+`Lines` names a list of
 consequences, and `Line` can also stand alone for an attachment or warning.
 `People` shows overlapping decorative avatars followed by readable names.
 A preview inside an activity body uses 13 px, including metadata and warnings.
@@ -296,8 +306,9 @@ type ChatMarkProps = { change: "added" | "removed"; children: JSX.Element };
 | `Chat.Preview.Header` | `ChatPreviewHeaderProps`; semantic description list with optional note. |
 | `Chat.Preview.Title` | `ChatPreviewTitleProps`; title with quiet trailing metadata. |
 | `Chat.Preview.Sentence` | `{ children: JSX.Element }`; a rule or instruction. |
-| `Chat.Preview.Excerpt` | `{ children: JSX.Element }`; fading text excerpt. |
+| `Chat.Preview.Excerpt` | `ChatPreviewExcerptProps`; fading text excerpt; `expanded` shows it whole and makes it focusable. |
 | `Chat.Preview.ReadMore` | `ChatPreviewReadMoreProps`; ordinary link to the reviewed version. |
+| `Chat.Preview.ShowAll` | `ChatPreviewShowAllProps`; quiet button that shows an excerpt whole in place and focuses it. |
 | `Chat.Preview.Lines` | `{ label?: string; children: JSX.Element }`; `ul` with an optional accessible name. |
 | `Chat.Preview.Line` | `ChatPreviewLineProps`; `li` inside Lines, otherwise `p`; accent colors its decorative icon. |
 | `Chat.Preview.People` | `ChatPreviewPeopleProps`; decorative avatars and host-supplied names. |

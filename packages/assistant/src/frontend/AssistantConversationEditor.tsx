@@ -154,7 +154,7 @@ function SearchIndexSection(props: { conversationId: string }) {
       <Show when={(status()?.keywords.length ?? 0) > 0}>
         <div class="flex flex-wrap gap-1">
           {(status()?.keywords ?? []).map((keyword) => (
-            <span class="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{keyword}</span>
+            <span class="rounded bg-[var(--ui-surface-muted)] text-secondary px-1.5 py-0.5 text-[11px]">{keyword}</span>
           ))}
         </div>
       </Show>

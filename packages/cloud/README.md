@@ -83,6 +83,14 @@ Application setup, public contracts, and deployment guidance:
 - **[Create the first application](https://github.com/k2b-dev/cloud/blob/main/docs-site/docs/en/build/getting-started.md)** — standalone project setup and a verified API endpoint
 - **[github.com/k2b-dev/cloud](https://github.com/k2b-dev/cloud)** — the platform monorepo (gateway, core, all platform apps)
 
+## Security
+
+Report a vulnerability privately through
+[GitHub Security Advisories](https://github.com/k2b-dev/cloud/security/advisories/new),
+never in a public issue. Security fixes appear in this package's changelog,
+and a published advisory names the first patched version. See the
+[security policy](https://github.com/k2b-dev/cloud/blob/main/SECURITY.md).
+
 ## License
 
 GNU Affero General Public License v3.0 or later.

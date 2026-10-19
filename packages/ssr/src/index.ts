@@ -182,7 +182,8 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
       ? `${JSON.stringify(shared)}.forEach(f=>{const l=document.createElement('link');l.rel='modulepreload';l.href=p+'/'+f;document.head.append(l)});`
       : "";
     // Hydration script - dynamically loads island/client bundles based on DOM
-    const hydrationScript = `<script type="module">const p=${JSON.stringify(assetPath)};${preload}document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
+    const loaderData = ` data-ssr-assets="${Bun.escapeHTML(assetPath)}"${shared.length ? ` data-ssr-preload="${Bun.escapeHTML(shared.join(" "))}"` : ""}`;
+    const hydrationScript = `<script type="module"${loaderData}>const p=${JSON.stringify(assetPath)};${preload}document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
 
     // Framework-injected assets
     let scripts = `${islandDisplayStyle}\n${hydrationScript}`;

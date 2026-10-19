@@ -76,7 +76,7 @@ const WEB_DOCUMENT = `<!DOCTYPE html>
     body
   </body>
   <style>solid-client,solid-island{display:contents}</style>
-<script type="module">const p="/_ssr/*";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>
+<script type="module" data-ssr-assets="/_ssr/*">const p="/_ssr/*";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>
 ${"  "}
 </html>`;
 

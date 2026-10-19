@@ -28,11 +28,13 @@ export type {
   ChatDecisionProps,
   ChatMarkProps,
   ChatOutcomeProps,
+  ChatPreviewExcerptProps,
   ChatPreviewHeaderProps,
   ChatPreviewLineProps,
   ChatPreviewPeopleProps,
   ChatPreviewProps,
   ChatPreviewReadMoreProps,
+  ChatPreviewShowAllProps,
   ChatPreviewTitleProps,
 } from "./ChatDecision";
 export type { ChatActivityProps, ChatActivityToggleProps, ChatContextUsageProps, ChatMessageProps } from "./ChatPrimitives";

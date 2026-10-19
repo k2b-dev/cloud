@@ -62,6 +62,12 @@ the chat it came from. Choose **Review**, read the request, then choose
 waiting than the card lists, review them in Cloud under **My account →
 Approvals**.
 
+Once your account has a paired device, pairing another device or removing one
+waits for approval in Cloud Login. The request shows **Pair a device** or
+**Remove a device** with the device name. Approve only a change you started
+yourself; otherwise choose **Deny**. The device being removed can approve its
+own removal, but only another paired device can deny it.
+
 Pair each account separately. You can add another Cloud, edit account labels,
 or disconnect an account through **Manage accounts**.
 
@@ -94,8 +100,9 @@ Already installed it from Samsung Internet? Each browser keeps its own
 Cloud Login data, so the Chrome copy starts empty. Install Cloud Login from
 Chrome and pair each Cloud there. Then disconnect each Cloud in the old copy
 through **Manage accounts**, which also revokes that device, and uninstall
-it. If the old copy is already gone, revoke its device under
-**Sign-in → Paired devices** on your profile in that Cloud.
+it. If the old copy is already gone, remove its device under
+**Sign-in → Paired devices** on your profile in that Cloud and approve the
+removal in the Chrome copy.
 
 ## Protect and recover
 
@@ -105,7 +112,9 @@ If you set a PIN in an earlier version, enter it one last time under
 **Remove app PIN** to keep your connected Clouds.
 
 Keep another sign-in method available. If you lose your device or reset the
-app, sign in to each Cloud another way, revoke the old device, and pair again.
+app, sign in to each Cloud another way and remove the old device. Approve the
+removal on another paired device; without one, ask an administrator to remove
+it. Then pair again.
 
 The app can start offline after its first online visit. Pairing and approvals
 need a connection.

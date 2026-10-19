@@ -20,11 +20,11 @@
 /* Unlayered like the shared rule it overrides: the segmented control is full-width by default. */
 .k2b-ui .spaces-overview-views { width: auto; max-width: 100%; overflow-x: auto; }
 .k2b-ui .spaces-overview-views .k2b-segmented-control__option { flex: 0 0 auto; white-space: nowrap; }
-.spaces-overview-count[data-zero="true"] { color: var(--color-zinc-500); font-weight: 400; }
+.spaces-overview-count[data-zero="true"] { color: var(--ui-text-dimmed); font-weight: 400; }
 .spaces-overview-space[data-pinned="true"] .ti-flag-off { color: var(--color-orange-600); }
 .dark .spaces-overview-space[data-pinned="true"] .ti-flag-off { color: var(--color-orange-400); }
 .spaces-overview-space-dot, .spaces-overview-space-mark { display: inline-block; width: .5rem; height: .5rem; flex: 0 0 auto; border-radius: 999px; }
-.spaces-overview-tab-count { color: var(--color-zinc-500); font-variant-numeric: tabular-nums; }
+.spaces-overview-tab-count { color: var(--ui-text-dimmed); font-variant-numeric: tabular-nums; }
 .spaces-overview-work-list { display: flex; flex-direction: column; }
 .spaces-overview-work-row { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: .75rem; padding: .75rem .5rem; color: inherit; text-decoration: none; border-radius: var(--ui-radius-control); transition: background-color 120ms ease; }
 .spaces-overview-work-row:hover { background: var(--ui-hover); }
@@ -34,9 +34,9 @@
 .spaces-overview-work-row > .ti-chevron-right { grid-column: -2; grid-row: 1; }
 .spaces-overview-work-copy { display: flex; min-width: 0; flex-direction: column; gap: .125rem; }
 .spaces-overview-work-copy strong { overflow: hidden; color: var(--color-zinc-900); font-size: .875rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.spaces-overview-work-copy span, .spaces-overview-work-row time { color: var(--color-zinc-500); font-size: .75rem; white-space: nowrap; }
+.spaces-overview-work-copy span, .spaces-overview-work-row time { color: var(--ui-text-dimmed); font-size: .75rem; white-space: nowrap; }
 .spaces-overview-work-row time { font-variant-numeric: tabular-nums; }
-.spaces-overview-priority { padding: .15rem .4rem; border-radius: 999px; background: var(--ui-surface-muted); color: var(--color-zinc-600); font-size: .625rem; text-transform: capitalize; }
+.spaces-overview-priority { padding: .15rem .4rem; border-radius: 999px; background: var(--ui-surface-muted); color: var(--ui-text-dimmed); font-size: .625rem; text-transform: capitalize; }
 .spaces-overview-priority.is-urgent { color: var(--color-red-600); background: color-mix(in srgb, var(--color-red-500) 10%, transparent); }
 .spaces-overview-priority.is-high { color: var(--color-orange-600); background: color-mix(in srgb, var(--color-orange-500) 10%, transparent); }
 .spaces-overview-activity .k2b-detail-panel { min-height: 0; }
@@ -47,13 +47,12 @@
 .spaces-overview-activity-row:hover { background: var(--k2b-hover); }
 .spaces-overview-activity-row:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 0; }
 .spaces-overview-activity-icon { position: absolute; top: .5rem; right: .5rem; font-size: .875rem; }
-.spaces-overview-activity-meta { display: flex; min-width: 0; align-items: baseline; gap: .375rem; color: var(--color-zinc-500); font-size: .6875rem; line-height: 1rem; }
+.spaces-overview-activity-meta { display: flex; min-width: 0; align-items: baseline; gap: .375rem; color: var(--ui-text-dimmed); font-size: .6875rem; line-height: 1rem; }
 .spaces-overview-activity-meta strong { min-width: 0; overflow: hidden; color: var(--color-zinc-900); font-size: .75rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .spaces-overview-activity-meta time { white-space: nowrap; }
-.spaces-overview-activity-description { color: var(--color-zinc-700); font-size: .75rem; line-height: 1.125rem; overflow-wrap: anywhere; }
+.spaces-overview-activity-description { color: var(--ui-text-secondary); font-size: .75rem; line-height: 1.125rem; overflow-wrap: anywhere; }
 .k2b-ui .spaces-overview-mobile-activity { display: none !important; }
 .dark .spaces-overview-work-copy strong, .dark .spaces-overview-activity-meta strong { color: var(--color-zinc-50); }
-.dark .spaces-overview-activity-description { color: var(--color-zinc-300); }
 @media (max-width: 47.999rem) {
   .k2b-ui .spaces-overview-workspace .spaces-overview-main { display: flex !important; }
   /* The activity column stays open but hidden here, so Main drops the space it would leave for a phone sheet. */

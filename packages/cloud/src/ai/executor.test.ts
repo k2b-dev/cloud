@@ -1581,3 +1581,55 @@ test("executor ignores a scope on an asking policy and uses only authorized reme
     ).toMatchObject({ type: "block_set", block: { approval: { allowAlways: rememberable, allowChat: rememberable } } });
   }
 });
+
+test("the pipeline keeps the review and check after an approval and execution end", async () => {
+  const save = spyOn(aiConversations, "saveTurnLiveState").mockResolvedValue(true);
+  const publish = spyOn(stream, "publishAiWireEvent").mockResolvedValue(undefined);
+  const review = reviewFixture();
+  const pipeline = new __aiExecutorTest.StreamPipeline({
+    conversationId: "chat",
+    turnId: "turn",
+    attempt: 1,
+    startSeq: 0,
+    leaseOwner: "worker",
+    seedBlocks: [{ id: toolBlockId("send"), kind: "tool", callId: "send", name: "demo.send", args: {}, status: "running" }],
+    allowRememberedApprovals: true,
+  });
+  try {
+    await pipeline.setToolReview("send", review);
+    await pipeline.apply({
+      agentId: "agent",
+      loopId: "turn",
+      turnId: "round",
+      turnIndex: 0,
+      type: "tool_action_request",
+      kind: "custom_approval",
+      callId: "send-approval-0",
+      name: "demo.send",
+      args: {},
+      message: "Send?",
+    });
+    expect(pipeline.blocks[0]).toMatchObject({ status: "awaiting_approval", review });
+    await pipeline.setToolCheck("send", { state: "checking" });
+    expect(pipeline.blocks[0]).toMatchObject({ status: "running", review, check: { state: "checking" } });
+    await pipeline.setToolCheck("send", { state: "done", receipt: { text: "Queued" } });
+    await pipeline.apply({
+      agentId: "agent",
+      loopId: "turn",
+      turnId: "round",
+      turnIndex: 0,
+      type: "tool_execution_end",
+      callId: "send",
+      name: "demo.send",
+      result: { data: null },
+      isError: false,
+    });
+    expect(pipeline.blocks[0]).toMatchObject({ status: "completed", review, check: { state: "done", receipt: { text: "Queued" } } });
+    expect(pipeline.blocks[0]).toMatchObject({ approval: undefined });
+    expect(publish.mock.calls.at(-1)?.[0]).toMatchObject({ type: "block_set", block: { review, check: { state: "done" } } });
+  } finally {
+    await pipeline.flush();
+    save.mockRestore();
+    publish.mockRestore();
+  }
+});
