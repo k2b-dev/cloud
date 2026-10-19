@@ -425,7 +425,12 @@ export default function MailConversationList(props: {
               </Tooltip.Anchor>
               <Show when={props.selectedConversationId || props.selectedMessageId}>
                 <Tooltip.Anchor content={messages().hideList}>
-                  <IconButton type="button" class="hidden lg:inline-flex" label={messages().hideList} onClick={props.onCollapse}>
+                  <IconButton
+                    type="button"
+                    class="hidden @min-[64rem]/k2b-app-area:inline-flex"
+                    label={messages().hideList}
+                    onClick={props.onCollapse}
+                  >
                     <i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
@@ -531,7 +536,8 @@ export default function MailConversationList(props: {
           {(hint) => (
             <NoticeCard tone="neutral" data-mail-folder-only-hint>
               <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
-                <p class="min-w-0 flex-[1_1_14rem]">
+                {/* 13rem keeps the semibold folder action beside the text in a desktop list column. */}
+                <p class="min-w-0 flex-[1_1_13rem]">
                   <strong class="font-semibold text-primary">{messages().folderOnlyHintTitle({ name: hint().folder.name })}</strong>{" "}
                   {messages().folderOnlyHintDetail}
                 </p>

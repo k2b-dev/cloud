@@ -106,6 +106,17 @@ const [due, setDue] = createSignal<string | null>("2026-10-24");
 
 ## Presets and ranges
 
+One click picks a complete one-day range. The next click on another day extends
+it; the earlier day becomes the start. If you are used to selecting both endpoints,
+those two clicks still pick the same range, but a one-day range now needs only
+one click before **Apply**. Clicking that same day again keeps it. After an
+extension, the next click starts a new one-day range; reopening the panel also
+starts a fresh selection. Hover or focus previews an extension until you pick
+the second day.
+
+The date-only duration in the footer uses the date locale, for example
+**1 day** / **3 days** in English and **1 Tag** / **3 Tage** in German.
+
 `presets` contains caller-defined labels and complete values. The components do not provide a fixed preset list.
 
 `datePresets` changes the selected date without closing the picker and applies to every `DateRangePicker`. `durationPresets` changes the end from the current start by a number of minutes and appears only with `withTime`.
@@ -113,6 +124,14 @@ const [due, setDue] = createSignal<string | null>("2026-10-24");
 Use `dateConfig` to define the application time zone and first day of the week. Without a supplied week start, the calendar starts on Monday.
 
 An explicit `dateConfig.locale` wins; without one the pickers inherit the render locale from `LocaleProvider` or the browser's `<html lang>` (see the Locale and formatting page). The timezone never comes from the locale context.
+
+## Weekend columns
+
+Weekend columns have a shaded background, from the weekday labels through the
+last week. They follow the locale's week data: Saturday and Sunday in `de-DE`,
+Friday and Saturday in `he-IL`. Without available week data, Saturday and Sunday
+are the fallback. The grid keeps the first day of the week from `dateConfig`;
+the shading is background only and causes no layout shift.
 
 ## Today
 

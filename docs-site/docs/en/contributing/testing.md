@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Testing
@@ -184,6 +184,17 @@ Known findings live in `scripts/checks/test-waits.baseline`. Its counts can
 only decrease; `bun scripts/check.ts test-waits --fix` lowers counts and
 removes entries when findings are gone.
 
+Scroll-driven animations, such as the navigation label fade in `@k2b/ui`,
+keep running and never finish. Before waiting for page animations to stop or
+awaiting their `finished` promises, select only the document timeline with
+`document.getAnimations().filter((animation) => animation.timeline === document.timeline)`.
+Apply the same filter to element calls with `{ subtree: true }`, which can
+include navigation labels. The `animation-settle` check requires an actual
+`.timeline` property access in the surrounding statement of document-wide and
+subtree calls in tests, browser suites, and browser harnesses, or a leading
+`// animation-settle: all timelines` comment (optionally followed by a reason)
+for deliberate inspection of all timelines.
+
 ## Test in Chromium and WebKit
 
 Layout, focus, touch, and paint need a real engine, so these tests drive one
@@ -292,7 +303,14 @@ Use `mostAtOnce(page, selector, change)` from `packages/ui/test/browser.ts` to
 check that Undo or a refresh never shows an entity twice and ends with exactly
 one. Scope a locator that reads the entity to its row, not to the page. Await
 Playwright calls and read their values: `expect(await box.isChecked())`.
-Never use `expect(promise).resolves`, which hides the reason for a rejection.
+In Playwright tests, never use `expect(promise).resolves` or `.rejects`.
+Besides hiding the reason for a rejection, Bun's matcher waits in a nested
+event loop that runs Playwright's channel messages out of order and can close
+the browser connection. This shows as `Cannot find object to "message": jsonPipe@…`
+and a next test that fails within milliseconds
+([#1502](https://github.com/k2b-dev/cloud/issues/1502)). The `browser-test-promises`
+check enforces this rule. Await promises directly and assert on their values;
+for an expected rejection, capture the reason and assert on it.
 See the tray Undo test in
 `packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
 
@@ -661,6 +679,12 @@ suite's `describe`; Bun runs it when the suite ends.
 A new integration test needs no configuration of its own: import nothing
 special, use the resolved runtime variables, and name the file
 `*.integration.test.ts`.
+
+bun:test does not stop a timed-out test body. An integration test ends the
+work it starts: teardown cancels and awaits every sync, job, or loop the test
+started before it restores shared stand-ins. A stand-in shared by several
+tests routes calls to the test that owns them and rejects calls from an ended
+test; see `packages/mail/src/service/remote-changes-fixture.ts`.
 
 Keep a test that needs one of these targets out of the Playwright suites
 (`*.browser.test.ts`): the nightly browser job sets no `CLOUD_TEST_*`

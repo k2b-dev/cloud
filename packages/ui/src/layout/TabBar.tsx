@@ -53,7 +53,7 @@ export function TabBar(props: TabBarProps): JSX.Element {
                 data-k2b-title={item.title ?? item.label}
               >
                 <i class={item.icon} aria-hidden="true" />
-                <span>{item.label}</span>
+                <span class="k2b-truncate-fade">{item.label}</span>
               </a>
             </li>
           )}

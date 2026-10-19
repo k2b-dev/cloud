@@ -757,7 +757,7 @@ export const createLoadedAiCapabilityTools = (input: {
   /** Locale of the turn; the approval text a person reads is worded in it. */
   locale?: string;
   review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReview | null>;
-  authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown) => Promise<void>;
+  authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<void>;
   onReview?: (callId: string, review: CapabilityActionReview) => void;
   execute: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
 }): AiRuntimeTool[] => {
@@ -769,7 +769,7 @@ export const createLoadedAiCapabilityTools = (input: {
       defineAiTool({
         name: entry.providerName,
         canonicalName: entry.name,
-        description: `${entry.title}. ${entry.description} Never retry ACTION_OUTCOME_UNKNOWN. Do not retry unchanged after INTERNAL or INVALID_APP_RESPONSE; report the provider error.`,
+        description: `${entry.title}. ${entry.description} Never retry ACTION_OUTCOME_UNKNOWN or NEEDS_APPROVAL. Do not retry unchanged after INTERNAL or INVALID_APP_RESPONSE; report the provider error.`,
         inputSchema: aiCapabilityInputSchema(
           offersApprovalReason(entry) ? withApprovalReason(entry.operation.inputSchema) : entry.operation.inputSchema,
         ),
@@ -779,7 +779,7 @@ export const createLoadedAiCapabilityTools = (input: {
         approval: "never",
       }).server(async (modelArgs, context) => {
         const args = withoutApprovalReason(entry, modelArgs);
-        await input.authorizeBackground?.(entry, args);
+        await input.authorizeBackground?.(entry, args, context);
         if (!input.authorizeBackground && entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
           const review = (await input.review?.(entry, args, context)) ?? null;
           if (review && context.callId) input.onReview?.(context.callId, review);
@@ -874,7 +874,7 @@ export const createAiToolResolver =
     maxLoadedTools?: number;
     execute?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
     review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReview | null>;
-    authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown) => Promise<void>;
+    authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<void>;
     onReview?: (callId: string, review: CapabilityActionReview) => void;
     onPrepared?: (snapshot: {
       prepared: PreparedAiTools;

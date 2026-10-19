@@ -493,6 +493,35 @@ solid-island {
     background: linear-gradient(to bottom, color-mix(in srgb, var(--k2b-surface) 0%, transparent), var(--k2b-surface) 0.75rem);
     pointer-events: none;
   }
+  /* The app's one primary action (the primary of `AppWorkspace.Head`) is the
+     round button in that free place beside the bar: the bar's height, its end
+     edge, and its shadow. The card keeps the bar's space free at its end and in
+     its scroll padding, so the button never covers the last row or a focused
+     control either. Only the outermost workspace's head offers it. */
+  .cloud-app-canvas[data-layout-authenticated]:has(> .cloud-tab-bar)
+    .k2b-app-workspace:not(.k2b-app-workspace *)
+    > .k2b-app-workspace__head
+    .k2b-app-workspace__head-primary {
+    position: fixed;
+    z-index: 11;
+    right: max(calc(env(safe-area-inset-right, 0px) + 0.75rem), calc((100vw - 33.75rem) / 2));
+    bottom: var(--cloud-tab-bar-end);
+    width: var(--cloud-tab-bar-height);
+    min-width: var(--cloud-tab-bar-height);
+    height: var(--cloud-tab-bar-height);
+    min-height: var(--cloud-tab-bar-height);
+    box-shadow:
+      0 10px 28px -14px rgb(9 9 11 / 0.34),
+      0 0 0 1px rgb(9 9 11 / 0.06);
+  }
+  .dark .cloud-app-canvas[data-layout-authenticated]:has(> .cloud-tab-bar)
+    .k2b-app-workspace:not(.k2b-app-workspace *)
+    > .k2b-app-workspace__head
+    .k2b-app-workspace__head-primary {
+    box-shadow:
+      0 12px 30px -14px rgb(0 0 0 / 0.7),
+      0 0 0 1px var(--k2b-border);
+  }
 }
 
 /* The bar exists only on signed-in phones. Its row keeps the place of the
@@ -644,9 +673,10 @@ solid-island {
    Phones ignore it. The app area takes the app bar's place and starts at the
    card spacing. The button that
    shows them again floats at the app area's bottom start corner; on touch
-   screens a drag from the 18 px strip at the left edge does the same. From
-   768 to 1023 px the navigation is already an overlay behind the
-   workspace head's button, so there only the app bar hides. */
+   screens a drag from the 18 px strip at the left edge does the same. In an
+   app host below 64 rem (a window from 768 to 1023 px, or the app beside the
+   panel column) the navigation is already an overlay behind the workspace
+   head's button, so there only the app bar hides. */
 .cloud-shell-show,
 .cloud-shell-reveal {
   display: none;
@@ -698,10 +728,15 @@ solid-island {
     left: calc(max(var(--cloud-card-inset), env(safe-area-inset-left, 0px)) + 0.75rem);
     bottom: calc(var(--cloud-card-inset) + var(--cloud-card-inset-bottom) + 0.75rem);
   }
-  /* The navigation leaves like a hidden sidebar: its track, its resize
-     handle, and navigation panes go, and the work area rounds its start
-     corners with the card. An island may wrap the sidebar or Main, as in
-     Grids. */
+}
+
+/* The navigation leaves like a hidden sidebar: its track, its resize handle,
+   and navigation panes go, and the work area rounds its start corners with
+   the card. An island may wrap the sidebar or Main, as in Grids. This follows
+   the app's host, as the sidebar column does: in a host below 64 rem, such as
+   the app beside the panel column, the navigation is an overlay behind the
+   workspace head's button and stays there. */
+@container k2b-app-area (min-width: 64rem) {
   .cloud-app-canvas[data-shell-focus] .k2b-app-workspace:not(.k2b-app-workspace *) {
     --k2b-workspace-start-radius: var(--k2b-workspace-inner-radius);
     --k2b-workspace-sidebar-space: 0px;
@@ -750,7 +785,7 @@ solid-island {
 .cloud-mobile-menu .k2b-panel-dialog__actions { flex: 1; min-width: 0; }
 .cloud-mobile-menu__switch { width: 100%; flex-wrap: nowrap; }
 .cloud-mobile-menu__switch button { flex: 1; min-width: 0; min-height: 3rem; white-space: nowrap; }
-.cloud-mobile-menu__switch button > span { overflow: hidden; text-overflow: ellipsis; }
+.cloud-mobile-menu__switch button > span { min-width: 0; overflow: hidden; }
 .cloud-mobile-menu .k2b-dialog__close { width: 2.75rem; height: 2.75rem; flex-shrink: 0; }
 
 .cloud-mobile-menu .k2b-panel-dialog__body { padding: .75rem 1rem 1rem; }

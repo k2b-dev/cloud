@@ -108,6 +108,9 @@ never overwritten.
 
 ## Read the measurements
 
+Mail, Chat, and Assistant responses stay uncompressed by design. They mix
+repeatedly writable outside text with private message content; see [Response compression](/en/docs/build/routing#response-compression).
+
 Static metrics use the served HTML and the production build files:
 
 - HTML sizes are raw UTF-8 bytes, gzip at level 9, and Brotli at maximum quality.
@@ -288,7 +291,9 @@ and of the large thread, list pages 2–5 through `workspace-route` and the
 public conversation list, conversation detail for a small, the large, and an
 HTML-heavy thread, rare, common, and structured search, three folder switches,
 view counts, a message arriving live, and opening compose for a new message
-and a reply.
+and a reply. `list-paging-workspace` loads page 1 through `workspace-route`
+as an untimed cursor prerequisite, then measures list pages 2–5 through
+`workspace-list`.
 
 For each scenario the run records cold, median, and p95 times, response and
 island props bytes, Server-Timing phases, and the statement count and
@@ -413,6 +418,7 @@ no lock.
   runs on the same quiet host rather than reading absolute numbers.
 - The browser part opens a short conversation, not the 180-message thread,
   so the client cost of a large thread is not measured.
-- The run's Caddy does not compress dynamic responses, and neither does
-  Cloud's gateway. An ingress that compresses HTML and JSON changes the
-  document and API transfer times.
+- The gateway compresses dynamic HTML and JSON according to `Accept-Encoding`.
+  Eligible document and API transfer times reflect Brotli when the browser accepts it;
+  the opt-outs above remain uncompressed.
+  The run's Caddy does not compress responses.

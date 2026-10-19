@@ -477,6 +477,8 @@ const DateDemo = () => {
     start: "2026-07-28T09:00",
     end: "2026-07-28T10:00",
   });
+  const [singleDayRange, setSingleDayRange] = createSignal<DateRangeValue>({ start: "2026-07-28", end: "2026-07-28" });
+  const [fridayWeekendDate, setFridayWeekendDate] = createSignal<string | null>("2026-07-31");
   return (
     <DemoCard
       id="date-picker"
@@ -491,6 +493,8 @@ const DateDemo = () => {
 <DateTimePicker label="Starts at" value={dateTime()} onValueChange={setDateTime} dateConfig={dateConfig} />
 <DateTimePicker label="Deadline" optionalTime defaultTime="17:00" value={deadline()} onValueChange={setDeadline} dateConfig={dateConfig} clearable />
 <DateRangePicker label="Window" value={range()} onValueChange={setRange} presets={datePresets} />
+<DateRangePicker label="One-day range" value={singleDayRange()} onValueChange={setSingleDayRange} />
+<DatePicker label="Friday/Saturday weekend (he-IL)" value={fridayWeekendDate()} onValueChange={setFridayWeekendDate} dateConfig={{ locale: "he-IL" }} />
 <DateRangePicker
   label="Meeting window"
   value={dateTimeRange()}
@@ -503,6 +507,13 @@ const DateDemo = () => {
     >
       <div class="ui-demo-form-grid">
         <DatePicker label="Release date" value={date()} onValueChange={setDate} clearable />
+        <DatePicker
+          label="Friday/Saturday weekend (he-IL)"
+          value={fridayWeekendDate()}
+          onValueChange={setFridayWeekendDate}
+          dateConfig={{ locale: "he-IL" }}
+        />
+        <DateRangePicker label="One-day range" value={singleDayRange()} onValueChange={setSingleDayRange} />
         <DatePicker
           label="Due"
           placeholder="Pick a due date"

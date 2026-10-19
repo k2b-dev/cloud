@@ -1,19 +1,14 @@
-import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
-import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
-import adminPages from "./artifacts/admin-page";
 import { agentHost } from "./artifacts/agent-host";
-import { codeToolRoutes } from "./artifacts/code-tool-routes";
 import { artifactDatabase, rsqlAllowlist } from "./artifacts/database";
 import { appChecks } from "./artifacts/html/check-service";
 import { httpService } from "./artifacts/http-service";
 import { migrateArtifacts } from "./artifacts/migrate";
-import { runnerApi } from "./artifacts/runner-api";
 import { assistantCapabilities } from "./capabilities";
-import { app, ssr } from "./config";
-import pageRoutes from "./frontend";
+import { app } from "./config";
 import { assistantHelp } from "./help";
+import { router } from "./router";
 
 let hostTimer: ReturnType<typeof setInterval> | undefined;
 let hostSweep: Promise<unknown> | undefined;
@@ -25,17 +20,6 @@ const sweep = () =>
     .finally(() => {
       databaseCleanup = undefined;
     }));
-
-const router = new Hono<AuthContext>()
-  .use("*", middleware.runtime())
-  .use("*", middleware.settings())
-  .route("/_internal/assistant/tools", codeToolRoutes)
-  .route("/api/assistant/runner", runnerApi)
-  .route("/api/assistant", apiRoutes)
-  .route("/app/assistant", pageRoutes)
-  .route("/admin/assistant", adminPages);
-
-router.get("/app/assistant/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 const result = await app.start({
   fetch: router.fetch,

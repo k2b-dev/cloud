@@ -39,7 +39,7 @@ describe("TabBar", () => {
     expect(html.match(/<li>/g)?.length).toBe(5);
     expect(html).not.toContain("Chat");
     expect(html).toContain(
-      '<a href="/pwa/" aria-current="page" data-tab="start" data-k2b-title="Example Cloud"><i class="ti ti-home" aria-hidden="true"></i><span>Start</span></a>',
+      '<a href="/pwa/" aria-current="page" data-tab="start" data-k2b-title="Example Cloud"><i class="ti ti-home" aria-hidden="true"></i><span class="k2b-truncate-fade">Start</span></a>',
     );
     // Each link names the title of its page, which the shell shows while that page loads; the label by default.
     expect(html).toContain('<a href="/pwa/tasks" data-tab="tasks" data-k2b-title="Tasks">');

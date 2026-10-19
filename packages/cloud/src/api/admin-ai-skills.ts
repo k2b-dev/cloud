@@ -4,6 +4,7 @@ import { aiAppSkills } from "../ai/app-skill-store";
 import { AiSkillInputError, AiSkillLastAdminError, AiSkillRevisionConflictError, aiSkills } from "../ai/skills";
 import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import { type AuthContext, auth, err, fail, ok, respond, v } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 
 const ListSkillsSchema = z
   .object({
@@ -32,6 +33,7 @@ const installAppSkill = async (c: Parameters<typeof respond>[0], install: () => 
 
 export const createAdminAiSkillsRoutes = (authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin")) =>
   new Hono<AuthContext>()
+    .use("*", noTransform())
     .use("*", authenticate)
     .get("/", v("query", ListSkillsSchema), async (c) => {
       const query = c.req.valid("query");

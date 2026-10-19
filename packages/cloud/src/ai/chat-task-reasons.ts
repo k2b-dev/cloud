@@ -28,7 +28,7 @@ const messages = i18n.define({
       failed: "The last run failed.",
       rights_changed: "What it may do changed. Please confirm again.",
       needs_approval: ({ action }: { action?: string }) =>
-        `${action ? `Tried to ${action}. ` : ""}That needs your approval every time, and routines never ask.`,
+        `${action ? `Tried to ${action.replace(/^\p{Lu}(?=\p{Ll})/u, (first) => first.toLowerCase())}. ` : ""}That needs your approval every time, and routines never ask.`,
       stopped: ({ list }: { list: string }) =>
         list
           ? `Stopped while the routine was running. Already done: ${list}. Nothing was undone.`

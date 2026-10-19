@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-16
+updated: 2026-10-18
 ---
 
 # App capabilities
@@ -759,6 +759,12 @@ folder, a Spaces task with assignees, or a Mail move to Trash.
 Cloud rejects this policy on `openWorld` Actions, on `destructive` Actions, and
 on Actions without a `review`. It does not weaken app-side authorization, input validation, audit,
 or concurrency checks, all of which still run for every invocation.
+
+Routines check their mandate first, then call the review before every Action
+whose `approval` is not `"none"`, including background Code Mode; they run it
+only when the review returns an `approvalScope`. Omit the scope for consequences
+that need confirmation every time: routines will refuse them, and a review
+can only narrow the mandate.
 
 People decide [Action approvals](/en/docs/identity/approvals) in the chat,
 an app, or Cloud's approval lists.

@@ -8,6 +8,7 @@ const task = (id: string): AiChatTask => ({
   locale: null,
   reasonCode: null,
   reasonAt: null,
+  reasonAction: null,
   id,
   shortId: id,
   chatId: "chat",

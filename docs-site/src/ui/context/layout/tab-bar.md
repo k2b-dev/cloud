@@ -35,7 +35,7 @@ const items: TabBarItem[] = [
   title, such as a Start tab whose page is titled with the app's name.
 - At most five items render; further items are left out. Put the rest behind a
   destination such as Start or More that lists every page.
-- The items share the width equally. Long labels end with an ellipsis, so keep
+- The items share the width equally. Long labels fade out, so keep
   them to one short word.
 
 The bar is a set of links, not a tab widget: each item loads a page. The server

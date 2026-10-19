@@ -626,7 +626,28 @@ export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string)
   return { requestUrl, search: { ...search, expression }, publicSearch: search };
 };
 
-export const loadMailboxPageData = async (params: {
+export type MailboxListView = Pick<
+  MailboxPageData,
+  | "scheduledMode"
+  | "scheduledPage"
+  | "scheduledError"
+  | "draftsMode"
+  | "draftsPage"
+  | "draftsError"
+  | "activeView"
+  | "savedViewId"
+  | "listMode"
+  | "folderId"
+  | "query"
+  | "search"
+  | "listItems"
+  | "listCursor"
+  | "nextListCursor"
+  | "listError"
+  | "listTitle"
+> & { scheduledCount?: number };
+
+type MailboxListParams = {
   context: MailRequestContext;
   mailboxId: string;
   requestUrl: URL;
@@ -634,52 +655,15 @@ export const loadMailboxPageData = async (params: {
   publicSearch: ResolvedMailSearchRoute;
   listMode?: MailListMode;
   locale?: string | null;
-}): Promise<Result<MailboxPageData>> => {
+};
+
+const buildMailboxListView = async (
+  params: MailboxListParams,
+  folderResult: Awaited<ReturnType<typeof messages.listFolders>>,
+  savedViewResult: Awaited<ReturnType<typeof savedViews.listSavedConversationViews>>,
+): Promise<MailboxListView> => {
   const t = workspaceMessages.resolve([params.locale ?? "en"]).t;
-  const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
-  if (!permission.ok) return fail(permission.error);
   const scheduledMode = params.requestUrl.searchParams.get("scheduled") === "1";
-
-  let initialLiveCursor: string | null = null;
-  try {
-    initialLiveCursor = await mailLive.cursor();
-  } catch (error) {
-    log.warn("Failed to capture the initial Mail live cursor", {
-      mailboxId: params.mailboxId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-
-  const [
-    mailboxResult,
-    folderResult,
-    identityResult,
-    viewCountsResult,
-    savedViewResult,
-    localTagResult,
-    scheduledCountResult,
-    receivingAddress,
-  ] = await Promise.all([
-    mailboxes.getMailbox(params.context, params.mailboxId),
-    messages.listFolders(params.context, params.mailboxId),
-    senderIdentities.listSenderIdentities(params.context, params.mailboxId),
-    messages.getConversationViewCounts({
-      context: params.context,
-      mailboxId: params.mailboxId,
-    }),
-    savedViews.listSavedConversationViews({
-      context: params.context,
-      mailboxId: params.mailboxId,
-    }),
-    localTags.listLocalTags(params.context, params.mailboxId),
-    scheduledSends.countScheduledSends({
-      context: params.context,
-      mailboxId: params.mailboxId,
-    }),
-    mailboxes.getMailboxReceivingAddress(params.mailboxId),
-  ]);
-  if (!mailboxResult.ok) return fail(mailboxResult.error);
-
   const parsedView = conversationViewSchema.safeParse(params.requestUrl.searchParams.get("view") ?? undefined);
   const activeView = parsedView.success ? parsedView.data : null;
   const savedViewId = activeView ? null : optionalUuidSearchParam(params.requestUrl, "savedView");
@@ -687,11 +671,6 @@ export const loadMailboxPageData = async (params: {
   const resolvedSearch = params.search;
   const { query, expression: searchExpression, sort: searchSort } = resolvedSearch;
   const listCursor = params.requestUrl.searchParams.get("cursor");
-  let selectedConversationId = optionalUuidSearchParam(params.requestUrl, "conversation");
-  let selectedMessageId = optionalUuidSearchParam(params.requestUrl, "message");
-  if (selectedConversationId && !(await requireVisibleConversation(permission.data, selectedConversationId)).ok)
-    selectedConversationId = null;
-  if (selectedMessageId && !(await requireVisibleMessages(permission.data, [selectedMessageId])).ok) selectedMessageId = null;
   const folders = folderResult.ok ? folderResult.data : [];
   const activeSavedView = savedViewResult.ok ? (savedViewResult.data.find((view) => view.id === savedViewId) ?? null) : null;
   const listMode = params.listMode ?? "conversations";
@@ -744,7 +723,109 @@ export const loadMailboxPageData = async (params: {
       ? drafts.listDraftFolder({ context: params.context, mailboxId: params.mailboxId, cursor: listCursor ?? undefined, limit: 50 })
       : Promise.resolve(null),
   ]);
-  const selectedListItem = list.items.find((item) =>
+  return {
+    scheduledMode,
+    ...(scheduledPageResult?.ok ? { scheduledCount: scheduledPageResult.data.total } : {}),
+    scheduledPage: scheduledPageResult?.ok ? scheduledPageResult.data : null,
+    scheduledError:
+      scheduledPageResult && !scheduledPageResult.ok ? localizeMailError(scheduledPageResult.error, params.locale).message : null,
+    draftsMode,
+    draftsPage: draftsPageResult?.ok ? draftsPageResult.data : null,
+    draftsError: draftsPageResult && !draftsPageResult.ok ? localizeMailError(draftsPageResult.error, params.locale).message : null,
+    activeView,
+    savedViewId,
+    listMode,
+    folderId,
+    query,
+    search: params.publicSearch,
+    listItems: list.items,
+    listCursor,
+    nextListCursor: list.nextCursor,
+    listError: list.error,
+    listTitle: scheduledMode
+      ? t.scheduled
+      : resolvedSearch.error
+        ? t.search
+        : searchExpression
+          ? query
+            ? t.resultsFor({ query })
+            : t.filteredSearch
+          : activeView
+            ? t.view({ view: activeView })
+            : (activeSavedView?.name ?? activeFolder?.name ?? t.allMail),
+  };
+};
+
+export const loadMailboxListView = async (params: MailboxListParams): Promise<Result<MailboxListView>> => {
+  const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
+  if (!permission.ok) return fail(permission.error);
+  const [folderResult, savedViewResult] = await Promise.all([
+    messages.listFolders(params.context, params.mailboxId),
+    savedViews.listSavedConversationViews({ context: params.context, mailboxId: params.mailboxId }),
+  ]);
+  return ok(await buildMailboxListView(params, folderResult, savedViewResult));
+};
+
+export const loadMailboxPageData = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  requestUrl: URL;
+  search: ResolvedMailSearchRoute;
+  publicSearch: ResolvedMailSearchRoute;
+  listMode?: MailListMode;
+  locale?: string | null;
+}): Promise<Result<MailboxPageData>> => {
+  const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
+  if (!permission.ok) return fail(permission.error);
+
+  let initialLiveCursor: string | null = null;
+  try {
+    initialLiveCursor = await mailLive.cursor();
+  } catch (error) {
+    log.warn("Failed to capture the initial Mail live cursor", {
+      mailboxId: params.mailboxId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const [
+    mailboxResult,
+    folderResult,
+    identityResult,
+    viewCountsResult,
+    savedViewResult,
+    localTagResult,
+    scheduledCountResult,
+    receivingAddress,
+  ] = await Promise.all([
+    mailboxes.getMailbox(params.context, params.mailboxId),
+    messages.listFolders(params.context, params.mailboxId),
+    senderIdentities.listSenderIdentities(params.context, params.mailboxId),
+    messages.getConversationViewCounts({
+      context: params.context,
+      mailboxId: params.mailboxId,
+    }),
+    savedViews.listSavedConversationViews({
+      context: params.context,
+      mailboxId: params.mailboxId,
+    }),
+    localTags.listLocalTags(params.context, params.mailboxId),
+    scheduledSends.countScheduledSends({
+      context: params.context,
+      mailboxId: params.mailboxId,
+    }),
+    mailboxes.getMailboxReceivingAddress(params.mailboxId),
+  ]);
+  if (!mailboxResult.ok) return fail(mailboxResult.error);
+
+  const listView = await buildMailboxListView(params, folderResult, savedViewResult);
+  const { scheduledMode, draftsMode, folderId } = listView;
+  let selectedConversationId = optionalUuidSearchParam(params.requestUrl, "conversation");
+  let selectedMessageId = optionalUuidSearchParam(params.requestUrl, "message");
+  if (selectedConversationId && !(await requireVisibleConversation(permission.data, selectedConversationId)).ok)
+    selectedConversationId = null;
+  if (selectedMessageId && !(await requireVisibleMessages(permission.data, [selectedMessageId])).ok) selectedMessageId = null;
+  const selectedListItem = listView.listItems.find((item) =>
     item.selectionKind === "message" ? item.id === selectedMessageId : item.conversationId === selectedConversationId,
   );
   const preferredFolderId = selectedListItem?.sourceFolderId ?? folderId;
@@ -763,47 +844,20 @@ export const loadMailboxPageData = async (params: {
   const selectedSubject = selection.detailMessages.at(-1)?.subject || selectedListItem?.subject || "";
 
   return ok({
+    ...listView,
     mailbox: mailboxResult.data,
     receivingAddress,
     permission: permission.data.permission,
     access: { scope: permission.data.scope, permission: permission.data.permission },
     initialLiveCursor,
-    folders,
+    folders: folderResult.ok ? folderResult.data : [],
     identities: identityResult.ok ? identityResult.data : [],
-    scheduledMode,
-    scheduledCount: scheduledPageResult?.ok ? scheduledPageResult.data.total : scheduledCountResult.ok ? scheduledCountResult.data : 0,
-    scheduledPage: scheduledPageResult?.ok ? scheduledPageResult.data : null,
-    scheduledError:
-      scheduledPageResult && !scheduledPageResult.ok ? localizeMailError(scheduledPageResult.error, params.locale).message : null,
-    draftsMode,
-    draftsPage: draftsPageResult?.ok ? draftsPageResult.data : null,
-    draftsError: draftsPageResult && !draftsPageResult.ok ? localizeMailError(draftsPageResult.error, params.locale).message : null,
+    scheduledCount: listView.scheduledPage ? listView.scheduledPage.total : scheduledCountResult.ok ? scheduledCountResult.data : 0,
     localTags: localTagResult.ok ? localTagResult.data : [],
-    activeView,
-    savedViewId,
     savedViews: savedViewResult.ok ? savedViewResult.data : [],
-    listMode,
-    folderId,
     viewCounts: viewCountsResult.ok ? viewCountsResult.data : EMPTY_VIEW_COUNTS,
-    query,
-    search: params.publicSearch,
     selectedConversationId,
     selectedMessageId,
-    listItems: list.items,
-    listCursor,
-    nextListCursor: list.nextCursor,
-    listError: list.error,
-    listTitle: scheduledMode
-      ? t.scheduled
-      : resolvedSearch.error
-        ? t.search
-        : searchExpression
-          ? query
-            ? t.resultsFor({ query })
-            : t.filteredSearch
-          : activeView
-            ? t.view({ view: activeView })
-            : (activeSavedView?.name ?? activeFolder?.name ?? t.allMail),
     ...selection,
     selectedSubject,
   });

@@ -59,7 +59,7 @@ function tree(
         return [
           createComponent(AppWorkspace.SidebarItemLabel, {
             children:
-              index === 2 ? "A very long notebook name that cannot possibly fit into a single chip without an ellipsis" : `Object ${index}`,
+              index === 2 ? "A very long notebook name that cannot possibly fit into a single chip without fading" : `Object ${index}`,
           }),
           createComponent(AppWorkspace.SidebarItemMeta, { children: `${index + 1}` }),
         ];
@@ -343,7 +343,7 @@ for (const [width, height] of [
           "Object 1",
           "Object 3",
           "Object 4",
-          "A very long notebook name that cannot possibly fit into a single chip without an ellipsis",
+          "A very long notebook name that cannot possibly fit into a single chip without fading",
           "Archived notebook",
           "New notebook",
           "Recently deleted",
@@ -446,7 +446,7 @@ for (const [width, height] of [
           .locator('[data-variant="object"]')
           .nth(2)
           .evaluate((chip) => {
-            const label = chip.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-item-label")!;
+            const label = chip.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-item-label-text")!;
             const icon = chip.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-item-icon")!;
             return {
               // No chip inside the chip: the object row's icon tile is a plain glyph here.
@@ -456,14 +456,16 @@ for (const [width, height] of [
               cut: label.scrollWidth > label.clientWidth,
               whiteSpace: getComputedStyle(label).whiteSpace,
               overflow: getComputedStyle(label).textOverflow,
+              mask: getComputedStyle(label).maskImage,
             };
           });
         expect(size.width).toBeLessThanOrEqual(240);
+        expect(size.mask).toContain("linear-gradient");
         expect(size).toMatchObject({
           height: 36,
           cut: true,
           whiteSpace: "nowrap",
-          overflow: "ellipsis",
+          overflow: "clip",
           icon: { height: 16, fill: "rgba(0, 0, 0, 0)" },
         });
       } finally {

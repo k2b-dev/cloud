@@ -48,6 +48,7 @@ export type AiChatTask = {
   locale: string | null;
   reasonCode: ChatTaskReasonCode | null;
   reasonAt: string | null;
+  reasonAction: string | null;
   id: string;
   shortId: string;
   chatId: string;
@@ -88,6 +89,7 @@ type TaskRow = {
   locale: string | null;
   reason_code: ChatTaskReasonCode | null;
   reason_at: Date | string | null;
+  reason_action: string | null;
   id: string;
   short_id: string;
   conversation_id: string;
@@ -255,7 +257,7 @@ const stopTaskAdmission = async (
   const state = chatTaskReasonState(code);
   const [stopped] = await db<TaskRow[]>`
     UPDATE ai.chat_tasks
-    SET state = ${state}, last_error = ${reason}, reason_code = ${code}, reason_at = now(),
+    SET state = ${state}, last_error = ${reason}, reason_code = ${code}, reason_action = NULL, reason_at = now(),
         mandate_revision = COALESCE(${pausedMandateRevision ?? null}::bigint, mandate_revision),
         revision = revision + 1, updated_at = now()
     WHERE id = ${task.id}::uuid AND state = ${task.state} RETURNING *
@@ -387,6 +389,8 @@ const toTask = (row: TaskRow): AiChatTask => ({
   locale: row.locale,
   reasonCode: row.reason_code,
   reasonAt: nullableIso(row.reason_at),
+  // An older Core may leave a stale action beside another code; the action belongs only to needs_approval.
+  reasonAction: row.reason_code === "needs_approval" ? row.reason_action : null,
   id: row.id,
   shortId: row.short_id,
   chatId: row.conversation_short_id,
@@ -908,6 +912,7 @@ export const aiChatTasks = {
               ELSE NULL
             END,
             reason_code = CASE WHEN ${authorityStopped} OR task.state = 'paused' OR (task.state = 'completed' AND ${scheduleChanged} = false) THEN task.reason_code ELSE NULL END,
+            reason_action = CASE WHEN ${authorityStopped} OR task.state = 'paused' OR (task.state = 'completed' AND ${scheduleChanged} = false) THEN task.reason_action ELSE NULL END,
             reason_at = CASE WHEN ${authorityStopped} OR task.state = 'paused' OR (task.state = 'completed' AND ${scheduleChanged} = false) THEN task.reason_at ELSE NULL END,
             revision = task.revision + 1, updated_at = now()
         WHERE id = ${current.id}::uuid
@@ -970,7 +975,7 @@ export const aiChatTasks = {
           const [restored] = await tx`SELECT 1 FROM ai.conversations WHERE id = ${input.conversationId}::uuid
             AND archived_at IS NULL FOR SHARE`;
           if (current?.reason_code === "chat_archived" && restored)
-            await tx`UPDATE ai.chat_tasks SET reason_code = 'paused', updated_at = now() WHERE id = ${current.id}::uuid`;
+            await tx`UPDATE ai.chat_tasks SET reason_code = 'paused', reason_action = NULL, updated_at = now() WHERE id = ${current.id}::uuid`;
         });
       } catch (error) {
         if (!(error instanceof AiChatTaskAuthorityError)) throw error;
@@ -1008,7 +1013,8 @@ export const aiChatTasks = {
           AND task.updated_at < now() - make_interval(secs => ${graceSeconds}::double precision)
         ORDER BY task.id LIMIT ${limit}
         FOR UPDATE OF task SKIP LOCKED FOR SHARE OF conversation SKIP LOCKED`;
-      for (const row of rows) await tx`UPDATE ai.chat_tasks SET reason_code = 'paused', updated_at = now() WHERE id = ${row.id}::uuid`;
+      for (const row of rows)
+        await tx`UPDATE ai.chat_tasks SET reason_code = 'paused', reason_action = NULL, updated_at = now() WHERE id = ${row.id}::uuid`;
       return rows.length;
     });
   },
@@ -1063,6 +1069,7 @@ export const aiChatTasks = {
         UPDATE ai.chat_tasks task
         SET state = ${input.state === "paused" ? chatTaskReasonState("paused") : "active"}, mandate_revision = ${revision},
             reason_code = ${input.state === "paused" ? "paused" : null},
+            reason_action = NULL,
             reason_at = CASE WHEN ${input.state} = 'active' THEN NULL WHEN task.reason_code = 'paused' THEN task.reason_at ELSE now() END,
             last_error = CASE WHEN task.state = ${input.state} THEN task.last_error ELSE NULL END,
             revision = CASE WHEN task.state = ${input.state} THEN task.revision ELSE task.revision + 1 END,
@@ -1278,7 +1285,7 @@ export const aiChatTasks = {
         task.id AS task_row_id, task.short_id AS task_short_id, task.conversation_id, conversation.short_id AS conversation_short_id,
         conversation.title AS conversation_title, task.sponsor_user_id, task.mandate_id, task.mandate_revision,
         (SELECT policy FROM auth.mandates WHERE id = task.mandate_id) AS mandate_policy,
-        task.title, task.locale, task.reason_code, task.reason_at, task.prompt, task.schedule_kind, task.run_at, task.cron,
+        task.title, task.locale, task.reason_code, task.reason_at, task.reason_action, task.prompt, task.schedule_kind, task.run_at, task.cron,
         task.timezone, task.state AS task_state, task.revision, task.last_error, task.created_at AS task_created_at, task.updated_at
       FROM (
         SELECT candidate.*,
@@ -1353,7 +1360,7 @@ export const aiChatTasks = {
         const revision = await pauseTerminalTaskMandate(task, tx);
         await tx`
           UPDATE ai.chat_tasks
-          SET state = ${chatTaskReasonState(input.code)}, reason_code = ${input.code}, reason_at = CASE WHEN reason_code = ${input.code} THEN COALESCE(reason_at, now()) ELSE now() END, last_error = ${input.error}, mandate_revision = ${revision},
+          SET state = ${chatTaskReasonState(input.code)}, reason_code = ${input.code}, reason_action = NULL, reason_at = CASE WHEN reason_code = ${input.code} THEN COALESCE(reason_at, now()) ELSE now() END, last_error = ${input.error}, mandate_revision = ${revision},
               revision = revision + 1, updated_at = now()
           WHERE id = ${rows[0].task_id}::uuid AND revision = ${rows[0].task_revision}::bigint
         `;
@@ -1481,6 +1488,13 @@ export const aiChatTasks = {
       return { delivered: true as const, conversationId: occurrence.conversation_id, turnId };
     }),
 
+  markNeedsApproval: async (input: { turnId: string; action: string }): Promise<void> => {
+    await sql`UPDATE ai.turns SET run_config = jsonb_set(run_config, '{background,needsApproval}',
+      jsonb_build_object('action', ${input.action.slice(0, 200)}::text))
+      WHERE id = ${input.turnId}::uuid AND run_config ? 'background'
+        AND run_config #> '{background,needsApproval}' IS NULL`;
+  },
+
   finalizeTurn: async (input: {
     turnId: string;
     status: AiTurnStatus;
@@ -1506,6 +1520,8 @@ export const aiChatTasks = {
         return occurrence ? { occurrenceId: occurrence.id, failed: false } : null;
       }
       if (!task) return null;
+      const needsApproval = turn.run_config.background?.needsApproval;
+      const approvalError = needsApproval ? `NEEDS_APPROVAL: ${needsApproval.action} requires approval for every call` : null;
       const rows = await tx<
         {
           occurrence_id: string;
@@ -1517,12 +1533,15 @@ export const aiChatTasks = {
           task_revision: number | bigint;
           current_revision: number | bigint;
           turn_error: string | null;
+          needs_approval: boolean;
           completed_at: Date | string;
         }[]
       >`
         UPDATE ai.chat_task_occurrences occurrence
-        SET state = ${input.status === "completed" ? "completed" : "failed"},
+        SET state = CASE WHEN ${approvalError}::text IS NOT NULL AND occurrence.task_revision = task.revision THEN 'failed'
+              ELSE ${input.status === "completed" ? "completed" : "failed"} END,
             error = CASE
+              WHEN ${approvalError}::text IS NOT NULL AND occurrence.task_revision = task.revision THEN ${approvalError}
               WHEN ${input.status} = 'completed' THEN NULL
               ELSE COALESCE(${input.error ?? null}, turn.error, ${`Scheduled turn ${input.status}`})
             END,
@@ -1531,10 +1550,12 @@ export const aiChatTasks = {
         WHERE occurrence.task_id = task.id AND occurrence.turn_id = ${input.turnId}::uuid AND turn.id = occurrence.turn_id
           AND occurrence.state = 'running'
         RETURNING occurrence.id AS occurrence_id, occurrence.task_id, task.schedule_kind, occurrence.trigger,
-          occurrence.scheduled_for, task.run_at, occurrence.task_revision, task.revision AS current_revision, turn.error AS turn_error, occurrence.completed_at
+          occurrence.scheduled_for, task.run_at, occurrence.task_revision, task.revision AS current_revision, turn.error AS turn_error, (${approvalError}::text IS NOT NULL AND occurrence.task_revision = task.revision) AS needs_approval, occurrence.completed_at
       `;
       const row = rows[0];
       if (!row) return null;
+      const failed = row.needs_approval || input.status !== "completed";
+      const failureCode = row.needs_approval ? "needs_approval" : "failed";
       const responses = await tx<{ message: Message }[]>`
         SELECT message FROM ai.task_messages WHERE loop_id = ${input.turnId} AND role = 'assistant' ORDER BY seq DESC
       `;
@@ -1549,36 +1570,35 @@ export const aiChatTasks = {
               .join("\n")
               .trim();
           })
-          .find(Boolean) || (input.status === "completed" ? "Background task completed." : "");
+          .find(Boolean) || (!failed ? "Background task completed." : "");
       const unchangedSinceStart = Number(row.task_revision) === Number(row.current_revision);
       const currentOnceSlot = row.run_at !== null && iso(row.run_at) === iso(row.scheduled_for);
-      if (
-        unchangedSinceStart &&
-        input.status === "completed" &&
-        row.schedule_kind === "once" &&
-        row.trigger === "scheduled" &&
-        currentOnceSlot
-      ) {
+      if (unchangedSinceStart && !failed && row.schedule_kind === "once" && row.trigger === "scheduled" && currentOnceSlot) {
         const revision = await pauseTerminalTaskMandate(task, tx);
         await tx`
           UPDATE ai.chat_tasks
-          SET state = 'completed', last_error = NULL, reason_code = NULL, reason_at = NULL, mandate_revision = ${revision}, revision = revision + 1, updated_at = now()
+          SET state = 'completed', last_error = NULL, reason_code = NULL, reason_action = NULL, reason_at = NULL, mandate_revision = ${revision}, revision = revision + 1, updated_at = now()
           WHERE id = ${row.task_id}::uuid AND revision = ${row.task_revision}::bigint
         `;
-      } else if (unchangedSinceStart && input.status !== "completed") {
-        const error = input.error || row.turn_error || `Scheduled turn ${input.status}`;
+      } else if (unchangedSinceStart && failed) {
+        const error = (row.needs_approval ? approvalError : null) || input.error || row.turn_error || `Scheduled turn ${input.status}`;
         const revision = await pauseTerminalTaskMandate(task, tx);
         await tx`
           UPDATE ai.chat_tasks
-          SET state = ${chatTaskReasonState("failed")}, reason_code = 'failed', reason_at = CASE WHEN reason_code = 'failed' THEN COALESCE(reason_at, now()) ELSE now() END, last_error = ${error}, mandate_revision = ${revision}, revision = revision + 1, updated_at = now()
+          SET state = ${chatTaskReasonState(failureCode)}, reason_code = ${failureCode},
+              reason_action = ${row.needs_approval ? needsApproval!.action : null},
+              reason_at = CASE WHEN reason_code = ${failureCode} THEN COALESCE(reason_at, now()) ELSE now() END, last_error = ${error}, mandate_revision = ${revision}, revision = revision + 1, updated_at = now()
           WHERE id = ${row.task_id}::uuid AND revision = ${row.task_revision}::bigint
         `;
       }
       const [current] = await tx<TaskRow[]>`SELECT * FROM ai.chat_tasks WHERE id = ${task.id}::uuid`;
-      const reason: ChatTaskReason | null =
-        input.status !== "completed"
-          ? { code: "failed", at: current?.reason_code === "failed" && current.reason_at ? iso(current.reason_at) : iso(row.completed_at) }
-          : null;
+      const reason: ChatTaskReason | null = failed
+        ? {
+            code: failureCode,
+            at: current?.reason_code === failureCode && current.reason_at ? iso(current.reason_at) : iso(row.completed_at),
+            ...(row.needs_approval ? { action: needsApproval!.action } : {}),
+          }
+        : null;
       await deliverOccurrenceResult(
         tx,
         task,
@@ -1586,7 +1606,7 @@ export const aiChatTasks = {
         resultText || (reason ? reasonSentence(task, reason, appLocale) : ""),
         reason ? { reason, ...(resultText ? {} : { reasonOnly: true as const }) } : {},
       );
-      return { occurrenceId: row.occurrence_id, failed: input.status !== "completed" };
+      return { occurrenceId: row.occurrence_id, failed };
     }),
 
   listTerminalRunningTurns: async (limit = 100): Promise<Array<{ turnId: string; status: "completed" | "failed" | "aborted" }>> => {
