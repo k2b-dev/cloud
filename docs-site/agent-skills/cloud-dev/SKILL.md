@@ -93,7 +93,8 @@ Declare Sync handles with `lazySync()`, use them after `app.start()`, start
 workers in lifecycle startup, and drain them before releasing dependencies.
 Shared resources need one owner and identical settings. Never declare one per
 entity: JetStream reserves each stream's bytes, so per-entity logs share one
-topic keyed by `tenantId` with watermark cursors (Topics and live events).
+topic keyed by `tenantId` with watermark cursors (Topics and live events);
+use `@k2b/cloud/shared-text` for collaboratively edited text.
 
 Cloud and every application are equal consumers of `@k2b/ui`. The standalone
 SolidJS library remains independent of Cloud and application domains.

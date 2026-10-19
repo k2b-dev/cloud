@@ -57,6 +57,7 @@
     "./cli/capabilities": "./src/cli/capabilities.ts",
     "./cli/admin": "./src/cli/admin/index.ts",
     "./shared": "./src/shared/index.ts",
+    "./shared-text": "./src/shared-text/index.ts",
     "./services": "./src/services/index.ts",
     "./services/image-metadata": "./src/services/image-metadata.ts",
     "./services/document-extraction": "./src/services/document-extraction.ts",
@@ -136,6 +137,7 @@
     "web-push": "3.6.7",
     "web-vitals": "6.2.2",
     "yaml": "2.9.1",
+    "yjs": "13.6.33",
     "hash-wasm": "4.12.0",
     "@types/sanitize-html": "2.16.1",
     "@types/web-push": "3.6.4"
