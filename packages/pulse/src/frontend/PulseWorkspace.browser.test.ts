@@ -79,8 +79,8 @@ describe("Pulse base page after the cut", () => {
         const hint = await tab.getByText("Dashboards und Fragen kommen zurück").first().boundingBox();
         expect(await tab.getByRole("button", { name: "Zu den Quellen" }).isVisible()).toBe(true);
         expect(await overflow(tab)).toBeLessThanOrEqual(0);
-        // Nothing loads after the first frame, so the hint never moves.
-        await tab.waitForTimeout(300);
+        // Nothing loads after the first frame, so the hint stays where it was two frames later.
+        await tab.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
         expect(await tab.getByText("Dashboards und Fragen kommen zurück").first().boundingBox()).toEqual(hint);
       } finally {
         await tab.close();
