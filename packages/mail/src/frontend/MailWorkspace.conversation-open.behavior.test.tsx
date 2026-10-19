@@ -149,8 +149,10 @@ describe("Mail workspace conversation open", () => {
   let revisions: Map<string, number>;
   /** Conversations with a flagged message on the server. */
   let flagged: Set<string>;
-  /** Conversations whose message also lies unread and flagged in Archive, which the detail names as its folder. */
+  /** Conversations with a second message that lies unread and flagged only in Archive. */
   let elsewhere: Set<string>;
+  /** Conversations whose messages were moved to Archive on the server after the list loaded. */
+  let moved: Set<string>;
   /** The mailbox's tags on the server. */
   let mailboxTags: MailboxPageData["localTags"];
   /** Holds a detail response until the test releases it. */
@@ -171,6 +173,7 @@ describe("Mail workspace conversation open", () => {
       workStatus: null,
       revision: revisions.get(id) ?? 1,
       flagged: flagged.has(id),
+      messageCount: elsewhere.has(id) ? 2 : 1,
     });
   const listFor = (href: string): MailboxListView => {
     const url = new URL(href, "http://localhost");
@@ -203,12 +206,15 @@ describe("Mail workspace conversation open", () => {
       localTags: mailboxTags,
       selectedSubject: `Subject ${conversationId}`,
       detailMessages: [
+        // An older message, so the reader still opens on the conversation's own body.
+        ...(elsewhere.has(conversationId)
+          ? [{ ...message(`a-${conversationId}`, `Subject ${conversationId}`, "Filed away"), flags: ["\\Flagged"], folderId: "Archive1" }]
+          : []),
         {
           ...message(`m-${conversationId}`, `Subject ${conversationId}`, `Body of ${conversationId}`),
-          flags: elsewhere.has(conversationId)
-            ? ["\\Flagged"]
-            : [...(unread.has(conversationId) ? [] : ["\\Seen"]), ...(flagged.has(conversationId) ? ["\\Flagged"] : [])],
-          folderId: elsewhere.has(conversationId) ? "Archive1" : FOLDER,
+          flags: [...(unread.has(conversationId) ? [] : ["\\Seen"]), ...(flagged.has(conversationId) ? ["\\Flagged"] : [])],
+          // B lies in Archive only, and the detail prefers the row's folder for each message.
+          folderId: conversationId === B || moved.has(conversationId) ? "Archive1" : FOLDER,
         },
         ...(reply ? [message(`r-${conversationId}`, `Subject ${conversationId}`, reply)] : []),
       ],
@@ -298,6 +304,7 @@ describe("Mail workspace conversation open", () => {
     revisions = new Map();
     flagged = new Set();
     elsewhere = new Set();
+    moved = new Set();
     mailboxTags = [];
     detailGate = new Map();
     detailStatus = () => 200;
@@ -742,13 +749,36 @@ describe("Mail workspace conversation open", () => {
   });
 
   test("a message in another folder does not make the folder's row look older", async () => {
-    mount();
-    // The detail names Archive for this message, which is unread and flagged there; the Inbox list states read and
-    // flag for the Inbox only.
+    // The conversation's second message lies unread and flagged in Archive only; the Inbox list states read and flag
+    // for the Inbox only.
     elsewhere.add(rowId(17));
+    mount();
     open(rowId(17));
     await until(() => shows(rowId(17)), "the opened conversation");
     await settle();
+    expect(routeRequests).toEqual([]);
+  });
+
+  test("a row whose folder no longer holds any of its messages is refreshed", async () => {
+    mount();
+    // Moving a conversation on the server changes its placements, not its revision.
+    moved.add(rowId(18));
+    open(rowId(18));
+    await until(() => shows(rowId(18)), "the opened conversation");
+    await until(() => routeRequests.length === 1, "the list refresh");
+    expect(routeRequests).toEqual([`${folderPath}&conversation=${rowId(18)}`]);
+  });
+
+  test("a search limited to a folder judges a row's unread state by that folder only", async () => {
+    const search = encodeURIComponent(JSON.stringify({ expression: { type: "folder_id", folderId: FOLDER }, sort: "newest" }));
+    // The search row is flagged, because search states flags for every folder; unread only for the Inbox.
+    elsewhere.add(rowId(19));
+    flagged.add(rowId(19));
+    mount(`${path}?search=${search}`);
+    open(rowId(19));
+    await until(() => shows(rowId(19)), "the opened conversation");
+    await settle();
+    expect(detailRequests).toEqual([{ id: rowId(19), folder: FOLDER }]);
     expect(routeRequests).toEqual([]);
   });
 
