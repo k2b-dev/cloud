@@ -324,13 +324,13 @@ describe("Mail workspace folder switches", () => {
     else Reflect.deleteProperty(globalThis, "CSS");
     setSystemTime();
   });
-  const mount = () => {
+  const mount = (initialLiveCursor: string | null = data.initialLiveCursor) => {
     dom.window.history.replaceState(null, "", path);
     const m = modules!;
     dispose = render(
       () =>
         createComponent(m.MailWorkspace, {
-          data: snapshotFor(path),
+          data: { ...snapshotFor(path), initialLiveCursor },
           requestPath: path,
           currentUserId: "user-1",
           currentUserEmail: "reader@example.test",
@@ -489,6 +489,15 @@ describe("Mail workspace folder switches", () => {
       counts();
       if (state === "unavailable") expect(dom.root.textContent).toContain("Updates paused");
     });
+
+  test("a page that started without a live cursor loads the full snapshot on a folder switch", async () => {
+    // The subscription then starts at the current position, so changes between the page and the subscription never arrive.
+    mount(null);
+    await caughtUp();
+    await switchTo("folder=Filed1");
+    expectRequests("workspace-route", `${path}?folder=Filed1`);
+    expect(heading()).toBe("Filed");
+  });
 
   test("Back after two list switches loads the previous scope and then the start through workspace-list", async () => {
     mount();
