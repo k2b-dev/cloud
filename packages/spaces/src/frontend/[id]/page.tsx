@@ -3,8 +3,11 @@ import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { ResourceShortIdSchema } from "../../contracts";
 import { spacesPageHelp } from "../../help";
+import { spacesService } from "../../service";
 import { isMailInvitationIntegrationAvailable } from "../../service/mail-integration";
+import { loadSpacesSidebar } from "../../service/overview";
 import { spacesPublicResources } from "../../service/public-resources";
+import { firstOpenSpacesHint } from "../spaces-hints";
 import SpacesWorkspace from "./_components/workspace/SpacesWorkspace";
 import { loadSpacesWorkspaceState } from "./_components/workspace/workspace-state";
 import { spaceMessages } from "./messages";
@@ -18,7 +21,7 @@ export default ssr<AuthContext>(async (c) => {
   const dateConfig = getDateConfig(c);
   if (!spaceId) return ssr.error(c, 404, { action: { label: t.allSpaces, href: "/app/spaces" } });
   const user = expectUserBackedActor(c);
-  const [state, mailIntegrationAvailable] = await Promise.all([
+  const [state, mailIntegrationAvailable, sidebar] = await Promise.all([
     loadSpacesWorkspaceState({
       user,
       spaceId,
@@ -29,6 +32,7 @@ export default ssr<AuthContext>(async (c) => {
       dateConfig,
     }),
     isMailInvitationIntegrationAvailable(),
+    loadSpacesSidebar({ userId: user.id, cookieHeader: c.req.header("Cookie"), dateConfig }),
   ]);
 
   if (state.kind !== "ok")
@@ -36,6 +40,19 @@ export default ssr<AuthContext>(async (c) => {
       description: state.message,
       action: { label: t.allSpaces, href: "/app/spaces" },
     });
+
+  const openHint = firstOpenSpacesHint(c, [
+    { id: "spaces.sidebar-switch", allowed: sidebar.spaces.length >= 2 },
+    { id: "spaces.view-tabs", allowed: true },
+    { id: "spaces.space-menu", allowed: true },
+  ]);
+  const hints = {
+    sidebarSwitch: openHint === "spaces.sidebar-switch",
+    viewTabs: openHint === "spaces.view-tabs",
+    spaceMenu: openHint === "spaces.space-menu",
+  };
+  // The existing assignee directory requires write permission; read-only users do not receive it.
+  const people = state.canWrite ? await spacesService.item.listAssignableUsers({ spaceId, search: "", limit: 20 }) : [];
 
   return () => (
     <Layout
@@ -45,7 +62,15 @@ export default ssr<AuthContext>(async (c) => {
       fullWidth
       title={state.title}
     >
-      <SpacesWorkspace userId={user.id} state={state} dateConfig={dateConfig} mailIntegrationAvailable={mailIntegrationAvailable} />
+      <SpacesWorkspace
+        userId={user.id}
+        state={state}
+        dateConfig={dateConfig}
+        mailIntegrationAvailable={mailIntegrationAvailable}
+        sidebar={sidebar}
+        hints={hints}
+        people={people}
+      />
     </Layout>
   );
 });

@@ -1,13 +1,13 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, IconButton, Kbd, prompts } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { Button } from "@k2b/ui";
+import { createSignal, Show } from "solid-js";
 import type { SpaceColumn, SpaceItemTemplate, SpaceTag, SpaceWormhole } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
-import FilterBar from "../filter/FilterBar";
-import { boardFilter, buildFilterUrl, defaultFilter, type FilterState } from "../filter/types";
+import { boardFilter, type FilterState } from "../filter/types";
 import KanbanBoard from "../kanban/KanbanBoard";
 import type { KanbanBucketInitial } from "../kanban/types";
 import { writeSpaceSettings } from "../settings/SpaceSettingsStore";
+import { provideSpacesRouteFilters } from "./route-filters";
 import { useSpacesRouteQuery } from "./route-query";
 
 type Props = {
@@ -26,46 +26,6 @@ type Props = {
   currentUserId: string;
 };
 
-/** The board's shortcuts as a dialog, so a click or tap shows them as well as a keyboard. */
-function KeyboardShortcutsButton(props: { canWrite: boolean }) {
-  const t = useSpaceMessages();
-  const shortcuts = () => [
-    { keys: ["arrowleft", "arrowup", "arrowright", "arrowdown"], label: t.kanbanShortcutNavigate },
-    { keys: ["enter"], label: t.kanbanShortcutOpen },
-    ...(props.canWrite
-      ? [
-          { keys: ["m"], label: t.kanbanShortcutAssign },
-          { keys: ["d"], label: t.kanbanShortcutComplete },
-          { keys: ["space", "arrowleft", "arrowup", "arrowright", "arrowdown", "escape"], label: t.kanbanShortcutMove },
-        ]
-      : []),
-  ];
-  const openShortcuts = () =>
-    void prompts.dialog<void>(
-      () => (
-        <div class="flex flex-col gap-2 text-sm">
-          <p class="text-xs text-dimmed">{t.kanbanShortcutsTitle}</p>
-          <For each={shortcuts()}>
-            {(shortcut) => (
-              <div class="flex items-center justify-between gap-4">
-                <span>{shortcut.label}</span>
-                <span class="flex gap-1">
-                  <For each={shortcut.keys}>{(key) => <Kbd keys={key} />}</For>
-                </span>
-              </div>
-            )}
-          </For>
-        </div>
-      ),
-      { title: t.keyboardShortcuts, icon: "ti ti-keyboard", size: "small" },
-    );
-  return (
-    <IconButton label={t.keyboardShortcuts} aria-haspopup="dialog" onClick={openShortcuts} data-spaces-kanban-shortcuts>
-      <i class="ti ti-keyboard text-base" aria-hidden="true" />
-    </IconButton>
-  );
-}
-
 export default function SpacesKanbanRoute(props: Props) {
   const t = useSpaceMessages();
   const view = useSpacesRouteQuery({
@@ -81,16 +41,18 @@ export default function SpacesKanbanRoute(props: Props) {
     const board = boardFilter(filter);
     return { ...board, tagIds: board.tagIds.filter((tagId) => props.tags.some((tag) => tag.id === tagId)) };
   };
-  const requestedFilter = () => appliedFilter(view.requestedFilter());
   const [folded, setFolded] = createSignal(new Set(props.foldedColumns));
+  provideSpacesRouteFilters(
+    () => ({
+      view: "kanban",
+      source: view.current().source,
+      requestedSource: view.source(),
+      busy: view.busy(),
+      searchReset: view.searchReset(),
+    }),
+    view,
+  );
 
-  const commitFilterPatch = (patch: Partial<FilterState>) => {
-    view.open(buildFilterUrl(view.source(), patch, requestedFilter()));
-  };
-  const clearFilters = () => {
-    view.open(buildFilterUrl(view.source(), defaultFilter, defaultFilter));
-    view.resetSearch();
-  };
   const toggleFolded = (bucketKey: string) => {
     const next = new Set(folded());
     if (!next.delete(bucketKey)) next.add(bucketKey);
@@ -103,20 +65,6 @@ export default function SpacesKanbanRoute(props: Props) {
 
   return (
     <>
-      <FilterBar
-        variant="board"
-        spaceId={props.spaceId}
-        columns={props.columns}
-        tags={props.tags}
-        filter={requestedFilter()}
-        searchBusy={view.busy()}
-        searchReset={view.searchReset()}
-        baseUrl={view.source()}
-        onFilterChange={commitFilterPatch}
-        onSearchChange={(search) => commitFilterPatch({ search })}
-        onClearFilters={clearFilters}
-        actions={<KeyboardShortcutsButton canWrite={props.canWrite} />}
-      />
       <Show when={view.error()}>
         {(error) => (
           <div class="flex items-center justify-between gap-2 pt-1 text-xs text-red-600" role="alert">

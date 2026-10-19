@@ -1,4 +1,6 @@
+import { openCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
+import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { listenPopState, navigate } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query as queries } from "@k2b/stdlib/solid";
@@ -6,26 +8,27 @@ import {
   AppWorkspace,
   Avatar,
   Button,
+  createNavigation,
   DetailPanel,
-  Dropdown,
   dialogCore,
   IconButton,
   PanelDialog,
-  PanelHeader,
-  Paper,
   Placeholder,
   panelDialogOptions,
-  SegmentedControl,
-  Tag,
   useLocale,
+  ViewTabs,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { Space } from "@/contracts";
 import { formatDeadline } from "@/presentation/deadline";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
-import { setPinnedSpaceIds } from "./[id]/_components/settings/SpaceSettingsStore";
-import { createSpaceCreation, type SpaceStarter } from "./create-space-dialog";
+import SpacesSidebarList from "./[id]/_components/sidebar/SpacesSidebarList";
+import {
+  createNewSpace,
+  createSpacesNavigationItems,
+  listenSpacesNavigationHints,
+  type SidebarSpace,
+} from "./[id]/_components/sidebar/spaces-navigation";
 import { readResponseError } from "./lib/response";
 import { overviewMessages } from "./overview-messages";
 import { createSpaceCommands } from "./space-commands";
@@ -43,50 +46,16 @@ type ActivityItem = {
   lastOccurredAt: string;
 };
 type ActivityPage = { data: ActivityItem[]; nextCursor: string | null };
-/** A Space plus the one sidebar fact and count the overview shows for it. */
-type OverviewSpace = Space & { openItemCount: number; lastActivityAt: string };
 type Props = {
-  spaces: OverviewSpace[];
+  spaces: SidebarSpace[];
+  canCreate?: boolean;
+  sidebarHint?: boolean;
   initialView: OverviewView;
   initialPinnedSpaceIds: string[];
   initialWork: OverviewWork;
   initialActivity: { items: ActivityItem[]; nextCursor: string | null };
   initialActivityError: string | null;
   dateConfig: DateContext;
-};
-
-/** The object list needs room for a title and a meta line; the overview does not resize. */
-const OVERVIEW_LAYOUT = { version: 2 as const, sidebarWidth: 304 };
-
-const starters: SpaceStarter[] = [
-  {
-    id: "tasks",
-    name: "Task board",
-    description: "Plan work with lists, kanban, deadlines, and assignees.",
-    icon: "ti ti-list-check",
-    color: "#3b82f6",
-  },
-  {
-    id: "calendar",
-    name: "Event calendar",
-    description: "Coordinate dated events, all-day work, and schedules.",
-    icon: "ti ti-calendar-event",
-    color: "#8b5cf6",
-  },
-  {
-    id: "project",
-    name: "Project tracker",
-    description: "Track delivery across statuses, owners, and priorities.",
-    icon: "ti ti-flag",
-    color: "#10b981",
-  },
-];
-const blankStarter: SpaceStarter = {
-  id: "blank",
-  name: "Blank space",
-  description: "Start with only To Do and Done, then shape the workflow as needed.",
-  icon: "ti ti-plus",
-  color: "#3b82f6",
 };
 
 const activityIcon = (action: string) =>
@@ -106,27 +75,6 @@ export default function SpacesOverview(props: Props) {
   createSpaceCommands({ dateConfig: props.dateConfig });
   const locale = useLocale();
   const { t } = overviewMessages.resolve([locale()]);
-  const localizeStarter = (starter: SpaceStarter): SpaceStarter => ({
-    ...starter,
-    name:
-      starter.id === "tasks"
-        ? t.taskBoard
-        : starter.id === "calendar"
-          ? t.eventCalendar
-          : starter.id === "project"
-            ? t.projectTracker
-            : t.blankSpace,
-    description:
-      starter.id === "tasks"
-        ? t.taskBoardDescription
-        : starter.id === "calendar"
-          ? t.eventCalendarDescription
-          : starter.id === "project"
-            ? t.projectTrackerDescription
-            : t.blankSpaceDescription,
-  });
-  const localizedStarters = starters.map(localizeStarter);
-  const localizedBlankStarter = localizeStarter(blankStarter);
   const activityDescription = (entry: ActivityItem) => {
     const title = entry.item?.title ?? String(entry.metadata.itemTitle ?? entry.space.name);
     const params = { title, space: entry.space.name };
@@ -165,20 +113,23 @@ export default function SpacesOverview(props: Props) {
     return labels[entry.action] ?? t.activityOther({ action: entry.action.replaceAll(".", " "), space: entry.space.name });
   };
   const [view, setView] = createSignal<OverviewView>(props.initialView);
-  const [pinned, setPinned] = createSignal(props.initialPinnedSpaceIds);
-  const [pinAnnouncement, setPinAnnouncement] = createSignal("");
-  const [dialogPending, setDialogPending] = createSignal(false);
   const [initialActivityError, setInitialActivityError] = createSignal(props.initialActivityError);
-  const orderedSpaces = createMemo(() =>
-    [...props.spaces].sort((left, right) => {
-      const a = pinned().indexOf(left.id);
-      const b = pinned().indexOf(right.id);
-      if (a === -1 && b === -1) return 0;
-      if (a === -1) return 1;
-      if (b === -1) return -1;
-      return a - b;
-    }),
-  );
+  const canCreate = () => props.canCreate ?? true;
+  const create = createNewSpace(t);
+  const navigation = createNavigation({
+    items: () =>
+      createSpacesNavigationItems({
+        spaces: props.spaces,
+        pinnedSpaceIds: props.initialPinnedSpaceIds,
+        current: { kind: "overview" },
+        canCreate: canCreate(),
+        myWorkLabel: t.myWork,
+        newSpaceLabel: t.newSpace,
+      }),
+    onAction: async (action) => {
+      if (action === "new-space") await create();
+    },
+  });
   const work = queries.create<OverviewView, OverviewWork>({
     source: view,
     initial: { source: props.initialView, data: props.initialWork },
@@ -211,56 +162,33 @@ export default function SpacesOverview(props: Props) {
   const activityItems = createMemo(() => activity.pages().flatMap((page) => page.data));
   const activityError = () => activity.error()?.message ?? initialActivityError();
 
-  const openCreateSpace = createSpaceCreation(t);
-  const createSpace = async (starter: SpaceStarter) => {
-    if (dialogPending()) return;
-    setDialogPending(true);
-    try {
-      await openCreateSpace(starter);
-    } finally {
-      setDialogPending(false);
-    }
-  };
-  const createMenuItems = () => [
-    {
-      sectionLabel: t.start,
-      items: [
-        {
-          label: localizedBlankStarter.name,
-          description: localizedBlankStarter.description,
-          icon: localizedBlankStarter.icon,
-          action: () => void createSpace(localizedBlankStarter),
-        },
-      ],
-    },
-    {
-      sectionLabel: t.starters,
-      items: localizedStarters.map((starter) => ({
-        label: starter.name,
-        description: starter.description,
-        icon: starter.icon,
-        action: () => void createSpace(starter),
-      })),
-    },
-  ];
-
-  const formatCount = (count: number) => count.toLocaleString(locale());
   const workViewOptions = () =>
-    (["mine", "today", "upcoming"] as const).map((value) => ({
-      value,
-      label: (
-        <>
-          {value === "mine" ? t.forMe : value === "today" ? t.today : t.upcoming}{" "}
-          <span class="spaces-overview-tab-count">{formatCount(counts()[value])}</span>
-        </>
-      ),
+    (["mine", "today", "upcoming"] as const).map((id) => ({
+      id,
+      label: id === "mine" ? t.forMe : id === "today" ? t.today : t.upcomingView,
+      href: `/app/spaces?view=${id}`,
+      count: counts()[id],
     }));
+  let tabsHost: HTMLDivElement | undefined;
   const selectView = (next: OverviewView) => {
     if (view() === next) return;
     setView(next);
     navigate(next === "mine" ? "/app/spaces" : `/app/spaces?view=${next}`, { scroll: "preserve" });
   };
   onMount(() => {
+    // Delegate native link clicks, including keyboard activation, without changing their semantics.
+    const onTabClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target instanceof Element ? event.target.closest("a") : null;
+      if (!anchor) return;
+      const next = new URL(anchor.href).searchParams.get("view");
+      if (next !== "mine" && next !== "today" && next !== "upcoming") return;
+      event.preventDefault();
+      selectView(next);
+    };
+    tabsHost?.addEventListener("click", onTabClick);
+    onCleanup(() => tabsHost?.removeEventListener("click", onTabClick));
+    onCleanup(listenSpacesNavigationHints(document, props.spaces));
     onCleanup(
       listenPopState(({ url }) => {
         const value = url.searchParams.get("view");
@@ -268,15 +196,6 @@ export default function SpacesOverview(props: Props) {
       }),
     );
   });
-  const togglePin = (space: Space) =>
-    setPinned((current) => {
-      const isPinned = current.includes(space.id);
-      const next = isPinned ? current.filter((id) => id !== space.id) : [space.id, ...current];
-      setPinnedSpaceIds(next);
-      setPinAnnouncement(isPinned ? t.unpinned({ name: space.name }) : t.pinned({ name: space.name }));
-      return next;
-    });
-
   const openSearch = () => openGlobalSearch({ scope: { appId: "spaces", label: "Spaces", icon: "ti ti-layout-kanban" } });
 
   const activityFeed = () => (
@@ -334,11 +253,9 @@ export default function SpacesOverview(props: Props) {
                   }
                   size="sm"
                 />
-                <Paper
-                  as="a"
+                <a
                   href={entry.item ? `/app/spaces/${entry.space.id}?item=${entry.item.id}` : `/app/spaces/${entry.space.id}`}
-                  interactive
-                  class="spaces-overview-activity-paper"
+                  class="spaces-overview-activity-row"
                 >
                   <i class={`${activityIcon(entry.action)} spaces-overview-activity-icon app-accent-text`} aria-hidden="true" />
                   <span class="spaces-overview-activity-meta">
@@ -349,7 +266,7 @@ export default function SpacesOverview(props: Props) {
                     </time>
                   </span>
                   <span class="spaces-overview-activity-description">{activityDescription(entry)}</span>
-                </Paper>
+                </a>
               </li>
             )}
           </For>
@@ -442,113 +359,43 @@ export default function SpacesOverview(props: Props) {
   );
 
   return (
-    <AppWorkspace mobileSurface="flush" flat class="spaces-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
+    <AppWorkspace mobileSurface="flush" flat class="spaces-overview-workspace">
+      <WorkspaceNavigationProvider label="Spaces" navigation={navigation} />
       <h1 class="sr-only">Spaces</h1>
-      <AppWorkspace.Sidebar label="Spaces" mobile="stacked" resizable={false}>
+      <AppWorkspace.Sidebar label="Spaces" collapsible>
         <AppWorkspace.SidebarDesktop>
-          <AppWorkspace.SidebarBody scrollPreserveKey={false}>
-            <AppWorkspace.SidebarSection title="Spaces" count={props.spaces.length}>
-              <For each={orderedSpaces()}>
-                {(space) => {
-                  const isPinned = () => pinned().includes(space.id);
-                  return (
-                    <AppWorkspace.SidebarItem
-                      variant="object"
-                      href={`/app/spaces/${space.id}`}
-                      title={space.description || space.name}
-                      class="spaces-overview-space"
-                      data={{ pinned: isPinned() ? "true" : undefined }}
-                      description={
-                        <time datetime={space.lastActivityAt} title={dates.formatDateTime(space.lastActivityAt, props.dateConfig)}>
-                          {dates.formatDateTimeRelative(space.lastActivityAt, props.dateConfig)}
-                        </time>
-                      }
-                      actions={
-                        <AppWorkspace.SidebarItemActions visibility="hover">
-                          <IconButton
-                            label={isPinned() ? t.unpin({ name: space.name }) : t.pin({ name: space.name })}
-                            tooltip={isPinned() ? t.unpin({ name: space.name }) : t.pin({ name: space.name })}
-                            size="xs"
-                            variant="text"
-                            aria-pressed={isPinned()}
-                            onClick={() => togglePin(space)}
-                          >
-                            <i class={`ti ${isPinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
-                          </IconButton>
-                        </AppWorkspace.SidebarItemActions>
-                      }
-                    >
-                      {/* Every Space shares the kanban icon, so the row leads with the Space's own colour instead. */}
-                      <AppWorkspace.SidebarItemIcon>
-                        <Show
-                          when={isPinned()}
-                          fallback={<span class="spaces-overview-space-dot" style={{ "background-color": space.color }} />}
-                        >
-                          <i class="ti ti-flag" style={{ color: space.color }} />
-                        </Show>
-                      </AppWorkspace.SidebarItemIcon>
-                      <AppWorkspace.SidebarItemLabel>{space.name}</AppWorkspace.SidebarItemLabel>
-                      <AppWorkspace.SidebarItemMeta>
-                        <span class="spaces-overview-count" data-zero={space.openItemCount === 0 ? "true" : undefined}>
-                          <span aria-hidden="true">{formatCount(space.openItemCount)}</span>
-                          <span class="sr-only">{t.openItemCount({ count: space.openItemCount })}</span>
-                        </span>
-                      </AppWorkspace.SidebarItemMeta>
-                    </AppWorkspace.SidebarItem>
-                  );
-                }}
-              </For>
-            </AppWorkspace.SidebarSection>
-            <span class="sr-only" aria-live="polite">
-              {pinAnnouncement()}
-            </span>
-          </AppWorkspace.SidebarBody>
-          <AppWorkspace.SidebarFooter>
-            <AppWorkspace.SidebarItem icon="ti ti-search" title={t.searchTitle} onClick={() => void openSearch()}>
-              {t.searchTitle}
-            </AppWorkspace.SidebarItem>
-          </AppWorkspace.SidebarFooter>
+          <SpacesSidebarList
+            spaces={props.spaces}
+            pinnedSpaceIds={props.initialPinnedSpaceIds}
+            myWorkCount={counts().mine}
+            current={{ kind: "overview" }}
+            canCreate={canCreate()}
+            hint={{ id: "spaces.overview-sidebar", open: Boolean(props.sidebarHint) && canCreate() }}
+          />
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
+      <AppWorkspace.Head
+        views={
+          <div ref={tabsHost}>
+            <ViewTabs label={t.workView} current={view()} items={workViewOptions()} />
+          </div>
+        }
+        actions={
+          <>
+            <IconButton label={t.searchTitle} onClick={() => void openSearch()}>
+              <i class="ti ti-search" aria-hidden="true" />
+            </IconButton>
+            <Button variant="secondary" size="sm" class="spaces-overview-mobile-activity" onClick={openMobileActivity}>
+              <i class="ti ti-history" aria-hidden="true" /> {t.activity}
+            </Button>
+          </>
+        }
+        primary={{ label: t.newTask, icon: "ti ti-plus", onClick: () => void openCommand("spaces.task.compose", {}) }}
+      />
       <AppWorkspace.Content>
         <AppWorkspace.Main class="spaces-overview-main" width="content" aria-busy={work.loading()}>
           <div class="spaces-overview-page">
-            <PanelHeader
-              as="h2"
-              size="lg"
-              title={t.myWork}
-              subtitle={t.myWorkDescription}
-              actions={
-                <Dropdown.Root
-                  items={createMenuItems()}
-                  position="bottom-right"
-                  width="min(38rem, calc(100vw - 1rem))"
-                  label={t.createSpace}
-                >
-                  <Dropdown.Trigger variant="primary">
-                    <i class="ti ti-plus" aria-hidden="true" /> {t.newSpace}
-                    <i class="ti ti-chevron-down" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              }
-            />
-            <div class="spaces-overview-toolbar">
-              <SegmentedControl<OverviewView>
-                class="spaces-overview-views"
-                size="sm"
-                ariaLabel={t.workView}
-                value={view}
-                onValueChange={selectView}
-                options={workViewOptions()}
-              />
-              <Tag icon="ti ti-layout-kanban" size="lg" class="spaces-overview-scope">
-                {t.allSpaces}
-              </Tag>
-              <Button variant="secondary" size="sm" class="spaces-overview-mobile-activity" onClick={openMobileActivity}>
-                <i class="ti ti-history" aria-hidden="true" /> {t.activity}
-              </Button>
-            </div>
-            <Paper class="spaces-overview-list">{workList()}</Paper>
+            <div class="spaces-overview-list">{workList()}</div>
           </div>
         </AppWorkspace.Main>
         <AppWorkspace.Detail id="spaces-overview-activity" open width="md" resizable={false} class="spaces-overview-activity">

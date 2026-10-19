@@ -26,8 +26,8 @@ kind: troubleshoot
 
 :::steps
 1. Return to the Space from the Spaces overview.
-2. In the Space sidebar, choose **List**. It shows the items without Kanban columns or calendar periods.
-3. Clear the search and the filter chips.
+2. Choose **List** in the tabs in the page header.
+3. If search or filters are active, choose **Reset** in the page header.
 4. Open the missing item from another known view or from global search.
 5. Apply the filters again, one at a time.
 :::

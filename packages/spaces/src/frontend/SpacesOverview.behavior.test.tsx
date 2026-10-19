@@ -57,8 +57,8 @@ test.skipIf(isServer)("overview keeps SSR work and ignores superseded tab reques
   const settle = () => Bun.sleep(30);
   const labels: Record<string, string> = { today: "Today", upcoming: "Upcoming" };
   const select = (view: string) => {
-    const option = Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')).find((button) =>
-      button.textContent?.startsWith(labels[view]!),
+    const option = Array.from(dom.root.querySelectorAll<HTMLAnchorElement>(".k2b-view-tabs__tab")).find((link) =>
+      link.textContent?.startsWith(labels[view]!),
     );
     expect(option).toBeDefined();
     option!.click();

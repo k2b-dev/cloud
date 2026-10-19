@@ -10,6 +10,8 @@ Ansichten stellen dieselben Einträge passend zur aktuellen Aufgabe dar. Eine gu
 
 ## Ansicht wählen {icon="layout-list"}
 
+Wähle **Liste**, **Tabelle**, **Kanban** oder **Kalender** in den Tabs im Kopfbereich. Die Tabs bleiben auch auf dem Handy dort.
+
 :::reference
 - **Liste:** Eignet sich für eine schnelle Einordnung, persönliche Arbeitsvorräte und kurze operative Listen.
 - **Tabelle:** Eignet sich, um bei vielen Einträgen zuständige Personen, Fälligkeitsdaten, Status, Prioritäten und Tags zu vergleichen.
@@ -39,6 +41,8 @@ Ansichten stellen dieselben Einträge passend zur aktuellen Aufgabe dar. Eine gu
 
 ## Gezielt filtern {icon="search"}
 
+In **Liste**, **Tabelle** und **Kanban** stehen Suche und Filter-Chips im Kopfbereich. **Zurücksetzen** entfernt aktive Filter und die Suche. Der Kalender behält seine Filter in seiner eigenen Werkzeugleiste.
+
 :::reference
 - **Suche:** Nutze die Suche, wenn du dich an ein Wort im Titel, in den Notizen oder in sichtbaren Angaben zum Eintrag erinnerst.
 - **Filter-Chips:** Nutze Filter-Chips für eindeutige Merkmale wie Typ, Status, Aktivität, zuständige Person, Priorität, Fälligkeitsdatum, Tags, Kanban-Spalte, Sortierung oder Gruppierung.
@@ -50,10 +54,10 @@ Ansichten stellen dieselben Einträge passend zur aktuellen Aufgabe dar. Eine gu
 ## Mit dem Kanban-Board arbeiten {icon="layout-kanban"}
 
 :::reference
-- **Filter:** Die Leiste über dem Board durchsucht und filtert alle Spalten nach Zuständigkeit, Priorität, Fälligkeitsdatum, Aktivität und Tags. **Mir zugewiesen** zeigt nur deine Arbeit. Solange ein Filter aktiv ist, zeigt jede Spalte, wie viele ihrer Einträge passen, zum Beispiel **2/7**. Eine neue Aufgabe, die nicht zum Filter passt, erhöht nur die Anzahl ihrer Spalte, bis du den Filter zurücksetzt. Filter stehen wie in den anderen Ansichten in der URL. Das Board anderer Personen ändern sie nie.
+- **Filter:** Suche und Chips im Kopfbereich filtern alle Spalten nach Zuständigkeit, Priorität, Fälligkeitsdatum, Aktivität und Tags. **Mir zugewiesen** zeigt nur deine Arbeit. Solange ein Filter aktiv ist, zeigt jede Spalte, wie viele ihrer Einträge passen, zum Beispiel **2/7**. Eine neue Aufgabe, die nicht zum Filter passt, erhöht nur die Anzahl ihrer Spalte, bis du den Filter zurücksetzt. Filter stehen wie in den anderen Ansichten in der URL. Das Board anderer Personen ändern sie nie.
 - **Karte verschieben:** Mit Zugriff **Bearbeiten** ziehst du eine Karte an ihrem Griff mit Maus oder Stift. Auf einem Touchscreen hältst du die Karte gedrückt, bis sie sich anhebt, und ziehst sie dann an ihren Platz. Mit einem schnellen Wischen scrollst du weiterhin das Board. Mit der Tastatur fokussierst du den Griff und drückst die **Leertaste**, um die Karte aufzunehmen. Mit **Pfeil nach oben** und **Pfeil nach unten** wählst du ihren Platz in der Spalte. Mit **Pfeil nach links** und **Pfeil nach rechts** wählst du einen anderen Status. Die Linie auf dem Board zeigt, wo die Karte landet. Drücke erneut die **Leertaste**, um sie abzulegen, oder **Escape**, um abzubrechen. Automatische Spalten werden übersprungen.
 - **Spalte einklappen:** Mit der Schaltfläche im Spaltenkopf klappst du eine Spalte ein, die du gerade nicht brauchst. Sie wird zu einem schmalen Streifen mit Name und Anzahl. Wähle den Streifen, um die Spalte wieder auszuklappen. Auch auf eine eingeklappte Spalte kannst du Karten ziehen; sie landen oben. Dieser Browser merkt sich eingeklappte Spalten für diesen Space und nur für dich.
-- **Tastenkürzel:** Die Tastatur-Schaltfläche am Ende der Leiste öffnet eine Liste der Kürzel des Boards.
+- **Tastenkürzel:** **… → Tastenkürzel** im Kopfbereich zeigt die Kürzel des Boards.
 - **Aktivität:** Ziehst du eine Karte in einen erledigten Status, zeigt die Aktivität die Aufgabe als erledigt. Ziehst du sie zurück in einen offenen Status, zeigt die Aktivität sie als wieder geöffnet.
 - **Spalten Blockiert und Überfällig:** Mit Zugriff **Bearbeiten** schaltest du in den Space-Einstellungen unter **Status** zwei automatische Spalten ein. **Blockiert** sammelt offene Aufgaben, die auf unerledigte Aufgaben warten. **Überfällig** sammelt offene Aufgaben, deren Frist vor heute lag. Eine solche Aufgabe erscheint nur dort, mit ihrem Status als kleinem Badge. Die Anzahl ihrer Statusspalte zählt sie nicht mit. Eine Aufgabe, die blockiert und überfällig ist, bleibt unter **Blockiert** und zeigt ein Badge **Überfällig**. Für neue und bestehende Spaces sind beide Spalten aus.
 - **In einer automatischen Spalte arbeiten:** In **Blockiert** und **Überfällig** kannst du keine Karte ablegen; sie füllen sich von selbst. Zieh eine Karte heraus, um ihren Status zu ändern. Abschließen verschiebt sie in die erledigte Spalte. Jeder andere Status lässt sie mit dem neuen Status-Badge an ihrem Platz, bis sie nicht mehr blockiert oder überfällig ist. Ziehst du eine Karte aus einer erledigten Spalte zurück in einen offenen Status, kommt sie wieder unter **Blockiert** oder **Überfällig**, wenn sie noch blockiert oder überfällig ist. Pfeiltasten, **M** und **D** funktionieren dort wie in jeder Spalte.

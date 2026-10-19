@@ -11,6 +11,8 @@ Views show the same items in the shape that fits the current job. A good view re
 
 ## Choose a view {icon="layout-list"}
 
+Choose **List**, **Table**, **Kanban**, or **Calendar** in the tabs in the page header. The tabs stay there on phones too.
+
 :::reference
 - **List:** Best for quick triage, personal work queues, and short operational lists.
 - **Table:** Best when people compare assignees, deadlines, status, priority, and tags across many items.
@@ -40,6 +42,8 @@ Views show the same items in the shape that fits the current job. A good view re
 
 ## Filter with intent {icon="search"}
 
+In **List**, **Table**, and **Kanban**, search and filter chips sit in the page header. **Reset** clears active filters and search. The calendar keeps its filters in its own toolbar.
+
 :::reference
 - **Search:** Use search when you remember a word in the title, the notes, or the visible item details.
 - **Chips:** Use filter chips for explicit state such as type, status, activity, assignee, priority, deadline, tags, Kanban column, sort, or grouping.
@@ -51,10 +55,10 @@ Views show the same items in the shape that fits the current job. A good view re
 ## Work on the Kanban board {icon="layout-kanban"}
 
 :::reference
-- **Filters:** The toolbar above the board searches and filters every column by assignment, priority, deadline, activity, and tags. **Assigned to me** shows only your work. While a filter is active, each column shows how many of its items match, for example **2/7**. A new task that does not match the filter only raises the count of its column until you clear the filter. Filters stay in the URL, as in the other views. They never change the board for anyone else.
+- **Filters:** Search and chips in the page header filter every column by assignment, priority, deadline, activity, and tags. **Assigned to me** shows only your work. While a filter is active, each column shows how many of its items match, for example **2/7**. A new task that does not match the filter only raises the count of its column until you clear the filter. Filters stay in the URL, as in the other views. They never change the board for anyone else.
 - **Move a card:** With **Edit** access, drag a card by its grip with a mouse or pen. On a touch screen, press and hold the card until it lifts, then drag it. A quick swipe still scrolls the board. With the keyboard, focus the grip and press **Space** to pick the card up. Use **Up** and **Down** to choose its place in the column and **Left** and **Right** to choose another status; the line on the board shows where it lands. Press **Space** again to drop it or **Escape** to cancel. Automatic columns are skipped.
 - **Fold a column:** Use the fold button in a column header to shrink a column that you do not need now. The column becomes a narrow strip with its name and count. Select the strip to open the column again. You can still drop a card on a folded column; the card lands at the top. This browser remembers folded columns for this Space and only for you.
-- **Keyboard shortcuts:** The keyboard button at the end of the toolbar opens a list of the shortcuts of the board.
+- **Keyboard shortcuts:** **… → Keyboard shortcuts** in the page header lists the shortcuts of the board.
 - **Activity:** When you drag a card into a done status, the activity shows the task as completed. When you drag it back to an open status, the activity shows it as reopened.
 - **Blocked and Overdue columns:** With **Edit** access, you can turn on two automatic columns in the Space settings under **Statuses**. **Blocked** gathers open tasks that wait for unfinished tasks. **Overdue** gathers open tasks whose deadline was before today. Such a task appears only there, with its status as a small badge. The count of its status column leaves it out. A task that is blocked and overdue stays under **Blocked** and shows an **Overdue** badge. Both columns are off for a new or existing Space.
 - **Work in an automatic column:** You cannot drop a card into **Blocked** or **Overdue**; they fill themselves. Drag a card out of one to change its status. Completing it moves it to the done column. Any other status keeps it in place with the new status badge, until it is no longer blocked or overdue. When you drag a card from a done column back to an open status, it returns to **Blocked** or **Overdue** if it is still blocked or overdue. Arrow keys, **M**, and **D** work there as in every column.

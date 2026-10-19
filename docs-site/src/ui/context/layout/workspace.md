@@ -112,6 +112,11 @@ strip or head layout after mounting. `resetHref` works before JavaScript;
 plain click while the URL remains available to the browser. The result count
 and Reset appear only while `filtered` is true.
 
+A head rendered on the server outside an island runs no callbacks. Give
+`primary` an `href` there, such as a command link that the page's island runs
+on load, and let that island handle a plain click in place. Filter chips with
+state of their own belong in an island in `filters` with their own Reset.
+
 ```ts
 type AppWorkspaceHeadProps = {
   views?: JSX.Element;

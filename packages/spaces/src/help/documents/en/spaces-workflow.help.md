@@ -11,6 +11,8 @@ Spaces works best when each item has a clear next action. Keep item titles short
 
 ## Create an item {icon="square-plus"}
 
+Choose **New task** in the page header. In the calendar, this button is **New event**. On a phone, use the round **+** button.
+
 When you create an item, Spaces first selects a task or an event, based on the current view. You can switch the type at the top of the dialog. The compact form asks for a title and a description. Events also need their schedule.
 
 Choose **More options** to see all task or event fields. You keep what you already entered. A task gets the status where you started to create it, or the first status when none was selected.
@@ -111,7 +113,7 @@ An item can have up to 20 different emoji. When it has 20, react with one of the
 - With an item open, press **J** for the next and **K** for the previous item in List, Table, and Kanban.
 - Press **Cmd/Ctrl+Alt+N** to create a task, or an event in the calendar view.
 - Press **Cmd/Ctrl+Shift+K** to search the current Space.
-- In Kanban, focus the board and use the arrow keys to move between cards. The keyboard button above the board lists these shortcuts.
+- In Kanban, focus the board and use the arrow keys to move between cards. **… → Keyboard shortcuts** in the page header lists these shortcuts.
 - To move a card, focus its grip, press **Space**, use the arrow keys, and press **Space** to drop it or **Escape** to cancel.
 - Press **Enter** to open the focused card, **M** to assign it to yourself, or **D** to complete it.
 

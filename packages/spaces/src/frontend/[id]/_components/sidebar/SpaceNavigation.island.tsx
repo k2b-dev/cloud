@@ -2,19 +2,17 @@ import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import type { DateContext } from "@k2b/stdlib";
 import { createNavigation, useLocale } from "@k2b/ui";
-import { createEffect, onCleanup } from "solid-js";
+import { createEffect, onCleanup, onMount } from "solid-js";
 import { spaceCommandMessages } from "../../../../commands";
+import { overviewMessages } from "../../../overview-messages";
 import { createSpaceCommands } from "../../../space-commands";
 import { useSpaceMessages } from "../../messages";
-import { createSpaceSearch } from "../search/SearchButton";
-import { createIcalCopy } from "./CopyICalButton";
 import { createItemController } from "./CreateItemButton";
-import { createSpaceSettings } from "./SpaceSettingsButton";
-import { createSpaceSwitcher } from "./space-switcher";
+import { interceptSpacePrimaryClick, spacePrimaryHref } from "./space-primary";
+import { createNewSpace, createSpacesNavigationItems, listenSpacesNavigationHints, type SpacesSidebarData } from "./spaces-navigation";
 import type { SpaceContext } from "./types";
-import { createSpaceViews } from "./ViewLinks";
 
-export default function SpaceNavigation(props: { ctx: SpaceContext; baseUrl: string; dateConfig?: DateContext }) {
+export default function SpaceNavigation(props: { ctx: SpaceContext; sidebar: SpacesSidebarData; dateConfig?: DateContext }) {
   const t = useSpaceMessages();
   const locale = useLocale();
   createSpaceCommands({ current: () => (props.ctx.canWrite ? props.ctx.space : undefined), dateConfig: props.dateConfig });
@@ -52,66 +50,25 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; baseUrl: str
         }),
       );
   });
-  const search = createSpaceSearch({
-    get spaceId() {
-      return props.ctx.space.id;
-    },
-    get spaceName() {
-      return props.ctx.space.name;
-    },
+  onMount(() => {
+    onCleanup(listenSpacesNavigationHints(document, props.sidebar.spaces));
+    if (!props.ctx.canWrite) return;
+    const href = spacePrimaryHref(props.ctx);
+    onCleanup(interceptSpacePrimaryClick(document, href, () => void create.createItem()));
   });
-  const settings = createSpaceSettings({
-    get spaceId() {
-      return props.ctx.space.id;
-    },
-    get baseUrl() {
-      return props.baseUrl;
-    },
-    get dateConfig() {
-      return props.dateConfig;
-    },
-  });
-  const calendar = createIcalCopy({
-    get icalToken() {
-      return props.ctx.space.icalToken;
-    },
-  });
-  const views = createSpaceViews({
-    get spaceId() {
-      return props.ctx.space.id;
-    },
-    get query() {
-      return props.ctx.query;
-    },
-    get currentView() {
-      return props.ctx.currentView;
-    },
-  });
-  const switcher = createSpaceSwitcher(() => props.ctx.space, Boolean(props.ctx.userId));
+  const { t: overview } = overviewMessages.resolve([locale()]);
+  const createSpace = createNewSpace(overview);
   const navigation = createNavigation({
-    switcher,
-    items: () => [
-      ...(props.ctx.canWrite
-        ? [{ id: "create", label: create.label(), icon: "ti ti-plus", action: "create", disabled: create.pending() }]
-        : []),
-      { id: "search", label: t.searchItems, icon: "ti ti-search", action: "search" },
-      ...views.views.map((view) => ({
-        id: view.id,
-        label: view.label,
-        icon: `ti ${view.icon}`,
-        href: views.href(view.id),
-        active: props.ctx.currentView === view.id,
-      })),
-      ...(props.ctx.space.icalToken
-        ? [{ id: "ical", label: calendar.copied() ? t.copied : t.copyIcalUrl, icon: "ti ti-calendar-share", action: "ical" }]
-        : []),
-      { id: "settings", label: t.spaceSettings, icon: "ti ti-settings", action: "settings", disabled: settings.open() },
-    ],
+    items: () =>
+      createSpacesNavigationItems({
+        ...props.sidebar,
+        current: { kind: "space", id: props.ctx.space.id },
+        canCreate: Boolean(props.ctx.userId),
+        myWorkLabel: overview.myWork,
+        newSpaceLabel: overview.newSpace,
+      }),
     onAction: async (action) => {
-      if (action === "create") await create.createItem();
-      if (action === "search") await search();
-      if (action === "ical") await calendar.handleCopy();
-      if (action === "settings") await settings.openDialog();
+      if (action === "new-space") await createSpace();
     },
   });
   return <WorkspaceNavigationProvider navigation={navigation} label={props.ctx.space.name} />;
