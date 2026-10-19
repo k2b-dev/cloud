@@ -897,8 +897,11 @@ describe("capability tool presentation", () => {
     expect(customHtml).toContain("Hello **Ada**");
     expect(customHtml).toContain("&lt;script>alert('plain text')&lt;/script>");
     expect(customHtml).not.toContain("<strong>Ada</strong>");
-    // Read it all opens the thing the review links.
+    // Read it all opens the thing the review links, and every other link of the review stays before the answer.
     expect(customHtml).toContain('href="/app/contacts"');
+    expect(customHtml).toContain('href="/app/mail/MbA123/drafts/DrG789"');
+    expect(customHtml).toContain(">Edit draft</a>");
+    expect(customHtml.indexOf(">Edit draft</a>")).toBeLessThan(customHtml.indexOf("k2b-chat-decision__answers"));
     expect(customHtml).not.toMatch(/border-[ty]\b/);
     expect(customHtml).not.toContain("book:default");
   });
@@ -1700,7 +1703,7 @@ describe("turn places in the reader's language", () => {
     /** The visible line of an outcome; the other lines of its flow only reserve their height. */
     const current = (html: string) => {
       const start = html.indexOf('data-current="true"');
-      return html.slice(start, html.indexOf('role="status"', start));
+      return html.slice(start, html.indexOf("</div>", start));
     };
     for (const status of ["completed", "failed", "rejected"] as const) {
       const html = renderPlaces([{ ...receipt, status, at }], { locale, timeZone: "Europe/Berlin" });

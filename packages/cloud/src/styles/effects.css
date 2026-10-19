@@ -160,6 +160,11 @@
   white-space: pre-wrap;
 }
 
+/* The review's other links continue the preview above them instead of starting a new block. */
+.k2b-ui .k2b-chat-decision__card > .k2b-chat-preview + .cloud-action-preview__links {
+  margin-top: 0.25rem;
+}
+
 /* The approvals page: where a request waits stands above its card, quiet, on the card's edge. */
 .k2b-ui .cloud-approvals .cloud-approval {
   display: grid;

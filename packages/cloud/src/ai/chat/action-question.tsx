@@ -423,6 +423,7 @@ function ReviewPreviewBody(props: { model: Extract<ActionPreviewModel, { kind: "
           }}
         </Match>
       </Switch>
+      <Show when={!preview()}>{readMore(t().readMore)}</Show>
       <Show when={props.model.consequences.length > 0}>
         <Chat.Preview.Lines label={t().changes}>
           <For each={props.model.consequences}>
@@ -491,18 +492,33 @@ function LegacyPreview(props: { model: Extract<ActionPreviewModel, { kind: "lega
 /** The thing the question is about, from its review, or an old review's rows and Markdown. */
 export function ActionPreview(props: { card: ActionCard; timeZone: string }) {
   return (
-    <Show when={props.card.preview}>
-      {(model) => (
-        <Switch>
-          <Match when={model().kind === "review" ? (model() as Extract<ActionPreviewModel, { kind: "review" }>) : undefined}>
-            {(review) => <ReviewPreviewBody model={review()} card={props.card} readMore={props.card.readMore} />}
-          </Match>
-          <Match when={model().kind === "legacy" ? (model() as Extract<ActionPreviewModel, { kind: "legacy" }>) : undefined}>
-            {(legacy) => <LegacyPreview model={legacy()} card={props.card} timeZone={props.timeZone} />}
-          </Match>
-        </Switch>
-      )}
-    </Show>
+    <>
+      <Show when={props.card.preview}>
+        {(model) => (
+          <Switch>
+            <Match when={model().kind === "review" ? (model() as Extract<ActionPreviewModel, { kind: "review" }>) : undefined}>
+              {(review) => <ReviewPreviewBody model={review()} card={props.card} readMore={props.card.readMore} />}
+            </Match>
+            <Match when={model().kind === "legacy" ? (model() as Extract<ActionPreviewModel, { kind: "legacy" }>) : undefined}>
+              {(legacy) => <LegacyPreview model={legacy()} card={props.card} timeZone={props.timeZone} />}
+            </Match>
+          </Switch>
+        )}
+      </Show>
+      {/* The review's other links, such as editing the draft, stay one quiet click away before the answer. */}
+      <Show when={props.card.links.length > 0 || (!props.card.preview && props.card.readMore)}>
+        <Chat.Preview class="cloud-action-preview__links">
+          <Show when={!props.card.preview && props.card.readMore}>
+            {(href) => (
+              <Chat.Preview.ReadMore href={href()} title={actionMessages(props.card.locale).readMoreTitle}>
+                {actionMessages(props.card.locale).readMore}
+              </Chat.Preview.ReadMore>
+            )}
+          </Show>
+          <For each={props.card.links}>{(link) => <Chat.Preview.ReadMore href={link.href}>{link.label}</Chat.Preview.ReadMore>}</For>
+        </Chat.Preview>
+      </Show>
+    </>
   );
 }
 

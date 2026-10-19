@@ -26,7 +26,12 @@ const { LocaleProvider } = await import("@k2b/ui");
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 
 /** One turn with its text and one call, rendered on the server as the chat renders history and the live turn. */
-const renderTurn = (block: ToolBlock, locale: ActionFixtureLocale, phase: "waiting" | "completed" | "running" = "waiting") =>
+const renderTurn = (
+  block: ToolBlock,
+  locale: ActionFixtureLocale,
+  phase: "waiting" | "completed" | "running" = "waiting",
+  actions: Record<string, unknown> = { onApproval: async () => undefined, onContinueTurn: () => undefined },
+) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -35,7 +40,7 @@ const renderTurn = (block: ToolBlock, locale: ActionFixtureLocale, phase: "waiti
           value: "Europe/Berlin",
           get children() {
             return createComponent(AiChatActionsProvider, {
-              actions: { onApproval: async () => undefined, onContinueTurn: () => undefined },
+              actions,
               get children() {
                 return createComponent(AiTurnView, {
                   segment: () => ({
@@ -253,6 +258,21 @@ describe("card v4 question", () => {
     );
     expect(html).toContain("Ich frage, weil das Cloud verlässt.");
     expect(html).not.toContain("Weil ich es so will.");
+  });
+});
+
+describe("an answer that is not possible here", () => {
+  test("turns confirm and the chat link off and says why in the reason's place; declining stays possible", () => {
+    const html = renderTurn(actionFixtures("de").note!.block, "de", "waiting", {});
+    expect(text(html)).toContain("Diese Frage kannst du hier nicht beantworten.");
+    expect(text(html)).not.toContain("Ich frage, weil Notebooks hier jedes Mal fragt.");
+    expect(html).toMatch(/<button[^>]*k2b-chat-decision__answer[^>]*disabled/);
+    expect(html).toMatch(/<button[^>]*k2b-chat-decision__remember[^>]*disabled/);
+    const stopping = renderTurn(actionFixtures("de").note!.block, "de", "waiting", {
+      onApproval: async () => undefined,
+      actionDisabled: () => true,
+    });
+    expect(text(stopping)).toContain("Die Antwort wird angehalten.");
   });
 });
 

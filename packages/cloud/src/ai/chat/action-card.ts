@@ -29,6 +29,7 @@ import type { AiTurnBlock } from "../protocol";
 import { toolSubject } from "../tool-wording";
 import { actionMessages } from "./action-messages";
 import { aiToolIcon, displayToolName } from "./message-utils";
+import { aiChatMessages } from "./messages";
 
 /**
  * One Action question and its outcome lines as data, the same for the chat, the approvals page, and Code Mode. A new
@@ -73,6 +74,8 @@ export type ActionCard = {
   preview: ActionPreviewModel | null;
   /** Opens exactly this version of the thing. */
   readMore?: string;
+  /** The review's other links, such as editing the draft, each with its words. */
+  links: { href: string; label: string }[];
   /** Where the thing itself opens, for an outcome Cloud could not see. */
   open?: string;
   confirm: { label: string; variant: "ai" | "danger" };
@@ -173,6 +176,16 @@ export const actionPlainText = (text: ActionText): string =>
 const firstLink = (links: readonly CapabilitySemanticLink[] | undefined, rels: CapabilitySemanticLink["rel"][]) =>
   rels.map((rel) => links?.find((link) => link.rel === rel)?.href).find(Boolean);
 
+/** Every link but the one "Read it all" follows, named by its own title or by what it does in the app. */
+const otherLinks = (links: readonly CapabilitySemanticLink[] | undefined, locale: string, app: string) => {
+  const readMore = firstLink(links, ["open", "preview"]);
+  const t = aiChatMessages(locale);
+  const label = (link: CapabilitySemanticLink) =>
+    link.title ??
+    { open: t.openIn({ app }), edit: t.editIn({ app }), status: t.statusIn({ app }), preview: t.preview, download: t.download }[link.rel];
+  return (links ?? []).filter((link) => link.href !== readMore).map((link) => ({ href: link.href, label: label(link) }));
+};
+
 const firstObjectHref = (review: CapabilityActionCallReview): string | undefined =>
   Object.values(review.slots)
     .map((slot) => ((slot.kind === "object" || slot.kind === "place") && slot.ref ? cloudResourceHref(slot.ref) : undefined))
@@ -217,6 +230,7 @@ export const reviewActionCard = (review: CapabilityActionCallReview, context: Ac
           }
         : null,
     readMore: firstLink(review.links, ["open", "preview"]),
+    links: otherLinks(review.links, locale, context.app.name),
     open: firstLink(review.links, ["open", "edit", "status"]) ?? firstObjectHref(review),
     confirm: {
       label: capabilityReviewSentence(review, "confirm", tz),
@@ -281,6 +295,7 @@ export const legacyActionCard = (input: LegacyCardInput, context: ActionCardCont
           }
         : null,
     readMore: firstLink(input.links, ["open", "preview"]),
+    links: otherLinks(input.links, context.locale, context.app.name),
     open: firstLink(input.links, ["open", "edit", "status"]),
     confirm: { label: input.title, variant: "ai" },
     decline: t.decline,

@@ -1067,6 +1067,12 @@ suiteFor(
       expect((await post("no-check")).status).toBe(409);
       expect((await post("legacy")).status).toBe(409);
       expect((await post("send", await createTestSession(strangerId))).status).toBe(404);
+      // The check runs with the person's session authority; an API key of the same person cannot borrow it.
+      const owner = await accounts.users.get({ id: userId });
+      if (!owner) throw new Error("Missing fixture user");
+      const apiToken = await serviceAccountCredentials.createUserApiToken({ user: owner, name: "Outcome check" });
+      if (!apiToken.ok) throw new Error(apiToken.error.message);
+      expect((await post("send", apiToken.data.token)).status).toBe(403);
       expect(dispatch).not.toHaveBeenCalled();
       const first = Promise.resolve(post("send"));
       inFlight = first;
@@ -1102,7 +1108,7 @@ suiteFor(
       dispatch.mockRestore();
       registrySpy.mockRestore();
       await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id=ANY(${[userId, strangerId]}::uuid[])`;
+      await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${strangerId}::uuid)`;
     }
   });
 });

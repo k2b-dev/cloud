@@ -165,6 +165,29 @@ domTest("an answer that did not arrive says so and asks again with the focus on 
   }
 });
 
+domTest("an answer whose response was lost still shows the outcome the server reports", async () => {
+  const view = await mountTurn([runCode], {
+    approve: async () => {
+      throw new Error("response lost");
+    },
+  });
+  try {
+    view.button("Run code").click();
+    await settle();
+    expect(view.line()).toContain("Your answer about Run code didn't arrive.");
+    // The server did take the answer: its outcome replaces the lost line.
+    view.setBlocks([{ ...runCode, status: "running", approved: true, approval: undefined }]);
+    view.setPhase("running");
+    await settle();
+    expect(view.line()).toBe("Running: Run code");
+    view.setBlocks([{ ...runCode, status: "completed", approved: true, approval: undefined, result: { status: "ok" } }]);
+    await settle();
+    expect(view.line()).toBe("Ran code");
+  } finally {
+    view.cleanup();
+  }
+});
+
 domTest("a declined question and one a stop left open read as outcome lines in the reader's language", async () => {
   const view = await mountTurn([runCode], { locale: "de" });
   try {

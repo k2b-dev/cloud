@@ -1208,66 +1208,74 @@ export const aiRoutes = (() => {
       .post("/conversations/:conversationId/turns/:turnId/calls/:callId/check", async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
-        if (ctx.actor.kind !== "user") return respond(c, fail(err.forbidden("Action outcome checks require a current user session.")));
+        // The check runs with the person's session authority, so a scoped token or another client cannot borrow it.
+        if (ctx.actor.kind !== "user" || !ctx.signedInSession)
+          return respond(c, fail(err.forbidden("Action outcome checks require a signed-in browser session.")));
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
         const turn = await loadTurn(conversation, c.req.param("turnId"));
         const callId = c.req.param("callId");
         if (!turn || !callId) return notFound(c);
         const target = { conversationId: conversation.id, turnId: turn.id, callId };
-        const response = await withAiToolCheckLock(target, async (db) => {
-          const messages = await aiConversations.listTurnMessages({
-            conversationId: conversation.id,
-            loopId: turn.id,
-            includeCompacted: true,
+        // The app's Query may take its whole budget; the request must outlast it.
+        setRequestTimeout(c, Math.ceil(QUERY_TIMEOUT_MS / 1000) + REQUEST_IDLE_TIMEOUT_SECONDS);
+        try {
+          const response = await withAiToolCheckLock(target, async (db) => {
+            const messages = await aiConversations.listTurnMessages({
+              conversationId: conversation.id,
+              loopId: turn.id,
+              includeCompacted: true,
+            });
+            const message = messages.find(
+              ({ message }) =>
+                message.role === "assistant" && message.content.some((block) => block.type === "tool_call" && block.id === callId),
+            );
+            if (!message) return notFound(c);
+            const review = message.meta?.toolReviews?.[callId];
+            const previous = message.meta?.toolChecks?.[callId];
+            if (
+              !review ||
+              !("sentence" in review) ||
+              !review.check ||
+              !previous ||
+              (previous.state !== "pending" && previous.state !== "failed")
+            )
+              return respond(c, fail(err.conflict("This call has no unresolved outcome check.")));
+            const block =
+              message.message.role === "assistant"
+                ? message.message.content.find((block) => block.type === "tool_call" && block.id === callId)
+                : undefined;
+            const catalog = buildAiCapabilityCatalog(await listCapabilities());
+            const presentation = message.meta?.toolPresentations?.[callId];
+            const entry = catalog.find(
+              (entry) =>
+                entry.kind === "action" &&
+                (entry.name === (block?.type === "tool_call" ? block.name : undefined) ||
+                  entry.providerName === (block?.type === "tool_call" ? block.name : undefined)) &&
+                (!presentation || presentation.appId === entry.appId),
+            );
+            if (!entry) return respond(c, fail(err.conflict("The Action's app is unavailable. Try the check again when it returns.")));
+            const authority = await resolveAiCapabilityActor({
+              conversationId: conversation.id,
+              persistedActor: ctx.actor,
+              store: aiConversations,
+            });
+            const check = await checkAiCapability({
+              ...target,
+              entry,
+              check: review.check,
+              catalog,
+              authority,
+              locale: getLocale(c),
+              context: { callId, signal: c.req.raw.signal },
+            });
+            await recordAiToolCheck({ ...target, check }, db);
+            return respond(c, ok(check));
           });
-          const message = messages.find(
-            ({ message }) =>
-              message.role === "assistant" && message.content.some((block) => block.type === "tool_call" && block.id === callId),
-          );
-          if (!message) return notFound(c);
-          const review = message.meta?.toolReviews?.[callId];
-          const previous = message.meta?.toolChecks?.[callId];
-          if (
-            !review ||
-            !("sentence" in review) ||
-            !review.check ||
-            !previous ||
-            (previous.state !== "pending" && previous.state !== "failed")
-          )
-            return respond(c, fail(err.conflict("This call has no unresolved outcome check.")));
-          const block =
-            message.message.role === "assistant"
-              ? message.message.content.find((block) => block.type === "tool_call" && block.id === callId)
-              : undefined;
-          const catalog = buildAiCapabilityCatalog(await listCapabilities());
-          const presentation = message.meta?.toolPresentations?.[callId];
-          const entry = catalog.find(
-            (entry) =>
-              entry.kind === "action" &&
-              (entry.name === (block?.type === "tool_call" ? block.name : undefined) ||
-                entry.providerName === (block?.type === "tool_call" ? block.name : undefined)) &&
-              (!presentation || presentation.appId === entry.appId),
-          );
-          if (!entry) return respond(c, fail(err.conflict("The Action's app is unavailable. Try the check again when it returns.")));
-          const authority = await resolveAiCapabilityActor({
-            conversationId: conversation.id,
-            persistedActor: ctx.actor,
-            store: aiConversations,
-          });
-          const check = await checkAiCapability({
-            ...target,
-            entry,
-            check: review.check,
-            catalog,
-            authority,
-            locale: getLocale(c),
-            context: { callId, signal: c.req.raw.signal },
-          });
-          await recordAiToolCheck({ ...target, check }, db);
-          return respond(c, ok(check));
-        });
-        return response ?? respond(c, fail(err.conflict("An outcome check is already running for this call.")));
+          return response ?? respond(c, fail(err.conflict("An outcome check is already running for this call.")));
+        } finally {
+          setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+        }
       })
       .post(
         "/conversations/:conversationId/turns/:turnId/actions/:callId",

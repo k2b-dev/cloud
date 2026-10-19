@@ -84,7 +84,8 @@ const flowOf = (input: {
   phase?: AiTurnPhase;
 }): Flow => {
   const { block, check } = input;
-  if (input.lost) return { flow: "lost" };
+  // A lost answer holds only while the question still waits; the server's own outcome always wins over it.
+  if (input.lost && block.status === "awaiting_approval") return { flow: "lost" };
   if (block.status === "awaiting_approval") return input.answer === "decline" ? { flow: "rejected" } : { flow: "run", current: "running" };
   if (check?.state === "checking") return { flow: "check", current: "checking" };
   if (check?.state === "done") return { flow: "check", current: "checkedDone" };
@@ -150,6 +151,7 @@ export function ToolActionView(props: {
       () => props.block.status === "awaiting_approval",
       (open, wasOpen) => {
         if (wasOpen === true && !open && answer() === null) setElsewhere(true);
+        if (!open) setLost(false);
       },
     ),
   );
