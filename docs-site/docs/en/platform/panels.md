@@ -203,6 +203,13 @@ fields are additive. Help IDs use the same lower-case hyphenated shape as
 `Layout.help`, with at most 180 characters each. Resource refs use the shared
 [reference contract](/en/docs/platform/resource-references).
 
+Providers served by Core, which need no consent, also receive the page's
+conflict-free keyboard shortcuts next to the context: ID, title, optional
+description, key combination, and optional scope. Updates arrive live by
+message, never in the provider URL, and clear with the context. The list has
+at most 24 entries, with length limits on each string. Providers that need
+consent never receive shortcuts, including their titles, even after approval.
+
 Only the visible provider receives context, and only from its current tab.
 `Layout context={false}` disables sharing for that document, including live
 publishers. An invalid scope is omitted. Without a current app or a panel

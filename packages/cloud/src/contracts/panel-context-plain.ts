@@ -1,3 +1,10 @@
+import {
+  HELP_SHORTCUT_DESCRIPTION_MAX_LENGTH,
+  HELP_SHORTCUT_ID_MAX_LENGTH,
+  HELP_SHORTCUT_KEYS_MAX_LENGTH,
+  HELP_SHORTCUT_TITLE_MAX_LENGTH,
+  HELP_START_SHORTCUT_LIMIT,
+} from "../ssr/layout-help-start";
 import type { PanelContextMessage, PanelPageContext } from "./panel-context";
 
 /**
@@ -63,10 +70,27 @@ export function isPanelPageContext(value: unknown): value is PanelPageContext {
 }
 
 export function isPanelContextMessage(value: unknown): value is PanelContextMessage {
+  if (!exactKeys(value, ["type", "v", "context"], ["shortcuts"])) return false;
+  const { shortcuts } = value;
   return (
-    exactKeys(value, ["type", "v", "context"]) &&
     value.type === "cloud.panel.context" &&
     value.v === 1 &&
-    (value.context === null || isPanelPageContext(value.context))
+    (value.context === null || isPanelPageContext(value.context)) &&
+    (shortcuts === undefined ||
+      (value.context !== null &&
+        Array.isArray(shortcuts) &&
+        shortcuts.length <= HELP_START_SHORTCUT_LIMIT &&
+        Array.from({ length: shortcuts.length }, (_, index) => index).every((index) => {
+          const item: unknown = shortcuts[index];
+          return (
+            index in shortcuts &&
+            exactKeys(item, ["id", "title", "shortcut"], ["description", "scope"]) &&
+            text(item.id, 1, HELP_SHORTCUT_ID_MAX_LENGTH) &&
+            text(item.title, 1, HELP_SHORTCUT_TITLE_MAX_LENGTH) &&
+            (item.description === undefined || text(item.description, 0, HELP_SHORTCUT_DESCRIPTION_MAX_LENGTH)) &&
+            text(item.shortcut, 1, HELP_SHORTCUT_KEYS_MAX_LENGTH) &&
+            (item.scope === undefined || item.scope === "selection" || item.scope === "page")
+          );
+        })))
   );
 }
