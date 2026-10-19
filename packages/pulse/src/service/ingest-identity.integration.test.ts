@@ -4,14 +4,14 @@ import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { PulseResourceRef } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { initializeSchema } from "../schema";
+import { migrate } from "../migrate";
 import { ingestBatch, ingestByApiKey } from "./ingest-writer";
 import { type CurrentStateRow, mapCurrentState } from "./telemetry-values";
 
 const enabled = testInfra.database !== undefined;
 const databaseTest = enabled ? test : test.skip;
 beforeAll(async () => {
-  if (enabled) await initializeSchema();
+  if (enabled) await migrate();
 }, 30_000);
 
 const fixture = async () => {

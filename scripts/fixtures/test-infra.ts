@@ -36,6 +36,7 @@
  *   CLOUD_TEST_VALKEY_URL     redis://host:6379 (no database index)
  *   CLOUD_TEST_FILEGATE_URL   http://host:4000
  *   CLOUD_TEST_GOTENBERG_URL  http://host:3001
+ *   CLOUD_TEST_CLICKHOUSE_URL http://admin:password@host:8123 (dedicated test admin)
  *   CLOUD_TEST_RSQL_URL       http://host:8080
  */
 import { afterAll, beforeAll, describe, test } from "bun:test";
@@ -164,6 +165,16 @@ const probes: Record<InfraKind, (target: string) => Promise<void>> = {
   filegate: httpReachable,
   gotenberg: httpReachable,
   rsql: httpReachable,
+  clickhouse: async (target) => {
+    const url = new URL(target);
+    const authorization = `Basic ${Buffer.from(`${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`).toString("base64")}`;
+    const response = await fetch(`${url.origin}/ping`, {
+      headers: { authorization },
+      redirect: "error",
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!response.ok || (await response.text()).trim() !== "Ok.") throw new Error("ClickHouse ping failed");
+  },
 };
 
 const verified = new Map<InfraKind, Promise<void>>();
@@ -175,9 +186,9 @@ export const requireInfra = async (...needs: InfraKind[]): Promise<void> => {
     if (!target) throw new Error(`${mappings[kind].test} is not set`);
     let probe = verified.get(kind);
     if (!probe) {
-      probe = probes[kind](target).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`${mappings[kind].test}=${target} is set but not usable: ${message}`);
+      probe = probes[kind](target).catch(() => {
+        // Client errors may contain credentials or even an entire server response.
+        throw new Error(`${mappings[kind].test}=${redactTarget(target)} is set but not usable: target probe failed`);
       });
       verified.set(kind, probe);
     }
@@ -298,3 +309,21 @@ export const createDisposableDatabase = async (prefix: string): Promise<{ url: s
     },
   };
 };
+
+/** Diagnostics retain the target but never URL credentials, for every infrastructure kind. */
+export const redactTarget = (target: string): string =>
+  target
+    .split(",")
+    .map((part) => {
+      try {
+        const url = new URL(part);
+        if (url.password) url.password = "REDACTED";
+        // Query parameters can also contain credentials; probes do not need them in diagnostics.
+        url.search = "";
+        url.hash = "";
+        return url.toString();
+      } catch {
+        return "[invalid URL]";
+      }
+    })
+    .join(",");

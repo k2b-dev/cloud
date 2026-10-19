@@ -182,3 +182,46 @@ describe("dotenv leak", () => {
     expect(manifest.scripts.test).toBe(`bun ${noEnvFile} scripts/run-tests.ts`);
   });
 });
+
+describe("ClickHouse test gate", () => {
+  test("has an explicit admin URL and no runtime aliases", () => {
+    expect(infraMappings.clickhouse).toEqual({ test: "CLOUD_TEST_CLICKHOUSE_URL", runtime: [] });
+    expect(readTestTarget({}, "clickhouse")).toBeUndefined();
+    expect(readTestTarget({ CLOUD_TEST_CLICKHOUSE_URL: " http://fixture:fake@127.0.0.1:8123 " }, "clickhouse")).toBe(
+      "http://fixture:fake@127.0.0.1:8123",
+    );
+    expect(Object.keys(testRuntimeEnv({ CLOUD_TEST_CLICKHOUSE_URL: "http://fixture:fake@127.0.0.1:8123" }))).not.toContain(
+      "CLICKHOUSE_URL",
+    );
+  });
+  const run = (source: string, target?: string) =>
+    Bun.spawnSync([process.execPath, "--no-env-file", "-e", source], {
+      cwd: workspaceRoot,
+      env: { PATH: process.env.PATH, BUN_OPTIONS: "--no-env-file", ...(target ? { CLOUD_TEST_CLICKHOUSE_URL: target } : {}) },
+    });
+  test("unset target skips the suite", () => {
+    const result = run(
+      'import { suiteFor } from "./scripts/fixtures/test-infra.ts"; import { describe } from "bun:test"; console.log(suiteFor("clickhouse") === describe.skip)',
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString().trim()).toBe("true");
+  });
+  test("unreachable target fails loudly with a redacted URL, never the password", () => {
+    const result = run(
+      'import { requireInfra } from "./scripts/fixtures/test-infra.ts"; try { await requireInfra("clickhouse") } catch (e) { console.error(e.message); process.exit(1) }',
+      "http://fixture:obviously-fake-gate-password@127.0.0.1:1",
+    );
+    expect(result.exitCode).toBe(1);
+    const output = result.stdout.toString() + result.stderr.toString();
+    expect(output).toContain("CLOUD_TEST_CLICKHOUSE_URL=http://fixture:REDACTED@127.0.0.1:1/");
+    expect(output).toContain("set but not usable");
+    expect(output).not.toContain("obviously-fake-gate-password");
+  });
+  test("all target diagnostics redact URL passwords and query parameters", () => {
+    const result = run(
+      'import { redactTarget } from "./scripts/fixtures/test-infra.ts"; console.log(redactTarget("postgres://fixture:fake-password@localhost/cloud_test?password=fake-password"))',
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString()).toBe("postgres://fixture:REDACTED@localhost/cloud_test\n");
+  });
+});

@@ -309,8 +309,14 @@ test("sections and bilingual scope words agree, with each locale's narrowing wor
   for (const locale of ["en", "de"]) {
     const copy = assistantCopyFor(locale);
     const scopes = assistantCommandScopes(copy, locale);
-    expect(assistantCommandSections(copy).map((section) => section.id)).toEqual(["insert", "skills", "files", "chat", "tasks"]);
-    expect(assistantCommandSections(copy).map((section) => Boolean(section.searched))).toEqual([false, true, true, false, true]);
+    expect(assistantCommandSections(copy).map((section) => section.id)).toEqual(["insert", "skills", "files", "chat", "tasks", "apps"]);
+    expect(assistantCommandSections(copy).map((section) => Boolean(section.searched))).toEqual([false, true, true, false, true, false]);
+    // App Commands load with the catalog; their section is last, so rows that arrive only fill the end.
+    expect(assistantCommandSections(copy, true).at(-1)).toEqual({
+      id: "apps",
+      label: locale === "de" ? "In Apps öffnen" : "Open in apps",
+      pending: true,
+    });
     for (const [word, id] of [
       ["project", "project"],
       ["projekt", "project"],

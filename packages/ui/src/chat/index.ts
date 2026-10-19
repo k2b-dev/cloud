@@ -14,6 +14,8 @@ import { ChatTimeline } from "./ChatTimeline";
 export type {
   ChatCommand,
   ChatCommandContext,
+  ChatCommandDraft,
+  ChatCommandOpenResult,
   ChatCommandResult,
   ChatCommandScope,
   ChatCommandSearch,

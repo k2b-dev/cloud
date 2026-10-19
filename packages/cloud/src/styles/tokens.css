@@ -200,7 +200,8 @@
 }
 
 /* Custom properties resolve where declared. Each app scope must re-read its
-   inline per-app values instead of inheriting the resolved platform defaults. */
+   inline per-app values instead of inheriting the resolved platform defaults.
+   The page shell's body carries the current app's scope so portalled dialogs inherit it. */
 .cloud-app-canvas,
 .app-accent-scope {
   --ui-app-accent-text: var(--app-ink-light);

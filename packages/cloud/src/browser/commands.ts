@@ -14,17 +14,33 @@ export type { CommandOptions } from "../contracts/commands";
 export type { CommandTarget, ContextAwareCommand } from "./command-bridge";
 export { registerCommandHandler, registerContextAwareCommand } from "./command-bridge";
 
-/** Opens locally only when a mounted owner explicitly accepts; otherwise follows the app's URL. */
-export const openCommand = async (command: string, input: unknown = {}, options: CommandOptions = {}): Promise<void> => {
+/**
+ * Opens locally only when a mounted owner accepts; otherwise follows the app's URL.
+ * Resolves true after the owner's handler resolves or navigation starts.
+ * Resolves false if code cannot load (with a reload notice) or `signal` aborts before handling or while resolving the link.
+ * An accepting owner takes over without the signal. Handler rejections and link resolution failures still reject.
+ */
+export const openCommand = async (
+  command: string,
+  input: unknown = {},
+  options: CommandOptions = {},
+  signal?: AbortSignal,
+): Promise<boolean> => {
   const modules = await importOnDemand(() => Promise.all([import("../contracts/commands"), import("../capabilities/client")]));
-  if (!modules) return;
+  if (!modules || signal?.aborted) return false;
   const [contracts, capabilities] = modules;
   const parsedOptions = contracts.CommandOptionsSchema.parse(options);
   const handled = requestCommandHandling({ command, input, options: parsedOptions });
-  if (handled) return handled;
-  const result = await capabilities.resolveCommand(command, input, parsedOptions);
-  if (!result.ok) throw new Error(result.error.message);
+  if (handled) {
+    await handled;
+    return true;
+  }
+  // An abort also ends the request, so a cancelled opening does not wait for its answer.
+  const result = await capabilities.resolveCommand(command, input, parsedOptions, { signal });
+  if (signal?.aborted) return false;
+  if (!result.ok) throw new Error(result.error.message, { cause: result.error });
   window.location.assign(result.data.href);
+  return true;
 };
 
 /** Call after this page's handlers have mounted. Each entry is consumed, including invalid links. */

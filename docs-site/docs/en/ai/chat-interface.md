@@ -1154,8 +1154,9 @@ tasks restore the plan automatically; switching chats resets the disclosure.
 
 Assistant recognizes `/` at a word boundary anywhere in the composer. Its
 sections stay in this order: **Insert**, **Skills**, **Files in this chat**,
-**This chat**, **Routines**. Files appear when searching or narrowing to
-files. Type a name, or narrow by typing one of these words followed by a space:
+**This chat**, **Routines**, **Open in apps** (German: **In Apps öffnen**).
+Files appear when searching or narrowing to files. Type a name, or narrow by
+typing one of these words followed by a space:
 
 | List | German and English words |
 | --- | --- |
@@ -1165,6 +1166,18 @@ files. Type a name, or narrow by typing one of these words followed by a space:
 | Studio apps | `app`, `apps`, `studio` |
 | Models | `model`, `models`, `modell`, `modelle` |
 | Routines | `routine`, `routinen` |
+
+**Open in apps** lists Commands that accept an empty input from other apps in
+your navigation. Choosing one saves this chat's draft with its references and
+attachments, then opens the app with a return link to the chat. A new or project
+composer creates the chat before saving. The target app decides whether to use
+the return link; returning restores the saved draft.
+
+While the catalog loads, placeholders stay at the end of the list. If loading
+fails, choose **Try again**. A save conflict or failure opens nothing and gives
+the reason in the composer status line. If the app cannot be reached, the menu
+stays open with an explanation on the row; choosing it again retries. After the
+page changes, the target app shows its own errors and checks access.
 
 The full words also list their category without a trailing space, including
 `/project` and `/projekt` for Projects.

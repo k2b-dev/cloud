@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { createDisposableDatabase, testInfra } from "../../../scripts/fixtures/test-infra";
-import { initializeSchema } from "./schema";
+import { migrate } from "./migrate";
 
 const enabled = testInfra.database !== undefined;
 const databaseTest = enabled ? test : test.skip;
@@ -27,11 +27,11 @@ afterAll(async () => {
   await database.drop();
 });
 
-describe("fresh Pulse installation", () => {
+describe("versioned Pulse migrations", () => {
   databaseTest(
     "rolls back an incomplete installation",
     async () => {
-      await expect(initializeSchema()).rejects.toThrow();
+      await expect(migrate()).rejects.toThrow();
       const [row] = await sql`SELECT to_regnamespace('pulse') IS NULL AS absent`;
       expect(row?.absent).toBe(true);
     },
@@ -44,9 +44,12 @@ describe("fresh Pulse installation", () => {
       await sql`CREATE SCHEMA auth`.simple();
       await sql`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
       await sql`CREATE TABLE auth.access (id UUID PRIMARY KEY)`.simple();
-      await Promise.all([initializeSchema(), initializeSchema()]);
+      await Promise.all([migrate(), migrate()]);
+      expect(await sql<{ version: number; name: string }[]>`SELECT version, name FROM pulse.schema_migrations ORDER BY version`).toEqual([
+        { version: 1, name: "baseline" },
+      ]);
       await sql`INSERT INTO pulse.bases (short_id, name) VALUES ('Test01', 'Preserved')`;
-      await initializeSchema();
+      await migrate();
       const [row] = await sql`SELECT name FROM pulse.bases WHERE short_id = 'Test01'`;
       expect(row?.name).toBe("Preserved");
       const [installation] = await sql`SELECT count(*)::int AS count FROM pulse.installation`;
@@ -72,6 +75,29 @@ describe("fresh Pulse installation", () => {
     30_000,
   );
 
+  databaseTest("adopts an old installation without replaying baseline DDL", async () => {
+    await sql`DROP TABLE pulse.schema_migrations`.simple();
+    await sql`INSERT INTO pulse.bases (short_id, name) VALUES ('Old001', 'Sentinel')`;
+    await sql`DROP INDEX pulse.idx_pulse_bases_created_by`.simple();
+    await migrate();
+    expect(await sql<{ version: number; name: string }[]>`SELECT version, name FROM pulse.schema_migrations`).toEqual([
+      { version: 1, name: "baseline" },
+    ]);
+    const [row] = await sql`SELECT name FROM pulse.bases WHERE short_id='Old001'`;
+    expect(row?.name).toBe("Sentinel");
+    const [index] = await sql`SELECT to_regclass('pulse.idx_pulse_bases_created_by') IS NULL AS absent`;
+    expect(index?.absent).toBe(true);
+  });
+
+  databaseTest("refuses a future ledger version without changing data or the ledger", async () => {
+    await sql`INSERT INTO pulse.schema_migrations (version, name) VALUES (99, 'future')`;
+    const before = await sql`SELECT * FROM pulse.schema_migrations ORDER BY version`;
+    await expect(migrate()).rejects.toThrow("version 99 is unknown: this image is older than the database");
+    expect(await sql`SELECT * FROM pulse.schema_migrations ORDER BY version`).toEqual(before);
+    const [row] = await sql`SELECT name FROM pulse.bases WHERE short_id='Old001'`;
+    expect(row?.name).toBe("Sentinel");
+  });
+
   databaseTest(
     "rejects an existing Alpha schema without changing its data",
     async () => {
@@ -79,7 +105,7 @@ describe("fresh Pulse installation", () => {
       await sql`CREATE SCHEMA pulse`.simple();
       await sql`CREATE TABLE pulse.alpha_fixture (value TEXT)`.simple();
       await sql`INSERT INTO pulse.alpha_fixture VALUES ('untouched')`;
-      await expect(initializeSchema()).rejects.toThrow("requires a fresh schema");
+      await expect(migrate()).rejects.toThrow("requires a fresh schema");
       const [row] = await sql`SELECT value FROM pulse.alpha_fixture`;
       expect(row?.value).toBe("untouched");
     },

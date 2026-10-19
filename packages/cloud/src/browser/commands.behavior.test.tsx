@@ -110,13 +110,151 @@ if (!isServer) {
       handled = true;
     });
     try {
-      await openCommand("demo.edit");
+      expect(await openCommand("demo.edit")).toBe(false);
       expect(load).toHaveBeenCalledTimes(1);
       expect(navigate).not.toHaveBeenCalled();
       expect(handled).toBe(false);
     } finally {
       stop();
       load.mockRestore();
+      navigate.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("an already aborted openCommand neither dispatches nor resolves a link", async () => {
+    const dom = createDomTestHarness();
+    const { openCommand, registerCommandHandler } = await import("./commands");
+    const navigate = spyOn(window.location, "assign").mockImplementation(() => {});
+    const fetch = spyOn(globalThis, "fetch");
+    let handled = false;
+    const stop = registerCommandHandler("demo.edit", z.object({}), () => {
+      handled = true;
+    });
+    try {
+      const signal = AbortSignal.abort();
+      expect(await openCommand("demo.edit", {}, {}, signal)).toBe(false);
+      expect(await openCommand("demo.missing", {}, {}, signal)).toBe(false);
+      expect(handled).toBe(false);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      stop();
+      fetch.mockRestore();
+      navigate.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("openCommand returns true after navigation starts", async () => {
+    const dom = createDomTestHarness();
+    const { openCommand } = await import("./commands");
+    const navigate = spyOn(window.location, "assign").mockImplementation(() => {});
+    const fetch = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ href: "http://localhost/app/demo?command=demo.edit" }));
+    try {
+      expect(await openCommand("demo.edit")).toBe(true);
+      expect(navigate).toHaveBeenCalledWith("http://localhost/app/demo?command=demo.edit");
+    } finally {
+      fetch.mockRestore();
+      navigate.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("an accepted owner finishes before openCommand returns true, even if the signal aborts", async () => {
+    const dom = createDomTestHarness();
+    const { openCommand, registerCommandHandler } = await import("./commands");
+    const started = Promise.withResolvers<void>();
+    const handled = Promise.withResolvers<void>();
+    const stop = registerCommandHandler("demo.edit", z.object({}), () => {
+      started.resolve();
+      return handled.promise;
+    });
+    try {
+      const controller = new AbortController();
+      let settled = false;
+      const opening = openCommand("demo.edit", {}, {}, controller.signal).then((opened) => {
+        settled = true;
+        return opened;
+      });
+      await started.promise;
+      controller.abort();
+      expect(settled).toBe(false);
+      handled.resolve();
+      expect(await opening).toBe(true);
+    } finally {
+      handled.resolve();
+      stop();
+      dom.cleanup();
+    }
+  });
+
+  test("a rejecting owner still rejects openCommand without navigation", async () => {
+    const dom = createDomTestHarness();
+    const { openCommand, registerCommandHandler } = await import("./commands");
+    const navigate = spyOn(window.location, "assign").mockImplementation(() => {});
+    const reason = new Error("The source is unavailable");
+    const stop = registerCommandHandler("demo.edit", z.object({}), async () => {
+      throw reason;
+    });
+    try {
+      expect(await openCommand("demo.edit").catch((error: unknown) => error)).toBe(reason);
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      stop();
+      navigate.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("openCommand preserves the resolver's capability error as its rejection cause", async () => {
+    const dom = createDomTestHarness();
+    const { openCommand } = await import("./commands");
+    const navigate = spyOn(window.location, "assign").mockImplementation(() => {});
+    const originalFetch = globalThis.fetch;
+    const failure = { code: "CAPABILITY_NOT_FOUND", message: "Dieser Befehl ist nicht mehr verfügbar." };
+    globalThis.fetch = Object.assign(async () => Response.json(failure, { status: 404 }), { preconnect: originalFetch.preconnect });
+    try {
+      await expect(openCommand("demo.missing")).rejects.toMatchObject({
+        message: failure.message,
+        cause: { ...failure, status: 404 },
+      });
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = originalFetch;
+      navigate.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("an aborted openCommand ends its pending request and never navigates", async () => {
+    const dom = createDomTestHarness();
+    const { openCommand } = await import("./commands");
+    const navigate = spyOn(window.location, "assign").mockImplementation(() => {});
+    const originalFetch = globalThis.fetch;
+    let requestSignal: AbortSignal | undefined;
+    const requested = Promise.withResolvers<void>();
+    globalThis.fetch = Object.assign(
+      (_input: RequestInfo | URL, init?: RequestInit) => {
+        requestSignal = init?.signal ?? undefined;
+        requested.resolve();
+        // Answers only through the abort, as a request the person left behind.
+        return new Promise<Response>((_resolve, reject) => {
+          requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason));
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      const controller = new AbortController();
+      const opening = openCommand("demo.edit", {}, { returnTo: "/app/assistant" }, controller.signal);
+      await requested.promise;
+      controller.abort();
+      expect(await opening).toBe(false);
+      expect(requestSignal?.aborted).toBe(true);
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = originalFetch;
       navigate.mockRestore();
       dom.cleanup();
     }
@@ -131,7 +269,7 @@ if (!isServer) {
       received.push({ input, options });
     });
     try {
-      await openCommand("demo.edit", { id: "a", extra: "stripped" }, { returnTo: "/app/demo?filter=open" });
+      expect(await openCommand("demo.edit", { id: "a", extra: "stripped" }, { returnTo: "/app/demo?filter=open" })).toBe(true);
       expect(received).toEqual([{ input: { id: "a" }, options: { returnTo: "/app/demo?filter=open" } }]);
       await expect(openCommand("demo.edit", { id: "b" }, { returnTo: "//other.test" })).rejects.toThrow("Expected a Cloud path");
       expect(received).toHaveLength(1);

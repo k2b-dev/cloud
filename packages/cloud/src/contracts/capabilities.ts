@@ -407,7 +407,15 @@ export type CapabilityPresentationTranslation = {
   types?: Readonly<Record<string, { title?: string; description?: string }>>;
   queries?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
   actions?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
-  commands?: Readonly<Record<string, Pick<CapabilityOperationPresentationTranslation, "title" | "description" | "input">>>;
+  commands?: Readonly<
+    Record<
+      string,
+      Pick<CapabilityOperationPresentationTranslation, "title" | "description" | "input"> & {
+        /** Translated search words, with the same bounds as the base Command keywords. */
+        keywords?: readonly string[];
+      }
+    >
+  >;
 };
 
 export type CapabilityPresentationCatalog = {

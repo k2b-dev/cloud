@@ -317,7 +317,7 @@ or mutate real data without approval.
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
 | [Dashboard](/en/apps/dashboard) (`dashboard`) | Baseline | Selected widget-provider apps and Core's widget proxy; no fixed requirement to install every provider. | Open `/app/dashboard`; verify a selected provider's widget and its unavailable state when that provider is absent. |
-| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose | Ingestion requires configured sources, source-bound credentials and producers. Its dashboards are separate from gateway observability. The release workflow publishes the Pulse image. | Ingest a disposable signal through its source credential and query it from the intended base. |
+| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; ClickHouse is optional in this release | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) can be connected now for later releases; current telemetry stays in Postgres. Ingestion requires configured sources, source-bound credentials and producers. Its dashboards are separate from gateway observability. The release workflow publishes the Pulse image. | Ingest a disposable signal through its source credential and query it from the intended base. |
 
 ### Work applications
 
@@ -485,6 +485,55 @@ image, to confirm that assets still load.
    Confirm health, authorization, durable writes, and any required background
    operation separately.
 
+## Provide ClickHouse for Pulse
+
+Provide ClickHouse 26.9 or newer as one node on the internal network, with its
+own persistent volume. Keep the instance dedicated to Pulse: ClickHouse user
+management is instance-wide, so the service user can alter any user, including
+ClickHouse admins. Whoever operates ClickHouse as admin can read all Pulse data.
+
+For the **normal** read profile, plan at least **10 GB RAM**: three concurrent
+reads at 2 GB, 1 GB for maintenance, and reserve. Choose **klein** (small) on
+smaller servers. The setup script also creates **groß** (large); each read
+profile has fixed memory, execution, scan and result limits that readers cannot
+override. This release installs the profiles but does not yet expose read-profile
+selection for bases.
+
+A Cloud admin opens **Administration → Pulse → Data store** (`/admin/pulse`),
+chooses the service password and requests the setup script. Run that script as
+the ClickHouse admin once, with `clickhouse-client --multiquery` or equivalent.
+It contains a salted password hash only and can be re-run to restore profiles
+or update the service password. Then enter the address, service user and
+password on that page, or use:
+
+```sh
+cld pulse admin store setup-sql --password-file /private/pulse.password
+# Run the resulting script as the ClickHouse admin before saving the connection.
+cld pulse admin store set --url http://clickhouse:8123 --password-file /private/pulse.password
+cld pulse admin store check
+```
+
+The save checks reachability, sign-in, version, scoped rights and profile
+constraints before replacing the stored settings. Failed checks leave the
+saved connection unchanged and identify the failed check with a repair hint.
+Store passwords only through the page, a private file or stdin; never put them
+in a CLI flag value or URL.
+
+The Cloud admin owns this internal target. Pulse allows exactly the host in
+the saved or submitted ClickHouse address, without environment configuration.
+Requests connect directly to checked addresses and never follow redirects.
+Remote response bodies are never echoed in errors. The answer time can still
+tell a closed port from an open one, so the Cloud admin role carries reach into
+the internal network that Cloud can connect to.
+
+Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
+Postgres and its encryption keys. Restore them as a consistent set.
+
+**In this release, Pulse does not yet store data in ClickHouse.** Without a
+connection, Pulse keeps working as before and both Cloud and Pulse report ready.
+Later releases require this store. Production Compose does not provision it;
+the operator supplies it.
+
 ## Verify readiness and upgrades
 
 Check `/_cloud/ready` on each service's **private** origin, then check gateway
@@ -506,6 +555,18 @@ sets and preflight, [Scaling and shutdown](/en/docs/operations/scaling-and-shutd
 for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshooting)
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
+
+### Prepare Pulse's new data store
+
+This release adds an optional ClickHouse connection and versioned Pulse
+Postgres migrations. A complete existing Pulse installation is adopted without
+replaying its baseline; older images must not start against ledger versions
+they do not recognize. An incomplete Alpha schema still requires an explicit
+reset and is never upgraded automatically.
+
+Provision and [connect ClickHouse](#provide-clickhouse-for-pulse) before the
+later releases that move telemetry there. No data moves in this release, and
+an unset store does not change startup or existing Pulse features.
 
 ### Upgrade Spaces task deadlines
 
@@ -1116,6 +1177,13 @@ and wait until `/_cloud/ready` answers ready before upgrading further.
 An installation that started Contacts on any release from v0.7.0 through
 v0.45.0 needs no action. See the
 [Contacts short-ID upgrade path](/en/docs/reference/deprecations-and-migrations#contacts-requires-finished-short-ids).
+
+### Discover Commands from navigation apps
+
+The global palette now hides Commands from apps outside a person's navigation.
+No configuration change is needed. The slash menu offers the same Commands in
+**Open in apps**, except those of its own app. Both surfaces require Commands
+that accept an empty input. The target page still checks access.
 
 ## Coordinate an existing installation's identity upgrade
 

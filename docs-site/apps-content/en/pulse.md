@@ -5,7 +5,7 @@ section: Operations
 order: 420
 description: Explore metrics, events, states, resources, queries, and dashboards in one telemetry workspace.
 tags: [pulse, telemetry, metrics, dashboards]
-updated: 2026-09-14
+updated: 2026-10-17
 ---
 
 # Pulse
@@ -14,6 +14,24 @@ Pulse turns incoming metrics, events, and current states into browsable
 resources, reusable queries, and dashboards. It can describe infrastructure,
 application behavior, or business activity without requiring one fixed domain
 model.
+
+## Set up the data store
+
+A Cloud admin connects an operator-provided ClickHouse instance in
+**Administration → Pulse → Data store**. The page shows three steps: provide
+a dedicated ClickHouse 26.9 or newer instance, run the setup script as its
+admin, then enter the service address and credentials and choose **Check and
+connect**. Pulse checks the connection, version, rights and read-profile limits
+before saving. A failed check names the problem and how to fix it; the saved
+connection stays unchanged.
+
+Operators can use `cld pulse admin store get|set|check|setup-sql` for the same
+workflow. Password input uses a private file or stdin. See
+[Provide ClickHouse for Pulse](/en/docs/operations/deployment-requirements#provide-clickhouse-for-pulse)
+for memory, isolation and backup requirements.
+
+This release prepares the connection only. Existing Pulse features continue
+using Postgres and work without ClickHouse; later releases require the store.
 
 ## Use Pulse
 

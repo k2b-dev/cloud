@@ -490,8 +490,8 @@ narrows the slash list. A selection returns `{ mention }` for the token's place;
 cancelling keeps `/…`. Supply `mention` to build the reference your draft stores,
 and `excludeRefs` to omit resources already in it.
 
-`createCloudComposerCatalog()` gives one composer its tags from a catalog load
-shared by every composer on the page. Call `catalog.ready(query, search, locale)`
+`createCloudComposerCatalog()` gives one composer its tags and Commands from a
+catalog load shared by every composer on the page. Call `catalog.ready(query, search, locale)`
 at the start of each `searchCommands` run. The first run of a menu opening,
 identified by `search.opening`, starts the load, so no keystroke sends a request.
 A successful load stays cached for the page; a failed one is retried at the next
@@ -502,13 +502,47 @@ no search waits again. Each catalog page has a 15-second deadline.
 
 The catalog leaves out the tags of apps that declare no resource reader,
 because a picker with `requireReader: true` can show none of their results.
+An app without a reader can still contribute Commands.
+
+`catalog.commands()` contains localized Commands that accept an empty input,
+belong to apps in the person's navigation, and belong to a different app than
+the composer. `catalog.state()` starts as `"loading"`, becomes `"ready"` after
+success or `"failed"` after failure. A new opening after failure starts one
+fresh shared load and returns to `"loading"`.
+
+Use `cloudCommandMenu` from the same import to build **Open in apps** rows.
+Pass its `pending` to the last section: three placeholders reserve its end in
+the overview, one while searching. The failed catalog offers a persistent
+retry row that starts another opening. The row's `before(draft, signal, follow)` must save
+`draft.value` and `draft.mentions`, which already leave out `/…`, together with
+the attachments, through your revisioned draft path. Read `returnTo()` after
+saving, so a newly created chat can supply its path. The signal comes from the
+composer and aborts when the opening ends without leaving the page: the person
+closed the list, or opening failed. The token is then still on screen, so save
+the live draft again. If `before` creates a chat that the composer then shows,
+call `follow()` right before creating it; otherwise any chat change cancels the
+opening. Preserve later edits once that signal aborts.
+
+`openComposerCommand(command, { before, returnTo, signal, locale })` provides
+the same save-then-open behavior for a custom row. A rejected `before()` reaches
+the composer status line and opens nothing. An invalid return path throws. If
+Command resolution fails, the row shows the app's unavailability only when the
+app cannot be reached; otherwise it shows the resolver's message. It stays open
+in either case. If the Command code cannot load, the row keeps the token and
+the reload notice offers a reload. `signal()` is read after saving: once it
+aborts, for example because the person left the chat, the row ends without
+opening anything. After navigation, the target app owns error feedback and
+chooses whether to use `returnTo`.
 
 ```tsx
-import { cloudInsertMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
-import { Chat, type ChatMention, useLocale } from "@k2b/ui";
+import { cloudCommandMenu, cloudInsertMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
+import { Chat, type ChatCommandDraft, type ChatMention, useLocale } from "@k2b/ui";
 import { createMemo, createSignal } from "solid-js";
 
-export function ResourceComposer() {
+export function ResourceComposer(props: {
+  saveDraft: (draft: ChatCommandDraft) => Promise<void>;
+  returnTo: () => string | undefined;
+}) {
   const locale = useLocale();
   const [text, setText] = createSignal("");
   const [mentions, setMentions] = createSignal<readonly ChatMention[]>([]);
@@ -521,14 +555,21 @@ export function ResourceComposer() {
       mention: (item) => ({ id: `resource:${item.ref.type}:${item.ref.id}`, name: item.title, data: item.ref }),
     }),
   );
+  const apps = createMemo(() => cloudCommandMenu({
+    locale: locale(), commands: catalog.commands(), state: catalog.state(), section: "apps",
+    before: props.saveDraft, returnTo: props.returnTo,
+  }));
   return (
     <Chat.Composer
       value={text()}
       onValueChange={setText}
       mentions={mentions()}
       onMentionsChange={setMentions}
-      commandSections={[{ id: "insert", label: "Insert" }]}
-      commands={[menu().insert, ...menu().tags]}
+      commandSections={[
+        { id: "insert", label: "Insert" },
+        { id: "apps", label: "Open in apps", pending: apps().pending },
+      ]}
+      commands={[menu().insert, ...menu().tags, ...apps().commands]}
       commandScopes={menu().scopes}
       commandFallback={menu().fallback}
       searchCommands={async (query, _signal, search) => {
@@ -561,8 +602,10 @@ application's draft format and persist the submitted mentions.
 The global search also discovers [Commands](/en/docs/platform/capabilities#open-an-interactive-flow-with-commands).
 Click **Actions** or type `>` to browse them. Ordinary text searches show
 matching actions after resource and page results. Only Commands whose input
-schema accepts `{}` appear globally; other Commands remain callable with
-explicit input. Resource pickers never show or execute Commands.
+schema accepts `{}` and whose app is in the person's navigation appear globally.
+The palette keeps the current app's Commands. Navigation is discoverability,
+never authorization: the target page still checks access. Other Commands remain
+callable with explicit input. Resource pickers never show or execute Commands.
 
 Register useful actions for the currently visible resource from its island:
 
