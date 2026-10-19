@@ -58,6 +58,8 @@ export default function SpacesSidebarList(props: SpacesSidebarProps) {
         <AppWorkspace.SidebarSection title="Spaces">
           <AppWorkspace.SidebarItem
             href="/app/spaces"
+            // The collapsed rail hides the label; the title names the row there.
+            title={t.myWork}
             icon="ti ti-checkbox"
             active={props.current.kind === "overview"}
             meta={count(props.myWorkCount)}
@@ -80,12 +82,22 @@ export default function SpacesSidebarList(props: SpacesSidebarProps) {
           <For each={spaces()}>
             {(space) => {
               const isPinned = () => pinned().includes(space.id);
+              const title = space.description ? `${space.name}: ${space.description}` : space.name;
+              const active = () => props.current.kind === "space" && props.current.id === space.id;
+              const icon = () => (
+                <AppWorkspace.SidebarItemIcon>
+                  <Show when={isPinned()} fallback={<span class="spaces-overview-space-dot" style={{ "background-color": space.color }} />}>
+                    <i class="ti ti-flag" style={{ color: space.color }} />
+                  </Show>
+                </AppWorkspace.SidebarItemIcon>
+              );
               return (
                 <>
                   <AppWorkspace.SidebarItem
+                    sidebarMode="expanded"
                     href={`/app/spaces/${space.id}`}
-                    title={space.description || space.name}
-                    active={props.current.kind === "space" && props.current.id === space.id}
+                    title={title}
+                    active={active()}
                     class="spaces-overview-space"
                     data={{ pinned: isPinned() ? "true" : undefined, "space-id": space.id }}
                     onClick={visitSpace}
@@ -104,16 +116,21 @@ export default function SpacesSidebarList(props: SpacesSidebarProps) {
                       </AppWorkspace.SidebarItemActions>
                     }
                   >
-                    <AppWorkspace.SidebarItemIcon>
-                      <Show
-                        when={isPinned()}
-                        fallback={<span class="spaces-overview-space-dot" style={{ "background-color": space.color }} />}
-                      >
-                        <i class="ti ti-flag" style={{ color: space.color }} />
-                      </Show>
-                    </AppWorkspace.SidebarItemIcon>
+                    {icon()}
                     <AppWorkspace.SidebarItemLabel marquee={false}>{space.name}</AppWorkspace.SidebarItemLabel>
                     <AppWorkspace.SidebarItemMeta>{count(space.openItemCount)}</AppWorkspace.SidebarItemMeta>
+                  </AppWorkspace.SidebarItem>
+                  {/* The collapsed rail hides labels and row actions. A row with a pin action names its wrapper, not its
+                      link, so the rail gets a plain row whose link carries the name. */}
+                  <AppWorkspace.SidebarItem
+                    sidebarMode="collapsed"
+                    href={`/app/spaces/${space.id}`}
+                    title={title}
+                    active={active()}
+                    onClick={visitSpace}
+                  >
+                    {icon()}
+                    <AppWorkspace.SidebarItemLabel marquee={false}>{space.name}</AppWorkspace.SidebarItemLabel>
                   </AppWorkspace.SidebarItem>
                   <Show
                     when={props.hint?.id === "spaces.sidebar-switch" && props.current.kind === "space" && props.current.id === space.id}
@@ -133,7 +150,7 @@ export default function SpacesSidebarList(props: SpacesSidebarProps) {
             }}
           </For>
           <Show when={props.canCreate}>
-            <AppWorkspace.SidebarItem icon="ti ti-plus" onClick={() => void create()}>
+            <AppWorkspace.SidebarItem icon="ti ti-plus" title={t.newSpace} onClick={() => void create()}>
               {t.newSpace}
             </AppWorkspace.SidebarItem>
           </Show>

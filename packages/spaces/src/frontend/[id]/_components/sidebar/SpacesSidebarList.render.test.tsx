@@ -72,6 +72,18 @@ describe("shared Spaces sidebar", () => {
         expect(html).not.toContain("k2b-app-workspace__switcher");
         expect(html).not.toContain("view=kanban");
         expect(html).toContain(locale === "de" ? "Neuer Space" : "New space");
+        // The collapsed rail hides every label and row action, so each link and button it shows names itself in its title.
+        const rail = [...html.matchAll(/<(?:a|button)\b[^>]*>/g)]
+          .map((match) => match[0])
+          // Rows with a pin action keep their link inside an expanded-only wrapper, so only whole-row controls count here.
+          .filter((tag) => /class="k2b-app-workspace__sidebar-item[\s"]/.test(tag) && !/data-sidebar-mode="expanded"/.test(tag));
+        const names = rail.map((control) => control.match(/\btitle="([^"]+)"/)?.[1]);
+        expect(names).toEqual([
+          locale === "de" ? "Meine Arbeit" : "My work",
+          "Ideas",
+          "Launch: Launch work",
+          locale === "de" ? "Neuer Space" : "New space",
+        ]);
       }
       expect(overview).toMatch(/<a[^>]*href="\/app\/spaces"[^>]*aria-current="page"/);
       expect(space).toMatch(/<a[^>]*href="\/app\/spaces\/First01"[^>]*aria-current="page"/);

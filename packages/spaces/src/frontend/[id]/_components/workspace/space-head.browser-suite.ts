@@ -490,7 +490,7 @@ describe(`Spaces shared head in ${browserName}`, () => {
           if (!usePath) await hint.getByRole("button", { name: "Got it", exact: true }).click();
           else if (id === "spaces.space-menu") await page.getByRole("button", { name: "Space menu", exact: true }).click();
           else if (id === "spaces.view-tabs") await page.locator('[data-spaces-view-tabs] a[aria-current="page"]').click();
-          else await page.locator('.spaces-sidebar-list a[href="/app/spaces/Space2"]').click();
+          else await page.locator('.spaces-sidebar-list .spaces-overview-space a[href="/app/spaces/Space2"]').click();
           await ready(page);
           expect(await page.locator(".k2b-moved-hint").count()).toBe(0);
           await page.reload();
