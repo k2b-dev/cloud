@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
-import * as stores from "./base-store";
 import type { StoreRow } from "./base-store";
+import * as stores from "./base-store";
 import { retentionPreview } from "./retention";
 
 const baseId = "11111111-1111-4111-8111-111111111111";
