@@ -60,9 +60,10 @@ export const emptyMailSelection = (): MailSelection => ({
 
 /**
  * Whether the detail shows that the row is older: a newer revision, more messages, or a flag or an unread message in a
- * folder the row does not know. When the detail holds every message, a flag or unread state the row shows but no
- * message has anymore counts too. Only messages in folders the list covers count (`listed`), because the row leaves
- * the others out. A missing row (not loaded) is never older.
+ * folder the row does not know. Only messages in folders the list covers count (`listed`), because the row leaves the
+ * others out. The detail shows one placement per message, so a flag or unread state the row shows but no message has
+ * anymore counts only for a list of one folder (`onePlacement`), where that placement is the folder's, and only when
+ * the detail holds every message. A missing row (not loaded) is never older.
  */
 export const mailRowOlderThanDetail = (
   item: Pick<MailListItem, "revision" | "messageCount" | "flagged" | "unread" | "unreadFolderIds"> | undefined,
@@ -72,6 +73,7 @@ export const mailRowOlderThanDetail = (
     conversationLocalTags: { conversationRevision: number } | null;
   },
   listed: (folderId: string | null) => boolean,
+  onePlacement: boolean,
 ): boolean => {
   if (!item) return false;
   const revision = Math.max(detail.collaborationState?.revision ?? 0, detail.conversationLocalTags?.conversationRevision ?? 0);
@@ -86,6 +88,6 @@ export const mailRowOlderThanDetail = (
     )
   )
     return true;
-  const complete = detail.detailMessages.length >= item.messageCount;
+  const complete = onePlacement && detail.detailMessages.length >= item.messageCount;
   return complete && ((item.flagged && !flagged) || (item.unread && !unread));
 };

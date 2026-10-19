@@ -1143,7 +1143,7 @@ function MailWorkspaceView(props: {
     const folderList = data.search.expression === null && !data.savedViewId ? data.folderId : null;
     const listedFolderIds = (folderId: string | null) =>
       folderList ? folderId === folderList : folderId === null || !excludedListingFolderIds().has(folderId);
-    const rowOlder = mailRowOlderThanDetail(row, selection, listedFolderIds);
+    const rowOlder = mailRowOlderThanDetail(row, selection, listedFolderIds, folderList !== null);
     commitSelectionInList(href, {
       ...selection,
       selectedConversationId: conversationId,
