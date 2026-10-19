@@ -374,6 +374,37 @@ for (const navigationApi of [true, false]) {
       expect(document.body.style.overflow).toBe("auto");
     });
 
+    test("a nested history dialog waiting for an earlier Back never opens once its parent's island is disposed", async () => {
+      const core = createDialogCore();
+      const a = trigger("a");
+      document.body.style.overflow = "auto";
+      a.button.focus();
+      const parent = core.open(view("Parent"), { history: true });
+      const parentButton = document.querySelector<HTMLButtonElement>("dialog > div:last-child button")!;
+      parentButton.focus();
+      let closeChild = () => {};
+      const child = core.open(
+        (close) => {
+          closeChild = close;
+          return view("Child")();
+        },
+        { history: true },
+      );
+      const deferred = deferTraversals();
+      closeChild();
+      await Promise.resolve();
+      expect(deferred).toHaveBeenCalledWith(-1);
+      parentButton.focus();
+      const waiting = core.open(view("Waiting child"), { history: true });
+      dispose(a.parent);
+      expect(await child).toBeUndefined();
+      expect(await parent).toBeUndefined();
+      expect(await waiting).toBeUndefined();
+      expect(core.isOpen()).toBe(false);
+      expect(document.querySelector("dialog")).toBeNull();
+      expect(document.body.style.overflow).toBe("auto");
+    });
+
     test("a dialog opened from a portalled menu item belongs to the island of the press that opened the menu", async () => {
       const core = createDialogCore();
       const { parent, button } = trigger("a");

@@ -273,12 +273,14 @@ export const createDialogCore = () => {
    * The island that opens a dialog now: the one around the target of the event being dispatched, else of the latest
    * pointer or key press (WebKit does not focus a clicked button, and a dialog may open after an await), else of focus.
    * A trigger outside every island, such as an item of a portalled menu, falls back to the island of the latest press
-   * inside one. A level opened from inside a dialog has no island and closes with the level below it.
+   * inside one. A level opened from inside a dialog belongs to the island of that dialog, also while it waits to open.
    */
   const openingIsland = (): DialogOwner => {
     const trigger = window.event?.target instanceof Element ? window.event.target : (lastInteraction ?? document.activeElement);
-    if (!(trigger instanceof Element) || state.element?.contains(trigger)) return {};
-    const island = trigger.closest(ISLANDS) ?? lastIsland;
+    if (!(trigger instanceof Element)) return {};
+    const island = state.element?.contains(trigger)
+      ? (state.stack.find((entry) => entry.container.contains(trigger)) ?? state.stack.at(-1))?.island
+      : (trigger.closest(ISLANDS) ?? lastIsland);
     return island ? { island, disposals: disposals.get(island) ?? 0 } : {};
   };
 
