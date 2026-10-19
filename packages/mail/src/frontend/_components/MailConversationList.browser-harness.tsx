@@ -3,11 +3,11 @@ import { AppWorkspace, LocaleProvider } from "@k2b/ui";
 import { batch, createSignal, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
-import type { MailConversationPreview, Mailbox } from "../../contracts";
+import type { Mailbox, MailConversationPreview } from "../../contracts";
 import type { MailFolderView, MessageDetail } from "../../service/messages";
 import MailConversationList from "./MailConversationList";
-import MailConversationReader from "./MailConversationReader";
 import MailConversationQuickLook from "./MailConversationQuickLook";
+import MailConversationReader from "./MailConversationReader";
 import type { MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import type { MailListItem } from "./mail-navigation";
 
