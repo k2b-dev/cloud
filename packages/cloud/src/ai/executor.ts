@@ -19,7 +19,7 @@ import {
   hasRememberedAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, isAssistantChatTurn, resolveAssistantAudioModel } from "./assistant-models";
-import { authorizeBackgroundAction } from "./background-review";
+import { authorizeBackgroundActionWith } from "./background-review";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { type AiCapabilityCatalogEntry, createAiToolResolver, createRunToolStore } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
@@ -1236,31 +1236,33 @@ export class AiTurnExecutor {
             : {}),
           authorizeBackground: authorizeBackgroundMandate
             ? async (entry, args, context) => {
-                await authorizeBackgroundAction({
-                  turnId,
-                  mandate: config.mandate!,
-                  appId: entry.appId,
-                  capabilityId: entry.operation.localId,
-                  kind: entry.kind,
-                  args,
-                  approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
-                  hasReview: entry.kind === "action" && "review" in entry.operation && entry.operation.review === true,
-                  action: entry.display.title,
-                  review: () =>
-                    capabilityAuthority
-                      ? reviewAiCapability({
-                          conversationId,
-                          authority: capabilityAuthority,
-                          mandate: config.mandate,
-                          locale: promptLocale,
-                          entry,
-                          args,
-                          context,
-                        })
-                      : Promise.resolve(null),
-                  signal: context.signal,
-                  dependencies: { authorizeCapability: () => authorizeBackgroundMandate(entry, args) },
-                });
+                await authorizeBackgroundActionWith(
+                  {
+                    turnId,
+                    mandate: config.mandate!,
+                    appId: entry.appId,
+                    capabilityId: entry.operation.localId,
+                    kind: entry.kind,
+                    args,
+                    approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
+                    hasReview: entry.kind === "action" && "review" in entry.operation && entry.operation.review === true,
+                    action: entry.display.title,
+                    review: () =>
+                      capabilityAuthority
+                        ? reviewAiCapability({
+                            conversationId,
+                            authority: capabilityAuthority,
+                            mandate: config.mandate,
+                            locale: promptLocale,
+                            entry,
+                            args,
+                            context,
+                          })
+                        : Promise.resolve(null),
+                    signal: context.signal,
+                  },
+                  () => authorizeBackgroundMandate(entry, args),
+                );
               }
             : undefined,
           onReview: (callId, review) => {

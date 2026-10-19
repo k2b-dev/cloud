@@ -27,6 +27,7 @@ import {
   reduceAiCapabilityInputSchema,
   searchAiTools,
 } from "./capabilities";
+import { aiChatTasks } from "./chat-tasks";
 import * as credentials from "./credentials";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiModelAccess } from "./model-access";
@@ -1302,10 +1303,10 @@ describe("AI capability catalog", () => {
         if (outcome === "review error") throw new Error("Review unavailable");
         return { message: "Create item?", ...(outcome === "scope" ? { approvalScope: "contacts:own" } : {}) };
       });
-      const authorizeCapability = mock(async () => {
+      spyOn(aiChatTasks, "authorizeCapability").mockImplementation(async () => {
         if (outcome === "mandate denied") throw new Error("Grant denied");
       });
-      const markNeedsApproval = mock(async () => {});
+      const markNeedsApproval = spyOn(aiChatTasks, "markNeedsApproval").mockImplementation(async () => {});
       const execute = mock(async () => ({ data: {} }));
       const prepared = prepareAiTools({
         tools: createLoadedAiCapabilityTools({
@@ -1326,7 +1327,6 @@ describe("AI capability catalog", () => {
               action: entry.display.title,
               review,
               signal: context.signal,
-              dependencies: { authorizeCapability, markNeedsApproval },
             });
           },
           review: async () => {
@@ -1370,7 +1370,8 @@ describe("AI capability catalog", () => {
   test("a background refusal reaches the model as the exact NEEDS_APPROVAL tool error and allows its final sentence", async () => {
     const catalog = buildAiCapabilityCatalog([capabilityApp("contacts")]);
     const execute = mock(async () => ({ data: {} }));
-    const markNeedsApproval = mock(async () => {});
+    spyOn(aiChatTasks, "authorizeCapability").mockImplementation(async () => {});
+    const markNeedsApproval = spyOn(aiChatTasks, "markNeedsApproval").mockImplementation(async () => {});
     const prepared = prepareAiTools({
       actor,
       conversationId: "conversation-1",
@@ -1392,7 +1393,6 @@ describe("AI capability catalog", () => {
             action: entry.display.title,
             review: async () => ({ message: "Create item?" }),
             signal: context.signal,
-            dependencies: { authorizeCapability: async () => {}, markNeedsApproval },
           });
         },
         execute,

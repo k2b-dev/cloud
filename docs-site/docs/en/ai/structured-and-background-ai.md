@@ -361,11 +361,13 @@ input, with no tools or implicit conversation context.
 ## Routine Action reviews
 
 Before each change, a routine checks its mandate first, then calls the app's
-review for every Action whose `approval` is not `"none"`. This includes
-background Code Mode. The Action runs only when that review returns an
-`approvalScope`. A missing review, a review error, or a result without the scope
-refuses the call and the app's `run` never executes. The review only narrows a
-mandate; it never grants access or widens the routine's authority.
+review for every Action with `approval: "rememberable"`. An Action that needs
+approval and is not rememberable never runs in a routine, regardless of the
+review. This includes background Code Mode. A rememberable Action runs only
+when that review returns an `approvalScope`. A missing review, a review error,
+or a result without the scope refuses the call and the app's `run` never
+executes. The review only narrows a mandate; it never grants access or widens
+the routine's authority.
 
 The model gets a short `NEEDS_APPROVAL` error telling it to stop and explain
 what was missing in one sentence. The run fails and the routine becomes

@@ -164,11 +164,12 @@ Remembered interactive approvals do not authorize background work. The target
 application still checks the user's current resource permissions.
 
 Before each change, a routine run checks the mandate first, then calls the
-app's review for every Action whose `approval` is not `"none"`. It runs the
-Action only when the review returns an `approvalScope`. A missing review, a
-review error, or a result without that scope refuses the call; the app's `run`
-is never invoked. The review only narrows the mandate and never grants access.
-The same rule applies to background Code Mode.
+app's review for every Action with `approval: "rememberable"`. It runs the
+Action only when the review returns an `approvalScope`. An Action that needs
+approval and is not rememberable never runs in a routine, regardless of the
+review. A missing review, a review error, or a result without that scope
+refuses the call; the app's `run` is never invoked. The review only narrows the
+mandate and never grants access. The same rule applies to background Code Mode.
 
 The model receives a short `NEEDS_APPROVAL` error telling it to stop and say
 what was missing. Even if the model completes its reply, the routine becomes

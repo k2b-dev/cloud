@@ -12,8 +12,7 @@ export class AiBackgroundApprovalRequiredError extends Error {
   }
 }
 
-/** Core routine gate. A review can narrow a mandate, never grant authority. */
-export const authorizeBackgroundAction = async (input: {
+type BackgroundActionInput = {
   turnId: string;
   mandate: { id: string; revision: number };
   appId: string;
@@ -25,12 +24,14 @@ export const authorizeBackgroundAction = async (input: {
   action: string;
   review: () => Promise<CapabilityActionReview | null>;
   signal?: AbortSignal;
-  dependencies?: {
-    authorizeCapability?: typeof aiChatTasks.authorizeCapability;
-    markNeedsApproval?: typeof aiChatTasks.markNeedsApproval;
-  };
-}): Promise<CapabilityActionReview | null> => {
-  await (input.dependencies?.authorizeCapability ?? aiChatTasks.authorizeCapability)({
+};
+
+/** Core routine gate. A review can narrow a mandate, never grant authority. */
+export const authorizeBackgroundActionWith = async (
+  input: BackgroundActionInput,
+  authorizeCapability: typeof aiChatTasks.authorizeCapability,
+): Promise<CapabilityActionReview | null> => {
+  await authorizeCapability({
     mandate: input.mandate,
     appId: input.appId,
     capabilityId: input.capabilityId,
@@ -40,6 +41,10 @@ export const authorizeBackgroundAction = async (input: {
   });
   if (input.kind === "query" || input.approval === "none") return null;
   input.signal?.throwIfAborted();
+  if (input.approval !== "rememberable") {
+    await aiChatTasks.markNeedsApproval({ turnId: input.turnId, action: input.action });
+    throw new AiBackgroundApprovalRequiredError(input.action);
+  }
   let review: CapabilityActionReview | null = null;
   if (input.hasReview) {
     try {
@@ -51,6 +56,9 @@ export const authorizeBackgroundAction = async (input: {
   }
   input.signal?.throwIfAborted();
   if (review?.approvalScope) return review;
-  await (input.dependencies?.markNeedsApproval ?? aiChatTasks.markNeedsApproval)({ turnId: input.turnId, action: input.action });
+  await aiChatTasks.markNeedsApproval({ turnId: input.turnId, action: input.action });
   throw new AiBackgroundApprovalRequiredError(input.action);
 };
+
+export const authorizeBackgroundAction = (input: BackgroundActionInput): Promise<CapabilityActionReview | null> =>
+  authorizeBackgroundActionWith(input, aiChatTasks.authorizeCapability);
