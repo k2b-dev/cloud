@@ -23,6 +23,25 @@ const loadDocument = (href: string, options: { replace?: boolean }): void => {
     console.error("[@k2b/ssr/nav] Document navigation failed.", error);
   }
 };
+// A target that differs from the current URL only by its hash must still load: assign() or replace() would only scroll.
+const recover = (href: string, replace: boolean): void => {
+  try {
+    const url = new URL(href);
+    const here = new URL(window.location.href);
+    if (url.origin !== here.origin || url.pathname !== here.pathname || url.search !== here.search || !href.includes("#")) {
+      loadDocument(href, { replace });
+      return;
+    }
+    if (url.href !== here.href) {
+      if (replace) window.history.replaceState(window.history.state, "", url.href);
+      else window.history.pushState(window.history.state, "", url.href);
+    }
+    window.location.reload();
+  } catch (error) {
+    // History and reload can also be refused by the browser; the API still never rejects.
+    console.error("[@k2b/ssr/nav] Document navigation failed.", error);
+  }
+};
 const marker = (state: unknown): unknown =>
   state !== null && typeof state === "object" && markerKey in state ? state[markerKey] : undefined;
 const abort = (state: SwapState): void => {
@@ -94,6 +113,7 @@ export function installPageSwap(): () => void {
     trusted: navigation === undefined || ("type" in navigation && navigation.type === "navigate"),
     uninstall: () => {
       window.removeEventListener("click", click);
+      window.removeEventListener("submit", submit);
       window.removeEventListener("popstate", popstate);
       announcer.remove();
       abort(state);
@@ -144,6 +164,23 @@ export function installPageSwap(): () => void {
       abort(state);
     }
   };
+  const submit = (event: SubmitEvent): void => {
+    if (event.defaultPrevented) return;
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    const target = (
+      event.submitter?.hasAttribute("formtarget")
+        ? event.submitter.getAttribute("formtarget")
+        : form.hasAttribute("target")
+          ? form.getAttribute("target")
+          : document.querySelector("base[target]")?.getAttribute("target")
+    )
+      ?.trim()
+      .toLowerCase();
+    if (target && !["_self", "_top", "_parent"].includes(target)) return;
+    // A late swap must not replace the page or cancel a pending native form navigation.
+    abort(state);
+  };
   const popstate = (event: PopStateEvent): void => {
     abort(state);
     const page = marker(event.state);
@@ -165,6 +202,7 @@ export function installPageSwap(): () => void {
   };
   shared[swapKey] = state;
   window.addEventListener("click", click);
+  window.addEventListener("submit", submit);
   window.addEventListener("popstate", popstate);
   document.body.append(announcer);
   return state.uninstall;
@@ -194,7 +232,7 @@ export async function swapPage(href: string, options: { replace?: boolean } = {}
     if (!active()) return;
     state.active = undefined;
     if (error !== undefined) console.error("[@k2b/ssr/nav] Page swap failed; falling back to document navigation.", error);
-    loadDocument(requested.href, options);
+    recover(requested.href, Boolean(options.replace));
   };
   let fetched: Document;
   let next: NonNullable<ReturnType<typeof shellContext>>;
@@ -266,26 +304,13 @@ const commit = (
   requested: URL,
   options: { replace?: boolean },
 ): void => {
-  const fallback = (replace: boolean) => loadDocument(requested.href, { replace });
-  // Once the old islands are gone, a target that differs from the current URL only by its hash must still load:
-  // location.assign() or replace() would only scroll.
-  const recover = (href: string, replace: boolean) => {
-    const url = new URL(href);
-    const here = new URL(window.location.href);
-    if (url.origin !== here.origin || url.pathname !== here.pathname || url.search !== here.search || !href.includes("#")) {
-      loadDocument(href, { replace });
-      return;
-    }
-    if (url.href !== here.href) window.history.replaceState(window.history.state, "", url.href);
-    window.location.reload();
-  };
   // The commit owns the page from here: a navigation that cleanups or new islands start cannot stop it halfway.
   // A swap they start finds its captured root detached and loads its document; cleanups should not navigate.
   state.active = undefined;
   const owned = () => shared[swapKey] === state && context.root.isConnected && context.shell.contains(context.root);
   // An island may have replaced the column while modules loaded; replacing a detached root would commit only history.
   if (!owned()) {
-    fallback(Boolean(options.replace));
+    recover(requested.href, Boolean(options.replace));
     return;
   }
   let committed = false;

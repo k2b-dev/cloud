@@ -408,14 +408,14 @@ test("install is idempotent; uninstall removes listeners, live region and pendin
   const remove = spyOn(window, "removeEventListener");
   install();
   expect(installPageSwap()).toBe(uninstall);
-  expect(add.mock.calls.filter(([type]) => type === "click" || type === "popstate")).toHaveLength(2);
+  expect(add.mock.calls.filter(([type]) => type === "click" || type === "submit" || type === "popstate")).toHaveLength(3);
   expect(document.querySelectorAll("[data-nav-announcer]")).toHaveLength(1);
   const requests = deferredFetch();
   const pending = swapPage("/app/A");
   uninstall();
   await pending;
   expect(requests[0]!.aborted).toBe(true);
-  expect(remove.mock.calls.filter(([type]) => type === "click" || type === "popstate")).toHaveLength(2);
+  expect(remove.mock.calls.filter(([type]) => type === "click" || type === "submit" || type === "popstate")).toHaveLength(3);
   expect(document.querySelector("[data-nav-announcer]")).toBeNull();
   expect(assign).not.toHaveBeenCalled();
 });
@@ -428,6 +428,47 @@ test("a native same-tab link aborts pending work without causing an extra docume
   await pending;
   expect(requests[0]!.aborted).toBe(true);
   expect(assign).not.toHaveBeenCalled();
+});
+
+test("a native same-tab form submission aborts a pending swap without committing or loading a document", async () => {
+  install();
+  const requests = deferredFetch(true);
+  const before = window.history.length;
+  const state = window.history.state;
+  const pending = swapPage("/app/A");
+  const form = document.createElement("form");
+  document.body.append(form);
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  expect(requests[0]!.signal.aborted).toBe(true);
+  requests[0]!.resolve(response(html("A"), {}, "https://example.test/app/A"));
+  await pending;
+  expect(document.title).toBe("old");
+  expect(document.querySelector("main b")!.textContent).toBe("old");
+  expect(window.location.href).toBe("https://example.test/app/old");
+  expect(window.history.length).toBe(before);
+  expect(window.history.state).toEqual(state);
+  expect(events).toEqual([]);
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+test.each(["prevented", "_blank"])("a %s form submission lets a pending swap commit", async (kind) => {
+  install();
+  const requests = deferredFetch(true);
+  const pending = swapPage("/app/A");
+  const form = document.createElement("form");
+  if (kind === "_blank") form.target = "_blank";
+  else form.addEventListener("submit", (event) => event.preventDefault());
+  document.body.append(form);
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  expect(requests[0]!.signal.aborted).toBe(false);
+  requests[0]!.resolve(response(html("A"), {}, "https://example.test/app/A"));
+  await pending;
+  expect(document.title).toBe("A");
+  expect(window.location.pathname).toBe("/app/A");
+  expect(events).toEqual(["cleanup:old", "mount:A"]);
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
 });
 
 test("an aborted module import can finish later without inserting or mounting its page", async () => {
@@ -994,6 +1035,39 @@ test.each([
   expect(assign).toHaveBeenCalledTimes(1);
   expect(assign).toHaveBeenCalledWith("https://example.test/app/new");
   expect(document.title).toBe("old");
+});
+
+test("an early 403 on the current URL with a hash reloads without changing history", async () => {
+  install();
+  window.history.replaceState(window.history.state, "", "/app/old#section");
+  const before = window.history.length;
+  const href = window.location.href;
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  spyOn(globalThis, "fetch").mockResolvedValue(response("", { status: 403 }, href));
+  await swapPage(href);
+  expect(reload).toHaveBeenCalledTimes(1);
+  expect(window.location.href).toBe(href);
+  expect(window.history.length).toBe(before);
+  expect(document.title).toBe("old");
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+test.each([false, true])("an early 403 for a different hash reloads with replace=%s", async (replaceEntry) => {
+  install();
+  window.history.replaceState(window.history.state, "", "/app/old#old");
+  const before = window.history.length;
+  const state = window.history.state;
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  spyOn(globalThis, "fetch").mockResolvedValue(response("", { status: 403 }, "https://example.test/app/old#new"));
+  await swapPage("/app/old#new", { replace: replaceEntry });
+  expect(reload).toHaveBeenCalledTimes(1);
+  expect(window.location.hash).toBe("#new");
+  expect(window.history.length).toBe(before + (replaceEntry ? 0 : 1));
+  expect(window.history.state).toEqual(state);
+  expect(document.title).toBe("old");
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
 });
 
 test("a commit failure on a URL with a hash reloads it, since replacing it would only scroll", async () => {

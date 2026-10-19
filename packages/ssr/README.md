@@ -330,8 +330,8 @@ the old islands. It pushes history, replaces the column, sets the title and
 the declared attributes, mounts the new islands, scrolls to the top or to
 the hash, focuses the first heading of the column, and announces the title in
 a polite live region. A newer navigation aborts a pending swap: another swap,
-Back or Forward, a native link, an enhanced `Link` click, or a call to
-`navigate()` or `documentNavigate()`.
+Back or Forward, a native link or form submission, an enhanced `Link` click,
+or a call to `navigate()` or `documentNavigate()`.
 
 Any failure loads the requested URL as a normal document: a status other than
 200, a response that is not HTML, a redirect out of the scope, a missing shell

@@ -200,8 +200,8 @@ declares the contract in server HTML, and nav knows nothing else about it:
 A swap is one transaction, and its order is the contract:
 
 1. Abort the previous swap. Only the newest navigation may commit: a newer
-   swap, `popstate`, a native same-tab link, and the history helpers
-   (`navigate()`, `documentNavigate()`, `navigateTo()`,
+   swap, `popstate`, a native same-tab link or form submission, and the
+   history helpers (`navigate()`, `documentNavigate()`, `navigateTo()`,
    `refreshCurrentPath()`) abort a pending swap, and so does a `Link` when it
    takes an enhanced click.
 2. Fetch the target as HTML with the abort signal. Check status 200, HTML,
