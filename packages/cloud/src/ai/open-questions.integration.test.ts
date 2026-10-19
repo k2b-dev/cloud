@@ -255,4 +255,26 @@ databaseSuite()("open questions", () => {
     expect(turn?.status).toBe("waiting_for_action");
     expect((await f.read()).count).toBe(1);
   });
+
+  test("a browser tool call sends no update of the list of open questions", async () => {
+    const f = await fixture();
+    await sql`DELETE FROM events.outbox WHERE kind='live' AND app_id='core' AND ordering_key=${`u:${f.userId}`}`;
+    await aiConversations.savePendingTurnAction({
+      conversationId: f.chat.id,
+      turnId: f.turn.id,
+      callId: "browser-read",
+      kind: "client_tool",
+      status: "pending",
+      name: "browser.read",
+      args: {},
+      allowAlways: false,
+      approvalScope: "browser",
+      resolvedEvent: null,
+    });
+    await sql`UPDATE ai.pending_actions SET status='resolved' WHERE turn_id=${f.turn.id}::uuid AND call_id='browser-read'`;
+    await sql`DELETE FROM ai.pending_actions WHERE turn_id=${f.turn.id}::uuid AND call_id='browser-read'`;
+    const [events] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM events.outbox
+      WHERE kind='live' AND app_id='core' AND ordering_key=${`u:${f.userId}`}`;
+    expect(events?.count).toBe(0);
+  });
 });

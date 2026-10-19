@@ -274,6 +274,22 @@ test("a focus moved to the sentence from elsewhere lights it up; a press on the 
     // A jump from a list of waiting questions focuses the sentence by script.
     await sentence.evaluate((e) => (e as HTMLElement).focus({ preventScroll: true }));
     expect(await sentence.getAttribute("data-arrive")).toBe("true");
+    await sentence.evaluate((e) => e.dispatchEvent(new Event("animationend")));
+    expect(await sentence.getAttribute("data-arrive")).toBeNull();
+    // The window comes back with the sentence still focused: the browser focuses it again, which is no arrival.
+    await sentence.evaluate((e) => {
+      window.dispatchEvent(new FocusEvent("blur"));
+      e.dispatchEvent(new FocusEvent("focus"));
+    });
+    expect(await sentence.getAttribute("data-arrive")).toBeNull();
+    // A press that the browser cancels, such as a long press on touch, does not swallow the next jump.
+    await page.getByRole("button", { name: "Send to Lea", exact: true }).focus();
+    await sentence.evaluate((e) => {
+      e.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      e.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
+      (e as HTMLElement).focus({ preventScroll: true });
+    });
+    expect(await sentence.getAttribute("data-arrive")).toBe("true");
   } finally {
     await page.close();
   }

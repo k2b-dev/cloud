@@ -12,7 +12,7 @@ The sidebar lists your active chats as plain rows: pinned chats first, then by t
 ## Chat navigation {icon="layout-list"}
 
 :::reference
-- **Chat rows:** Each row shows the chat's title. One icon at the row's end marks a chat that is running, waiting for you, failed, has a new response, or has an active schedule; its tooltip names the state. A chat with an open question carries a dot.
+- **Chat rows:** Each row shows the chat's title. One icon at the row's end marks a chat that is running, waiting for you, failed, has a new response, or has an active schedule; its tooltip names the state. When a chat waits for you, for example with an open question, that mark is a dot.
 - **Projects:** Use the plus action in the Projects popup to create a Project with a name and optional instructions.
 - **New chat:** Opens an empty chat. When the open chat is still empty, Assistant keeps it instead of creating another one, unless it belongs to a Project, was opened by another app, has a name or description you gave it, or is pinned, done, or archived.
 - **Empty chat:** Choose an optional Project below the centered composer before sending the first message. Starter cards fill an editable request; they never send it automatically.
