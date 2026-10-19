@@ -21,7 +21,7 @@ const listProps = (requestUrl: string) => ({
   search: resolveMailSearchRoute(new URL(requestUrl, "https://cloud.test")),
   query: "",
   title: "Needs action",
-  namedByTabs: true,
+  namedBy: "tabs" as const,
   items: [],
   error: null,
   selectedConversationId: null,

@@ -66,7 +66,7 @@ import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
 import { createRetryToasts } from "./_components/mail-feedback";
-import { onlyInFolderFolders } from "./_components/mail-folder-tree";
+import { buildVisibleMailFolderTree, flattenMailFolderTree, onlyInFolderFolders } from "./_components/mail-folder-tree";
 import { mailboxNeedsConnection } from "./_components/mail-health-presentation";
 import {
   type MailListOptimisticField,
@@ -2384,6 +2384,17 @@ function MailWorkspaceView(props: {
       savedViewId: data.savedViewId,
     }),
   );
+  const listNamedBy = createMemo(() => {
+    if (currentTab() !== null) return "tabs";
+    if (
+      data.scheduledMode ||
+      data.draftsMode ||
+      data.activeView === "send_problems" ||
+      flattenMailFolderTree(buildVisibleMailFolderTree(data.folders)).some(({ folder }) => folder.id === data.folderId)
+    )
+      return "sidebar";
+    return null;
+  });
   const viewTabs = createMemo(() =>
     mailboxViewTabs({
       mailboxId: data.mailbox.id,
@@ -2524,7 +2535,7 @@ function MailWorkspaceView(props: {
                     query={data.query}
                     search={data.search}
                     title={data.listTitle}
-                    namedByTabs={currentTab() !== null}
+                    namedBy={listNamedBy()}
                     items={listView().items}
                     leavingKeys={listView().leavingKeys}
                     error={data.listError}

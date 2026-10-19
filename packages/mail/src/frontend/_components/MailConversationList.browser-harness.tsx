@@ -211,7 +211,7 @@ window.mountMailList = (options) => {
                   query={options.requestUrl ? (new URL(requestUrl(), location.origin).searchParams.get("q") ?? "") : ""}
                   search={{ query: "", expression: null, sort: "relevance", error: null }}
                   title="Inbox"
-                  namedByTabs
+                  namedBy="tabs"
                   items={list.items}
                   leavingKeys={leaving()}
                   error={null}

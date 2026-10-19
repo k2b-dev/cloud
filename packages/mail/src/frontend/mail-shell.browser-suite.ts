@@ -656,6 +656,19 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       });
 
+    test("1440: a folder is named where the person sees it even without a sidebar row", async () => {
+      const page = await open(`${boxPath}?folder=Quiet1`, 1440);
+      try {
+        expect(await sidebar(page).locator('a[href$="folder=Quiet1"]').count()).toBe(0);
+        const heading = page.locator("[data-mail-list-heading]");
+        expect(await heading.textContent()).toBe("Quiet");
+        expect((await heading.boundingBox())?.width ?? 0).toBeGreaterThan(20);
+        expect(await heading.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+      } finally {
+        await close(page);
+      }
+    });
+
     test("the open mailbox's name stays readable beside its row actions at the default width", async () => {
       const page = await open(boxPath);
       try {

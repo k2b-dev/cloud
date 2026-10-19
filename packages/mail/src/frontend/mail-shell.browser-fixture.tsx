@@ -69,6 +69,7 @@ const folders = [
     }),
   ),
   mailTestFolder("Filed1", { role: "custom", providerRole: "custom", name: "Filed", unread: 7 }),
+  mailTestFolder("Quiet1", { role: "custom", providerRole: "custom", name: "Quiet", display: "hidden", unread: 0 }),
   mailTestFolder("Child1", { role: "custom", providerRole: "custom", name: "Nested", parentId: "Filed1", unread: 2 }),
   mailTestFolder("Long01", {
     role: "custom",

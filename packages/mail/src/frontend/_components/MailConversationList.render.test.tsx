@@ -26,7 +26,7 @@ const renderList = (overrides: Partial<Parameters<typeof MailConversationList>[0
       query: "",
       search: resolveMailSearchRoute(new URL(overrides.requestUrl ?? "/app/mail/Box001?view=needs_action", "https://cloud.test")),
       title: "Needs action",
-      namedByTabs: true,
+      namedBy: "tabs",
       items: [],
       error: null,
       selectedConversationId: null,
@@ -93,10 +93,18 @@ describe("Mail conversation list", () => {
   });
 
   test("names a folder in a visible heading where the sidebar is out of view, and leaves a view's name to its tab", () => {
-    const folder = renderList({ requestUrl: "/app/mail/Box001?folder=Fld001", title: "Archive", namedByTabs: false });
+    const folder = renderList({ requestUrl: "/app/mail/Box001?folder=Fld001", title: "Archive", namedBy: "sidebar" });
     // The class is visible by default; only the 64 rem container query in app.css hides it beside the sidebar.
     expect(folder).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="mail-list-heading [^"]*"[^>]*>Archive<\/h1>/);
-    expect(renderList({ namedByTabs: true })).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="sr-only"[^>]*>Needs action<\/h1>/);
+    expect(renderList({ namedBy: "tabs" })).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="sr-only"[^>]*>Needs action<\/h1>/);
+  });
+
+  test("keeps a folder heading visible at every width when no sidebar row names it", () => {
+    const folder = renderList({ requestUrl: "/app/mail/Box001?folder=Quiet1", title: "Quiet", namedBy: null });
+    const headingClass = folder.match(/<h1[^>]*data-mail-list-heading[^>]*class="([^"]*)"[^>]*>Quiet<\/h1>/)?.[1];
+    expect(headingClass).toBe("truncate text-base font-semibold text-primary");
+    expect(headingClass).not.toContain("mail-list-heading");
+    expect(headingClass).not.toContain("sr-only");
   });
 
   test("explains a failed search instead of showing service text", () => {

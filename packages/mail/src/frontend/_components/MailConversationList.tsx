@@ -74,8 +74,8 @@ export default function MailConversationList(props: {
   query: string;
   search: ResolvedMailSearchRoute;
   title: string;
-  /** The head's tabs name the list (a view or saved view). A folder or Send problems has no tab. */
-  namedByTabs: boolean;
+  /** Where the list is already named, or null when its heading must stay visible. */
+  namedBy: "tabs" | "sidebar" | null;
   items: MailListItem[];
   leavingKeys?: ReadonlySet<string>;
   error: MailListError | null;
@@ -364,14 +364,18 @@ export default function MailConversationList(props: {
           fallback={
             <div class="flex min-w-0 items-center gap-2">
               <div class="min-w-0 flex-1">
-                {/* The head's tabs name a view at every width, and the sidebar's marked row names a folder from 64 rem:
-                    there the heading stays for assistive technology and focus only. Narrower, the sidebar is out of
-                    view, so a folder's heading shows. */}
+                {/* Hide the heading only where tabs or a sidebar row already name the list. */}
                 <h1
                   data-mail-list-heading
                   ref={listHeading}
                   tabIndex={-1}
-                  class={props.namedByTabs ? "sr-only" : "mail-list-heading truncate text-base font-semibold text-primary"}
+                  class={
+                    props.namedBy === "tabs"
+                      ? "sr-only"
+                      : props.namedBy === "sidebar"
+                        ? "mail-list-heading truncate text-base font-semibold text-primary"
+                        : "truncate text-base font-semibold text-primary"
+                  }
                 >
                   {props.title}
                 </h1>
