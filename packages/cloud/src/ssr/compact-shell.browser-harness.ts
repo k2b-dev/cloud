@@ -116,30 +116,38 @@ const workspace = (selected: string) =>
  * A task-list page: a long list in Main and an open detail that the server renders with its own close
  * control, as Contacts and Capabilities do. Invented content.
  */
-const listWorkspace = () =>
+const listWorkspace = (head = false) =>
   createComponent(AppWorkspace, {
     class: "min-h-0 flex-1",
     get children() {
-      return createComponent(AppWorkspace.Content, {
-        get children() {
-          return [
-            createComponent(AppWorkspace.Main, {
-              get children() {
-                return Array.from({ length: 80 }, (_, index) =>
-                  createComponent(Button, { class: "list-row", align: "start", children: `Task ${index + 1}` }),
-                );
-              },
-            }),
-            createComponent(AppWorkspace.Detail, {
-              id: "task-detail",
-              open: true,
-              get children() {
-                return createComponent(Button, { "data-workspace-detail-close": "", children: "Close task" });
-              },
-            }),
-          ];
-        },
-      });
+      return [
+        head ? createComponent(AppWorkspace.Head, { primary: { label: "New task", icon: "ti ti-plus", href: "?new=task" } }) : null,
+        createComponent(AppWorkspace.Content, {
+          get children() {
+            return [
+              createComponent(AppWorkspace.Main, {
+                get children() {
+                  return Array.from({ length: 80 }, (_, index) =>
+                    createComponent(Button, {
+                      variant: head ? "ghost" : undefined,
+                      class: "list-row",
+                      align: "start",
+                      children: `Task ${index + 1}`,
+                    }),
+                  );
+                },
+              }),
+              createComponent(AppWorkspace.Detail, {
+                id: "task-detail",
+                open: true,
+                get children() {
+                  return createComponent(Button, { "data-workspace-detail-close": "", children: "Close task" });
+                },
+              }),
+            ];
+          },
+        }),
+      ];
     },
   });
 
@@ -270,7 +278,7 @@ const server = new Hono()
             fullPage: list === "page",
             title: [{ title: "Home", href: "/" }, { title: "Tasks" }],
             get children() {
-              return listWorkspace();
+              return listWorkspace(c.req.query("head") === "1");
             },
           });
       return () =>
