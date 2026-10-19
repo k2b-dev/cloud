@@ -252,19 +252,22 @@ Pass `logger` to use an application log source; the default source is
 | `log` | Definition ID. |
 | `measuredAt` | Measurement time as a Date. |
 | `documents` | Number of scanned documents whose latest event is newer than their snapshot. |
-| `oldest` | Null with no backlog; otherwise the document with the lowest stored sequence. |
+| `oldest` | Null with no backlog; otherwise the queued document with the oldest unsnapshotted update, by stream sequence. |
 | `oldest.docId` | That document's ID. |
 | `oldest.sequence` | Its first unsnapshotted event's sequence. |
 | `oldest.ageMs` | Time since that event's publication. |
 | `oldest.sequenceDistance` | Last scanned shared head sequence minus the event sequence. |
+| `oldest.partial` | True when the lookup budget leaves a possible older update; omitted otherwise. |
 
-The scan reuses its existing broker lookups. After scanning, it makes one
-bounded tenant replay for the document with the lowest stored sequence and
-stops after the first event. This measures the oldest update after the
-furthest-behind snapshot; it does not compare every document's update age.
+The scan reuses its existing broker lookups. After scanning, it makes at most
+16 short tenant replays, lowest stored sequences first. Each stops after its
+first event, and reconcile heartbeats before each further lookup. Lookups
+stop once no remaining document can hold an older update.
+If the budget runs out first, `oldest.partial` is true.
 
-If this lookup fails, reconciliation still succeeds and warns. The report
-uses `storedSequence + 1` as `sequence`, null for `ageMs`, and
+If a lookup fails, reconciliation still succeeds and warns. Further lookups
+stop. The report uses the failing document's `storedSequence + 1` as
+`sequence`, null for `ageMs`, and
 `lastHeadSequence - storedSequence` as `sequenceDistance`. It also includes
 `historyGap`, true only for a `RetentionGapError`. An unknown age signals an
 unreadable history, not an empty backlog.

@@ -8,6 +8,9 @@ import type { SharedTextContributor, SharedTextSaveInput, SharedTextStoredState,
 
 const ACK_WAIT_MS = 120_000;
 const RECONCILE_LIMIT = 5_000;
+// Each lookup is a short-lived tenant replay stopped after its first event; 16 is far below 5,000 latestCursor lookups per scan page.
+// In steady state, only documents edited within the last snapshot delay or stalled documents remain behind.
+const BACKLOG_LOOKUPS = 16;
 
 export const sharedTextSnapshotJobConfig = (
   config: Pick<JobConfig, "id" | "deadLetterRetention" | "terminalRetentionMs" | "dedupeWindowMs"> & {
@@ -54,7 +57,15 @@ export type SharedTextSnapshotBacklog = {
   log: string;
   measuredAt: Date;
   documents: number;
-  oldest: null | { docId: string; sequence: number; ageMs: number | null; sequenceDistance: number; historyGap?: boolean };
+  oldest: null | {
+    docId: string;
+    sequence: number;
+    ageMs: number | null;
+    sequenceDistance: number;
+    historyGap?: boolean;
+    /** The lookup budget left documents that may contain an older update. */
+    partial?: true;
+  };
 };
 type SnapshotLog = {
   id: string;
@@ -211,7 +222,8 @@ const createSnapshots = <Input>(
     let queued = 0;
     let advanced = 0;
     let lastHeadSeq = 0;
-    let oldest: { docId: string; stored: string; storedSeq: number; latest: string } | null = null;
+    const backlogCandidates: Array<{ docId: string; stored: string; storedSeq: number; latest: string }> = [];
+    let unretainedMinSeq: number | null = null;
     while (true) {
       config.signal?.throwIfAborted();
       const candidates = await store.list({ limit: RECONCILE_LIMIT, after, signal: config.signal });
@@ -247,7 +259,21 @@ const createSnapshots = <Input>(
           queued++;
           const from = stored ?? topic.cursorAt(0);
           const storedSeq = topic.cursorSequence(from);
-          if (!oldest || storedSeq < oldest.storedSeq) oldest = { docId: candidate.docId, stored: from, storedSeq, latest };
+          const index = backlogCandidates.findIndex((entry) => entry.storedSeq > storedSeq);
+          if (backlogCandidates.length === BACKLOG_LOOKUPS && index === -1) {
+            unretainedMinSeq = Math.min(unretainedMinSeq ?? storedSeq, storedSeq);
+          } else {
+            if (backlogCandidates.length === BACKLOG_LOOKUPS) {
+              const evicted = backlogCandidates.pop()!;
+              unretainedMinSeq = Math.min(unretainedMinSeq ?? evicted.storedSeq, evicted.storedSeq);
+            }
+            backlogCandidates.splice(index === -1 ? backlogCandidates.length : index, 0, {
+              docId: candidate.docId,
+              stored: from,
+              storedSeq,
+              latest,
+            });
+          }
           continue;
         }
         if (!stored) continue;
@@ -258,37 +284,51 @@ const createSnapshots = <Input>(
       after = candidates.at(-1)!.docId;
     }
     const report: SharedTextSnapshotBacklog = { log: log.id, measuredAt: new Date(), documents: queued, oldest: null };
-    if (oldest) {
+    for (const [index, candidate] of backlogCandidates.entries()) {
+      if (report.oldest && candidate.storedSeq + 1 >= report.oldest.sequence) break;
+      // The first lookup runs in the scan's last heartbeat interval, each later one
+      // renews it. A lost lease ends the run; only the lookup itself fails softly.
+      if (index > 0) await config.heartbeat?.();
       const lookup = new AbortController();
       const signal = config.signal ? AbortSignal.any([lookup.signal, config.signal]) : lookup.signal;
       try {
-        // One bounded tenant replay per run; stop after the first unsnapshotted update.
-        for await (const event of topic.replay({ tenantId: oldest.docId, after: oldest.stored, until: oldest.latest, signal })) {
-          report.oldest = {
-            docId: oldest.docId,
-            sequence: event.sequence,
-            ageMs: report.measuredAt.getTime() - event.publishedAt.getTime(),
-            sequenceDistance: lastHeadSeq - event.sequence,
-          };
+        let found = false;
+        for await (const event of topic.replay({ tenantId: candidate.docId, after: candidate.stored, until: candidate.latest, signal })) {
+          found = true;
+          if (!report.oldest || event.sequence < report.oldest.sequence)
+            report.oldest = {
+              docId: candidate.docId,
+              sequence: event.sequence,
+              ageMs: report.measuredAt.getTime() - event.publishedAt.getTime(),
+              sequenceDistance: lastHeadSeq - event.sequence,
+            };
           break;
         }
-        if (!report.oldest) throw new Error("Snapshot backlog replay returned no retained event");
+        if (!found) throw new Error("Snapshot backlog replay returned no retained event");
       } catch (error) {
         config.signal?.throwIfAborted();
         output.warn("Could not read shared text snapshot backlog history", {
-          docId: oldest.docId,
+          docId: candidate.docId,
           error: error instanceof Error ? error.message : String(error),
         });
         report.oldest = {
-          docId: oldest.docId,
-          sequence: oldest.storedSeq + 1,
+          docId: candidate.docId,
+          sequence: candidate.storedSeq + 1,
           ageMs: null,
-          sequenceDistance: lastHeadSeq - oldest.storedSeq,
+          sequenceDistance: lastHeadSeq - candidate.storedSeq,
           historyGap: error instanceof RetentionGapError,
         };
+        break;
       } finally {
         lookup.abort();
       }
+      if (
+        candidate === backlogCandidates.at(-1) &&
+        report.oldest &&
+        unretainedMinSeq !== null &&
+        unretainedMinSeq + 1 < report.oldest.sequence
+      )
+        report.oldest.partial = true;
     }
     config.signal?.throwIfAborted();
     output.info("Snapshot reconcile finished", { checked, queued, advanced });

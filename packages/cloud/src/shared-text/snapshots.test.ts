@@ -457,7 +457,102 @@ test("reconcile advances only below the older half and honours a store's rejecte
   expect(f.advances).toEqual([["older", { from: cursor(59), to: cursor(100), latest: null }]]);
 });
 
-test("backlog counts stale documents and makes one lookup for the lowest stored sequence, stopping after one event", async () => {
+test("backlog reports the oldest unsnapshotted update despite its newer stored cursor", async () => {
+  const f = fixture();
+  f.head.value = cursor(1100);
+  f.rows.push({ docId: "a", cursor: cursor(10) }, { docId: "b", cursor: cursor(20) });
+  f.latest.set("a", cursor(1000));
+  f.latest.set("b", cursor(25));
+  f.events.push(event(25, "b", 3 * 60 * 60 * 1000), event(1000, "a", 1000));
+  expect(await f.pipeline.reconcile()).toEqual({ checked: 2, queued: 2, advanced: 0 });
+  expect(f.pipeline.backlog()?.oldest).toEqual({ docId: "b", sequence: 25, ageMs: 10800000, sequenceDistance: 1075 });
+  expect(f.replays.map(({ tenantId }) => tenantId)).toEqual(["a", "b"]);
+});
+
+test("backlog stops lookups when remaining stored sequences cannot precede the best event", async () => {
+  const f = fixture();
+  f.rows.push({ docId: "doc", cursor: cursor(0) }, { docId: "b", cursor: cursor(4) }, { docId: "c", cursor: cursor(6) });
+  f.latest.set("b", cursor(8));
+  f.latest.set("c", cursor(9));
+  f.events.push(event(8, "b"), event(9, "c"));
+  expect(await f.pipeline.reconcile()).toEqual({ checked: 3, queued: 3, advanced: 0 });
+  expect(f.pipeline.backlog()?.oldest).toEqual({ docId: "doc", sequence: 5, ageMs: 1000, sequenceDistance: 5 });
+  expect(f.replays.map(({ tenantId }) => tenantId)).toEqual(["doc"]);
+  expect(f.control.closed).toBe(1);
+  expect(f.replays[0]?.signal?.aborted).toBe(true);
+});
+
+for (const order of ["ascending", "descending", "mixed"] as const)
+  for (const bestSequence of [17, 1000])
+    test(`backlog bounds ${order} candidates to 16 replays and marks partial only for a possible older update (${bestSequence})`, async () => {
+      const f = fixture();
+      f.head.value = cursor(1100);
+      const storedSequences = Array.from({ length: 20 }, (_, i) => i);
+      if (order === "descending") storedSequences.reverse();
+      if (order === "mixed") storedSequences.splice(15, 5, 19, 18, 17, 16, 15);
+      for (const [index, storedSeq] of storedSequences.entries()) {
+        const docId = String(index).padStart(2, "0");
+        const eventSeq = storedSeq === 0 ? bestSequence : storedSeq === 16 ? 25 : 1000 + storedSeq;
+        f.rows.push({ docId, cursor: cursor(storedSeq) });
+        f.latest.set(docId, cursor(eventSeq));
+        f.events.push(event(eventSeq, docId));
+      }
+      let heartbeats = 0;
+      expect(
+        await f.pipeline.reconcile({
+          heartbeat: async () => {
+            heartbeats++;
+          },
+        }),
+      ).toEqual({ checked: 20, queued: 20, advanced: 0 });
+      expect(f.pipeline.backlog()?.oldest).toEqual({
+        docId: String(storedSequences.indexOf(0)).padStart(2, "0"),
+        sequence: bestSequence,
+        ageMs: 1000,
+        sequenceDistance: 1100 - bestSequence,
+        ...(bestSequence === 1000 ? { partial: true } : {}),
+      });
+      expect(f.replays).toHaveLength(16);
+      expect(f.replays.map(({ after }) => sequence(after!))).toEqual(Array.from({ length: 16 }, (_, i) => i));
+      expect(heartbeats).toBe(16);
+      expect(f.control.closed).toBe(16);
+      expect(f.replays.every(({ signal }) => signal?.aborted)).toBe(true);
+    });
+
+for (const failure of ["error", "gap", "empty"] as const)
+  test(`backlog stops on the second candidate's ${failure} and reports its unknown age`, async () => {
+    const f = fixture();
+    f.rows.push({ docId: "doc", cursor: cursor(0) }, { docId: "b", cursor: cursor(1) }, { docId: "c", cursor: cursor(2) });
+    f.latest.set("b", cursor(8));
+    f.latest.set("c", cursor(9));
+    f.events.push(event(9, "c"));
+    f.control.replayHook = async () => {
+      if (f.replays.length === 2 && failure !== "empty")
+        throw failure === "gap" ? new RetentionGapError(cursor(1), cursor(8)) : new Error("second lookup");
+    };
+    expect(await f.pipeline.reconcile()).toEqual({ checked: 3, queued: 3, advanced: 0 });
+    expect(f.pipeline.backlog()?.oldest).toEqual({
+      docId: "b",
+      sequence: 2,
+      ageMs: null,
+      sequenceDistance: 9,
+      historyGap: failure === "gap",
+    });
+    expect(f.replays.map(({ tenantId }) => tenantId)).toEqual(["doc", "b"]);
+    expect(f.warnings).toEqual([
+      [
+        "Could not read shared text snapshot backlog history",
+        {
+          docId: "b",
+          error: failure === "empty" ? "Snapshot backlog replay returned no retained event" : expect.any(String),
+        },
+      ],
+    ]);
+    expect(f.control.closed).toBe(2);
+    expect(f.replays.every(({ signal }) => signal?.aborted)).toBe(true);
+  });
+
+test("backlog counts stale documents and compares first events by sequence, closing each lookup", async () => {
   const f = fixture();
   expect(f.pipeline.backlog()).toBeNull();
   f.rows.push({ docId: "doc", cursor: cursor(0) }, { docId: "behind", cursor: cursor(1) });
@@ -471,16 +566,17 @@ test("backlog counts stale documents and makes one lookup for the lowest stored 
     documents: 2,
     oldest: { docId: "doc", sequence: 5, ageMs: 1000, sequenceDistance: 5 },
   });
-  expect(f.replays).toHaveLength(1);
+  expect(f.replays).toHaveLength(2);
   expect(f.replays[0]).toMatchObject({ tenantId: "doc", after: cursor(0), until: cursor(6) });
-  expect(f.control.yielded).toBe(1);
-  expect(f.control.closed).toBe(1);
-  expect(f.replays[0]?.signal?.aborted).toBe(true);
+  expect(f.replays[1]).toMatchObject({ tenantId: "behind", after: cursor(1), until: cursor(8) });
+  expect(f.control.yielded).toBe(2);
+  expect(f.control.closed).toBe(2);
+  expect(f.replays.every(({ signal }) => signal?.aborted)).toBe(true);
   expect(f.infos.at(-1)).toEqual(["Shared text snapshot backlog", f.pipeline.backlog()]);
   f.rows.length = 0;
   await f.pipeline.reconcile();
   expect(f.pipeline.backlog()).toEqual({ log: "test.text", measuredAt: NOW, documents: 0, oldest: null });
-  expect(f.replays).toHaveLength(1);
+  expect(f.replays).toHaveLength(2);
 });
 
 for (const error of [
@@ -531,7 +627,7 @@ for (const phase of ["before", "scan", "lookup"] as const)
     expect(f.infos.filter(([message]) => message === "Shared text snapshot backlog")).toHaveLength(1);
   });
 
-test("backlog keeps the lowest stored cursor across pages and uses the final page's head without extra document lookups", async () => {
+test("backlog finds the oldest update across pages and uses the final head without extra head or latest lookups", async () => {
   const f = fixture();
   f.rows.push(
     ...Array.from({ length: 5001 }, (_, i) => ({ docId: String(i).padStart(5, "0"), cursor: cursor(i === 0 ? 20 : i === 5000 ? 10 : 95) })),
@@ -545,9 +641,9 @@ test("backlog keeps the lowest stored cursor across pages and uses the final pag
     return list(options);
   };
   expect(await f.pipeline.reconcile()).toEqual({ checked: 5001, queued: 2, advanced: 0 });
-  expect(f.pipeline.backlog()?.oldest).toEqual({ docId: "05000", sequence: 70, ageMs: 5000, sequenceDistance: 130 });
+  expect(f.pipeline.backlog()?.oldest).toEqual({ docId: "00000", sequence: 30, ageMs: 1000, sequenceDistance: 170 });
   expect(f.calls.filter((call) => call === "head")).toHaveLength(2);
   expect(f.calls.filter((call) => call === "latest")).toHaveLength(5001);
-  expect(f.replays).toHaveLength(1);
-  expect(f.control.yielded).toBe(1);
+  expect(f.replays.map(({ tenantId }) => tenantId)).toEqual(["05000", "00000"]);
+  expect(f.control.yielded).toBe(2);
 });
