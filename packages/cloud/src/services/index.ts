@@ -247,6 +247,7 @@ export {
 } from "./network-security";
 export type { NetworkLookup, PublicNetworkAddress } from "./network-security";
 
+export { geoip } from "./geoip";
 export {
   knownBrowsers,
   KNOWN_BROWSER_LIMITS,

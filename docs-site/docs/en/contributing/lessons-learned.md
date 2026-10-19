@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Decode work bounded only by file size | One record consumes the whole file's decode budget on every lookup, or a probe keeps many large records at once. | Tests: Cloud `geoip.test.ts` checks the 32 KiB record boundary, isolated failure and refusal of a valid record with a huge array; GeoIP `index.test.ts` checks upload refusal and that the probe keeps no record between addresses. |
 | Navigation truncation drift | Component or app CSS reintroduces an ellipsis, or a mask clips the navigation control's focus ring. | Tests: UI `truncate-fade-contract.test.ts` rejects ellipsis and line clamps across shipped navigation families; `truncate-fade.render.test.tsx` checks inner label classes; `sidebar-row-labels.browser.test.ts` checks overflow, resizing, RTL, focus, and stable heights. |
 | Browser cookie store read races a document write | WebKit stores a `document.cookie` write asynchronously, so a test reading `context.cookies()` immediately can see the previous value ([#1496](https://github.com/k2b-dev/cloud/issues/1496)). | Check: `cookie-store` requires `storedCookie(page, name)` from `packages/ui/test/browser.ts` to wait until the store agrees with the document, or a leading `// cookie-store: <reason>` for a deliberate read such as an HttpOnly cookie. |
 | Rate-limit scope and budget mismatch | Multi-request uploads exhaust the public page budget; per-link keys let clients bypass the upload cap by spraying tokens. | Tests: Files `public-rate-limit.integration.test.ts` checks the per-client (IPv6 /64) upload budget, token spraying and page isolation; `public-inbox.behavior.test.tsx` checks automatic waits and the terminal rate-limit message ([#1168](https://github.com/k2b-dev/cloud/issues/1168)). |
@@ -626,6 +627,13 @@ convention still needs a check or a test.
 - **Root cause:** App color properties were set only on `.cloud-app-canvas`, while UI dialogs mount in a portal under the page shell's body, outside that canvas.
 - **Error class:** App colors lost at a dialog portal.
 - **Guard:** The page shell carries the current app's validated accent scope. `packages/cloud/src/ssr/Layout.render.test.tsx` checks exact body markup, invalid and absent accents, app Help, focus and admin pages, and unchanged minimal pages. `packages/cloud/src/ssr/dialog-app-colors.browser.test.ts` checks inherited settings and row colors, stable category geometry, and local accent overrides in light and dark mode at desktop and phone sizes.
+
+### GeoIP records could consume the whole database's decode budget
+
+- **What happened:** A valid MMDB record containing millions of empty strings passed the upload probe and consumed hundreds of megabytes on each lookup. Distinct large records reached by the probe's addresses also stayed in memory together.
+- **Root cause:** Record validation bounded nodes by the data section's size and did not charge scalar payload bytes; the probe's batch kept every decoded record until it ended.
+- **Error class:** Decode work bounded only by file size.
+- **Guard:** `geoip.test.ts` checks records just below and above 32 KiB, failure isolation and refusal of a valid huge array. GeoIP `index.test.ts` checks upload refusal, shared pointers, and that the probe decodes each address on its own.
 
 ## Add a lesson
 

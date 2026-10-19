@@ -640,3 +640,23 @@ Record retention deletes idempotency keys with their rows.
 from 1 to 36500, with record retention at least as long as content retention.
 The API saves both settings in one transaction and audits their old and new
 values as `outgoing_mail.retention.update`.
+
+## Sign-in locations
+
+Inspect or replace the City and ASN databases used for approximate sign-in
+locations. These commands use the same API as **Admin → Settings → Sign-in →
+Sign-in locations** and require an administrator:
+
+```bash
+cld admin geoip status --json
+cld admin geoip upload ./database.mmdb.gz
+cld admin geoip reset city --yes
+```
+
+Uploads accept IPv6 City or ASN `.mmdb` and `.mmdb.gz` files. The CLI compresses
+raw files while streaming them. Limits are 192 MiB unpacked and 128 MiB per
+request. Follow the provider's licence and keep the data current; the status
+marks data older than about six months. Postgres stores one upload per type,
+which stays active until reset. Other Core instances pick up changes within
+about a minute of lookups. `reset asn --yes` resets ASN; `reset --yes` resets
+both types. Status includes DB-IP attribution while DB-IP data is active.

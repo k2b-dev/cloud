@@ -52,6 +52,8 @@ test("lookup failure cannot fail the request", async () => {
     c.json(
       describeRequest(c, {
         geoIp: {
+          refresh: async () => {},
+          install: () => {},
           lookup() {
             throw new Error("fixture");
           },

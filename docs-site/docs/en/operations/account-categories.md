@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1081
 description: Configure Guest, local Login and FreeIPA access independently from login-page visibility.
 tags: [accounts, authentication, administration, freeipa]
-updated: 2026-09-21
+updated: 2026-10-17
 ---
 
 # Configure account types and sign-in
@@ -129,3 +129,11 @@ is no automatic bypass for ordinary administrator accounts.
 ## Display account types in an application
 
 See the [Account administration API](/en/docs/reference/account-administration#display-account-types-in-an-application).
+
+## Sign-in locations
+
+In **Admin → Settings → Sign-in → Sign-in locations**, inspect the City and ASN
+database source and build date, upload an IPv6 `.mmdb` or `.mmdb.gz` replacement,
+or reset a type to the bundled snapshot. Data older than about six months gets
+a hint. See [Sign-in locations](/en/docs/operations/sign-in-locations) for limits,
+licences, CLI commands, and how changes reach all Core instances.

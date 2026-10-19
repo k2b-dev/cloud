@@ -131,6 +131,8 @@ suite("every successful web sign-in route remembers its browser", () => {
     const context = spyOn(requestContext, "describeRequest").mockImplementation((c) =>
       describe(c, {
         geoIp: {
+          refresh: async () => {},
+          install: () => {},
           lookup: () => ({ cityDatabase: true, asnDatabase: false, country: "AT", city: "Wien", network: null }),
           status: () => ({ city: null, asn: null }),
         },
