@@ -8,6 +8,7 @@ import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
+import { collectRecentSentResourceRefs, RECENT_SENT_CONVERSATION_SCAN_LIMIT, RECENT_SENT_MESSAGE_SCAN_LIMIT } from "./recent-sent-refs";
 import { AiRunTimeout } from "./run-timeout";
 import { withAiShortId, withAiShortIdForDb } from "./short-id";
 import { parseAiTodoPlan } from "./todo-contracts";
@@ -64,6 +65,45 @@ export const resolveAiTurnShortIds = async (input: {
   `;
   return new Map(rows.map((row) => [row.id, row.short_id]));
 };
+
+/**
+ * Marker texts of the owner's latest sent messages, newest first. The candidates carry no message bodies; only the
+ * newest few are read for their resource markers.
+ */
+export const recentSentResourceMarkersQuery = (ownerUserId: string) => sql<
+  { conversation_id: string; short_id: string; created_at: Date | string; markers: string[] }[]
+>`
+      WITH conversations AS MATERIALIZED (
+        SELECT id FROM ai.conversations
+        WHERE created_by_user_id = ${ownerUserId}::uuid AND archived_at IS NULL
+        ORDER BY updated_at DESC
+        LIMIT ${RECENT_SENT_CONVERSATION_SCAN_LIMIT}
+      ), recent_messages AS MATERIALIZED (
+        SELECT candidate.id, candidate.conversation_id, candidate.created_at FROM conversations
+        CROSS JOIN LATERAL (
+          SELECT message.id, message.conversation_id, message.created_at
+          FROM ai.messages message
+          WHERE message.conversation_id = conversations.id
+            AND message.role = 'user' AND message.kind = 'message'
+            AND NOT (COALESCE(message.meta, '{}'::jsonb) ? 'scheduledTask')
+            AND NOT (COALESCE(message.meta, '{}'::jsonb) ? 'agentMessage')
+          ORDER BY message.seq DESC
+          LIMIT ${RECENT_SENT_MESSAGE_SCAN_LIMIT}
+        ) candidate
+        ORDER BY candidate.created_at DESC, candidate.id DESC
+        LIMIT ${RECENT_SENT_MESSAGE_SCAN_LIMIT}
+      )
+      SELECT recent_messages.conversation_id, sent.short_id, recent_messages.created_at,
+             array_agg(part->>'text' ORDER BY ordinal) AS markers
+      FROM recent_messages
+      JOIN ai.messages sent ON sent.id = recent_messages.id
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(sent.message->'content') = 'array' THEN sent.message->'content' ELSE '[]'::jsonb END
+      ) WITH ORDINALITY AS content(part, ordinal)
+      WHERE part->>'type' = 'text' AND ltrim(part->>'text') LIKE '[Attached Cloud resource %'
+      GROUP BY recent_messages.id, recent_messages.conversation_id, sent.short_id, recent_messages.created_at
+      ORDER BY recent_messages.created_at DESC, recent_messages.id DESC
+    `;
 
 type ConversationSearchBackend = "native" | "bm25";
 let conversationSearchBackendPromise: Promise<ConversationSearchBackend> | null = null;
@@ -1219,15 +1259,17 @@ export const aiConversations: AiConversationService = {
       );
       const target = rows[0];
       if (!target) throw new Error("Failed to fork conversation.");
+      // Copies keep their original send time because Recent orders by it.
       await tx`
         INSERT INTO ai.messages (
           short_id, conversation_id, seq, kind, role, message, search_text, loop_id,
-          model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason, meta
+          model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason, meta, created_at
         )
         SELECT
           short_id, ${target.id}::uuid, seq, kind, role, message, search_text, loop_id,
           model_profile_id, provider_model, usage, stop_reason, loop_aggregate, loop_done_reason,
-          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END
+          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END,
+          created_at
         FROM ai.messages
         WHERE conversation_id = ${input.sourceConversationId}::uuid
           AND compacted_at IS NULL
@@ -1561,6 +1603,18 @@ export const aiConversations: AiConversationService = {
       resources: page.map(rowToConversationResourceRef),
       ...(rows.length > limit && page.at(-1) ? { nextCursor: encodeResourceCursor(page.at(-1)!) } : {}),
     };
+  },
+
+  listRecentSentResourceRefs: async ({ ownerUserId }) => {
+    const rows = await recentSentResourceMarkersQuery(ownerUserId);
+    return collectRecentSentResourceRefs(
+      rows.map((row) => ({
+        conversationId: row.conversation_id,
+        messageId: row.short_id,
+        lastSentAt: iso(row.created_at),
+        markers: row.markers,
+      })),
+    );
   },
 
   listUserConversationResources: async (input) => {
@@ -2507,6 +2561,7 @@ export const aiConversations: AiConversationService = {
 
     await sql.begin(async (tx) => {
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.targetConversationId} FOR UPDATE`;
+      // Copies keep their original send time because Recent orders by it.
       await tx`
         INSERT INTO ai.messages (
           short_id,
@@ -2523,7 +2578,8 @@ export const aiConversations: AiConversationService = {
           stop_reason,
           loop_aggregate,
           loop_done_reason,
-          meta
+          meta,
+          created_at
         )
         SELECT
           short_id,
@@ -2540,7 +2596,8 @@ export const aiConversations: AiConversationService = {
           stop_reason,
           loop_aggregate,
           loop_done_reason,
-          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END
+          CASE WHEN ${todoMetaJson()} ? 'todoPlan' THEN jsonb_build_object('todoPlan', ${todoMetaJson()}->'todoPlan') ELSE NULL END,
+          created_at
         FROM ai.messages
         WHERE conversation_id = ${input.sourceConversationId}
           AND compacted_at IS NULL
