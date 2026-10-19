@@ -21,20 +21,22 @@ test("page-head URLs follow content and Core's release across real process resta
     writeFileSync(join(root, "public", id, "favicon.svg"), `<svg id="${id}"/>`);
   }
 
-  const start = async (release: string, alsoDevelopment = false, nextCoreRelease?: string): Promise<Pages[]> => {
+  const start = async (
+    release: string,
+    { nextCoreRelease, nodeEnv = "production" }: { nextCoreRelease?: string; nodeEnv?: string } = {},
+  ): Promise<Pages[]> => {
+    const probe = {
+      root,
+      defineApp: join(import.meta.dir, "define-app.ts"),
+      apps: ["faq", "mail", "core"],
+      coreRelease: release,
+      nextCoreRelease,
+    };
     const child = Bun.spawn(
-      [process.execPath, join(import.meta.dir, "define-app.stylesheet-versions.test-fixture.ts"), "faq", "mail", "core"],
+      [process.execPath, join(import.meta.dir, "define-app.stylesheet-versions.test-fixture.ts"), JSON.stringify(probe)],
       {
         cwd: new URL("../..", import.meta.url).pathname,
-        env: {
-          ...process.env,
-          NODE_ENV: "production",
-          PROBE_ROOT: root,
-          PROBE_DEFINE_APP: join(import.meta.dir, "define-app.ts"),
-          PROBE_CORE_RELEASE: release,
-          PROBE_NEXT_CORE_RELEASE: nextCoreRelease,
-          PROBE_ALSO_DEVELOPMENT: alsoDevelopment ? "1" : "0",
-        },
+        env: { ...process.env, NODE_ENV: nodeEnv },
         stdout: "pipe",
         stderr: "pipe",
         timeout: 20_000,
@@ -53,7 +55,7 @@ test("page-head URLs follow content and Core's release across real process resta
   };
 
   try {
-    const [first, afterCoreRedeploy] = await start("sha-0123456789ab", false, "sha-core-redeployed");
+    const [first, afterCoreRedeploy] = await start("sha-0123456789ab", { nextCoreRelease: "sha-core-redeployed" });
     const [restarted] = await start("sha-0123456789ab");
     expect(restarted).toEqual(first);
     for (const id of ["faq", "mail", "core"]) {
@@ -86,13 +88,14 @@ test("page-head URLs follow content and Core's release across real process resta
     });
 
     rmSync(join(root, "public", "mail", "app.css"));
-    const [unnamed, development] = await start("local", true);
+    const [unnamed] = await start("local");
     expect(unnamed!.mail!.status).toBe(200);
     expect(unnamed!.mail!.hrefs).toContain("/public/mail/app.css");
     for (const id of ["faq", "mail", "core"]) {
       for (const sheet of sheets) expect(unnamed![id]!.hrefs).toContain(`/public/${sheet}.css`);
     }
 
+    const [development] = await start("sha-0123456789ab", { nodeEnv: "development" });
     // Exactly the five original development hrefs, in their original order, with one shared start stamp.
     const stamp = /\?v=(\d+)$/.exec(development!.faq!.hrefs[0]!)?.[1];
     expect(stamp).toMatch(/^\d+$/);
