@@ -200,6 +200,10 @@ describe("Mail workspace list pages", () => {
     const page = searching ? { rows: ["hit"], next: null } : PAGES[cursor ?? "first"]!;
     const rows = [...(!searching && !cursor ? arrived : []), ...page.rows];
     return {
+      mailbox: data.mailbox,
+      permission: data.permission,
+      access: data.access,
+      savedViews: data.savedViews,
       scheduledMode: false,
       scheduledPage: null,
       scheduledError: null,

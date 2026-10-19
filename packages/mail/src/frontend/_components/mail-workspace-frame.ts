@@ -1,33 +1,23 @@
 import type { MailboxListView, MailboxPageData } from "../../service/workspace";
 import { emptyMailSelection } from "./mail-selection-detail";
 
-/** The part of a workspace snapshot that belongs to the mailbox: it depends on neither the list nor the selection. */
+/**
+ * The part of a workspace snapshot that a list switch keeps: it depends on neither the list nor the selection, and live
+ * updates refresh it. The list view brings the mailbox, the reader's access and the saved views itself, because their
+ * writers include ones outside Mail's live updates (sync health, platform group membership).
+ */
 export type MailWorkspaceFrame = Pick<
   MailboxPageData,
-  | "receivingAddress"
-  | "mailbox"
-  | "permission"
-  | "access"
-  | "initialLiveCursor"
-  | "folders"
-  | "identities"
-  | "scheduledCount"
-  | "savedViews"
-  | "viewCounts"
-  | "localTags"
+  "receivingAddress" | "initialLiveCursor" | "folders" | "identities" | "scheduledCount" | "viewCounts" | "localTags"
 >;
 
 /** Typed field by field, so the frame cannot take a list or selection field the snapshot gains. */
 export const pickMailWorkspaceFrame = (data: MailboxPageData): MailWorkspaceFrame => ({
   receivingAddress: data.receivingAddress,
-  mailbox: data.mailbox,
-  permission: data.permission,
-  access: data.access,
   initialLiveCursor: data.initialLiveCursor,
   folders: data.folders,
   identities: data.identities,
   scheduledCount: data.scheduledCount,
-  savedViews: data.savedViews,
   viewCounts: data.viewCounts,
   localTags: data.localTags,
 });
@@ -38,6 +28,10 @@ export const pickMailWorkspaceFrame = (data: MailboxPageData): MailWorkspaceFram
  */
 export const composeMailListSnapshot = (frame: MailWorkspaceFrame, list: MailboxListView): MailboxPageData => ({
   ...frame,
+  mailbox: list.mailbox,
+  permission: list.permission,
+  access: list.access,
+  savedViews: list.savedViews,
   scheduledMode: list.scheduledMode,
   scheduledPage: list.scheduledPage,
   scheduledError: list.scheduledError,

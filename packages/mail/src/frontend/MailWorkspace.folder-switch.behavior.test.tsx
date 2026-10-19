@@ -169,7 +169,12 @@ describe("Mail workspace folder switches", () => {
   let dom: DomTestHarness;
   let dispose = () => {};
   let requests: RecordedRequest[];
-  let truth: { unread: number; total: number; needsAction: number; scheduled: number };
+  let truth: Pick<MailboxPageData, "mailbox" | "permission" | "access" | "savedViews"> & {
+    unread: number;
+    total: number;
+    needsAction: number;
+    scheduled: number;
+  };
   let failure: number | null;
 
   const listFor = (href: string, listMode: MailboxListView["listMode"] = "conversations"): MailboxListView => {
@@ -189,13 +194,17 @@ describe("Mail workspace folder switches", () => {
         : scheduledMode
           ? "Scheduled"
           : savedViewId
-            ? "Priority"
+            ? (truth.savedViews.find((view) => view.id === savedViewId)?.name ?? "All mail")
             : activeView
               ? "Waiting"
               : folderId === "Filed1"
                 ? "Filed"
                 : "All mail";
     return {
+      mailbox: truth.mailbox,
+      permission: truth.permission,
+      access: truth.access,
+      savedViews: truth.savedViews,
       scheduledMode,
       scheduledPage: scheduledMode
         ? {
@@ -279,7 +288,16 @@ describe("Mail workspace folder switches", () => {
     FakeWebSocket.instances = [];
     Reflect.set(globalThis, "WebSocket", FakeWebSocket);
     requests = [];
-    truth = { unread: 3, total: 3, needsAction: 3, scheduled: 2 };
+    truth = {
+      mailbox: structuredClone(data.mailbox),
+      permission: data.permission,
+      access: structuredClone(data.access),
+      savedViews: structuredClone(data.savedViews),
+      unread: 3,
+      total: 3,
+      needsAction: 3,
+      scheduled: 2,
+    };
     failure = null;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL) => {
@@ -384,7 +402,7 @@ describe("Mail workspace folder switches", () => {
     await caughtUp();
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="Select conversations"]')!.click();
     expect(dom.root.querySelector('.mail-list-entry input[type="checkbox"]')).not.toBeNull();
-    truth = { unread: 7, total: 12, needsAction: 9, scheduled: 4 };
+    truth = { ...truth, unread: 7, total: 12, needsAction: 9, scheduled: 4 };
     await switchTo("folder=Filed1");
     assertList(`${path}?folder=Filed1`, "Filed");
     counts();
@@ -428,10 +446,29 @@ describe("Mail workspace folder switches", () => {
     counts();
   });
 
+  test("a caught-up folder switch takes mailbox and saved view names from the list and keeps counts", async () => {
+    mount();
+    await caughtUp();
+    truth = {
+      ...truth,
+      mailbox: { ...truth.mailbox, name: "Renamed support" },
+      savedViews: truth.savedViews.map((view) => ({ ...view, name: "Renamed priority" })),
+      unread: 7,
+      total: 12,
+      needsAction: 9,
+    };
+    await switchTo("folder=Filed1");
+    assertList(`${path}?folder=Filed1`, "Filed");
+    const sidebar = link(`${path}?savedView=Saved1`).closest("aside")!;
+    expect(sidebar.textContent).toContain("Renamed support");
+    expect(link(`${path}?savedView=Saved1`).textContent).toBe("Renamed priority");
+    counts();
+  });
+
   test("a live event after a list switch reloads the frame's folder and view counts", async () => {
     mount();
     const socket = await caughtUp();
-    truth = { unread: 7, total: 12, needsAction: 9, scheduled: 4 };
+    truth = { ...truth, unread: 7, total: 12, needsAction: 9, scheduled: 4 };
     await switchTo("folder=Filed1");
     assertList(`${path}?folder=Filed1`, "Filed");
     counts();
@@ -445,7 +482,7 @@ describe("Mail workspace folder switches", () => {
   test("a live event while the list loads reloads the snapshot after it", async () => {
     mount();
     const socket = await caughtUp();
-    truth = { unread: 7, total: 12, needsAction: 9, scheduled: 4 };
+    truth = { ...truth, unread: 7, total: 12, needsAction: 9, scheduled: 4 };
     const fetchMock = globalThis.fetch;
     let releaseList = () => {};
     const listHeld = new Promise<void>((resolve) => (releaseList = resolve));

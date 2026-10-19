@@ -31,7 +31,7 @@ import {
   userBackedActor,
 } from "./auth";
 import { validateDestructiveIncomingAutomationsForMailbox } from "./incoming-automations";
-import { enqueueMailInvalidation, mailLive } from "./live";
+import { mailLive } from "./live";
 import { pauseDeletedMailboxExecution, pauseMailboxTransport } from "./mailbox-lifecycle";
 import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
@@ -420,12 +420,11 @@ export const updateMailbox = async (params: {
     return fail(err.badInput(composeSafety.error.issues[0]?.message ?? "Composer safety settings are invalid"));
   }
 
-  let changed = false;
-  const result = await tryCatch(
+  return tryCatch(
     () =>
       sql.begin(async (tx) => {
-        const [locked] = await tx<DbMailbox[]>`
-          SELECT ${mailboxColumns} FROM mail.mailboxes m WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL FOR UPDATE
+        const [locked] = await tx<{ id: string }[]>`
+          SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL FOR UPDATE
         `;
         if (!locked) unwrap(fail(err.notFound("Mailbox")));
         unwrap(await requireMailboxPermission(params.context, params.mailboxId, "admin", tx));
@@ -476,14 +475,10 @@ export const updateMailbox = async (params: {
           },
           tx,
         );
-        changed = JSON.stringify({ ...mapMailbox(locked!), updatedAt: null }) !== JSON.stringify({ ...mapMailbox(row), updatedAt: null });
-        if (changed) await enqueueMailInvalidation(tx, { mailboxId: params.mailboxId });
         return mapMailbox(row);
       }),
     () => err.internal("Failed to update mailbox"),
   );
-  if (result.ok && changed) mailLive.wake();
-  return result;
 };
 
 export const deleteMailbox = async (context: MailRequestContext, mailboxId: string): Promise<Result<void>> => {

@@ -10,14 +10,12 @@ import {
   unavailableProviderLimitSnapshot,
 } from "../contracts";
 import { migrate } from "../migrate";
-import { grantMailboxAccess, revokeMailboxAccess, updateMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { attachProviderBinding, rediscoverProviderBinding } from "./bindings";
 import { imapSmtpConnector } from "./connectors";
 import { mailboxLiveKeys } from "./live-channels";
-import { createMailbox, updateMailbox } from "./mailboxes";
+import { createMailbox } from "./mailboxes";
 import { createProviderConnection, replaceProviderConnection, revokeProviderConnection } from "./provider-connections";
-import { createSavedConversationView, deleteSavedConversationView, updateSavedConversationView } from "./saved-views";
 import {
   createSenderIdentity,
   disableSenderIdentity,
@@ -25,7 +23,6 @@ import {
   updateSenderIdentity,
   verifySenderIdentity,
 } from "./sender-identities";
-import { claimFence, commitSyncBatch, syncFolderBatch } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 type Update = { payload: { v: number; k: string; d: { conversationId: string | null } }; transaction: string };
@@ -244,106 +241,6 @@ suite("Mail frame writers invalidate open mailboxes", () => {
     }
   });
 
-  test("an empty sync batch invalidates changed health in both scopes, then stays quiet", async () => {
-    setSystemTime(new Date("2026-10-01T12:00:00.000Z"));
-    try {
-      const f = await connected();
-      const [folder] = await sql<Parameters<typeof commitSyncBatch>[0]["folder"][]>`
-        SELECT folder.id AS folder_id, resource.mailbox_id, resource.id AS remote_resource_id,
-          resource.sync_generation, folder.envelope_cursor, folder.role
-        FROM mail.folders folder
-        JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
-        JOIN mail.provider_bindings binding ON binding.remote_resource_id = resource.id
-        WHERE binding.id = ${f.bindingId}::uuid AND folder.role = 'inbox'
-      `;
-      expect(folder).toBeDefined();
-      await sql`
-        UPDATE mail.mailboxes SET health = 'bootstrapping', health_reason = 'Historical synchronization in progress'
-        WHERE id = ${f.mailboxId}::uuid
-      `;
-      const cursor = {
-        version: 1 as const,
-        uidValidity: "10",
-        highestSeenUid: 0,
-        backfillNextHigh: null,
-        backfillComplete: true,
-        incrementalTargetHigh: null,
-        incrementalNextHigh: null,
-        highestModseq: "1",
-        flagTargetModseq: null,
-        flagNextLow: null,
-        flagMaxUid: null,
-        reconcileNextLow: null,
-        lastFullReconcileAt: null,
-      };
-      const commit = async () => {
-        const fence = await claimFence(folder!.remote_resource_id, f.bindingId, "incremental", folder!.folder_id);
-        const result = await commitSyncBatch({
-          folder: folder!,
-          folderId: folder!.folder_id,
-          bindingId: f.bindingId,
-          secretRevision: 1,
-          fence,
-          status: { uidValidity: "10", uidNext: 1, highestModseq: "1", messages: 0 },
-          beforeCursor: cursor,
-          cursor: { ...cursor },
-          uidValidityChanged: false,
-          envelopeBatch: null,
-          envelopeKind: null,
-          flagChanges: [],
-          reconcileWindow: null,
-        });
-        expect(result).toMatchObject({ hydratedIds: [], flagsUpdated: 0, removed: 0 });
-        const [mailbox] = await sql`SELECT health, health_reason FROM mail.mailboxes WHERE id = ${f.mailboxId}::uuid`;
-        expect(mailbox).toEqual({ health: "active", health_reason: null });
-      };
-      await change(f.mailboxId, commit);
-      await clear(f.mailboxId);
-      await commit();
-      expect(await pending(f.mailboxId)).toEqual([]);
-      expect(await pending(sentinelId)).toEqual([]);
-    } finally {
-      setSystemTime();
-    }
-  });
-
-  test("a failed folder sync invalidates mailbox health in both scopes, then stays quiet", async () => {
-    setSystemTime(new Date("2026-10-01T12:00:00.000Z"));
-    const failure = Object.assign(new Error("Fixture folder sync failed"), { code: "FIXTURE_SYNC_FAILED" });
-    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockRejectedValue(failure);
-    try {
-      const f = await connected();
-      const [folder] = await sql<{ id: string }[]>`
-        SELECT folder.id FROM mail.folders folder
-        JOIN mail.provider_bindings binding ON binding.remote_resource_id = folder.remote_resource_id
-        WHERE binding.id = ${f.bindingId}::uuid AND folder.role = 'inbox'
-      `;
-      expect(folder).toBeDefined();
-      await sql`UPDATE mail.mailboxes SET health = 'active', health_reason = NULL WHERE id = ${f.mailboxId}::uuid`;
-      const fail = async () => {
-        await expect(syncFolderBatch(folder!.id, async () => undefined)).rejects.toBe(failure);
-        const [mailbox] = await sql`SELECT health, health_reason FROM mail.mailboxes WHERE id = ${f.mailboxId}::uuid`;
-        expect(mailbox).toEqual({ health: "degraded", health_reason: failure.message });
-      };
-      await change(f.mailboxId, fail);
-      await clear(f.mailboxId);
-      await fail();
-      expect(status).toHaveBeenCalledTimes(2);
-      expect(await pending(f.mailboxId)).toEqual([]);
-      expect(await pending(sentinelId)).toEqual([]);
-    } finally {
-      status.mockRestore();
-      setSystemTime();
-    }
-  });
-
-  test("updateMailbox notifies both scopes, and a no-op stays quiet", async () => {
-    const mailboxId = await mailbox();
-    await change(mailboxId, async () => unwrap(await updateMailbox({ context, mailboxId, name: "Renamed", syncEnabled: false })));
-    await clear(mailboxId);
-    unwrap(await updateMailbox({ context, mailboxId, name: "Renamed", syncEnabled: false }));
-    expect(await pending(mailboxId)).toEqual([]);
-  });
   test("createSenderIdentity notifies both scopes", async () => {
     const mailboxId = await mailbox();
     await change(mailboxId, () => identity(mailboxId));
@@ -366,67 +263,6 @@ suite("Mail frame writers invalidate open mailboxes", () => {
     expect((await disableSenderIdentity(params)).ok).toBe(false);
     expect(await pending(mailboxId)).toEqual([]);
   });
-
-  test("granting, changing and revoking mailbox access each notify both scopes", async () => {
-    const mailboxId = await mailbox();
-    const reader = `mail-frame-reader-${crypto.randomUUID()}`;
-    const [row] = await sql<{ id: string }[]>`
-      INSERT INTO auth.users (uid, provider, profile, display_name, admin)
-      VALUES (${reader}, 'local', 'user', 'Frame reader', false) RETURNING id
-    `;
-    try {
-      let accessId = "";
-      await change(mailboxId, async () => {
-        accessId = unwrap(
-          await grantMailboxAccess({ context, mailboxId, principal: { type: "user", userId: row!.id }, permission: "write" }),
-        ).id;
-      });
-      await change(mailboxId, async () => unwrap(await updateMailboxAccess({ context, mailboxId, accessId, permission: "read" })));
-      await change(mailboxId, async () => unwrap(await revokeMailboxAccess({ context, mailboxId, accessId })));
-    } finally {
-      await sql`DELETE FROM auth.users WHERE id = ${row!.id}::uuid`;
-    }
-  });
-
-  for (const operation of ["create", "update", "delete"] as const)
-    test(`private saved view ${operation} notifies both scopes without an activity or private content`, async () => {
-      const mailboxId = await mailbox();
-      const input = {
-        scope: "private" as const,
-        name: "Private subject",
-        filter: { sort: "newest" as const, expression: { type: "all" as const } },
-      };
-      const view = operation === "create" ? null : unwrap(await createSavedConversationView({ context, mailboxId, input }));
-      await change(mailboxId, async () => {
-        if (operation === "create") return unwrap(await createSavedConversationView({ context, mailboxId, input }));
-        if (operation === "update")
-          return unwrap(
-            await updateSavedConversationView({
-              context,
-              mailboxId,
-              viewId: view!.id,
-              input: { expectedRevision: view!.revision, name: "Private rename" },
-            }),
-          );
-        return unwrap(await deleteSavedConversationView({ context, mailboxId, viewId: view!.id, expectedRevision: view!.revision }));
-      });
-      if (operation === "update") {
-        await change(mailboxId, async () => {
-          const unchanged = unwrap(
-            await updateSavedConversationView({
-              context,
-              mailboxId,
-              viewId: view!.id,
-              input: { expectedRevision: view!.revision + 1, name: "Private rename", filter: input.filter },
-            }),
-          );
-          expect(unchanged.revision).toBe(view!.revision + 2);
-        });
-      }
-      const activity =
-        await sql`SELECT id FROM mail.activity_events WHERE mailbox_id = ${mailboxId}::uuid AND target_type = 'saved_conversation_view'`;
-      expect(activity).toHaveLength(0);
-    });
 
   for (const operation of ["create", "replace", "revoke"] as const)
     test(`provider connection ${operation} invalidates the receiving address`, async () => {

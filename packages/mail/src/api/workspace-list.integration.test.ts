@@ -32,14 +32,16 @@ import type { apiClient } from "./client";
 type ListResponse = InferResponseType<(typeof apiClient.mailboxes)[":mailboxId"]["workspace-list"]["$get"], 200>;
 const inferredListView = (data: ListResponse): MailboxListView => data;
 
-// Page 2 of the folder fixture with a conversation open, measured on 2026-10-18: workspace-route sends 25,254 bytes
-// (the whole workspace and the open conversation's detail), workspace-list 3,411 bytes. The budget sits between them
-// with room for row fields, and fails when a list page carries the workspace or the selection again.
+// Page 2 of the folder fixture with a conversation open, measured on 2026-10-19: workspace-route sends 16,861 bytes
+// (the whole workspace and the open conversation's detail), workspace-list 4,145 bytes (the list plus the mailbox, the
+// reader's access and the saved views). The budget sits between them with room for row fields, and fails when a list
+// page carries the workspace or the selection again.
 const WORKSPACE_LIST_PAGE_TWO_MAX_BYTES = 5_000;
-// Page 1 of the folder fixture on a folder switch, measured on 2026-10-19: workspace-route sends 48,045 bytes (the
-// list plus mailbox, folders, counts, identities and saved views), workspace-list 44,940 bytes. Fifty rows dominate
-// this small mailbox; the budget sits between the two and fails when the switch carries the mailbox frame again.
-const WORKSPACE_LIST_FOLDER_SWITCH_MAX_BYTES = 46_000;
+// Page 1 of the folder fixture on a folder switch, measured on 2026-10-19: workspace-route sends 48,069 bytes (the
+// list plus mailbox, folders, counts, identities and saved views), workspace-list 45,674 bytes (the list plus mailbox,
+// access and saved views). Fifty rows dominate this small mailbox; the budget sits between the two and fails when the
+// switch carries the folders, counts or identities again.
+const WORKSPACE_LIST_FOLDER_SWITCH_MAX_BYTES = 46_500;
 const anchor = new Date("2026-10-01T12:00:00.000Z");
 const suite = suiteFor("database", "nats", "valkey");
 const contextFor = (user: User): MailRequestContext => ({
@@ -48,6 +50,10 @@ const contextFor = (user: User): MailRequestContext => ({
   requestId: null,
 });
 const listFields = [
+  "mailbox",
+  "permission",
+  "access",
+  "savedViews",
   "scheduledMode",
   "scheduledPage",
   "scheduledError",
@@ -302,7 +308,6 @@ suite("Mail workspace list pages", () => {
     const spies = [
       spyOn(messages, "getConversationViewCounts"),
       spyOn(senderIdentities, "listSenderIdentities"),
-      spyOn(mailboxes, "getMailbox"),
       spyOn(scheduledSends, "countScheduledSends"),
       spyOn(mailboxes, "getMailboxReceivingAddress"),
       spyOn(mailLive, "cursor"),
@@ -364,7 +369,6 @@ suite("Mail workspace list pages", () => {
     const spies = [
       spyOn(messages, "getConversationViewCounts"),
       spyOn(senderIdentities, "listSenderIdentities"),
-      spyOn(mailboxes, "getMailbox"),
       spyOn(scheduledSends, "countScheduledSends"),
       spyOn(mailboxes, "getMailboxReceivingAddress"),
       spyOn(mailLive, "cursor"),

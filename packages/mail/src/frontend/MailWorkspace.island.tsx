@@ -400,8 +400,9 @@ function MailWorkspaceView(props: {
   const routeKey = createMemo(() => routeListKey(routeSource()));
   let committedRouteSource = initialRouteSource;
   /**
-   * Another list without a selection loads only its list view and keeps the mailbox, folders, counts and access shown:
-   * live updates refresh them exactly as while the person stays in one list. The whole snapshot loads while live
+   * Another list without a selection loads only its list view, which also brings the mailbox, access and saved views,
+   * and keeps the folders, counts, identities and tags shown (`MailWorkspaceFrame`): live updates refresh them exactly as
+   * while the person stays in one list. The whole snapshot loads while live
    * updates are not caught up, when the page started without a live cursor (changes before the subscription would not
    * reach it), for a change of the list mode, and for a target that opens a conversation or message.
    */
