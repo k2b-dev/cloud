@@ -148,7 +148,8 @@ export default function TargetsAdmin(props: { initialPage: InternalTargetsPage |
   };
   const add = async () => {
     const created = await openAddTarget(t(), controller.signal);
-    if (created) setRows([created, ...rows().filter((row) => row.id !== created.id)]);
+    // Reload the first page: an added or removed row shifts the server offsets of every later page.
+    if (created) await reload();
   };
   const remove = async (target: InternalTarget) => {
     const confirmed = await prompts.confirm(t().removeTargetText({ base: target.baseName }), {
@@ -162,6 +163,7 @@ export default function TargetsAdmin(props: { initialPage: InternalTargetsPage |
     try {
       await adminClient.removeTarget(target.id, controller.signal);
       setRows(rows().filter((row) => row.id !== target.id));
+      await reload();
     } catch (cause) {
       if (!controller.signal.aborted) toast.error(adminErrorText(t(), codeOf(cause)));
     } finally {

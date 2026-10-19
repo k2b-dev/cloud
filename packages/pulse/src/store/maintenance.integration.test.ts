@@ -98,6 +98,10 @@ suite("Pulse accounting and restore checkpoints", () => {
       expect(await verifyBaseCheckpoint(base.id, store)).toBe(false);
       expect((await loadStoreRow(base.id))?.write_block_reason).toBe("checkpoint_mismatch");
       expect((await requireBaseWritable(base.id)).ok).toBe(false);
+      // An hourly checkpoint whose acceptance failed left a pending id; a clear must not reuse it, or a backup
+      // from before the clear would match the Postgres state after it.
+      const stale = "0f0f0f0f-0000-4000-8000-000000000001";
+      await sql`UPDATE pulse.base_stores SET pending_checkpoint_id=${stale}::uuid WHERE base_id=${base.id}::uuid`;
       expect((await adminBaseAction(adminFixtureIdentity(), base.shortId, "recreate")).store.state).toBe("clearing");
       expect((await loadStoreRow(base.id))?.schema_version).toBe(0);
       expect(submit).toHaveBeenCalledWith(base.id, base.shortId);
@@ -106,6 +110,7 @@ suite("Pulse accounting and restore checkpoints", () => {
       expect(row).toMatchObject({ state: "active", write_block_reason: null });
       expect(row?.checkpoint_id).toBeTruthy();
       expect(row?.checkpoint_id).not.toBe(original);
+      expect(row?.checkpoint_id).not.toBe(stale);
       expect((await requireBaseWritable(base.id)).ok).toBe(true);
       const checkpoints = await store.query(`SELECT toString(id) AS id FROM ${q(base.database)}._checkpoints`);
       expect(checkpoints).toEqual([{ id: row!.checkpoint_id }]);

@@ -485,7 +485,8 @@ export const clearBaseData = async (params: { baseId: string; user: AccessScope 
     if (!active.ok) return active;
     const authorized = await requireBaseAccess(params.baseId, params.user, "admin", tx);
     if (!authorized.ok) return authorized;
-    await tx`UPDATE pulse.base_stores SET state='clearing',operation='clear',attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
+    // A clear gets a fresh checkpoint identity; retries of this clear keep the one its first run prepared.
+    await tx`UPDATE pulse.base_stores SET state='clearing',operation='clear',pending_checkpoint_id=NULL,attempts=0,updated_at=now() WHERE base_id=${params.baseId}::uuid`;
     await tx`
       UPDATE pulse.bases
       SET data_clear_started_at = now(),

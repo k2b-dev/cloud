@@ -294,15 +294,20 @@ describe("Pulse administration tabs in a browser", () => {
       await dialog.getByRole("combobox", { name: "Base" }).click();
       await page.getByRole("option", { name: "Betrieb" }).click();
       await dialog.getByRole("textbox", { name: /Target/ }).fill("0.0.0.0/0");
-      await page.route(`${origin}/api/pulse/admin/targets`, (route) =>
-        route.request().method() === "POST"
-          ? route.fulfill(
-              (route.request().postDataJSON() as { entry: string }).entry === "0.0.0.0/0"
-                ? { status: 400, json: { code: "TARGET_TOO_BROAD" } }
-                : { status: 201, json: created },
-            )
-          : route.fallback(),
-      );
+      // The server list the tab reloads after every change: a change shifts the offsets of later pages.
+      let listed = [...targetsPage.items];
+      await page.route(`${origin}/api/pulse/admin/targets**`, (route) => {
+        const method = route.request().method();
+        if (method === "POST") {
+          if ((route.request().postDataJSON() as { entry: string }).entry === "0.0.0.0/0")
+            return route.fulfill({ status: 400, json: { code: "TARGET_TOO_BROAD" } });
+          listed = [created, ...listed];
+          return route.fulfill({ status: 201, json: created });
+        }
+        if (method === "DELETE") listed = listed.filter((item) => !route.request().url().endsWith(`/${item.id}`));
+        if (method === "GET") return route.fulfill({ json: { items: listed, total: listed.length, nextOffset: null } });
+        return route.fallback();
+      });
       await dialog.getByRole("button", { name: "Release target" }).click();
       await dialog.getByText("A /0 network would allow every address.", { exact: false }).waitFor();
       await dialog.getByRole("textbox", { name: /Target/ }).fill("db-02:5432");

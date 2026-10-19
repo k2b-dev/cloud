@@ -143,7 +143,7 @@ export const adminBaseAction = async (identity: StoreIdentity, id: string, actio
   } else {
     const changed = await sql.begin(async (tx) => {
       await tx`SELECT id FROM pulse.bases WHERE id=${base.id}::uuid FOR UPDATE`;
-      return tx`UPDATE pulse.base_stores SET state='clearing',operation='clear',schema_version=0,attempts=0,updated_at=now() WHERE base_id=${base.id}::uuid AND state='active' RETURNING base_id`;
+      return tx`UPDATE pulse.base_stores SET state='clearing',operation='clear',schema_version=0,pending_checkpoint_id=NULL,attempts=0,updated_at=now() WHERE base_id=${base.id}::uuid AND state='active' RETURNING base_id`;
     });
     if (!changed.length) throw new BaseAdminError("BASE_BUSY", 409);
     await submitBaseLifecycleJob(base.id, base.short_id);
