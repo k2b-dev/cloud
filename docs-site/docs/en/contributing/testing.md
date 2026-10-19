@@ -201,6 +201,15 @@ for a step before it: the continuous month test waits until the grid rests at
 the week and the header names the month, because the view names the month in
 an animation frame after the scroll event.
 
+A live region that a component fills after a timer is read with a bounded
+wait, such as `waitForFunction` on its text, never once after `settled()`.
+`settled()` waits for fonts, animations, and frames, not for timers. The
+outcome line of `ChatOutcome` in `@k2b/ui` empties its `role="status"` region
+and fills it 40 ms later, so that the same words spoken again are announced.
+The answering case in `action-question.browser.test.ts` holds the fixture's
+answer, waits until the status names the pending line, and only then releases
+the answer ([#1572](https://github.com/k2b-dev/cloud/issues/1572)).
+
 The `test-waits` check rejects new awaited fixed waits of at least 1,000 ms
 with a numeric literal in `*.test.ts` and `*.test.tsx` files. A line comment
 `// fixed wait: <reason>` on the same line or directly above allows a wait
