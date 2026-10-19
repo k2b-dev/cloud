@@ -25,6 +25,12 @@ export const interactions = [
     end: "The reader shows the body of the conversation's newest message in the viewport (HTML: after its frame reported its height)",
   },
   {
+    id: "conversation-open-large",
+    start: "An exact subject search for the fixture's largest thread (Project correspondence 0), verified on page 1 before each sample",
+    action: "Click the largest thread's conversation row (180 messages by default; the reader loads the newest 100)",
+    end: "The reader shows the body of the thread's newest message in the viewport (HTML: after its frame reported its height)",
+  },
+  {
     id: "list-scroll",
     start: "Inbox",
     action: "Scroll the conversation list to its end",

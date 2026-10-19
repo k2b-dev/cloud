@@ -45,11 +45,12 @@ Plain Postgres uses search fallback; BM25 availability is recorded.
 
 Browser part: mailbox and compose page loads (eager/lazy JS brotli and
 modules, FCP, LCP, TTI, island mount end, island render time, long tasks,
-one extra traced Chromium load for main-thread shares), and six interactions
+one extra traced Chromium load for main-thread shares), and seven interactions
 timed from the input event (or ingest commit) to the painted DOM end state:
-folder-switch, conversation-open, list-scroll, search-submit, live-arrival,
-compose-open. Desktop 1440x900 and phone 390x844; Chromium phone has 4x CPU
-slowdown and a 1.6 Mbit/s, 150 ms network. Local emulation, not real phones.
+folder-switch, conversation-open, conversation-open-large, list-scroll,
+search-submit, live-arrival, compose-open. Desktop 1440x900 and phone 390x844;
+Chromium phone has 4x CPU slowdown and a 1.6 Mbit/s, 150 ms network.
+Local emulation, not real phones.
 
 Cold means first scenario invocation, not flushed database/OS caches. Scenarios
 share a seeded installation; background noise is recorded in a 5-second idle

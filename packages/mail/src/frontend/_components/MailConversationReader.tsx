@@ -37,7 +37,7 @@ import type {
 import type { MailActivityEvent } from "../../service/collaboration";
 import type { ConversationKeep } from "../../service/conversation-keeps";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
-import type { MessageDetail } from "../../service/messages";
+import type { MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import MailConversationSummaryCard from "./MailConversationSummaryCard";
 import { openMailConversationToolbarDialog } from "./MailConversationToolbarDialog";
@@ -65,7 +65,7 @@ import { captureMailWorkspaceRefreshError } from "./mail-workspace-refresh";
 
 type MailConversationComposerRequest = {
   intent: DraftIntent;
-  message: MessageDetail;
+  message: MailWorkspaceMessage;
   quotedBody?: string;
 };
 
@@ -102,7 +102,7 @@ export default function MailConversationReader(props: {
   keep: ConversationKeep | null;
   reference: string | null;
   subject: string;
-  messages: MessageDetail[];
+  messages: MailWorkspaceMessage[];
   activity: MailActivityEvent[];
   conversationSummary: ConversationContentSummary | null;
   conversationDrafts: ConversationDraftSummary[];
@@ -513,10 +513,10 @@ export default function MailConversationReader(props: {
   const derivedDraft = mutations.create<
     MailDraftSeed,
     {
-      message: MessageDetail;
+      message: MailWorkspaceMessage;
       input: Omit<DeriveDraftFromMessageInput, "idempotencyKey">;
     },
-    { message: MessageDetail }
+    { message: MailWorkspaceMessage }
   >({
     onBefore: ({ message }) => ({ message }),
     mutation: async ({ message, input }, { abortSignal }) => {
@@ -549,7 +549,7 @@ export default function MailConversationReader(props: {
   });
   const composerBusy = () => conversationDrafts.loading() || createdDraft.loading() || derivedDraft.loading();
 
-  const startComposer = (intent: DraftIntent, message: MessageDetail, quotedBody?: string) => {
+  const startComposer = (intent: DraftIntent, message: MailWorkspaceMessage, quotedBody?: string) => {
     const conversationId = props.selectedConversationId;
     if (!conversationId || composerBusy()) return;
     void conversationDrafts.mutate({
@@ -558,7 +558,7 @@ export default function MailConversationReader(props: {
     });
   };
 
-  const deriveMessage = async (kind: DraftDerivationKind, message: MessageDetail) => {
+  const deriveMessage = async (kind: DraftDerivationKind, message: MailWorkspaceMessage) => {
     if (composerBusy() || derivedDraft.loading()) return;
     const selectionKey = props.selectionKey;
     const identities = props.identities.filter((identity) => identity.status === "verified");
@@ -686,7 +686,7 @@ export default function MailConversationReader(props: {
     derivedDraft.abort();
   });
 
-  const startQuoteReply = (message: MessageDetail, body: HTMLElement) => {
+  const startQuoteReply = (message: MailWorkspaceMessage, body: HTMLElement) => {
     const selection = window.getSelection();
     const selectedInFrame = messageSelections()[message.id]?.trim() ?? "";
     const hostSelection = selection?.toString().trim() ?? "";

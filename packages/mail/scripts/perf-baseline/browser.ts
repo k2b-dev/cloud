@@ -192,6 +192,11 @@ const listSchema = z.object({
   ),
 });
 type ListItem = z.infer<typeof listSchema>["listItems"][number];
+const detailSchema = z.object({
+  detailMessages: z.array(
+    z.object({ id: z.string(), hydrationStatus: z.string(), plainText: z.string().nullable(), sanitizedHtml: z.string().nullable() }),
+  ),
+});
 const rowSelector = (item: ListItem) =>
   item.selectionKind === "message" || !item.conversationId
     ? `[data-mail-conversation-list] [data-message-id="${item.id}"]`
@@ -259,11 +264,6 @@ class MailBrowser {
   }
   /** The reader folder's first conversation whose newest message has its body. */
   private async hydratedConversation() {
-    const detailSchema = z.object({
-      detailMessages: z.array(
-        z.object({ id: z.string(), hydrationStatus: z.string(), plainText: z.string().nullable(), sanitizedHtml: z.string().nullable() }),
-      ),
-    });
     for (const row of (await this.route(this.readerFolder)).listItems) {
       if (!row.conversationId) continue;
       const detail = detailSchema.parse(
@@ -361,6 +361,52 @@ class MailBrowser {
               conditions: [
                 { selector: `[data-mail-message-id="${newest}"] .mail-message-body`, visible: true, framesReported: true },
                 { selector: `[data-mail-message-id="${newest}"] [data-mail-body-format]` },
+              ],
+            });
+            await this.press(profile, link);
+            return null;
+          },
+        };
+      }
+      case "conversation-open-large": {
+        /**
+         * Exact subject search isolates conversation 0 on page 1 without scrolling, even
+         * when its date ranks below other done threads. Inbox live arrivals have different
+         * subjects, so they cannot displace this row after repeated samples.
+         */
+        const subject = this.setup.plan.messages.find((message) => message.conversation === shape.largestThreadId)?.subject;
+        if (!subject) throw new Error(`${id}: fixture thread ${shape.largestThreadId} has no subject`);
+        const start = buildMailSearchHref(new URL(this.base, this.setup.api.origin), {
+          search: JSON.stringify({ expression: { type: "text", field: "subject", query: subject, match: "exact" }, sort: "newest" }),
+        });
+        const row = (await this.route(start)).listItems.find(
+          (item) => item.selectionKind === "conversation" && item.conversationId === shape.largestThreadId,
+        );
+        if (!row) throw new Error(`${id}: thread ${shape.largestThreadId} is missing from page 1 of ${start}`);
+        const detail = detailSchema.parse(
+          await this.setup.api.request(`/api/mail/mailboxes/${this.setup.mailbox.shortId}/workspace-detail/${shape.largestThreadId}`),
+        );
+        const newest = detail.detailMessages.at(-1);
+        if (
+          !newest ||
+          (newest.hydrationStatus !== "complete" && newest.hydrationStatus !== "body") ||
+          !(newest.plainText || newest.sanitizedHtml)
+        )
+          throw new Error(`${id}: newest message of thread ${shape.largestThreadId} has no body`);
+        return {
+          startPath: start,
+          act: async (page, profile) => {
+            const link = page
+              .locator(`${rowSelector(row)} a`)
+              .filter({ visible: true })
+              .first();
+            await link.waitFor({ timeout: interactionTimeoutMs });
+            await this.arm(page, {
+              id,
+              action: "pointerdown",
+              conditions: [
+                { selector: `[data-mail-message-id="${newest.id}"] .mail-message-body`, visible: true, framesReported: true },
+                { selector: `[data-mail-message-id="${newest.id}"] [data-mail-body-format]` },
               ],
             });
             await this.press(profile, link);

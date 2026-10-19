@@ -336,7 +336,7 @@ function MailOverviewView(props: {
       const [mailboxId, conversationId] = source.split("/");
       if (!mailboxId || !conversationId) throw new Error(messages().invalidConversationSelection);
       const response = await apiClient.mailboxes[":mailboxId"]["workspace-detail"][":conversationId"].$get(
-        { param: { mailboxId, conversationId } },
+        { param: { mailboxId, conversationId }, query: {} },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadConversationDetails));

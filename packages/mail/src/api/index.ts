@@ -900,11 +900,16 @@ const mailOperationsApi = new Hono<MailApiContext>()
         conversationId: ResourceShortIdSchema,
       }),
     ),
+    v("query", z.object({ folder: ResourceShortIdSchema.optional() })),
     async (c) => {
       const params = internalParams(c, c.req.valid("param"));
+      const { folder } = c.req.valid("query");
+      const preferredFolderId = folder ? await publicResources.resolveMailboxPublicId("folders", internalMailboxId(c), folder) : undefined;
+      if (folder && !preferredFolderId) return respondPublic(c, fail(err.notFound("Folder")));
       const detail = await loadMailboxConversationDetail({
         context: requestContext(c),
         ...params,
+        preferredFolderId,
         locale: getLocale(c),
       });
       return respondAggregate(c, detail ? { ok: true, data: detail } : fail(err.notFound("Conversation")));
