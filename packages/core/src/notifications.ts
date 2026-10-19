@@ -2,12 +2,12 @@ import { createHash } from "node:crypto";
 import { type BoundNotificationMap, type NotificationDeliveryPolicy, notification } from "@k2b/cloud";
 import { APP_LOGIN_CONTEXT_BROWSERS, APP_LOGIN_CONTEXT_OSES } from "@k2b/cloud/contracts/app-approval";
 import {
-  SIGN_IN_METHODS,
-  type SignInMethod,
   type AppDeviceEnrollmentNotice,
   notifications,
   type PwaDevicePairedNotice,
   renderTemplate,
+  SIGN_IN_METHODS,
+  type SignInMethod,
 } from "@k2b/cloud/services";
 import type { AccountLifecycleNotificationSender } from "@k2b/cloud/services/account-lifecycle/notification-sender";
 import type { AuthNotificationSender } from "@k2b/cloud/services/auth-flows";
@@ -94,7 +94,8 @@ const notificationMessages = i18n.define({
       newBrowserAction:
         "Falls du das nicht warst, prüfe unter <strong>Konto\u00a0› Anmeldung</strong> deine gekoppelten Geräte und wende dich an die Administration.",
       openSignIn: "Anmeldung öffnen",
-      newBrowserFooter: "Diese Mitteilung kommt einmal pro neuem Browser. Du kannst sie unter Konto\u00a0› Benachrichtigungen abschalten.",
+      newBrowserFooter:
+        "Diese Benachrichtigung kommt einmal pro neuem Browser. Du kannst sie unter Konto\u00a0› Benachrichtigungen abschalten.",
       approximateFooter: " Ortsangaben sind ungefähr.",
       deviceTitle: "Neues Anmeldegerät gekoppelt",
       deviceBody: ({ name, assisted }) =>

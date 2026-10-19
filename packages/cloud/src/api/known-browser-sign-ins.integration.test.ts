@@ -8,11 +8,11 @@ import * as requestContext from "../server/request-context";
 import { AppApprovalError, appApproval } from "../services/app-approval";
 import { authFlows } from "../services/auth-flows";
 import {
-  type NewBrowserSignInNotifier,
-  type NewBrowserSignInNotice,
-  type SignInMethod,
   browserHash,
+  type NewBrowserSignInNotice,
+  type NewBrowserSignInNotifier,
   newBrowserCookie,
+  type SignInMethod,
 } from "../services/known-browsers";
 import { session } from "../services/session";
 import { loadCurrentUser } from "../services/session/user";

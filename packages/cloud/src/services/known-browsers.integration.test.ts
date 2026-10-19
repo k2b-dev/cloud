@@ -5,16 +5,16 @@ import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { env } from "../config/env";
 import * as requestContext from "../server/request-context";
-import * as sessionTokens from "./identity/session-token";
 import * as keyRing from "./identity/key-ring";
+import * as sessionTokens from "./identity/session-token";
 import {
-  type NewBrowserSignInNotice,
-  type NewBrowserSignInNotifier,
   browserHash,
   cleanup,
-  maintainNotices,
   countrySeen,
   findBrowser,
+  maintainNotices,
+  type NewBrowserSignInNotice,
+  type NewBrowserSignInNotifier,
   newBrowserCookie,
   rememberSignIn,
   trustState,

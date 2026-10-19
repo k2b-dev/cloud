@@ -18,11 +18,11 @@ import {
   announceNewBrowser,
   type NewBrowserSignInNotice,
   type NewBrowserSignInNotifier,
-  type SignInMethod,
   newBrowserCookie,
   noticeFirstName,
   readBrowserCookie,
   rememberSignIn,
+  type SignInMethod,
   setBrowserCookie,
 } from "../known-browsers";
 import * as settings from "../settings";

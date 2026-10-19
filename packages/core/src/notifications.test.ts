@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
-import { coreSettings } from "@k2b/cloud/services";
-import * as settingsStore from "@k2b/cloud/services/settings/store";
+import { coreSettings, SIGN_IN_METHODS } from "@k2b/cloud/services";
 import { prepareNotificationEmail } from "@k2b/cloud/services/notifications/email-frame";
-import { SIGN_IN_METHODS } from "@k2b/cloud/services";
+import * as settingsStore from "@k2b/cloud/services/settings/store";
 import { app } from "./config";
 
 describe("Core notification definitions", () => {
@@ -145,7 +144,7 @@ describe("new-browser sign-in notice", () => {
           : "If this wasn't you, check your paired devices under <strong>Account\u00a0› Sign-in</strong> and contact your administrator.",
         de ? "Anmeldung öffnen" : "Open sign-in",
         de
-          ? "Diese Mitteilung kommt einmal pro neuem Browser. Du kannst sie unter Konto\u00a0› Benachrichtigungen abschalten."
+          ? "Diese Benachrichtigung kommt einmal pro neuem Browser. Du kannst sie unter Konto\u00a0› Benachrichtigungen abschalten."
           : "You get this notice once per new browser. You can turn it off under Account\u00a0› Notifications.",
         de ? "Ortsangaben sind ungefähr." : "Locations are approximate.",
         'href="https://cloud.example.test/me/security"',
