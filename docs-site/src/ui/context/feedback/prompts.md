@@ -398,7 +398,7 @@ answers the prompt with `undefined`, like Cancel.
 
 The dialog adds a same-URL history entry while it is open. Back, or the
 Android back gesture, closes it and every dialog opened after it; nested
-history dialogs close one Back at a time. Closing it any other way removes the
+history dialogs close one Back at a time. Closing it normally removes the
 entry again, and the returned promise settles only after that, so the caller
 can navigate or open the next dialog right away. Dialogs closed together leave
 the history in one step. After a reload, a leftover entry never reopens a
@@ -411,6 +411,13 @@ synthetic Back on close is suppressed; user Back and Forward still reach listene
 A Back or Forward that changes the address still reaches them, also when
 the application pushed or replaced an address while a dialog was open; closing
 such a dialog then leaves that history alone.
+
+A dialog closes when the island that opened it is disposed, together with the
+dialogs stacked above it. The opening island is the one around the clicked
+element, or around the focused element when no event is being handled; a
+dialog opened from a timer or outside any island stays open. Its history entry
+stays in the browser and is left to the router; later traversals of that entry
+reach application listeners normally.
 
 Use the option for dialogs a person opens on purpose. Leave it off for
 confirmations inside another dialog, which Back closes together with their

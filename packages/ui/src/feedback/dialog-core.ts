@@ -18,9 +18,11 @@ export type OpenDialogOptions = {
   ariaLabel?: string;
   /**
    * Add a same-URL history entry while the dialog is open, so the browser's or the phone's Back closes the dialog
-   * instead of leaving the page. Closing the dialog removes the entry again; the returned promise settles after that.
+   * instead of leaving the page. Normally closing the dialog removes the entry again; the returned promise settles after that.
    * With the Navigation API, same-URL traversals between this core's entries and the page do not reach application popstate listeners.
    * Without it, only the synthetic Back on close is suppressed.
+   * Island disposal closes its dialogs immediately and forgets their markers without traversing history.
+   * The same-URL entry remains for the router to replace; later traversals are ordinary application popstate events.
    */
   history?: boolean;
 };
@@ -54,6 +56,7 @@ type DialogStackEntry = {
   cancelBehavior: NonNullable<OpenDialogOptions["cancelBehavior"]>;
   initialFocus: NonNullable<OpenDialogOptions["initialFocus"]>;
   opener?: HTMLElement;
+  island?: Element;
   openerRing: boolean;
   ariaLabel?: string;
   dismissHandler?: () => void | Promise<void>;
@@ -87,7 +90,7 @@ const HISTORY_MARKER = "k2bDialog";
 const historyRecord = (): Record<string, unknown> =>
   typeof history.state === "object" && history.state !== null ? { ...history.state } : {};
 const historyMarker = (): unknown => historyRecord()[HISTORY_MARKER];
-const historySnapshot = () => ({ href: location.href, length: history.length });
+const historySnapshot = () => ({ href: location.href, length: history.length, marker: historyMarker() });
 
 const resolveInitialFocusTarget = (entry: DialogStackEntry, dialog: HTMLDialogElement): HTMLElement | null => {
   const { initialFocus } = entry;
@@ -143,17 +146,20 @@ export const createDialogCore = () => {
   /** Markers of this core's entries in the browser history, oldest first. */
   let historyIds: number[] = [];
   const issued = new Set<number>();
+  /** Only disposed markers: foreign history keeps its existing behavior. */
+  const forgotten = new Set<number>();
   const ownMarker = (marker: unknown): marker is number => typeof marker === "number" && issued.has(marker);
   let seen: ReturnType<typeof historySnapshot> | undefined;
   let traversalFrom: { href: string; marker: unknown } | undefined;
   let syntheticFrom: { href: string; marker: unknown } | undefined;
   const historyHolders = new Set<HistoryHolder>();
   let historySyncScheduled = false;
+  let disposingIslands = false;
   /** Settles when the synthetic Back that removes closed dialogs' entries has arrived. */
   let returning: Promise<void> | undefined;
   let resolveReturning: (() => void) | undefined;
 
-  /** Closed entries leave with one Back to the newest live dialog or holder, or to the page. */
+  /** Outside island disposal, closed entries leave with one Back to the newest live dialog or holder, or to the page. */
   const syncHistory = () => {
     if (returning) {
       void returning.then(() => {
@@ -183,7 +189,17 @@ export const createDialogCore = () => {
   };
 
   const releaseHistory = (entry: HistoryEntry) => {
-    if (entry.historyId === undefined || historySyncScheduled) return;
+    if (entry.historyId === undefined) return;
+    // During a content swap the router owns history. Forget the dead marker, leaving its entry for the router
+    // to replace. Later Back/Forward involving that entry must reach application listeners normally.
+    if (disposingIslands) {
+      historyIds = historyIds.filter((id) => id !== entry.historyId);
+      issued.delete(entry.historyId);
+      forgotten.add(entry.historyId);
+      entry.historyId = undefined;
+      return;
+    }
+    if (historySyncScheduled) return;
     historySyncScheduled = true;
     queueMicrotask(syncHistory);
   };
@@ -198,6 +214,11 @@ export const createDialogCore = () => {
     resolveReturning = undefined;
     try {
       const marker = historyMarker();
+      // An island's forgotten entry is ordinary same-URL history, even next to a still-open dialog's marker.
+      // Without the Navigation API, the last observed marker identifies departure from that dead entry.
+      const departure = from ?? seen;
+      const dead = (value: unknown) => typeof value === "number" && forgotten.has(value);
+      if (departure?.href === location.href && (dead(departure.marker) || dead(marker))) return;
       if (from && from.href === location.href && from.marker !== marker && (ownMarker(from.marker) || ownMarker(marker))) {
         event.stopImmediatePropagation();
       }
@@ -218,6 +239,20 @@ export const createDialogCore = () => {
     }
   };
 
+  const onIslandDispose = (event: Event) => {
+    if (!disposingIslands) {
+      disposingIslands = true;
+      queueMicrotask(() => {
+        disposingIslands = false;
+      });
+    }
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const lowest = state.stack.findIndex((entry) => entry.island && target.contains(entry.island));
+    if (lowest < 0) return;
+    while (state.stack.length > lowest) popTop(undefined);
+  };
+
   const onNavigate = (event: NavigateEvent) => {
     if (event.navigationType === "traverse") traversalFrom = { href: location.href, marker: historyMarker() };
   };
@@ -226,8 +261,11 @@ export const createDialogCore = () => {
   const listen = () => {
     if (listening?.window === window) return;
     listening?.window.removeEventListener("popstate", onPopState, { capture: true });
+    listening?.window.removeEventListener("ssr:island-dispose", onIslandDispose, { capture: true });
     listening?.navigation?.removeEventListener("navigate", onNavigate);
     window.addEventListener("popstate", onPopState, { capture: true });
+    // Capture opens the disposal window before target listeners can release history holders.
+    window.addEventListener("ssr:island-dispose", onIslandDispose, { capture: true });
     const current = typeof navigation !== "undefined" ? navigation : undefined;
     current?.addEventListener("navigate", onNavigate);
     listening = { window, navigation: current };
@@ -270,7 +308,7 @@ export const createDialogCore = () => {
   };
 
   /**
-   * Settles once released entries have left the history. A caller that navigates or pushes an entry of its own waits
+   * Settles once released entries have left history or were forgotten during island disposal. A caller that navigates waits
    * for it, as a dialog's result waits: a Back still on its way would otherwise land behind the new entry.
    */
   const historySettled = async (): Promise<void> => {
@@ -474,9 +512,15 @@ export const createDialogCore = () => {
       if (returning) return returning.then(() => open(view, options));
     }
     const dialog = ensureDialogElement();
+    listen();
     const previousTop = state.stack[state.stack.length - 1];
     if (previousTop) previousTop.container.style.display = "none";
     const activeElement = document.activeElement;
+    // The island around the element that opened this dialog. WebKit does not focus a clicked button, so the target of
+    // the event being dispatched comes first. A level opened from inside a dialog closes with the level below it.
+    const trigger = window.event?.target instanceof Element ? window.event.target : activeElement;
+    const island =
+      trigger instanceof Element && !dialog.contains(trigger) ? (trigger.closest("solid-island,solid-client") ?? undefined) : undefined;
 
     const panelClassName = options.panelClassName ?? DEFAULT_PANEL_CLASS;
     const cancelBehavior = options.cancelBehavior ?? "resolve-undefined";
@@ -493,6 +537,7 @@ export const createDialogCore = () => {
       cancelBehavior,
       initialFocus,
       opener: activeElement instanceof HTMLElement ? activeElement : undefined,
+      island,
       openerRing: ringOnReturn(activeElement),
       ariaLabel: options.ariaLabel,
       modal: true,
@@ -613,7 +658,8 @@ export const dialogCore: DialogCore = publicDialogCore;
 /**
  * Internal: transient UI shares dialogs' Back handling without exposing another public dialog capability.
  * Same-URL traversals are suppressed with the Navigation API; without it, only the synthetic Back on release is suppressed.
+ * Release during island disposal forgets the marker without traversing; the router may replace the remaining entry.
  */
 export const holdDialogHistory = holdHistory;
-/** Internal: waits until entries released through `holdDialogHistory` have left the history. */
+/** Internal: waits until released holders have left history or were forgotten during island disposal. */
 export const dialogHistorySettled = historySettled;

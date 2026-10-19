@@ -125,6 +125,17 @@ Good:
 
 Put interactive behavior inside the island/client component. For server effects, pass serializable data such as IDs, URLs, action names, or initial state, then call an API route, submit a form, or update client state from inside the island.
 
+## Island lifetime
+
+An island lives until the document unloads or the framework disposes the content
+around it. Disposal runs every Solid `onCleanup` and effect cleanup, including
+those of an error fallback. Use `onCleanup` to remove global listeners, clear
+timers, and release subscriptions.
+
+Just before cleanup, the wrapper dispatches a bubbling `ssr:island-dispose`
+event. Code that renders outside the wrapper, such as a portal, can close what
+the island opened. `@k2b/ui` dialogs close automatically.
+
 ## Island Error Boundaries
 
 Every island and client component instance is mounted in its own error

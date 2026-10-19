@@ -123,6 +123,34 @@ Each caught error dispatches a bubbling, cancelable `ssr:island-error` event
 and calls `reportError()` unless cancelled. A configured `errorFallback`
 renders inside a nested boundary whose fallback is the built-in one.
 
+The registry lives on `globalThis[Symbol.for("@k2b/ssr/islands")]`, created on
+first use. Components are keyed by their generated selector; each wrapper has
+one disposer in a `WeakMap`. Registration overwrites the component without
+remounting existing wrappers. Each registration retains its runtime's mount
+callback so another runtime copy uses the same Solid instance for rendering
+and cleanup ownership.
+
+`mountIslands(root)` and `disposeIslands(root)` are internal named exports for
+navigation, with no package export or re-export from `index.ts`. They include
+root itself when it is a wrapper and visit wrappers in document order. Mounting
+skips unregistered or already-mounted wrappers. Disposal dispatches a bubbling,
+non-cancelable `ssr:island-dispose` event with `detail: { id }` on each wrapper
+before running its Solid disposer and forgetting it. Call disposal while the
+wrappers are still in the document so window listeners receive the event.
+A disposer error goes to `reportError()` and does not stop later wrappers.
+
+Solid disposal runs component and fallback `onCleanup` and effect cleanups and
+empties the wrapper, including while an error fallback is displayed. The outer
+catch path stores a DOM-only disposer; a successful **Try again** replaces it
+with the new Solid disposer. Disposed wrappers can mount again from `data-props`.
+
+The loader's opening tag always exposes `data-ssr-assets`: the unversioned
+`ssrPath` in development, the versioned asset path in production. A non-empty
+shared module list also appears as space-separated file names in
+`data-ssr-preload`, in loader order. Both attributes are HTML-escaped. The
+loader body stays byte-identical for `scripts/perf-baseline/model.ts`; never
+emit modulepreload links in HTML.
+
 ## Adapters
 
 Shared helpers live in `src/adapter/utils.ts` (`normalizeBasePath`,

@@ -23,6 +23,17 @@ re-rendering follow:
 - server and client must render the same markup from the same props, or the
   page shifts when the island mounts.
 
+## Island lifetime
+
+An island lives until the document unloads or the framework disposes the content
+around it. Disposal runs every Solid `onCleanup` and effect cleanup, including
+those of an error fallback. Use `onCleanup` to remove global listeners, clear
+timers, and release subscriptions.
+
+Just before cleanup, the wrapper dispatches a bubbling `ssr:island-dispose`
+event. Code that renders outside the wrapper, such as a portal, can close what
+the island opened. `@k2b/ui` dialogs close automatically.
+
 ## Size & Philosophy
 
 This framework is intentionally minimal and focused on SSR + islands only.

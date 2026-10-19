@@ -1,0 +1,272 @@
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { createDialogCore, dialogCore, holdDialogHistory } from "../src/feedback/dialog-core";
+import { createDomTestHarness, type DomTestHarness } from "./dom";
+
+let dom: DomTestHarness;
+beforeEach(() => {
+  dom = createDomTestHarness();
+});
+afterEach(() => {
+  mock.restore();
+  dom.cleanup();
+});
+const view = (label: string) => () => {
+  const button = document.createElement("button");
+  button.textContent = label;
+  return button;
+};
+const trigger = (id?: string, tag = "solid-island") => {
+  const parent = document.createElement(id ? tag : "div");
+  if (id) parent.dataset.id = id;
+  const button = document.createElement("button");
+  parent.append(button);
+  document.body.append(parent);
+  return { parent, button };
+};
+const dispose = (island: Element) =>
+  island.dispatchEvent(
+    new CustomEvent("ssr:island-dispose", {
+      bubbles: true,
+      detail: { id: island.getAttribute("data-id") },
+    }),
+  );
+const settle = () => Bun.sleep(20);
+
+for (const navigationApi of [true, false]) {
+  describe(navigationApi ? "with the Navigation API" : "without it", () => {
+    let restoreNavigation: () => void;
+    beforeEach(() => {
+      const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigation");
+      const target = new dom.window.EventTarget();
+      Object.defineProperty(globalThis, "navigation", { configurable: true, value: navigationApi ? target : undefined });
+      const traverse = () => target.dispatchEvent(Object.assign(new dom.window.Event("navigate"), { navigationType: "traverse" }));
+      const back = history.back.bind(history);
+      const forward = history.forward.bind(history);
+      const go = history.go.bind(history);
+      const wrappers = navigationApi
+        ? [
+            spyOn(history, "back").mockImplementation(() => {
+              traverse();
+              back();
+            }),
+            spyOn(history, "forward").mockImplementation(() => {
+              traverse();
+              forward();
+            }),
+            spyOn(history, "go").mockImplementation((delta) => {
+              traverse();
+              go(delta);
+            }),
+          ]
+        : [];
+      restoreNavigation = () => {
+        for (const wrapper of wrappers) wrapper.mockRestore();
+        if (descriptor) Object.defineProperty(globalThis, "navigation", descriptor);
+        else Reflect.deleteProperty(globalThis, "navigation");
+      };
+    });
+    afterEach(() => restoreNavigation());
+
+    test("disposal closes the focused island's dialog, portal, focus trap and scroll lock", async () => {
+      const core = createDialogCore();
+      const { parent, button } = trigger("a");
+      document.body.style.overflow = "auto";
+      document.documentElement.style.overflow = "scroll";
+      button.focus();
+      const result = core.open(view("Owned content"));
+      expect(document.querySelector("dialog")).not.toBeNull();
+      expect(document.body.style.overflow).toBe("hidden");
+      dispose(parent);
+      expect(core.isOpen()).toBe(false);
+      expect(document.querySelector("dialog")).toBeNull();
+      expect(document.body.textContent).not.toContain("Owned content");
+      expect(document.body.style.overflow).toBe("auto");
+      expect(document.documentElement.style.overflow).toBe("scroll");
+      expect(document.activeElement?.closest("dialog")).toBeNull();
+      expect(await result).toBeUndefined();
+    });
+
+    test("disposal listening moves with the window even for a dialog without history", async () => {
+      const core = createDialogCore();
+      const remove = spyOn(window, "removeEventListener");
+      dom.cleanup();
+      dom = createDomTestHarness();
+      const { parent, button } = trigger("a");
+      button.focus();
+      const result = core.open(view("Moved"));
+      expect(remove).toHaveBeenCalledWith("ssr:island-dispose", expect.any(Function), { capture: true });
+      dispose(parent);
+      expect(core.isOpen()).toBe(false);
+      expect(await result).toBeUndefined();
+    });
+
+    test("nested dialogs close top first while other-island and unowned levels below stay", async () => {
+      const core = createDialogCore();
+      const outside = trigger();
+      const a = trigger("a");
+      const b = trigger("b", "solid-client");
+      outside.button.focus();
+      const unowned = core.open(view("Outside"));
+      b.button.focus();
+      const other = core.open(view("Other island"));
+      a.button.focus();
+      const owned = core.open(view("Owned"));
+      document.querySelector<HTMLButtonElement>("dialog > div:last-child button")!.focus();
+      const nested = core.open(view("Nested"));
+      const order: string[] = [];
+      void owned.then(() => order.push("owned"));
+      void nested.then(() => order.push("nested"));
+      dispose(a.parent);
+      expect(await nested).toBeUndefined();
+      expect(await owned).toBeUndefined();
+      expect(order).toEqual(["nested", "owned"]);
+      expect(core.isOpen()).toBe(true);
+      expect(document.body.textContent).toContain("Other island");
+      expect(document.body.textContent).toContain("Outside");
+      expect(document.body.textContent).not.toContain("Owned");
+      dispose(b.parent);
+      expect(await other).toBeUndefined();
+      expect(core.isOpen()).toBe(true);
+      core.close();
+      await unowned;
+    });
+
+    test("the dispatch target owns a dialog even when WebKit leaves focus elsewhere", async () => {
+      const core = createDialogCore();
+      const { parent, button } = trigger("a");
+      const outside = trigger();
+      outside.button.focus();
+      let result: Promise<unknown> | undefined;
+      const descriptor = Object.getOwnPropertyDescriptor(window, "event");
+      button.addEventListener("click", (event) => {
+        // Happy DOM does not expose the browser's legacy window.event during dispatch.
+        Object.defineProperty(window, "event", { configurable: true, value: event });
+        result = core.open(view("Clicked"));
+      });
+      try {
+        button.click();
+      } finally {
+        if (descriptor) Object.defineProperty(window, "event", descriptor);
+        else Reflect.deleteProperty(window, "event");
+      }
+      dispose(parent);
+      expect(core.isOpen()).toBe(false);
+      expect(await result).toBeUndefined();
+    });
+
+    test("disposed history markers become ordinary traversals and later dialogs still own theirs", async () => {
+      const core = createDialogCore();
+      const application = mock(() => {});
+      window.addEventListener("popstate", application);
+      const a = trigger("a");
+      const outside = trigger();
+      outside.button.focus();
+      const remaining = core.open(view("Keep open"));
+      a.button.focus();
+      const result = core.open(view("Owned"), { history: true });
+      const length = history.length;
+      const back = spyOn(history, "back");
+      const go = spyOn(history, "go");
+      const forward = spyOn(history, "forward");
+      dispose(a.parent);
+      expect(document.body.textContent).not.toContain("Owned");
+      expect(await result).toBeUndefined();
+      await settle();
+      expect(back).not.toHaveBeenCalled();
+      expect(go).not.toHaveBeenCalled();
+      expect(forward).not.toHaveBeenCalled();
+      expect(history.length).toBe(length);
+      history.back();
+      await settle();
+      expect(application).toHaveBeenCalledTimes(1);
+      expect(core.isOpen()).toBe(true);
+      history.forward();
+      await settle();
+      expect(application).toHaveBeenCalledTimes(2);
+      expect(core.isOpen()).toBe(true);
+      outside.button.focus();
+      const next = core.open(view("Next"), { history: true });
+      expect(history.length).toBe(length + 1);
+      document.querySelector<HTMLButtonElement>("dialog > div:last-child button")!.focus();
+      // Back removes only the new level and its marker.
+      history.back();
+      expect(await next).toBeUndefined();
+      expect(core.isOpen()).toBe(true);
+      expect(application).toHaveBeenCalledTimes(navigationApi ? 2 : 3);
+      core.close();
+      await remaining;
+    });
+
+    test("traversing a dead entry beside a live history dialog neither closes nor hides popstate", async () => {
+      const core = createDialogCore();
+      const application = mock(() => {});
+      window.addEventListener("popstate", application);
+      const a = trigger("a");
+      const b = trigger("b");
+      b.button.focus();
+      const lower = core.open(view("Live history"), { history: true });
+      a.button.focus();
+      const upper = core.open(view("Disposed history"), { history: true });
+      dispose(a.parent);
+      expect(core.isOpen()).toBe(true);
+      expect(document.body.textContent).not.toContain("Disposed history");
+      expect(await upper).toBeUndefined();
+      history.back();
+      await settle();
+      expect(application).toHaveBeenCalledTimes(1);
+      expect(core.isOpen()).toBe(true);
+      history.forward();
+      await settle();
+      expect(application).toHaveBeenCalledTimes(2);
+      expect(core.isOpen()).toBe(true);
+      // Remove the remaining level through its signal-free close path, away from the dead entry.
+      history.back();
+      await settle();
+      core.close();
+      await lower;
+    });
+
+    test.each(["wrapper", "window"])("holder release on %s during disposal never schedules Back", async (target) => {
+      const { parent, button } = trigger("a");
+      button.focus();
+      const dialog = dialogCore.open(view("Owned"));
+      const release = holdDialogHistory(() => {
+        throw new Error("must not close via Back");
+      });
+      const go = spyOn(history, "go");
+      const length = history.length;
+      // Target listeners run before bubble listeners; both releases belong to the disposal window.
+      (target === "wrapper" ? parent : window).addEventListener("ssr:island-dispose", release, { once: true });
+      dispose(parent);
+      expect(dialogCore.isOpen()).toBe(false);
+      expect(await dialog).toBeUndefined();
+      await settle();
+      expect(go).not.toHaveBeenCalled();
+      expect(history.length).toBe(length);
+    });
+
+    test("the disposal window resets at the next microtask and normal close still goes Back", async () => {
+      const core = createDialogCore();
+      const { parent, button } = trigger("a");
+      button.focus();
+      const disposed = core.open(view("Disposed first"), { history: true });
+      dispose(parent);
+      expect(core.isOpen()).toBe(false);
+      expect(await disposed).toBeUndefined();
+      await Promise.resolve();
+      button.focus();
+      let close = () => {};
+      const result = core.open(
+        (done) => {
+          close = done;
+          return view("Normal")();
+        },
+        { history: true },
+      );
+      const go = spyOn(history, "go");
+      close();
+      expect(await result).toBeUndefined();
+      expect(go).toHaveBeenCalledWith(-1);
+    });
+  });
+}
