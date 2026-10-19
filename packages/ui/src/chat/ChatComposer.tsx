@@ -96,6 +96,14 @@ export type ChatCommandSection = {
   searched?: boolean;
   /** Only while searching or narrowed: absent from the overview (empty query), including its loading placeholder. */
   searchOnly?: boolean;
+  /** Only in the overview (empty query, no scope): absent while searching or narrowed, such as recently used rows. */
+  overviewOnly?: boolean;
+  /**
+   * Its local rows are fixed when the list opens: a row that arrives while the list is open waits for the next opening,
+   * so a section above others whose rows load in the background never pushes a visible row down. Rows that go away
+   * still leave at once.
+   */
+  fixedWhileOpen?: boolean;
   /**
    * Local rows still on their way, such as Commands from a catalog: the section ends with placeholder rows, three in
    * the overview and one while searching, and its heading shows a spinner. Make it the last section, so rows that
@@ -127,6 +135,11 @@ export type ChatCommand = {
   persistent?: boolean;
   /** Application name, searchable but not displayed. */
   app?: string;
+  /**
+   * Used recently by this person. While searching, a matching row moves one step up the ranking ladder of its section
+   * and comes before rows of equal rank. The overview keeps consumer order.
+   */
+  recent?: boolean;
   /** Stable row key for option ids, marking and de-duplication. Defaults to `name`. */
   id?: string;
   name: string;
@@ -490,7 +503,25 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setSearchResults([]);
     setSearchResultsQuery(undefined);
   });
-  const localCommands = createMemo(() => props.commands ?? []);
+  // Rows of a `fixedWhileOpen` section are the ones it had when this `/` opened the list; later ones wait for the next
+  // `/`. A retry row starts another opening in the same open list, so it does not count.
+  const fixedCommandKeys = createMemo(() => {
+    props.draftKey;
+    if (openingStart() === undefined) return undefined;
+    return untrack(() => {
+      const fixed = new Set((props.commandSections ?? []).filter((section) => section.fixedWhileOpen).map((section) => section.id));
+      return fixed.size
+        ? new Set((props.commands ?? []).filter((command) => fixed.has(command.section ?? "")).map(chatCommandKey))
+        : undefined;
+    });
+  });
+  const localCommands = createMemo(() => {
+    const commands = props.commands ?? [];
+    const keys = fixedCommandKeys();
+    if (!keys) return commands;
+    const fixed = new Set((props.commandSections ?? []).filter((section) => section.fixedWhileOpen).map((section) => section.id));
+    return commands.filter((command) => !fixed.has(command.section ?? "") || keys.has(chatCommandKey(command)));
+  });
   const commandModel = createMemo(() =>
     chatCommandListModel({
       query: commandQuery()?.query ?? "",

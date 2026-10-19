@@ -67,7 +67,7 @@ import { capabilityMessages } from "../shared/capability-messages";
 import { dispatchCapabilityStream, sealCapabilityStream } from "./capability-streams";
 
 const log = logger("capabilities");
-const QUERY_TIMEOUT_MS = 15_000;
+export const QUERY_TIMEOUT_MS = 15_000;
 const ACTION_TIMEOUT_MS = 30_000;
 const DEFAULT_CATALOG_LIMIT = 10;
 const MAX_CATALOG_LIMIT = 25;

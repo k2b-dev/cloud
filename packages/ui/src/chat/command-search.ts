@@ -136,8 +136,9 @@ export function chatCommandListModel(input: {
   }
   const seen = new Set<string>();
   for (const [index, group] of groups.entries()) {
-    // A search-only section is absent from the overview, rows and placeholder included.
+    // A search-only section is absent from the overview, rows and placeholder included; an overview-only one while searching.
     if (overview && group.section?.searchOnly) continue;
+    if (!overview && group.section?.overviewOnly) continue;
     const ranked: (ChatCommandRow & { rank: number })[] = [];
     for (const { command, server } of buckets[index]!) {
       const key = chatCommandKey(command);
@@ -146,7 +147,9 @@ export function chatCommandListModel(input: {
       const match = rankPrepared(prepare(command), query);
       if (!overview && !match && !command.persistent && !(server && input.searchResultsFresh)) continue;
       seen.add(key);
-      ranked.push({ command, server, highlight: match?.highlight, rank: match?.rank ?? Infinity });
+      // A recent match moves one step up the ladder and leads its rank.
+      const rank = (match?.rank ?? Infinity) - (command.recent && match ? 1.5 : 0);
+      ranked.push({ command, server, highlight: match?.highlight, rank });
     }
     if (!overview) ranked.sort((a, b) => a.rank - b.rank);
     group.rows = ranked.map(({ command, server, highlight }) => ({ command, server, highlight }));

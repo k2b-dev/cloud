@@ -304,14 +304,17 @@ type ChatCommandOpenResult = void | "cancelled" | { failed: string };
 type ChatCommand = {
   id?: string; name: string; description: string; icon?: string; label?: string;
   keywords?: readonly string[]; reason?: string; busyLabel?: string; disabled?: boolean;
-  section?: string; scope?: string; hiddenUntilSearch?: boolean; app?: string;
+  section?: string; scope?: string; hiddenUntilSearch?: boolean; app?: string; recent?: boolean;
   action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
   mention?: ChatAttachment;
   open?: (draft: ChatCommandDraft, signal: AbortSignal, follow: () => void) => Promise<ChatCommandOpenResult>;
   selected?: boolean; searchAgain?: boolean; persistent?: boolean;
 };
 
-type ChatCommandSection = { id: string; label: string; searched?: boolean; searchOnly?: boolean; pending?: boolean };
+type ChatCommandSection = {
+  id: string; label: string; searched?: boolean; searchOnly?: boolean; overviewOnly?: boolean;
+  fixedWhileOpen?: boolean; pending?: boolean;
+};
 type ChatCommandScope = { id: string; title: string; words: readonly string[] };
 type ChatCommandSearch = { scope?: string; opening: number };
 
@@ -364,7 +367,11 @@ starts with query (3+ characters), then one typo in a title word or keyword
 prefix (4+ characters). The title is `label ?? name`; when a label exists,
 `name` remains a search word alongside `keywords`. `app` is searchable and is
 not displayed. Equal ranks keep static rows first, then server rows, each in
-consumer order.
+consumer order. Set `recent: true` on a row this person used recently: while
+searching, a matching recent row moves one step up the ladder and comes before
+rows of equal rank, so a recent row whose title contains the query comes
+before one whose title word starts with it, but after a title start. The
+overview keeps consumer order.
 
 `searchCommands(query, signal, { scope, opening })` runs after a 120 ms debounce. Fresh
 server results remain visible even without a local match, after matching rows.
@@ -434,7 +441,17 @@ while the next query loads. A resolved scope always keeps its title and shows a
 placeholder while loading without rows. Placeholders are skipped by arrow keys.
 A `searchOnly` section, such as
 files of the current chat, is absent from the overview, placeholder included,
-and appears while searching or narrowed.
+and appears while searching or narrowed. An `overviewOnly` section, such as
+recently used references, appears only in the overview; while searching or
+narrowed, the same entries can appear in their own sections as `recent` rows.
+
+Set `fixedWhileOpen` on a section whose local rows load in the background and
+that sits above others, such as recently used references at the top. Its rows
+are the ones it had when this `/` opened the list. A row that arrives while
+the list is open waits for the next `/`, so it never pushes a visible row
+down; a retry row's new opening does not count. Rows that go away still leave
+at once. Unlike `pending`, the section reserves no place: when its rows are
+not there yet, the list opens without it.
 
 A settled empty list says `Nothing found for “<query>”`. A scope with no search
 text uses the generic empty message. After an unmatched query settles, a

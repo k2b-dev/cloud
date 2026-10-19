@@ -18,6 +18,26 @@ import type { RequestActor } from "../server";
 import type { AiLocalClient, AiLocalContext, AiLocalToolName } from "./local-tool-contracts";
 import type { AiTurnBlock } from "./protocol";
 
+/** Current reader-confirmed metadata for a recently sent resource. */
+export type AiRecentResource = {
+  ref: CloudResourceRef;
+  title: string;
+  icon?: string;
+  href?: string;
+  kind: string;
+  preview?: string;
+  appName: string;
+  count: number;
+};
+
+export type AiRecentSentResourceRef = {
+  ref: CloudResourceRef;
+  count: number;
+  lastSentAt: string;
+  /** Internal conversation UUID, only for authorized Studio reads. */
+  conversationId: string;
+};
+
 export const AI_MODEL_CAPABILITIES = ["streaming", "tools", "vision", "transcription"] as const;
 export type AiModelCapability = (typeof AI_MODEL_CAPABILITIES)[number];
 
@@ -766,6 +786,7 @@ export type AiConversationService = {
     before?: string;
     limit?: number;
   }): Promise<{ resources: AiConversationResourceRef[]; nextCursor?: string }>;
+  listRecentSentResourceRefs(input: { ownerUserId: string }): Promise<AiRecentSentResourceRef[]>;
   listUserConversationResources(input: {
     ownerUserId: string;
     search?: string;

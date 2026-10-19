@@ -309,8 +309,31 @@ test("sections and bilingual scope words agree, with each locale's narrowing wor
   for (const locale of ["en", "de"]) {
     const copy = assistantCopyFor(locale);
     const scopes = assistantCommandScopes(copy, locale);
-    expect(assistantCommandSections(copy).map((section) => section.id)).toEqual(["insert", "skills", "files", "chat", "tasks", "apps"]);
-    expect(assistantCommandSections(copy).map((section) => Boolean(section.searched))).toEqual([false, true, true, false, true, false]);
+    expect(assistantCommandSections(copy).map((section) => section.id)).toEqual([
+      "recent",
+      "insert",
+      "skills",
+      "files",
+      "chat",
+      "tasks",
+      "apps",
+    ]);
+    expect(assistantCommandSections(copy).map((section) => Boolean(section.searched))).toEqual([
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+    ]);
+    // Recent sits on top: only in the overview, and only with the rows it had when the list opened.
+    expect(assistantCommandSections(copy)[0]).toEqual({
+      id: "recent",
+      label: locale === "de" ? "Zuletzt" : "Recent",
+      overviewOnly: true,
+      fixedWhileOpen: true,
+    });
     // App Commands load with the catalog; their section is last, so rows that arrive only fill the end.
     expect(assistantCommandSections(copy, true).at(-1)).toEqual({
       id: "apps",

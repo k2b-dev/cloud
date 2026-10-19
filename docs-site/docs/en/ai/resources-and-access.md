@@ -5,7 +5,7 @@ section: AI
 order: 1010
 description: Attach Cloud resources without moving domain authorization into AI Core.
 tags: [ai, authorization, resources, capabilities]
-updated: 2026-08-18
+updated: 2026-10-19
 ---
 
 # AI resources and access
@@ -20,6 +20,28 @@ type CloudResourceRef = { type: string; id: string };
 It is not a snapshot, access token, instruction channel, or primary chat owner.
 Assistant can attach refs through its plus menu, and an application can include
 initial refs when it creates a conversation draft.
+
+## Recently sent references
+
+`GET /api/ai/resources/recent` returns up to eight distinct refs from the
+person's own sent messages. Each app reader runs as the request's actor with
+its current access subject through the audited capability path, before any
+ref or display metadata is returned. Missing readers, denied access, invalid
+answers, failures, and timeouts omit that ref. Stored marker titles, icons,
+and links are never returned. A reader must return its own matching ref with
+a current title. Skills use one current Skills visibility list and omit
+disabled entries. Studio apps use the authorized `code_read` path for ordinary
+user sessions; credentials whose restrictions that path cannot preserve omit
+Studio refs.
+
+A call makes at most eight reads in parallel under one 15-second query budget
+and the request's cancellation signal. Preview text contains only the first
+line, up to 160 characters. Type and app names follow the request locale.
+No new resource history is stored: the scan considers the latest 200 active
+conversations by update time and the latest 200 own user messages among them,
+with at most 200 candidates per conversation. Counts describe messages within
+that window, with repeated refs counted once per message. Scheduled-task and
+agent messages are excluded. Actions keep their existing order.
 
 ## Publish context and actions as Capabilities
 

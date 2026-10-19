@@ -117,9 +117,12 @@ import {
   assistantCommandScopes,
   assistantCommandSections,
   assistantComposerCommands,
+  assistantDraftRefs,
   assistantExcludedRefs,
   assistantInsertCommands,
+  assistantRecentCommands,
   createAssistantCommandSession,
+  createAssistantRecentResources,
   createAssistantTaskRunKeys,
 } from "./composer-commands";
 import { releaseWhenPageReturns } from "./composer-file-choice";
@@ -1530,6 +1533,11 @@ export default function AssistantWorkspace(props: Props) {
     );
     const commandSession = createAssistantCommandSession();
     onCleanup(() => commandSession.dispose());
+    // "Recent" loads when the composer appears, so it is usually there before the first "/"; an opening that comes
+    // first shows the list without it, and only a later opening adds it.
+    const recentResources = createAssistantRecentResources();
+    onMount(() => recentResources.ensure(locale()));
+    const draftRefs = () => assistantDraftRefs(composerAttachmentsFor(sessionKey()), mentionsFor(sessionKey()));
     const searchChat = () => {
       const conversation = activeConversation();
       if (conversation) openGlobalSearch(assistantSearchOptions(locale(), conversation));
@@ -1626,6 +1634,12 @@ export default function AssistantWorkspace(props: Props) {
           commandScopes={[...assistantCommandScopes(commandCopy(), locale()), ...insert().scopes]}
           commandFallback={insert().fallback}
           commands={[
+            ...assistantRecentCommands({
+              items: recentResources.items(),
+              excludeRefs: draftRefs(),
+              partCount: attachmentCount() + mentionCount(),
+              locale: locale(),
+            }),
             ...insert().commands,
             ...appCommands().commands,
             ...assistantBuiltInCommands({
@@ -1682,8 +1696,13 @@ export default function AssistantWorkspace(props: Props) {
             }),
           ]}
           searchCommands={async (query, signal, search) => {
+            // A new opening asks again after a failed load; it never waits for the answer.
+            recentResources.opened(search, locale());
             const [rows] = await Promise.all([
               assistantComposerCommands({
+                recent: recentResources.items(),
+                excludeRefs: draftRefs(),
+                partCount: attachmentCount() + mentionCount(),
                 query,
                 scope: search.scope,
                 session: search.opening,
