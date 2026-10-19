@@ -65,4 +65,5 @@ onMount(() => onCleanup(installPageSwap()));
 - the newest navigation wins (another swap, Back/Forward, a native link, an enhanced `Link` click, `navigate()`, `documentNavigate()`); any failure (status, not HTML, redirect out of scope, signature, module prefix, `<base>`, stylesheet set, module error) loads the requested URL as a document
 - `swapPage(href, { replace })` swaps from code
 - inline scripts in the fetched page do not run; keep page data in island props
-- Back and Forward are not swapped yet: on a page loaded normally islands handle their entries with `listenPopState()`; on a page a swap showed (also after a reload), Back or Forward loads the document except onto that page's own entry
+- Back and Forward are not swapped yet: install marks a null-state entry, swap entries carry their page's marker (kept across a reload), and only entries with the shown page's marker, a fresh hash-link entry, or, on a page loaded normally that has not swapped, unmarked island entries stay with islands; any other entry loads the document
+- a swap does not fire `beforeunload`: an island with unsaved input prevents in-scope link clicks itself (a document capture listener calling `preventDefault()`) or the links carry `data-nav-document`

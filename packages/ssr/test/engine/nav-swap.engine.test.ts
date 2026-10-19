@@ -259,6 +259,60 @@ test(`${browserName}: success focuses and announces; Back loads the previous doc
   }
 });
 
+test(`${browserName}: a same-page hash link after a swap stays native`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await open(page);
+    await page.click("#new");
+    await page.waitForFunction(() => document.querySelector("[data-nav-announcer]")?.textContent === "new");
+    await page.evaluate(() => {
+      Object.assign(window, { __alive: true });
+      document
+        .querySelector("main")!
+        .insertAdjacentHTML("beforeend", '<a id="toc" href="#later">Later</a><div style="height:2000px"></div><p id="later">Later</p>');
+    });
+    const documents = trackDocuments(page);
+    await page.click("#toc");
+    expect(await page.evaluate(() => location.hash)).toBe("#later");
+    expect(await page.evaluate(() => "__alive" in window && window.__alive)).toBe(true);
+    expect(await page.locator("main [data-mounted]").textContent()).toBe("new");
+    expect(documents).toEqual([]);
+    await page.goBack();
+    expect(page.url()).toBe(`${origin}/app/new`);
+    expect(await page.evaluate(() => "__alive" in window && window.__alive)).toBe(true);
+    expect(documents).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test(`${browserName}: Back across an island push after a reload loads the right page`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await open(page);
+    await page.click("#new");
+    await page.waitForFunction(() => document.querySelector("[data-nav-announcer]")?.textContent === "new");
+    await page.evaluate(() => history.pushState(null, "", "/app/new?tab=2"));
+    await page.reload();
+    await page.waitForFunction(
+      () => document.documentElement.dataset.ready === "yes" && document.querySelector("main [data-mounted]")?.textContent === "new",
+    );
+    const documents = trackDocuments(page);
+    await page.evaluate(() => history.go(-2));
+    await page.waitForFunction(
+      () =>
+        location.pathname === "/app/old" &&
+        document.documentElement.dataset.ready === "yes" &&
+        document.querySelector("main [data-mounted]")?.textContent === "old",
+    );
+    expect(documents).toEqual([`${origin}/app/old`]);
+  } finally {
+    await context.close();
+  }
+});
+
 test(`${browserName}: a relative URL in the swapped column resolves against the new page`, async () => {
   const context = await browser.newContext();
   try {

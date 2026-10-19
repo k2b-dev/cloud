@@ -8,8 +8,10 @@ type SwapState = {
   active?: AbortController;
   token: string;
   counter: number;
-  /** The page marker of the shown server page: undefined on a document loaded without a swap entry. */
+  /** The page marker of the shown server page; island-owned state may leave it undefined. */
   currentPage: unknown;
+  trusted: boolean;
+  fragment?: string;
 };
 const shared: typeof globalThis & { [swapKey]?: SwapState } = globalThis;
 const markerKey = "@k2b/ssr/nav";
@@ -79,6 +81,7 @@ export function installPageSwap(): () => void {
     "style",
     "position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap",
   );
+  const navigation = window.performance.getEntriesByType("navigation")[0];
   const state: SwapState = {
     document,
     announcer,
@@ -87,6 +90,8 @@ export function installPageSwap(): () => void {
     counter: 0,
     // A reload keeps the entry's marker; that document then also shares history with other server pages.
     currentPage: marker(window.history.state),
+    // Only a fresh document without a swap can trust unmarked island entries.
+    trusted: navigation === undefined || ("type" in navigation && navigation.type === "navigate"),
     uninstall: () => {
       window.removeEventListener("click", click);
       window.removeEventListener("popstate", popstate);
@@ -95,6 +100,10 @@ export function installPageSwap(): () => void {
       if (shared[swapKey] === state) delete shared[swapKey];
     },
   };
+  if (window.history.state === null) {
+    state.currentPage = `${state.token}:${++state.counter}`;
+    window.history.replaceState({ [markerKey]: state.currentPage }, "");
+  }
   const click = (event: MouseEvent): void => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     // The composed path reaches an anchor inside a shadow root, where event.target is the host.
@@ -116,6 +125,12 @@ export function installPageSwap(): () => void {
     if (hashJump(url)) {
       // A native jump on this page is still a newer navigation than a pending swap.
       abort(state);
+      const href = url.href;
+      state.fragment = href;
+      // Native fragment popstate runs after the click's microtask checkpoint, before the next task.
+      setTimeout(() => {
+        if (state.fragment === href) state.fragment = undefined;
+      }, 0);
       return;
     }
     const context = shellContext(document);
@@ -132,8 +147,18 @@ export function installPageSwap(): () => void {
   const popstate = (event: PopStateEvent): void => {
     abort(state);
     const page = marker(event.state);
-    // Entries of the shown page keep its marker (or none on a page loaded normally); islands handle those.
-    if (page === state.currentPage) return;
+    // Marked entries stay with islands only while their server page is shown.
+    if (page !== undefined) {
+      if (page === state.currentPage) return;
+    } else {
+      // The link's own fresh fragment entry belongs to the shown page, even after a swap.
+      if (event.state === null && state.fragment !== undefined && state.fragment === window.location.href) {
+        state.fragment = undefined;
+        if (state.currentPage !== undefined) window.history.replaceState({ [markerKey]: state.currentPage }, "");
+        return;
+      }
+      if (state.trusted) return;
+    }
     // The next slice gives every history entry its page ID, including island-owned entries.
     // reload(), not replace(location.href): for a URL with a hash that would only be a fragment navigation.
     window.location.reload();
@@ -285,6 +310,7 @@ const commit = (
     if (options.replace) window.history.replaceState({ [markerKey]: pageId }, "", target.href);
     else window.history.pushState({ [markerKey]: pageId }, "", target.href);
     committed = true;
+    state.trusted = false;
     state.currentPage = pageId;
     const root = document.adoptNode(next.root);
     context.root.replaceWith(root);

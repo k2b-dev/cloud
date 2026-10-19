@@ -183,6 +183,42 @@ test("without install anchors stay native and programmatic swap loads one docume
   expect(assign).toHaveBeenCalledWith("https://example.test/app/A");
 });
 
+test("install stamps a null-state entry without adding history", () => {
+  const before = window.history.length;
+  install();
+  expect(window.history.state["@k2b/ssr/nav"]).toMatch(/:1$/);
+  expect(window.history.length).toBe(before);
+  expect(window.location.pathname).toBe("/app/old");
+});
+
+test("install leaves non-null island state alone", () => {
+  window.history.replaceState({ island: 1 }, "");
+  install();
+  expect(window.history.state).toEqual({ island: 1 });
+});
+
+test("an unmarked popstate after a reload loads the document", () => {
+  const entry = {
+    name: window.location.href,
+    entryType: "navigation",
+    startTime: 0,
+    duration: 0,
+    type: "reload",
+    toJSON: () => ({}),
+  };
+  const entries = spyOn(window.performance, "getEntriesByType").mockReturnValue([entry]);
+  try {
+    // A reload may start on island-owned state without a page marker.
+    window.history.replaceState({ island: 1 }, "");
+    install();
+    const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+    window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+    expect(reload).toHaveBeenCalledTimes(1);
+  } finally {
+    entries.mockRestore();
+  }
+});
+
 test("rapid A then B aborts A and only B mounts and commits", async () => {
   install();
   const requests = deferredFetch();
@@ -295,7 +331,7 @@ test("success disposes, mounts, copies attributes, commits history, focuses and 
     spyOn(globalThis, "fetch").mockResolvedValue(response());
     await swapPage("/app/new");
     expect(document.title).toBe("new");
-    expect(window.history.state["@k2b/ssr/nav"]).toMatch(/:1$/);
+    expect(window.history.state["@k2b/ssr/nav"]).toMatch(/:2$/);
     expect(window.history.length).toBe(before + 1);
     expect(document.querySelector("[data-nav-shell]")!.getAttribute("data-mode")).toBe("new");
     expect(document.querySelector("[data-nav-shell]")!.hasAttribute("data-obsolete")).toBe(false);
@@ -999,4 +1035,19 @@ test("a same-page hash link stays native and aborts a pending swap", async () =>
   expect(requests[0]!.aborted).toBe(true);
   expect(document.title).toBe("old");
   expect(assign).not.toHaveBeenCalled();
+});
+
+test("a fresh hash-link popstate after a swap stays native and gets the shown page marker", async () => {
+  install();
+  spyOn(globalThis, "fetch").mockResolvedValue(response());
+  await swapPage("/app/new");
+  const current = window.history.state;
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  expect(click("#later").defaultPrevented).toBe(false);
+  // Native fragment activation follows the click's microtask checkpoint; Happy DOM needs its popstate emulated.
+  await Promise.resolve();
+  window.history.replaceState(null, "", "/app/new#later");
+  window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+  expect(reload).not.toHaveBeenCalled();
+  expect(window.history.state).toEqual(current);
 });

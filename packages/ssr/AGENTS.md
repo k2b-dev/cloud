@@ -227,14 +227,20 @@ after a history commit it replaces the entry. The click listener sits on
 `window` in the bubble phase, so island and delegated Solid handlers can
 prevent a swap first.
 
-Back and Forward are not swapped yet. Swap entries carry a page marker in
-`history.state`, and a reload keeps it. A `popstate` onto an entry with the
-marker of the shown page (none on a page loaded normally) stays with the
-islands; any other entry reloads the document (`location.reload()`, since
-replacing a URL with a hash would only scroll). An island that replaces the
-swap entry's state with its own drops the marker; after a reload of that
-entry, Back can then keep the wrong column. The history slice gives every
-entry its page ID and closes this.
+Back and Forward are not swapped yet. Install marks the current entry when
+its state is null; non-null island state stays untouched. Swap entries carry
+their page's marker, and a reload keeps it. A `popstate` onto an entry with
+the shown page's marker, or onto a fresh hash-link entry, stays with islands.
+An unmarked entry stays with islands only on a page loaded normally that has
+not swapped yet; after a swap or a reload it loads the document. An island
+that replaces an entry's state with its own drops the marker, so returning
+to that entry later loads the document. The history slice gives every entry
+its page ID.
+
+A swap does not fire `beforeunload`; an island with unsaved input must prevent
+in-scope link clicks itself (for example, a document capture listener calling
+`preventDefault()`, which the swap honours) or mark the links with
+`data-nav-document`.
 
 Cover every change in the unit, Happy DOM, and `test/engine` suites: history
 push and replace, Back and Forward, hash links, async fallbacks, reactive
