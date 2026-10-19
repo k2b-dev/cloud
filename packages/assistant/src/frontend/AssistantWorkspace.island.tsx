@@ -1,4 +1,6 @@
 import type {
+  AiOpenQuestion,
+  AiOpenQuestions,
   AiChatTaskView,
   AiConversation,
   AiConversationPage,
@@ -84,6 +86,7 @@ import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
 import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
+import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
 import {
@@ -137,6 +140,7 @@ import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
+import { waitingQuestionsView } from "./waiting-questions";
 
 type Status = {
   ok: boolean;
@@ -184,6 +188,8 @@ type Props = {
   initialProjectContext: AssistantProjectContextSnapshot | null;
   /** The Assistant's open approvals at render time, and whether the page opened on the approvals view. */
   approvals: { page: ApprovalPage; open: boolean };
+  /** The person's open questions at render time, for "Waiting for you" above the composer. */
+  initialQuestions: AiOpenQuestions;
 };
 
 type ProjectViewState = {
@@ -292,12 +298,18 @@ export default function AssistantWorkspace(props: Props) {
     source: () => "/api/assistant/workspace/sidebar",
     initial: {
       source: "/api/assistant/workspace/sidebar",
-      data: { conversations: props.initialConversations, projects: props.projects, doneCount: props.initialDoneCount },
+      data: {
+        conversations: props.initialConversations,
+        projects: props.projects,
+        doneCount: props.initialDoneCount,
+        questions: props.initialQuestions,
+      },
     },
     load: (_source, { abortSignal }) => assistantApi.loadSidebar(abortSignal),
   });
   const conversations = () => sidebar.data()?.conversations ?? props.initialConversations;
   const projects = () => sidebar.data()?.projects ?? props.projects;
+  const openQuestions = () => sidebar.data()?.questions ?? props.initialQuestions;
   const [projectView, setProjectView] = createSignal<ProjectViewState | null>(
     props.initialProject && props.initialProjectChats && props.initialProjectContext
       ? {
@@ -736,6 +748,41 @@ export default function AssistantWorkspace(props: Props) {
     if (result === "stale" || requestId !== navigationRequest) return false;
     if (chat.activeConversationId() === conversationId) focusComposer();
     return true;
+  };
+  // "Waiting for you" above the composer: the server's read of every open question, corrected by what this chat shows.
+  const waitingConversationId = () => (projectView() || approvalsOpen() ? null : chat.activeConversationId());
+  const waiting = createMemo(() => {
+    const conversationId = waitingConversationId();
+    const loaded = conversationId !== null && chat.conversation()?.id === conversationId && !chat.loadingConversation();
+    return waitingQuestionsView({
+      questions: openQuestions(),
+      conversationId,
+      local: loaded ? (chat.activeTurn()?.blocks ?? []) : null,
+    });
+  });
+  const waitingFocus = createWaitingQuestionFocus({
+    onlyHere: () => waiting().onlyHere,
+    viewport: timelineViewport,
+    content: timelineContent,
+    scrollToAnchor: (anchor) => scrollToMessageAnchor?.(anchor) ?? false,
+    gone: focusComposer,
+  });
+  let questionJump = 0;
+  /** Jumps to a question from "Waiting for you"; one in another chat opens that chat as a new history entry. */
+  const jumpToQuestion = async (question: AiOpenQuestion) => {
+    const jump = ++questionJump;
+    const current = () => jump === questionJump;
+    if (waitingConversationId() === question.conversationId) return waitingFocus.focus(question.anchor, current);
+    const href = assistantConversationHref(window.location.href, question.conversationId);
+    const requestId = ++navigationRequest;
+    setProjectView(null);
+    setApprovalsOpen(false);
+    const result = await chat.openConversation(question.conversationId);
+    if (requestId !== navigationRequest || !current() || result === "stale") return;
+    // The page load shows the chat, or why it cannot.
+    if (result === "failed") return navigateTo(href);
+    navigate(href, { scroll: "manual", viewTransition: false });
+    await waitingFocus.focus(question.anchor, current);
   };
   const openProject = async (projectId: string) => {
     const project = projects().find((item) => item.id === projectId);
@@ -1576,30 +1623,42 @@ export default function AssistantWorkspace(props: Props) {
         <Chat.Composer
           addOpensCommands
           accessory={
-            <Show when={!projectComposer() && (hasOpenTodos() || showCompletedTodos())}>
-              <Chat.Tasks
-                items={todoItems()}
-                open={todoOpen()}
-                onOpenChange={setTodoOpen}
-                label={locale().startsWith("de") ? "Aufgaben" : "Tasks"}
-                progressLabel={todoProgress()}
-                statusLabels={
-                  locale().startsWith("de")
-                    ? {
-                        pending: "Offen",
-                        in_progress: chat.activeTurn()?.status === "running" ? "In Arbeit" : "Aktueller Schritt",
-                        completed: "Erledigt",
-                        cancelled: "Verworfen",
-                      }
-                    : {
-                        pending: "Pending",
-                        in_progress: chat.activeTurn()?.status === "running" ? "In progress" : "Current step",
-                        completed: "Completed",
-                        cancelled: "Cancelled",
-                      }
-                }
-              />
-            </Show>
+            <>
+              <Show when={!projectComposer() && (hasOpenTodos() || showCompletedTodos())}>
+                <Chat.Tasks
+                  items={todoItems()}
+                  open={todoOpen()}
+                  onOpenChange={setTodoOpen}
+                  label={locale().startsWith("de") ? "Aufgaben" : "Tasks"}
+                  progressLabel={todoProgress()}
+                  statusLabels={
+                    locale().startsWith("de")
+                      ? {
+                          pending: "Offen",
+                          in_progress: chat.activeTurn()?.status === "running" ? "In Arbeit" : "Aktueller Schritt",
+                          completed: "Erledigt",
+                          cancelled: "Verworfen",
+                        }
+                      : {
+                          pending: "Pending",
+                          in_progress: chat.activeTurn()?.status === "running" ? "In progress" : "Current step",
+                          completed: "Completed",
+                          cancelled: "Cancelled",
+                        }
+                  }
+                />
+              </Show>
+              {/* Right above the field, under the thumb on phones. */}
+              <Show when={waiting().total > 0}>
+                <AssistantWaitingStrip
+                  view={waiting()}
+                  conversationId={waitingConversationId()}
+                  quiet={waitingFocus.quiet()}
+                  onJump={(question) => void jumpToQuestion(question)}
+                  onShowMore={openApprovals}
+                />
+              </Show>
+            </>
           }
           draftKey={sessionKey()}
           mentions={mentionsFor(sessionKey())}

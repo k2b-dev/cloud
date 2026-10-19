@@ -5,6 +5,7 @@ import {
   capabilityReceiptParts,
   capabilityReviewSentence,
   capabilityReviewSentenceParts,
+  capabilitySentenceParts,
   capabilitySentenceText,
 } from "../../_internal/capability-sentences";
 import type {
@@ -173,6 +174,19 @@ export const actionPlainText = (text: ActionText): string =>
       return chip.kind === "time" ? chip.label : chip.title;
     })
     .join("");
+
+/** The short template, else the action sentence, read as the card's chips without person addresses or title quotes. */
+export const reviewShortText = (review: CapabilityActionCallReview, context: ActionCardContext): string =>
+  actionPlainText(
+    partsText(
+      capabilitySentenceParts(review.sentence.short ?? review.sentence.action, review.slots, {
+        locale: review.locale,
+        timeZone: context.timeZone,
+      }),
+      review.locale,
+      context.app,
+    ),
+  );
 
 const firstLink = (links: readonly CapabilitySemanticLink[] | undefined, rels: CapabilitySemanticLink["rel"][]) =>
   rels.map((rel) => links?.find((link) => link.rel === rel)?.href).find(Boolean);

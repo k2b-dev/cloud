@@ -481,3 +481,5 @@ export {
   type CloudAiViewImageOutput,
   CloudAiViewImageOutputSchema,
 } from "./vision-tool";
+
+export { type AiOpenQuestion, type AiOpenQuestions, listAiOpenQuestions } from "./open-questions";

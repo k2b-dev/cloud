@@ -75,6 +75,8 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
   const [answeredHere, setAnsweredHere] = createSignal(false);
   const [arrive, setArrive] = createSignal(false);
   let reopenedHere = false;
+  // A press on the sentence focuses it too; only a focus moved there from elsewhere, such as a jump, lights it up.
+  let sentencePressed = false;
   // A press counts only while its action runs: a reopen from elsewhere later must not take the focus.
   const scope = {
     answered: answeredHere,
@@ -144,6 +146,16 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
             class="k2b-chat-decision__sentence"
             tabindex="-1"
             data-arrive={arrive() ? "true" : undefined}
+            onPointerDown={() => {
+              sentencePressed = true;
+            }}
+            onPointerUp={() => {
+              sentencePressed = false;
+            }}
+            onFocus={() => {
+              if (!sentencePressed) setArrive(true);
+              sentencePressed = false;
+            }}
             onAnimationEnd={() => setArrive(false)}
           >
             {props.sentence}

@@ -2297,6 +2297,12 @@ export const migrateCloudAi = async (): Promise<void> => {
     AFTER UPDATE OF status, error, completed_at, cancel_requested_at ON ai.turns
     FOR EACH ROW EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list,conversation-detail')
   `.simple();
+  await sql`DROP TRIGGER IF EXISTS ai_live_pending_actions_changed ON ai.pending_actions`.simple();
+  await sql`
+    CREATE TRIGGER ai_live_pending_actions_changed
+    AFTER INSERT OR DELETE OR UPDATE OF status ON ai.pending_actions
+    FOR EACH ROW EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list')
+  `.simple();
   await sql`DROP TRIGGER IF EXISTS ai_live_chat_tasks_changed ON ai.chat_tasks`.simple();
   await sql`
     CREATE TRIGGER ai_live_chat_tasks_changed AFTER INSERT OR UPDATE OR DELETE ON ai.chat_tasks

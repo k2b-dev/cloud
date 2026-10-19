@@ -3,7 +3,7 @@ id: assistant-workflow
 title: Chats & Actions
 icon: ti ti-messages
 description: Find chats, manage metadata, retry, continue in a new chat, compact, stop, and handle actions.
-updated: 2026-10-11
+updated: 2026-10-19
 order: 110
 ---
 
@@ -12,7 +12,7 @@ The sidebar lists your active chats as plain rows: pinned chats first, then by t
 ## Chat navigation {icon="layout-list"}
 
 :::reference
-- **Chat rows:** Each row shows the chat's title. One icon at the row's end marks a chat that is running, waiting for you, failed, has a new response, or has an active schedule; its tooltip names the state.
+- **Chat rows:** Each row shows the chat's title. One icon at the row's end marks a chat that is running, waiting for you, failed, has a new response, or has an active schedule; its tooltip names the state. A chat with an open question carries a dot.
 - **Projects:** Use the plus action in the Projects popup to create a Project with a name and optional instructions.
 - **New chat:** Opens an empty chat. When the open chat is still empty, Assistant keeps it instead of creating another one, unless it belongs to a Project, was opened by another app, has a name or description you gave it, or is pinned, done, or archived.
 - **Empty chat:** Choose an optional Project below the centered composer before sending the first message. Starter cards fill an editable request; they never send it automatically.
@@ -56,6 +56,14 @@ for asking, and a preview of what will change. Two buttons name the deed and
 target: one allows it and one declines. An approval applies once to what the
 card shows. If that changes before the Action runs, Assistant asks again. A
 reload keeps the reviewed sentence and preview.
+
+While questions are open, **Waiting for you** above the composer lists each one
+in its short form, also those from your other chats with the chat's name.
+Select one to go to its question; Assistant opens that chat if needed and puts
+the focus on the question's sentence. When more questions wait than the row
+lists, its last entry opens **Approvals**. With a single question in the open chat,
+the row shows only while that question's buttons are out of view. There is no
+way to approve several questions at once: you answer each in its own card.
 
 Where offered, the quiet **Yes, and don't ask again in this chat** link remembers
 this scope until you delete the chat. **Always approve** is no longer offered;

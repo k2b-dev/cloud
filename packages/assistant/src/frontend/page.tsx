@@ -23,7 +23,9 @@ import { ASSISTANT_CONTEXT_COOKIE, assistantContextClosedFromCookie } from "./ch
 import { assistantMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
-  const { t } = assistantMessages.resolve([getLocale(c)]);
+  const locale = getLocale(c);
+  const timeZone = getTimeZone(c);
+  const { t } = assistantMessages.resolve([locale]);
   const user = expectUserBackedActor(c);
   const url = new URL(c.req.raw.url);
   const requestedConversationId = url.searchParams.get("conversation") ?? undefined;
@@ -36,7 +38,7 @@ export default ssr<AuthContext>(async (c) => {
     assistantAiSettingsState(subject),
     listAssistantAiModels(subject),
     aiUserPrefs.get(user.id),
-    loadAssistantSidebarSnapshot(user.id),
+    loadAssistantSidebarSnapshot(user.id, { locale, timeZone }),
     coreSettings.get<string>("app.url"),
     getAiChatQuotas(subject).catch(() => null),
     // Also without the view: the sidebar shows its Approvals row from the first paint, so it never pushes Studio away.
@@ -93,7 +95,7 @@ export default ssr<AuthContext>(async (c) => {
     ? await Promise.all([
         loadAiStreamState(activeConversation),
         aiConversations.listConversationTimeline({ conversationId: activeConversation.id }),
-        loadAssistantChatContextSnapshot(user.id, activeConversation.shortId, { timeZone: getTimeZone(c) }),
+        loadAssistantChatContextSnapshot(user.id, activeConversation.shortId, { timeZone }),
       ])
     : [null, [], null];
 
@@ -106,11 +108,12 @@ export default ssr<AuthContext>(async (c) => {
         status={status}
         models={models}
         lastModelId={prefs.lastModelId}
-        timeZone={getTimeZone(c)}
+        timeZone={timeZone}
         renderedAt={new Date().toISOString()}
         initialLiveCursor={initialLiveCursor}
         initialConversations={initialConversations}
         initialDoneCount={sidebar.doneCount}
+        initialQuestions={sidebar.questions}
         initialConversationId={activeConversation?.shortId ?? null}
         initialArtifactPath={initialArtifactPath}
         initialWorkspaceHref={`${url.pathname}${url.search}`}

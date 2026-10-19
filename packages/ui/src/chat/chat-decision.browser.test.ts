@@ -262,6 +262,22 @@ test("marking a line later keeps its retained children in place", async () => {
   }
 });
 
+test("a focus moved to the sentence from elsewhere lights it up; a press on the sentence itself does not", async () => {
+  const page = await open();
+  try {
+    const sentence = page.locator(".k2b-chat-decision__sentence").first();
+    await sentence.click();
+    expect(await sentence.evaluate((e) => e === document.activeElement)).toBe(true);
+    expect(await sentence.getAttribute("data-arrive")).toBeNull();
+    await page.getByRole("button", { name: "Send to Lea", exact: true }).focus();
+    // A jump from a list of waiting questions focuses the sentence by script.
+    await sentence.evaluate((e) => (e as HTMLElement).focus({ preventScroll: true }));
+    expect(await sentence.getAttribute("data-arrive")).toBe("true");
+  } finally {
+    await page.close();
+  }
+});
+
 test("a reopen from elsewhere after an unrelated outcome action leaves the focus alone", async () => {
   const page = await open();
   try {
