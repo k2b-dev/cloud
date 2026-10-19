@@ -152,10 +152,26 @@ In browser tests, fixtures stamp their data from a fixed clock, and each
 context gets an init script that replaces the page's `Date` with one that
 starts at that clock and flows from there. The Chat harness starts at
 `chatTestNow`, exposes its flowing clock as `harness.now()`, and pins pages
-with `pinPageClock` in `ChatWorkspace.browser.test.ts`. Do not use
-Playwright's `clock` for this: even `setSystemTime` replaces timers,
-animation frames, and `performance`, and the Chat read-state tests then
-failed in WebKit. Use `performance.now()` for durations and deadlines.
+with `pinPageClock` in `packages/chat/src/frontend/ChatWorkspace.browser.test.ts`.
+A page built with `setContent` keeps the window of its blank page, so the
+continuous month test in `@k2b/ui` runs the same function with
+`page.evaluate` before `setContent`. Use `performance.now()` for durations
+and deadlines.
+
+Do not pin the date with Playwright's `clock`. `setFixedTime` and
+`setSystemTime` also install its fake clock, which replaces timers,
+animation frames, and `performance`. Scroll- and frame-driven UI then runs
+on a timer instead of the page's rendering, so a test sees state that lags
+only in the test. The Chat read-state tests failed in WebKit this way, and so
+did the continuous month title
+([#1139](https://github.com/k2b-dev/cloud/issues/1139)).
+
+The `test-clock` check flags `.clock.setFixedTime(` and
+`.clock.setSystemTime(` calls on a page or context. A line comment
+`// playwright clock: <reason>` on the same line or directly above allows a
+pin in a test whose subject is fake timers. The reason must be non-empty.
+`clock.install()`, `runFor`, and `fastForward` stay allowed for deliberate
+timer control, and `setSystemTime` from `bun:test` is not a finding.
 
 Measure browser timing on the browser's clock. Playwright events such as
 `request` reach the test process late under load, so tests that assert a browser
@@ -180,7 +196,10 @@ still there. The live-routes slow-client test waits for the server's `1013`
 close before it resumes the client. A test about the moment before a debounce
 or delay fires acts in the same task as the trigger, as the Notebooks Timeline
 scroll-restore test does, because a check after a real-time wait that the delay
-has not fired yet fails on a slow runner.
+has not fired yet fails on a slow runner. Wait for the state you assert, not
+for a step before it: the continuous month test waits until the grid rests at
+the week and the header names the month, because the view names the month in
+an animation frame after the scroll event.
 
 The `test-waits` check rejects new awaited fixed waits of at least 1,000 ms
 with a numeric literal in `*.test.ts` and `*.test.tsx` files. A line comment
