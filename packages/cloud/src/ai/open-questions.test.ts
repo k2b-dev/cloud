@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { type CapabilityActionCallReview, CapabilityActionCallReviewSchema } from "../contracts/capabilities";
 import { reviewShortText, toolActionCard, toolBlockReview } from "./chat/action-card";
-import { FIXTURE_AT, actionFixtures } from "./chat/action-question.fixtures";
+import { actionFixtures, FIXTURE_AT } from "./chat/action-question.fixtures";
 import { legacyOutcomeWords } from "./chat/tool-action-words";
 import { listAiOpenQuestions, openQuestionFromRow } from "./open-questions";
 import type { AiTurnBlock } from "./protocol";

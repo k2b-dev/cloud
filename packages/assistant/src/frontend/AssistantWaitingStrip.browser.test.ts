@@ -2,10 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiStoredMessage, AiTurnBlock } from "@k2b/cloud/ai";
+import { aiOpenQuestionFixture, aiQuestionFixtures } from "@k2b/cloud/ai/testing";
 import type { Browser, Page, Route } from "playwright";
-import { actionFixtures } from "../../../cloud/src/ai/chat/action-question.fixtures";
-import { openQuestionFromRow } from "../../../cloud/src/ai/open-questions";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { emptySidebarSnapshot } from "./AssistantChatSidebar.fixture";
 
 // "Waiting for you" is layout and focus: its reserved row, whether it shows while a card's answers are in view, a
@@ -110,7 +109,7 @@ const message = (id: string, seq: number, role: "user" | "assistant", text: stri
 type State = { locale: Locale; scenario: Scenario };
 
 const tools = (locale: Locale) => {
-  const fixtures = actionFixtures(locale);
+  const fixtures = aiQuestionFixtures(locale);
   return { mail: fixtures.mail!.block, del: fixtures.del!.block, routine: fixtures.routine!.block };
 };
 
@@ -121,18 +120,13 @@ const toolBlock = (locale: Locale, key: "mail" | "del" | "routine", open: boolea
 
 /** A question as the server's read presents it from the chat's tool block. */
 const question = (locale: Locale, key: "mail" | "del" | "routine", chat: ChatId, minutesAgo: number): AiOpenQuestion => {
-  const block = tools(locale)[key] as Extract<AiTurnBlock, { kind: "tool" }>;
-  return openQuestionFromRow(
+  return aiOpenQuestionFixture(
     {
       id: `req-${key}`,
       conversationId: chat,
       conversationTitle: titles(locale)[chat],
-      displayCallId: block.callId,
-      appId: block.presentation?.kind === "capability" ? block.presentation.appId : "core",
-      sentence: "",
-      toolName: block.name,
-      createdAt: new Date(at(minutesAgo)),
-      block,
+      createdAt: at(minutesAgo),
+      block: tools(locale)[key],
     },
     { locale, timeZone: "Europe/Berlin" },
   );
@@ -408,10 +402,12 @@ const until = async (page: Page, condition: () => Promise<boolean>, what: string
   }
   throw new Error(`Did not settle: ${what}`);
 };
+// Each live event carries its own cursor, counted from the fixed clock.
+let liveCursor = now;
 /** Tells the page that the owner's chats changed, as Core's socket does. */
 const changed = (page: Page, conversationId: string | null) =>
   page.evaluate(
-    ([conversationId, at]) =>
+    ([conversationId, at, cursor]) =>
       (window as unknown as { live: { apply: (events: unknown[]) => Promise<void> } }).live.apply([
         {
           data: {
@@ -422,10 +418,10 @@ const changed = (page: Page, conversationId: string | null) =>
             domains: ["conversation-list", "conversation-detail"],
             at,
           },
-          cursor: `s6t.cloud-live-core.${Date.now()}`,
+          cursor: `s6t.cloud-live-core.${cursor}`,
         },
       ]),
-    [conversationId, new Date(now).toISOString()] as const,
+    [conversationId, new Date(now).toISOString(), ++liveCursor] as const,
   );
 /** Scrolls the chat's timeline: the scrollable ancestor of its first message. */
 const scrollTimeline = (page: Page, to: "top" | "end") =>
@@ -542,6 +538,7 @@ describe("Waiting for you", () => {
         await strip(page).locator(".assistant-waiting__entry").first().click();
         await until(page, async () => (await focusedSentence(page)) === "tool-mail-1", "sentence focused");
         await until(page, async () => (await strip(page).getAttribute("data-quiet")) === "", "row hides again");
+        await settled(page);
         expect(await rect(page, "nav.assistant-waiting")).toEqual(row);
         expect(await rect(page, ".k2b-chat-composer")).toEqual(field);
         expect(unexpected.filter((line) => line.startsWith("pageerror"))).toEqual([]);
@@ -561,6 +558,7 @@ describe("Waiting for you", () => {
           .click();
         await page.waitForURL(/\?conversation=Tops42&question=tool-routine-1$/);
         await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence of the other chat focused");
+        await settled(page);
         // The sentence is in view, and the open chat's question now leads the row; the others name their chat.
         const sentence = await rect(page, '[data-chat-anchor="tool-routine-1"] .k2b-chat-decision__sentence');
         expect(sentence.top).toBeGreaterThanOrEqual(0);
@@ -595,6 +593,7 @@ describe("Waiting for you", () => {
         expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-mail-1");
         await page.reload();
         await until(page, async () => (await focusedSentence(page)) === "tool-mail-1", "earlier sentence focused after reload");
+        await settled(page);
         const earlier = await rect(page, '[data-chat-anchor="tool-mail-1"] .k2b-chat-decision__sentence');
         expect(earlier.top).toBeGreaterThanOrEqual(0);
         expect(earlier.bottom).toBeLessThanOrEqual((await rect(page, "nav.assistant-waiting")).top);

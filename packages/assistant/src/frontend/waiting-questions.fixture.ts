@@ -1,6 +1,5 @@
 import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiTurnBlock, AiTurnSnapshot } from "@k2b/cloud/ai";
-import { actionFixtures } from "../../../cloud/src/ai/chat/action-question.fixtures";
-import { openQuestionFromRow } from "../../../cloud/src/ai/open-questions";
+import { aiOpenQuestionFixture, aiQuestionFixtures } from "@k2b/cloud/ai/testing";
 
 /**
  * "Waiting for you" for tests: the card mockup's multi scenario in German, with questions presented by the server's own
@@ -37,25 +36,15 @@ const chat = (id: string, title: string, minutesAgo: number, waiting: boolean): 
 
 const titles = { Wart42: "Wartung Oktober", Tops42: "Team Ops Wochenplanung" } as const;
 const blocks = () => {
-  const fixtures = actionFixtures("de");
-  return { mail: fixtures.mail!.block, del: fixtures.del!.block, routine: fixtures.routine!.block } as Record<Key, ToolBlock>;
+  const fixtures = aiQuestionFixtures("de");
+  return { mail: fixtures.mail!.block, del: fixtures.del!.block, routine: fixtures.routine!.block } satisfies Record<Key, ToolBlock>;
 };
 
 /** A question as the server's read presents it from its tool block. */
 export const waitingQuestion = (key: Key, conversationId: keyof typeof titles, minutesAgo: number): AiOpenQuestion => {
   const block = blocks()[key];
-  return openQuestionFromRow(
-    {
-      id: `req-${key}`,
-      conversationId,
-      conversationTitle: titles[conversationId],
-      displayCallId: block.callId,
-      appId: block.presentation?.kind === "capability" ? block.presentation.appId : "core",
-      sentence: "",
-      toolName: block.name,
-      createdAt: new Date(at(minutesAgo)),
-      block,
-    },
+  return aiOpenQuestionFixture(
+    { id: `req-${key}`, conversationId, conversationTitle: titles[conversationId], createdAt: at(minutesAgo), block },
     { locale: "de", timeZone: "Europe/Berlin" },
   );
 };

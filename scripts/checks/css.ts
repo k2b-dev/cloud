@@ -263,6 +263,7 @@ export const rule: Rule = {
       "--analysis-min-width", // AnalyticsView.tsx: validated layout width
       "--mail-row-height", // MailConversationRow.tsx: measured height of a leaving row
       "--cloud-panel-width-set", // Layout.tsx and browser/panel-slot.ts: the panel width the reader saved
+      "--assistant-waiting-accent", // AssistantWaitingStrip.tsx: the accent of the app that asks
     ]);
     // Cloud imports the UI package stylesheet. Its defaults are valid owners,
     // while Cloud and application styles may override those theme tokens.

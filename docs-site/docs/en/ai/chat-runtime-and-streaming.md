@@ -506,10 +506,15 @@ Truncated values end with `…`, included in the limit, without splitting a code
 point. These bounds also apply to legacy questions and fallback text.
 
 Assistant carries this read in its sidebar snapshot for both server rendering
-and subsequent reloads. Opening or resolving a pending action invalidates
+and subsequent reloads. Opening, resolving, or removing a question invalidates
 `conversation-list`, including when another question in the same turn remains
-open. Reuse that invalidation to reload the snapshot; no separate polling or
-question endpoint is needed.
+open; browser tool calls do not. Reuse that invalidation to reload the
+snapshot; no separate polling or question endpoint is needed.
+
+In tests, `@k2b/cloud/ai/testing` provides demo questions:
+`aiQuestionFixtures(locale)` returns tool blocks with reviews, and
+`aiOpenQuestionFixture` presents one of them as this read would. The demo data
+may change in any release, so assert on what your host renders from it.
 
 ## Treat turns as asynchronous
 
