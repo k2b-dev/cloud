@@ -773,21 +773,26 @@ const parseMimeStructure = (value: unknown): Record<string, unknown> => {
 // node counts, attachments included: MailParser can take HTML from a multipart subtree marked as
 // an attachment into the body, and counting one HTML attachment too many only reserves more.
 export const hydrationHtmlBytes = (structure: unknown, sourceBytes: number): number => {
+  let root: Record<string, unknown>;
+  try {
+    root = parseMimeStructure(structure);
+  } catch {
+    return sourceBytes;
+  }
+  if (typeof root.type !== "string") return sourceBytes;
   let total = 0;
-  let usable = false;
   let missing = false;
   const visit = (value: unknown): void => {
     if (!isMimeNode(value)) return;
     if (String(value.type).toLowerCase() === "text/html") {
       if (typeof value.size === "number" && Number.isFinite(value.size) && value.size >= 0) {
         total += value.size;
-        usable = true;
       } else missing = true;
     }
     if (Array.isArray(value.childNodes)) for (const child of value.childNodes) visit(child);
   };
-  visit(parseMimeStructure(structure));
-  return usable && !missing ? total : sourceBytes;
+  visit(root);
+  return missing ? sourceBytes : total;
 };
 
 export const hydrateMessageFromSource = async (params: {
