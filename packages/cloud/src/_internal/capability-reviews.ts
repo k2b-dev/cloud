@@ -30,6 +30,13 @@ export type CapabilityReviewContext = {
   locales?: readonly string[];
 };
 const schemaIssues = (error: z.ZodError): string[] => error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
+let actionCheckDataHash: string | undefined;
+/** Whether a Query answers an Action's `check`: its data schema is exactly the projected `CapabilityActionCheckSchema`. */
+export const capabilityQueryChecksActionOutcome = (query: CapabilityQueryManifest): boolean => {
+  actionCheckDataHash ??= capabilityHash(projectSchema(CapabilityActionCheckSchema, "Action check", "output"));
+  return capabilityHash(query.dataSchema) === actionCheckDataHash;
+};
+
 export const capabilityActionReviewIssues = (review: unknown, context: CapabilityReviewContext): string[] => {
   const parsed = CapabilityActionReviewDataSchema.safeParse(review);
   if (!parsed.success) return schemaIssues(parsed.error);
@@ -51,8 +58,7 @@ export const capabilityActionReviewIssues = (review: unknown, context: Capabilit
     issues.push("locale is not supported by the app");
   if (data.check) {
     const query = context.queries.find((query) => query.localId === data.check?.query);
-    if (!query || capabilityHash(query.dataSchema) !== capabilityHash(projectSchema(CapabilityActionCheckSchema, "Action check", "output")))
-      issues.push("check.query must return CapabilityActionCheckSchema");
+    if (!query || !capabilityQueryChecksActionOutcome(query)) issues.push("check.query must return CapabilityActionCheckSchema");
     else if (!context.validateQueryInput(query, data.check.input)) issues.push("check.input does not match the Query");
   }
   issues.push(

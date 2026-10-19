@@ -301,6 +301,14 @@ const slotBoundaryCases = () => {
     { kind: "time", start: "2026-10-17T12:00:00+02:00", end: "2026-10-17T10:00:00Z", format: "date-time" },
   ])
     cases.push({ name: `slot valid ${slot.format}`, slot, valid: true });
+  for (const format of ["date", "date-time"] as const)
+    for (const field of ["start", "end"] as const)
+      for (const value of ["tomorrow", "2026-02-30", "2026-10-17T12:00:00", "2026-02-30T12:00:00Z"])
+        cases.push({
+          name: `slot time ${format}.${field} ${value}`,
+          slot: { kind: "time", start: format === "date" ? "2026-10-17" : "2026-10-17T12:00:00Z", format, [field]: value },
+          valid: false,
+        });
   for (const kind of ["object", "place", "text", "person", "count"]) {
     const slot =
       kind === "object" || kind === "place"
@@ -393,8 +401,56 @@ export const previewBoundaryCases = () => {
         preview: { kind: "fields", rows: [{ label: "Title", value: "X", [field]: "x".repeat(n) }] },
         valid: n === max,
       });
+  const dateValues = [
+    { value: "2024-02-29", date: true, dateTime: false },
+    { value: "2026-10-17T12:00:00Z", date: true, dateTime: true },
+    { value: "2026-10-17T12:00:00+02:00", date: true, dateTime: true },
+    { value: "tomorrow", date: false, dateTime: false },
+    { value: "2026-02-29", date: false, dateTime: false },
+    { value: "2026-02-30T12:00:00Z", date: false, dateTime: false },
+    { value: "2026-10-17T12:00:00", date: false, dateTime: false },
+  ];
+  for (const { value, date, dateTime } of dateValues) {
+    for (const format of ["date", "date-time"] as const)
+      for (const field of ["value", "before"] as const)
+        cases.push({
+          name: `preview fields ${format}.${field} ${value}`,
+          preview: { kind: "fields", rows: [{ label: "Date", value: "2026-10-17T12:00:00Z", format, [field]: value }] },
+          valid: format === "date" ? date : dateTime,
+        });
+    for (const allDay of [undefined, false, true])
+      for (const field of ["start", "end"] as const)
+        cases.push({
+          name: `preview event ${field} ${value} allDay=${allDay}`,
+          preview: { ...bases.event, allDay, [field]: value },
+          valid: date,
+        });
+    cases.push({ name: `preview task due ${value}`, preview: { ...bases.task, due: value }, valid: date });
+    cases.push({ name: `preview message sendAt ${value}`, preview: { ...bases.message, sendAt: value }, valid: dateTime });
+  }
   return cases;
 };
+
+export const outcomeCheckCases = () => [
+  { name: "without receipt", result: { data: { outcome: "pending" } }, valid: true },
+  {
+    name: "own slots",
+    result: { data: { outcome: "done", receipt: { text: "Saved {file}", slots: { file: { kind: "object", title: "Saved.pdf" } } } } },
+    valid: true,
+  },
+  { name: "unknown slot", result: { data: { outcome: "done", receipt: { text: "{missing}" } } }, valid: false },
+  ...[false, true].map((open) => ({
+    name: `truncated preview with open link=${open}`,
+    result: {
+      data: {
+        outcome: "done",
+        receipt: { text: "Saved", preview: { kind: "page", title: "Page", body: "Text", format: "plain", truncated: true } },
+      },
+      ...(open ? { links: [{ rel: "open", href: "/app/demo" }] } : {}),
+    },
+    valid: open,
+  })),
+];
 
 export const receiptCases = () => [
   {

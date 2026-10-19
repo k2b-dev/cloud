@@ -22,7 +22,7 @@ import {
   reviewCompiledCapability,
   validateCapabilityResult,
 } from "./capabilities";
-import { compileReviewFixture, receiptCases, reviewCases, reviewFixture } from "./capability-review.test-fixture";
+import { compileReviewFixture, outcomeCheckCases, receiptCases, reviewCases, reviewFixture } from "./capability-review.test-fixture";
 import { actionReview, capabilityActionReviewIssues, capabilityReviewRememberScope, capabilityReviewView } from "./capability-reviews";
 
 const context = {
@@ -86,6 +86,14 @@ describe("shared review validation at the producer", () => {
       const result = validateCapabilityResult(compiled, compiled.actions.get("send")!, { data: {}, receipt, ...(links ? { links } : {}) });
       expect(result.ok).toBe(valid);
       if (!valid) expect(result).toMatchObject({ ok: false, error: { code: "INVALID_APP_RESPONSE", status: 500 } });
+    });
+  for (const { name, result: wire, valid } of outcomeCheckCases())
+    test(`producer outcome check: ${name}`, () => {
+      const compiled = compileReviewFixture();
+      const result = validateCapabilityResult(compiled, compiled.queries.get("check")!, wire);
+      expect(result.ok).toBe(valid);
+      if (valid && result.ok) expect(result.data).toEqual(wire);
+      else expect(result).toMatchObject({ ok: false, error: { code: "INVALID_APP_RESPONSE", status: 500 } });
     });
   test("silent reach only narrows; scope never bypasses per-call ask", () => {
     const review = reviewFixture();

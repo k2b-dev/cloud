@@ -417,7 +417,14 @@ export const CapabilityPreviewSchema = z.discriminatedUnion("kind", [
               before: reviewBlock(2000).optional(),
               format: z.enum(["date", "date-time"]).optional(),
             })
-            .strict(),
+            .strict()
+            .superRefine((row, context) => {
+              const schema =
+                row.format === "date" ? CapabilityReviewDateSchema : row.format === "date-time" ? CapabilityReviewDateTimeSchema : null;
+              for (const key of ["value", "before"] as const)
+                if (row[key] !== undefined && schema?.safeParse(row[key]).success === false)
+                  context.addIssue({ code: "custom", path: [key], message: "Invalid date or time" });
+            }),
         )
         .min(1)
         .max(12),

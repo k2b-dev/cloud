@@ -5,7 +5,7 @@ import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { futureLibrary } from "../../test/future-capability-manifest";
 import { compileCapabilities } from "../_internal/capabilities";
-import { compileReviewFixture, receiptCases, reviewCases } from "../_internal/capability-review.test-fixture";
+import { compileReviewFixture, outcomeCheckCases, receiptCases, reviewCases } from "../_internal/capability-review.test-fixture";
 import { resolveLiveCapabilityRegistryEntry } from "../_internal/registry";
 import { env } from "../config/env";
 import { CapabilityCatalogSchema, defineCapabilities } from "../contracts/capabilities";
@@ -1349,6 +1349,25 @@ describe("policy review and receipt validation", () => {
       });
       expect(result.status).toBe(valid ? 200 : 502);
       if (!valid) expect(await result.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
+    });
+  for (const { name, result: wire, valid } of outcomeCheckCases())
+    test(`Core outcome check: ${name}`, async () => {
+      const capability = { ...entry(), manifest: compileReviewFixture().manifest };
+      const result = await dispatchCapability({
+        origin: "http",
+        appId: "demo",
+        capabilityId: "check",
+        kind: "queries",
+        request: new Request("https://cloud.example.test/api/capabilities/v1/queries/demo/check"),
+        input: { id: "one" },
+        dependencies: {
+          getCapability: async () => capability,
+          fetch: async () => Response.json(wire),
+        },
+      });
+      expect(result.status).toBe(valid ? 200 : 502);
+      if (valid) expect(await result.json()).toEqual(wire);
+      else expect(await result.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
     });
   test("Query results cannot carry receipts", async () => {
     const result = await dispatchCapability({

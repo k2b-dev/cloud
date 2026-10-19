@@ -3,7 +3,11 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
-import { capabilityActionReceiptIssues, capabilityActionReviewIssues } from "../_internal/capability-reviews";
+import {
+  capabilityActionReceiptIssues,
+  capabilityActionReviewIssues,
+  capabilityQueryChecksActionOutcome,
+} from "../_internal/capability-reviews";
 import { getCapability, listApps } from "../_internal/registry";
 import { resolveCommandLink } from "../capabilities/command-link";
 import {
@@ -643,6 +647,17 @@ const runCapabilityDispatch = async (
       : params.kind === "queries"
         ? ["Queries cannot return a receipt"]
         : capabilityActionReceiptIssues(receipt, { ...reviewContext, links: links.success ? links.data : undefined });
+  if (!params.review && params.kind === "queries" && !("idempotency" in operation) && capabilityQueryChecksActionOutcome(operation)) {
+    const data =
+      upstreamBody.data !== null && typeof upstreamBody.data === "object"
+        ? Object.getOwnPropertyDescriptor(upstreamBody.data, "data")?.value
+        : undefined;
+    const nestedReceipt = data !== null && typeof data === "object" ? Object.getOwnPropertyDescriptor(data, "receipt")?.value : undefined;
+    if (nestedReceipt !== undefined)
+      reviewIssues.push(
+        ...capabilityActionReceiptIssues(nestedReceipt, { ...reviewContext, links: links.success ? links.data : undefined }),
+      );
+  }
   if (!resultValidator || !parsedResult?.success || reviewIssues.length > 0) {
     if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     const invalid = errorResponse("INVALID_APP_RESPONSE", messages.outsideResultSchema({ appId: params.appId }), 502);

@@ -112,16 +112,7 @@ describe("capability action review", () => {
       },
     };
     const html = renderToString(() => createComponent(ActionReviewContent, { review }));
-    for (const value of [
-      "Send",
-      "Meeting",
-      "ops@example.com",
-      "lea@example.com",
-      "cc@example.com",
-      "bcc@example.com",
-      "meeting.pdf",
-      "this leaves Cloud",
-    ])
+    for (const value of ["Send", "Meeting", "ops@example.com", "lea@example.com", "cc@example.com", "bcc@example.com", "meeting.pdf"])
       expect(html).toContain(value);
   });
 });

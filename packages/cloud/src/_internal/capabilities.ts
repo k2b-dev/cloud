@@ -44,7 +44,7 @@ import {
 } from "../contracts/capabilities";
 import { fileProviderIssues } from "../contracts/file-provider";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared/locale";
-import { capabilityActionReceiptIssues, capabilityActionReviewIssues } from "./capability-reviews";
+import { capabilityActionReceiptIssues, capabilityActionReviewIssues, capabilityQueryChecksActionOutcome } from "./capability-reviews";
 import {
   CAPABILITY_SENTENCE_KEYS,
   CAPABILITY_SENTENCE_MAX_CHARS,
@@ -1247,6 +1247,17 @@ export const validateCapabilityResult = (
             links: parsedLinks.success ? parsedLinks.data : undefined,
           })
         : ["Queries cannot return a receipt"];
+  if (!("idempotency" in operation.manifest) && capabilityQueryChecksActionOutcome(operation.manifest)) {
+    const data = result !== null && typeof result === "object" ? Object.getOwnPropertyDescriptor(result, "data")?.value : undefined;
+    const nestedReceipt = data !== null && typeof data === "object" ? Object.getOwnPropertyDescriptor(data, "receipt")?.value : undefined;
+    if (nestedReceipt !== undefined)
+      receiptIssues.push(
+        ...capabilityActionReceiptIssues(nestedReceipt, {
+          ...compiledReviewContext(compiled, operation.manifest.localId),
+          links: parsedLinks.success ? parsedLinks.data : undefined,
+        }),
+      );
+  }
   if (!parsed.success || receiptIssues.length > 0) {
     try {
       onInvalidResult?.(
