@@ -60,10 +60,11 @@ reload keeps the reviewed sentence and preview.
 While questions are open, **Waiting for you** above the composer lists each one
 in its short form, also those from your other chats with the chat's name.
 Select one to go to its question; Assistant opens that chat if needed and puts
-the focus on the question's sentence. When more questions wait than the row
-lists, its last entry opens **Approvals**. With a single question in the open chat,
-the row shows only while that question's buttons are out of view. There is no
-way to approve several questions at once: you answer each in its own card.
+the focus on the question's sentence. A reload returns to that question. When
+more questions wait than the row lists, its last entry opens **Approvals**.
+With a single question in the open chat, the row shows only while that
+question's buttons are out of view. There is no way to approve several
+questions at once: you answer each in its own card.
 
 Where offered, the quiet **Yes, and don't ask again in this chat** link remembers
 this scope until you delete the chat. **Always approve** is no longer offered;

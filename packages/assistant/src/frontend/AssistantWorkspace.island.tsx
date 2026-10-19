@@ -105,6 +105,8 @@ import {
   assistantConversationIdFromHref,
   assistantMessageHref,
   assistantMessageSeqFromHref,
+  assistantQuestionAnchorFromHref,
+  assistantQuestionHref,
   assistantProjectHref,
   assistantProjectIdFromHref,
 } from "./assistant-navigation";
@@ -777,15 +779,12 @@ export default function AssistantWorkspace(props: Props) {
     // A newer jump, any navigation and leaving the workspace end this one, also while it waits for the card.
     const navigation = here ? navigationRequest : ++navigationRequest;
     const current = () => jump === questionJump && navigation === navigationRequest && waitingConversationId() === question.conversationId;
+    // The URL keeps the question, so a reload and Back land on it again.
+    const href = assistantQuestionHref(window.location.href, question.conversationId, question.anchor);
     if (here) {
-      if (assistantMessageSeqFromHref(window.location.href) !== null) {
-        const url = new URL(window.location.href);
-        url.searchParams.delete("message");
-        navigate(`${url.pathname}${url.search}${url.hash}`, { replace: true, scroll: "manual", viewTransition: false });
-      }
+      navigate(href, { replace: true, scroll: "manual", viewTransition: false });
       return waitingFocus.focus(question.anchor, current);
     }
-    const href = assistantConversationHref(window.location.href, question.conversationId);
     setProjectView(null);
     setApprovalsOpen(false);
     const result = await chat.openConversation(question.conversationId);
@@ -794,6 +793,15 @@ export default function AssistantWorkspace(props: Props) {
     if (result === "failed") return navigateTo(href);
     navigate(href, { scroll: "manual", viewTransition: false });
     await waitingFocus.focus(question.anchor, current);
+  };
+  /** Lands on the question the URL names, after a reload or Back, once its chat shows it. */
+  const landOnQuestion = async (anchor: string) => {
+    const navigation = navigationRequest;
+    const conversationId = chat.activeConversationId();
+    const current = () => navigation === navigationRequest && chat.activeConversationId() === conversationId;
+    // After the frame in which the composer takes the page's first focus.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    if (current()) await waitingFocus.focus(anchor, current);
   };
   const openProject = async (projectId: string) => {
     const project = projects().find((item) => item.id === projectId);
@@ -858,7 +866,9 @@ export default function AssistantWorkspace(props: Props) {
       }),
     );
     const initialMessage = assistantMessageSeqFromHref(window.location.href);
+    const initialQuestion = assistantQuestionAnchorFromHref(window.location.href);
     if (initialMessage !== null) void revealMessage(initialMessage).catch((error) => chat.setError(error.message));
+    else if (initialQuestion && !approvalsOpen() && !projectView()) void landOnQuestion(initialQuestion);
     artifactWorkspace.restore();
     setWorkspaceMounted(true);
     const guardUnsaved = (event: BeforeUnloadEvent) => {
@@ -880,6 +890,7 @@ export default function AssistantWorkspace(props: Props) {
       const projectId = assistantProjectIdFromHref(window.location.href);
       const artifactPath = assistantArtifactPathFromHref(window.location.href);
       const messageSeq = assistantMessageSeqFromHref(window.location.href);
+      const questionAnchor = assistantQuestionAnchorFromHref(window.location.href);
       if (assistantApprovalsOpenFromHref(window.location.href)) {
         setProjectView(null);
         setApprovalsRendered(false);
@@ -901,6 +912,7 @@ export default function AssistantWorkspace(props: Props) {
           .then(async (opened) => {
             if (!opened || navigationRequest !== generation) return;
             if (messageSeq !== null && !(await revealMessage(messageSeq))) return;
+            if (navigationRequest === generation && messageSeq === null && questionAnchor) await landOnQuestion(questionAnchor);
             if (navigationRequest === generation && artifactPath) void openFiles(artifactPath);
           })
           .catch(() => {
@@ -909,6 +921,7 @@ export default function AssistantWorkspace(props: Props) {
         return;
       }
       if (messageSeq !== null) void revealMessage(messageSeq).catch((error) => chat.setError(error.message));
+      else if (questionAnchor) void landOnQuestion(questionAnchor);
       if (artifactPath) void openFiles(artifactPath);
     };
     window.addEventListener("popstate", handlePopState);

@@ -555,7 +555,7 @@ describe("Waiting for you", () => {
         await strip(page)
           .getByRole("button", { name: /in Team Ops Wochenplanung/ })
           .click();
-        await page.waitForURL(/conversation=Tops42$/);
+        await page.waitForURL(/\?conversation=Tops42&question=tool-routine-1$/);
         await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence of the other chat focused");
         // The sentence is in view, and the open chat's question now leads the row; the others name their chat.
         const sentence = await rect(page, '[data-chat-anchor="tool-routine-1"] .k2b-chat-decision__sentence');
@@ -568,7 +568,8 @@ describe("Waiting for you", () => {
 
         await page.reload();
         await strip(page).waitFor();
-        expect(new URL(page.url()).search).toBe("?conversation=Tops42");
+        expect(new URL(page.url()).search).toBe("?conversation=Tops42&question=tool-routine-1");
+        await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence focused after reload");
         expect(await entries(page)).toEqual(there);
 
         await page.goBack();
@@ -580,17 +581,26 @@ describe("Waiting for you", () => {
           `${short("de", "routine")} in Team Ops Wochenplanung`,
         ]);
 
-        // A jump in the open chat stays in it and lands on that sentence.
+        // A jump in the open chat stays in it and lands on that sentence, also for a reload: here the earlier one, above
+        // the chat's end.
         await strip(page).locator(".assistant-waiting__entry").nth(1).click();
         await until(page, async () => (await focusedSentence(page)) === "tool-del-1", "sentence in this chat focused");
-        expect(new URL(page.url()).search).toBe("?conversation=Wart42");
+        expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-del-1");
+        await strip(page).locator(".assistant-waiting__entry").first().click();
+        await until(page, async () => (await focusedSentence(page)) === "tool-mail-1", "earlier sentence focused");
+        expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-mail-1");
+        await page.reload();
+        await until(page, async () => (await focusedSentence(page)) === "tool-mail-1", "earlier sentence focused after reload");
+        const earlier = await rect(page, '[data-chat-anchor="tool-mail-1"] .k2b-chat-decision__sentence');
+        expect(earlier.top).toBeGreaterThanOrEqual(0);
+        expect(earlier.bottom).toBeLessThanOrEqual((await rect(page, "nav.assistant-waiting")).top);
 
         // A chat opened at a message: the question takes that place, so a reload does not return to the message.
         await page.goto("http://localhost:4799/app/assistant?conversation=Wart42&message=3");
         await strip(page).waitFor();
         await strip(page).locator(".assistant-waiting__entry").nth(1).click();
         await until(page, async () => (await focusedSentence(page)) === "tool-del-1", "sentence focused over the message");
-        expect(new URL(page.url()).search).toBe("?conversation=Wart42");
+        expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-del-1");
         expect(unexpected.filter((line) => line.startsWith("pageerror"))).toEqual([]);
       } finally {
         await close();

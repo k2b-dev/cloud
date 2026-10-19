@@ -60,11 +60,12 @@ der Assistent erneut. Nach dem Neuladen bleiben Satz und Vorschau erhalten.
 Solange Fragen offen sind, listet **Wartet auf dich** über dem Eingabefeld jede
 in ihrer Kurzform, auch die aus deinen anderen Chats mit dem Namen des Chats.
 Wähle eine aus, um zu ihrer Frage zu springen: Der Assistent öffnet bei Bedarf
-den Chat und setzt den Fokus auf den Satz der Frage. Warten mehr Fragen, als die
-Leiste zeigt, öffnet ihr letzter Eintrag **Freigaben**. Bei einer einzigen Frage
-im offenen Chat erscheint die Leiste nur, solange deren Schaltflächen nicht zu
-sehen sind. Mehrere Fragen auf einmal freizugeben geht nicht: Du beantwortest
-jede in ihrer eigenen Karte.
+den Chat und setzt den Fokus auf den Satz der Frage. Nach dem Neuladen bist du
+wieder bei dieser Frage. Warten mehr Fragen, als die Leiste zeigt, öffnet ihr
+letzter Eintrag **Freigaben**. Bei einer einzigen Frage im offenen Chat
+erscheint die Leiste nur, solange deren Schaltflächen nicht zu sehen sind.
+Mehrere Fragen auf einmal freizugeben geht nicht: Du beantwortest jede in ihrer
+eigenen Karte.
 
 Wo angeboten, merkt sich der dezente Link **Ja, und in diesem Chat nicht mehr
 fragen** diese Freigabe bis zum Löschen des Chats. **Immer freigeben** wird

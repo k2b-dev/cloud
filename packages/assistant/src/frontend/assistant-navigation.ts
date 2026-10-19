@@ -25,6 +25,7 @@ export const assistantConversationHref = (currentHref: string, conversationId: s
   if (previousConversationId !== conversationId) {
     url.searchParams.delete("artifact");
     url.searchParams.delete("message");
+    url.searchParams.delete("question");
   }
   return relativeHref(url);
 };
@@ -33,6 +34,7 @@ export const assistantProjectHref = (currentHref: string, projectId: string): st
   const url = new URL(currentHref, URL_BASE);
   url.searchParams.delete("conversation");
   url.searchParams.delete("message");
+  url.searchParams.delete("question");
   url.searchParams.delete("artifact");
   url.searchParams.set("project", projectId);
   url.searchParams.delete("approvals");
@@ -56,8 +58,23 @@ export const assistantArtifactPathFromHref = (href: string): string | null => ne
 /** The current chat at one message, for a jump that should survive reload and Back. */
 export const assistantMessageHref = (currentHref: string, messageSeq: number): string => {
   const url = new URL(currentHref, URL_BASE);
+  url.searchParams.delete("question");
   url.searchParams.set("message", String(messageSeq));
   return relativeHref(url);
+};
+
+/** A chat at one of its questions, by the card's anchor: a jump from "Waiting for you" that survives reload and Back. */
+export const assistantQuestionHref = (currentHref: string, conversationId: string, anchor: string): string => {
+  const url = new URL(assistantConversationHref(currentHref, conversationId), URL_BASE);
+  url.searchParams.delete("message");
+  url.searchParams.set("question", anchor);
+  return relativeHref(url);
+};
+
+/** The question a chat was opened at; anchors are tool block ids. */
+export const assistantQuestionAnchorFromHref = (href: string): string | null => {
+  const value = new URL(href, URL_BASE).searchParams.get("question");
+  return value && value.startsWith("tool-") && value.length <= 256 ? value : null;
 };
 
 /** Message sequence links remain valid across reloads and history navigation. */
