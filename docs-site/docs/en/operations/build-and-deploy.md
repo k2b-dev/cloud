@@ -318,6 +318,11 @@ Blocked framing prevents Help from becoming ready; the slot shows **The panel
 did not load** with **Try again**.
 See [Offer a panel](/en/docs/platform/panels).
 
+`defineApp()` now rejects a `panel.href` at or below the application's
+`<basePath>/help` path, because the framework's Help redirects would shadow
+it. An application with such a provider route must move it before it upgrades,
+or it fails at startup.
+
 ### Panel context consent after the upgrade
 
 The panel runtime now supplies place context through the first iframe URL and

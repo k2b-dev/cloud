@@ -856,13 +856,17 @@
 
 /* The article head names the app whose Help this is: the app's own canvas gradient (the same tokens and strength as
    the app background, over the reader's surface), without a border or a shadow, and the article's icon in the flat
-   shared tile. Without app colours it stays the plain surface. */
+   shared tile. Without app colours it stays the plain surface. The embedded readers (Grids, Pulse) sit inside the
+   app's own chrome, which already names the app: their head stays flat. */
 .help-article-head {
+  margin-bottom: 2rem;
+}
+
+.help-article:not([data-surface="embedded"]) .help-article-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 1.5rem;
-  margin-bottom: 2rem;
   border-radius: var(--ui-radius-surface);
   padding: 1.5rem;
   background: linear-gradient(
@@ -873,7 +877,7 @@
   );
 }
 
-.dark .help-article-head {
+.dark .help-article:not([data-surface="embedded"]) .help-article-head {
   background: linear-gradient(
     var(--app-canvas-angle, 135deg),
     color-mix(in srgb, var(--app-canvas-from, var(--k2b-surface)) var(--app-canvas-dark-strength, 0%), var(--k2b-surface)),
@@ -897,7 +901,7 @@
 }
 
 /* Over the gradient the chips keep their own quiet fill, so they read as facts and not as part of the colour. */
-.help-article-head .help-article-fact {
+.help-article:not([data-surface="embedded"]) .help-article-head .help-article-fact {
   background: color-mix(in srgb, var(--k2b-surface) 72%, transparent);
 }
 
@@ -1606,18 +1610,21 @@
 /* Narrow: the tile stands before the title, and the path, the short answer, and the chips use the full width. */
 @container help-article (max-width: 40rem) {
   .help-article-head {
+    margin-bottom: 1.5rem;
+  }
+
+  .help-article:not([data-surface="embedded"]) .help-article-head {
     grid-template-columns: auto minmax(0, 1fr);
     column-gap: 0.75rem;
     row-gap: 0;
-    margin-bottom: 1.5rem;
     padding: 1.25rem 1rem;
   }
 
-  .help-article-head-copy {
+  .help-article:not([data-surface="embedded"]) .help-article-head-copy {
     display: contents;
   }
 
-  .help-article-path {
+  .help-article:not([data-surface="embedded"]) .help-article-path {
     grid-column: 1 / -1;
     grid-row: 1;
     margin-bottom: 0.75rem;
@@ -1631,12 +1638,12 @@
     font-size: 1.375rem;
   }
 
-  .help-article-title {
+  .help-article:not([data-surface="embedded"]) .help-article-title {
     grid-column: 2;
     grid-row: 2;
   }
 
-  .help-article-head-copy > :not(.help-article-path, .help-article-title) {
+  .help-article:not([data-surface="embedded"]) .help-article-head-copy > :not(.help-article-path, .help-article-title) {
     grid-column: 1 / -1;
     margin-top: 0.75rem;
   }

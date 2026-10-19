@@ -1004,19 +1004,22 @@ const HelpShell = (props: {
                   <div class="help-article-main">
                     <header class="help-article-head" data-help-article-head="">
                       <div class="help-article-head-copy">
-                        <p class="help-article-path">
-                          <Show when={appName}>
-                            {(name) => (
-                              <>
-                                <span class="app-accent-text">{name()}</span>
-                                <i class="ti ti-chevron-right" aria-hidden="true" />
-                              </>
-                            )}
-                          </Show>
-                          <button type="button" class="help-article-path-link focus-ui" onClick={goBack}>
-                            {t().help}
-                          </button>
-                        </p>
+                        {/* In the panel, its head already names the app and leads back to the start. */}
+                        <Show when={props.surface !== "panel"}>
+                          <p class="help-article-path">
+                            <Show when={appName}>
+                              {(name) => (
+                                <>
+                                  <span class="app-accent-text">{name()}</span>
+                                  <i class="ti ti-chevron-right" aria-hidden="true" />
+                                </>
+                              )}
+                            </Show>
+                            <button type="button" class="help-article-path-link focus-ui" onClick={goBack}>
+                              {t().help}
+                            </button>
+                          </p>
+                        </Show>
                         <h3 ref={articleHeading} tabindex="-1" class="help-article-title focus-ui">
                           {topic().title}
                         </h3>
@@ -1088,9 +1091,12 @@ const HelpShell = (props: {
                           </div>
                         </Show>
                       </div>
-                      <span class="help-article-icon k2b-icon-tile app-accent-text" aria-hidden="true">
-                        <i class={iconClass(topic().icon)} />
-                      </span>
+                      {/* The embedded readers sit in the app's own chrome and keep the flat head. */}
+                      <Show when={props.surface !== "embedded"}>
+                        <span class="help-article-icon k2b-icon-tile app-accent-text" aria-hidden="true">
+                          <i class={iconClass(topic().icon)} />
+                        </span>
+                      </Show>
                     </header>
                     <Show when={loading()}>
                       <div class="min-h-[24rem]">

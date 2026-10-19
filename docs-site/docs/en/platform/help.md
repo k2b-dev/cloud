@@ -46,7 +46,7 @@ older `@k2b/cloud`. On a phone, below 48 rem, that dialog is the shared bottom
 sheet at full height.
 
 Inside Help, `/` focuses search unless the reader is editing another field.
-Escape clears a nonempty search first; with an empty search it closes the
+Escape in a nonempty search field clears it first. Otherwise Escape closes the
 panel and returns focus to the opener. Articles of the current app open inside
 Help. **Open as page** opens the current article or start in the app window.
 Panel article navigation leaves the iframe address unchanged. Cross-app Help
