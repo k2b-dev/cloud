@@ -136,6 +136,8 @@ export const parseGeoIpUpload = (bytes: Uint8Array) => {
     if (Buffer.byteLength(JSON.stringify(subset, null, 1)) > 4096) throw new GeoIpError("geoip_invalid");
     // A bounded probe catches gross corruption, not every bad record; request lookups still fail closed. Each
     // address is one lookup that keeps nothing: at most 32 KiB of decode work and one decoded record in memory.
+    // A crafted file with records at that cap can block this Core process for about ten seconds; normal files take
+    // milliseconds.
     for (const address of probeAddresses) {
       const record = database.get(address);
       if (record !== null && (typeof record !== "object" || Array.isArray(record))) throw new GeoIpError("geoip_invalid");
