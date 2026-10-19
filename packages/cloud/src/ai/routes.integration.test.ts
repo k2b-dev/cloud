@@ -31,6 +31,7 @@ import * as aiRuntime from "./runtime";
 import { createAiShortId } from "./short-id";
 import { aiConversations, recordAiToolCheck, recordAiToolReview, settleAiToolCheck } from "./store";
 import { publishAiWireEvent } from "./stream";
+import { aiToolAudit } from "./tool-audit";
 
 const suite = databaseSuite();
 
@@ -967,6 +968,109 @@ suiteFor(
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test.each(["completed", "failed", "aborted"] as const)(
+    "checks a dispatched cut-off call without a stored check after its turn is %s",
+    async (status) => {
+      const userId = await insertUser();
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      const compiled = compileReviewFixture();
+      const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([
+        {
+          appId: "demo",
+          appName: "Demo",
+          appDescription: "Check fixture",
+          appIcon: "ti ti-box",
+          endpoint: "http://demo.invalid/api/_internal/capabilities/v1",
+          manifest: compiled.manifest,
+        },
+      ]);
+      const dispatch = spyOn(capabilityDispatch, "dispatchCapability").mockImplementation(async (input) => {
+        expect(input).toMatchObject({
+          kind: "queries",
+          capabilityId: "check",
+          appId: "demo",
+          review: false,
+          origin: "assistant",
+          input: { id: "original" },
+        });
+        return Response.json({ data: { outcome: "done", receipt: { text: "Saved" } } });
+      });
+      try {
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelProfileId: "test-model",
+          runConfig: { kind: "chat", input: "Send", toolSource: { kind: "none" } },
+          userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
+        });
+        const store = aiConversations.createSessionStore({ conversationId: conversation.id, turnId: turn.id });
+        const callIds = ["send", "no-audit", "not-dispatched", "has-result"];
+        await store.append({
+          role: "assistant",
+          content: callIds.map((id) => ({ type: "tool_call", id, name: "demo__action__send", args: {} })),
+        });
+        const target = { conversationId: conversation.id, turnId: turn.id, callId: "send" };
+        for (const callId of callIds) {
+          await recordAiToolReview({
+            ...target,
+            callId,
+            review: { ...reviewFixture(), ask: "sends", check: { query: "check", input: { id: "original" } } },
+          });
+        }
+        // A tool-call row without a request id is not evidence of capability dispatch.
+        await aiToolAudit.noteToolStarted({ ...target, callId: "not-dispatched", toolName: "demo__action__send" });
+        for (const callId of ["send", "has-result"]) {
+          await aiToolAudit.noteCapabilityDispatch({
+            ...target,
+            callId,
+            toolName: "demo__action__send",
+            requestId: crypto.randomUUID(),
+          });
+        }
+        await store.append({ role: "tool_result", callId: "has-result", name: "demo__action__send", result: {} });
+        const token = await createTestSession(userId);
+        const post = (callId: string) =>
+          aiRoutes.request(`/conversations/${conversation.shortId}/turns/${turn.shortId}/calls/${callId}/check`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        // Even a noted dispatch cannot start a first check while its turn is still live.
+        for (const liveStatus of ["queued", "running", "waiting_for_action"]) {
+          await sql`UPDATE ai.turns SET status=${liveStatus} WHERE id=${turn.id}::uuid`;
+          expect((await post("send")).status).toBe(409);
+        }
+        expect(await aiConversations.completeTurn({ ...target, status })).toBe("completed");
+        for (const callId of ["no-audit", "not-dispatched", "has-result"]) {
+          const rejected = await post(callId);
+          expect(rejected.status).toBe(409);
+          const body = (await rejected.json()) as { code?: string; message?: string };
+          expect(body.code).toBe("CONFLICT");
+          expect(body.message).toContain("This call has no outcome check.");
+        }
+        expect(dispatch).not.toHaveBeenCalled();
+        const before = await aiConversations.listTurnMessages({ ...target, loopId: turn.id, includeCompacted: true });
+        expect(buildBlocksFromMessages(before).find((block) => block.kind === "tool" && block.callId === "send")).toMatchObject({
+          status: "running",
+          check: undefined,
+        });
+        const response = await post("send");
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ state: "done", receipt: { text: "Saved" } });
+        const messages = await aiConversations.listTurnMessages({ ...target, loopId: turn.id, includeCompacted: true });
+        expect(buildBlocksFromMessages(messages).find((block) => block.kind === "tool" && block.callId === "send")).toMatchObject({
+          check: { state: "done", receipt: { text: "Saved" } },
+        });
+        const replay = await post("send");
+        expect(replay.status).toBe(200);
+        expect(await replay.json()).toMatchObject({ state: "done", receipt: { text: "Saved" } });
+        expect(dispatch).toHaveBeenCalledTimes(1);
+      } finally {
+        dispatch.mockRestore();
+        registrySpy.mockRestore();
+        await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    },
+  );
   test.each(["pending", "failed"] as const)(
     "re-checks %s once per press, rejects concurrent checks, and replays a settled check",
     async (state) => {

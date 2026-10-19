@@ -412,7 +412,14 @@ describe("card v4 outcome line", () => {
     expect(failedTurn.current).toContain("Ob Mail Wartungsfenster Dienstag an Lea Berg senden passiert ist, weiß ich noch nicht.");
     expect(failedTurn.current).toContain("Die Antwort endete, während das lief.");
     expect(failedTurn.all).not.toContain("Die Antwort wurde angehalten.");
-    expect(failedTurn.all).not.toContain("Noch einmal prüfen");
+    // The review's check is the person's to start, since Core never got to it; without a check only the link stays.
+    const actions = { onApproval: async () => undefined, onCheckAction: async () => ({ state: "pending" }) };
+    expect(text(renderTurn(running, "de", "failed", actions))).toContain("Noch einmal prüfen");
+    const review = running.review!;
+    const withoutCheck = { ...running, review: "sentence" in review ? { ...review, check: undefined } : review };
+    const linkOnly = text(renderTurn(withoutCheck, "de", "failed", actions));
+    expect(linkOnly).not.toContain("Noch einmal prüfen");
+    expect(linkOnly).toContain("In Mail öffnen");
     const stopped = outcome(running, "stopped");
     expect(stopped.current).toContain("Die Antwort wurde angehalten.");
   });
@@ -448,6 +455,19 @@ describe("card v4 outcome line", () => {
     expect(noCheck.all).not.toContain("Noch einmal prüfen");
     for (const line of [checking, found, notFound, pending, failed, noCheck])
       expect(line.all).not.toMatch(/Erneut senden|Noch einmal senden|An Lea Berg senden/);
+  });
+
+  test("a Markdown excerpt drops marks but keeps every literal character and link target", () => {
+    const review = de.mail!.block.review!;
+    if (!("sentence" in review) || review.preview?.kind !== "message") throw new Error("Expected a message review");
+    const body =
+      "## Hallo _Lea_\n\nBitte prüfe **customer_account_id** und `a_b`.\n\n- [Entwurf](https://example.com/draft_one_two)\n- snake_case_name";
+    const html = renderTurn({ ...de.mail!.block, review: { ...review, preview: { ...review.preview, body, format: "markdown" } } }, "de");
+    const start = html.indexOf("k2b-chat-preview__excerpt");
+    const excerpt = html.slice(html.indexOf(">", start) + 1, html.indexOf("</", start));
+    expect(excerpt).toBe(
+      "Hallo Lea\nBitte prüfe customer_account_id und a_b.\nEntwurf (https://example.com/draft_one_two)\nsnake_case_name",
+    );
   });
 
   test("an old review's done line is the app's old summary", () => {

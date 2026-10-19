@@ -648,7 +648,8 @@ after dispatch (`ACTION_OUTCOME_UNKNOWN`, `IDEMPOTENCY_UNCERTAIN`,
 the model gets `ACTION_OUTCOME_UNKNOWN`. A failure before Cloud sent anything
 to the app, such as an unavailable registry, keeps its own code and reads as
 failed. A call that was still running when its turn ended without a stop is
-unknown too. When a new review supplies
+unknown too; when Cloud had sent it and its review has a check, **Check again**
+starts that check. When a new review supplies
 `check: { query, input }`, Cloud then runs that app's Query once. `done` shows the receipt and settles the call;
 `not_done` shows not run and tells the model to ask before trying again.
 `pending` keeps the unknown line. An unavailable or invalid check also keeps

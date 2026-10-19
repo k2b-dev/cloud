@@ -10,6 +10,7 @@ import {
   ReferenceChip,
   StructuredDataPreview,
 } from "@k2b/ui";
+import { Lexer, type Token, type Tokens } from "marked";
 import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import type { CapabilityPerson, CapabilityPreview } from "../../contracts/capabilities";
 import { formatBytes } from "../../shared/format";
@@ -114,15 +115,42 @@ const personRow = (person: CapabilityPerson) => ({
   ...(person.address ? { address: person.address } : {}),
 });
 
-/** Markdown in a short excerpt reads as its words: marks, link targets kept, so a link never hides where it goes. */
+/** Block tokens end their line, so the excerpt keeps the text's lines. */
+const MARKDOWN_BLOCKS = new Set(["heading", "paragraph", "code", "blockquote", "html", "hr"]);
+
+/**
+ * The words of Markdown as the parser reads them: marks dropped, every literal character kept (an intraword `_` is
+ * text), and link targets kept, so a link never hides where it goes.
+ */
+const markdownWords = (tokens: readonly Token[]): string =>
+  tokens
+    .map((token): string => {
+      switch (token.type) {
+        case "space":
+          return "";
+        case "link": {
+          const text = markdownWords(token.tokens ?? []);
+          return text === token.href ? token.href : `${text} (${token.href})`;
+        }
+        case "image":
+          return token.text;
+        case "br":
+          return "\n";
+        case "list":
+          return `${(token as Tokens.List).items.map((item) => markdownWords(item.tokens).trimEnd()).join("\n")}\n`;
+        case "table": {
+          const table = token as Tokens.Table;
+          return `${[table.header, ...table.rows].map((row) => row.map((cell) => markdownWords(cell.tokens)).join(" · ")).join("\n")}\n`;
+        }
+      }
+      const words = "tokens" in token && token.tokens ? markdownWords(token.tokens) : "text" in token ? String(token.text) : token.raw;
+      return MARKDOWN_BLOCKS.has(token.type) ? `${words.trimEnd()}\n` : words;
+    })
+    .join("");
+
+/** A short excerpt of a body: plain text as it is, Markdown as its words. */
 const excerptText = (body: string, format: "plain" | "markdown"): string =>
-  format === "plain"
-    ? body
-    : body
-        .replace(/!\[([^\]]*)\]\(([^)]*)\)/g, "$1")
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
-        .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
-        .replace(/(\*\*|__|\*|_|~~|`)(.+?)\1/g, "$2");
+  format === "plain" ? body : markdownWords(Lexer.lex(body)).trimEnd();
 
 const peopleNames = (people: readonly CapabilityPerson[], locale: string, more = 0): string => {
   const names = people.map((person) => person.name ?? person.address ?? "");

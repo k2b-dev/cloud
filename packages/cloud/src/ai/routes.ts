@@ -98,6 +98,7 @@ import { aiSkills } from "./skills";
 import { AI_TOOL_CHECK_STALE_MS, aiConversations, claimAiToolCheck, readAiToolCheck, settleAiToolCheck } from "./store";
 import { createAiConversationStreamResponse, loadAiStreamState } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
+import { aiToolAudit } from "./tool-audit";
 import { aiToolPromptHints } from "./tools";
 import type { AiConversation, AiTurn } from "./types";
 
@@ -1232,11 +1233,18 @@ export const aiRoutes = (() => {
           if (!message) return notFound(c);
           const review = message.meta?.toolReviews?.[callId];
           const previous = message.meta?.toolChecks?.[callId];
-          if (!review || !("sentence" in review) || !review.check || !previous)
-            return respond(c, fail(err.conflict("This call has no outcome check.")));
+          if (!review || !("sentence" in review) || !review.check) return respond(c, fail(err.conflict("This call has no outcome check.")));
+          if (!previous) {
+            // Core may stop after dispatch but before recording an unknown outcome. Only a cut-off call in a
+            // terminal turn may start its first check here; an undispatched Action must never be checked.
+            const terminal = turn.status === "completed" || turn.status === "failed" || turn.status === "aborted";
+            const hasResult = messages.some(({ message }) => message.role === "tool_result" && message.callId === callId);
+            if (!terminal || hasResult || !(await aiToolAudit.hasCapabilityDispatch(target)))
+              return respond(c, fail(err.conflict("This call has no outcome check.")));
+          }
           // A settled check answers again as it was stored, so a client whose last response got lost can recover
           // without running the Query again.
-          if (previous.state === "done" || previous.state === "not_done") return respond(c, ok(previous));
+          if (previous?.state === "done" || previous?.state === "not_done") return respond(c, ok(previous));
           const block =
             message.message.role === "assistant"
               ? message.message.content.find((block) => block.type === "tool_call" && block.id === callId)
@@ -1261,6 +1269,7 @@ export const aiRoutes = (() => {
           const claimedAt = new Date().toISOString();
           const claimed = await claimAiToolCheck({
             ...target,
+            first: !previous,
             at: claimedAt,
             staleBefore: new Date(Date.now() - AI_TOOL_CHECK_STALE_MS).toISOString(),
           });

@@ -379,12 +379,13 @@ export function ToolActionView(props: {
             detail: words.noCheck,
             ...(c.open ? { actions: unknownActions(false) } : {}),
           },
+          // A call the turn's end cut off has no check yet; the review's check, if any, is the person's to start.
           cutOff: {
             tone: "warning",
             icon: "ti ti-help-circle",
             text: c.forms.unknown,
-            detail: words.cutOff,
-            ...(c.open ? { actions: unknownActions(false) } : {}),
+            detail: failedDetail ?? words.cutOff,
+            ...(c.open || c.hasCheck ? { actions: unknownActions(true) } : {}),
           },
         };
         const reachable: Record<typeof current.current, (keyof typeof all)[]> = {
@@ -394,7 +395,7 @@ export function ToolActionView(props: {
           checkedDone: ["checkedDone"],
           checkedNotDone: ["checkedNotDone"],
           noCheck: ["noCheck"],
-          cutOff: ["cutOff"],
+          cutOff: ["cutOff", "checkedDone", "checkedNotDone", "pending", "checkFailed"],
         };
         return Object.fromEntries(reachable[current.current].map((key) => [key, all[key]!]));
       }
