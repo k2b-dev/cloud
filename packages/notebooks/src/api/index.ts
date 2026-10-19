@@ -20,6 +20,7 @@ import {
   getLocale,
   hasPermission,
   jsonResponse,
+  middleware,
   REQUEST_IDLE_TIMEOUT_MAX_SECONDS,
   REQUEST_IDLE_TIMEOUT_SECONDS,
   rateLimit,
@@ -996,6 +997,11 @@ const notePdfAdmissions = new WeakMap<
 >();
 
 const app = new Hono<AuthContext>()
+  .use("/", middleware.noTransform())
+  .use("/search", middleware.noTransform())
+  .use("/search/*", middleware.noTransform())
+  .use("/:id/route-state", middleware.noTransform())
+  .use("/:id/route-state/*", middleware.noTransform())
   .route("/widget", widgetRoutes)
   .route("/ws", wsRoutes)
   .use(rateLimit())

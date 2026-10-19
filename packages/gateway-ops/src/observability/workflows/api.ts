@@ -5,7 +5,7 @@
  * any workflow broken" without scraping HTML. The two writes mirror the
  * kernel's safe controls: cancellation and an explicit effect decision.
  */
-import { type AuthContext, auth, rateLimit, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware, rateLimit, respond, v } from "@k2b/cloud/server";
 import {
   getWorkflowRun,
   listStrandedWorkflowEffects,
@@ -51,6 +51,7 @@ const RunsQuerySchema = z.object({
 });
 
 const app = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .use(rateLimit())
   .use(auth.requireRole("admin"))
 

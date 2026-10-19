@@ -7,6 +7,7 @@ import { listApps } from "../_internal/registry";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { AI_INFERENCE_SCOPE } from "../contracts/shared";
 import { type AuthContext, auth, err, respond, v } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import { audit } from "../services/audit";
 import { getIdentitySigningKeyStatus, identityMetrics, revokeIdentitySigningKey, rewrapIdentitySigningKeys } from "../services/identity";
 import { WORKLOAD_SCOPES } from "../services/identity/workload-auth";
@@ -110,6 +111,8 @@ export const createAdminIdentityRoutes = (
   service: IdentityAdminDependencies = dependencies,
 ) =>
   new Hono<AuthContext>()
+    // Mandate lists hold every user's grant inputs, which users write at will and which can carry private text.
+    .use("*", noTransform())
     .use(authenticate)
     .use("*", async (c, next) => {
       c.header("Cache-Control", "no-store");

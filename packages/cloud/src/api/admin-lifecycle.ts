@@ -4,6 +4,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { createPagination, ErrorResponseSchema, MessageResponseSchema, PaginationQuerySchema, parsePagination } from "../contracts";
 import { type AuthContext, auth, jsonResponse, requiresAdmin, respond, v } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import { accountLifecycle, lifecycleJobs } from "../services";
 
 const DeletedAccountSchema = z.object({
@@ -63,7 +64,9 @@ const TriggerJobResponseSchema = z.object({
   jobId: z.string(),
 });
 
+// Deleted-account and reminder reports list other accounts' personal data next to requester-controlled identity text.
 const app = new Hono<AuthContext>()
+  .use("*", noTransform())
   .use(auth.requireRole("admin"))
   .get(
     "/deleted-accounts",

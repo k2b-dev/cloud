@@ -2,6 +2,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { getApp, listApps } from "../_internal/registry";
 import { type AuthContext, auth, rejectReservedWorkloadCredential } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { syncInvocationOperation } from "../services/identity/invocation-operations";
 import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
@@ -19,6 +20,7 @@ type Dependencies = {
 /** Core owns the credential-bearing hop; targets receive only an operation-bound invocation. */
 export const createSyncOpsProxyRoutes = (dependencies: Dependencies = {}) =>
   new Hono<AuthContext>()
+    .use("*", noTransform())
     .use(dependencies.authenticate ?? auth.requireRole("admin"))
     .use(rejectReservedWorkloadCredential)
     .use(auth.requireOAuthScope("admin"))
