@@ -173,3 +173,68 @@ test.skipIf(isServer)("live counts and a rename update the open mailbox's row in
     dom.cleanup();
   }
 });
+
+test.skipIf(isServer)("the open mailbox's health follows the page, not the sidebar's first snapshot", () => {
+  const dom = createDomTestHarness();
+  const m = modules!;
+  const [health, setHealth] = createSignal<"paused" | "active">("paused");
+  const dispose = render(
+    () =>
+      createComponent(m.default, {
+        ...m.mailSidebarFixture({
+          mailboxes: [{ id: "Box001", name: "Support", health: "paused", healthReason: null, receivingAddress: null }],
+        }),
+        get open() {
+          return m.openMailboxFixture({ mailbox: { health: health(), healthReason: null, receivingAddress: null } });
+        },
+      }),
+    dom.root,
+  );
+  const warning = () => dom.root.querySelector('[data-mailbox="Box001"] .mail-sidebar-health');
+  try {
+    expect(warning()).not.toBeNull();
+    setHealth("active");
+    expect(warning()).toBeNull();
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("hiding the open mailbox opens the closed Hidden section, so its folders stay in view", async () => {
+  const dom = createDomTestHarness();
+  delegateEvents(["click"], dom.document);
+  const m = modules!;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(async () => Response.json({ pinned: false, hidden: true }), { preconnect: originalFetch.preconnect });
+  const dispose = render(
+    () =>
+      createComponent(
+        m.default,
+        m.mailSidebarFixture({
+          mailboxes: [
+            { id: "Box001", name: "Support", health: "active", healthReason: null, receivingAddress: null },
+            { id: "Box002", name: "Sales", health: "active", healthReason: null, receivingAddress: null },
+          ],
+          preferences: m.createMailboxPreferences({ pinnedMailboxIds: [], hiddenMailboxIds: ["Box002"] }),
+          open: m.openMailboxFixture({ folders: [mailTestFolder("Inbox1", { name: "Inbox", role: "inbox" })] }),
+        }),
+      ),
+    dom.root,
+  );
+  const inbox = () => dom.root.querySelector('a[href="/app/mail/Box001?folder=Inbox1"]');
+  // A closed section keeps its rows in a hidden region.
+  const shown = (element: Element | null) => Boolean(element) && !element!.closest("[hidden]");
+  try {
+    // The Hidden section starts closed: the open mailbox is not hidden yet.
+    expect(shown(dom.root.querySelector('[data-mailbox="Box002"]'))).toBe(false);
+    expect(shown(inbox())).toBe(true);
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Hide Support"]')!.click();
+    expect(dom.root.querySelector('[data-mailbox="Box001"][data-hidden="true"]')).not.toBeNull();
+    expect(shown(inbox())).toBe(true);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});

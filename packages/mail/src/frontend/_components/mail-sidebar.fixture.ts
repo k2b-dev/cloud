@@ -28,6 +28,7 @@ export const openMailboxFixture = (overrides: Partial<MailSidebarOpenMailbox> = 
   mailboxName: "Support",
   canWrite: true,
   assignedOnly: false,
+  mailbox: { health: "active", healthReason: null, receivingAddress: "support@example.test" },
   folders: [],
   scheduledMode: false,
   scheduledCount: 0,

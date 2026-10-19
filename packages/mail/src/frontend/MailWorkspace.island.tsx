@@ -2419,6 +2419,7 @@ function MailWorkspaceView(props: {
           mailboxName: data.mailbox.name,
           canWrite: canWrite(),
           assignedOnly: assignedOnly(),
+          mailbox: { health: data.mailbox.health, healthReason: data.mailbox.healthReason, receivingAddress: data.receivingAddress },
           folders: listCounts().folders,
           scheduledMode: data.scheduledMode,
           scheduledCount: data.scheduledCount,

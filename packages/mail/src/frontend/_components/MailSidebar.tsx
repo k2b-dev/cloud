@@ -4,7 +4,7 @@ import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { type LinkNavigateEvent, navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations, query as queries } from "@k2b/stdlib/solid";
 import { AppWorkspace, Button, createNavigation, IconButton, type NavigationItem, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, getOwner, onCleanup, runWithOwner, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, getOwner, on, onCleanup, runWithOwner, Show, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
 import type { ConversationView, DeletedMailbox, DeletedMailboxPage, Mailbox } from "../../contracts";
@@ -34,6 +34,8 @@ export type MailSidebarOpenMailbox = {
    * Unassigned view, which all need mailbox-wide access.
    */
   assignedOnly: boolean;
+  /** The mailbox's current state from the page, which can change while it is open. */
+  mailbox: Pick<MailSidebarMailbox, "health" | "healthReason" | "receivingAddress">;
   folders: MailFolderView[];
   scheduledMode: boolean;
   scheduledCount: number;
@@ -108,6 +110,11 @@ export default function MailSidebar(
   const ordered = createMemo(() => orderMailboxes(listed(), props.preferences.pinnedMailboxIds()));
   const visibleMailboxes = createMemo(() => ordered().filter((mailbox) => !props.preferences.isHidden(mailbox.id)));
   const hiddenMailboxes = createMemo(() => ordered().filter((mailbox) => props.preferences.isHidden(mailbox.id)));
+  // A hidden mailbox that is open stays in view with its folders: the section opens with it, also when the person
+  // hides the open mailbox while the section is closed.
+  const openIsHidden = createMemo(() => hiddenMailboxes().some((mailbox) => mailbox.id === openMailboxId()));
+  const [hiddenOpen, setHiddenOpen] = createSignal(untrack(openIsHidden));
+  createEffect(on(openIsHidden, (hidden) => hidden && setHiddenOpen(true), { defer: true }));
   const countsById = createMemo(() => new Map(props.counts.map((entry) => [entry.mailboxId, entry])));
   const isOpen = (mailboxId: string) => openMailboxId() === mailboxId;
   const stats = (mailboxId: string) => {
@@ -448,7 +455,9 @@ export default function MailSidebar(
     const pinned = () => props.preferences.isPinned(mailbox.id);
     const hidden = () => props.preferences.isHidden(mailbox.id);
     const counts = () => stats(mailbox.id);
-    const health = () => mailboxHealthPresentation(mailbox, locale());
+    // The open mailbox's health follows the page, so a resumed or reconnected mailbox clears its warning at once.
+    const current = () => (isOpen(mailbox.id) && props.open ? { ...mailbox, ...props.open.mailbox } : mailbox);
+    const health = () => mailboxHealthPresentation(current(), locale());
     const rowOpen = () => (isOpen(mailbox.id) ? props.open : null);
     // One number per row: needs action. Unread is a dot; both exact counts live in the tooltip and sr-only text.
     const countLabels = () => [
@@ -459,7 +468,7 @@ export default function MailSidebar(
       <>
         <AppWorkspace.SidebarItem
           href={`/app/mail/${mailbox.id}`}
-          title={[mailboxName(mailbox), mailboxOverviewSubtitle(mailbox, locale()), ...countLabels()].join(" · ")}
+          title={[mailboxName(mailbox), mailboxOverviewSubtitle(current(), locale()), ...countLabels()].join(" · ")}
           active={Boolean(rowOpen()) && !placeActive()}
           class="mail-sidebar-mailbox"
           data={{
@@ -642,8 +651,8 @@ export default function MailSidebar(
                 title={messages().hiddenMailboxes}
                 count={hiddenMailboxes().length}
                 collapsible
-                // A hidden mailbox that is open stays in view with its folders.
-                defaultOpen={hiddenMailboxes().some((mailbox) => isOpen(mailbox.id))}
+                open={hiddenOpen()}
+                onOpenChange={setHiddenOpen}
               >
                 <For each={hiddenMailboxes()}>{mailboxRow}</For>
               </AppWorkspace.SidebarSection>
