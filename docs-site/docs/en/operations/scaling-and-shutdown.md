@@ -15,6 +15,11 @@ Cloud can run multiple replicas behind one stable service address.
 The orchestrator distributes traffic between replicas. Cloud registers one
 logical entry per application ID and routes to that service address.
 
+The nightly [scale acceptance](/en/docs/contributing/testing#scale-acceptance)
+runs Core, Mail, Chat, and Notebooks with two replicas each in a disposable
+stack. It checks live updates, draft leases, and delivery after one replica is
+killed.
+
 ## Scale stateless request handling
 
 Application processes may keep caches and clients in memory. Domain state must
