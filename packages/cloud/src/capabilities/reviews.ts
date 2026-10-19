@@ -1,10 +1,10 @@
 import { capabilityPersonText, capabilityReviewSentence, capabilitySentenceText } from "../_internal/capability-sentences";
 import {
   CAPABILITY_MAX_REVIEW_BYTES,
-  type CapabilityActionLegacyReview,
+  type CapabilityActionCallReview,
+  CapabilityActionCallReviewSchema,
   type CapabilityActionReview,
   type CapabilityActionReviewData,
-  CapabilityActionReviewSchema,
   type CapabilityPreview,
   type CapabilitySemanticLink,
   type CapabilitySlot,
@@ -27,7 +27,7 @@ export const capabilityPreviewIssues = (
   return issues;
 };
 /** Context-free rules shared by the builder and runtime validation. */
-export const capabilityReviewFormIssues = (review: CapabilityActionReview): string[] => {
+export const capabilityReviewFormIssues = (review: CapabilityActionCallReview): string[] => {
   const issues: string[] = [];
   if (canonicalLocale(review.locale) !== review.locale) return ["locale must be a canonical BCP 47 tag"];
   for (const form of ["confirm", "decline"] as const)
@@ -41,7 +41,7 @@ export const capabilityReviewFormIssues = (review: CapabilityActionReview): stri
   }
   return issues;
 };
-export type CapabilityReviewForms = Pick<CapabilityActionReview, "locale" | "sentence">;
+export type CapabilityReviewForms = Pick<CapabilityActionCallReview, "locale" | "sentence">;
 export type SlotNames<Text extends string> = string extends Text
   ? string
   : Text extends `${string}{${infer Name}}${infer Rest}`
@@ -60,9 +60,9 @@ type ActionSlotNames<Forms extends CapabilityReviewForms> =
 export const actionReview = <const Forms extends CapabilityReviewForms, const Slots extends Record<string, CapabilitySlot>>(
   forms: Forms & CheckedForms<Forms>,
   slots: Slots & Record<ActionSlotNames<Forms>, CapabilitySlot> & Record<Exclude<keyof Slots, ActionSlotNames<Forms>>, never>,
-  extra?: Omit<CapabilityActionReview, "locale" | "sentence" | "slots">,
-): CapabilityActionReview => {
-  const review = CapabilityActionReviewSchema.parse({ ...forms, slots, ...extra });
+  extra?: Omit<CapabilityActionCallReview, "locale" | "sentence" | "slots">,
+): CapabilityActionCallReview => {
+  const review = CapabilityActionCallReviewSchema.parse({ ...forms, slots, ...extra });
   const issues = capabilityReviewFormIssues(review);
   if (issues.length) throw new Error(`Invalid Action review:\n- ${issues.join("\n- ")}`);
   return review;
@@ -79,12 +79,12 @@ export const capabilityReviewRememberScope = (
         : undefined
       : review.approvalScope;
 
-type Detail = NonNullable<CapabilityActionLegacyReview["details"]>[number];
+type Detail = NonNullable<CapabilityActionReview["details"]>[number];
 /** Today's surfaces read this view; storage and digests always retain the original review. */
 export const capabilityReviewView = (
   review: CapabilityActionReviewData,
   context: { timeZone: string },
-): Pick<CapabilityActionLegacyReview, "message" | "details" | "links"> => {
+): Pick<CapabilityActionReview, "message" | "details" | "links"> => {
   if (!("sentence" in review)) return review;
   const de = review.locale.toLowerCase().startsWith("de");
   const details: Detail[] = [];
@@ -105,7 +105,7 @@ export const capabilityReviewView = (
   };
   const sentence = (value: { text: string; slots?: Readonly<Record<string, CapabilitySlot>> }) =>
     capabilitySentenceText(value.text, value.slots ?? {}, { locale: review.locale, timeZone: context.timeZone });
-  const consequence = (value: NonNullable<CapabilityActionReview["consequences"]>[number]) =>
+  const consequence = (value: NonNullable<CapabilityActionCallReview["consequences"]>[number]) =>
     row(
       value.mark === "added" ? "Added" : value.mark === "removed" ? "Removed" : "Consequence",
       value.mark === "added" ? "Neu" : value.mark === "removed" ? "Entfernt" : "Folge",

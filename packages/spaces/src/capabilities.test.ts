@@ -3,8 +3,8 @@ import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/ca
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
-  CapabilityActionLegacyReviewSchema,
   type CapabilityActionReviewResult,
+  CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   capabilityResultSchema,
@@ -1542,8 +1542,8 @@ describe("spaces capabilities", () => {
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
       if (result.ok) {
-        expect(typeof CapabilityActionLegacyReviewSchema.parse(result.data).approvalScope).toBe("string");
-        const parsed = CapabilityActionLegacyReviewSchema.safeParse(result.data);
+        expect(typeof CapabilityActionReviewSchema.parse(result.data).approvalScope).toBe("string");
+        const parsed = CapabilityActionReviewSchema.safeParse(result.data);
         if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
       }
     }

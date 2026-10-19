@@ -1,8 +1,8 @@
 import { dates, i18n } from "@k2b/stdlib";
 import type {
+  CapabilityActionCallReview,
   CapabilityActionOutcome,
   CapabilityActionReceipt,
-  CapabilityActionReview,
   CapabilityActionSentences,
   CapabilityAskReason,
   CapabilityPerson,
@@ -546,7 +546,7 @@ export type CapabilityReviewSentenceForm =
   | "confirm"
   | "decline";
 export const capabilityReviewSentence = (
-  review: CapabilityActionReview,
+  review: CapabilityActionCallReview,
   form: CapabilityReviewSentenceForm,
   context: { timeZone: string },
 ): string => {
@@ -563,7 +563,7 @@ export const capabilityReviewSentence = (
   return plain(t.rejected({ action: action() }), 400);
 };
 export const capabilityOutcomeSentence = (
-  review: CapabilityActionReview,
+  review: CapabilityActionCallReview,
   outcome: CapabilityActionOutcome,
   receipt: CapabilityActionReceipt | undefined,
   context: { timeZone: string },

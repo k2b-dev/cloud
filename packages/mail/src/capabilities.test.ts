@@ -3,7 +3,7 @@ import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/ca
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
-  CapabilityActionLegacyReviewSchema,
+  CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   capabilityResultSchema,
@@ -801,7 +801,7 @@ describe("mail capabilities", () => {
         ],
       },
     });
-    if (review.ok) expect(CapabilityActionLegacyReviewSchema.safeParse(review.data).success).toBeTrue();
+    if (review.ok) expect(CapabilityActionReviewSchema.safeParse(review.data).success).toBeTrue();
   });
 
   test("returns German action-review text for regional German locales", async () => {
@@ -887,7 +887,7 @@ describe("mail capabilities", () => {
     expect(Buffer.byteLength(preview?.value ?? "", "utf8")).toBe(10_000);
     expect(proposedBody.startsWith(preview?.value ?? "")).toBeTrue();
     expect(preview?.value).not.toBe(proposedBody);
-    expect(CapabilityActionLegacyReviewSchema.safeParse(review.data).success).toBeTrue();
+    expect(CapabilityActionReviewSchema.safeParse(review.data).success).toBeTrue();
   });
 
   test("shows the current body directly in the send approval", async () => {
@@ -932,7 +932,7 @@ describe("mail capabilities", () => {
     );
 
     if (!review.ok) throw new Error("Expected a send review");
-    const parsedReview = CapabilityActionLegacyReviewSchema.parse(review.data);
+    const parsedReview = CapabilityActionReviewSchema.parse(review.data);
     expect(parsedReview.details).toContainEqual({
       label: "Body",
       value: "Hello Ada,\n\nThe release is ready.",
@@ -976,7 +976,7 @@ describe("mail capabilities", () => {
     );
 
     if (!review.ok) throw new Error("Expected a send review");
-    const details = CapabilityActionLegacyReviewSchema.parse(review.data).details;
+    const details = CapabilityActionReviewSchema.parse(review.data).details;
     const bodyIndex = details?.findIndex((detail) => detail.label === "Body") ?? -1;
     expect(bodyIndex).toBeGreaterThan(0);
     expect(details?.[bodyIndex - 1]).toEqual({ label: "Signature", value: expected });
@@ -1001,7 +1001,7 @@ describe("mail capabilities", () => {
       context,
     );
     expect(review.ok).toBeTrue();
-    if (review.ok) expect(CapabilityActionLegacyReviewSchema.safeParse(review.data).success).toBeTrue();
+    if (review.ok) expect(CapabilityActionReviewSchema.safeParse(review.data).success).toBeTrue();
   });
 
   test("reviews a batch assignment with a bounded count and representative conversations", async () => {
@@ -1377,7 +1377,7 @@ describe("mail capabilities", () => {
     for (const result of results) {
       expect(result.ok).toBeTrue();
       if (!result.ok) continue;
-      const parsed = CapabilityActionLegacyReviewSchema.safeParse(result.data);
+      const parsed = CapabilityActionReviewSchema.safeParse(result.data);
       if (!parsed.success) throw new Error(parsed.error.message);
       expect(parsed.data.approvalScope).toBe(`mailbox:${mailboxId}`);
     }

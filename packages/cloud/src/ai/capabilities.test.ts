@@ -6,9 +6,9 @@ import { z } from "zod";
 import { type FixtureCorpus, fixtureHelpReader } from "../../test/help-reader";
 import { compileCapabilities } from "../_internal/capabilities";
 import {
-  type CapabilityActionLegacyReview,
-  CapabilityActionLegacyReviewSchema,
+  type CapabilityActionReview,
   type CapabilityActionReviewData,
+  CapabilityActionReviewSchema,
   defineCapabilities,
 } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
@@ -68,7 +68,7 @@ const configureAudio = async (audioModelId = "speech") => {
 describe("capability action review details", () => {
   test("validates semantic date formats without changing ordinary text", () => {
     expect(
-      CapabilityActionLegacyReviewSchema.parse({
+      CapabilityActionReviewSchema.parse({
         message: "Schedule the event.",
         details: [
           { label: "Day", value: "2026-08-20", format: "date" },
@@ -84,7 +84,7 @@ describe("capability action review details", () => {
       { label: "Window", value: "After approval" },
     ]);
     expect(
-      CapabilityActionLegacyReviewSchema.safeParse({
+      CapabilityActionReviewSchema.safeParse({
         message: "Schedule the event.",
         details: [{ label: "Starts", value: "tomorrow morning", format: "date-time" }],
       }).success,
@@ -1304,7 +1304,7 @@ describe("AI capability catalog", () => {
       const app = capabilityApp("contacts");
       app.manifest.actions[0]!.approval = "rememberable";
       app.manifest.actions[0]!.review = true;
-      const review = mock(async (): Promise<CapabilityActionLegacyReview> => {
+      const review = mock(async (): Promise<CapabilityActionReview> => {
         if (outcome === "review error") throw new Error("Review unavailable");
         return { message: "Create item?", ...(outcome === "scope" ? { approvalScope: "contacts:own" } : {}) };
       });

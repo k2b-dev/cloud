@@ -27,7 +27,8 @@ permissions still apply to every permitted operation.
 
 Applications can declare [Action policies, per-call reviews, and receipts](/en/docs/platform/capabilities#describe-each-call-with-policy-and-typed-slots).
 In this release, silent policies keep the rememberable-approval behavior;
-asking policies ask every time. Upgrade Core before apps return the new shapes.
+asking policies ask every time. Upgrade Core, Assistant, and Capabilities
+before apps return the new shapes.
 
 ## Define a server tool
 

@@ -148,8 +148,8 @@ const CapabilityActionReviewDetailSchema = z
     }
   });
 
-/** @deprecated removed with the next major; return CapabilityActionReview. */
-export const CapabilityActionLegacyReviewSchema = z
+/** @deprecated the next major release replaces this shape; return CapabilityActionCallReview. */
+export const CapabilityActionReviewSchema = z
   .object({
     message: z.string().min(1).max(1000).describe("Plain-text description of the concrete Action consequence."),
     details: z.array(CapabilityActionReviewDetailSchema).max(20).optional(),
@@ -158,8 +158,8 @@ export const CapabilityActionLegacyReviewSchema = z
   })
   .strict();
 
-/** @deprecated removed with the next major; return CapabilityActionReview. */
-export type CapabilityActionLegacyReview = z.infer<typeof CapabilityActionLegacyReviewSchema>;
+/** @deprecated the next major release replaces this shape; return CapabilityActionCallReview. */
+export type CapabilityActionReview = z.infer<typeof CapabilityActionReviewSchema>;
 
 export const CAPABILITY_ASK_REASONS = [
   "sends",
@@ -432,7 +432,7 @@ export const CapabilityPreviewSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 export type CapabilityPreview = z.infer<typeof CapabilityPreviewSchema>;
-export const CapabilityActionReviewSchema = z
+export const CapabilityActionCallReviewSchema = z
   .object({
     locale: z.string(),
     sentence: z
@@ -471,21 +471,21 @@ export const CapabilityActionReviewSchema = z
         ctx.addIssue({ code: "custom", path: ["sentence", form], message: "Buttons name at most one slot" });
     }
   });
-export type CapabilityActionReview = z.infer<typeof CapabilityActionReviewSchema>;
-export type CapabilityActionReviewData = CapabilityActionReview | CapabilityActionLegacyReview;
+export type CapabilityActionCallReview = z.infer<typeof CapabilityActionCallReviewSchema>;
+export type CapabilityActionReviewData = CapabilityActionCallReview | CapabilityActionReview;
 export const CapabilityActionReviewDataSchema = z
   .unknown()
   .transform((value, ctx) => {
     const schema =
       value !== null && typeof value === "object" && Object.hasOwn(value, "sentence")
-        ? CapabilityActionReviewSchema
-        : CapabilityActionLegacyReviewSchema;
+        ? CapabilityActionCallReviewSchema
+        : CapabilityActionReviewSchema;
     const parsed = schema.safeParse(value);
     if (parsed.success) return parsed.data;
     for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
     return z.NEVER;
   })
-  .pipe(z.union([CapabilityActionReviewSchema, CapabilityActionLegacyReviewSchema]));
+  .pipe(z.union([CapabilityActionCallReviewSchema, CapabilityActionReviewSchema]));
 export const CapabilityActionReceiptSchema = z
   .object({ ...sentenceShape, preview: CapabilityPreviewSchema.optional() })
   .strict()
@@ -721,7 +721,7 @@ export type CapabilityUniversalSearchDefinition = {
 export type CapabilitySchemaPresentation = Readonly<Record<string, string>>;
 
 /**
- * @deprecated removed with the next major; return per-call CapabilityActionReview sentence forms.
+ * @deprecated removed with the next major; return per-call CapabilityActionCallReview sentence forms.
  *
  * What one Action does, in words people read in approvals, receipts, and step rows. Each sentence is a
  * template: `{input.to}` inserts a field of the validated call input by its dotted schema path, and

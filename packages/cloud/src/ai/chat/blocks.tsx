@@ -4,7 +4,7 @@ import { Button, ButtonLink, Chat, isStructuredDataValue, MarkdownView, SplitBut
 import { createSignal, createUniqueId, For, type JSX, Match, Show, Switch, untrack } from "solid-js";
 import { capabilityApprovalReason, capabilityApprovalReasonLabel } from "../../_internal/capability-sentences";
 import { capabilityReviewView } from "../../capabilities/reviews";
-import type { CapabilityActionLegacyReview } from "../../contracts/capabilities";
+import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
@@ -38,7 +38,7 @@ import { CloudCardBlock, CloudSurveyBlock, CloudSurveyResultBlock, CloudTextEdit
 import { FetchFileToolBlock, WebExtractToolBlock, WebSearchToolBlock, WebsiteReceipts, websiteReceipts } from "./web-tools";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
-type ReviewDetail = NonNullable<CapabilityActionLegacyReview["details"]>[number];
+type ReviewDetail = NonNullable<CapabilityActionReview["details"]>[number];
 
 const reviewDetailText = (detail: ReviewDetail, locale: string): string => {
   if (detail.format === "date")

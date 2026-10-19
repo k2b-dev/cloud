@@ -851,7 +851,7 @@ choose whether to approve future operations in the same scope.
 Legacy Actions without a policy return this deprecated type:
 
 ```ts
-type CapabilityActionLegacyReview = {
+type CapabilityActionReview = {
   message: string;
   details?: Array<{
     label: string;
@@ -925,14 +925,15 @@ draft, also carries the expected revision in its input.
 
 ### Describe each call with policy and typed slots
 
-New applications can declare `policy` and return `CapabilityActionReview`.
-The old `approval`, `CapabilityActionLegacyReview`, and
+New applications can declare `policy` and return `CapabilityActionCallReview`.
+The old `approval`, `CapabilityActionReview`, and
 `presentation.sentences` contracts are deprecated and will be removed with the
 next major release. Existing applications keep working in this release.
 
-Upgrade **Core before the application** returns new reviews or receipts. An
-older Core can discover the Action through its derived `approval`, but rejects
-these new result shapes.
+Upgrade **Core and every application that calls Actions** (at least Assistant
+and Capabilities) before an application returns new reviews or receipts. An
+older Core can discover the Action through its derived `approval`, but older
+Core and caller versions reject these new result shapes.
 
 Choose the widest reach of a silent Action:
 
@@ -1051,7 +1052,8 @@ class and attachment, scheduled `sendAt`, and the app's own safety `warnings`.
 Any positive `more.to`, `more.cc`, `more.bcc`, or `moreAttachments` requires an
 `open` link to the complete reviewed revision, on every message preview,
 including receipts. Every truncated preview also requires an `open` link.
-Cloud rejects missing `from` on a `sends` review; the application is responsible
+Cloud rejects a message preview without `from` when the declared policy or the
+review's own `ask` is `sends`; the application is responsible
 for truthfully supplying its schedule and warnings. The `from` requirement
 applies only to reviews; receipts may omit it.
 
@@ -1124,13 +1126,15 @@ Consumers use `capabilityActionPolicy(manifest, localId)` from
 
 Routine grants accept only silent policy Actions without `routines: false`,
 independently of their derived approval. Each unattended call still runs its
-review. A review with `ask`, or a missing, failed, or aborted review, prevents
-execution with `NEEDS_APPROVAL`. Silent reviews need no scope in a routine.
+review. A review with `ask`, or a missing or failed review, prevents
+execution with `NEEDS_APPROVAL`. A cancelled routine stops like any other
+cancelled routine step. Silent reviews need no scope in a routine.
 Legacy Actions retain their existing routine rules.
 
 #### Migrate an application
 
-1. Upgrade Core first, then rebuild the app with this release of `@k2b/cloud`.
+1. Upgrade Core and the applications that call Actions (at least Assistant and
+   Capabilities) first, then rebuild the app with this release of `@k2b/cloud`.
 2. Replace `approval` with `policy`, choosing the widest reach or the reason
    the Action always asks. Keep the existing effect flags and retry safety.
 3. Move catalog sentences into the review forms for every supported locale.

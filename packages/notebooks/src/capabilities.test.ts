@@ -2,8 +2,8 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
-  CapabilityActionLegacyReviewSchema,
   type CapabilityActionReviewResult,
+  CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   capabilityResultSchema,
@@ -574,7 +574,7 @@ describe("notebooks capabilities", () => {
       expect("approval" in operation).toBeFalse();
       const review = await operation.review(input, userContext);
       expect(review.ok).toBeTrue();
-      if (review.ok) expect(CapabilityActionLegacyReviewSchema.safeParse(review.data).success).toBeTrue();
+      if (review.ok) expect(CapabilityActionReviewSchema.safeParse(review.data).success).toBeTrue();
     }
     expect(update).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
@@ -1079,7 +1079,7 @@ describe("notebooks capabilities", () => {
         display: "block",
       },
     ]);
-    expect(CapabilityActionLegacyReviewSchema.parse(result.data).approvalScope).toBe(`notebook:${notebook.shortId}`);
+    expect(CapabilityActionReviewSchema.parse(result.data).approvalScope).toBe(`notebook:${notebook.shortId}`);
   });
 
   test("returns a valid notebook scope from every rememberable action review", async () => {
@@ -1111,8 +1111,8 @@ describe("notebooks capabilities", () => {
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
       if (!result.ok) continue;
-      expect(CapabilityActionLegacyReviewSchema.parse(result.data).approvalScope).toBe(`notebook:${notebook.shortId}`);
-      const parsed = CapabilityActionLegacyReviewSchema.safeParse(result.data);
+      expect(CapabilityActionReviewSchema.parse(result.data).approvalScope).toBe(`notebook:${notebook.shortId}`);
+      const parsed = CapabilityActionReviewSchema.safeParse(result.data);
       if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
     }
   });

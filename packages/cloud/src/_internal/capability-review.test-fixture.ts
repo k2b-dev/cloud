@@ -1,13 +1,13 @@
 import { z } from "zod";
 import {
   CAPABILITY_MAX_REVIEW_BYTES,
+  type CapabilityActionCallReview,
   CapabilityActionCheckSchema,
   type CapabilityActionPolicy,
-  type CapabilityActionReview,
 } from "../contracts/capabilities";
 import { compileCapabilities } from "./capabilities";
 
-export const reviewFixture = (): CapabilityActionReview => ({
+export const reviewFixture = (): CapabilityActionCallReview => ({
   locale: "en",
   sentence: {
     action: "Send {subject} to {to}",
@@ -270,7 +270,7 @@ export const reviewCases = (): Array<{ name: string; review: object; valid: bool
   ];
 };
 
-const byteBoundaryReview = (over: boolean): CapabilityActionReview => {
+const byteBoundaryReview = (over: boolean): CapabilityActionCallReview => {
   const review = reviewFixture();
   const changes = [2000, 2000, 2000, 0].map((count) => ({ change: "added" as const, text: "é".repeat(count) }));
   review.preview = { kind: "page", title: "Page", body: "é".repeat(10_000), format: "plain", changes };

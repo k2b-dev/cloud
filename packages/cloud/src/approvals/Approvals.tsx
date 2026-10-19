@@ -24,7 +24,7 @@ import {
   ApprovalPageSchema,
   type PendingApproval,
 } from "../contracts/approvals";
-import type { CapabilityActionLegacyReview } from "../contracts/capabilities";
+import type { CapabilityActionReview } from "../contracts/capabilities";
 import { approvalMessages } from "./messages";
 
 /** How a decided request ends in this list. It stays in place as a receipt until the next load. */
@@ -42,7 +42,7 @@ const outcomeIcon = (outcome: Outcome, band = false) =>
         ? "ti ti-circle-x"
         : "ti ti-x"
       : "ti ti-info-circle";
-type ReviewDetail = NonNullable<CapabilityActionLegacyReview["details"]>[number];
+type ReviewDetail = NonNullable<CapabilityActionReview["details"]>[number];
 
 export type ApprovalsProps = {
   /** List the requests whose effect belongs to this app or that this app asked for. Without, every app's, grouped. */

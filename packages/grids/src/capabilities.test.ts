@@ -3,7 +3,7 @@ import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/ca
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
-  CapabilityActionLegacyReviewSchema,
+  CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
   type CapabilityQueryDefinition,
   capabilityResultSchema,
@@ -93,7 +93,7 @@ const review = (localId: string, input: unknown, context: CapabilityExecutionCon
   if (!parsed.success) throw new Error(`Invalid test review input for ${localId}: ${parsed.error.message}`);
   return Promise.resolve(operation.review(parsed.data, context)).then((result) => {
     if (result.ok) {
-      const validated = CapabilityActionLegacyReviewSchema.safeParse(result.data);
+      const validated = CapabilityActionReviewSchema.safeParse(result.data);
       if (!validated.success) throw new Error(`Invalid test review for ${localId}: ${validated.error.message}`);
       // Only a rememberable Action returns a scope; it may omit it for arguments that ask every time, such as a shared View.
       if (operation.approval !== "rememberable") expect(validated.data.approvalScope).toBeUndefined();

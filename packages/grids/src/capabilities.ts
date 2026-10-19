@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
-  type CapabilityActionLegacyReview,
+  type CapabilityActionReview,
   type CapabilityExecutionContext,
   CapabilityTablePresentationSchema,
   type CloudResourceReference,
@@ -1214,7 +1214,7 @@ const recordValuesReview = (
   fields: ReadonlyArray<Field>,
   locale?: string,
   detailBudget = REVIEW_FIELD_DETAILS,
-): NonNullable<CapabilityActionLegacyReview["details"]> => {
+): NonNullable<CapabilityActionReview["details"]> => {
   const t = capabilityMessagesFor(locale);
   const fieldsByShortId = new Map(fields.map((field) => [field.shortId, field]));
   const entries = Object.entries(values).map(([id, value]) => {

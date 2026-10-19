@@ -11,7 +11,7 @@ import {
   type ToolStreamIssue,
 } from "@k2b/nessi";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
-import type { CapabilityActionLegacyReview } from "../contracts/capabilities";
+import type { CapabilityActionReview } from "../contracts/capabilities";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   aiTurnAllowsRememberedApprovals,
@@ -1401,7 +1401,7 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
       prepared: prepareAiTools({ tools: [] }),
       allowRememberedApprovals: false,
       rememberableCapabilityApprovals: new Map<string, string>(),
-      capabilityActionReviews: new Map<string, CapabilityActionLegacyReview>(),
+      capabilityActionReviews: new Map<string, CapabilityActionReview>(),
       approvalTargets: new Map(),
       linkedApprovals: new Map(),
       appliedSteers: [],

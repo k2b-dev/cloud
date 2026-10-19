@@ -12,17 +12,19 @@ updated: 2026-10-19
 
 ## Action policies and per-call reviews replace approval and catalog sentences
 
-Action `approval`, `CapabilityActionLegacyReview`, and `presentation.sentences`
+Action `approval`, `CapabilityActionReview`, and `presentation.sentences`
 are deprecated and will be removed with the next major release. This release
 accepts both contracts. Follow the [application migration guide](/en/docs/platform/capabilities#migrate-an-application),
-and upgrade Core before an app returns the new review or receipt shapes.
+and upgrade Core and the applications that call Actions before an app returns
+the new review or receipt shapes.
 
-The TypeScript names `CapabilityActionReview` and `CapabilityActionReviewSchema`
-now name the new review shape; the old shape is `CapabilityActionLegacyReview`
-and `CapabilityActionLegacyReviewSchema`. Code that annotated an old review
-with `CapabilityActionReview` must switch to `CapabilityActionLegacyReview`.
-The `data` in `CapabilityActionReviewResult` is now `CapabilityActionReviewData`,
-which accepts either shape.
+The new review shape is `CapabilityActionCallReview` with
+`CapabilityActionCallReviewSchema`. `CapabilityActionReview` and
+`CapabilityActionReviewSchema` keep the old shape in this release; the next
+major release gives that name to the new shape. Because a review can now have
+either shape, `data` in `CapabilityActionReviewResult` and in review client
+results is `CapabilityActionReviewData`. Code that reads it narrows with
+`"sentence" in data` or parses it with the schema of the shape it expects.
 
 ## Cloud administrators see only granted contact books in Contacts
 

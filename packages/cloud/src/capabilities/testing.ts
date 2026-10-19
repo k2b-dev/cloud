@@ -7,8 +7,8 @@ import {
 } from "../_internal/capability-reviews";
 import { capabilitySentenceParts } from "../_internal/capability-sentences";
 import {
+  CapabilityActionCallReviewSchema,
   CapabilityActionReviewDataSchema,
-  CapabilityActionReviewSchema,
   type CapabilityDefinitions,
   type CapabilityManifest,
   type CapabilityResult,
@@ -54,7 +54,7 @@ export const checkActionReviewMessages = (input: {
 }): string[] =>
   input.locales.flatMap((locale) => {
     try {
-      const review = CapabilityActionReviewSchema.safeParse({ ...input.forms(locale), slots: input.slots });
+      const review = CapabilityActionCallReviewSchema.safeParse({ ...input.forms(locale), slots: input.slots });
       if (!review.success) return review.error.issues.map((issue) => `${locale} ${issue.path.join(".")}: ${issue.message}`);
       const issues = capabilityReviewFormIssues(review.data).map((issue) => `${locale}: ${issue}`);
       const visible = capabilitySentenceParts(review.data.sentence.action, review.data.slots, {
