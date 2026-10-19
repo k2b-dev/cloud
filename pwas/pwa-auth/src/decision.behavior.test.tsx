@@ -32,7 +32,7 @@ for (const terminal of [false, true]) {
     const noop = async () => {};
     const auth: Authenticator = {
       bindings: () => [binding],
-      states: () => ({ fixture: { requests: [request], actions: [], moreActions: 0 } }),
+      states: () => ({ fixture: { requests: [request], changes: [], actions: [], moreChanges: 0, moreActions: 0 } }),
       now: () => Date.parse("2026-10-16T12:00:30.000Z"),
       online: () => true,
       storageError: () => false,
@@ -48,6 +48,7 @@ for (const terminal of [false, true]) {
         throw new Error("No action in this test");
       },
       act: noop,
+      decideChange: noop,
       decide: async (_binding, _request, decision) => {
         decisions.push(decision);
         throw new Error("The response was lost");
@@ -130,7 +131,7 @@ for (const terminal of [false, true]) {
     const noop = async () => {};
     const auth: Authenticator = {
       bindings: () => [binding],
-      states: () => ({ fixture: { requests: [request], actions: [], moreActions: 0 } }),
+      states: () => ({ fixture: { requests: [request], changes: [], actions: [], moreChanges: 0, moreActions: 0 } }),
       now,
       online: () => true,
       storageError: () => false,
@@ -146,6 +147,7 @@ for (const terminal of [false, true]) {
         throw new Error("No action in this test");
       },
       act: noop,
+      decideChange: noop,
       decide: async (_binding, _request, decision) => {
         decisions.push(decision);
         throw new Error("The response was lost");
@@ -232,7 +234,7 @@ test("the sheet says when the sign-in started, on the device's clock in its lang
       };
       const auth: Authenticator = {
         bindings: () => [binding],
-        states: () => ({ fixture: { requests: [request], actions: [], moreActions: 0 } }),
+        states: () => ({ fixture: { requests: [request], changes: [], actions: [], moreChanges: 0, moreActions: 0 } }),
         now: () => Date.parse(createdAt) + 30_000,
         online: () => true,
         storageError: () => false,
@@ -248,6 +250,7 @@ test("the sheet says when the sign-in started, on the device's clock in its lang
           throw new Error("No action in this test");
         },
         act: noop,
+        decideChange: noop,
         decide: noop,
         revoke: noop,
         syncPush: noop,

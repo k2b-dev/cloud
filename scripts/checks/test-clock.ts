@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import ts from "@typescript/typescript6";
 import { listFiles } from "./files";
 import type { Finding, Rule } from "./rule";
 
@@ -10,8 +11,10 @@ const message =
 
 const listenerMessage =
   "Playwright events reach the test process late under load; measure browser timing in the page (performance.now() in a page or init script) and assert on those times.";
+const playwrightClockMessage =
+  "Playwright's clock.setFixedTime/setSystemTime also installs its fake clock (timers, animation frames, performance); pin only Date with a page script (see pinPageClock in packages/chat/src/frontend/ChatWorkspace.browser.test.ts), or add // playwright clock: <reason> when fake timers are the subject of the test.";
 
-/** Keep strings, including page scripts, but blank comments without changing positions or line numbers. */
+/** Keep strings for clock reads in page scripts; Playwright pins must be in real code. Preserve positions and line numbers. */
 export const checkTestClockSource = (file: string, source: string): Finding[] => {
   const optOuts = new Set<number>();
   const code = source.replace(
@@ -36,12 +39,34 @@ export const checkTestClockSource = (file: string, source: string): Finding[] =>
     }
     return { start, end: code.length };
   });
-  return [...code.matchAll(/\bnew\s+Date\s*\(\s*\)|\b(?:Date|performance)\s*\.\s*now\s*\(\s*\)/g)].flatMap((match) => {
+  const reads = [...code.matchAll(/\bnew\s+Date\s*\(\s*\)|\b(?:Date|performance)\s*\.\s*now\s*\(\s*\)/g)].flatMap((match) => {
     const listener = listeners.some(({ start, end }) => match.index >= start && match.index < end);
     if (!listener && match[0].startsWith("performance")) return [];
     const line = code.slice(0, match.index).split("\n").length;
     return optOuts.has(line) || optOuts.has(line - 1) ? [] : [{ file, line, message: listener ? listenerMessage : message }];
   });
+  if (!source.includes("clock")) return reads;
+  // Parse literals so quotes inside regexes cannot swallow later code or turn strings into opt-outs.
+  const playwrightChars = source.split("");
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const blankLiterals = (node: ts.Node): void => {
+    if (ts.isStringLiteralLike(node) || ts.isTemplateExpression(node) || ts.isRegularExpressionLiteral(node)) {
+      for (let index = node.getStart(sourceFile); index < node.end; index++) {
+        if (playwrightChars[index] !== "\n" && playwrightChars[index] !== "\r") playwrightChars[index] = " ";
+      }
+    } else ts.forEachChild(node, blankLiterals);
+  };
+  blankLiterals(sourceFile);
+  const playwrightOptOuts = new Set<number>();
+  const playwrightCode = playwrightChars.join("").replace(/\/\/[^\r\n]*|\/\*[\s\S]*?\*\//g, (token, offset: number) => {
+    if (/^\/\/[ \t]*playwright clock:[ \t]*\S/.test(token)) playwrightOptOuts.add(source.slice(0, offset).split("\n").length);
+    return token.replace(/[^\r\n]/g, " ");
+  });
+  const pins = [...playwrightCode.matchAll(/\.\s*clock\s*\.\s*(?:setFixedTime|setSystemTime)\s*\(/g)].flatMap((match) => {
+    const line = playwrightCode.slice(0, match.index).split("\n").length;
+    return playwrightOptOuts.has(line) || playwrightOptOuts.has(line - 1) ? [] : [{ file, line, message: playwrightClockMessage }];
+  });
+  return [...reads, ...pins];
 };
 
 export const collectTestClockFindings = (workspaceRoot: string): Finding[] =>
@@ -72,7 +97,7 @@ const readBaseline = (path: string): Map<string, number> => {
 
 export const rule: Rule = {
   name: "test-clock",
-  description: "UI tests pin the clock and measure browser timing in the browser",
+  description: "UI tests pin the clock without Playwright's fake timers and measure browser timing in the browser",
   run: async ({ workspaceRoot, fix }) => {
     const baselinePath = join(workspaceRoot, BASELINE);
     const baseline = readBaseline(baselinePath);

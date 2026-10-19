@@ -63,6 +63,7 @@ const operations: string[] = [];
 let features: string[] = [];
 const inboxCommands: Array<{ operation: string; accept?: string[] }> = [];
 let inboxLogins: Login[] = [];
+let pendingChange: import("./authenticator").DeviceChange;
 const pendingCommands: Array<{ operation: string; accept?: string[] }> = [];
 let pendingLogins: Login[] = [];
 let actStatus = 200;
@@ -89,6 +90,7 @@ beforeEach(() => {
   features = [];
   inboxCommands.length = 0;
   inboxLogins = [];
+  pendingChange = deviceChange();
   pendingCommands.length = 0;
   pendingLogins = [];
   actStatus = 200;
@@ -112,14 +114,20 @@ beforeEach(() => {
       if (command.operation === "account") return Response.json({ account, device: { name: "iPhone", createdAt: pairedAt } });
       if (command.operation === "inbox") {
         inboxCommands.push(command);
-        return Response.json({ logins: inboxLogins, actions: [actionSummary()], moreActions: 2, pollAfterSeconds: 5 });
+        return Response.json({
+          logins: inboxLogins,
+          actions: [actionSummary()],
+          moreActions: 2,
+          pollAfterSeconds: 5,
+          ...(command.accept?.includes("device-changes") ? { changes: [pendingChange], moreChanges: 2 } : {}),
+        });
       }
       if (command.operation === "pending") {
         pendingCommands.push(command);
         return Response.json({ requests: pendingLogins, pollAfterSeconds: 5 });
       }
       if (command.operation === "action") return Response.json(actionView());
-      if (command.operation === "act") {
+      if (command.operation === "act" || command.operation === "change") {
         if (dropAct) throw new Error("lost response");
         if (actStatus !== 200) return new Response(null, { status: actStatus });
         return Response.json({ state: command.decision === "approve" ? "approved" : "denied" });
@@ -231,7 +239,7 @@ for (const actions of [false, true]) {
     for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
     expect(operations).toContain(actions ? "inbox" : "pending");
     expect(operations).not.toContain(actions ? "pending" : "inbox");
-    expect(auth.states()[binding.id]).toMatchObject({ requests: [], moreActions: actions ? 2 : 0 });
+    expect(auth.states()[binding.id]).toMatchObject({ requests: [], moreActions: actions ? 2 : 0, moreChanges: 0 });
     expect(auth.states()[binding.id]?.actions).toHaveLength(actions ? 1 : 0);
   });
 }
@@ -256,6 +264,19 @@ for (const terminal of [false, true]) {
     for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
     expect(inboxCommands).toEqual([terminal ? { operation: "inbox", accept: ["terminal-logins"] } : { operation: "inbox" }]);
     expect(auth.states()[binding.id]?.requests).toEqual([request]);
+  });
+}
+
+for (const context of [false, true]) {
+  test(`inbox asks for terminal sign-ins${context ? ", sign-in context" : ""} and device changes together when the Cloud offers them`, async () => {
+    features = ["actions", "terminal-logins", ...(context ? ["login-context"] : []), "device-changes"];
+    const { auth, binding } = await paired();
+    for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+    expect(inboxCommands).toEqual([
+      { operation: "inbox", accept: ["terminal-logins", ...(context ? ["login-context"] : []), "device-changes"] },
+    ]);
+    expect(auth.states()[binding.id]?.changes).toEqual([pendingChange]);
+    expect(auth.states()[binding.id]?.moreChanges).toBe(2);
   });
 }
 
@@ -354,6 +375,68 @@ test("expired, hidden and offline Actions are refused before sending", async () 
   Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
   await expect(auth.act(binding, actionView(), "approve")).rejects.toThrow("stale");
   expect(operations).not.toContain("act");
+});
+
+const deviceChange = (): import("./authenticator").DeviceChange => {
+  // real clock: the authenticator under test compares expiry with the real clock.
+  const now = Date.now();
+  return {
+    changeId: crypto.randomUUID(),
+    kind: "revoke",
+    device: { id: crypto.randomUUID(), name: "Old phone" },
+    endSessions: true,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + 60_000).toISOString(),
+  };
+};
+
+for (const status of [200, 409, 403, 500]) {
+  test(`device change HTTP ${status} reserves once and drops only a settled or stale request`, async () => {
+    features = ["device-changes"];
+    actStatus = status;
+    const { auth, binding } = await paired();
+    for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+    expect(auth.states()[binding.id]?.changes).toEqual([pendingChange]);
+    expect(operations).toContain("inbox");
+    if (status === 200) await auth.decideChange(binding, pendingChange, "approve");
+    else await expect(auth.decideChange(binding, pendingChange, "approve")).rejects.toThrow(status === 409 ? "stale" : "uncertain");
+    await expect(auth.decideChange(binding, pendingChange, "deny")).rejects.toThrow("uncertain");
+    expect(operations.filter((item) => item === "change")).toHaveLength(1);
+    expect(auth.states()[binding.id]?.changes).toHaveLength(status === 200 || status === 409 ? 0 : 1);
+  });
+}
+
+test("a lost device change response reserves the request across models", async () => {
+  features = ["device-changes"];
+  dropAct = true;
+  const { auth, binding } = await paired();
+  await expect(auth.decideChange(binding, pendingChange, "deny")).rejects.toThrow("uncertain");
+  const other = createRoot((stop) => {
+    const firstDispose = dispose;
+    dispose = () => {
+      firstDispose();
+      stop();
+    };
+    return createAuthenticator(vault);
+  });
+  await expect(other.decideChange(binding, pendingChange, "deny")).rejects.toThrow("uncertain");
+  expect(operations.filter((item) => item === "change")).toHaveLength(1);
+});
+
+test("expired, hidden and offline device changes leave state before any send", async () => {
+  features = ["device-changes"];
+  const { auth, binding } = await paired();
+  for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+  // real clock: the authenticator under test compares expiry with the real clock.
+  const expiredAt = new Date(Date.now() - 1_000).toISOString();
+  await expect(auth.decideChange(binding, { ...pendingChange, expiresAt: expiredAt }, "approve")).rejects.toThrow("stale");
+  expect(auth.states()[binding.id]?.changes).toEqual([]);
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+  await expect(auth.decideChange(binding, pendingChange, "approve")).rejects.toThrow("stale");
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+  Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+  await expect(auth.decideChange(binding, pendingChange, "approve")).rejects.toThrow("stale");
+  expect(operations).not.toContain("change");
 });
 
 test("an open sign-in stays open with its offline note when the phone loses its connection", async () => {

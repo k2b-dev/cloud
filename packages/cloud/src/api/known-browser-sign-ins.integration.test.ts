@@ -183,10 +183,17 @@ suite("every successful web sign-in route remembers its browser", () => {
           },
         },
       });
+      // Cloud Login completion links the session to the approving device, so the device must exist.
+      const deviceId = crypto.randomUUID();
+      const deviceKeys = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
+      const jwk = await crypto.subtle.exportKey("jwk", deviceKeys.publicKey);
+      await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted,enrolled_by)
+        VALUES (${deviceId}::uuid,${issuer},${userId}::uuid,'Fixture',${JSON.stringify({ kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y })}::text::jsonb,false,${userId}::uuid)`;
       const [epoch] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid`;
       const approval = spyOn(appApproval, "consumeLogin").mockResolvedValue({
         userId,
         authEpoch: Number(epoch!.auth_epoch),
+        deviceId,
         deviceName: "Jana’s phone",
       });
       const create = spyOn(session, "create");
