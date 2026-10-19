@@ -1079,7 +1079,7 @@ describe("notebooks capabilities", () => {
         display: "block",
       },
     ]);
-    expect(result.data.approvalScope).toBe(`notebook:${notebook.shortId}`);
+    expect(CapabilityActionReviewSchema.parse(result.data).approvalScope).toBe(`notebook:${notebook.shortId}`);
   });
 
   test("returns a valid notebook scope from every rememberable action review", async () => {
@@ -1111,7 +1111,7 @@ describe("notebooks capabilities", () => {
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
       if (!result.ok) continue;
-      expect(result.data.approvalScope).toBe(`notebook:${notebook.shortId}`);
+      expect(CapabilityActionReviewSchema.parse(result.data).approvalScope).toBe(`notebook:${notebook.shortId}`);
       const parsed = CapabilityActionReviewSchema.safeParse(result.data);
       if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
     }

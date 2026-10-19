@@ -15,6 +15,7 @@ import {
   CloudAiTextEditorOutputSchema,
   parseAiTodoPlan,
 } from "@k2b/cloud/ai/browser";
+import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import type { CloudCliTableColumn } from "@k2b/cloud/cli";
 import { resolveLocalPath } from "./local-paths";
 import { localToolTarget } from "./local-tool-target";
@@ -88,8 +89,16 @@ export const approvalOptions = (action: ApprovalAction): PermissionOption[] =>
       ];
 export const approvalReviewText = (action: ApprovalAction, link: string): string =>
   [
-    action.review?.message ?? action.message ?? action.name,
-    ...(action.review?.details ?? []).map((detail) => `${terminalSafeText(detail.label)}: ${terminalSafeText(detail.value)}`),
+    (action.review
+      ? capabilityReviewView(action.review, { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }).message
+      : undefined) ??
+      action.message ??
+      action.name,
+    ...(
+      (action.review
+        ? capabilityReviewView(action.review, { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }).details
+        : undefined) ?? []
+    ).map((detail) => `${terminalSafeText(detail.label)}: ${terminalSafeText(detail.value)}`),
     `Open in Cloud: ${link}`,
   ]
     .map(terminalSafeText)

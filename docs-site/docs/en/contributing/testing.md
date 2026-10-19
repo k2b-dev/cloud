@@ -195,6 +195,42 @@ subtree calls in tests, browser suites, and browser harnesses, or a leading
 `// animation-settle: all timelines` comment (optionally followed by a reason)
 for deliberate inspection of all timelines.
 
+Before a test reads styles or geometry after an action, it awaits
+`settled(page)` from `packages/ui/test/browser.ts` or waits for its own
+condition. `settled()` waits for fonts, for the running finite animations on
+the document timeline, and then for two frames. It does not wait for infinite,
+scroll-driven, or paused animations, because they never finish. When the page
+starts new finite animations in that time, `settled()` throws and names them:
+a page that keeps animating is not settled, and the test must wait for its own
+condition. `settled()` does not change media emulation. Tests that are not
+about motion pass `reducedMotion: "reduce"` to `newPage()` or `newContext()`.
+See `open()` in `packages/oauth/src/frontend/authorization-page.browser.test.ts`
+([#1476](https://github.com/k2b-dev/cloud/issues/1476),
+[#1499](https://github.com/k2b-dev/cloud/issues/1499)).
+
+The `settle-reads` check flags a style or geometry read that follows an action
+with no settle in between. It checks `*.browser.test.ts`, `*.browser-suite.ts`,
+and `*.browser-harness.tsx` files. A read is `boundingBox()`, or an
+`evaluate()` or `evaluateAll()` callback that uses `getComputedStyle`,
+`getBoundingClientRect`, `getClientRects`, `checkVisibility`, or
+`elementFromPoint`. Actions are navigation, `setContent`, clicks, key presses,
+hover, fill, focus, `dispatchEvent`, mouse, keyboard, and touchscreen calls,
+`emulateMedia`, `setViewportSize`, and `newPage`. Settles are `settled()`,
+`waitForFunction`, `expect.poll`, locator `waitFor`, `keptThrough`, and
+`mostAtOnce`, when the test awaits them. The check reads each function body in source order, nested
+blocks included. A call to a named helper in the same file counts as what the
+helper does: a read before its first action or settle, and its last action or
+settle. A helper whose return type names `Page` counts as an action unless it
+ends in a settle.
+
+Known findings live in `scripts/checks/settle-reads.baseline`. Its counts can
+only decrease; `bun scripts/check.ts settle-reads --fix` lowers counts and
+removes entries when findings are gone. A line comment `// settled: <reason>`
+on the same line or directly above allows a read whose subject is the first
+frame or the unsettled moment, such as a read of the server-rendered frame.
+The reason must be non-empty. On a read inside a helper, it also covers the
+helper's callers.
+
 The `cookie-store` check rejects direct `cookies()` reads in tests, browser
 suites, and browser harnesses. Use `storedCookie(page, name)` for cookies that
 page scripts write; see [Engine differences](#engine-differences). A leading

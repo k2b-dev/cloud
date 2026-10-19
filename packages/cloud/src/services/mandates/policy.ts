@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CapabilityAppIdSchema, CapabilityLocalIdSchema } from "../../contracts/capabilities";
+import { type CapabilityActionPolicy, CapabilityAppIdSchema, CapabilityLocalIdSchema } from "../../contracts/capabilities";
 
 export const MANDATE_POLICY_VERSION = 1 as const;
 export const MANDATE_POLICY_MAX_IDENTIFIERS = 100;
@@ -201,6 +201,7 @@ export const mandatePolicyAllows = (
     operation: string;
     actionApproval: "none" | "approved";
     input?: unknown;
+    capabilityPolicy?: CapabilityActionPolicy;
     capabilityApproval?: "none" | "rememberable" | "always";
   },
 ): boolean => {
@@ -239,7 +240,11 @@ export const mandatePolicyAllows = (
       )
     )
       return false;
-    if (kind === "action" && input.capabilityApproval !== "none" && input.capabilityApproval !== "rememberable") return false;
+    if (kind === "action") {
+      if (input.capabilityPolicy) {
+        if (!("silent" in input.capabilityPolicy) || input.capabilityPolicy.routines === false) return false;
+      } else if (input.capabilityApproval !== "none" && input.capabilityApproval !== "rememberable") return false;
+    }
   }
   if (!input.operation.startsWith("capability.action.run:")) return true;
   if (policy.actions === "deny") return false;
@@ -250,13 +255,20 @@ export const mandatePolicyAllows = (
 /** Discovery ignores fixed inputs: at least one unattended call must fit the policy. */
 export const mandatePolicyCanPermitCapability = (
   policy: MandatePolicyV1,
-  input: { appId: string; capabilityId: string; kind: "query" | "action"; approval?: "none" | "rememberable" | "always" },
+  input: {
+    appId: string;
+    capabilityId: string;
+    kind: "query" | "action";
+    capabilityPolicy?: CapabilityActionPolicy;
+    approval?: "none" | "rememberable" | "always";
+  },
 ): boolean => {
   const call = {
     appId: input.appId,
     operation: `capability.${input.kind === "query" ? "query" : "action.run"}:${input.capabilityId}`,
     actionApproval: "none" as const,
     capabilityApproval: input.approval,
+    capabilityPolicy: input.capabilityPolicy,
   };
   if (policy.grants === undefined) return mandatePolicyAllows(policy, call);
   return policy.grants.some(

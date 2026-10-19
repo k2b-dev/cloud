@@ -20,6 +20,7 @@ import {
   CloudAiSurveyInputSchema,
   CloudAiTextEditorInputSchema,
 } from "@k2b/cloud/ai/browser";
+import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
 import { httpApprovalNotice } from "../artifacts/code-approval-message";
@@ -374,7 +375,13 @@ export async function collectCapabilityApproval(
     ctx.print(terminalSafeText(`App: ${request.resource.title}`));
     ctx.print("Returned Cloud data may be stored in this app and read by others with access. Personal remembered approvals do not apply.");
   }
-  ctx.print(terminalSafeText(request.review?.message ?? request.title));
+  ctx.print(
+    terminalSafeText(
+      (request.review
+        ? capabilityReviewView(request.review, { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }).message
+        : undefined) ?? request.title,
+    ),
+  );
   ctx.print(approvalInputPreview(request.input));
   const decision = await collectActionApproval(ctx, reader, request);
   return decision?.remember === "always" ? { approved: true, remember: "always" } : { approved: decision?.approved === true };
