@@ -5,8 +5,9 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* The avatar is an app chip: the AA-checked app ink on the icon-tile fill rule, round instead of a tile. */
+/* The avatar is a round app chip: the app ink on the navigation fill of an active chip. The initials are text, and
+   the icon-tile share of the ink would leave them below 4.5:1; app-color.ts checks the ink against this fill. */
 .contact-avatar {
-  background: color-mix(in srgb, currentColor var(--k2b-icon-tile-fill), transparent);
+  background: var(--ui-app-selected-nav);
   color: var(--ui-app-accent-text);
 }
