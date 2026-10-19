@@ -137,8 +137,17 @@ type Answer = { status?: number; json: unknown };
  * Opens one tab. `answer` maps "METHOD /path" to a response; orphans wait for `release()` so a test can measure
  * the frame before ClickHouse answered.
  */
-const open = async (view: View, snapshot: Snapshot, options: { dark?: boolean; locale?: string; answer?: Record<string, Answer> } = {}) => {
+const open = async (
+  view: View,
+  snapshot: Snapshot,
+  options: { dark?: boolean; locale?: string; answer?: Record<string, Answer>; frozenAt?: Date } = {},
+) => {
   const page = await browser.newPage({ viewport: { width: view.width, height: view.height }, isMobile: view.touch, hasTouch: view.touch });
+  // A frozen clock runs status refreshes only when the test advances it.
+  if (options.frozenAt) {
+    await page.clock.install({ time: options.frozenAt });
+    await page.clock.pauseAt(options.frozenAt);
+  }
   let release = () => {};
   const released = new Promise<void>((done) => {
     release = done;
@@ -351,4 +360,45 @@ describe("Pulse administration tabs in a browser", () => {
           }
         }
   }, 120_000);
+
+  test("running operations are followed to a failure, to the end, and to a deleted base, without moving rows", async () => {
+    const failedAgain = row("Lad001", "Laden", { state: "failed", operation: "provision", errorCode: "STORE_UNREACHABLE", usage: null });
+    const deleting = row("Alt001", "Altbestand", { state: "deleting", operation: "delete" });
+    const page0: AdminBasesPage = { ...basesPage, items: [...basesPage.items, deleting], total: 4 };
+    const answer: Record<string, Answer> = {
+      "POST /api/pulse/admin/bases/Lad001/retry": {
+        json: row("Lad001", "Laden", { state: "provisioning", operation: "provision", usage: null }),
+      },
+    };
+    const { page, release } = await open(desktop, { view: "bases", policy, page: page0 }, { answer, frozenAt: new Date(measuredAt) });
+    const lookups: string[] = [];
+    // Status refreshes look up each running base by its ID.
+    await page.route(`${origin}/api/pulse/admin/bases?*`, (route) => {
+      const q = new URL(route.request().url()).searchParams.get("q") ?? "";
+      lookups.push(q);
+      const items = q === "Lad001" ? [failedAgain] : [];
+      return route.fulfill({ json: { ...basesPage, items, total: items.length } });
+    });
+    try {
+      release();
+      const laden = page.getByRole("row", { name: /Laden/ });
+      const alt = page.getByRole("row", { name: /Altbestand/ });
+      await alt.getByText("Being deleted").waitFor();
+      const before = await layout(page);
+      await laden.getByRole("button", { name: "Retry" }).click();
+      await laden.getByText("Being set up").waitFor();
+      await page.clock.runFor(5_100);
+      // The retried base failed again: Retry is back in place; the deleted one says so and keeps its row.
+      await laden.getByRole("button", { name: "Retry" }).waitFor();
+      await alt.getByText("Deleted", { exact: true }).waitFor();
+      expect(await alt.getByRole("button", { name: "Limits" }).isDisabled()).toBe(true);
+      expect(lookups.sort()).toEqual(["Alt001", "Lad001"]);
+      // Nothing is running any more, so nothing is asked again.
+      await page.clock.runFor(10_100);
+      expect(lookups).toHaveLength(2);
+      expect((await layout(page)).rows).toEqual(before.rows);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 });

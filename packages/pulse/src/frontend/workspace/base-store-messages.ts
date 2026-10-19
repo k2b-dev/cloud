@@ -19,7 +19,7 @@ export const baseStoreMessages = i18n.define({
       failedClear: "Clearing the data failed. Pulse continues where it stopped when you retry.",
       failedDelete: "Deleting the base failed. Pulse continues where it stopped when you retry.",
       deletingText: "Pulse is deleting this base in the background. This card shows when it is done.",
-      deletedText: "Pulse deleted this base and its data.",
+      deletedText: "Pulse deleted this base and its data. It no longer appears after the next reload.",
       busyText: "Pulse is working on this base. Writing waits until it is active again.",
       blockedText:
         "Pulse found a different checkpoint in the data store, for example after a restore. It keeps the data and accepts no new values until a Cloud admin decides.",
@@ -63,7 +63,7 @@ export const baseStoreMessages = i18n.define({
       failedClear: "Die Daten konnten nicht geleert werden. Beim erneuten Versuch macht Pulse dort weiter, wo es aufgehört hat.",
       failedDelete: "Die Base konnte nicht gelöscht werden. Beim erneuten Versuch macht Pulse dort weiter, wo es aufgehört hat.",
       deletingText: "Pulse löscht diese Base im Hintergrund. Hier siehst du, wann das Löschen fertig ist.",
-      deletedText: "Pulse hat diese Base und ihre Daten gelöscht.",
+      deletedText: "Pulse hat diese Base und ihre Daten gelöscht. Nach dem nächsten Laden erscheint sie hier nicht mehr.",
       busyText: "Pulse arbeitet an dieser Base. Schreiben wartet, bis sie wieder aktiv ist.",
       blockedText:
         "Pulse hat im Datenspeicher einen anderen Prüfpunkt gefunden, zum Beispiel nach einer Wiederherstellung. Die Daten bleiben, neue Werte nimmt Pulse erst an, wenn ein Cloud-Admin entschieden hat.",

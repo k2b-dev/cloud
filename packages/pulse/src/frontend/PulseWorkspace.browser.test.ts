@@ -196,14 +196,16 @@ describe("Pulse base page after the cut", () => {
       expect(await retry.isEnabled()).toBe(true);
       await retry.click();
       await card.getByText("Wird gelöscht").waitFor();
-      // The deletion finishes: the card says so and keeps its place until the next reload.
+      // The deletion finishes: the card says so and keeps its place until the next reload. Its text may wrap
+      // differently, but it is the last element, so nothing else moves.
       answer = { status: 404, json: { code: "NOT_FOUND", message: "Pulse base not found" } };
       await tab.clock.runFor(5_100);
       await card.getByText("Gelöscht", { exact: true }).waitFor();
       expect(await retry.isDisabled()).toBe(true);
       const after = await card.boundingBox();
       expect(after?.y).toBe(box?.y);
-      expect(after?.height).toBe(box?.height);
+      expect(after?.x).toBe(box?.x);
+      expect(after?.width).toBe(box?.width);
       expect(calls.filter((call) => call === `GET /api/pulse/bases/${base.id}`).length).toBe(2);
       expect(await overflow(tab)).toBe(0);
     } finally {
