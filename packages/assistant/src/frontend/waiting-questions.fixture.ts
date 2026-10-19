@@ -67,28 +67,43 @@ const questions = (items: AiOpenQuestion[]): AiOpenQuestions => ({
 /** What a test reads from the waiting row's markup, on the server and in the browser alike. */
 export type WaitingStripSummary = { quiet: boolean; label: string; entries: string[] };
 
-const text = (html: string) =>
-  html
-    .replace(/<[^>]*>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+const entities: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
+/** Markup text as a person reads it: entities decoded in one pass, white space collapsed. */
+const text = (raw: string) =>
+  raw
+    .replace(/&(amp|lt|gt|quot|#39);/g, (_, name: string) => entities[name] ?? "")
     .replace(/\s+/g, " ")
     .trim();
 
 /** The waiting row in `html`, or `null` without one. Hydration markers and comments do not count. */
 export const waitingStripSummary = (html: string): WaitingStripSummary | null => {
-  const source = html.replace(/<!--[\s\S]*?-->/g, "");
-  const start = /<nav\b[^>]*class="assistant-waiting"[^>]*>/.exec(source);
-  if (!start) return null;
-  const body = source.slice(start.index + start[0].length, source.indexOf("</nav>", start.index));
-  const label = /<span\b[^>]*class="assistant-waiting__label"[^>]*>([\s\S]*?)<\/span>/.exec(body)?.[1] ?? "";
-  const entries = [...body.matchAll(/<button\b[^>]*class="[^"]*assistant-waiting__entry[^"]*"[^>]*>([\s\S]*?)<\/button>/g)].map((match) =>
-    text(match[1] ?? ""),
-  );
-  return { quiet: /\sdata-quiet(=|\s|>)/.test(start[0]), label: text(label), entries };
+  let found = false;
+  let quiet = false;
+  let label = "";
+  const entries: string[] = [];
+  new HTMLRewriter()
+    .on("nav.assistant-waiting", {
+      element(nav) {
+        if (found) return;
+        found = true;
+        quiet = nav.hasAttribute("data-quiet");
+      },
+    })
+    .on("nav.assistant-waiting .assistant-waiting__label", {
+      text(chunk) {
+        label += chunk.text;
+      },
+    })
+    .on("nav.assistant-waiting .assistant-waiting__entry", {
+      element() {
+        entries.push("");
+      },
+      text(chunk) {
+        entries[entries.length - 1] += chunk.text;
+      },
+    })
+    .transform(html);
+  return found ? { quiet, label: text(label), entries: entries.map(text) } : null;
 };
 
 const mail = waitingQuestion("mail", "Wart42", 4);

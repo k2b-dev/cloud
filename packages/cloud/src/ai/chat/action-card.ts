@@ -354,7 +354,8 @@ const messageRows = (block: ToolBlock): AiLegacyReviewRow[] => {
   for (const line of message.split("\n").map((entry) => entry.trim())) {
     if (!line || /^Review the validated arguments below before running this action\.$/i.test(line)) continue;
     const heading = /^([^:]{1,40}):$/.exec(line);
-    const match = /^([^:]{1,40}):\s+(.+)$/.exec(line);
+    // The value starts at its first visible character, so the pattern never backtracks over the white space before it.
+    const match = /^([^:]{1,40}):\s+(\S.*)$/.exec(line);
     if (heading) {
       open = { label: heading[1]!, value: "" };
       rows.push(open);
