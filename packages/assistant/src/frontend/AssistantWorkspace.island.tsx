@@ -772,7 +772,16 @@ export default function AssistantWorkspace(props: Props) {
   const jumpToQuestion = async (question: AiOpenQuestion) => {
     const jump = ++questionJump;
     const current = () => jump === questionJump;
-    if (waitingConversationId() === question.conversationId) return waitingFocus.focus(question.anchor, current);
+    // The question replaces any message the chat was opened at, also after a reload.
+    revealRequest++;
+    if (waitingConversationId() === question.conversationId) {
+      if (assistantMessageSeqFromHref(window.location.href) !== null) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("message");
+        navigate(`${url.pathname}${url.search}${url.hash}`, { replace: true, scroll: "manual", viewTransition: false });
+      }
+      return waitingFocus.focus(question.anchor, current);
+    }
     const href = assistantConversationHref(window.location.href, question.conversationId);
     const requestId = ++navigationRequest;
     setProjectView(null);

@@ -73,9 +73,14 @@ describe("waitingQuestionsView", () => {
     expect(view).toEqual({ entries: [], more: 0, total: 1, onlyHere: "tool-mail" });
   });
 
-  test("while the chat is not loaded, the server's read decides", () => {
+  test("while the chat is not loaded, the server's read decides, and the row shows until the card does", () => {
     const view = waitingQuestionsView({ questions: { items: [mail], count: 1 }, conversationId: "here01", local: null });
-    expect(view).toEqual({ entries: [mail], more: 0, total: 1, onlyHere: "tool-mail" });
+    expect(view).toEqual({ entries: [mail], more: 0, total: 1, onlyHere: null });
+  });
+
+  test("a question this chat does not show, such as one without its card, keeps the row visible", () => {
+    const view = waitingQuestionsView({ questions: { items: [mail], count: 1 }, conversationId: "here01", local: [] });
+    expect(view).toEqual({ entries: [mail], more: 0, total: 1, onlyHere: null });
   });
 
   test("questions beyond the bounded read are counted as more", () => {

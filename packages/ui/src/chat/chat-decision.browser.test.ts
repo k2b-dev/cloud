@@ -266,7 +266,8 @@ test("a focus moved to the sentence from elsewhere lights it up; a press on the 
   const page = await open();
   try {
     const sentence = page.locator(".k2b-chat-decision__sentence").first();
-    await sentence.click();
+    // On its first word, not on a chip: a chip is a link of its own.
+    await sentence.click({ position: { x: 4, y: 10 } });
     expect(await sentence.evaluate((e) => e === document.activeElement)).toBe(true);
     expect(await sentence.getAttribute("data-arrive")).toBeNull();
     await page.getByRole("button", { name: "Send to Lea", exact: true }).focus();

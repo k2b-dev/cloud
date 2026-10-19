@@ -165,7 +165,13 @@ const detailOf = (state: State, id: ChatId) => {
   const chat = conversationsOf(state).find((item) => item.id === id)!;
   // A long history above the questions, so they can scroll out of view.
   const history = Array.from({ length: 6 }, (_, index) => [
-    message(`u${index}`, index * 2 + 1, "user", de ? `Frage ${index + 1} zur Wartung im Oktober.` : `Question ${index + 1} about the October maintenance.`, 300 - index * 20),
+    message(
+      `u${index}`,
+      index * 2 + 1,
+      "user",
+      de ? `Frage ${index + 1} zur Wartung im Oktober.` : `Question ${index + 1} about the October maintenance.`,
+      300 - index * 20,
+    ),
     message(
       `a${index}`,
       index * 2 + 2,
@@ -184,7 +190,10 @@ const detailOf = (state: State, id: ChatId) => {
           ...(state.scenario === "one" ? [] : [toolBlock(state.locale, "del", pending.Wart42.includes("del"))]),
         ]
       : id === "Tops42"
-        ? [{ id: "intro", kind: "text", text: de ? "Das richte ich als Routine ein." : "I'll set this up as a routine." }, toolBlock(state.locale, "routine", pending.Tops42.length > 0)]
+        ? [
+            { id: "intro", kind: "text", text: de ? "Das richte ich als Routine ein." : "I'll set this up as a routine." },
+            toolBlock(state.locale, "routine", pending.Tops42.length > 0),
+          ]
         : [];
   const waiting = blocks.some((block) => block.kind === "tool" && block.status === "awaiting_approval");
   return {
@@ -213,7 +222,9 @@ const propsOf = (state: State, url: URL) => {
     userId: "user123",
     cloudUrl: "http://localhost:4799",
     status: { ok: true, enabled: true, defaultModelId: "standard", visionModelConfigured: false, error: null, models: [] },
-    models: [{ id: "standard", label: "Standard", provider: "ollama", model: "standard", capabilities: ["streaming"], dataBoundary: "private" }],
+    models: [
+      { id: "standard", label: "Standard", provider: "ollama", model: "standard", capabilities: ["streaming"], dataBoundary: "private" },
+    ],
     lastModelId: "standard",
     timeZone: "Europe/Berlin",
     renderedAt: new Date(now).toISOString(),
@@ -322,7 +333,9 @@ const open = async (view: View, state: State, options: { theme?: "light" | "dark
       const column = view.column
         ? `display:flex;justify-content:flex-end;height:100vh` // The panel column sits at the right edge.
         : "display:flex;height:100vh";
-      const inner = view.column ? `<div id="root" style="width:${view.column};display:flex;height:100vh"></div>` : `<div id="root" style="display:flex;width:100%;height:100vh"></div>`;
+      const inner = view.column
+        ? `<div id="root" style="width:${view.column};display:flex;height:100vh"></div>`
+        : `<div id="root" style="display:flex;width:100%;height:100vh"></div>`;
       return route.fulfill({
         contentType: "text/html",
         body:
@@ -341,7 +354,8 @@ const open = async (view: View, state: State, options: { theme?: "light" | "dark
     // The chat's stream stays open and quiet.
     if (url.pathname.endsWith("/stream")) return;
     if (url.pathname === "/api/approvals") return route.fulfill({ json: { items: [], nextCursor: null, count: 0, elsewhere: 0 } });
-    if (url.pathname === "/api/capabilities/v1/catalog") return route.fulfill({ json: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
+    if (url.pathname === "/api/capabilities/v1/catalog")
+      return route.fulfill({ json: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
     // The rest of the chat's own loads answer empty, so the page shows nothing but the chat.
     const empty: Record<string, unknown> = {
       "/api/ai/resources/recent": { resources: [] },
@@ -359,14 +373,8 @@ const open = async (view: View, state: State, options: { theme?: "light" | "dark
     return route.fulfill({ status: 503, json: { message: "unavailable" } });
   });
   await page.goto(`http://localhost:4799${options.path ?? "/app/assistant?conversation=Wart42"}`);
-  try {
-    await page.locator("textarea").first().waitFor({ timeout: 30_000 });
-  } catch (error) {
-    await page.screenshot({ path: "/tmp/s1-3b/shots/debug-open.png" });
-    console.log("DEBUG", unexpected, await page.locator("body").innerHTML().then((h) => h.slice(0, 3000)));
-    throw error;
-  }
-  return { page, unexpected, sidebarLoads, close: async () => { if (unexpected.length) console.log("DEBUG", unexpected); await context.close(); } };
+  await page.locator("textarea").first().waitFor({ timeout: 30_000 });
+  return { page, unexpected, sidebarLoads, close: () => context.close() };
 };
 
 const strip = (page: Page) => page.locator("nav.assistant-waiting");
@@ -380,7 +388,13 @@ const rect = (page: Page, selector: string) =>
     .first()
     .evaluate((element) => {
       const box = element.getBoundingClientRect();
-      return { top: Math.round(box.top), bottom: Math.round(box.bottom), left: Math.round(box.left), right: Math.round(box.right), height: Math.round(box.height) };
+      return {
+        top: Math.round(box.top),
+        bottom: Math.round(box.bottom),
+        left: Math.round(box.left),
+        right: Math.round(box.right),
+        height: Math.round(box.height),
+      };
     });
 const settle = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 const until = async (page: Page, condition: () => Promise<boolean>, what: string) => {
@@ -396,7 +410,14 @@ const changed = (page: Page, conversationId: string | null) =>
     ([conversationId, at]) =>
       (window as unknown as { live: { apply: (events: unknown[]) => Promise<void> } }).live.apply([
         {
-          data: { type: "ai.invalidated", changeId: crypto.randomUUID(), conversationId, projectId: null, domains: ["conversation-list", "conversation-detail"], at },
+          data: {
+            type: "ai.invalidated",
+            changeId: crypto.randomUUID(),
+            conversationId,
+            projectId: null,
+            domains: ["conversation-list", "conversation-detail"],
+            at,
+          },
           cursor: `s6t.cloud-live-core.${Date.now()}`,
         },
       ]),
@@ -404,17 +425,22 @@ const changed = (page: Page, conversationId: string | null) =>
   );
 /** Scrolls the chat's timeline: the scrollable ancestor of its first message. */
 const scrollTimeline = (page: Page, to: "top" | "end") =>
-  page.locator(".k2b-chat-decision").first().evaluate((card, to) => {
-    let scroller: HTMLElement | null = card.parentElement;
-    while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY)))
-      scroller = scroller.parentElement;
-    if (!scroller) throw new Error("No scrolling timeline");
-    scroller.scrollTop = to === "top" ? 0 : scroller.scrollHeight;
-  }, to);
+  page
+    .locator(".k2b-chat-decision")
+    .first()
+    .evaluate((card, to) => {
+      let scroller: HTMLElement | null = card.parentElement;
+      while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY)))
+        scroller = scroller.parentElement;
+      if (!scroller) throw new Error("No scrolling timeline");
+      scroller.scrollTop = to === "top" ? 0 : scroller.scrollHeight;
+    }, to);
 const focusedSentence = (page: Page) =>
   page.evaluate(() => {
     const active = document.activeElement;
-    return active?.classList.contains("k2b-chat-decision__sentence") ? (active.closest("[data-chat-anchor]")?.getAttribute("data-chat-anchor") ?? "") : null;
+    return active?.classList.contains("k2b-chat-decision__sentence")
+      ? (active.closest("[data-chat-anchor]")?.getAttribute("data-chat-anchor") ?? "")
+      : null;
   });
 
 const short = (locale: Locale, key: "mail" | "del" | "routine") => question(locale, key, "Wart42", 0).short;
@@ -430,7 +456,11 @@ describe("Waiting for you", () => {
           await strip(page).waitFor();
           expect(await strip(page).getAttribute("aria-label")).toBe("Wartet auf dich");
           // This chat's questions first, in the order they were asked, then the other chat's with its name.
-          expect(await entries(page)).toEqual([short("de", "mail"), short("de", "del"), `${short("de", "routine")} in Team Ops Wochenplanung`]);
+          expect(await entries(page)).toEqual([
+            short("de", "mail"),
+            short("de", "del"),
+            `${short("de", "routine")} in Team Ops Wochenplanung`,
+          ]);
           expect(await strip(page).getAttribute("data-quiet")).toBeNull();
           // Every entry is a ghost button; there is no way to answer several at once.
           expect(await strip(page).locator(".assistant-waiting__entry").count()).toBe(3);
@@ -446,6 +476,21 @@ describe("Waiting for you", () => {
           expect(row.height).toBe(height(view));
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
           const composerTop = field.top;
+          // Both chats with an open question carry the dot in the list, the other chat none.
+          if (view === desktop)
+            expect(
+              await page.locator(".assistant-chat-sidebar-item").evaluateAll((rows) =>
+                rows.map((row) => {
+                  const dot = row.querySelector(".assistant-chat-waiting");
+                  const box = dot?.getBoundingClientRect();
+                  return [row.querySelector("a")?.getAttribute("href"), box ? [Math.round(box.width), Math.round(box.height)] : null];
+                }),
+              ),
+            ).toEqual([
+              ["/app/assistant?conversation=Wart42", [8, 8]],
+              ["/app/assistant?conversation=Tops42", [8, 8]],
+              ["/app/assistant?conversation=Urlb42", null],
+            ]);
 
           // Two pending: the mail was answered elsewhere; the row and the field stay where they were.
           state.scenario = "two";
@@ -507,13 +552,17 @@ describe("Waiting for you", () => {
       const { page, unexpected, close } = await open(view, state);
       try {
         await strip(page).waitFor();
-        await strip(page).getByRole("button", { name: /in Team Ops Wochenplanung/ }).click();
+        await strip(page)
+          .getByRole("button", { name: /in Team Ops Wochenplanung/ })
+          .click();
         await page.waitForURL(/conversation=Tops42$/);
         await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence of the other chat focused");
         // The sentence is in view, and the open chat's question now leads the row; the others name their chat.
         const sentence = await rect(page, '[data-chat-anchor="tool-routine-1"] .k2b-chat-decision__sentence');
         expect(sentence.top).toBeGreaterThanOrEqual(0);
         expect(sentence.bottom).toBeLessThanOrEqual((await rect(page, "nav.assistant-waiting")).top);
+        // Its question ends the chat, so the chat stays at its end and keeps following.
+        expect(await page.getByText("Zur neuesten Nachricht").count()).toBe(0);
         const there = [short("de", "routine"), `${short("de", "mail")} in Wartung Oktober`, `${short("de", "del")} in Wartung Oktober`];
         expect(await entries(page)).toEqual(there);
 
@@ -525,11 +574,22 @@ describe("Waiting for you", () => {
         await page.goBack();
         await page.waitForURL(/conversation=Wart42$/);
         await until(page, async () => (await entries(page))[0] === short("de", "mail"), "first chat's row");
-        expect(await entries(page)).toEqual([short("de", "mail"), short("de", "del"), `${short("de", "routine")} in Team Ops Wochenplanung`]);
+        expect(await entries(page)).toEqual([
+          short("de", "mail"),
+          short("de", "del"),
+          `${short("de", "routine")} in Team Ops Wochenplanung`,
+        ]);
 
         // A jump in the open chat stays in it and lands on that sentence.
         await strip(page).locator(".assistant-waiting__entry").nth(1).click();
         await until(page, async () => (await focusedSentence(page)) === "tool-del-1", "sentence in this chat focused");
+        expect(new URL(page.url()).search).toBe("?conversation=Wart42");
+
+        // A chat opened at a message: the question takes that place, so a reload does not return to the message.
+        await page.goto("http://localhost:4799/app/assistant?conversation=Wart42&message=3");
+        await strip(page).waitFor();
+        await strip(page).locator(".assistant-waiting__entry").nth(1).click();
+        await until(page, async () => (await focusedSentence(page)) === "tool-del-1", "sentence focused over the message");
         expect(new URL(page.url()).search).toBe("?conversation=Wart42");
         expect(unexpected.filter((line) => line.startsWith("pageerror"))).toEqual([]);
       } finally {

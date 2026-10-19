@@ -8,7 +8,7 @@ export type WaitingQuestionsView = {
   more: number;
   /** All open questions of the person. The strip keeps its place while this is above zero. */
   total: number;
-  /** The anchor of the only open question when it waits in this chat: the strip then shows only while its answers are out of view. */
+  /** The anchor of the only open question when this chat shows its card: the strip then shows only while its answers are out of view. */
   onlyHere: string | null;
 };
 
@@ -45,6 +45,7 @@ export const waitingQuestionsView = (input: {
     entries: [...entries.filter(here).sort(byAsked), ...entries.filter((question) => !here(question)).sort(byAsked)],
     more,
     total,
-    onlyHere: total === 1 && hereAnchors.length === 1 ? hereAnchors[0]! : null,
+    // Only a card this chat shows can have its answers in view; without one, the row shows.
+    onlyHere: total === 1 && hereAnchors.length === 1 && openHere?.includes(hereAnchors[0]!) ? hereAnchors[0]! : null,
   };
 };

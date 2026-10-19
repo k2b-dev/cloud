@@ -39,10 +39,10 @@ export function AssistantWaitingStrip(props: {
                 onClick={() => props.onJump(question)}
               >
                 <i class={`assistant-waiting__icon ${question.app.icon}`} aria-hidden="true" />
-                <span class="assistant-waiting__short">{question.short}</span>
+                <span class="assistant-waiting__short k2b-truncate-fade">{question.short}</span>
                 <Show when={question.conversationId !== props.conversationId}>
                   {/* Read as one name, "… in Team Ops"; the row's gap sets the visible space. */}{" "}
-                  <small class="assistant-waiting__chat">
+                  <small class="assistant-waiting__chat k2b-truncate-fade">
                     {question.conversationTitle ? t().waitingInChat({ title: question.conversationTitle }) : t().waitingInOtherChat}
                   </small>
                 </Show>
@@ -133,15 +133,19 @@ export const createWaitingQuestionFocus = (input: {
     }
     if (!current()) return;
     if (!element) return input.gone();
-    input.scrollToAnchor(anchor);
     const viewport = input.viewport();
-    if (viewport) {
-      // A card that fits stands in the middle, with its answers in view; a taller one starts at the top.
-      const card = element.getBoundingClientRect();
-      const room = viewport.getBoundingClientRect();
-      if (card.height < room.height) {
-        viewport.scrollTop = Math.max(0, viewport.scrollTop + card.top - room.top - (room.height - card.height) / 2);
-      }
+    const card = element.getBoundingClientRect();
+    const room = viewport?.getBoundingClientRect();
+    if (viewport && room && card.height < room.height) {
+      // A card that fits stands in the middle, with its answers in view. One near the chat's end stays at the end,
+      // where the chat keeps following new messages and offers no "to the newest message".
+      const end = viewport.scrollHeight - viewport.clientHeight;
+      const middle = Math.min(end, Math.max(0, viewport.scrollTop + card.top - room.top - (room.height - card.height) / 2));
+      if (middle >= end - 1) viewport.scrollTop = end;
+      else if (input.scrollToAnchor(anchor)) viewport.scrollTop = middle;
+    } else {
+      // A taller one starts at the top.
+      input.scrollToAnchor(anchor);
     }
     const target =
       element.querySelector<HTMLElement>(".k2b-chat-decision__sentence") ??

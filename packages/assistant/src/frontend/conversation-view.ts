@@ -15,9 +15,9 @@ export const conversationStatusPresentation = (
   if (conversation.runStatus === "waiting_for_browser") {
     return { label: active ? t.running : t.waitingForBrowser, icon: active ? spinner : "ti ti-browser", tone: "progress" };
   }
-  // A chat that waits for an answer, such as an open question, carries the same dot as "Waiting for you" above the composer.
-  if (conversation.runStatus === "needs_attention")
-    return { label: t.needsAttention, icon: "ti ti-point-filled assistant-chat-waiting", tone: "attention" };
+  // A chat that waits for an answer, such as an open question, carries the dot of "Waiting for you" above the composer.
+  // It is drawn by CSS: the icon font has no filled glyphs.
+  if (conversation.runStatus === "needs_attention") return { label: t.needsAttention, icon: "assistant-chat-waiting", tone: "attention" };
   if (conversation.runStatus === "running" || conversation.runStatus === "queued") {
     return { label: conversation.runStatus === "queued" ? t.queued : t.running, icon: spinner, tone: "progress" };
   }
