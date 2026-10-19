@@ -22,6 +22,7 @@ export {
 export { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
 export { type AiAttachmentRef, aiAttachmentMarker, formatAiFileSize, parseAiAttachmentMarkers } from "./attachments";
 export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, createCloudAiTranscribeAudioTool } from "./audio-tool";
+export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
 export { CODE_RUNTIME_TOOL_NAMES, CodeResourceId, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
 export { aiCapabilityId, aiCapabilityToolName } from "./capabilities";
 export { getAiChatQuotas } from "./chat-quotas";
@@ -59,7 +60,6 @@ export {
   type AiChatTaskState,
   aiChatTasks,
 } from "./chat-tasks";
-export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
 export { parseAiSse } from "./client/transport";
 // Framework-owned managed execution host transport.
 export { CODE_CAPABILITY_TOKEN_HEADER, createCodeCapabilityTransport } from "./code-capability-transport";

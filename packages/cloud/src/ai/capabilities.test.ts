@@ -10,6 +10,7 @@ import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { parseMandatePolicy } from "../services/mandates/policy";
 import { aiChatAccessSubject } from "./assistant-models";
+import { authorizeBackgroundAction } from "./background-review";
 import {
   aiCapabilityInputSchema,
   aiCapabilityToolName,
@@ -26,7 +27,6 @@ import {
   reduceAiCapabilityInputSchema,
   searchAiTools,
 } from "./capabilities";
-import { authorizeBackgroundAction } from "./background-review";
 import * as credentials from "./credentials";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiModelAccess } from "./model-access";
