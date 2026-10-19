@@ -786,6 +786,8 @@ const HelpShell = (props: {
       </ScrollArea>
     );
 
+  // The dialog and the panel copy from their ⋯ menu; only the page repeats the copy action beside the article.
+  const copyInMenu = props.surface === "modal" || props.surface === "panel";
   const pageHref = () => (props.pageBase ? layoutHelpTopicHref(props.pageBase, view() === "article" ? activeId() : null) : undefined);
   const menuItems = () => [
     {
@@ -795,9 +797,7 @@ const HelpShell = (props: {
         ? { disabled: true as const }
         : { action: () => void copyFromMenu() }),
     },
-    ...((props.surface === "modal" || props.surface === "panel") && pageHref()
-      ? [{ label: t().openAsPage, icon: "ti ti-app-window", href: pageHref()! }]
-      : []),
+    ...(copyInMenu && pageHref() ? [{ label: t().openAsPage, icon: "ti ti-app-window", href: pageHref()! }] : []),
   ];
 
   return (
@@ -1048,7 +1048,7 @@ const HelpShell = (props: {
                             </Show>
                           </ul>
                         </Show>
-                        <Show when={articleSections().length > 0 || props.surface !== "modal"}>
+                        <Show when={articleSections().length > 0 || !copyInMenu}>
                           <div class="help-article-tools">
                             <Show when={articleSections().length > 0}>
                               <Dropdown.Root
@@ -1068,7 +1068,7 @@ const HelpShell = (props: {
                                 </Dropdown.Trigger>
                               </Dropdown.Root>
                             </Show>
-                            <Show when={props.surface !== "modal"}>
+                            <Show when={!copyInMenu}>
                               <IconButton
                                 class="help-article-tools-copy"
                                 disabled={!payload()}
@@ -1114,7 +1114,7 @@ const HelpShell = (props: {
                         contentRoot={() => articleContent}
                         onActiveChange={(id) => setActiveSectionId(id ?? null)}
                       />
-                      <Show when={props.surface !== "modal"}>
+                      <Show when={!copyInMenu}>
                         <Button size="sm" variant="ghost" disabled={!payload()} onClick={() => void copyArticle(topic(), payload())}>
                           <i class={articleClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
                           {articleClipboard.wasCopied() ? t().copied : t().copyMarkdown}
