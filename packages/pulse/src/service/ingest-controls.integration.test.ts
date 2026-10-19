@@ -1,6 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { SQL, sql } from "bun";
 import { requireInfra, requireInfraUrl, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { CLICKHOUSE_UUID_CHUNK_SIZE } from "../store/client";
 import { installIngestControlsFixture } from "./ingest-controls.test-fixture";
 
 if (testInfra.database && testInfra.valkey && testInfra.clickhouse) {
@@ -252,6 +253,43 @@ suiteFor(
       const hours = await sql<{ hour: Date }[]>`SELECT hour FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid ORDER BY hour`;
       expect(hours.map((r) => r.hour.toISOString())).toEqual(["2026-10-17T10:00:00.000Z", "2026-10-17T12:00:00.000Z"]);
     } finally {
+      await f.cleanup();
+    }
+  }, 60000);
+  test("late-sample successor lookup preserves pairs and successor hours across chunks", async () => {
+    const f = await writeFixture("late-lookup-chunks");
+    const query = f.store.query;
+    const chunks: number[] = [];
+    const count = CLICKHOUSE_UUID_CHUNK_SIZE + 1;
+    try {
+      await sql`UPDATE pulse.base_stores SET max_series=${count},values_per_minute=${count * 3},bytes_per_minute=${count * 1024} WHERE base_id=${f.base.id}::uuid`;
+      const metrics = Array.from({ length: count }, (_, i) => ({ name: "load", value: i, dimensions: { host: String(i) } }));
+      assertWrite(await f.write({ metrics }));
+      await sql`UPDATE pulse.metric_hours SET state='clean',lease_until=NULL WHERE base_id=${f.base.id}::uuid`;
+      f.store.query = async (statement, params) => {
+        if (statement.includes("ASOF LEFT JOIN")) {
+          const size = String(params?.series).split(",").length;
+          expect(JSON.parse(String(params?.times))).toHaveLength(size);
+          chunks.push(size);
+        }
+        return query(statement, params);
+      };
+      assertWrite(
+        await f.write({
+          metrics: metrics.map((m, i) => ({ ...m, ts: i < CLICKHOUSE_UUID_CHUNK_SIZE ? "2026-10-17T10:00:00Z" : "2026-10-17T11:00:00Z" })),
+        }),
+      );
+      expect(chunks).toEqual([CLICKHOUSE_UUID_CHUNK_SIZE, 1]);
+      const hours = await sql<
+        { hour: Date; state: string }[]
+      >`SELECT hour,state FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid ORDER BY hour`;
+      expect(hours.map((r) => [r.hour.toISOString(), r.state])).toEqual([
+        ["2026-10-17T10:00:00.000Z", "dirty"],
+        ["2026-10-17T11:00:00.000Z", "dirty"],
+        ["2026-10-17T12:00:00.000Z", "dirty"],
+      ]);
+    } finally {
+      f.store.query = query;
       await f.cleanup();
     }
   }, 60000);

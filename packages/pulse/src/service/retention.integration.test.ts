@@ -3,6 +3,7 @@ import { SQL, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { installFixtureStore } from "../store/base-store.test-fixture";
+import { CLICKHOUSE_UUID_CHUNK_SIZE } from "../store/client";
 import { listAdminBases } from "./base-admin";
 import { createRetention } from "./retention";
 import { assertWrite, writeFixture } from "./write.test-fixture";
@@ -87,6 +88,74 @@ suiteFor(
     } finally {
       boundary.mockRestore();
       await database.close();
+      await f.cleanup();
+    }
+  }, 60000);
+  test.each([30, 1])(
+    "seals and watermark survive failure immediately after raw drop (rollup retention %i)",
+    async (rollupDays) => {
+      const f = await writeFixture(`partition-rollback-${rollupDays}`);
+      const query = f.store.query;
+      const ts = "2026-10-14T10:05:00Z";
+      let dropped = false;
+      try {
+        await f.stopMerges();
+        assertWrite(await f.write({ metrics: [{ name: "load", value: 1, ts }] }));
+        await sql`UPDATE pulse.bases SET retention_days=1,rollup_retention_days=${rollupDays} WHERE id=${f.base.id}::uuid`;
+        await sql`UPDATE pulse.metric_hours SET state='clean',lease_until=NULL WHERE base_id=${f.base.id}::uuid`;
+        f.store.query = async (statement, params) => {
+          const rows = await query(statement, params);
+          if (statement.includes("DROP PARTITION")) {
+            dropped = true;
+            throw new Error("Injected failure after partition drop");
+          }
+          return rows;
+        };
+        await expect(createRetention({ store: f.store })(f.base.id)).rejects.toThrow("Injected failure after partition drop");
+        expect(dropped).toBe(true);
+        expect(await f.read("samples", "count() AS n")).toEqual([{ n: 0 }]);
+        expect(await sql<{ state: string }[]>`SELECT state FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid`).toEqual([
+          { state: "sealed" },
+        ]);
+        const [row] = await sql<
+          { sealed_before: Date | null }[]
+        >`SELECT sealed_before FROM pulse.base_stores WHERE base_id=${f.base.id}::uuid`;
+        expect(row?.sealed_before?.toISOString() ?? null).toBe(rollupDays === 1 ? "2026-10-14T11:00:00.000Z" : null);
+        await sql`UPDATE pulse.bases SET retention_days=30 WHERE id=${f.base.id}::uuid`;
+        expect(await f.write({ metrics: [{ name: "load", value: 2, ts }] })).toMatchObject({
+          ok: false,
+          error: { status: 400, message: "Metric hour is sealed after raw retention" },
+        });
+      } finally {
+        f.store.query = query;
+        await f.cleanup();
+      }
+    },
+    60000,
+  );
+  test("retirement tombstones every series across multiple URL-bounded chunks", async () => {
+    const f = await writeFixture("retirement-chunks");
+    const query = f.store.query;
+    const chunks: number[] = [];
+    const count = CLICKHOUSE_UUID_CHUNK_SIZE + 1;
+    try {
+      await f.stopMerges();
+      await sql`UPDATE pulse.base_stores SET max_series=${count},values_per_minute=${count * 3},bytes_per_minute=${count * 1024} WHERE base_id=${f.base.id}::uuid`;
+      assertWrite(
+        await f.write({ metrics: Array.from({ length: count }, (_, i) => ({ name: "load", value: i, dimensions: { host: String(i) } })) }),
+      );
+      expect(await f.read("series", "count() AS n")).toEqual([{ n: count }]);
+      await sql`UPDATE pulse.metric_series SET last_seen_at='2025-01-01',last_sample_at='2025-01-01' WHERE base_id=${f.base.id}::uuid`;
+      f.store.query = async (statement, params) => {
+        if (statement.includes("version+1,toUInt8(1)")) chunks.push(String(params?.series).split(",").length);
+        return query(statement, params);
+      };
+      expect((await createRetention({ store: f.store })(f.base.id)).registryRecords).toBe(count + 1);
+      expect(chunks).toEqual([CLICKHOUSE_UUID_CHUNK_SIZE, 1]);
+      expect(await f.read("series", "count() AS n")).toEqual([{ n: 0 }]);
+      expect(await sql<{ id: string }[]>`SELECT id FROM pulse.metric_series WHERE base_id=${f.base.id}::uuid`).toEqual([]);
+    } finally {
+      f.store.query = query;
       await f.cleanup();
     }
   }, 60000);

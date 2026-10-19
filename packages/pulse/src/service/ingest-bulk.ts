@@ -5,6 +5,7 @@ import type { PulseIngestBatch } from "../contracts";
 import { explicitPulseResource } from "../resource-model";
 import { assertStoreName } from "../store/base-schema";
 import type { baseStore } from "../store/base-store";
+import { CLICKHOUSE_UUID_CHUNK_SIZE } from "../store/client";
 import { enforceMetricSeriesBudget } from "./metric-cardinality";
 import { markMetricHoursDirty } from "./metric-rollups";
 import { lockStateIdentities } from "./state-transitions";
@@ -165,23 +166,26 @@ export const registerIngestBatch = async (params: {
   const touched = batch.metrics.map((m) => m.ts);
   if (late.length) {
     const database = assertStoreName(params.database, store.prefix);
-    // ASOF chooses the next observation, across arbitrarily many empty hours. One query, at most one row per pair.
-    const next = await store.query(
-      `SELECT toUnixTimestamp64Milli(r.ts) AS next_ms FROM
+    // ASOF chooses the next observation across empty hours, at most one row per pair in each bounded request.
+    for (let offset = 0; offset < late.length; offset += CLICKHOUSE_UUID_CHUNK_SIZE) {
+      const chunk = late.slice(offset, offset + CLICKHOUSE_UUID_CHUNK_SIZE);
+      const next = await store.query(
+        `SELECT toUnixTimestamp64Milli(r.ts) AS next_ms FROM
       (SELECT pair.1 AS series_id,fromUnixTimestamp64Milli(pair.2) AS ts
        FROM (SELECT arrayJoin(arrayZip({series:Array(UUID)},{times:Array(Int64)})) AS pair) ORDER BY series_id,ts) l
       ASOF LEFT JOIN (SELECT DISTINCT series_id,ts FROM ${database}._samples
         WHERE series_id IN {series:Array(UUID)} AND ts>fromUnixTimestamp64Milli({minTime:Int64})
         AND ts>=fromUnixTimestamp64Milli({cutoff:Int64}) ORDER BY series_id,ts) r
       ON l.series_id=r.series_id AND l.ts<r.ts WHERE r.ts>l.ts`,
-      {
-        series: `[${late.map((s) => `'${s.series_id}'`).join(",")}]`,
-        times: JSON.stringify(late.map((s) => Date.parse(s.ts))),
-        minTime: Math.min(...late.map((s) => Date.parse(s.ts))),
-        cutoff: now.getTime() - Number(limits.retention_days) * 86_400_000,
-      },
-    );
-    touched.push(...next.map((r) => new Date(Number(r.next_ms)).toISOString()));
+        {
+          series: `[${chunk.map((s) => `'${s.series_id}'`).join(",")}]`,
+          times: JSON.stringify(chunk.map((s) => Date.parse(s.ts))),
+          minTime: Math.min(...chunk.map((s) => Date.parse(s.ts))),
+          cutoff: now.getTime() - Number(limits.retention_days) * 86_400_000,
+        },
+      );
+      touched.push(...next.map((r) => new Date(Number(r.next_ms)).toISOString()));
+    }
   }
   await markMetricHoursDirty(baseId, touched, db, now);
 };
