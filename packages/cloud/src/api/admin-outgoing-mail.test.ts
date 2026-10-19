@@ -76,7 +76,7 @@ test("retention reads effective settings even when record deletion precedes cont
   try {
     const response = await authorized().request("/retention");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("no-store, no-transform");
     expect(await response.json()).toEqual({ contentDays: 90, recordDays: 30 });
     expect(get.mock.calls).toEqual([["outgoing_mail.content_retention_days"], ["outgoing_mail.record_retention_days"]]);
   } finally {
@@ -353,7 +353,7 @@ test("batch cancellation validates its UUID, preserves admin context, and return
   try {
     const response = await request(authorized(), `/batches/${batchId}/cancel`, "POST");
     expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Cache-Control")).toBe("no-store, no-transform");
     expect(await response.json()).toEqual({ batchId, cancelled: 2 });
     expect(cancel.mock.calls[0]).toEqual([batchId, expect.objectContaining({ actor: expect.objectContaining({ userId: user.id }) })]);
     expect((await request(authorized(), "/batches/invalid/cancel", "POST")).status).toBe(400);
@@ -392,7 +392,7 @@ test("send-log routes validate filters, return metadata and forward audited cont
       "/messages?app=inventory&profile=alerts&status=queued&status=failed&ref=order:42&recipient=%40example.org&limit=20&cursor=abc",
     );
     expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Cache-Control")).toBe("no-store, no-transform");
     expect(await response.json()).toEqual(page);
     expect(list).toHaveBeenCalledWith(
       { app: "inventory", profile: "alerts", status: ["queued", "failed"], ref: { scope: "order", id: "42" }, recipient: "@example.org" },
@@ -483,7 +483,7 @@ test("log-access PUT validates app IDs and bounded distinct grants and forwards 
     ] as const) {
       const response = await request(authorized(), `/apps/${appId}/log-access`, "PUT", { apps });
       expect(response.status).toBe(200);
-      expect(response.headers.get("Cache-Control")).toBe("no-store");
+      expect(response.headers.get("Cache-Control")).toBe("no-store, no-transform");
       expect(await response.json()).toEqual(item);
       expect(set).toHaveBeenLastCalledWith(
         appId,

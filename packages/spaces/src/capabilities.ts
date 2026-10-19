@@ -19,6 +19,7 @@ import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
 import type { z } from "zod";
+import { isDateOnlyDeadline } from "@/presentation/deadline";
 import {
   CalendarDestinationListDataSchema,
   CalendarDestinationListInputSchema,
@@ -370,7 +371,15 @@ const reviewItemCreate = async (
       ...(input.templateId !== undefined ? [{ label: t.fromTemplate, value: input.templateId }] : []),
       ...("startsAt" in input && input.startsAt ? [{ label: t.starts, value: input.startsAt, format: "date-time" as const }] : []),
       ...("endsAt" in input && input.endsAt ? [{ label: t.ends, value: input.endsAt, format: "date-time" as const }] : []),
-      ...("deadline" in input && input.deadline ? [{ label: t.deadline, value: input.deadline, format: "date-time" as const }] : []),
+      ...("deadline" in input && input.deadline
+        ? [
+            {
+              label: t.deadline,
+              value: input.deadline,
+              format: isDateOnlyDeadline(input.deadline) ? ("date" as const) : ("date-time" as const),
+            },
+          ]
+        : []),
       ...(input.description ? [{ label: t.description, value: input.description, display: "block" as const }] : []),
       ...(input.assigneeIds?.length ? [{ label: t.assignees, value: String(input.assigneeIds.length) }] : []),
     ],
@@ -457,6 +466,7 @@ const mapTask = (item: SpaceItem) => {
     description: description.text,
     descriptionTruncated: description.truncated,
     deadline: item.deadline,
+    deadlineAllDay: item.deadlineAllDay,
     estimatedDurationMinutes: item.estimatedDurationMinutes,
     activeBlockerCount: item.activeBlockerCount,
     priority: item.priority,
@@ -523,6 +533,7 @@ const mapTaskSummary = (item: SpaceItem, dateConfig?: DateContext) => {
     descriptionPreview: description.text,
     descriptionTruncated: description.truncated,
     deadline: item.deadline,
+    deadlineAllDay: item.deadlineAllDay,
     overdue: isTaskOverdue(item, dateConfig),
     estimatedDurationMinutes: item.estimatedDurationMinutes,
     activeBlockerCount: item.activeBlockerCount,
@@ -1532,7 +1543,8 @@ const fillFromTemplate = async (
   if (!timeZone.ok) return timeZone;
   const draft = await spacesService.template.draft({
     template: resolved.data.internal,
-    date: input.date ?? (input.at ? localNow(new Date(input.at), timeZone.data).date : undefined),
+    date:
+      input.date ?? (input.at ? (isDateOnlyDeadline(input.at) ? input.at : localNow(new Date(input.at), timeZone.data).date) : undefined),
     noDate: input.noDate,
     timeZone: timeZone.data,
     locale: context.locale,
@@ -2804,7 +2816,11 @@ export const spacesCapabilities = defineCapabilities({
               ? [
                   input.deadline === null
                     ? { label: t.deadline, value: t.clearDeadline }
-                    : { label: t.deadline, value: input.deadline, format: "date-time" as const },
+                    : {
+                        label: t.deadline,
+                        value: input.deadline,
+                        format: isDateOnlyDeadline(input.deadline) ? ("date" as const) : ("date-time" as const),
+                      },
                 ]
               : []),
             ...(input.estimatedDurationMinutes !== undefined

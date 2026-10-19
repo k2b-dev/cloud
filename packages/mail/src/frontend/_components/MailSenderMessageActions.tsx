@@ -4,7 +4,7 @@ import { Dropdown, type DropdownItem, prompts, toast, useLocale } from "@k2b/ui"
 import { createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { DraftDerivationKind, MailAutomationConditions, SenderIdentity, SenderMatchKind } from "../../contracts";
-import type { MessageDetail } from "../../service/messages";
+import type { MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import type { AutomationActionKind } from "./mail-automation-actions";
 import { isOutgoingMessage } from "./mail-conversation-history";
@@ -24,13 +24,13 @@ export default function MailSenderMessageActions(props: {
   mailboxWide: boolean;
   selectionKey: string | null;
   selectedConversationId: string | null;
-  message: MessageDetail;
+  message: MailWorkspaceMessage;
   totalMessageCount: number;
   identities: SenderIdentity[];
   primaryActions?: DropdownItem[];
   onReassignMessage: (messageId: string) => void | Promise<void>;
   onSplitMessage: (messageId: string) => void | Promise<void>;
-  onDeriveMessage: (kind: DraftDerivationKind, message: MessageDetail) => unknown;
+  onDeriveMessage: (kind: DraftDerivationKind, message: MailWorkspaceMessage) => unknown;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);

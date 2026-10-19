@@ -5,7 +5,7 @@ section: Frontend
 order: 890
 description: Apply Cloud's visual and interaction rules without forking shared primitives.
 tags: [css, accessibility, themes, design]
-updated: 2026-10-15
+updated: 2026-10-18
 ---
 
 # Styling and accessibility
@@ -46,6 +46,21 @@ hierarchy, so a person finds the value they came for without reading the
 frame around it. Flatness never justifies weaker usability, contrast, or
 keyboard behavior: check those again after you remove decoration.
 
+## Tables, states, and moved paths
+
+[DataTable](/en/ui/content/tables#presentation) follows the minimal Grids
+reference: no grid, zebra striping, or row lines; 44px rows (40px compact),
+a hover fill, a small muted header without a line, and numbers aligned right
+with tabular figures. Only tables with more than 8 columns get row hairlines,
+automatically. Do not add custom row borders.
+
+Use row-height loading placeholders and distinguish empty, no results, and
+no access without adding a box. Every load error offers **Try again** through
+[empty-state recovery](/en/ui/surfaces/empty-states) with `state="error"` and `onRetry`;
+keep the person's selection. A moved familiar path gets a one-time
+[MovedHint](/en/ui/feedback/moved-hint) at the old place, only for people who may
+use the new path. Mail is the agreed exception and shows no hint there.
+
 ## Group content without decorative lines
 
 Do not use lines to group ordinary application content. This includes
@@ -76,7 +91,7 @@ in app-owned markup.
 
 Boundaries are valid when they explain how a shared component operates:
 
-- `DataTable` may expose row and column structure.
+- `DataTable` adds row hairlines automatically only above 8 columns.
 - A compound control may separate functional parts.
 - A resizable layout may expose an interactive separator.
 - A shared workspace layout may mark the edge between adjacent panes or a
@@ -167,7 +182,11 @@ standalone `@k2b/ui` APIs and not general action or status colors.
 `app-accent-text` uses `--ui-app-accent-text`, the app ink that meets WCAG AA
 contrast on Cloud's theme and selection surfaces. `--ui-app-selected` and
 `--ui-app-selected-nav` provide the app's selection fills on the main surface
-and the sidebar.
+and the sidebar. Cloud maps these fills to `--k2b-row-selected` and
+`--k2b-app-workspace-selected`, with `--k2b-app-workspace-active` for
+navigation ink. Tabs, view tabs, segmented controls, and active filter chips
+share the navigation fill; other controls and options retain their platform
+colors.
 
 When app-owned CSS is necessary, use the semantic theme variables already
 provided by the host. The host's `--ui-focus` is a complete `box-shadow`: use

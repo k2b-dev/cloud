@@ -1,4 +1,4 @@
-import { rateLimit } from "@k2b/cloud/server";
+import { middleware, rateLimit } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { gridsLive } from "../service/live";
 import legacyLiveRoutes from "../ws";
@@ -27,6 +27,7 @@ import workspaceRoutes from "./workspace";
 
 // The live socket and its predecessor own their authentication and rate limit.
 const app = new Hono()
+  .use("*", middleware.noTransform())
   .route("/live", gridsLive.routes(gridsLiveChannels))
   .route("/ws", legacyLiveRoutes)
   .use(rateLimit())

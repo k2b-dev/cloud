@@ -120,7 +120,9 @@ Setze `{{ mailbox.logo }}` in eine Signatur, um das Postfachlogo in neuen Nachri
 
 Verwende `{{ mailbox.logo }}` allein, ohne Filter. Eine Vorlage mit diesem Platzhalter darf keine Liquid-`capture`-Tags enthalten, auch nicht für anderen Text.
 
-Ein Postfachadmin lädt ein PNG oder JPEG mit `cld mail compose logo set --file logo.png` hoch: höchstens 100 KiB und 1200×400 Pixel. Die Anzeigebreite beträgt standardmäßig 200 px; `--width` erlaubt 1–600 px. Der Alternativtext ist standardmäßig der getrimmte Postfachname. `--alt` erlaubt 1–200 Zeichen ohne Steuerzeichen. Logo-Einstellungen im Browser folgen später.
+Öffne in den Einstellungen des Postfachs **Schreiben → Logo**, um das Logo hochzuladen oder zu ersetzen, seine Anzeigebreite oder seinen Alternativtext zu ändern oder es nach Bestätigung zu entfernen. Dafür brauchst du Zugriff **Verwalten**. Mit Zugriff **Bearbeiten** siehst du das Logo und seine Werte, kannst sie aber nicht ändern. Eine Änderung der Breite oder des Alternativtexts speichert eine neue Version mit demselben Bild.
+
+Ein Postfachadmin lädt ein PNG oder JPEG alternativ mit `cld mail compose logo set --file logo.png` hoch: höchstens 100 KiB und 1200×400 Pixel. Die Anzeigebreite beträgt standardmäßig 200 px; `--width` erlaubt 1–600 px. Der Alternativtext ist standardmäßig der getrimmte Postfachname. `--alt` erlaubt 1–200 Zeichen ohne Steuerzeichen.
 
 Nutze diese Liquid-Variablen in deiner Vorlage:
 

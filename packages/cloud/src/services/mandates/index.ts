@@ -1,6 +1,7 @@
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
 import { type SQL, sql } from "bun";
 import { z } from "zod";
+import type { CapabilityActionPolicy } from "../../contracts/capabilities";
 import { CapabilityAppIdSchema } from "../../contracts/capabilities";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { audit } from "../audit";
@@ -626,6 +627,7 @@ export const validateMandateIssueAuthority = async (
     operation: string;
     actionApproval?: "none" | "approved";
     input?: unknown;
+    capabilityPolicy?: CapabilityActionPolicy;
     capabilityApproval?: "none" | "rememberable" | "always";
     expectedRevision?: number;
     requestId?: string;
@@ -687,6 +689,7 @@ export const validateMandateIssueAuthority = async (
       actionApproval: input.actionApproval ?? "none",
       input: input.input,
       capabilityApproval: input.capabilityApproval,
+      capabilityPolicy: input.capabilityPolicy,
     })
   ) {
     return denyMandateIssue(err.forbidden(MANDATE_POLICY_DENIED_MESSAGE));

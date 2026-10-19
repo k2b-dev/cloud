@@ -38,7 +38,13 @@ export default ssr<AuthContext>(async (c) => {
     });
 
   return () => (
-    <Layout c={c} help={spacesPageHelp.workspace} fullWidth title={state.title}>
+    <Layout
+      context={{ scope: { type: "spaces.space", id: state.space.id } }}
+      c={c}
+      help={spacesPageHelp.workspace}
+      fullWidth
+      title={state.title}
+    >
       <SpacesWorkspace userId={user.id} state={state} dateConfig={dateConfig} mailIntegrationAvailable={mailIntegrationAvailable} />
     </Layout>
   );

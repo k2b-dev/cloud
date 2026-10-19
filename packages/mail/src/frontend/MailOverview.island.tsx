@@ -13,6 +13,7 @@ import {
   SegmentedControl,
   toast,
   useLocale,
+  watchAppHostWidth,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
@@ -335,7 +336,7 @@ function MailOverviewView(props: {
       const [mailboxId, conversationId] = source.split("/");
       if (!mailboxId || !conversationId) throw new Error(messages().invalidConversationSelection);
       const response = await apiClient.mailboxes[":mailboxId"]["workspace-detail"][":conversationId"].$get(
-        { param: { mailboxId, conversationId } },
+        { param: { mailboxId, conversationId }, query: {} },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadConversationDetails));
@@ -424,11 +425,9 @@ function MailOverviewView(props: {
     onError: (error) => prompts.error(error.message),
   });
 
+  let overview: HTMLDivElement | undefined;
   onMount(() => {
-    const media = window.matchMedia("(min-width: 64rem)");
-    const updateWideLayout = () => setWideLayout(media.matches);
-    updateWideLayout();
-    media.addEventListener("change", updateWideLayout);
+    if (overview) onCleanup(watchAppHostWidth(overview, 64, setWideLayout));
     const stop = listenPopState(({ url }) => {
       const parsed = url.searchParams.get("view");
       showView(parsed === "unassigned" || parsed === "waiting" || parsed === "all" ? parsed : "mine");
@@ -437,7 +436,6 @@ function MailOverviewView(props: {
       setSelection(mailboxId && conversationId ? { mailboxId, conversationId } : null);
     });
     onCleanup(() => {
-      media.removeEventListener("change", updateWideLayout);
       stop();
     });
   });
@@ -752,7 +750,7 @@ function MailOverviewView(props: {
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
         <AppWorkspace.Main class="mail-focus-main" width="content" aria-busy={focusResults().loading() || focusResults().refreshing()}>
-          <div class="mail-overview-page">
+          <div ref={overview} class="mail-overview-page">
             <PanelHeader
               as="h2"
               size="lg"

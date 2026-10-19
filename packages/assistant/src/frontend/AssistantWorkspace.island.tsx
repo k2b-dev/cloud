@@ -31,7 +31,7 @@ import {
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
+import { cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
@@ -562,21 +562,28 @@ export default function AssistantWorkspace(props: Props) {
     );
     return next;
   };
-  const composerInput = (key: string) =>
+  type ComposerOverride = { text: string; mentions: readonly ChatMention[] };
+  const composerInput = (key: string, override?: ComposerOverride) =>
     aiComposerSendInput({
       intent: "send",
-      text: composerDraft(key),
-      mentions: mentionsFor(key),
+      text: override?.text ?? composerDraft(key),
+      mentions: override?.mentions ?? mentionsFor(key),
       attachments: aiChatAttachments(composerAttachmentsFor(key)),
     });
-  const saveComposer = (key: string, target: string) =>
-    serializeComposer(key, async () => {
+  const saveComposer = (key: string, target: string, override?: ComposerOverride) => {
+    // An override snapshots this generation, even if newer edits arrive before its queued save starts.
+    const overrideGeneration = override ? session(key).editGeneration : undefined;
+    return serializeComposer(key, async () => {
       const local = session(key);
       if (local.conflict) return null;
-      const generation = local.editGeneration;
+      const generation = overrideGeneration ?? local.editGeneration;
       local.saving = true;
       try {
-        const saved = await chat.saveDraft({ ...composerInput(key), conversationId: target, expectedDraftRevision: local.baseRevision });
+        const saved = await chat.saveDraft({
+          ...composerInput(key, override),
+          conversationId: target,
+          expectedDraftRevision: local.baseRevision,
+        });
         if (saved) confirmComposerSave(local, saved.revision, generation);
         else {
           local.conflict = true;
@@ -590,6 +597,7 @@ export default function AssistantWorkspace(props: Props) {
         touchSession();
       }
     });
+  };
 
   const selectedModel = createMemo(() => props.models.find((model) => model.id === selectedModelId()) ?? null);
   const acceptsImages = () =>
@@ -604,11 +612,14 @@ export default function AssistantWorkspace(props: Props) {
     if (href === current) return;
     navigate(href, { replace, scroll: "manual", viewTransition: false });
   };
-  const newConversation = mutation.create<AiConversation | null, { focus: boolean; projectId?: string; navigate?: boolean }>({
+  const newConversation = mutation.create<
+    AiConversation | null,
+    { focus: boolean; projectId?: string; navigate?: boolean | (() => boolean) }
+  >({
     mutation: async ({ focus, projectId, navigate: shouldNavigate = true }) => {
       const conversation = await chat.createConversation({ title: t().newChat, ...(projectId ? { projectId } : {}) });
       if (conversation && chat.activeConversationId() === conversation.id) {
-        if (shouldNavigate) {
+        if (typeof shouldNavigate === "function" ? shouldNavigate() : shouldNavigate) {
           setProjectView(null);
           setApprovalsOpen(false);
           commitConversationUrl(conversation.id);
@@ -618,7 +629,7 @@ export default function AssistantWorkspace(props: Props) {
       return conversation;
     },
   });
-  const createConversation = async (focus: boolean, projectId?: string, shouldNavigate = true) => {
+  const createConversation = async (focus: boolean, projectId?: string, shouldNavigate: boolean | (() => boolean) = true) => {
     if (newConversation.loading()) return null;
     await newConversation.mutate({ focus, projectId, navigate: shouldNavigate });
     return newConversation.data();
@@ -1408,6 +1419,102 @@ export default function AssistantWorkspace(props: Props) {
     // A Project composer starts new chats; a response still running in the previous chat does not block it.
     const composerRunning = () => !projectComposer() && chat.running();
     const catalog = createCloudComposerCatalog();
+    let commandTarget: string | undefined;
+    const [commandCreating, setCommandCreating] = createSignal(false);
+    // One app opening at a time; it ends when this composer goes away or the person moves to another chat, so a late
+    // answer never navigates over where they are now.
+    let commandOpening: { controller: AbortController; key?: string } | undefined;
+    onCleanup(() => commandOpening?.controller.abort());
+    createEffect(() => {
+      const key = sessionKey();
+      if (commandOpening?.key !== undefined && commandOpening.key !== key) commandOpening.controller.abort();
+    });
+    // Saves the draft without its "/…" before an app opens, through the revisioned path, with references and
+    // attachments. A chat that does not exist yet is created first, as "Assign project" and dictation do.
+    const beforeCommand = async (draft: { value: string; mentions: readonly ChatMention[] }, signal: AbortSignal, follow: () => void) => {
+      if (signal.aborted) return;
+      let key = sessionKey();
+      // A draft already in conflict says so; the conflict notice offers the way out.
+      if (session(key).conflict) throw new Error(commandCopy().commandDraftConflict);
+      const projectId = composerProps.projectId;
+      let target = projectId ? pendingProjectChats()[projectId]?.id : chat.activeConversationId();
+      commandOpening?.controller.abort();
+      const opening: { controller: AbortController; key?: string } = { controller: new AbortController() };
+      commandOpening = opening;
+      try {
+        if (!target) {
+          // The new chat starts with the draft as it is saved, without "/…": its key changes, so the composer cannot
+          // take the token out there itself.
+          const attachments = composerAttachmentsFor(key);
+          setCommandCreating(true);
+          if (!projectId) follow();
+          const created = await createConversation(false, projectId, projectId ? false : () => !opening.controller.signal.aborted).finally(
+            () => setCommandCreating(false),
+          );
+          if (!created) throw new Error("Chat not created");
+          target = created.id;
+          if (projectId) {
+            session(key).baseRevision = created.draft.revision;
+            setPendingProjectChats((all) => ({ ...all, [projectId]: created }));
+          } else {
+            const from = key;
+            key = created.id;
+            if (signal.aborted) {
+              setComposerDraft(key, composerDraft(from));
+              setComposerAttachmentsFor(key, composerAttachmentsFor(from));
+              setMentionsFor(key, mentionsFor(from));
+            } else {
+              setComposerDraft(key, draft.value);
+              setComposerAttachmentsFor(key, attachments);
+              setMentionsFor(key, draft.mentions);
+            }
+            session(key).baseRevision = created.draft.revision;
+          }
+        }
+        const opened = key;
+        // Once the person cancelled, they may have edited since choosing, also in a project composer: save the live draft.
+        const override = signal.aborted ? undefined : { text: draft.value, mentions: draft.mentions };
+        // A failed save answers null for a revision conflict and for any other failure alike; a conflict also
+        // shows the composer's conflict notice.
+        if (!(await saveComposer(key, target, override))) throw new Error("Draft not saved");
+        // The saved draft leaves out "/…", which an opening that fails or is cancelled keeps on screen; the composer's
+        // signal aborts then, and the live draft is saved again, so a reload shows what the person sees.
+        if (override) {
+          const savedKey = key;
+          const savedTarget = target;
+          const resave = () => void saveComposer(savedKey, savedTarget);
+          if (signal.aborted) resave();
+          else signal.addEventListener("abort", resave, { once: true });
+        }
+        // This composer went away meanwhile, such as for Approvals: the opening just ends.
+        if (signal.aborted || opening.controller.signal.aborted) return;
+        // The person moved to another chat while it saved: the app does not open over that one.
+        if (sessionKey() !== opened) {
+          opening.controller.abort();
+          throw new Error(commandCopy().commandSuperseded);
+        }
+        commandTarget = target;
+        // From here on, moving to another chat ends the opening, also while the link resolves.
+        opening.key = opened;
+      } catch (error) {
+        // The composer's status line names the failure once; an error of a chat the person moved to stays there.
+        if (sessionKey() === key) chat.setError(null);
+        throw error instanceof Error && error.message === commandCopy().commandSuperseded
+          ? error
+          : new Error(commandCopy().commandDraftNotSaved);
+      }
+    };
+    const appCommands = createMemo(() =>
+      cloudCommandMenu({
+        locale: locale(),
+        commands: catalog.commands(),
+        state: catalog.state(),
+        section: "apps",
+        before: (draft, signal, follow) => trackComposerPicking(beforeCommand(draft, signal, follow)),
+        returnTo: () => (commandTarget ? assistantConversationHref(window.location.href, commandTarget) : undefined),
+        signal: () => commandOpening?.controller.signal,
+      }),
+    );
     const attachmentCount = createMemo(() => composerAttachmentsFor(sessionKey()).length);
     const mentionCount = createMemo(() => mentionsFor(sessionKey()).length);
     const insert = createMemo(() =>
@@ -1515,11 +1622,12 @@ export default function AssistantWorkspace(props: Props) {
           draftKey={sessionKey()}
           mentions={mentionsFor(sessionKey())}
           onMentionsChange={(mentions) => setMentionsFor(sessionKey(), mentions)}
-          commandSections={assistantCommandSections(commandCopy())}
+          commandSections={assistantCommandSections(commandCopy(), appCommands().pending)}
           commandScopes={[...assistantCommandScopes(commandCopy(), locale()), ...insert().scopes]}
           commandFallback={insert().fallback}
           commands={[
             ...insert().commands,
+            ...appCommands().commands,
             ...assistantBuiltInCommands({
               copy: commandCopy(),
               projectComposer: projectComposer(),
@@ -1654,10 +1762,10 @@ export default function AssistantWorkspace(props: Props) {
               onRefresh={quotas.refresh}
             />
           }
-          disabled={!canUseComposer() || newConversation.loading() || chat.loadingConversation()}
+          disabled={!canUseComposer() || (newConversation.loading() && !commandCreating()) || chat.loadingConversation()}
           state={
             projectComposer()
-              ? newConversation.loading()
+              ? newConversation.loading() && !commandCreating()
                 ? "submitting"
                 : "idle"
               : chat.runStatus() === "stopping"

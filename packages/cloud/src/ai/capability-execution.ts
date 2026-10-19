@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import type { ToolContext } from "@k2b/nessi";
 import { type CapabilityDispatchDependencies, dispatchCapability } from "../api/capabilities";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
-import { type CapabilityActionManifest, type CapabilityActionReview, CapabilityActionReviewSchema } from "../contracts/capabilities";
+import {
+  type CapabilityActionManifest,
+  type CapabilityActionReviewData,
+  CapabilityActionReviewDataSchema,
+} from "../contracts/capabilities";
 import type { RequestActor } from "../server";
 import type { AccessSubject } from "../server/services/access";
 import { isAccountCategoryAllowed } from "../services/account-category-policy";
@@ -156,9 +160,9 @@ const dispatchAiCapability = async (input: AiCapabilityCall, review: boolean): P
   );
 };
 
-export const reviewAiCapability = async (input: AiCapabilityCall): Promise<CapabilityActionReview | null> => {
+export const reviewAiCapability = async (input: AiCapabilityCall): Promise<CapabilityActionReviewData | null> => {
   if (input.entry.kind !== "action" || !(input.entry.operation as CapabilityActionManifest).review) return null;
-  return CapabilityActionReviewSchema.parse(await dispatchAiCapability(input, true));
+  return CapabilityActionReviewDataSchema.parse(await dispatchAiCapability(input, true));
 };
 
 export const executeAiCapability = (input: AiCapabilityCall): Promise<unknown> => dispatchAiCapability(input, false);

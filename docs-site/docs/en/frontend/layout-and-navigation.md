@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Layout and navigation
@@ -18,6 +18,14 @@ pages, breadcrumbs and a footer.
 
 Layout owns Cloud chrome; an [application shell](/en/docs/frontend/application-shells)
 owns the geometry inside it.
+
+Application authors put objects in the sidebar and views of the open object
+in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and
+quiet secondary actions share that row while the workspace width permits;
+filters wrap and the quiet filtered result count disappears first. Put the
+one filled primary action in `Head.primary`; on phones the shell leaves its
+place beside the bottom bar. See [Objects on the left, views in the head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head)
+for the complete rule and API.
 
 ## Know the shell at each width
 
@@ -137,9 +145,37 @@ See [Offer a panel](/en/docs/platform/panels).
 fit this page, for example `help={["inventory-start", "inventory-access"]}`.
 Help lists them first under **For this view**, in the declared order. Cloud
 removes duplicates, ignores IDs outside the reader's authorized Help manifest,
-and keeps at most three. Without a manifest, the section is absent. These
+and keeps at most three IDs of at most 180 characters each. Without a manifest, the section is absent. These
 articles stay in their usual task tiles or kind groups too. See
 [In-product Help](/en/docs/platform/help#use-the-automatically-derived-surfaces).
+
+`context?: { scope?: CloudResourceRef } | false` reports the current place to
+the visible panel, for example
+`context={{ scope: { type: "inventory.warehouse", id: warehouse.id } }}`.
+Use the public ID the owning app's resource reader accepts. Cloud adds the
+current app ID and the filtered `help` IDs above. An invalid scope is omitted;
+`context={false}` disables all context for the document. With no current app
+or no panel slot, there is no context.
+
+When the place changes inside one document, publish its current scope from a
+reactive effect in browser code. Dispose that effect's previous publication
+when it changes or unmounts:
+
+```ts
+import { publishPageContext } from "@k2b/cloud/browser/panel";
+import { createEffect, onCleanup } from "solid-js";
+
+createEffect(() => {
+  onCleanup(publishPageContext({ scope: currentScope() }));
+});
+```
+
+Each call owns one source. The most recent active source with a scope wins;
+disposing it reveals the next source, then the server scope. Publishers work
+before the lazy panel controller loads and across independent islands. Cloud
+asks consent per provider app before sharing; Core providers need no consent.
+See [Page context](/en/docs/platform/panels#page-context) for reading it and
+its authorization boundaries.
 
 `printHint?: string` supplies the application's final localized export or printing guidance. In regular and focus mode, `Layout` appends a screen-hidden `data-print-fallback` as the last child of the app canvas. When no `data-print-region` exists, only this fallback prints. Its default hint is “Open the item you want to print, or use the app's export.” Pass an app-specific sentence, such as “Open a note to print it, or download it as a PDF from the note's details.” See [Browser printing](/en/ui/layout/print) for marking printable content.
 

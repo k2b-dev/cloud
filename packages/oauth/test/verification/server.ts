@@ -47,6 +47,7 @@ if (core) {
       sendMagicLink: unusedNotification,
       sendIpaLoginHint: unusedNotification,
       sendPasswordReset: unusedNotification,
+      sendNewBrowserSignIn: async () => {},
     }),
   );
   if (current) {

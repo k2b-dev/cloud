@@ -55,11 +55,31 @@ The link expires after five minutes. Do not share it outside this setup.
 6. Approve only the request that you started, and only with the matching code.
 :::
 
+When Cloud supplies browser details, the app shows them above the code:
+
+- Browser, system, and start time in your phone's time zone.
+- **Approximately {city}, {country}** and **Network: …**, only when Cloud's location database knows the address. The network names the operator.
+- **Same internet address as this phone**, only when true. Its absence says nothing.
+- **Known browser · since …** or **Cloud does not know this browser yet**. Neither appears during the first 14 days after the update. Known means “signed in here before”, not “safe”.
+- A known browser in a new country gets a calm note about country history. A new browser can get **Did you start this sign-in?**. This warning requires no sign-in from that country in the last 90 days and existing sign-in countries for your account. A younger history uses its start date. **Deny** is then the main button, with **Approve anyway** available.
+
+Only passkeys are phishing-resistant. A phishing page can relay the app's code. A nearby proxy can match place and network.
+
 Without the app, local accounts can still use an email link, and FreeIPA accounts can use their password. Existing passkeys stay available.
 
 After sign-in, Cloud asks you to accept its terms and acknowledge the privacy policy if you have not done so yet. Confirm to continue, or cancel to sign out.
 
 If the result of a sign-in is unclear, reload the page to check your session, or start a new request.
+
+## New sign-in notice {icon="bell"}
+
+After a successful sign-in, Cloud sends **New sign-in from a new browser** once for each new browser. This starts 14 days after the upgrade. It does not apply to the mobile app.
+
+The notice shows the browser and time. The email also shows the sign-in method and the approximate place, when available.
+
+If this was not you, check your paired devices under **Profile settings → Sign-in**. Then contact your administrator.
+
+By default, Cloud sends the notice by email. Without an email address, it sends a browser notification. To turn it off, open **Profile settings → Notifications** and clear every channel under **New sign-in from a new browser**.
 
 ## Check and revoke paired devices {icon="device-mobile"}
 

@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { type AuthorizationState, authorizationStates, renderAuthorizationState } from "./authorization-page.test-fixture";
 
 // Where the card sits, whether it is framed or flat, and whether anything moves when a control is
@@ -41,31 +41,52 @@ afterAll(async () => {
   await browser?.close();
 });
 
+const card = 'section[aria-labelledby="oauth-page-title"]';
+
 /**
- * The server-rendered document with the stylesheets and fonts it links, once the fonts are in. The
- * pages need no script to show their state; the platform's MinimalLayout test owns the first frame.
+ * The server-rendered document with the stylesheets and fonts it links, once the fonts are in and its
+ * styles have settled. The pages need no script to show their state; the platform's MinimalLayout
+ * test owns the first frame. Without the inline theme script, nothing stops the parser before
+ * `<body>`, so a stylesheet that arrives late can apply after the engine styled the card once, and
+ * the card's and buttons' colors then transition from their unstyled values. None of these tests is
+ * about motion: under reduced motion, @k2b/ui makes every transition inside `.k2b-ui` instant.
+ *
+ * `late` holds one stylesheet back until the parsed card has been styled once, as the engine
+ * sometimes does on its own under load.
  */
 const open = async (
   state: AuthorizationState,
   locale: "en" | "de",
   viewport: keyof typeof viewports,
   theme: "light" | "dark" = "light",
+  late?: string,
 ): Promise<Page> => {
   const html = new HTMLRewriter()
     .on("script", { element: (script) => void script.remove() })
     .transform(await renderAuthorizationState(state, locale, theme));
-  const page = await browser.newPage({ ...viewports[viewport], deviceScaleFactor: 1 });
-  await page.route(`${origin}/**`, (route) => {
+  const page = await browser.newPage({ ...viewports[viewport], deviceScaleFactor: 1, reducedMotion: "reduce" });
+  const { promise: styledOnce, resolve: styled } = Promise.withResolvers<void>();
+  await page.route(`${origin}/**`, async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname === "/authorization-page") return route.fulfill({ contentType: "text/html", body: html });
     const stylesheet = stylesheets[pathname];
-    if (stylesheet !== undefined) return route.fulfill({ contentType: "text/css", body: stylesheet });
+    if (stylesheet !== undefined) {
+      if (pathname === late) await styledOnce;
+      return route.fulfill({ contentType: "text/css", body: stylesheet });
+    }
     if (pathname === "/public/tabler-icons.woff2") return route.fulfill({ path: iconFont });
     if (pathname.startsWith("/public/fonts/"))
       return route.fulfill({ path: resolve(uiDist, "fonts", pathname.slice("/public/fonts/".length)) });
     return route.fulfill({ status: 404, body: "" });
   });
-  await page.goto(`${origin}/authorization-page`);
+  const loaded = page.goto(`${origin}/authorization-page`);
+  if (late !== undefined) {
+    await page.waitForSelector(card, { state: "attached" });
+    // settled: styles the card once before the held stylesheet arrives; the unsettled moment is the subject.
+    await page.evaluate((selector) => getComputedStyle(document.querySelector(selector)!).backgroundColor, card);
+    styled();
+  }
+  await loaded;
   const fonts = await page.evaluate(async () => {
     await document.fonts.ready;
     const loaded: string[] = [];
@@ -76,15 +97,16 @@ const open = async (
   });
   // Measured in a fallback font, a row that wraps for a person would pass.
   expect(fonts, state).toEqual(expect.arrayContaining(["IBM Plex Sans", "tabler-icons"]));
+  await settled(page);
   return page;
 };
 
 /**
  * Text and icons in the card whose contrast against the surface behind them is below WCAG AA: 4.5:1
- * for text and 3:1 for icons.
+ * for text and 3:1 for icons, and the animations still running when they were read.
  */
 const lowContrast = (page: Page) =>
-  page.evaluate(() => {
+  page.evaluate((selector) => {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 1;
     const context = canvas.getContext("2d", { willReadFrequently: true })!;
@@ -103,7 +125,7 @@ const lowContrast = (page: Page) =>
       });
       return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
     };
-    const card = document.querySelector('section[aria-labelledby="oauth-page-title"]')!;
+    const card = document.querySelector(selector)!;
     const found: string[] = [];
     for (const element of [card, ...card.querySelectorAll("*")]) {
       const icon = element.matches("i.ti");
@@ -117,8 +139,78 @@ const lowContrast = (page: Page) =>
       const ratio = (light! + 0.05) / (dark! + 0.05);
       if (ratio < (icon ? 3 : 4.5)) found.push(`${element.tagName.toLowerCase()}.${element.className}: ${ratio.toFixed(2)}`);
     }
-    return found;
-  });
+    const running = document
+      .getAnimations()
+      .filter((animation) => animation.timeline === document.timeline && animation.playState !== "finished")
+      .map((animation) => {
+        const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+        return {
+          target: target ? `${target.tagName.toLowerCase()}.${target.className}` : null,
+          name:
+            animation instanceof CSSTransition
+              ? animation.transitionProperty
+              : animation instanceof CSSAnimation
+                ? animation.animationName
+                : animation.id,
+          currentTime: animation.currentTime,
+          playState: animation.playState,
+        };
+      });
+    return { found, running };
+  }, card);
+
+/**
+ * Where the card sits and what frames it, with the animations still running when it was read. A
+ * framed card has a border, a shadow, and a surface of its own that stands out from the page.
+ */
+const layoutOf = (page: Page) =>
+  page.evaluate((selector) => {
+    const card = document.querySelector(selector)!;
+    const box = card.getBoundingClientRect();
+    const style = getComputedStyle(card);
+    const running = document
+      .getAnimations()
+      .filter((animation) => animation.timeline === document.timeline && animation.playState !== "finished")
+      .map((animation) => {
+        const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+        return {
+          target: target ? `${target.tagName.toLowerCase()}.${target.className}` : null,
+          name:
+            animation instanceof CSSTransition
+              ? animation.transitionProperty
+              : animation instanceof CSSAnimation
+                ? animation.animationName
+                : animation.id,
+          currentTime: animation.currentTime,
+          playState: animation.playState,
+        };
+      });
+    return {
+      mains: document.querySelectorAll("main").length,
+      mainBackground: getComputedStyle(document.querySelector("main")!).backgroundColor,
+      navs: Array.from(document.querySelectorAll("nav"), (nav) => nav.closest("footer") !== null),
+      headings: Array.from(document.querySelectorAll("h1"), (heading) => heading.id),
+      card: { left: box.left, right: box.right, top: box.top, bottom: box.bottom },
+      frame: {
+        borderTopWidth: style.borderTopWidth,
+        boxShadow: style.boxShadow,
+        backgroundColor: style.backgroundColor,
+        bodyBackgroundColor: getComputedStyle(document.body).backgroundColor,
+      },
+      scrollWidth: document.documentElement.scrollWidth,
+      running,
+    };
+  }, card);
+
+const framed = ({ frame }: Awaited<ReturnType<typeof layoutOf>>) =>
+  frame.borderTopWidth !== "0px" &&
+  frame.boxShadow !== "none" &&
+  frame.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+  frame.backgroundColor !== frame.bodyBackgroundColor;
+
+/** A failure context with what framed the card and what still ran when it was read. */
+const described = (context: string, layout: Awaited<ReturnType<typeof layoutOf>>) =>
+  `${context}; frame ${JSON.stringify(layout.frame)}; running ${JSON.stringify(layout.running)}`;
 
 /** Every box in the card and the footer, rounded to hundredths of a pixel. */
 const boxes = (page: Page) =>
@@ -129,8 +221,6 @@ const boxes = (page: Page) =>
     }),
   );
 
-const settle = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-
 describe("OAuth authorization pages in a browser", () => {
   for (const viewport of Object.keys(viewports) as Array<keyof typeof viewports>) {
     const { width, height } = viewports[viewport].viewport;
@@ -140,26 +230,8 @@ describe("OAuth authorization pages in a browser", () => {
         for (const state of Object.keys(authorizationStates) as AuthorizationState[]) {
           const page = await open(state, "en", viewport, theme);
           try {
-            const layout = await page.evaluate(() => {
-              const card = document.querySelector('section[aria-labelledby="oauth-page-title"]')!;
-              const box = card.getBoundingClientRect();
-              const style = getComputedStyle(card);
-              return {
-                mains: document.querySelectorAll("main").length,
-                mainBackground: getComputedStyle(document.querySelector("main")!).backgroundColor,
-                navs: Array.from(document.querySelectorAll("nav"), (nav) => nav.closest("footer") !== null),
-                headings: Array.from(document.querySelectorAll("h1"), (heading) => heading.id),
-                card: { left: box.left, right: box.right, top: box.top, bottom: box.bottom },
-                // A border, a shadow, and a surface of its own that stands out from the page.
-                framed:
-                  style.borderTopWidth !== "0px" &&
-                  style.boxShadow !== "none" &&
-                  style.backgroundColor !== "rgba(0, 0, 0, 0)" &&
-                  style.backgroundColor !== getComputedStyle(document.body).backgroundColor,
-                scrollWidth: document.documentElement.scrollWidth,
-              };
-            });
-            const context = `${state} ${theme} at ${width} px`;
+            const layout = await layoutOf(page);
+            const context = described(`${state} ${theme} at ${width} px`, layout);
             expect(layout.mains, context).toBe(1);
             // One page background from top to footer: no band behind the card that ends at the footer.
             expect(layout.mainBackground, context).toBe("rgba(0, 0, 0, 0)");
@@ -173,8 +245,9 @@ describe("OAuth authorization pages in a browser", () => {
             expect(Math.abs(layout.card.left - (width - layout.card.right)), context).toBeLessThan(1);
             expect(layout.card.bottom, context).toBeLessThanOrEqual(height);
             // A frame on the desktop, flat on the phone where the page padding is all the room there is.
-            expect(layout.framed, context).toBe(viewport === "desktop");
-            expect(await lowContrast(page), context).toEqual([]);
+            expect(framed(layout), context).toBe(viewport === "desktop");
+            const contrast = await lowContrast(page);
+            expect(contrast.found, `${state} ${theme} at ${width} px; running ${JSON.stringify(contrast.running)}`).toEqual([]);
           } finally {
             await page.close();
           }
@@ -187,7 +260,7 @@ describe("OAuth authorization pages in a browser", () => {
         const page = await open(state, "en", viewport);
         try {
           await page.mouse.move(0, 0);
-          await settle(page);
+          await settled(page);
           const resting = await boxes(page);
           // The closed language menu is rendered but hidden.
           const controls = page
@@ -197,14 +270,14 @@ describe("OAuth authorization pages in a browser", () => {
           expect(count, state).toBeGreaterThan(0);
           for (let index = 0; index < count; index += 1) {
             await controls.nth(index).hover();
-            await settle(page);
+            await settled(page);
             expect(await boxes(page), `${state}: hover on control ${index}`).toEqual(resting);
           }
           await page.mouse.move(0, 0);
           await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
           for (let step = 0; step < count; step += 1) {
             await page.keyboard.press("Tab");
-            await settle(page);
+            await settled(page);
             expect(await boxes(page), `${state}: Tab ${step + 1}`).toEqual(resting);
           }
         } finally {
@@ -290,4 +363,18 @@ describe("OAuth authorization pages in a browser", () => {
       }
     }, 60_000);
   }
+
+  test("a card styled before its last stylesheet arrived is read framed and readable at 1440 px", async () => {
+    for (const theme of ["light", "dark"] as const) {
+      const page = await open("confirm", "en", "desktop", theme, "/public/global.css");
+      try {
+        const layout = await layoutOf(page);
+        expect(framed(layout), described(`confirm ${theme} at 1440 px`, layout)).toBe(true);
+        const contrast = await lowContrast(page);
+        expect(contrast.found, `confirm ${theme} at 1440 px; running ${JSON.stringify(contrast.running)}`).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }
+  }, 60_000);
 });

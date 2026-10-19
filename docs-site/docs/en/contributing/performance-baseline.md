@@ -5,7 +5,7 @@ section: Contributing
 order: 1311
 description: Record repeatable page weight and cold-load timings from isolated production bundles.
 tags: [contributing, performance, testing, ssr]
-updated: 2026-10-10
+updated: 2026-10-18
 ---
 
 # Measure production page performance
@@ -108,6 +108,9 @@ never overwritten.
 
 ## Read the measurements
 
+Mail, Chat, and Assistant responses stay uncompressed by design. They mix
+repeatedly writable outside text with private message content; see [Response compression](/en/docs/build/routing#response-compression).
+
 Static metrics use the served HTML and the production build files:
 
 - HTML sizes are raw UTF-8 bytes, gzip at level 9, and Brotli at maximum quality.
@@ -148,16 +151,21 @@ negotiate gzip and transfer headers add overhead.
 the end of each initial island/client wrapper's synchronous mount, the
 response end of every script loaded during the observation, and, in
 Chromium, the end of the last long task. WebKit has no long-task entries.
-Every script request the harness sees must have a resource timing entry;
-a missing entry fails the load.
+Every script request the harness sees must have a resource timing entry.
 
 The observation stops when every initial wrapper has mounted, no script is
-pending, and script requests have been quiet for at least 500 ms. This quiet
+pending, every script request has its resource timing entry, and script
+requests have been quiet for at least 500 ms. WebKit can add the entry of a
+`modulepreload` link that the page inserts at runtime well after the request
+finished, so the observation waits for it; an entry that never arrives runs
+into the deadline below. This quiet
 window only ends the observation; it and the harness polling delay are not
 part of TTI. The probe observes the existing synchronous `innerHTML = ""`
 followed by `render()` in the SSR mount runtime and records the time in a
 microtask after that stack. An island-error event fails the load. The
 45-second deadline fails the profile; it never becomes a numeric TTI result.
+Its error names the time to `DOMContentLoaded` and the last observed state:
+mounted islands, pending scripts, scripts without timing, and the quiet time.
 
 The probe and static inspector depend on today's SSR internals:
 clear-and-render mounting, the inline `const p=` loader, and
@@ -239,19 +247,21 @@ the reported range as inconclusive.
 ## Measure Mail at mailbox scale
 
 `packages/mail/scripts/perf-baseline.ts` measures the Mail server and its APIs
-at a realistic mailbox size. It reuses this page's isolated production stack
-but starts no browsers:
+at a realistic mailbox size. It reuses this page's isolated production stack.
+With `--browser`, it also measures client cost and interaction times in
+Chromium and WebKit on the same seeded mailbox:
 
 ```bash
 bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 5
+bun --no-env-file packages/mail/scripts/perf-baseline.ts --browser chromium,webkit
 ```
 
 The script needs Docker and takes the machine-wide heavy lock. It creates and
 removes only its own labelled containers, publishes them on free loopback
 ports, and never uses port 3000 or the development database. Builds and
 startup take 5–15 minutes, seeding 20,000 messages takes about 2 minutes, and
-measuring takes 2–5 minutes; a busy host takes longer. `--help` lists every
-flag without starting Docker.
+measuring takes 2–5 minutes; a busy host takes longer. The browser part adds
+roughly 10–30 minutes. `--help` lists every flag without starting Docker.
 
 ### Fixture
 
@@ -281,7 +291,9 @@ and of the large thread, list pages 2–5 through `workspace-route` and the
 public conversation list, conversation detail for a small, the large, and an
 HTML-heavy thread, rare, common, and structured search, three folder switches,
 view counts, a message arriving live, and opening compose for a new message
-and a reply.
+and a reply. `list-paging-workspace` loads page 1 through `workspace-route`
+as an untimed cursor prerequisite, then measures list pages 2–5 through
+`workspace-list`.
 
 For each scenario the run records cold, median, and p95 times, response and
 island props bytes, Server-Timing phases, and the statement count and
@@ -291,6 +303,103 @@ plan of the slowest statement, from one extra pass that is not timed.
 The result is `.local/mail-perf/<UTC timestamp>/result.json` and
 `summary.md`; existing files are never overwritten. Pass
 `--compare <earlier result.json>` to add median deltas to the summary.
+
+### Browser part
+
+`--browser chromium,webkit` runs after the server scenarios, on the same
+installation, once SQL plan logging (`auto_explain`) is off again; if it
+cannot be turned off, the browser part fails instead of measuring. It starts the run-owned Playwright container from this page
+and uses the same desktop and phone profiles, throttling, TTI definition, and
+transfer sizes. `--browser chromium` or `--browser webkit` measures one
+engine. `--browser-runs N` (1–20, default 3) sets the cold loads per page,
+interaction, engine, and profile. WebKit may skip with a recorded connection
+error, as on the page baseline.
+
+Two pages are loaded: the mailbox and the compose page of a fresh draft. For
+each page the result has the eager and lazy JavaScript (Brotli bytes and
+module count) and, per engine and profile, FCP, LCP, TTI, the end of the
+last initial island mount, the island render time (the union of the initial
+islands' clear-and-render windows), long tasks (count and total, Chromium
+only), and total blocking time. One extra Chromium load per page and profile
+records a trace, which is not part of the timings because tracing slows the
+page. Its main-thread task time from navigation to TTI is split into the
+shares of island rendering, style and layout, and JavaScript parse and
+compile. The shares can overlap; for example, an island render can force a
+layout.
+
+The Document transfer column shows the HTML body download time
+(`responseEnd - responseStart`), its transferred bytes, and its content
+encoding. An absent `content-encoding` header is recorded as `identity`.
+
+Seven interactions share one definition for both engines and both profiles.
+Each sample opens its start page in its own fresh page, waits for TTI, and
+then times one action:
+
+| Interaction | Action | Ends when |
+| --- | --- | --- |
+| `folder-switch` | Click the fixture's first custom folder in the navigation; on the phone, in the opened app menu | The heading names that folder and its first row is on screen |
+| `conversation-open` | In the fixture's first custom folder, click the first conversation whose newest message has a body. Live arrivals land in the Inbox as envelopes without a body, so this folder keeps a body to render after any number of runs | The body of that newest message is on screen in the reader; an HTML body also needs its message frame to report its laid-out height |
+| `conversation-open-large` | Start with a mailbox-wide exact subject search for conversation 0 (`Project correspondence 0`, newest first), then click its conversation row. This isolates `plan.shape.largestThreadId` on page 1 without scrolling; live arrivals have different subjects. Before each sample, the workspace API must return that row on page 1 or the sample fails with the start href | The reader loads the newest 100 messages of the thread (180 messages by default). The newest message's body is on screen, with a body-format marker; an HTML body also needs its frame to report its laid-out height. A missing newest body fails the sample |
+| `list-scroll` | Scroll the list to its end | The first row of page 2 is in the list |
+| `search-submit` | Type the fixture's rare word into the search field and press Enter in one driver call; the timer starts at the Enter keydown | The heading names the search and its first result is on screen |
+| `live-arrival` | A message is ingested through `ingestEnvelope` against the run's database | The new row is on screen |
+| `compose-open` | Click Compose; on the phone, in the opened app menu | The body editor is mounted, on screen, and writable |
+
+The expected rows and messages come from the same workspace API the client
+calls, read just before each sample. The timer starts at the trusted input
+event in the page: the pointer press, or for `search-submit` the Enter
+keydown. A search sample fails if Enter comes 300 ms or more after the typed
+input, because the debounced search may have started first. For `list-scroll` it
+starts when the page sets the list's scroll position. For `live-arrival` it
+starts at the ingest commit, and the page waits for its live subscription
+before the message arrives. The
+timer stops in the first animation frame in which the end state holds, so
+the result is the time until that frame paints, not network idle. Times are
+wall-clock milliseconds; the browser container shares the host clock. An end
+state that already holds before the action fails the sample. After `compose-open`,
+the harness types one character and fails the sample if the editor does not
+take it. An interaction sample also fails on an uncaught error or rejection
+or on an island error in any of the app's documents during the sample, so an
+error in the start page still counts after compose navigated away. Errors
+inside the sandboxed message frame do not count.
+Each interaction records the requests that started from the
+action until its end state, with their encoded response bytes and content
+encoding (`identity` when the header is absent); a request
+that a navigation cancels counts with its error and no bytes. The summary
+shows the API requests and bytes, and lists request encodings. Failed or
+unsettled requests have `null` encoding.
+
+Every sample uses a fresh browser context, so each start page loads cold.
+The interaction then reuses what that load cached, as for a person who just
+opened the page: Chromium turns its cache back on after the start page, and
+WebKit keeps the context's cache. JavaScript and styles that only the next
+page needs, such as compose, still load from the network. These are local
+emulations in a container, not measurements on real phones.
+
+### Rank bottlenecks
+
+After a run, rank candidate bottlenecks against its result:
+
+```bash
+bun --no-env-file packages/mail/scripts/perf-baseline.ts \
+  --rank .local/mail-perf/<run>/result.json --bottlenecks candidates.json
+```
+
+`candidates.json` is a list of entries with `title`, `location`
+(`path:line` relative to the repository), `metric`, `evidence`, and `slice`.
+The `metric` names a measured time in that result, for example
+`interaction.folder-switch.chromium.phone.median`,
+`load.mailbox.webkit.desktop.ttiMs`,
+`trace.compose.chromium.phone.styleLayoutMs`, or
+`server.search-common.totalMs.median`. The command prints the five entries
+with the largest measured times as a Markdown table. It refuses an entry
+whose location is not an existing file and line, or whose metric has no
+number in the result, and it needs at least five entries. It also refuses
+a list that mixes `server.` metrics with browser metrics: a server request
+time and a throttled browser time do not measure the same thing. Pick the
+metric that isolates the named cost, for example the island render time
+rather than the whole TTI for a render cost. It starts no Docker and takes
+no lock.
 
 ### Limits
 
@@ -308,3 +417,7 @@ The result is `.local/mail-perf/<UTC timestamp>/result.json` and
   Real sync wakes the dispatcher right after commit.
 - Cold means the first request of a scenario; caches are not flushed. Compare
   runs on the same quiet host rather than reading absolute numbers.
+- The gateway compresses dynamic HTML and JSON according to `Accept-Encoding`.
+  Eligible document and API transfer times reflect Brotli when the browser accepts it;
+  the opt-outs above remain uncompressed.
+  The run's Caddy does not compress responses.

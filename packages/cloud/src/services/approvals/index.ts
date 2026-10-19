@@ -1,7 +1,7 @@
 import { type SQL, sql } from "bun";
 import { capabilityRequestHash } from "../../capabilities/claims";
 import { APPROVAL_ACP_CLIENT } from "../../contracts/approvals";
-import type { CapabilityActionReview } from "../../contracts/capabilities";
+import type { CapabilityActionReviewData } from "../../contracts/capabilities";
 import { isAppSessionActor } from "../../server/actor";
 import type { RequestActor, RequestCredentialKind } from "../../server/middleware/auth";
 import { audit } from "../audit";
@@ -23,7 +23,8 @@ export type ApprovalAssurance = "standard" | "confirm";
  */
 export const approvalAssurance = (rememberable: boolean): ApprovalAssurance => (rememberable ? "standard" : "confirm");
 export const approvalArgsDigest = (input: unknown): string => capabilityRequestHash(input);
-export const approvalReviewDigest = (review: CapabilityActionReview | null | undefined): string => capabilityRequestHash(review ?? null);
+export const approvalReviewDigest = (review: CapabilityActionReviewData | null | undefined): string =>
+  capabilityRequestHash(review ?? null);
 export const approvalDecisionChannel = (input: {
   credentialKind?: RequestCredentialKind;
   actor?: RequestActor;
@@ -50,7 +51,7 @@ export type ApprovalRequestInput = {
   approverUserId: string;
   assurance: ApprovalAssurance;
   sentence: string;
-  review?: CapabilityActionReview | null;
+  review?: CapabilityActionReviewData | null;
   input: unknown;
   expiresInMs: number;
 };
@@ -67,7 +68,7 @@ export type ApprovalRequest = {
   approverUserId: string;
   assurance: ApprovalAssurance;
   sentence: string;
-  details: CapabilityActionReview | null;
+  details: CapabilityActionReviewData | null;
   argsDigest: string;
   reviewDigest: string;
   status: ApprovalStatus;
@@ -211,7 +212,7 @@ export type ApprovalConsumeResult =
   | { ok: false; code: "NOT_FOUND" | "NOT_APPROVED" | "ALREADY_CONSUMED" | "INPUT_CHANGED" | "REVIEW_CHANGED" | "REVOKED" };
 export const consume = async (
   id: string,
-  input: { input: unknown; review: CapabilityActionReview | null; requester: { kind: ApprovalRequesterKind; ref: string } },
+  input: { input: unknown; review: CapabilityActionReviewData | null; requester: { kind: ApprovalRequesterKind; ref: string } },
   db?: SQL,
 ): Promise<ApprovalConsumeResult> => {
   const argsDigest = approvalArgsDigest(input.input),

@@ -1,6 +1,7 @@
 import { isOwnAppPath } from "../_internal/app-path";
 import { hasAnyAppRole } from "../_internal/app-roles";
 import type { RuntimeAppMeta } from "../contracts/app";
+import { panelProviderNeedsConsent } from "../contracts/panel-context-plain";
 import { isPwaPartId } from "../contracts/pwa-paths";
 import type { User } from "../contracts/shared";
 import { resolveAppPresentation } from "../shared/app-presentation";
@@ -54,7 +55,7 @@ export const visiblePwaParts = (apps: readonly RuntimeAppMeta[], user: User | un
     .sort((a, b) => a.name.localeCompare(b.name, locale) || a.id.localeCompare(b.id));
 };
 
-export type PanelProvider = { id: string; label: string; icon: string; href: string };
+export type PanelProvider = { id: string; label: string; icon: string; href: string; appName: string; consent: boolean };
 
 /** Authorized presentation only: the panel route still authorizes every request. */
 export const visiblePanelProviders = (apps: readonly RuntimeAppMeta[], user: User | undefined, locale: string): PanelProvider[] => {
@@ -62,8 +63,20 @@ export const visiblePanelProviders = (apps: readonly RuntimeAppMeta[], user: Use
   return apps
     .flatMap((app) => {
       if (!app.panel || !isOwnAppPath(app.panel.href, app.routes) || !hasAnyAppRole(user, app.panel.requiresRoles)) return [];
-      const panel = resolveAppPresentation(app, locale).panel;
-      return panel ? [{ id: app.id, label: panel.label, icon: panel.icon, href: panel.href }] : [];
+      const presentation = resolveAppPresentation(app, locale);
+      const panel = presentation.panel;
+      return panel
+        ? [
+            {
+              id: app.id,
+              label: panel.label,
+              icon: panel.icon,
+              href: panel.href,
+              appName: presentation.name,
+              consent: panelProviderNeedsConsent(app.id),
+            },
+          ]
+        : [];
     })
     .sort((a, b) => a.label.localeCompare(b.label, locale) || a.id.localeCompare(b.id));
 };

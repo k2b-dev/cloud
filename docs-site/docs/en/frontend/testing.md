@@ -53,6 +53,11 @@ For an owner-local query, also cover:
 
 Mock the typed API boundary. Do not mock the component's own state transitions.
 
+A browser test that waits for page animations to finish selects only those on
+the document timeline. Navigation labels from `@k2b/ui` run scroll-driven
+animations that never finish, so a wait on every animation never ends:
+`document.getAnimations().filter((animation) => animation.timeline === document.timeline)`.
+
 ## Test URL behavior
 
 Verify parsing and link building together.

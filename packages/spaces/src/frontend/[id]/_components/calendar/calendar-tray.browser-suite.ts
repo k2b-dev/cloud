@@ -57,6 +57,7 @@ const base = {
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   priority: null,
   recurrence: null,
   recurringEventId: null,
@@ -94,6 +95,7 @@ const trayTask = (id: string, title: string, deadline: string | null = null): Sp
   endsAt: null,
   allDay: false,
   deadline,
+  deadlineAllDay: false,
   estimatedDurationMinutes: null,
   activeBlockerCount: 0,
   priority: null,
@@ -663,7 +665,7 @@ describe(`Spaces task tray in ${browserName}`, () => {
   test("offers no tray checkbox to a reader who may not change tasks", async () => {
     const page = await open(desktop, { canWrite: false });
     await page.getByText("Vertrag Stadtwerke gegenzeichnen").waitFor();
-    await expect(page.locator(`${TRAY} input[type=checkbox]`).count()).resolves.toBe(0);
+    expect(await page.locator(`${TRAY} input[type=checkbox]`).count()).toBe(0);
     await page.context().close();
   }, 60_000);
 

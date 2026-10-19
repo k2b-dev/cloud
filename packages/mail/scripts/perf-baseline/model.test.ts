@@ -1,57 +1,8 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { help, parseArgs, parsePrevious, type Result, renderSummary, resultSchema, statistics, summarizeSamples } from "./model";
+import { exampleResult } from "./example-result";
+import { help, parseArgs, parsePrevious, renderSummary, resultSchema, statistics, summarizeSamples } from "./model";
 
-export function exampleResult(): Result {
-  return {
-    schemaVersion: 1,
-    kind: "mail",
-    metadata: {
-      commit: "abc",
-      dirty: true,
-      timestamp: "2026-10-01T00:00:00Z",
-      bunVersion: "1",
-      runtimeImage: "bun",
-      cpuCount: 8,
-      cpuModel: "Test CPU",
-      loadAverage: { start: [1, 2, 3], end: [2, 3, 4] },
-      runs: 2,
-      fixture: { seed: 1, anchor: "2026-10-01T00:00:00Z", messages: 600, conversations: 120, folders: 6 },
-      fixtureDigest: "digest",
-      shape: {},
-      seedDurationMs: 1,
-      bm25: false,
-      pgTextsearch: false,
-      postgresVersion: "17",
-      origin: "https://localhost:4000",
-    },
-    idle: null,
-    notes: ["No provider connection"],
-    errors: [],
-    scenarios: [
-      {
-        id: "detail-small",
-        group: "Details",
-        status: "ok",
-        errors: [],
-        notes: [],
-        database: null,
-        plan: null,
-        planError: null,
-        unparsedPlans: 0,
-        metrics: null,
-        samples: [10, 20, 40].map((totalMs) => ({
-          totalMs,
-          ttfbMs: totalMs / 2,
-          rawBytes: 100,
-          brotliBytes: 30,
-          propsBytes: 10,
-          requests: [],
-        })),
-      },
-    ],
-  };
-}
 test("arguments: defaults, limits, invalid and unknown flags", () => {
   expect(parseArgs([])).toMatchObject({ messages: 20000, conversations: 3000, folders: 30, runs: 5, seed: 20261001 });
   expect(

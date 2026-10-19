@@ -46,9 +46,17 @@ suite("first-login legal acceptance (isolated Postgres and Valkey)", () => {
     await settings.set("security.rate_limit_per_second", 1000);
     router = new Hono<AuthContext>()
       .route("/", createIdentityPublicRoutes())
-      .route("/api/auth", createAuthRoutes({ sendMagicLink: unused, sendIpaLoginHint: unused, sendPasswordReset: unused }))
-      .route("/api/auth/app-approval/v1", createAppApprovalRoutes())
-      .post("/issue", async (c) => c.json({ token: await session.create(c, userId) }))
+      .route(
+        "/api/auth",
+        createAuthRoutes({
+          sendMagicLink: unused,
+          sendIpaLoginHint: unused,
+          sendPasswordReset: unused,
+          sendNewBrowserSignIn: async () => {},
+        }),
+      )
+      .route("/api/auth/app-approval/v1", createAppApprovalRoutes({ notify: async () => {} }))
+      .post("/issue", async (c) => c.json({ token: await session.create(c, userId, { method: "password", notify: async () => {} }) }))
       .get("/protected", auth.requireRole("authenticated"), (c) => c.json({ id: c.get("user").id }))
       .get("/pending", async (c) => c.json({ pending: !!(await legalConsent.pending(c)) }));
     server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: router.fetch });
@@ -147,7 +155,7 @@ suite("first-login legal acceptance (isolated Postgres and Valkey)", () => {
         },
       },
     });
-    const approval = spyOn(appApproval, "consumeLogin").mockResolvedValue(userId);
+    const approval = spyOn(appApproval, "consumeLogin").mockResolvedValue({ userId, deviceName: "Jana’s phone" });
     await settings.set("freeipa.enable", true);
     await settings.set("user.app_approval.enabled", true);
     try {

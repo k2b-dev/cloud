@@ -3,6 +3,7 @@ import { appApproval } from "@k2b/cloud/browser/app-approval";
 import { createRoot } from "solid-js";
 import { createDomTestHarness, type DomTestHarness } from "../../../packages/ui/test/dom";
 import type { Login } from "./authenticator";
+import type { Preferences } from "./preferences";
 import type { Vault } from "./vault";
 
 // Records are sealed with a real vault session and parsed with the real schemas. Only IndexedDB is replaced:
@@ -62,6 +63,8 @@ const operations: string[] = [];
 let features: string[] = [];
 const inboxCommands: Array<{ operation: string; accept?: string[] }> = [];
 let inboxLogins: Login[] = [];
+const pendingCommands: Array<{ operation: string; accept?: string[] }> = [];
+let pendingLogins: Login[] = [];
 let actStatus = 200;
 let dropAct = false;
 const vault: Vault = {
@@ -86,6 +89,8 @@ beforeEach(() => {
   features = [];
   inboxCommands.length = 0;
   inboxLogins = [];
+  pendingCommands.length = 0;
+  pendingLogins = [];
   actStatus = 200;
   dropAct = false;
   // The Cloud: discovery, then signed device commands. Signatures are the SDK's concern and are not checked here.
@@ -108,6 +113,10 @@ beforeEach(() => {
       if (command.operation === "inbox") {
         inboxCommands.push(command);
         return Response.json({ logins: inboxLogins, actions: [actionSummary()], moreActions: 2, pollAfterSeconds: 5 });
+      }
+      if (command.operation === "pending") {
+        pendingCommands.push(command);
+        return Response.json({ requests: pendingLogins, pollAfterSeconds: 5 });
       }
       if (command.operation === "action") return Response.json(actionView());
       if (command.operation === "act") {
@@ -143,9 +152,18 @@ const login = () => ({
   requestId: crypto.randomUUID(),
   challenge: "A".repeat(43),
   comparison: "123456",
-  createdAt: new Date().toISOString(),
+  createdAt: "2026-10-19T10:00:00.000Z",
   expiresAt: new Date(Date.now() + 60_000).toISOString(),
 });
+const loginContext: NonNullable<Login["context"]> = {
+  level: "warn",
+  browser: "edge",
+  os: "windows",
+  country: "PL",
+  city: "Warsaw",
+  network: "OVH",
+  history: { knownSince: null, newCountry: true, countriesSince: null },
+};
 
 test("account details merge into the latest encrypted record without dropping its label or push token", async () => {
   const { auth, binding } = await paired();
@@ -241,6 +259,46 @@ for (const terminal of [false, true]) {
   });
 }
 
+for (const accepted of [[], ["terminal-logins"], ["login-context"], ["terminal-logins", "login-context"]]) {
+  test(`inbox filters opt-ins for Cloud features ${JSON.stringify(["actions", ...accepted])} and preserves logins`, async () => {
+    features = ["actions", ...accepted];
+    const request: Login = { ...login(), ...(accepted.includes("login-context") ? { context: loginContext } : {}) };
+    inboxLogins = [request];
+    const { auth, binding } = await paired();
+    for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+    expect(inboxCommands).toEqual([{ operation: "inbox", ...(accepted.length ? { accept: accepted } : {}) }]);
+    expect(auth.states()[binding.id]?.requests).toEqual([request]);
+    expect(auth.states()[binding.id]?.error).toBeUndefined();
+  });
+}
+
+for (const context of [false, true]) {
+  test(`pending ${context ? "opts in to login-context and preserves it" : "omits accept for an older Cloud"}`, async () => {
+    features = context ? ["login-context"] : [];
+    const request: Login = { ...login(), ...(context ? { context: loginContext } : {}) };
+    pendingLogins = [request];
+    const { auth, binding } = await paired();
+    for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+    expect(pendingCommands).toEqual([context ? { operation: "pending", accept: ["login-context"] } : { operation: "pending" }]);
+    expect(auth.states()[binding.id]?.requests).toEqual([request]);
+    expect(auth.states()[binding.id]?.error).toBeUndefined();
+  });
+}
+
+for (const actions of [false, true]) {
+  test(`${actions ? "inbox" : "pending"} accepts missing context from a Cloud offering login-context`, async () => {
+    features = actions ? ["actions", "login-context"] : ["login-context"];
+    const request = login();
+    inboxLogins = [request];
+    pendingLogins = [request];
+    const { auth, binding } = await paired();
+    for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+    expect(actions ? inboxCommands : pendingCommands).toEqual([{ operation: actions ? "inbox" : "pending", accept: ["login-context"] }]);
+    expect(auth.states()[binding.id]?.requests).toEqual([request]);
+    expect(auth.states()[binding.id]?.error).toBeUndefined();
+  });
+}
+
 for (const status of [200, 409, 403, 500]) {
   test(`act handles HTTP ${status} and reserves the Action across models before sending`, async () => {
     features = ["actions"];
@@ -296,4 +354,47 @@ test("expired, hidden and offline Actions are refused before sending", async () 
   Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
   await expect(auth.act(binding, actionView(), "approve")).rejects.toThrow("stale");
   expect(operations).not.toContain("act");
+});
+
+test("an open sign-in stays open with its offline note when the phone loses its connection", async () => {
+  features = ["login-context"];
+  pendingLogins = [{ ...login(), context: loginContext }];
+  const { auth, binding } = await paired();
+  for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+  const { render } = await import("solid-js/web");
+  const { createComponent } = await import("solid-js");
+  const { Clouds } = await import("./Clouds");
+  const { closeDialogs } = await import("./dialog");
+  const preferences: Preferences = {
+    locale: () => "en",
+    language: () => "en",
+    theme: () => "light",
+    setLanguage: () => {},
+    setTheme: () => {},
+  };
+  const stop = render(() => createComponent(Clouds, { auth, preferences }), dom.root);
+  try {
+    for (let i = 0; i < 50 && !document.querySelector("dialog[open]"); i++) await Bun.sleep(10);
+    const dialog = document.querySelector<HTMLDialogElement>("dialog[open]")!;
+    expect(dialog.querySelector(".auth-decision__details[data-context]")).not.toBeNull();
+    // The real offline event clears the polled list; that is no answer about the request.
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    window.dispatchEvent(new Event("offline"));
+    await Bun.sleep(30);
+    expect(auth.states()[binding.id]).toBeUndefined();
+    expect(document.querySelector("dialog[open]")).toBe(dialog);
+    expect(dialog.querySelector(".auth-decision__hint")?.hasAttribute("data-offline")).toBe(true);
+    const choices = [...dialog.querySelectorAll<HTMLButtonElement>(".auth-decision-actions__choices button")];
+    expect(choices.every((button) => button.disabled)).toBe(true);
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    window.dispatchEvent(new Event("online"));
+    await Bun.sleep(30);
+    expect(document.querySelector("dialog[open]")).toBe(dialog);
+    expect(dialog.querySelector(".auth-decision__hint")?.hasAttribute("data-offline")).toBe(false);
+    expect(choices.every((button) => !button.disabled)).toBe(true);
+  } finally {
+    closeDialogs();
+    await Bun.sleep(20);
+    stop();
+  }
 });

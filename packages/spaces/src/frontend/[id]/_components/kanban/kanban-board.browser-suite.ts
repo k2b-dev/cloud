@@ -7,7 +7,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceItemReaction, type SpaceWormhole } from "@/contracts";
-import { browserName, keptThrough, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, keptThrough, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
 import type { KanbanBucketInitial } from "./types";
 
 // Where the board starts, whether the toolbar stays one row, and how a folded column takes a drop are
@@ -47,6 +47,7 @@ const item = (id: string, columnId: string, title: string, extra: Partial<SpaceI
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   estimatedDurationMinutes: null,
   activeBlockerCount: 0,
   priority: null,
@@ -590,7 +591,15 @@ const cardControls = (page: Page, title: string) =>
       };
     });
 /** Hover and focus fade the controls in; wait until the fade has finished. */
-const settled = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));
+const settled = (page: Page) =>
+  page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.timeline === document.timeline)
+        .map((animation) => animation.finished),
+    ),
+  );
 const expectGripBox = (state: Awaited<ReturnType<typeof cardControls>>) => {
   expect([state.grip.box.width, state.grip.box.height]).toEqual([20, 20]);
   // Absolute offsets start inside the article's border.
@@ -1092,7 +1101,7 @@ describe("Spaces Kanban board in a browser", () => {
       expect(await page.evaluate(() => window.document.activeElement?.getAttribute("data-spaces-kanban-fold"))).toBe("column:Col002");
       expect(await fold.getAttribute("aria-label")).toBe("Unfold In progress, 2 items");
       const settings = async () => {
-        const cookie = (await page.context().cookies()).find((entry) => entry.name === "settings-app-spaces");
+        const cookie = await storedCookie(page, "settings-app-spaces");
         return cookie ? JSON.parse(decodeURIComponent(cookie.value)).spaces.Space1 : undefined;
       };
       expect((await settings())?.foldedColumns).toEqual(["column:Col002"]);
@@ -2313,7 +2322,8 @@ const reactionScenario = (canWrite = true): Scenario => ({
     bucket({ key: "virtual:overdue", label: "Overdue", color: null, kind: "overdue", columnId: null, isDone: false }, [
       item("ReactFull", "Col001", "Confirm all the stands", {
         updatedAt: reactionNow,
-        deadline: "2026-10-16T12:00:00.000Z",
+        deadline: "2026-10-16",
+        deadlineAllDay: true,
         assignees: [me, kim, { id: "33333333-3333-4333-8333-333333333333", kind: "user", displayName: "Alex Example", avatarHash: null }],
       }),
     ]),

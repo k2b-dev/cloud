@@ -30,9 +30,10 @@ describe("date surfaces inherit the render locale", () => {
     expect(expected).not.toBe(english);
     expect(html).toContain(expected);
     expect(html).not.toContain(english);
-    // Weekday header row follows the same inherited locale and week start.
-    for (const day of dates.weekdays({ locale: "de", weekStartsOn: 1 })) {
-      expect(html).toContain(`<span>${day}</span>`);
+    // Weekday header row follows the same inherited locale and week start, and so do its weekend columns.
+    const weekdays = dates.weekdays({ locale: "de", weekStartsOn: 1 });
+    for (const [index, day] of weekdays.entries()) {
+      expect(html).toContain(index >= 5 ? `<span data-weekend="true">${day}</span>` : `<span>${day}</span>`);
     }
   });
 

@@ -2,7 +2,7 @@
  * Creates the target integration database if missing and prepares it once per `bun run test --integration`.
  *
  * Runs the real production migration path: Core setup first, then every
- * application `migrate()` (or `initializeSchema()` for Pulse). All of them are
+ * application `migrate()`. All of them are
  * idempotent, so re-running against an already prepared database is a no-op.
  *
  *   CLOUD_TEST_DATABASE_URL=postgres://…/<name>_test bun scripts/fixtures/integration-bootstrap.ts
@@ -44,7 +44,6 @@ await runCoreSetup();
 /** Applications whose schema setup does not live in `src/migrate.ts`. */
 const migrationModules: Record<string, { path: string; export: string }> = {
   assistant: { path: "src/artifacts/migrate.ts", export: "migrateArtifacts" },
-  pulse: { path: "src/schema.ts", export: "initializeSchema" },
 };
 
 for (const appId of appIds()) {

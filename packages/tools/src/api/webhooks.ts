@@ -1,4 +1,4 @@
-import { type AuthContext, auth, err, fail, getLocale, ok, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, err, fail, getLocale, middleware, ok, respond, v } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -91,6 +91,7 @@ const receiveWebhook = async (c: Context<AuthContext>, token: string): Promise<A
 };
 
 const app = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .all("/receive/:token", async (c) => {
     return receiveWebhook(c, c.req.param("token")!);
   })

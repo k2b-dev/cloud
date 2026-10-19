@@ -501,7 +501,7 @@ describe("contacts capabilities", () => {
       (Object.values(contactsCapabilities.actions) as CapabilityActionDefinition[]).filter((action) => action.approval === "rememberable")
         .length,
     );
-    expect(results.map((result) => (result.ok ? result.data.approvalScope : null))).toEqual([
+    expect(results.map((result) => (result.ok ? CapabilityActionReviewSchema.parse(result.data).approvalScope : null))).toEqual([
       `book:${publicBookId}`,
       `book:${publicBookId}`,
       "favorites",
@@ -537,7 +537,7 @@ describe("contacts capabilities", () => {
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
       if (!result.ok) continue;
-      expect(result.data.approvalScope?.length).toBeGreaterThan(0);
+      expect(CapabilityActionReviewSchema.parse(result.data).approvalScope?.length).toBeGreaterThan(0);
       const parsed = CapabilityActionReviewSchema.safeParse(result.data);
       if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
     }

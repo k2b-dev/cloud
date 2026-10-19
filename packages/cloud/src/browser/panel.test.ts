@@ -75,3 +75,13 @@ for (const embedded of [false, true]) {
     });
   }
 }
+
+test("the public browser module exposes only the five panel operations", async () => {
+  expect(Object.keys(await import("./panel")).sort()).toEqual([
+    "closePanel",
+    "getContext",
+    "onContextChange",
+    "openPanel",
+    "publishPageContext",
+  ]);
+});

@@ -1,4 +1,4 @@
-import type { CloudSearchTag } from "@k2b/cloud/browser/composer-insert";
+import { type CloudSearchTag, cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { Chat, type ChatMention, LocaleProvider } from "@k2b/ui";
 import { createMemo, createSignal } from "solid-js";
 import { render } from "solid-js/web";
@@ -65,6 +65,26 @@ const insert = createMemo(() =>
     fileSelectionDisabled: running,
   }),
 );
+const catalog = createCloudComposerCatalog();
+if (params.has("commands")) {
+  const shell = document.createElement("script");
+  shell.id = "cloud-shell-data";
+  shell.textContent = JSON.stringify({
+    apps: ["spaces", "notebooks", "contacts", "mail", "assistant"].map((id) => ({ id })),
+    appId: "assistant",
+  });
+  document.body.append(shell);
+}
+const appCommands = createMemo(() =>
+  cloudCommandMenu({
+    locale,
+    commands: catalog.commands(),
+    state: catalog.state(),
+    section: "apps",
+    before: async () => {},
+    returnTo: () => "/app/assistant?conversation=chat01",
+  }),
+);
 const failed = () => Promise.reject(new Error("Not part of this page"));
 Object.assign(window, { harness: { value, mentions } });
 
@@ -77,11 +97,12 @@ render(
           onValueChange={setValue}
           mentions={mentions()}
           onMentionsChange={setMentions}
-          commandSections={assistantCommandSections(copy)}
+          commandSections={assistantCommandSections(copy, params.has("commands") && appCommands().pending)}
           commandScopes={[...assistantCommandScopes(copy, locale), ...insert().scopes]}
           commandFallback={insert().fallback}
           commands={[
             ...insert().commands,
+            ...(params.has("commands") ? appCommands().commands : []),
             ...assistantBuiltInCommands({
               copy,
               projectComposer: false,
@@ -97,7 +118,10 @@ render(
               newChat: failed,
             }),
           ]}
-          searchCommands={async () => []}
+          searchCommands={async (query, _signal, search) => {
+            if (params.has("commands")) await catalog.ready(query, search, locale);
+            return [];
+          }}
           fileSelection={{ onSelect: () => {}, choose: async () => [], disabled: running }}
           models={models}
           selectedModelId="standard"

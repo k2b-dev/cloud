@@ -58,6 +58,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
     endsAt: null,
     allDay: false,
     deadline: null,
+    deadlineAllDay: false,
     estimatedDurationMinutes: null,
     activeBlockerCount: 0,
     priority: null,

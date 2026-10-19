@@ -140,8 +140,8 @@ describe("AppWorkspace ordered levels SSR", () => {
         { id: "one", label: "Title", description: "Quiet description", actions: "Controls", scroll: false, children: "Content" },
       ]),
     );
-    expect(html).toContain('<h2 tabindex="-1">Title</h2>');
-    expect(html).toContain("<p>Quiet description</p>");
+    expect(html).toContain('<h2 tabindex="-1"><span class="k2b-truncate-fade">Title</span></h2>');
+    expect(html).toContain('<p class="k2b-truncate-fade">Quiet description</p>');
     expect(html).toContain('class="k2b-app-workspace__level-actions">Controls');
     expect(html).toContain('class="k2b-app-workspace__level-body" data-scroll="false"');
     expect(attributes(html, "section", "aria-label")[0]?.["aria-label"]).toBe("Title");
@@ -179,7 +179,7 @@ describe("AppWorkspace ordered levels SSR", () => {
       ]),
     );
     expect(html).not.toContain("Closed controls");
-    expect(html).toContain("<p>Quiet description</p>");
+    expect(html).toContain('<p class="k2b-truncate-fade">Quiet description</p>');
     expect(html).toContain('class="k2b-app-workspace__level-actions">Controls');
     expect(built).toBe(2);
   });

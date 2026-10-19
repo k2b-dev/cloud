@@ -1269,6 +1269,8 @@ describe("mailbox signature logos", () => {
     src: "cid:logo.00000000-0000-4000-8000-000000000001@example.test",
     altText: 'Team "<>& $&',
     displayWidth: 234,
+    pixelWidth: 1200,
+    pixelHeight: 400,
     byteLength: 68,
   };
   const render = (input: Partial<Parameters<typeof renderComposeContent>[0]> = {}) =>
@@ -1301,11 +1303,23 @@ describe("mailbox signature logos", () => {
     expect(result.data.logoUsed).toBe(true);
     expect(result.data.html?.match(/<img /g)).toHaveLength(1);
     expect(result.data.html).toContain(
-      `<img src="${logo.src}" alt="Team &#34;&#60;&#62;&#38; $&#38;" width="234" style="display:block;border:0;height:auto;max-width:100%">`,
+      `<img src="${logo.src}" alt="Team &#34;&#60;&#62;&#38; $&#38;" width="234" height="78" style="display:block;border:0;height:auto;max-width:100%">`,
     );
     expect(result.data.text).toContain(logo.altText);
     expect(result.data.html).not.toContain("MAILLOGO");
     expect(result.data.text).not.toContain("MAILLOGO");
+  });
+  test("reserves the rounded logo box in a data URL preview without remote images", () => {
+    const result = render({
+      logo: { ...logo, src: "data:image/png;base64,aGVsbG8=", displayWidth: 200 },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.html?.match(/<img /g)).toHaveLength(1);
+    expect(result.data.html).toContain(
+      '<img src="data:image/png;base64,aGVsbG8=" alt="Team &#34;&#60;&#62;&#38; $&#38;" width="200" height="67" style="display:block;border:0;height:auto;max-width:100%">',
+    );
+    expect(result.data.html).not.toMatch(/src=["']https?:/i);
   });
   test("budgets repeated logos as data URLs before allocating images in both delivery modes", () => {
     const byteLength = 100 * 1024;

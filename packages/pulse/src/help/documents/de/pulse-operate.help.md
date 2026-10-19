@@ -7,6 +7,20 @@ order: 140
 ---
 Nutze diese Seite, wenn Daten fehlen, wenn sich der Zugriff ändern muss oder wenn eine öffentliche Ansicht nur ein Dashboard zeigen soll.
 
+## Datenspeicher verbinden (Cloud-Admins) {icon="database"}
+
+Öffne **Administration → Pulse → Datenspeicher**. Der Betreiber stellt eine
+eigene ClickHouse-Instanz ab Version 26.9 bereit. Wähle das Dienst-Passwort,
+hole das **Einrichtungs-Skript** und lass es einmal vom ClickHouse-Admin
+ausführen. Trage dann Adresse, Dienst-Zugang und Passwort ein und wähle
+**Prüfen und verbinden**. Pulse speichert erst nach erfolgreicher Prüfung.
+Eine fehlgeschlagene Prüfung nennt den Grund und die Korrektur; die
+gespeicherte Verbindung bleibt dann unverändert.
+
+Derselbe Ablauf steht über `cld pulse admin store` bereit. Übergib Passwörter
+nur mit `--password-file` oder `--password-stdin`. Bestehende Funktionen laufen
+in dieser Version auch ohne Verbindung weiter; spätere Versionen benötigen sie.
+
 ## Basis regelmäßig prüfen {icon="route"}
 
 :::reference

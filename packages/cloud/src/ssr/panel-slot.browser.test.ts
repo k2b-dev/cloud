@@ -6,8 +6,8 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
-import type { Browser, BrowserContext, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import type { Browser, Page } from "playwright";
+import { launchBrowser, storedCookie } from "../../../ui/test/browser";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-panel-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -17,8 +17,9 @@ setDefaultTimeout(30_000);
 const rail = await import("../services/rail-snapshot");
 const settings = await import("../server/middleware/settings");
 const help = await import("./help");
+const { panelContextConsent } = await import("../services/panel-context-consent");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
-const { server, panelGeometry } = await import("./panel-slot.browser-harness");
+const { server, panelGeometry, consentGeometry, consentAnswers, fixtureConsent } = await import("./panel-slot.browser-harness");
 let browser: Browser;
 let providerRequests = 0;
 let origin: string;
@@ -27,6 +28,7 @@ const spies: { mockRestore(): void }[] = [];
 
 beforeAll(async () => {
   spies.push(
+    spyOn(panelContextConsent, "get").mockImplementation(fixtureConsent.get),
     spyOn(rail, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
     spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
@@ -70,11 +72,18 @@ beforeAll(async () => {
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import ShellRuntime from "./ShellRuntime.island";
-import { openPanel } from "../browser/panel";
+import { openPanel, publishPageContext } from "../browser/panel";
 render(() => createComponent(ShellRuntime, { panel: true, workspace: { appId: "fixture" }, commands: { searchResources: false } }), document.createElement("div"));
 for (const button of document.querySelectorAll("[data-cloud-panel-toggle]")) button.addEventListener("click", () => window.dispatchEvent(new CustomEvent("cloud.panel.request", { detail: { action: "toggle" } })));
 document.getElementById("open-panel").addEventListener("click", () => openPanel("fixture"));
 document.getElementById("open-silent-panel").addEventListener("click", () => openPanel("fixture", { search: "mode=silent" }));
+let disposeContext = () => {};
+document.getElementById("change-context")?.addEventListener("click", () => {
+  const previous = disposeContext;
+  disposeContext = publishPageContext({ scope: { type: "fixture.place", id: "place2" } });
+  previous();
+});
+document.documentElement.dataset.consentFirstFrame = JSON.stringify((${consentGeometry.toString()})());
 document.documentElement.dataset.panelFirstFrame = JSON.stringify((${panelGeometry.toString()})());
 document.documentElement.dataset.panelHostMounted = "true";
 `,
@@ -85,6 +94,10 @@ document.documentElement.dataset.panelHostMounted = "true";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import PanelRuntime from "./PanelRuntime.island";
+import { getContext, onContextChange } from "../browser/panel";
+const showContext = () => document.getElementById("panel-context-probe").textContent = JSON.stringify(getContext());
+showContext();
+onContextChange(showContext);
 document.getElementById("prevent-escape").addEventListener("keydown", event => { if (event.key === "Escape") event.preventDefault(); });
 if (new URL(location.href).searchParams.get("mode") !== "silent" || document.cookie.includes("fixture_ready=1")) {
   render(() => createComponent(PanelRuntime, { provider: document.querySelector("[data-cloud-panel-page]").dataset.panelProvider }), document.createElement("div"));
@@ -112,7 +125,7 @@ document.documentElement.dataset.panelProviderMounted = "true";
           "</body>",
           embedded
             ? '<script src="/panel-provider.js"></script></body>'
-            : `<script>document.documentElement.dataset.panelServerFrame=JSON.stringify((${panelGeometry.toString()})());</script><script src="/panel-host.js"></script></body>`,
+            : `<script>document.documentElement.dataset.consentServerFrame=JSON.stringify((${consentGeometry.toString()})());document.documentElement.dataset.panelServerFrame=JSON.stringify((${panelGeometry.toString()})());</script><script src="/panel-host.js"></script></body>`,
         );
       return new Response(markup, { headers: { "content-type": "text/html; charset=utf-8" } });
     },
@@ -132,14 +145,37 @@ const separator = ".cloud-panel__resize";
 const ready = (page: Page) => page.waitForFunction(() => document.getElementById("cloud-panel")?.dataset.state === "ready");
 const closed = (page: Page) => page.waitForFunction(() => document.getElementById("cloud-panel")?.dataset.state === "closed");
 const settle = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-const panelCookie = async (context: BrowserContext) => (await context.cookies()).find((cookie) => cookie.name === "cloud_panel")?.value;
+const panelCookie = async (page: Page) => (await storedCookie(page, "cloud_panel"))?.value;
 const modJ = async (page: Page) =>
   (await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent))) ? "Meta+j" : "Control+j";
-async function fixture(width = 1440, cookie?: string) {
-  const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC", reducedMotion: "reduce" });
+async function fixture(
+  width = 1440,
+  cookie?: string,
+  options: { focus?: boolean; hasTouch?: boolean; height?: number; ask?: boolean } = {},
+) {
+  const context = await browser.newContext({
+    viewport: { width, height: options.height ?? 900 },
+    locale: "en",
+    timezoneId: "UTC",
+    reducedMotion: "reduce",
+    hasTouch: options.hasTouch,
+  });
+  const personId = crypto.randomUUID();
+  consentAnswers.set(
+    personId,
+    options.ask
+      ? new Map()
+      : new Map([
+          ["fixture", { allowed: true, revision: 1 }],
+          ["second", { allowed: true, revision: 1 }],
+        ]),
+  );
+  context.on("close", () => consentAnswers.delete(personId));
   try {
     await context.addCookies([
+      { name: "fixture_person", value: personId, url: origin },
       { name: "cloud.timezone", value: "UTC", url: origin },
+      ...(options.focus ? [{ name: "cloud_shell_focus", value: "1", url: origin }] : []),
       ...(cookie ? [{ name: "cloud_panel", value: cookie, url: origin }] : []),
     ]);
     const page = await context.newPage();
@@ -203,16 +239,16 @@ test("pointer and keyboard resize commit width and ARIA in rem", async () => {
     await page.mouse.up();
     expect(await page.locator(separator).getAttribute("aria-valuenow")).toBe("28");
     expect((await page.locator(slot).boundingBox())?.width).toBe(448);
-    expect(await panelCookie(context)).toBe("1:fixture:28");
+    expect(await panelCookie(page)).toBe("1:fixture:28");
     await page.locator(separator).focus();
     await page.keyboard.press("ArrowLeft");
-    expect(await panelCookie(context)).toBe("1:fixture:29");
+    expect(await panelCookie(page)).toBe("1:fixture:29");
     await page.keyboard.press("Shift+ArrowRight");
-    expect(await panelCookie(context)).toBe("1:fixture:25");
+    expect(await panelCookie(page)).toBe("1:fixture:25");
     await page.keyboard.press("Home");
-    expect(await panelCookie(context)).toBe("1:fixture:20");
+    expect(await panelCookie(page)).toBe("1:fixture:20");
     await page.keyboard.press("End");
-    expect(await panelCookie(context)).toBe("1:fixture:36");
+    expect(await panelCookie(page)).toBe("1:fixture:36");
   } finally {
     await context.close();
   }
@@ -230,7 +266,7 @@ test("close drag shows its hint and keeps the committed width", async () => {
     expect((await page.locator(slot).boundingBox())?.width).toBe(320);
     await page.mouse.up();
     await closed(page);
-    expect(await panelCookie(context)).toBe("0:fixture:24");
+    expect(await panelCookie(page)).toBe("0:fixture:24");
     await open(page);
     expect((await page.locator(slot).boundingBox())?.width).toBe(384);
   } finally {
@@ -405,14 +441,14 @@ test("390px sheet grows and navigation, popstate and persisted pageshow close it
       await closed(page);
       await open(page);
     }
-    expect(await panelCookie(context)).toBe("1:fixture:24");
+    expect(await panelCookie(page)).toBe("1:fixture:24");
     // The half-height sheet leaves the page's top in reach.
     await page.locator("[data-cloud-panel-grow]").click();
     await page.locator("#next-page").click();
     await page.waitForURL("**/app/fixture/next");
     await page.waitForFunction(() => document.documentElement.dataset.panelHostMounted === "true");
     expect(await page.locator(slot).isVisible()).toBe(false);
-    expect(await panelCookie(context)).toBe("1:fixture:24");
+    expect(await panelCookie(page)).toBe("1:fixture:24");
   } finally {
     await context.close();
   }
@@ -521,7 +557,138 @@ test("two provider tabs switch and unload, with one iframe in the DOM", async ()
     expect(await page.locator(".cloud-panel__frame").count()).toBe(1);
     expect(await second.getAttribute("aria-selected")).toBe("true");
     expect(await first.getAttribute("aria-selected")).toBe("false");
-    expect(await panelCookie(context)).toBe("1:second:");
+    expect(await panelCookie(page)).toBe("1:second:");
+  } finally {
+    await context.close();
+  }
+});
+
+for (const [width, height] of [
+  [1440, 900],
+  [1194, 834],
+] as const)
+  test(`${width}x${height}: unanswered consent has identical server, first and settled rectangles`, async () => {
+    const { context, page } = await fixture(width, "1:fixture:", { height, ask: true });
+    try {
+      await page.waitForFunction(() => document.documentElement.dataset.consentFirstFrame !== undefined);
+      await settle(page);
+      expect(await page.locator("[data-cloud-panel-consent]").isVisible()).toBe(true);
+      const serverFrame = await page.evaluate(() => document.documentElement.dataset.consentServerFrame ?? "");
+      expect(await page.evaluate(() => document.documentElement.dataset.consentFirstFrame)).toBe(serverFrame);
+      expect(JSON.stringify(await page.evaluate(consentGeometry))).toBe(serverFrame);
+      expect(await page.locator(slot).getAttribute("data-consent")).toBe("ask");
+      expect(await page.locator("[data-cloud-panel-frame]").getAttribute("src")).not.toContain("cloud_panel_context");
+    } finally {
+      await context.close();
+    }
+  });
+
+test("Allow delivers the place live; the menu checkbox withdraws it and stops subsequent updates", async () => {
+  const { context, page } = await fixture(1440, "1:fixture:", { ask: true });
+  try {
+    // A consent-covered iframe may still be lazy. Wait for its runtime before proving no reload on Allow.
+    const frameElement = page.locator("[data-cloud-panel-frame]");
+    await frameElement.evaluate((frame) => {
+      if (frame instanceof HTMLIFrameElement) frame.loading = "eager";
+    });
+    await ready(page);
+    const provider = page.frameLocator("[data-cloud-panel-frame]");
+    expect(await provider.locator("#panel-context-probe").textContent()).toBe("null");
+    const before = providerRequests;
+    await page.getByRole("button", { name: "Allow", exact: true }).click();
+    await page.waitForFunction(() => document.getElementById("cloud-panel")?.dataset.contextAllowed === "true");
+    await provider.locator("#panel-context-probe").waitFor();
+    await page.waitForFunction(() =>
+      document
+        .querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")
+        ?.contentDocument?.getElementById("panel-context-probe")
+        ?.textContent?.includes('"id":"place1"'),
+    );
+    expect(providerRequests).toBe(before);
+    await page.getByRole("button", { name: "Panel menu", exact: true }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Share context", exact: true }).click();
+    await page.waitForFunction(
+      () =>
+        document.getElementById("cloud-panel")?.dataset.contextAllowed === "false" &&
+        document.getElementById("cloud-panel")?.dataset.consentSaving === "false",
+    );
+    await page.waitForFunction(
+      () =>
+        document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentDocument?.getElementById("panel-context-probe")
+          ?.textContent === "null",
+    );
+    await page.locator("#change-context").click();
+    await settle(page);
+    expect(await provider.locator("#panel-context-probe").textContent()).toBe("null");
+  } finally {
+    await context.close();
+  }
+});
+
+const workspaceDetail = "#k2b-workspace-detail-panel-fixture-detail";
+const mainArea = ".k2b-app-workspace__main";
+
+// Pins shell focus to the host: the 1440px narrow app must retain reachable overlay navigation.
+test("shell focus follows app host width beside the panel and when the panel closes", async () => {
+  for (const [width, cookie, overlay] of [
+    [1440, "1:fixture:26", true],
+    [1680, "1:fixture:26", false],
+    [1440, "0:fixture:26", false],
+  ] as const) {
+    const { context, page } = await fixture(width, cookie, { focus: true });
+    try {
+      await settle(page);
+      expect(await page.locator(".cloud-app-canvas").getAttribute("data-shell-focus")).toBe("true");
+      const navigation = page.locator(".k2b-app-workspace__sidebar");
+      const button = page.getByRole("button", { name: "Show navigation", exact: true });
+      expect(await button.isVisible()).toBe(overlay);
+      if (overlay) {
+        await button.click();
+        expect(await navigation.isVisible()).toBe(true);
+        expect(await page.locator(".k2b-app-workspace").getAttribute("data-sidebar-overlay")).toBe("open");
+      } else {
+        expect(await navigation.isVisible()).toBe(false);
+        expect(await page.locator('[data-app-workspace-resize="sidebar"]').isVisible()).toBe(false);
+        const root = (await page.locator(".k2b-app-workspace").boundingBox())!;
+        expect((await page.locator(mainArea).boundingBox())!.x).toBe(root.x + 1);
+        expect(await page.locator(".k2b-app-workspace").evaluate((element) => getComputedStyle(element).paddingInlineStart)).toBe("0px");
+      }
+    } finally {
+      await context.close();
+    }
+  }
+});
+
+// Pins the 1194px touch tablet beside the open panel: waiting follows the host width, not the pointer,
+// from the server frame on, and the Details drawer opens flush with the card edge without moving Main.
+test("1194px touch tablet waits for Details beside the open panel and opens an edge drawer", async () => {
+  const { context, page } = await fixture(1194, "1:fixture:", { hasTouch: true });
+  try {
+    await ready(page);
+    await settle(page);
+    expect(await page.evaluate(() => matchMedia("(any-pointer: coarse)").matches)).toBe(true);
+    const server = await page.evaluate(() => document.documentElement.dataset.panelServerFrame ?? "");
+    expect(await page.evaluate(() => document.documentElement.dataset.panelFirstFrame)).toBe(server);
+    expect(JSON.stringify(await page.evaluate(panelGeometry))).toBe(server);
+    expect(
+      await page
+        .locator(workspaceDetail)
+        .evaluate((element) => getComputedStyle(element).getPropertyValue("--k2b-workspace-detail-waiting").trim()),
+    ).toBe("1");
+    expect(await page.locator(workspaceDetail).isVisible()).toBe(false);
+    const before = (await page.locator(mainArea).boundingBox())!;
+    expect(before.width).toBeGreaterThanOrEqual(320);
+    await page.locator("[data-app-workspace-detail-toggle]").tap();
+    expect(await page.locator(workspaceDetail).isVisible()).toBe(true);
+    const drawer = (await page.locator(workspaceDetail).boundingBox())!;
+    const root = (await page.locator(".k2b-app-workspace").boundingBox())!;
+    const head = (await page.locator(".k2b-app-workspace__head").boundingBox())!;
+    expect(drawer.x + drawer.width).toBeCloseTo(root.x + root.width - 1, 1);
+    expect(drawer.y + drawer.height).toBeCloseTo(root.y + root.height - 1, 1);
+    expect(drawer.y).toBeCloseTo(head.y + head.height, 1);
+    expect(await page.locator(mainArea).boundingBox()).toEqual(before);
+    expect(await page.locator(slot).getAttribute("data-state")).toBe("ready");
+    expect(await page.locator(".cloud-app-canvas").getAttribute("data-panel")).toBe("open");
   } finally {
     await context.close();
   }

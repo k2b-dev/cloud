@@ -34,6 +34,11 @@ export type FilterChipProps = {
   iconOnly?: boolean;
   /** Use a standard button appearance instead of the default filter field. */
   variant?: ButtonVariant;
+  /**
+   * An active chip names its first value instead of a count: "Tags: Customer", "Tags: Customer +2". Use it for the
+   * chips of `AppWorkspace.Head`; pass only the filter's name as `label`. The chip then grows with its value.
+   */
+  showValue?: boolean;
   disabled?: boolean;
   class?: string;
 };
@@ -43,6 +48,9 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
   const messages = useUiMessages();
   const filterMessages = useFilterMessages();
   const selectedValues = createMemo(() => new Set(props.value));
+  const selectedOptions = createMemo(() =>
+    props.options.flatMap((section) => section.options).filter((option) => selectedValues().has(option.value)),
+  );
   const defaultValues = createMemo(() => new Set(props.defaultValue ?? []));
   const sectionByValue = createMemo(() => {
     const sections = new Map<string, FilterChipSection>();
@@ -54,6 +62,12 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
   const hasDefault = () => (props.defaultValue?.length ?? 0) > 0;
   const selected = (value: string) => selectedValues().has(value);
   const active = () => props.isActive ?? props.value.length > 0;
+  const namedValue = () => (props.showValue && !props.iconOnly && active() ? selectedOptions()[0] : undefined);
+  const triggerLabel = () => {
+    const first = namedValue();
+    if (!first) return props.label;
+    return `${props.label}: ${first.label}${props.value.length > 1 ? ` +${props.value.length - 1}` : ""}`;
+  };
   const atDefault = () => {
     if (!props.defaultValue) return false;
     const current = props.value;
@@ -128,13 +142,24 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
         data-state={active() ? "active" : "idle"}
         data-active={active() ? "true" : undefined}
         data-icon-only={props.iconOnly ? "true" : undefined}
-        label={props.label}
+        label={triggerLabel()}
       >
         <i class={props.icon} aria-hidden="true" />
         <Show when={!props.iconOnly}>
-          <span>
+          <span class="k2b-filter-chip__label">
             {props.label}
-            <Show when={!hasDefault() && props.value.length > 0}>{` (${props.value.length})`}</Show>
+            <Show when={namedValue()} fallback={<Show when={!hasDefault() && props.value.length > 0}>{` (${props.value.length})`}</Show>}>
+              {(first) => (
+                <span class="k2b-filter-chip__value">
+                  :{" "}
+                  <Show when={first().color}>
+                    {(color) => <span class="k2b-filter-chip__dot" style={{ "--k2b-filter-color": color() }} aria-hidden="true" />}
+                  </Show>
+                  {first().label}
+                  <Show when={props.value.length > 1}>{` +${props.value.length - 1}`}</Show>
+                </span>
+              )}
+            </Show>
           </span>
           <i class="ti ti-chevron-down k2b-filter-chip__chevron" aria-hidden="true" />
         </Show>

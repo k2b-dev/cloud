@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
+import * as layoutHelp from "@k2b/cloud/ssr/help";
 import { Hono } from "hono";
 import { fromJSON } from "seroval";
 import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
@@ -67,6 +68,7 @@ afterEach(() => {
 let railSnapshot: ReturnType<typeof stubRailSnapshot>;
 beforeEach(() => {
   railSnapshot = stubRailSnapshot();
+  spies.push(spyOn(layoutHelp, "preloadLayoutHelp").mockResolvedValue(null));
 });
 afterEach(() => railSnapshot.mockRestore());
 
@@ -85,7 +87,18 @@ const renderEmptyNotebook = async (mode: "write" | "book" | "graph" | "graph&fro
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
     c.set("user", user);
-    c.set("runtime", { apps: [] });
+    c.set("runtime", {
+      apps: [
+        {
+          id: "notebooks",
+          name: "Notebooks",
+          icon: "ti ti-notebook",
+          description: "Fixture",
+          routes: ["/app/notebooks"],
+          panel: { href: "/app/notebooks/panel", label: "Notes", icon: "ti ti-notebook" },
+        },
+      ],
+    });
     await next();
   });
   app.get("/app/notebooks/:id", ...handler);
@@ -819,3 +832,11 @@ test.each(["note02", "other1"])(
     expect(html).not.toContain("Foreign note");
   },
 );
+
+for (const mode of ["write", "book", "graph", "graph&from=readonly"] as const)
+  test(`${mode} notebook page reports the public notebook scope in shell data`, async () => {
+    const html = await renderEmptyNotebook(mode);
+    const shell = JSON.parse(html.match(/id="cloud-shell-data" type="application\/json">([^<]*)/)![1]!);
+    expect(shell.panel.context.scope).toEqual({ type: "notebooks.notebook", id: notebook.shortId });
+    expect(shell.panel.context.scope.id).not.toBe(notebook.id);
+  });

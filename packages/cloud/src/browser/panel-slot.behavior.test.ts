@@ -1,7 +1,8 @@
-import { afterEach, expect, jest, test } from "bun:test";
+import { afterEach, expect, jest, mock, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import type { PanelPageContext } from "../contracts/panel-context";
 
 if (isServer) test.skip("requires browser conditions and solid-dom-preload", () => {});
 else {
@@ -11,8 +12,11 @@ else {
   bootstrap.cleanup();
 
   let cleanup = () => {};
+  let fetchSpy: { mockRestore(): void } | undefined;
   afterEach(() => {
     cleanup();
+    fetchSpy?.mockRestore();
+    fetchSpy = undefined;
     jest.useRealTimers();
   });
   function setup(
@@ -22,28 +26,40 @@ else {
     beforeInstall?: (frame: HTMLIFrameElement) => void,
     navigationApi = false,
     href = (id: string) => `/app/${id}/panel?base=1`,
+    contextOptions: { context: PanelPageContext | null; consent: boolean; answer?: boolean | null; restored?: boolean } = {
+      context: null,
+      consent: false,
+    },
   ) {
     const dom = createDomTestHarness();
     const navigation = new dom.window.EventTarget();
     if (navigationApi) Object.defineProperty(dom.window, "navigation", { value: navigation });
     dom.window.innerWidth = viewport;
     document.documentElement.style.fontSize = "16px";
-    const providers = ["fixture", "second"].map((id) => ({ id, label: `${id} panel`, icon: "ti ti-box", href: href(id) }));
-    dom.root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({ panel: { providers, provider: "fixture" } })}</script>
+    const providers = ["fixture", "second"].map((id) => ({
+      id,
+      label: `${id} panel`,
+      appName: id,
+      consent: contextOptions.consent,
+      icon: "ti ti-box",
+      href: href(id),
+    }));
+    dom.root.innerHTML = `<script id="cloud-shell-data" type="application/json">${JSON.stringify({ panel: { providers, provider: "fixture", context: contextOptions.context, ...(Object.hasOwn(contextOptions, "answer") ? { consent: { provider: "fixture", allowed: contextOptions.answer, revision: typeof contextOptions.answer === "boolean" ? 1 : 0 } } : {}) } })}</script>
     <button id="opener" data-cloud-panel-toggle>Panel</button>
     <div class="cloud-app-canvas" ${initialOpen ? 'data-panel="open"' : ""} style="${storedWidth ? "--cloud-panel-width-set:24rem" : ""}">
       <div data-cloud-app-area><main class="layout-content-main">Application</main></div>
       <aside id="cloud-panel" data-provider="fixture" data-state="closed">
         <div class="cloud-panel__resize" aria-orientation="vertical" tabindex="0"></div>
         <button data-cloud-panel-close>Close</button><button data-cloud-panel-grow>Grow</button>
-        <button data-cloud-panel-provider="fixture">Fixture</button><button data-cloud-panel-provider="second">Second</button>
-        <div class="cloud-panel__body">${initialOpen ? '<iframe src="/app/fixture/panel?base=1" data-cloud-panel-frame="fixture"></iframe>' : ""}<button data-cloud-panel-retry>Try again</button><div class="k2b-placeholder__description"></div></div>
+        <button data-cloud-panel-provider="fixture">Fixture</button><button data-cloud-panel-provider="second">Second</button><span data-cloud-panel-menu><button>Placeholder</button></span>
+        <div class="cloud-panel__body"><div data-cloud-panel-consent tabindex="-1"><h3 data-cloud-panel-consent-title></h3><p data-cloud-panel-consent-body></p><button data-cloud-panel-consent-answer="allow">Allow</button><button data-cloud-panel-consent-answer="deny">Deny</button><p data-cloud-panel-consent-error></p></div>${initialOpen ? '<iframe src="/app/fixture/panel?base=1" data-cloud-panel-frame="fixture"></iframe>' : ""}<button data-cloud-panel-retry>Try again</button><div class="k2b-placeholder__description"></div></div>
         <div data-cloud-panel-status></div>
       </aside>
     </div>`;
     Object.defineProperty(document.getElementById("cloud-panel"), "getBoundingClientRect", {
       value: () => ({ width: dom.window.innerWidth < 1280 ? 344 : 416 }),
     });
+    if (contextOptions.restored) document.documentElement.setAttribute("data-cloud-page-restored", "");
     const serverFrame = document.querySelector<HTMLIFrameElement>("iframe");
     if (serverFrame) beforeInstall?.(serverFrame);
     const dispose = installPanelSlot();
@@ -392,5 +408,591 @@ else {
     separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", cancelable: true }));
     expect(h.canvas.style.getPropertyValue("--cloud-panel-width-set")).toBe("22.5rem");
     expect(document.cookie).toBe("cloud_panel=1:fixture:22.5");
+  });
+  const pageContext: PanelPageContext = {
+    v: 1,
+    seq: 0,
+    pageId: "11111111-1111-4111-8111-111111111111",
+    app: "mail",
+    scope: { type: "mail.mailbox", id: "Box001" },
+  };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const setupContext = (context: PanelPageContext | null = pageContext, consent = true, answer?: boolean | null, restored = false) =>
+    setup(1440, false, true, undefined, false, undefined, { context, consent, restored, ...(answer !== undefined ? { answer } : {}) });
+  // A loaded provider document: its own location and the ready mark its PanelRuntime writes.
+  const showDocument = (frame: HTMLIFrameElement, window: object, provider = frame.dataset.cloudPanelFrame) => {
+    Object.defineProperty(frame, "contentWindow", { configurable: true, value: window });
+    Object.defineProperty(frame, "contentDocument", {
+      configurable: true,
+      value: { documentElement: { dataset: { cloudPanelReady: provider } } },
+    });
+  };
+  const spyFrame = (h: ReturnType<typeof setup>) => {
+    const post = mock((_data: unknown, _origin: string) => {});
+    showDocument(h.frame(), { postMessage: post, location: new URL(h.frame().src, location.origin) });
+    return post;
+  };
+  const ready = (h: ReturnType<typeof setup>, provider = "fixture") => h.message({ type: "cloud.panel.ready", v: 1, provider });
+  const consent = (provider: string, allowed: boolean) =>
+    window.dispatchEvent(new CustomEvent("cloud.panel.consent", { detail: { provider, allowed } }));
+
+  test("foreign providers receive no URL or live context until consent; allow delivers live without reloading", async () => {
+    const fetch = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: {} })))
+      .mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: true, revision: 1 })));
+    fetchSpy = fetch;
+    const h = setupContext();
+    h.open();
+    expect(h.slot.dataset.state).toBe("loading");
+    expect(h.slot.querySelector("iframe")).toBeNull();
+    await tick();
+    expect(h.frame().src).not.toContain("cloud_panel_context");
+    expect(h.slot.dataset.consent).toBe("ask");
+    const frame = h.frame();
+    const post = spyFrame(h);
+    ready(h);
+    expect(post).not.toHaveBeenCalled();
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    expect(h.slot.querySelector<HTMLButtonElement>('[data-cloud-panel-consent-answer="deny"]')!.disabled).toBe(true);
+    await tick();
+    expect(h.frame()).toBe(frame);
+    expect(post.mock.calls).toEqual([[{ type: "cloud.panel.context", v: 1, context: pageContext }, location.origin]]);
+    expect(h.slot.dataset.consent).toBeUndefined();
+    h.click("[data-cloud-panel-retry]");
+    expect(new URL(h.frame().src).searchParams.get("cloud_panel_context")).toBe(JSON.stringify(pageContext));
+    expect(fetch.mock.calls.filter(([, init]) => !init?.method)).toHaveLength(1);
+  });
+
+  test("stored approval is read before the first provider load; a failed read asks and never leaks", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 1 } } })),
+    );
+    const h = setupContext();
+    h.open();
+    await tick();
+    expect(new URL(h.frame().src).searchParams.get("cloud_panel_context")).toBe(JSON.stringify(pageContext));
+    h.dispose();
+    h.dom.cleanup();
+    fetchSpy.mockRestore();
+    fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Offline"));
+    const failed = setupContext();
+    failed.open();
+    await tick();
+    expect(failed.frame().src).not.toContain("cloud_panel_context");
+    expect(failed.slot.dataset.consent).toBe("ask");
+  });
+
+  test("platform providers get scope without a consent read, and false context sends nothing", () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Unexpected consent read"));
+    const h = setupContext(pageContext, false);
+    h.open();
+    expect(h.frame().src).toContain("cloud_panel_context");
+    const post = spyFrame(h);
+    ready(h);
+    expect(post.mock.calls[0]).toEqual([{ type: "cloud.panel.context", v: 1, context: pageContext }, location.origin]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    h.dispose();
+    h.dom.cleanup();
+    const disabled = setupContext(null, false);
+    disabled.open();
+    const disabledPost = spyFrame(disabled);
+    ready(disabled);
+    expect(disabled.frame().src).not.toContain("cloud_panel_context");
+    expect(disabledPost).not.toHaveBeenCalled();
+  });
+
+  test("switch, close and consent withdrawal clear the old context, and withdrawal stops later updates", async () => {
+    fetchSpy = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 1 }, second: { allowed: true, revision: 1 } } })),
+      )
+      .mockResolvedValue(new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 2 })));
+    const { publishPageContext } = await import("./panel");
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const old = spyFrame(h);
+    ready(h);
+    h.open("second");
+    expect(old.mock.calls.at(-1)).toEqual([{ type: "cloud.panel.context", v: 1, context: null }, location.origin]);
+    await tick();
+    const second = spyFrame(h);
+    ready(h, "second");
+    handlePanelRequest({ action: "close" });
+    expect(second.mock.calls.at(-1)?.[0]).toEqual({ type: "cloud.panel.context", v: 1, context: null });
+    h.open();
+    const active = spyFrame(h);
+    ready(h);
+    consent("fixture", false);
+    expect(active.mock.calls.at(-1)?.[0]).toEqual({ type: "cloud.panel.context", v: 1, context: null });
+    await tick();
+    const count = active.mock.calls.length;
+    const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    expect(active).toHaveBeenCalledTimes(count);
+    h.click("[data-cloud-panel-retry]");
+    expect(h.frame().src).not.toContain("cloud_panel_context");
+    dispose();
+  });
+
+  test("withdrawal also drops the URL snapshot, so a provider reload stays without context", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 2 })),
+    );
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const shown = new URL(h.frame().src);
+    const post = mock((_data: unknown, _origin: string) => {});
+    const replaceState = mock((_state: unknown, _title: string, path: string) => {
+      const next = new URL(path, location.origin);
+      shown.search = next.search;
+    });
+    showDocument(h.frame(), { postMessage: post, location: shown, history: { state: null, replaceState } });
+    ready(h);
+    consent("fixture", false);
+    await tick();
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    expect(shown.searchParams.get("base")).toBe("1");
+    // The provider reloads its own, now clean address and reports ready again: nothing is sent to it.
+    post.mockClear();
+    ready(h);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  test("withdrawal cleans a provider address that holds a raw backslash in its query", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 2 })),
+    );
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const shown = new URL(h.frame().src);
+    // Browsers keep a raw backslash in the query, for example a search for C:\\Users built by hand.
+    shown.search = `${shown.search}&q=C:\\Users`;
+    expect(shown.search).toContain("\\");
+    const replaceState = mock((_state: unknown, _title: string, path: string) => {
+      shown.search = new URL(path, location.origin).search;
+    });
+    showDocument(h.frame(), { postMessage: mock(() => {}), location: shown, history: { state: null, replaceState } });
+    ready(h);
+    consent("fixture", false);
+    await tick();
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    expect(shown.searchParams.get("q")).toBe("C:\\Users");
+  });
+
+  test("a frame that navigated to another provider's page gets no context", async () => {
+    const { publishPageContext } = await import("./panel");
+    const h = setupContext(pageContext, false);
+    h.open();
+    const post = spyFrame(h);
+    ready(h);
+    post.mockClear();
+    showDocument(h.frame(), { postMessage: post, location: new URL("/app/second/panel", location.origin) }, "second");
+    const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    expect(post).not.toHaveBeenCalled();
+    dispose();
+  });
+
+  test("a page restored from the back/forward cache stops sharing until it has read the answers again", async () => {
+    const fetch = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 2 } } })),
+    );
+    fetchSpy = fetch;
+    const { publishPageContext } = await import("./panel");
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    post.mockClear();
+    restore();
+    expect(post.mock.calls).toEqual([[{ type: "cloud.panel.context", v: 1, context: null }, location.origin]]);
+    const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(1);
+    dispose();
+  });
+
+  test("the controller mounts the panel menu over the server placeholder, hidden for providers without consent", () => {
+    const h = setupContext(pageContext, true, true);
+    const host = h.slot.querySelector<HTMLElement>("[data-cloud-panel-menu]")!;
+    expect(host.textContent).not.toContain("Placeholder");
+    expect(host.querySelector('[aria-label="Panel menu"]')).not.toBeNull();
+    expect(host.style.visibility).toBe("visible");
+    h.dispose();
+    h.dom.cleanup();
+    const core = setupContext(pageContext, false);
+    const coreHost = core.slot.querySelector<HTMLElement>("[data-cloud-panel-menu]")!;
+    expect(coreHost.style.visibility).toBe("hidden");
+    expect(coreHost.inert).toBe(true);
+  });
+
+  const restore = () => {
+    const restored = new Event("pageshow");
+    Object.defineProperty(restored, "persisted", { value: true });
+    window.dispatchEvent(restored);
+  };
+  // A provider document whose address and history the controller may rewrite.
+  const loadedDocument = (h: ReturnType<typeof setup>, address: string) => {
+    const shown = new URL(address, location.origin);
+    const post = mock((_data: unknown, _origin: string) => {});
+    const history = {
+      state: null,
+      replaceState: (_state: unknown, _title: string, path: string) => {
+        shown.search = new URL(path, location.origin).search;
+      },
+    };
+    showDocument(h.frame(), { postMessage: post, location: shown, history });
+    return { shown, post };
+  };
+
+  test("withdrawn while the provider was still loading, its address loses the snapshot once it is ready", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 2 })),
+    );
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const src = h.frame().src;
+    expect(src).toContain("cloud_panel_context");
+    loadedDocument(h, "about:blank");
+    consent("fixture", false);
+    await tick();
+    const { shown, post } = loadedDocument(h, src);
+    ready(h);
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    expect(post.mock.calls).toEqual([[{ type: "cloud.panel.context", v: 1, context: null }, location.origin]]);
+  });
+
+  test("a restore that reads a withdrawn answer also removes the snapshot from the provider's address", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 2 } } })),
+    );
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { shown } = loadedDocument(h, h.frame().src);
+    ready(h);
+    restore();
+    await tick();
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+  });
+
+  test("a consent read from before a restore cannot fill in the answer afterwards", async () => {
+    let answerOld: (response: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => (answerOld = resolve));
+    const fetch = spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(pending)
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 2 } } })));
+    fetchSpy = fetch;
+    const h = setupContext();
+    h.open();
+    restore();
+    answerOld(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 1 } } })));
+    await tick();
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(h.frame().src).not.toContain("cloud_panel_context");
+  });
+
+  const deferred = () => {
+    let resolve: (response: Response) => void = () => {};
+    const promise = new Promise<Response>((done) => (resolve = done));
+    return { promise, resolve };
+  };
+  const contexts = (post: ReturnType<typeof mock>) =>
+    post.mock.calls.map(([data]) => (data as { context: PanelPageContext | null }).context);
+
+  test("live context also moves into the provider's address, so a reload renders the same place", async () => {
+    const { publishPageContext } = await import("./panel");
+    const h = setupContext(pageContext, false);
+    h.open();
+    const { shown } = loadedDocument(h, h.frame().src);
+    ready(h);
+    const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    expect(JSON.parse(shown.searchParams.get("cloud_panel_context")!).scope).toEqual({ type: "spaces.space", id: "Space1" });
+    dispose();
+  });
+
+  test("a restore while a withdrawal is saving reads the answers only after the save, and never shares meanwhile", async () => {
+    const put = deferred();
+    const fetch = spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(put.promise)
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 2 } } })));
+    fetchSpy = fetch;
+    const { publishPageContext } = await import("./panel");
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { shown, post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    consent("fixture", false);
+    expect(contexts(post).at(-1)).toBeNull();
+    expect(shown.searchParams.has("cloud_panel_context")).toBe(false);
+    restore();
+    const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    await tick();
+    // Reads and writes run in order: the restore's read waits for the pending save.
+    expect(fetch).toHaveBeenCalledTimes(1);
+    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 2 })));
+    await tick();
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(
+      contexts(post)
+        .slice(1)
+        .every((context) => context === null),
+    ).toBe(true);
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    dispose();
+  });
+
+  test("a document that arrives after the withdrawal with the old address is cleaned when it reports ready", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 2 })),
+    );
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const src = h.frame().src;
+    loadedDocument(h, src);
+    ready(h);
+    // The outgoing document is cleaned at once; the navigation already under way still uses the old address.
+    consent("fixture", false);
+    await tick();
+    const arriving = loadedDocument(h, src);
+    ready(h);
+    expect(arriving.shown.searchParams.has("cloud_panel_context")).toBe(false);
+    expect(contexts(arriving.post)).toEqual([null]);
+  });
+
+  test("a restore before the lazy controller arrived rechecks the answers before anything is shared", async () => {
+    const read = deferred();
+    const fetch = spyOn(globalThis, "fetch").mockReturnValue(read.promise);
+    fetchSpy = fetch;
+    {
+      const h = setupContext(pageContext, true, true, true);
+      h.open();
+      const { post } = loadedDocument(h, h.frame().src);
+      ready(h);
+      await tick();
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(contexts(post).every((context) => context === null)).toBe(true);
+      read.resolve(new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 2 } } })));
+      await tick();
+      await tick();
+      expect(h.slot.dataset.contextAllowed).toBe("false");
+      expect(contexts(post).every((context) => context === null)).toBe(true);
+    }
+  });
+
+  test("after a save with an unknown outcome nothing is shared until the person answers again", async () => {
+    fetchSpy = spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new DOMException("The operation timed out.", "TimeoutError"))
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 1 } } })));
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    consent("fixture", false);
+    await tick();
+    expect(h.slot.dataset.consent).toBe("ask");
+    restore();
+    await tick();
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(
+      contexts(post)
+        .slice(1)
+        .every((context) => context === null),
+    ).toBe(true);
+  });
+
+  const bodies = (fetch: { mock: { calls: unknown[][] } }) =>
+    fetch.mock.calls.flatMap(([, init]) => {
+      const body = (init as RequestInit | undefined)?.body;
+      return typeof body === "string" ? [JSON.parse(body)] : [];
+    });
+
+  test("a conflict reads the current revision and saves the person's choice once more", async () => {
+    const fetch = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: "CONFLICT" }), { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 7 } } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ provider: "fixture", allowed: false, revision: 8 })));
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    post.mockClear();
+    consent("fixture", false);
+    await tick();
+    await tick();
+    expect(bodies(fetch).at(-1)).toEqual({ allowed: false, revision: 7 });
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(h.slot.dataset.consent).toBeUndefined();
+    expect(contexts(post).every((context) => context === null)).toBe(true);
+  });
+
+  test("a second conflict shows the question again and shares nothing", async () => {
+    fetchSpy = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 7 } } })))
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 9 } } })));
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    post.mockClear();
+    consent("fixture", false);
+    await tick();
+    await tick();
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(h.slot.dataset.consent).toBe("ask");
+    expect(h.slot.querySelector("[data-cloud-panel-consent-error]")!.textContent).toContain("Not saved");
+    expect(contexts(post).every((context) => context === null)).toBe(true);
+  });
+
+  test("a save that failed reads the current revision and keeps sharing off until the person answers again", async () => {
+    const fetch = spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new DOMException("The operation timed out.", "TimeoutError"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answers: { fixture: { allowed: true, revision: 2 } } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ provider: "fixture", allowed: true, revision: 3 })));
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    post.mockClear();
+    consent("fixture", false);
+    await tick();
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(h.slot.dataset.consent).toBe("ask");
+    expect(contexts(post).every((context) => context === null)).toBe(true);
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    await tick();
+    await tick();
+    expect(bodies(fetch).at(-1)).toEqual({ allowed: true, revision: 2 });
+    expect(h.slot.dataset.contextAllowed).toBe("true");
+  });
+
+  test("a slow save does not pull focus back into the panel after the reader moved on", async () => {
+    const put = deferred();
+    fetchSpy = spyOn(globalThis, "fetch").mockReturnValueOnce(put.promise);
+    const h = setupContext(pageContext, true, null);
+    h.open();
+    loadedDocument(h, h.frame().src);
+    ready(h);
+    const allow = h.slot.querySelector<HTMLButtonElement>('[data-cloud-panel-consent-answer="allow"]')!;
+    allow.focus();
+    allow.click();
+    h.opener.focus();
+    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: true, revision: 1 })));
+    await tick();
+    await tick();
+    expect(h.slot.dataset.contextAllowed).toBe("true");
+    expect(document.activeElement).toBe(h.opener);
+  });
+
+  test("an Allow response that arrives after a restore is checked against the server again", async () => {
+    const put = deferred();
+    const fetch = spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(put.promise)
+      .mockResolvedValue(new Response(JSON.stringify({ answers: { fixture: { allowed: false, revision: 2 } } })));
+    fetchSpy = fetch;
+    const h = setupContext(pageContext, true, null);
+    h.open();
+    const { post } = loadedDocument(h, h.frame().src);
+    ready(h);
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    restore();
+    await tick();
+    put.resolve(new Response(JSON.stringify({ provider: "fixture", allowed: true, revision: 1 })));
+    await tick();
+    await tick();
+    // The restore's read runs after the save and has the final word.
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(contexts(post).every((context) => context === null)).toBe(true);
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+  });
+
+  test("context that arrived live does not make the same provider reload on the next open", async () => {
+    const { publishPageContext } = await import("./panel");
+    const h = setupContext(pageContext, false);
+    h.open();
+    const frame = h.frame();
+    spyFrame(h);
+    ready(h);
+    const dispose = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    h.open();
+    expect(h.frame()).toBe(frame);
+    dispose();
+  });
+
+  test("the first client-side open of a foreign provider moves focus once its answer is known", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ answers: {} })));
+    const h = setupContext();
+    h.open();
+    expect(document.activeElement).toBe(h.opener);
+    await tick();
+    expect(h.slot.dataset.consent).toBe("ask");
+    expect(document.activeElement).toBe(h.slot.querySelector("[data-cloud-panel-consent]"));
+  });
+
+  test("publisher collection works before lazy loading; last source wins, effective changes advance seq and disposal restores only its part", async () => {
+    const dom = createDomTestHarness();
+    const { publishPageContext } = await import("./panel");
+    const a = publishPageContext({ scope: { type: "mail.mailbox", id: "Box002" } });
+    // setup installs a fresh document: use its beforeInstall callback to publish before the controller.
+    a();
+    dom.cleanup();
+    let disposeEarly = () => {};
+    const h = setup(
+      1440,
+      true,
+      true,
+      () => {
+        disposeEarly = publishPageContext({ scope: { type: "mail.mailbox", id: "Box002" } });
+      },
+      false,
+      undefined,
+      { context: pageContext, consent: false },
+    );
+    const post = spyFrame(h);
+    ready(h);
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({ context: { seq: 1, scope: { id: "Box002" } } });
+    const b = publishPageContext({ scope: { type: "spaces.space", id: "Space1" } });
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({
+      context: { seq: 2, scope: { type: "spaces.space", id: "Space1" }, pageId: pageContext.pageId },
+    });
+    disposeEarly(); // A hidden older source does not change the effective place.
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({ context: { seq: 2 } });
+    b();
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({ context: { seq: 3, scope: pageContext.scope } });
+  });
+
+  test("save failures keep the question and error visible and re-enable the answers", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Offline"));
+    const h = setupContext(pageContext, true, null);
+    h.open();
+    ready(h);
+    h.click('[data-cloud-panel-consent-answer="allow"]');
+    await tick();
+    expect(h.slot.dataset.consent).toBe("ask");
+    expect(h.slot.querySelector("[data-cloud-panel-consent-error]")!.textContent).toContain("Not saved");
+    expect(h.slot.querySelector<HTMLButtonElement>('[data-cloud-panel-consent-answer="allow"]')!.disabled).toBe(false);
+    expect(h.frame().src).not.toContain("cloud_panel_context");
+  });
+
+  test("a failed repeated approval clears previously delivered context before forgetting the answer", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Offline"));
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    const post = spyFrame(h);
+    ready(h);
+    consent("fixture", true);
+    await tick();
+    expect(post.mock.calls.at(-1)?.[0]).toEqual({ type: "cloud.panel.context", v: 1, context: null });
+    expect(h.slot.dataset.consent).toBe("ask");
+    h.click("[data-cloud-panel-retry]");
+    expect(h.frame().src).not.toContain("cloud_panel_context");
   });
 }

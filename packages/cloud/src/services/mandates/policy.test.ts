@@ -69,6 +69,19 @@ describe("mandate policy", () => {
     expect(
       mandatePolicyAllows(policy, { appId: "spaces", operation: "capability.action.run:event.create", actionApproval: "approved" }),
     ).toBe(true);
+    for (const capabilityPolicy of [undefined, { ask: "sends" }] as const) {
+      expect(
+        mandatePolicyAllows(policy, {
+          appId: "spaces",
+          operation: "capability.action.run:event.create",
+          actionApproval: "approved",
+          capabilityPolicy,
+        }),
+      ).toBe(true);
+      expect(
+        mandatePolicyCanPermitCapability(policy, { appId: "spaces", capabilityId: "event.create", kind: "action", capabilityPolicy }),
+      ).toBe(false);
+    }
   });
 });
 
@@ -225,4 +238,30 @@ describe("capability discovery under a mandate", () => {
     expect(mandatePolicyCanPermitCapability(policy, { ...action, approval: undefined })).toBe(false);
     expect(mandatePolicyCanPermitCapability(policy, { ...action, approval: "none" })).toBe(true);
   });
+});
+
+test("policy Actions allow only silent routine grants, independently of derived approval", () => {
+  const policy = parseMandatePolicy({
+    version: 1,
+    apps: ["demo"],
+    operations: ["capability.action.run:edit", "capability.action.review:edit"],
+    actions: "preapproved",
+    grants: [{ appId: "demo", capabilityId: "edit", kind: "action", fixedInput: {} }],
+  });
+  for (const capabilityPolicy of [{ ask: "sends" }, { silent: "you", routines: false }, { silent: "you" }] as const) {
+    const allowed = "silent" in capabilityPolicy && !("routines" in capabilityPolicy && capabilityPolicy.routines === false);
+    for (const operation of ["capability.action.run:edit", "capability.action.review:edit"])
+      expect(
+        mandatePolicyAllows(policy, {
+          appId: "demo",
+          operation,
+          actionApproval: "approved",
+          capabilityApproval: "rememberable",
+          capabilityPolicy,
+        }),
+      ).toBe(allowed);
+    expect(mandatePolicyCanPermitCapability(policy, { appId: "demo", capabilityId: "edit", kind: "action", capabilityPolicy })).toBe(
+      allowed,
+    );
+  }
 });

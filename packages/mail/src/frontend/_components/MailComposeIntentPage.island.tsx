@@ -39,7 +39,7 @@ export default function MailComposeIntentPage(props: {
   const [returnHref, setReturnHref] = createSignal(CommandPathSchema.safeParse(props.returnHref).success ? props.returnHref : null);
   const [commandLoading, setCommandLoading] = createSignal(false);
   const [commandError, setCommandError] = createSignal<string>();
-  const [retryCommand, setRetryCommand] = createSignal<() => Promise<void>>();
+  const [retryCommand, setRetryCommand] = createSignal<() => Promise<boolean>>();
   const parsedIntent = createMemo(() => parseMailtoIntent(mailto()));
   const commandAbort = new AbortController();
   onCleanup(() => commandAbort.abort());

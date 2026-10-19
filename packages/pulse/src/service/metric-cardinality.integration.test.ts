@@ -11,8 +11,8 @@ const postgresTest = runDbSmoke ? test : test.skip;
 
 beforeAll(async () => {
   if (!runDbSmoke) return;
-  const { initializeSchema } = await import("../schema");
-  await initializeSchema();
+  const { migrate } = await import("../migrate");
+  await migrate();
 }, 60_000);
 
 describe("Pulse metric cardinality Postgres smoke", () => {

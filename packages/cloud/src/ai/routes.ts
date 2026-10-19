@@ -19,6 +19,7 @@ import {
 } from "../server";
 import { isAppSessionActor } from "../server/actor";
 import { isRequestCredentialCurrent } from "../server/middleware/auth";
+import { noTransform } from "../server/middleware/no-transform";
 import { approvalDecisionChannel } from "../services/approvals";
 import { ImageMetadataError } from "../services/image-metadata";
 import { logger } from "../services/logging";
@@ -305,6 +306,7 @@ export const aiRoutes = (() => {
 
   return (
     new Hono<AuthContext>()
+      .use("*", noTransform())
       .use(rateLimit())
       .use("*", auth.requireRole("authenticated"))
       .get("/status", async (c) => {

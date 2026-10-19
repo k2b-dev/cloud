@@ -240,3 +240,37 @@ test("matchesChatCommand shares empty, bilingual, accent and typo ranking rules"
   for (const query of ["", "  ", "modell", "wahlen", "choose", "modle", "strasse"]) expect(matchesChatCommand(row, query)).toBe(true);
   for (const query of ["xyz", "modleeeee"]) expect(matchesChatCommand(row, query)).toBe(false);
 });
+
+describe("sections whose local rows are still on their way", () => {
+  const input = (query: string, extra: Partial<Parameters<typeof chatCommandListModel>[0]> = {}) =>
+    chatCommandListModel({
+      query,
+      sections: [
+        { id: "chat", label: "Chat" },
+        { id: "apps", label: "Apps", pending: true },
+      ],
+      commands: [command("Compact", { section: "chat" })],
+      searchResults: [],
+      searchResultsFresh: true,
+      searchSettled: true,
+      searching: false,
+      ...extra,
+    });
+  test("a pending section reserves three rows in the overview and one in a search, and holds Nothing found", () => {
+    expect(input("").groups.map((group) => [group.section?.id, group.pendingRows, group.loading])).toEqual([
+      ["chat", 0, false],
+      ["apps", 3, true],
+    ]);
+    const search = input("xylo");
+    expect(search.groups.map((group) => [group.section?.id, group.pendingRows])).toEqual([["apps", 1]]);
+    expect(search.rows).toEqual([]);
+    expect(search.empty).toBe(false);
+    expect(input("notiz q3", { scopes }).groups[0]).toMatchObject({ scopeTitle: "Notizen", pendingRows: 0 });
+  });
+  test("a persistent row stays in every search of its section, after the matches", () => {
+    const retry = command("Could not load", { section: "chat", persistent: true });
+    const rows = input("comp", { commands: [retry, command("Compact", { section: "chat" })] }).rows;
+    expect(rows.map((row) => row.command.label)).toEqual(["Compact", "Could not load"]);
+    expect(input("xylo", { commands: [retry] }).rows.map((row) => row.command.label)).toEqual(["Could not load"]);
+  });
+});

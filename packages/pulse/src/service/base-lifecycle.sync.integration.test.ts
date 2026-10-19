@@ -14,8 +14,8 @@ syncTest(
       "./base-lifecycle"
     );
     const { newShortId } = await import("../lib/short-id");
-    const { initializeSchema } = await import("../schema");
-    await initializeSchema();
+    const { migrate } = await import("../migrate");
+    await migrate();
     const connection = await connectTestNats({ ignoreClusterUpdates: true, name: "pulse-deletion-test" });
     const namespace = testSyncNamespace("pulse-lifecycle");
     const sync = createSync({ connection, namespace, application: "pulse", defaults: { replicas: 1 }, observe: observeSyncEvent });

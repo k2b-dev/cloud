@@ -17,6 +17,22 @@ x-nats: &nats
     retries: 30
 
 services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.9.19.9
+    restart: unless-stopped
+    env_file: ./.local/clickhouse/credentials.env
+    volumes:
+      - pulse_clickhouse_data:/var/lib/clickhouse
+    ports:
+      - "127.0.0.1:${CLOUD_DEV_CLICKHOUSE_PORT:-8123}:8123"
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   rsql:
     image: ghcr.io/k2b-dev/rsql:1.0.0
     restart: unless-stopped
@@ -192,6 +208,7 @@ secrets:
     file: ./.local/filegate/token
 
 volumes:
+  pulse_clickhouse_data:
   kit_rsql_data:
   ipa_postgres_data:
   ipa_valkey_data:

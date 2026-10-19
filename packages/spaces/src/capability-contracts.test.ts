@@ -15,6 +15,7 @@ import {
   TaskChecklistListDataSchema,
   TaskChecklistUpdateInputSchema,
   TaskCreateInputSchema,
+  TaskDataSchema,
   TaskDependentListInputSchema,
   TaskListInputSchema,
   TaskListItemDataSchema,
@@ -22,6 +23,7 @@ import {
   TaskSetCompletedInputSchema,
   TaskUpdateInputSchema,
   TemplateCreateInputSchema,
+  TemplateDataSchema,
   TemplateUpdateInputSchema,
 } from "./capability-contracts";
 
@@ -207,4 +209,31 @@ test("capability assignee directories and compact entries preserve principal kin
       expect(schema.shape.assignees.parse([assignee])).toEqual([assignee]);
     }
   }
+});
+
+test("task capability deadline schemas accept both forms and remain JSON Schema compatible", () => {
+  expect("deadlineAllDay" in TemplateDataSchema.shape).toBeFalse();
+  for (const deadline of ["2026-10-24", "2024-02-29", "2026-10-24T17:00:00+02:00"]) {
+    expect(TaskCreateInputSchema.parse({ spaceId: "Spc001", columnId: "Col001", title: "Task", deadline }).deadline).toBe(deadline);
+    expect(TaskUpdateInputSchema.parse({ itemId: "Itm001", deadline }).deadline).toBe(deadline);
+    expect(TaskDataSchema.shape.deadline.parse(deadline)).toBe(deadline);
+    expect(TaskListItemDataSchema.shape.deadline.parse(deadline)).toBe(deadline);
+  }
+  for (const deadline of ["2026-02-30", "2026-02-29", "2026-13-01"]) {
+    expect(TaskCreateInputSchema.safeParse({ spaceId: "Spc001", columnId: "Col001", title: "Task", deadline }).success).toBeFalse();
+    expect(TaskUpdateInputSchema.safeParse({ itemId: "Itm001", deadline }).success).toBeFalse();
+  }
+  expect(TaskUpdateInputSchema.parse({ itemId: "Itm001", deadline: null }).deadline).toBeNull();
+  const schema = z.toJSONSchema(TaskCreateInputSchema, { io: "input" });
+  // Date-time first: a sentence or review that reads the first format of a union keeps a timed deadline's time, and
+  // still formats a date-only value as a date.
+  expect(schema.properties?.deadline).toMatchObject({
+    anyOf: [
+      { type: "string", format: "date-time" },
+      { type: "string", format: "date" },
+    ],
+  });
+  expect(
+    z.fromJSONSchema(schema).safeParse({ spaceId: "Spc001", columnId: "Col001", title: "Task", deadline: "2026-10-24" }).success,
+  ).toBeTrue();
 });

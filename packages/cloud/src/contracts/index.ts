@@ -10,6 +10,7 @@ export * from "./file-provider";
 export * from "./geoip";
 export * from "./notification-types";
 export * from "./outgoing-mail";
+export * from "./panel-context";
 export * from "./posix";
 export * from "./profile";
 export * from "./pwa";
@@ -18,6 +19,7 @@ export { RailAccessSchema, type RailAdminEntry, RailAdminInputSchema, RailAdminS
 export type { RailShortcut } from "./rail-preferences";
 export * from "./registry";
 export * from "./resource-clipboard";
+export * from "./seen-hints";
 export * from "./shared";
 export * from "./user-notifications";
 export * from "./widgets";

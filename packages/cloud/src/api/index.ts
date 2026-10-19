@@ -70,7 +70,10 @@ const buildCoreApi = (options: CoreApiOptions) => {
   const widgetRoutes = createWidgetRoutes();
   return new Hono()
     .use(prettyJSON())
-    .route("/auth/app-approval/v1", createAppApprovalRoutes(undefined, undefined, options.terminalLogins))
+    .route(
+      "/auth/app-approval/v1",
+      createAppApprovalRoutes({ notify: options.notifications.sendNewBrowserSignIn }, undefined, undefined, options.terminalLogins),
+    )
     .route("/auth/pwa/v1", createPwaRoutes())
     .route("/auth", createAuthRoutes(options.notifications))
     .route("/me", meRoutes)

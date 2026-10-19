@@ -1,5 +1,6 @@
 import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import type { StatusTone } from "@k2b/ui";
+import { messageForwardTextOf } from "../../forward-text";
 import type { MessageDeliveryState, MessageDetail } from "../../service/messages";
 import type { MailReadingFormat } from "./mail-user-preferences";
 
@@ -136,8 +137,8 @@ export const splitPlainTextLinks = (value: string): PlainTextLinkSegment[] => {
   return segments.length > 0 ? segments : [{ kind: "text", text: value }];
 };
 
-export const messagePreviewText = (plainText: string | null, forwardText: string, maxLength = 240): string => {
-  const source = plainText?.trim() ? plainText : forwardText;
+export const messagePreviewText = (plainText: string | null, forwardText: string | undefined, maxLength = 240): string => {
+  const source = messageForwardTextOf({ plainText, forwardText });
   const content = splitPlainMessageSegments(source).find((segment) => segment.kind === "content" && segment.text.trim())?.text ?? source;
   const normalized = content.replace(/\s+/gu, " ").trim();
   return normalized.length > maxLength ? `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…` : normalized;

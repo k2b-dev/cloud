@@ -20,6 +20,7 @@ import { normalizeLocale } from "../shared/locale";
 import { reconcileAppSkills } from "./app-skill-store";
 import { type AppSkillDefinition, skill as appSkill, appSkillManifestHash, registerAppSkills } from "./app-skills";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
+import { buildAiCapabilityCatalog } from "./capabilities";
 import * as capabilityExecution from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { aiTurnErrorText } from "./chat/turn-error";
@@ -771,6 +772,172 @@ suite("AI executor integration", () => {
     } finally {
       getCapabilitySpy.mockRestore();
       registrySpy.mockRestore();
+      executeSpy.mockRestore();
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test.each(["no_scope", "scoped", "review_throws", "mandate_denied"] as const)("background action review gate: %s", async (mode) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const locale = "de";
+    const compiled = compileCapabilities(
+      "demo",
+      defineCapabilities({
+        protocolVersion: 2,
+        presentation: {
+          baseLocale: "en",
+          translations: { de: { actions: { write: { title: "Eintrag schreiben" } } } },
+        },
+        actions: {
+          write: {
+            title: "Write item",
+            description: "Write one item.",
+            input: z.object({ value: z.string().describe("Value to write.") }).strict(),
+            data: z.object({ written: z.boolean() }),
+            approval: "rememberable",
+            idempotency: "required",
+            destructive: false,
+            openWorld: false,
+            review: async () => ok({ message: "Write one item." }),
+            run: async () => ok({ data: { written: true } }),
+          },
+        },
+      }),
+    );
+    const entry: CapabilityRegistryEntry = {
+      appId: "demo",
+      appName: "Demo",
+      appDescription: "Test actions",
+      appIcon: "ti ti-box",
+      appAccent: "#0f766e",
+      endpoint: "http://demo.invalid/api/_internal/capabilities/v1",
+      manifest: compiled.manifest,
+      presentation: compiled.presentation,
+    };
+    const [action] = buildAiCapabilityCatalog([entry], locale);
+    if (!action) throw new Error("Expected action in catalog");
+    const title = action.display.title;
+    const requestSchema = z.object({
+      messages: z.array(z.object({ role: z.string(), tool_call_id: z.string().optional(), content: z.unknown() })),
+      tools: z.array(z.object({ function: z.object({ name: z.string() }) })).optional(),
+    });
+    const requests: z.infer<typeof requestSchema>[] = [];
+    const getCapabilitySpy = spyOn(registry, "getCapability").mockImplementation(async (appId) => (appId === entry.appId ? entry : null));
+    const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([entry]);
+    const reviewSpy = spyOn(capabilityExecution, "reviewAiCapability").mockResolvedValue({
+      message: "Write one item.",
+      ...(mode === "scoped" ? { approvalScope: "value:one" } : {}),
+    });
+    const executeSpy = spyOn(capabilityExecution, "executeAiCapability").mockResolvedValue({ data: { written: true } });
+    try {
+      if (mode === "review_throws") reviewSpy.mockRejectedValue(new Error("Review unavailable"));
+      expect(action.operation).toMatchObject({ approval: "rememberable", review: true });
+      expect(title).not.toBe(action.title);
+      const task = await aiChatTasks.create({
+        userId,
+        chatId: conversation.shortId,
+        prompt: "Write one item",
+        locale,
+        grants: [{ appId: "demo", capabilityId: "write", kind: "action", fixedInput: { value: "one" } }],
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      });
+      if (!task?.mandateId) throw new Error("Expected scheduled task mandate");
+      const occurrence = await aiChatTasks.createOccurrence({
+        taskId: task.id,
+        scheduledFor: "2026-01-01T09:00:00.000Z",
+        trigger: "manual",
+        requestKey: `review:${task.id}`,
+      });
+      if (!occurrence) throw new Error("Expected occurrence");
+      const delivered = await aiChatTasks.deliverOccurrence({
+        occurrenceId: occurrence.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: task.prompt,
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default", appTools: true },
+        },
+        userMessage: userMessage(task.prompt),
+        expectedRevision: task.revision,
+      });
+      if (!delivered.delivered) throw new Error("Expected background run");
+      const args = { value: mode === "mandate_denied" ? "other" : "one" };
+      completionQueue = [
+        toolCallCompletion("load-write", "load_tools", { names: [action.name] }),
+        toolCallCompletion("write-1", action.providerName, args),
+        textCompletion(mode === "scoped" ? "The item was written." : "The routine lacked permission to write the item."),
+      ];
+      onCompletionRequest = (body) => {
+        requests.push(requestSchema.parse(body));
+      };
+      const leaseOwner = "background-review-exec";
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: delivered.turnId,
+        leaseOwner,
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected claim");
+      await createExecutor(leaseOwner, undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: delivered.turnId,
+        claim,
+        signal: new AbortController().signal,
+      });
+      expect(requests).toHaveLength(3);
+      expect(requests[1]?.tools?.map((tool) => tool.function.name)).toContain(action.providerName);
+      const toolResult = requests[2]?.messages.find((message) => message.role === "tool" && message.tool_call_id === "write-1")?.content;
+      const turn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: delivered.turnId });
+      const runConfig = await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: delivered.turnId });
+      if (!turn || runConfig?.kind !== "chat") throw new Error("Expected background chat turn");
+      expect(turn.status).toBe("completed");
+      expect(runConfig.locale).toBe(locale);
+      const needsApproval = mode === "no_scope" || mode === "review_throws";
+      if (needsApproval) {
+        expect(toolResult).toBe(
+          `NEEDS_APPROVAL: ${title} needs the user's approval every time, and routines never ask. Stop and say in one sentence what was missing.`,
+        );
+        expect(runConfig.background?.needsApproval).toEqual({ action: title });
+      } else {
+        expect(runConfig.background?.needsApproval).toBeUndefined();
+      }
+      if (mode === "mandate_denied") {
+        expect(reviewSpy).not.toHaveBeenCalled();
+        expect(toolResult).toBe(
+          "This task's grants do not allow demo.write with these inputs; continue with the granted tools or explain what is missing.",
+        );
+      } else {
+        expect(reviewSpy).toHaveBeenCalledTimes(1);
+        expect(reviewSpy.mock.calls[0]?.[0]).toMatchObject({ entry: action, args, locale, mandate: { id: task.mandateId } });
+      }
+      if (mode === "scoped") {
+        expect(executeSpy).toHaveBeenCalledTimes(1);
+        expect(executeSpy.mock.calls[0]?.[0]).toMatchObject({ entry: action, args, actionApproval: "approved" });
+      } else {
+        expect(executeSpy).not.toHaveBeenCalled();
+      }
+      expect(await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: turn.status })).toEqual({
+        occurrenceId: occurrence.id,
+        failed: needsApproval,
+      });
+      expect(await aiChatTasks.get({ userId, taskId: task.shortId })).toMatchObject(
+        needsApproval
+          ? { state: "needs_attention", reasonCode: "needs_approval", reasonAction: title }
+          : { state: "active", reasonCode: null, reasonAction: null },
+      );
+    } finally {
+      getCapabilitySpy.mockRestore();
+      registrySpy.mockRestore();
+      reviewSpy.mockRestore();
       executeSpy.mockRestore();
       completionQueue = [];
       onCompletionRequest = null;

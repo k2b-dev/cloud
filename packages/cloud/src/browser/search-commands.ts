@@ -1,12 +1,15 @@
-import { z } from "zod";
 import type { SearchItem } from "../api/search/schemas";
 import { listCapabilityCatalog } from "../capabilities/client";
 import { LOCALE_HEADER } from "../shared/locale";
 import type { ContextAwareCommand } from "./command-bridge";
 
+import { discoverableCommandInput } from "./discoverable-command";
+import { navigationApps } from "./navigation-apps";
+
 export type PaletteCommand = ContextAwareCommand & { appName?: string; keywords?: readonly string[]; context?: boolean };
 export const loadSearchCommands = async (locale: string, signal: AbortSignal): Promise<PaletteCommand[]> => {
   const commands: PaletteCommand[] = [];
+  const { appIds } = navigationApps();
   let cursor: string | undefined;
   do {
     const result = await listCapabilityCatalog({ limit: 25, cursor, signal, headers: { [LOCALE_HEADER]: locale } });
@@ -14,8 +17,8 @@ export const loadSearchCommands = async (locale: string, signal: AbortSignal): P
     for (const app of result.data.apps) {
       for (const command of app.manifest.commands) {
         // Only Commands with a valid empty invocation are globally discoverable.
-        const input = z.fromJSONSchema(structuredClone(command.inputSchema)).safeParse({});
-        if (!input.success) continue;
+        const input = discoverableCommandInput(command, app.appId, appIds);
+        if (!input?.success) continue;
         const id = `${app.appId}.${command.localId}`;
         commands.push({
           id,

@@ -79,7 +79,6 @@ const AppOverviewCards = (props: AppOverviewCardsProps): JSX.Element => (
 
 const AppOverviewEmptyState = (props: AppOverviewEmptyStateProps): JSX.Element => (
   <Placeholder
-    surface="paper"
     variant="panel"
     title={props.title}
     description={props.description}

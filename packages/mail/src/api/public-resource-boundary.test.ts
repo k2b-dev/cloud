@@ -3,6 +3,7 @@ import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { publicResources } from "../service";
 import { imapSmtpConnector, transportDiagnostic } from "../service/connectors/imap-smtp";
+import { mailboxLogoFailure } from "../service/mailbox-logo-errors";
 import { verifyProviderConnection } from "../service/provider-connections";
 import {
   type MailApiContext,
@@ -37,6 +38,20 @@ describe("Mail public response projection", () => {
       code: "NOT_FOUND",
       message: "Das Postfach wurde nicht gefunden",
     });
+  });
+
+  test("preserves logo validation details through projection for localized public responses", async () => {
+    const failure = fail(mailboxLogoFailure("tooManyPixels", { width: 2000, height: 500 }));
+    expect(await projectPublicResult(failure)).toBe(failure);
+    const app = new Hono<MailApiContext>().get("/", (c) => respondPublic(c, failure));
+    for (const [locale, message] of [
+      ["en", "The logo is 2000x500 pixels; the maximum is 1200x400 pixels"],
+      ["de-CH", "Das Logo hat 2000×500 Pixel; erlaubt sind höchstens 1200×400 Pixel."],
+    ] as const) {
+      const response = await app.request("/", { headers: { "Accept-Language": locale } });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ code: "BAD_INPUT", message });
+    }
   });
 
   test("shows the provider's login failure detail with a German invalid-input error", async () => {

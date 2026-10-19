@@ -32,11 +32,13 @@ import { migrate as migrateAnnouncements } from "./migrate/core/announcements";
 import { migrate as migrateAppApproval } from "./migrate/core/app-approval";
 import { migrate as migrateAudit } from "./migrate/core/audit";
 import { migrate as migrateAuth } from "./migrate/core/auth";
+import { migrate as migrateDeviceTrust } from "./migrate/core/device-trust";
 import { migrate as migrateEvents } from "./migrate/core/events";
 import { migrate as migrateGeoIp } from "./migrate/core/geoip";
 import { migrate as migrateLogging } from "./migrate/core/logging";
 import { migrate as migrateNotifications } from "./migrate/core/notifications";
 import { migrate as migrateOutgoingMail } from "./migrate/core/outgoing-mail";
+import { migrate as migratePanelContextConsent } from "./migrate/core/panel-context-consent";
 import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
@@ -104,9 +106,11 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "auth", run: migrateAuth },
     { name: "help", run: migrateHelp },
     { name: "rail-preferences", run: migrateRailPreferences },
+    { name: "panel-context-consent", run: migratePanelContextConsent },
     { name: "rail-shortcuts", run: migrateRailShortcuts },
     { name: "app-approval", run: migrateAppApproval },
     { name: "pwa", run: migratePwa },
+    { name: "device-trust", run: migrateDeviceTrust },
     { name: "audit", run: migrateAudit },
     { name: "geoip", run: migrateGeoIp },
     { name: "announcements", run: migrateAnnouncements },

@@ -176,7 +176,7 @@ describe(`EmojiPicker in ${browserName}`, () => {
     const button = page.getByRole("button", { name: "Insert emoji" });
     await button.focus();
     await page.keyboard.press("Enter");
-    await expect(search(page).evaluate((input) => input === document.activeElement)).resolves.toBe(true);
+    expect(await search(page).evaluate((input) => input === document.activeElement)).toBe(true);
     await page.locator(".k2b-emoji-picker__option").first().waitFor();
 
     // "Daumen" finds 👍 first, and Enter picks it into the composer, which keeps the focus.

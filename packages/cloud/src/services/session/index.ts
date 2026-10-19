@@ -5,6 +5,8 @@ import { HTTPException } from "hono/http-exception";
 import { env } from "../../config/env";
 import { PWA_AUTH_PATH, PWA_COOKIES } from "../../contracts/pwa";
 import type { User } from "../../contracts/shared";
+import { getLocale } from "../../server/locale";
+import { describeRequest } from "../../server/request-context";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { isAccountExpired } from "../account-model";
 import { audit } from "../audit";
@@ -12,6 +14,17 @@ import { IDENTITY_CLOCK_TOLERANCE_SECONDS, IDENTITY_ROLLOUT_MARGIN_MS } from "..
 import { invalidateIdentitySignerCache, type PreparedIdentitySigner, prepareIdentitySigner } from "../identity/key-ring";
 import { getIdentityRuntimeConfig } from "../identity/runtime-config";
 import { type CloudSessionClaims, isSessionJwtCandidate, signSessionToken, verifySessionToken } from "../identity/session-token";
+import {
+  announceNewBrowser,
+  type NewBrowserSignInNotice,
+  type NewBrowserSignInNotifier,
+  newBrowserCookie,
+  noticeFirstName,
+  readBrowserCookie,
+  rememberSignIn,
+  type SignInMethod,
+  setBrowserCookie,
+} from "../known-browsers";
 import * as settings from "../settings";
 import { loadJwtSession, loadJwtSessionIdentity } from "./user";
 
@@ -146,6 +159,11 @@ const revokeToken = async (token: string, requestId?: string | null): Promise<vo
 
 export type SessionIssueOptions = {
   ttlSeconds: number;
+  /** Only web session.create supplies browser persistence, never mobile issuance. */
+  knownBrowser?: Pick<
+    Parameters<typeof rememberSignIn>[1],
+    "cookie" | "browser" | "os" | "country" | "city" | "method" | "device" | "locale" | "announce"
+  >;
   /** Pre-chosen family id, for callers that record it in the same transaction. */
   sid?: string;
   /** Binds the family to a paired phone of the mobile app; the device must be active. */
@@ -162,6 +180,7 @@ type PreparedFamily = {
   expiresAt: Date;
   signer: PreparedIdentitySigner;
   options: SessionIssueOptions;
+  notice: NewBrowserSignInNotice | null;
 };
 
 const SIGNER_INACTIVE = "Prepared Cloud session signer is no longer active";
@@ -175,15 +194,17 @@ const insertFamily = async (
   signer: PreparedIdentitySigner,
   options: SessionIssueOptions,
 ): Promise<PreparedFamily> => {
-  const issuedAt = new Date();
-  const expiresAt = new Date(issuedAt.getTime() + options.ttlSeconds * 1_000);
   const sid = options.sid ?? crypto.randomUUID();
   const requestId = c.req.header("x-request-id")?.slice(0, 64) ?? null;
   const userAgent = c.req.header("user-agent")?.slice(0, 256) ?? null;
-  const [user] = await tx<Array<{ auth_epoch: string | number | bigint; provider: "local" | "ipa"; profile: "guest" | "user" }>>`
-    SELECT auth_epoch, provider, profile FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE
+  const [user] = await tx<
+    Array<{ given_name: string | null; auth_epoch: string | number | bigint; provider: "local" | "ipa"; profile: "guest" | "user" }>
+  >`
+    SELECT given_name, auth_epoch, provider, profile FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE
   `;
   if (!user) throw new Error("Cannot create a session for an unknown user");
+  const issuedAt = new Date();
+  const expiresAt = new Date(issuedAt.getTime() + options.ttlSeconds * 1_000);
   if (!(await isAccountCategoryAllowed(user, tx)))
     throw new HTTPException(403, { message: "This account category is disabled. Contact an administrator." });
   const epoch = Number(user.auth_epoch);
@@ -208,8 +229,11 @@ const insertFamily = async (
     ) VALUES (${sid}, ${userId}, ${epoch}, ${signer.kid}, ${issuedAt}, ${expiresAt}, ${requestId}, ${userAgent},
       NOT EXISTS (SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${userId}::uuid), ${options.pwaDeviceId ?? null})
   `;
+  const notice = options.knownBrowser
+    ? await rememberSignIn(tx, { ...options.knownBrowser, userId, firstName: noticeFirstName(user.given_name), now: issuedAt })
+    : null;
   if (options.recordLogin !== false) await tx`UPDATE auth.users SET last_login_local = ${issuedAt} WHERE id = ${userId}::uuid`;
-  return { userId, sid, authEpoch: epoch, issuedAt, expiresAt, signer, options };
+  return { userId, sid, authEpoch: epoch, issuedAt, expiresAt, signer, options, notice };
 };
 
 /** Signs a committed family. Null when the signer was revoked meanwhile; the family is revoked then. */
@@ -244,7 +268,13 @@ const signFamily = async (family: PreparedFamily): Promise<string | null> => {
 };
 
 /** One issuance attempt is retried once when the signing key changes underneath it. */
-const issueJwtSession = async (c: Context, userId: string, options: SessionIssueOptions, attempt = 0): Promise<string> => {
+const issueJwtSession = async (
+  c: Context,
+  userId: string,
+  options: SessionIssueOptions,
+  attempt = 0,
+  committedNotice: NewBrowserSignInNotice | null = null,
+): Promise<{ token: string; notice: NewBrowserSignInNotice | null }> => {
   const signer = await prepareIdentitySigner("session");
   let family: PreparedFamily;
   try {
@@ -252,13 +282,14 @@ const issueJwtSession = async (c: Context, userId: string, options: SessionIssue
   } catch (error) {
     if (attempt === 0 && isSignerInactive(error)) {
       invalidateIdentitySignerCache("session", signer.kid);
-      return issueJwtSession(c, userId, options, 1);
+      return issueJwtSession(c, userId, options, 1, committedNotice);
     }
     throw error;
   }
   const token = await signFamily(family);
-  if (token) return token;
-  if (attempt === 0) return issueJwtSession(c, userId, { ...options, sid: undefined }, 1);
+  const notice = committedNotice ?? family.notice;
+  if (token) return { token, notice };
+  if (attempt === 0) return issueJwtSession(c, userId, { ...options, sid: undefined }, 1, notice);
   throw new Error("Cloud session signer changed repeatedly during issuance");
 };
 
@@ -281,7 +312,7 @@ const issueInTransaction = async <T>(
       value = await sql.begin((tx) =>
         work(tx, async (userId, options) => {
           if (family) throw new Error("Only one session family per transaction");
-          family = await insertFamily(tx, c, userId, signer, options);
+          family = await insertFamily(tx, c, userId, signer, { ...options, knownBrowser: undefined });
           return family.sid;
         }),
       );
@@ -294,7 +325,7 @@ const issueInTransaction = async <T>(
     }
     if (!family) return { value, token: null };
     const token = await signFamily(family);
-    return { value, token: token ?? (await issueJwtSession(c, family.userId, { ...family.options, sid: undefined }, 1)) };
+    return { value, token: token ?? (await issueJwtSession(c, family.userId, { ...family.options, sid: undefined }, 1)).token };
   }
 };
 
@@ -349,11 +380,37 @@ export const session = {
 
   getBearerToken: (c: Context): string | null => parseBearer(c.req.header("Authorization")),
 
-  create: async (c: Context, userId: string): Promise<string> => {
+  create: async (
+    c: Context,
+    userId: string,
+    signIn: {
+      method: SignInMethod;
+      device?: string | null;
+      /** Null means this sign-in announces nothing, including during maintenance. */
+      notify: NewBrowserSignInNotifier | null;
+    },
+  ): Promise<string> => {
     const expiryHours = await settings.get<number>("user.session.expiry_hours");
     if (!Number.isFinite(expiryHours) || expiryHours < 1) throw new Error("user.session.expiry_hours must be a positive number");
     const ttlSeconds = Math.floor(expiryHours * 60 * 60);
-    const clientToken = await issueJwtSession(c, userId, { ttlSeconds });
+    const cookie = readBrowserCookie(c) ?? newBrowserCookie();
+    const { browser, os, country, city } = describeRequest(c);
+    const { token: clientToken, notice } = await issueJwtSession(c, userId, {
+      ttlSeconds,
+      knownBrowser: {
+        cookie,
+        browser,
+        os,
+        country,
+        city,
+        method: signIn.method,
+        device: signIn.device ?? null,
+        locale: getLocale(c),
+        announce: signIn.notify !== null,
+      },
+    });
+    // Handoff precedes the response so the person signing in cannot turn the notice off first.
+    if (signIn.notify !== null && notice) await announceNewBrowser(signIn.notify, notice);
 
     setCookie(c, "session_token", clientToken, {
       httpOnly: true,
@@ -362,6 +419,7 @@ export const session = {
       maxAge: ttlSeconds,
       path: "/",
     });
+    setBrowserCookie(c, cookie);
     return clientToken;
   },
 

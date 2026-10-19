@@ -1,5 +1,5 @@
 import { sql } from "bun";
-import { CapabilityActionReviewSchema } from "../contracts/capabilities";
+import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
 import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
 import { migrateAiMessageQueue } from "./message-queue";
@@ -2667,7 +2667,7 @@ const backfillApprovalRequests = async (): Promise<void> => {
             WHERE r.requester_kind='assistant_turn' AND r.requester_ref=a.turn_id::text || '/' || a.call_id)
         ORDER BY a.created_at, a.id LIMIT 200 FOR UPDATE OF a SKIP LOCKED`;
       for (const row of rows) {
-        const review = CapabilityActionReviewSchema.safeParse(row.review == null ? null : decoded(row.review));
+        const review = CapabilityActionReviewDataSchema.safeParse(row.review == null ? null : decoded(row.review));
         // request computes both canonical digests; preserve the original wait deadline, including expiry.
         const record = await approvals.request(
           {

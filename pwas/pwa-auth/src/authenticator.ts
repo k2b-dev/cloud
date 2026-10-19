@@ -71,10 +71,11 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       if (!(await storage.reserve(pollId, Date.now() + appApproval.limits.pollSeconds * 1000))) return;
       abort.signal.throwIfAborted();
       const api = await client(binding.issuer, abort.signal);
-      // The sign-in sheet shows a terminal's client, rights and lifetime; the SDK sends the opt-in only to Clouds that offer it.
+      // The sheet shows a terminal's client, rights and lifetime and a browser sign-in's context.
+      // The SDK sends each opt-in only to Clouds that announce it.
       const result = api.actions
-        ? await api.inbox(binding, abort.signal, { accept: ["terminal-logins"] })
-        : await api.pending(binding, abort.signal);
+        ? await api.inbox(binding, abort.signal, { accept: ["terminal-logins", "login-context"] })
+        : await api.pending(binding, abort.signal, { accept: ["login-context"] });
       const state: InboxState =
         "logins" in result
           ? { requests: result.logins, actions: result.actions, moreActions: result.moreActions }

@@ -111,12 +111,18 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
         event.preventDefault();
         togglePanel();
       };
+      // The panel controller loads lazily; it reads this mark to recheck consent after a restore it did not see.
+      const restored = (event: PageTransitionEvent) => {
+        if (event.persisted) document.documentElement.setAttribute("data-cloud-page-restored", "");
+      };
+      window.addEventListener("pageshow", restored);
       window.addEventListener("cloud.panel.request", request);
       if (!props.commands) window.addEventListener("keydown", key);
       if (document.querySelector('.cloud-app-canvas[data-panel="open"]')) void load();
       onCleanup(() => {
         stopped = true;
         dispose?.();
+        window.removeEventListener("pageshow", restored);
         window.removeEventListener("cloud.panel.request", request);
         window.removeEventListener("keydown", key);
       });

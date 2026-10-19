@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1084
 description: Connect Cloud to its trusted authenticator website and prepare a first sign-in.
 tags: [accounts, administration, authentication]
-updated: 2026-09-30
+updated: 2026-10-19
 ---
 
 # Set up app sign-in
@@ -68,12 +68,53 @@ when replacing an untrusted authenticator.
 3. Keep the login page open and open your authenticator, or tap its
    notification if you turned notifications on.
 4. Unlock the app, compare the request with the waiting login page, and approve
-   only if the codes match and you started the request. The request also shows
-   when it started, in your phone's time zone, so you can tell it apart from a
-   sign-in you did not start.
+   only if the codes match and you started the request. Check the browser,
+   start time, and any place or network details shown above the code.
 
 The waiting page signs you in after approval. Deny requests you do not recognize.
 If a request expires, start a new sign-in from Cloud.
+
+### Read the request details
+
+For browser sign-ins, Clouds that support sign-in context let Cloud Login
+show these rows above the comparison code:
+
+- **{browser} on {os}**, or **Unknown browser**. Safari on an iPad can read
+  **Safari on Mac or iPad**.
+- **Approximately {city}, {country}**, or only the country; **Location unknown**
+  when no place is available. **Network: {operator}**, or **Network unknown**.
+  These two rows appear only when Cloud's location database (GeoIP) knows the
+  address; without a database, or for an unknown address, both are left out.
+  The network line names the operator; Cloud never labels a VPN or data center.
+- **Same internet address as this phone**, only when true. Its absence says
+  nothing about whether the addresses match.
+- **Started at {time}**, in your phone's time zone.
+- **Known browser · since {date}** if this browser signed in to this account
+  before, or the calm note **Cloud does not know this browser yet**. During
+  the first 14 days after the Cloud update, the app makes no known/new claim.
+
+For a known browser in a new country, a calm note says **No sign-in from this
+country in the last 90 days**. While Cloud's location history is younger, it
+says **since {date}** instead. Only a new browser from a country without a
+sign-in in that window, on an account that already has sign-in countries,
+shows **Did you start this sign-in?** as a warning. **Deny** becomes the main
+button; **Approve anyway** stays in its place. After denial, the sheet says
+**Denied · Nobody was signed in.**
+
+Offline, **You are offline. Approve and deny work again once you are connected.**
+replaces the comparison hint, and both buttons are disabled. Older Clouds show
+the earlier dialog with the start time. A request without context also uses
+that dialog. Terminal sign-ins (Cloud CLI) are unchanged.
+
+Known means “signed in here before”, not “safe”. These details help you notice
+a request you did not start. They do not make app sign-in phishing-resistant:
+a real-time phishing page can relay the code, and a proxy near you can match
+place and network. Only passkeys are phishing-resistant. See
+[location accuracy](/en/docs/operations/sign-in-locations#privacy-and-accuracy)
+and [stored sign-in data](/en/docs/operations/sign-in-locations#where-traces-of-a-sign-in-end-up)
+for accuracy and storage limits.
+
+### Continue or use another method
 
 After a FreeIPA sign-in with the app, this browser opens FreeIPA with the app
 next time, until someone signs in there with a FreeIPA password again. The

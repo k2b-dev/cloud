@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent, type JSX } from "solid-js";
-import { renderToString } from "solid-js/web";
+import { Dynamic, renderToString } from "solid-js/web";
 import {
   APP_WORKSPACE_MAIN_MIN,
   APP_WORKSPACE_MAIN_MIN_HEIGHT,
@@ -196,7 +196,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(html).toContain("data-k2b-app-workspace");
     // A tree item's description is a second line under its label.
     expect(html).toMatch(
-      /k2b-app-workspace__sidebar-item-copy"><span class="k2b-app-workspace__sidebar-item-label" data-label="Available"><span class="k2b-app-workspace__sidebar-item-label-text">Available<\/span><\/span><span class="k2b-app-workspace__sidebar-item-description">Updated today<\/span>/,
+      /k2b-app-workspace__sidebar-item-copy"><span class="k2b-app-workspace__sidebar-item-label" data-label="Available"><span class="k2b-app-workspace__sidebar-item-label-text k2b-truncate-fade-lines">Available<\/span><\/span><span class="k2b-app-workspace__sidebar-item-description k2b-truncate-fade">Updated today<\/span>/,
     );
     expect(html).not.toContain("k2b-app-workspace__sidebar-mobile");
     expect(html).not.toContain('data-mobile="stacked"');
@@ -298,7 +298,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(html).toMatch(/<script>\(function settleChipRow\(/);
       expect(html).toContain("document.currentScript.previousElementSibling");
       expect(html).toContain('class="k2b-app-workspace__sidebar-item-label" data-lines="1"');
-      expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-description">support@example.test</span>');
+      expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-description k2b-truncate-fade">support@example.test</span>');
       expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-meta">12</span>');
     });
   }
@@ -405,7 +405,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(actionRule).toContain("line-height: 1");
   });
 
-  test("keeps active sidebar navigation quiet and distinct from hover", async () => {
+  test("keeps active sidebar navigation filled and distinct from ordinary hover", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const activeItemRule = css.match(/\.k2b-ui \.k2b-app-workspace__sidebar-item\.is-active \{([^}]*)\}/)?.[1];
     const activeItemHoverRule = css.match(/\.k2b-ui \.k2b-app-workspace__sidebar-item\.is-active:hover \{([^}]*)\}/)?.[1];
@@ -414,13 +414,13 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     expect(css).toContain("--k2b-app-workspace-active: var(--k2b-action)");
     expect(activeItemRule).toContain("color: var(--k2b-app-workspace-active)");
-    expect(activeItemRule).toContain("background: transparent");
+    expect(activeItemRule).toContain("background: var(--k2b-app-workspace-selected)");
     expect(activeItemRule).toContain("font-weight: 600");
-    expect(activeItemHoverRule).toContain("background: var(--k2b-app-workspace-hover)");
+    expect(activeItemHoverRule).toContain("background: var(--k2b-app-workspace-selected)");
     expect(activeIconRule).toContain("color: var(--k2b-app-workspace-active)");
-    expect(activeIconRule).toContain("background: transparent");
-    expect(activeIconHoverRule).toContain("background: var(--k2b-app-workspace-hover)");
-    // Every hover in the sidebar uses the one neutral fill, so none sits in platform blue beside the app accent.
+    expect(activeIconRule).toContain("background: var(--k2b-app-workspace-selected)");
+    expect(activeIconHoverRule).toContain("background: var(--k2b-app-workspace-selected)");
+    // Ordinary hover uses one neutral fill; selected rows retain their navigation fill.
     expect(css).toContain("--k2b-app-workspace-hover: color-mix(in srgb, var(--k2b-text) 5%, transparent)");
     for (const selector of [
       ".k2b-app-workspace__sidebar-item:hover",
@@ -789,12 +789,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       );
 
     // Only wrapping plain strings reserve their selected weight.
-    expect(item()).toContain('class="k2b-app-workspace__sidebar-item-label-text"');
+    expect(item()).toContain('class="k2b-app-workspace__sidebar-item-label-text k2b-truncate-fade-lines"');
     expect(item()).toContain('data-label="A very long row label"');
     expect(item()).not.toContain("data-lines");
     expect(item(false)).toContain('data-lines="1"');
     expect(item(false)).not.toContain("data-label");
-    expect(item(undefined, <strong>Styled label</strong>)).not.toContain("data-label");
+    expect(item(undefined, createComponent(Dynamic, { component: "strong", children: "Styled label" }))).not.toContain("data-label");
     expect(item(undefined, 123)).not.toContain("data-label");
   });
 
@@ -1033,7 +1033,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(css).toContain(".k2b-settings__tabs button:focus-visible");
       expect(css).toContain(".k2b-settings__tabs button:not([data-active=true]):hover");
       // A single-line label truncates; it is not a flex column.
-      expect(rule(".k2b-settings__tabs button>span")).toContain("text-overflow:ellipsis");
+      expect(rule(".k2b-settings__tabs button>span")).not.toContain("text-overflow:ellipsis");
       expect(rule(".k2b-settings__tabs button>span")).not.toContain("flex-direction:column");
     });
 
@@ -1188,11 +1188,11 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     test("balances two label lines and reserves the selected weight", () => {
       expect(rule(".k2b-app-workspace__sidebar-item-label")).toContain("display:grid");
-      expect(css).toContain("-webkit-line-clamp:2");
+      expect(css).toContain("max-height:calc(var(--k2b-truncate-fade-lines,2)*1lh)");
       expect(css).toContain("text-wrap:balance");
       expect(css).toMatch(/sidebar-item-label\[data-label\]:after\{[^}]*font-weight:600/);
-      // One-line labels, and labels beside a live status, keep the ellipsis.
-      expect(css).toMatch(/sidebar-item-label:is\(\[data-lines="1"\][^{]*sidebar-status[^{]*\{[^}]*text-overflow:ellipsis/);
+      // One-line labels, and labels beside a live status, use the same fade on one line.
+      expect(css).toMatch(/sidebar-item-label:is\(\[data-lines="1"\][^{]*sidebar-status[^{]*\{[^}]*--k2b-truncate-fade-lines:1/);
     });
 
     test("mutes a pane separator that cannot be dragged", () => {

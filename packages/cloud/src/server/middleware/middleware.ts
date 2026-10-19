@@ -23,6 +23,7 @@
  * orthogonal to the request lifecycle.
  */
 import { describeRoute } from "hono-openapi";
+import { noTransform } from "./no-transform";
 import { rateLimit } from "./rate-limit";
 import { requestLogger } from "./request-logger";
 import { routeTemplate } from "./route-template";
@@ -31,6 +32,14 @@ import { settings } from "./settings";
 import { validator } from "./validator";
 
 export const middleware = {
+  /**
+   * Use when another party can repeatedly write text beside unreadable text,
+   * personal submissions or secrets worth guessing, including live refetches.
+   * Metadata alone and containers every writer can read stay compressed.
+   * Mount `.use("*", middleware.noTransform())` first on the app/route-group
+   * router, or use it as per-route middleware. Sets Cache-Control: no-transform.
+   */
+  noTransform,
   /**
    * Live cluster registry on `c.get("runtime")`. Required for Layout/Sidebar.
    * Also reports the matched route template to gateway telemetry — you do not

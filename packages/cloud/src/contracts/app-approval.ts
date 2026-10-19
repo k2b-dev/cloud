@@ -30,10 +30,20 @@ export const APP_ACTION_LIMITS = {
   valueChars: 300,
 } as const;
 /** Commands a Cloud serves beyond the first version, announced in `/info` as `features`. */
-export const APP_APPROVAL_FEATURES = ["actions", "terminal-logins"] as const;
+export const APP_APPROVAL_FEATURES = ["actions", "terminal-logins", "login-context"] as const;
 
-export const APP_APPROVAL_ACCEPT = ["terminal-logins"] as const;
+export const APP_APPROVAL_ACCEPT = ["terminal-logins", "login-context"] as const;
 export type AppApprovalAccept = (typeof APP_APPROVAL_ACCEPT)[number];
+export const APP_APPROVAL_PENDING_ACCEPT = ["login-context"] as const;
+export type AppApprovalPendingAccept = (typeof APP_APPROVAL_PENDING_ACCEPT)[number];
+
+const acceptList = <T extends readonly [string, ...string[]]>(values: T) =>
+  z
+    .array(z.enum(values))
+    .min(1)
+    .max(8)
+    .refine((entries) => new Set(entries).size === entries.length)
+    .optional();
 
 const Id = z.string().uuid();
 const Secret = z.string().regex(/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/);
@@ -73,7 +83,7 @@ export const AppDeviceMutationSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("revoke"), deviceId: Id }).strict(),
 ]);
 export const AppDeviceCommandSchema = z.discriminatedUnion("operation", [
-  z.object({ operation: z.literal("pending") }).strict(),
+  z.object({ operation: z.literal("pending"), accept: acceptList(APP_APPROVAL_PENDING_ACCEPT) }).strict(),
   z.object({ operation: z.literal("revoke") }).strict(),
   /** Reads the signing device's own account and device record, e.g. to show which account it signs in. */
   z.object({ operation: z.literal("account") }).strict(),
@@ -83,12 +93,7 @@ export const AppDeviceCommandSchema = z.discriminatedUnion("operation", [
   z
     .object({
       operation: z.literal("inbox"),
-      accept: z
-        .array(z.enum(APP_APPROVAL_ACCEPT))
-        .min(1)
-        .max(8)
-        .refine((values) => new Set(values).size === values.length)
-        .optional(),
+      accept: acceptList(APP_APPROVAL_ACCEPT),
     })
     .strict(),
   /** One open Action approval as the device shows it, with the digest the device recomputes before it decides. */
@@ -134,7 +139,7 @@ export const appDeviceProofMessage = (proof: AppDeviceProof): string => {
     c.operation,
     ...(c.operation === "decide" ? [c.requestId, c.challenge, c.comparison, c.decision] : []),
     ...(c.operation === "push" ? [c.token] : []),
-    ...(c.operation === "inbox" && c.accept !== undefined ? [c.accept] : []),
+    ...((c.operation === "inbox" || c.operation === "pending") && c.accept !== undefined ? [c.accept] : []),
     ...(c.operation === "action" ? [c.actionId] : []),
     ...(c.operation === "act" ? [c.actionId, c.digest, c.decision] : []),
   ]);
@@ -190,6 +195,44 @@ export const AppTerminalLoginSchema = z
   })
   .strict();
 export type AppTerminalLogin = z.infer<typeof AppTerminalLoginSchema>;
+export const APP_LOGIN_CONTEXT_BROWSERS = ["firefox", "chrome", "safari", "edge", "samsung", "opera", "other"] as const;
+export const APP_LOGIN_CONTEXT_OSES = ["windows", "macos", "mac-or-ipad", "ios", "android", "linux", "chromeos", "other"] as const;
+const ContextName = PlainText(96)
+  .min(1)
+  .refine((value) => new TextEncoder().encode(value).length <= 96);
+/** Core alone computes the level. The app displays it and never derives its own.
+ * Terminal logins never carry context. Opted-in browser logins carry it unless
+ * started before the upgrade or omitted to fit the response budget.
+ * History is null during introduction; sameNetwork is a positive, transient hint. */
+export const AppLoginContextSchema = z
+  .object({
+    /** Computed by Core only; descriptive signals never change it. */
+    level: z.enum(["info", "hint", "warn"]),
+    browser: z.enum(APP_LOGIN_CONTEXT_BROWSERS),
+    os: z.enum(APP_LOGIN_CONTEXT_OSES),
+    country: z
+      .string()
+      .regex(/^[A-Z]{2}$/)
+      .nullable(),
+    city: ContextName.nullable(),
+    /** Operator name, never a VPN or data-center classification. */
+    network: ContextName.nullable(),
+    history: z
+      .object({
+        /** This browser's first_seen_at for the account, or null when unknown. */
+        knownSince: DateTime.nullable(),
+        /** A request country, geoip_since set, and no sign-in from it inside the 90-day window. */
+        newCountry: z.boolean(),
+        /** geoip_since only when less than 90 days ago; the app can say "since {date}". */
+        countriesSince: DateTime.nullable(),
+      })
+      .strict()
+      .nullable(),
+    sameNetwork: z.literal(true).optional(),
+  })
+  .strict();
+export type AppLoginContext = z.infer<typeof AppLoginContextSchema>;
+
 export const AppPendingLoginSchema = z
   .object({
     requestId: Id,
@@ -198,6 +241,7 @@ export const AppPendingLoginSchema = z
     createdAt: DateTime,
     expiresAt: DateTime,
     terminal: AppTerminalLoginSchema.optional(),
+    context: AppLoginContextSchema.optional(),
   })
   .strict();
 export const AppPairingPayloadSchema = z

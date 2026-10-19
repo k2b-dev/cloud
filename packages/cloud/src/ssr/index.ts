@@ -11,6 +11,7 @@ export {
   visiblePanelProviders,
   visiblePwaParts,
 } from "./app-navigation";
+export { hintOpen, markHintSeen } from "./hints";
 export { default as Layout } from "./Layout";
 export {
   default as MinimalLayout,
@@ -19,6 +20,7 @@ export {
 } from "./MinimalLayout";
 export { default as PanelLayout, type PanelLayoutProps } from "./PanelLayout";
 export { default as PwaLayout, type PwaLayoutProps } from "./PwaLayout";
+export { readPanelContext } from "./panel-context";
 export { requestPath } from "./request-path";
 export { getLocalizedRuntimeContext, getRuntimeContext, type RuntimeContext } from "./runtime";
 export type { UrlFilterField } from "./url-filter";

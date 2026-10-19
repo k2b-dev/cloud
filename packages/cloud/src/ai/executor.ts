@@ -1,7 +1,9 @@
 import type { AssistantMessage, CompactEvent, LoopAggregate, Message, NessiLoop, OutboundEvent } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
+import { capabilityReviewRememberScope } from "../_internal/capability-reviews";
 import { listCapabilities } from "../_internal/registry";
-import type { CapabilityActionReview } from "../contracts/capabilities";
+import type { CapabilityActionReviewData } from "../contracts/capabilities";
+import { capabilityActionPolicy } from "../contracts/capabilities";
 import type { AccessSubject, RequestActor } from "../server";
 import { approvalAssurance, approvalScopeFromToolName, approvals } from "../services/approvals";
 import { createHelpReader } from "../services/help";
@@ -19,6 +21,7 @@ import {
   hasRememberedAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, isAssistantChatTurn, resolveAssistantAudioModel } from "./assistant-models";
+import { authorizeBackgroundActionWith } from "./background-review";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { type AiCapabilityCatalogEntry, createAiToolResolver, createRunToolStore } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
@@ -27,12 +30,7 @@ import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AiChatTaskAuthorityError, aiChatTasks } from "./chat-tasks";
 import { createCloudCompactFn } from "./compaction";
-import {
-  createCloudAiCodeTools,
-  createCloudAiLocalBashTool,
-  createCloudAiLocalTools,
-  createConfiguredDefaultCloudAiTools,
-} from "./default-tools";
+import { createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import {
@@ -427,9 +425,9 @@ type ToolBlockPatch = Partial<Extract<AiTurnBlock, { kind: "tool" }>> & { name?:
 const customApprovalParentCallId = (callId: string): string | undefined => /^(.*)-approval-\d+$/.exec(callId)?.[1];
 
 const approvalReviewForCallId = (
-  reviews: ReadonlyMap<string, CapabilityActionReview>,
+  reviews: ReadonlyMap<string, CapabilityActionReviewData>,
   callId: string,
-): CapabilityActionReview | undefined => {
+): CapabilityActionReviewData | undefined => {
   const direct = reviews.get(callId);
   if (direct) return direct;
   const parentCallId = customApprovalParentCallId(callId);
@@ -479,9 +477,11 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
   const setCanonicalNames = (items: Map<string, string>) => {
     canonicalNames = items;
   };
-  let approvalReviews = new Map<string, CapabilityActionReview>();
-  const setApprovalReviews = (items: Map<string, CapabilityActionReview>) => {
+  let approvalReviews = new Map<string, CapabilityActionReviewData>();
+  let capabilityScopes: ReadonlyMap<string, string> = new Map();
+  const setApprovalReviews = (items: Map<string, CapabilityActionReviewData>, scopes: ReadonlyMap<string, string> = new Map()) => {
     approvalReviews = items;
+    capabilityScopes = scopes;
   };
   let approvalPolicies: PreparedAiTools["approvalPolicies"] = new Map();
   const setApprovalPolicies = (items: PreparedAiTools["approvalPolicies"]) => {
@@ -572,7 +572,8 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
         const target = event.kind === "custom_approval" ? approvalTargets.get(event.callId) : undefined;
         const allowAlways = target
           ? target.always
-          : review?.approvalScope !== undefined || aiToolAllowsAlways(approvalPolicies.get(event.name));
+          : capabilityScopes.has(customApprovalParentCallId(event.callId) ?? event.callId) ||
+            aiToolAllowsAlways(approvalPolicies.get(event.name));
         return [
           setTool(
             event.callId,
@@ -690,10 +691,7 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
               accessSubject: aiChatAccessSubject(config.actor),
               allowedDataBoundaries: config.modelPolicy?.allowedDataBoundaries,
             })),
-            // Cloud runs the code tools itself; only tools a client must run wait for that client to declare them.
-            ...[createCloudAiLocalBashTool(), ...createCloudAiLocalTools(), ...createCloudAiCodeTools()].filter(
-              (tool) => tool.location === "server" || config.clientToolIds?.some((name) => name === tool.def.name),
-            ),
+            ...createAiTurnCodeAndClientTools(config),
           ]
         : [],
     toolApprovalContext: config.toolApprovalContext,
@@ -997,11 +995,7 @@ export class AiTurnExecutor {
     ];
     const toolsSupported = resolved.profile.capabilities.includes("tools");
     const allowed = allowedTools === null ? null : new Set(allowedTools);
-    const activeTools = toolsSupported
-      ? runtimeTools.filter(
-          (tool) => (!allowed || allowed.has(tool.def.name)) && !(config.mandate && ["code_open", "code_secret"].includes(tool.def.name)),
-        )
-      : [];
+    const activeTools = toolsSupported ? runtimeTools.filter((tool) => !allowed || allowed.has(tool.def.name)) : [];
     let audioUnavailableInstruction: string | undefined;
     if (
       defaultToolSource &&
@@ -1092,7 +1086,7 @@ export class AiTurnExecutor {
     });
     let backgroundError: string | null = null;
     const rememberableCapabilityApprovals = new Map<string, string>();
-    const capabilityActionReviews = new Map<string, CapabilityActionReview>();
+    const capabilityActionReviews = new Map<string, CapabilityActionReviewData>();
     pipeline.setApprovalTargets(approvalTargets);
     pipeline.setFrontendModes(prepared.frontendModes);
     pipeline.setCanonicalNames(prepared.canonicalNames);
@@ -1101,7 +1095,7 @@ export class AiTurnExecutor {
     const rejectedToolCallIds = new Set<string>();
     const approvedToolCallIds = new Set<string>();
     pipeline.setPresentations(toolPresentations);
-    pipeline.setApprovalReviews(capabilityActionReviews);
+    pipeline.setApprovalReviews(capabilityActionReviews, rememberableCapabilityApprovals);
     let turnInput = config.input;
     try {
       if (resolved.profile.capabilities.includes("vision") && config.files?.attached.some((file) => isAiImageMediaType(file.mediaType))) {
@@ -1192,7 +1186,7 @@ export class AiTurnExecutor {
       );
       return;
     }
-    const authorizeBackground =
+    const authorizeBackgroundMandate =
       config.background && config.mandate
         ? async (entry: AiCapabilityCatalogEntry, args: unknown) => {
             try {
@@ -1202,6 +1196,7 @@ export class AiTurnExecutor {
                 capabilityId: entry.operation.localId,
                 kind: entry.kind,
                 input: args,
+                policy: capabilityActionPolicy(entry.app.manifest, entry.operation.localId),
                 approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
               });
             } catch (error) {
@@ -1245,16 +1240,49 @@ export class AiTurnExecutor {
                   }),
               }
             : {}),
-          authorizeBackground,
-          onReview: (callId, review) => {
+          authorizeBackground: authorizeBackgroundMandate
+            ? async (entry, args, context) => {
+                await authorizeBackgroundActionWith(
+                  {
+                    turnId,
+                    mandate: config.mandate!,
+                    appId: entry.appId,
+                    capabilityId: entry.operation.localId,
+                    kind: entry.kind,
+                    args,
+                    policy: capabilityActionPolicy(entry.app.manifest, entry.operation.localId),
+                    approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
+                    hasReview: entry.kind === "action" && "review" in entry.operation && entry.operation.review === true,
+                    action: entry.display.title,
+                    review: () =>
+                      capabilityAuthority
+                        ? reviewAiCapability({
+                            conversationId,
+                            authority: capabilityAuthority,
+                            mandate: config.mandate,
+                            locale: promptLocale,
+                            entry,
+                            args,
+                            context,
+                          })
+                        : Promise.resolve(null),
+                    signal: context.signal,
+                  },
+                  () => authorizeBackgroundMandate(entry, args),
+                );
+              }
+            : undefined,
+          onReview: (callId, review, approval) => {
             capabilityActionReviews.set(callId, review);
-            if (review.approvalScope) rememberableCapabilityApprovals.set(callId, review.approvalScope);
+            const scope = capabilityReviewRememberScope(review, approval);
+            if (scope) rememberableCapabilityApprovals.set(callId, scope);
+            else rememberableCapabilityApprovals.delete(callId);
           },
           ...(capabilityAuthority
             ? {
                 execute: async (entry, args, context) => {
                   try {
-                    await authorizeBackground?.(entry, args);
+                    await authorizeBackgroundMandate?.(entry, args);
                     const result = await executeAiCapability({
                       conversationId,
                       turnId,
@@ -1593,7 +1621,7 @@ export class AiTurnExecutor {
     approvalContext?: AiToolApprovalContext;
     allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
-    capabilityActionReviews: ReadonlyMap<string, CapabilityActionReview>;
+    capabilityActionReviews: ReadonlyMap<string, CapabilityActionReviewData>;
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
@@ -1778,7 +1806,7 @@ export class AiTurnExecutor {
     approvalContext?: AiToolApprovalContext;
     allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
-    capabilityActionReviews: ReadonlyMap<string, CapabilityActionReview>;
+    capabilityActionReviews: ReadonlyMap<string, CapabilityActionReviewData>;
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
@@ -2207,8 +2235,8 @@ class StreamPipeline {
     this.mapper.setCanonicalNames(names);
   }
 
-  setApprovalReviews(reviews: Map<string, CapabilityActionReview>): void {
-    this.mapper.setApprovalReviews(reviews);
+  setApprovalReviews(reviews: Map<string, CapabilityActionReviewData>, scopes: ReadonlyMap<string, string>): void {
+    this.mapper.setApprovalReviews(reviews, scopes);
   }
 
   setApprovalPolicies(policies: PreparedAiTools["approvalPolicies"]): void {

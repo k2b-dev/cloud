@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Testing
@@ -184,6 +184,59 @@ Known findings live in `scripts/checks/test-waits.baseline`. Its counts can
 only decrease; `bun scripts/check.ts test-waits --fix` lowers counts and
 removes entries when findings are gone.
 
+Scroll-driven animations, such as the navigation label fade in `@k2b/ui`,
+keep running and never finish. Before waiting for page animations to stop or
+awaiting their `finished` promises, select only the document timeline with
+`document.getAnimations().filter((animation) => animation.timeline === document.timeline)`.
+Apply the same filter to element calls with `{ subtree: true }`, which can
+include navigation labels. The `animation-settle` check requires an actual
+`.timeline` property access in the surrounding statement of document-wide and
+subtree calls in tests, browser suites, and browser harnesses, or a leading
+`// animation-settle: all timelines` comment (optionally followed by a reason)
+for deliberate inspection of all timelines.
+
+Before a test reads styles or geometry after an action, it awaits
+`settled(page)` from `packages/ui/test/browser.ts` or waits for its own
+condition. `settled()` waits for fonts, for the running finite animations on
+the document timeline, and then for two frames. It does not wait for infinite,
+scroll-driven, or paused animations, because they never finish. When the page
+starts new finite animations in that time, `settled()` throws and names them:
+a page that keeps animating is not settled, and the test must wait for its own
+condition. `settled()` does not change media emulation. Tests that are not
+about motion pass `reducedMotion: "reduce"` to `newPage()` or `newContext()`.
+See `open()` in `packages/oauth/src/frontend/authorization-page.browser.test.ts`
+([#1476](https://github.com/k2b-dev/cloud/issues/1476),
+[#1499](https://github.com/k2b-dev/cloud/issues/1499)).
+
+The `settle-reads` check flags a style or geometry read that follows an action
+with no settle in between. It checks `*.browser.test.ts`, `*.browser-suite.ts`,
+and `*.browser-harness.tsx` files. A read is `boundingBox()`, or an
+`evaluate()` or `evaluateAll()` callback that uses `getComputedStyle`,
+`getBoundingClientRect`, `getClientRects`, `checkVisibility`, or
+`elementFromPoint`. Actions are navigation, `setContent`, clicks, key presses,
+hover, fill, focus, `dispatchEvent`, mouse, keyboard, and touchscreen calls,
+`emulateMedia`, `setViewportSize`, and `newPage`. Settles are `settled()`,
+`waitForFunction`, `expect.poll`, locator `waitFor`, `keptThrough`, and
+`mostAtOnce`, when the test awaits them. The check reads each function body in source order, nested
+blocks included. A call to a named helper in the same file counts as what the
+helper does: a read before its first action or settle, and its last action or
+settle. A helper whose return type names `Page` counts as an action unless it
+ends in a settle.
+
+Known findings live in `scripts/checks/settle-reads.baseline`. Its counts can
+only decrease; `bun scripts/check.ts settle-reads --fix` lowers counts and
+removes entries when findings are gone. A line comment `// settled: <reason>`
+on the same line or directly above allows a read whose subject is the first
+frame or the unsettled moment, such as a read of the server-rendered frame.
+The reason must be non-empty. On a read inside a helper, it also covers the
+helper's callers.
+
+The `cookie-store` check rejects direct `cookies()` reads in tests, browser
+suites, and browser harnesses. Use `storedCookie(page, name)` for cookies that
+page scripts write; see [Engine differences](#engine-differences). A leading
+`// cookie-store: <reason>` line comment allows a deliberate store read, such
+as an HttpOnly cookie set by a server response. The reason must be non-empty.
+
 ## Test in Chromium and WebKit
 
 Layout, focus, touch, and paint need a real engine, so these tests drive one
@@ -219,6 +272,20 @@ reports after the timeout names what it waited for, not the cleanup in
 `finally`. Open pages and contexts in each test, not in `beforeAll`: a page
 kept across tests closes with its browser.
 `packages/ui/test/browser.browser.test.ts` guards this recovery.
+
+`browser.close()` from `launchBrowser()` is bounded. It asks the browser to
+exit and waits up to 2 s, then kills its process group and waits up to 2 s until
+every process is gone. This keeps `afterAll` inside Bun's 5 s hook timeout
+even when exit hangs, so the next file never starts beside a browser still
+shutting down ([#1473](https://github.com/k2b-dev/cloud/issues/1473)). A
+browser from `TEST_BROWSER_ENDPOINT` runs elsewhere and only gets the 2 s
+graceful close.
+A close that needed the kill and a launch still pending after 4 s print a
+`launchBrowser:` line with their durations next to the failure. A failed
+launch carries its duration in the error. A process group still alive after
+the kill fails the hook with those timings.
+`packages/ui/test/browser.browser.test.ts` guards a hung close and the next
+launch.
 
 Open each URL state that a test checks in its own page. Navigate a loaded page
 in place only when the test checks navigation itself: reload, Back, Forward,
@@ -292,7 +359,14 @@ Use `mostAtOnce(page, selector, change)` from `packages/ui/test/browser.ts` to
 check that Undo or a refresh never shows an entity twice and ends with exactly
 one. Scope a locator that reads the entity to its row, not to the page. Await
 Playwright calls and read their values: `expect(await box.isChecked())`.
-Never use `expect(promise).resolves`, which hides the reason for a rejection.
+In Playwright tests, never use `expect(promise).resolves` or `.rejects`.
+Besides hiding the reason for a rejection, Bun's matcher waits in a nested
+event loop that runs Playwright's channel messages out of order and can close
+the browser connection. This shows as `Cannot find object to "message": jsonPipe@…`
+and a next test that fails within milliseconds
+([#1502](https://github.com/k2b-dev/cloud/issues/1502)). The `browser-test-promises`
+check enforces this rule. Await promises directly and assert on their values;
+for an expected rejection, capture the reason and assert on it.
 See the tray Undo test in
 `packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
 
@@ -461,12 +535,27 @@ branch:
   or longer before it lifts as stopped, so the list stops without a fling.
   It moves about as far as the finger did, give or take a few pixels, so
   assert a bound rather than an exact scroll position.
+- `Input.dispatchTouchEvent` returns once the browser has passed the touch on,
+  not once the page has handled it. With the page's main thread busy, the call
+  returns while the page still has to dispatch the touch and its pointer
+  events. Before a test reads what a touch changed, it waits for the page's own
+  record of that touch: a one-shot capture listener for the last event, such
+  as `touchend` or `touchcancel`, installed before the touch is sent, then
+  `page.waitForFunction` for that record. `swipe()` in
+  `signature-input.browser.test.ts` does this.
 - WebKit matches `forced-colors: active` under emulation but has no forced
   colours mode that repaints author colours.
 - WebKit does not support `reading-flow` yet, so focus and VoiceOver keep the
   source order where a grid or flex layout shows elements in another order.
   Put elements in the source in the order they are shown, in every layout,
   so that a focus order test expects the same order in both engines.
+- WebKit stores a `document.cookie` write in its network process
+  asynchronously, so `context.cookies()` right after a key or click can still
+  return the previous value ([#1496](https://github.com/k2b-dev/cloud/issues/1496)).
+  Read cookies that page scripts write with `storedCookie(page, name)` from
+  `packages/ui/test/browser.ts`. It waits until the browser store agrees with
+  the document and returns the full cookie with its attributes. The
+  `cookie-store` check enforces this.
 - Playwright's WebKit draws overlay scrollbars that reserve no gutter.
 - Playwright's WebKit ignores the charset of a routed response. A page that a
   test serves names it with `<meta charset="utf-8">`, as every Cloud page
@@ -543,10 +632,11 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | `CLOUD_TEST_VALKEY_URL` | `redis://127.0.0.1:6380` (no database index) |
 | `CLOUD_TEST_FILEGATE_URL` | `http://127.0.0.1:4000` |
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
+| `CLOUD_TEST_CLICKHOUSE_URL` | `http://cloud_ci:cloud_ci@127.0.0.1:8123` (test admin URL) |
 | `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8080` |
 
 The ports are the development stack's defaults. If you moved them with
-`CLOUD_DEV_POSTGRES_PORT`, `CLOUD_DEV_TEST_VALKEY_PORT`, or `CLOUD_DEV_NATS_PORT`
+`CLOUD_DEV_POSTGRES_PORT`, `CLOUD_DEV_TEST_VALKEY_PORT`, `CLOUD_DEV_NATS_PORT`, or `CLOUD_DEV_CLICKHOUSE_PORT`
 ([Change host ports](/en/docs/operations/monorepo-development#change-host-ports)),
 use the same ports here.
 
@@ -559,6 +649,26 @@ removed, because unset is the off switch for those clients. `DATABASE_URL` and
 and `redis` handles would otherwise dial `localhost`, so an ungated test that
 reaches for them fails with a connection error instead of touching the stack
 configured in `.env`.
+
+`CLOUD_TEST_CLICKHOUSE_URL` is an **admin URL**, including URL-encoded userinfo,
+for example `http://cloud_ci:cloud_ci@127.0.0.1:8123` for the throwaway CI service.
+It has no runtime alias: Pulse gets its store connection from app settings.
+The gate checks `/ping` within three seconds. An unset target skips ClickHouse
+suites; a configured but unusable target fails loudly. Diagnostics redact URL
+passwords for every infrastructure kind.
+
+ClickHouse tests use one `pulsetest_<8 hex>_` prefix per process. Generated
+setup SQL grants the service user only that database wildcard. When loaded with
+a configured target, `scripts/fixtures/test-clickhouse.ts` registers its own
+`afterAll` hook to remove exactly that prefix's databases, users, settings
+profiles, roles, quotas and row policies. Cleanup validates the prefix
+before dropping anything and leaves objects outside it alone. Use a dedicated
+test instance: checks deliberately probe instance-wide admin privileges and
+create temporary users. CI and nightly provide ClickHouse 26.9.19.9 for these
+suites. See [development setup](/en/docs/operations/monorepo-development#connect-pulse-to-development-clickhouse)
+for local credentials. Installation tests in `pulse/src/migrate.integration.test.ts`
+keep their own disposable Postgres database and run in the integration runner's
+one-file process, as the previous schema test did.
 
 Run integration tests through `bun run test`: it exports those runtime
 variables into every test process before Bun starts, which is the only moment
@@ -661,6 +771,12 @@ suite's `describe`; Bun runs it when the suite ends.
 A new integration test needs no configuration of its own: import nothing
 special, use the resolved runtime variables, and name the file
 `*.integration.test.ts`.
+
+bun:test does not stop a timed-out test body. An integration test ends the
+work it starts: teardown cancels and awaits every sync, job, or loop the test
+started before it restores shared stand-ins. A stand-in shared by several
+tests routes calls to the test that owns them and rejects calls from an ended
+test; see `packages/mail/src/service/remote-changes-fixture.ts`.
 
 Keep a test that needs one of these targets out of the Playwright suites
 (`*.browser.test.ts`): the nightly browser job sets no `CLOUD_TEST_*`

@@ -7,7 +7,7 @@ import {
   parsePagination,
   type User,
 } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, rateLimit, requiresAdmin, requiresAuth, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, jsonResponse, middleware, rateLimit, requiresAdmin, requiresAuth, respond, v } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
@@ -125,6 +125,7 @@ const respondMessage = async (
 
 /** Notification routes - available to all authenticated users. */
 const app = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .use(rateLimit())
   .use(auth.requireRole("authenticated"))
   // List notifications (admins see all, users see own)

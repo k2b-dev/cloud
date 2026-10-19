@@ -15,6 +15,8 @@ import {
   AppPairingStartSchema,
 } from "../contracts/app-approval";
 import { type AuthContext, auth, rateLimit, v } from "../server";
+import { noTransform } from "../server/middleware/no-transform";
+import { addressPrefix, clientIp, describeRequest } from "../server/request-context";
 import {
   type AppApprovalActor,
   AppApprovalError,
@@ -22,6 +24,7 @@ import {
   appApproval,
   type createAppApprovalService,
 } from "../services/app-approval";
+import { type NewBrowserSignInNotifier, readBrowserCookie } from "../services/known-browsers";
 import { appNameIn } from "../ssr/runtime";
 import { createDeviceActions } from "./app-approval-actions";
 
@@ -30,7 +33,12 @@ const DevicePageSchema = z.object({ after: z.string().uuid().optional() }).stric
 type Service = ReturnType<typeof createAppApprovalService>;
 
 /** This is a separate credential surface, never a user API-key or OAuth scope. */
-export const createAppApprovalRoutes = (service: Service = appApproval, actions = createDeviceActions, terminal?: AppTerminalLogins) => {
+export const createAppApprovalRoutes = (
+  options: { notify: NewBrowserSignInNotifier },
+  service: Service = appApproval,
+  actions = createDeviceActions,
+  terminal?: AppTerminalLogins,
+) => {
   const actor = async (c: Parameters<typeof auth.session.getToken>[0]): Promise<AppApprovalActor> => {
     // The web session (or an explicit bearer session), never the mobile app's session: a phone
     // that pairs sign-in devices would hand out authority that outlives its removal.
@@ -42,6 +50,8 @@ export const createAppApprovalRoutes = (service: Service = appApproval, actions 
     return { userId: session.user.id, sid: session.data.sid, admin: session.user.roles.includes("admin") };
   };
   return new Hono<AuthContext>()
+    .use("/device", noTransform())
+    .use("/device/*", noTransform())
     .onError((error, c) => {
       if (error instanceof AppApprovalError) return c.json({ code: error.code, message: error.code }, error.status);
       if (error instanceof HTTPException && error.status < 500) return c.json({ code: "INVALID_REQUEST" }, error.status);
@@ -118,6 +128,7 @@ export const createAppApprovalRoutes = (service: Service = appApproval, actions 
             c.req.valid("json"),
             actions((appId, locale) => appNameIn(c, appId, locale, appId)),
             terminal,
+            { address: clientIp(c) },
           ),
         ),
     )
@@ -127,7 +138,10 @@ export const createAppApprovalRoutes = (service: Service = appApproval, actions 
       v("json", AppLoginStartSchema),
       async (c) => {
         const input = c.req.valid("json");
-        return c.json(await service.startLogin(input.identifier, input.category), 202);
+        const description = describeRequest(c);
+        const cookie = readBrowserCookie(c);
+        const prefix = addressPrefix(clientIp(c));
+        return c.json(await service.startLogin(input.identifier, input.category, { ...description, cookie, prefix }), 202);
       },
     )
     .post("/login/status", v("json", AppLoginReferenceSchema), async (c) => {
@@ -143,8 +157,8 @@ export const createAppApprovalRoutes = (service: Service = appApproval, actions 
       v("json", AppLoginReferenceSchema),
       async (c) => {
         const input = c.req.valid("json");
-        const userId = await service.consumeLogin(input.requestId, input.browserSecret);
-        await auth.session.create(c, userId);
+        const { userId, deviceName } = await service.consumeLogin(input.requestId, input.browserSecret);
+        await auth.session.create(c, userId, { method: "cloud_login", device: deviceName, notify: options.notify });
         return c.body(null, 204);
       },
     );

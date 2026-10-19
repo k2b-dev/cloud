@@ -875,8 +875,8 @@ describe("profile menu in the rail", () => {
       const { context, page } = await open(device, "/app/mail/inbox");
       try {
         const trigger = page.locator(".layout-profile-preferences__dropdown-trigger");
-        await expect(trigger.isVisible()).resolves.toBe(true);
-        await expect(page.locator(".layout-profile-preferences__link").isVisible()).resolves.toBe(false);
+        expect(await trigger.isVisible()).toBe(true);
+        expect(await page.locator(".layout-profile-preferences__link").isVisible()).toBe(false);
         expect(await page.locator(".layout-profile-preferences [data-position]").getAttribute("data-position")).toBe("right-start");
         // Beside the rail, the avatar's menu cannot open below the window's bottom edge, so it grows upward.
         const avatar = await trigger.evaluate((element) => element.getBoundingClientRect().toJSON() as DOMRect);

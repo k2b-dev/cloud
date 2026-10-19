@@ -1,3 +1,4 @@
+import { middleware } from "@k2b/cloud/server";
 /**
  * Fleet-wide sync operations API. Reads and mutations fan out to the owning
  * app's `/_internal/sync` surface with the caller's credentials, so every
@@ -46,6 +47,7 @@ const RunNowBodySchema = z.object({ requestId: z.string().min(1).max(128).option
 const RunQuerySchema = z.object({ timeoutMs: z.coerce.number().int().min(0).max(30_000).optional() });
 
 const syncApiRoutes = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .use(rateLimit())
   .use(auth.requireRole("admin"))
   .use(auth.requireOAuthScope("admin"))

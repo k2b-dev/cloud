@@ -5,6 +5,8 @@ import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } fro
 import { readPanelCookie } from "../_internal/panel-cookie";
 import { readShellFocusCookie } from "../_internal/shell-focus";
 import { resolveNavMatch } from "../contracts/app"; // ==========================
+import { type CloudResourceRef, CloudResourceRefSchema } from "../contracts/capabilities";
+import { PANEL_HELP_ID_MAX_LENGTH, PanelPageContextSchema } from "../contracts/panel-context";
 import { isPwaShellAvailable } from "../contracts/pwa";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
 import { hasRole, type User } from "../contracts/shared";
@@ -42,6 +44,8 @@ type LayoutProps = {
   title?: string | Breadcrumb[];
   /** Up to three ids of the current app's Help articles that fit this page; Help lists them first under "For this view". Unknown ids and articles the reader may not see are ignored. */
   help?: readonly string[];
+  /** Share only the current place with the visible panel; false disables context for this document. */
+  context?: { scope?: CloudResourceRef } | false;
   fullPage?: boolean /** Keep the shell viewport-bound and suppress its footer. */;
   fullWidth?: boolean /** Delegate scrolling and clipping to the page's work surface. */;
   /** Hide the panel slot on this page (sign-in, print, presentation, public pages). */
@@ -165,7 +169,6 @@ export default function Layout(props: LayoutProps) {
     providers.length ? cookie : undefined,
     providers.map((provider) => provider.id),
   );
-  const panel = providers.length ? { providers, provider: panelState.provider ?? providers[0]?.id } : undefined;
   const pathname = new URL(c.req.raw.url).pathname;
   const currentRoute = resolveRuntimeRoute(runtime.apps, pathname);
   const currentApp = resolveCurrentApp(runtime.apps, pathname);
@@ -196,6 +199,7 @@ export default function Layout(props: LayoutProps) {
   const page = c.get("page") as Record<string, unknown>;
   const pageTitle = typeof title === "string" ? title : (title?.at(-1)?.title ?? appName);
   if (!page.title) page.title = pageTitle;
+  page.appAccent = currentApp?.appearance?.accent;
   const breadcrumbs: Breadcrumb[] = !title ? [{ title: appName }] : typeof title === "string" ? [{ title }] : title;
   // The way up is derived from the title array by one rule (see `derivePageTrail`). Anonymous pages keep their
   // header breadcrumbs, and focus surfaces such as pop-out editors have no way up; both show the title alone. The
@@ -228,7 +232,26 @@ export default function Layout(props: LayoutProps) {
       .join(";") || undefined;
   const appLabel = currentApp?.name ?? (pathname.startsWith("/admin") ? t.admin : undefined);
   const helpIds = new Set(registeredHelp?.documents.map((topic) => topic.id));
-  const viewHelp = [...new Set(props.help)].filter((id) => helpIds.has(id)).slice(0, HELP_VIEW_LIMIT);
+  const viewHelp = [...new Set(props.help)]
+    .filter((id) => helpIds.has(id) && id.length <= PANEL_HELP_ID_MAX_LENGTH)
+    .slice(0, HELP_VIEW_LIMIT);
+  const scope = props.context && CloudResourceRefSchema.safeParse(props.context.scope);
+  // Fail closed: a page whose place does not validate shares nothing rather than failing to render.
+  const pageContext =
+    (providers.length &&
+      props.context !== false &&
+      PanelPageContextSchema.safeParse({
+        v: 1,
+        seq: 0,
+        pageId: crypto.randomUUID(),
+        app: currentApp?.id,
+        ...(scope && scope.success ? { scope: scope.data } : {}),
+        ...(viewHelp.length ? { help: viewHelp } : {}),
+      }).data) ||
+    null;
+  const panel: ShellData["panel"] = providers.length
+    ? { providers, provider: panelState.provider ?? providers[0]?.id, context: pageContext, consent: c.get("panelConsent") }
+    : undefined;
   const shellData: ShellData = {
     ...(panel ? { panel } : {}),
     platform: keyboardPlatform(c.req.raw.headers.get("User-Agent") ?? ""),

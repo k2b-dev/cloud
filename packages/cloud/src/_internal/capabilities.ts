@@ -1,4 +1,7 @@
-import { createHash } from "node:crypto";
+import { capabilityHash, projectSchema, stableJsonValue } from "./capability-schemas";
+
+export { capabilityHash } from "./capability-schemas";
+
 import { isServiceError, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
 import {
@@ -8,8 +11,8 @@ import {
   CAPABILITY_PROTOCOL_VERSION,
   type CapabilityActionDefinition,
   type CapabilityActionManifest,
+  CapabilityActionPolicySchema,
   type CapabilityActionReviewResult,
-  CapabilityActionReviewSchema,
   type CapabilityActionSentences,
   type CapabilityCommandDefinition,
   type CapabilityCommandManifest,
@@ -33,12 +36,14 @@ import {
   type CapabilitySearchTagDefinition,
   type CapabilityStreamDefinition,
   type CapabilityUniversalSearchDefinition,
+  capabilityActionPolicy,
   capabilityResultSchema,
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "../contracts/capabilities";
 import { fileProviderIssues } from "../contracts/file-provider";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared/locale";
+import { capabilityActionReceiptIssues, capabilityActionReviewIssues, capabilityQueryChecksActionOutcome } from "./capability-reviews";
 import {
   CAPABILITY_SENTENCE_KEYS,
   CAPABILITY_SENTENCE_MAX_CHARS,
@@ -94,6 +99,7 @@ const ACTION_FIELDS = {
   stream: true,
   idempotency: true,
   approval: true,
+  policy: true,
   review: true,
   run: true,
 } satisfies DefinedFields<CapabilityActionDefinition>;
@@ -221,21 +227,6 @@ export const serializeCapabilityProviderResult = (
   return { body: JSON.stringify(fallback), status: options.nonIdempotentAction ? 502 : 500 };
 };
 
-const stableJsonValue = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(stableJsonValue);
-  if (typeof value !== "object" || value === null) return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entry]) => [key, stableJsonValue(entry)]),
-  );
-};
-
-export const capabilityHash = (value: unknown): string =>
-  createHash("sha256")
-    .update(JSON.stringify(stableJsonValue(value)))
-    .digest("hex");
-
 const assertText = (value: string, label: string, max: number): void => {
   if (!value.trim()) throw new Error(`${label} is required`);
   if (value.length > max) throw new Error(`${label} must be at most ${max} characters`);
@@ -338,12 +329,12 @@ const compileOperationPresentation = (
   operation: CapabilityQueryManifest | CapabilityActionManifest | CapabilityCommandManifest,
   label: string,
   strict = true,
-): CapabilityOperationPresentationTranslation => {
+): CapabilityOperationPresentationTranslation & { keywords?: readonly string[] } => {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   const translation = value as Record<string, unknown>;
   const allowed = new Set(
     "path" in operation
-      ? ["title", "description", "input"]
+      ? ["title", "description", "input", "keywords"]
       : ["title", "description", "input", "data", "searchTags", ...(isAction(operation) ? ["sentences"] : [])],
   );
   const extra = Object.keys(translation).find((key) => !allowed.has(key));
@@ -356,6 +347,10 @@ const compileOperationPresentation = (
     if (typeof translation.description !== "string") throw new Error(`${label}.description must be text`);
     assertText(translation.description, `${label}.description`, 1000);
   }
+  const keywords =
+    "path" in operation && translation.keywords !== undefined
+      ? CapabilityCommandManifestSchema.shape.keywords.parse(translation.keywords)
+      : undefined;
   let searchTags: CapabilityOperationPresentationTranslation["searchTags"];
   const universalSearch = "universalSearch" in operation ? operation.universalSearch : undefined;
   // A reader skips search-tag copy for an operation without Universal Search instead of losing its other copy.
@@ -398,6 +393,7 @@ const compileOperationPresentation = (
   return {
     ...(typeof translation.title === "string" ? { title: translation.title.trim() } : {}),
     ...(typeof translation.description === "string" ? { description: translation.description.trim() } : {}),
+    ...(keywords ? { keywords } : {}),
     ...(input ? { input } : {}),
     ...(data ? { data } : {}),
     ...(searchTags ? { searchTags } : {}),
@@ -515,17 +511,6 @@ export const compileCapabilityPresentation = (
     };
   }
   return { baseLocale, ...(sentences && Object.keys(sentences).length > 0 ? { sentences } : {}), translations };
-};
-
-const projectSchema = (schema: z.ZodType, label: string, io: "input" | "output"): JsonSchema => {
-  try {
-    const projected = z.toJSONSchema(schema, { io }) as JsonSchema;
-    z.fromJSONSchema(projected);
-    return projected;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`${label} is not JSON-Schema-round-trippable: ${message}`);
-  }
 };
 
 const assertPropertyDescriptions = (schema: unknown, label: string, path: readonly string[] = []): void => {
@@ -720,6 +705,20 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     const label = `Action ${localId}`;
     assertDefinedFields(definition, ACTION_FIELDS, label);
     assertDefinedStreamFields(definition.stream, label);
+    if (definition.policy !== undefined) {
+      const parsedPolicy = CapabilityActionPolicySchema.safeParse(definition.policy);
+      if (!parsedPolicy.success) throw new Error(`${label} has invalid policy: ${parsedPolicy.error.message}`);
+      if (definition.approval !== undefined) throw new Error(`${label} policy and approval are mutually exclusive`);
+      if (!definition.review) throw new Error(`${label} policy requires review()`);
+      if ("silent" in parsedPolicy.data && (definition.destructive || definition.openWorld))
+        throw new Error(`${label} destructive or open-world policy must ask`);
+      if (
+        "ask" in parsedPolicy.data &&
+        (parsedPolicy.data.ask === "sends" || parsedPolicy.data.ask === "deletes") &&
+        definition.idempotency !== "required"
+      )
+        throw new Error(`${label} sends or deletes policy requires idempotency: "required"`);
+    }
     // Declaration rule, documented in docs/platform/capabilities.md:
     // destructive means irreversible or externally visible. An irreversible or
     // open-world effect must always be reviewable and safely repeatable, and
@@ -767,7 +766,13 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
       destructive: definition.destructive,
       openWorld: definition.openWorld,
       idempotency: definition.idempotency,
-      ...(definition.approval ? { approval: definition.approval } : {}),
+      ...(definition.policy
+        ? "silent" in definition.policy
+          ? { approval: "rememberable" as const }
+          : {}
+        : definition.approval
+          ? { approval: definition.approval }
+          : {}),
       ...(definition.review ? { review: true as const } : {}),
     } satisfies CapabilityActionManifest;
     actions.set(localId, {
@@ -795,6 +800,9 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
       });
     });
 
+  const policies = Object.fromEntries(
+    [...actions].flatMap(([localId, action]) => (action.definition.policy ? [[localId, action.definition.policy]] : [])),
+  );
   const fileProvider = definitions.fileProvider;
   const manifestBase = {
     protocolVersion: CAPABILITY_PROTOCOL_VERSION,
@@ -803,6 +811,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     queries: [...queries.values()].map((entry) => entry.manifest),
     actions: [...actions.values()].map((entry) => entry.manifest),
     commands,
+    ...(Object.keys(policies).length ? { policies } : {}),
     // Omitted when unused so manifests without a provider keep their earlier hash.
     ...(fileProvider
       ? { fileProvider: { list: fileProvider.list, read: fileProvider.read, ...(fileProvider.save ? { save: fileProvider.save } : {}) } }
@@ -954,6 +963,7 @@ export const resolveCapabilityManifestPresentation = (
               title: copy.title ?? operation.title,
               description: copy.description ?? operation.description,
               inputSchema: applySchemaPresentation(operation.inputSchema, copy.input),
+              keywords: copy.keywords ? [...copy.keywords] : operation.keywords,
             }
           : operation;
       }),
@@ -970,6 +980,7 @@ export const resolveCapabilityManifestPresentation = (
           : operation;
       }),
       ...(current.fileProvider ? { fileProvider: current.fileProvider } : {}),
+      ...(current.policies ? { policies: current.policies } : {}),
     };
     current = CapabilityManifestSchema.parse({ ...manifestBase, manifestHash: capabilityHash(manifestBase) });
   }
@@ -1213,6 +1224,15 @@ const resultRefs = (result: unknown): Array<{ type: string; id: string }> => {
   }>;
 };
 
+const compiledReviewContext = (compiled: CompiledCapabilities, localId: string) => ({
+  policy: capabilityActionPolicy(compiled.manifest, localId),
+  approval: compiled.actions.get(localId)?.manifest.approval,
+  queries: compiled.manifest.queries,
+  validateQueryInput: (query: CapabilityQueryManifest, input: Record<string, unknown>) =>
+    compiled.queries.get(query.localId)?.definition.input.safeParse(input).success === true,
+  ...(compiled.presentation ? { locales: [compiled.presentation.baseLocale, ...Object.keys(compiled.presentation.translations)] } : {}),
+});
+
 export const validateCapabilityResult = (
   compiled: CompiledCapabilities,
   operation: CompiledCapabilityQuery | CompiledCapabilityAction,
@@ -1220,12 +1240,25 @@ export const validateCapabilityResult = (
   onInvalidResult?: (error: unknown) => void,
 ): Result<unknown, ServiceError> => {
   const parsed = operation.resultSchema.safeParse(result);
-  if (!parsed.success) {
+  const field = (value: unknown, key: string): unknown =>
+    value !== null && typeof value === "object" ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+  const receipt = field(result, "receipt");
+  const links = field(result, "links");
+  const receiptIssues =
+    receipt === undefined
+      ? []
+      : "idempotency" in operation.manifest
+        ? capabilityActionReceiptIssues(receipt, links)
+        : ["Queries cannot return a receipt"];
+  const nestedReceipt = field(field(result, "data"), "receipt");
+  if (!("idempotency" in operation.manifest) && nestedReceipt !== undefined && capabilityQueryChecksActionOutcome(operation.manifest))
+    receiptIssues.push(...capabilityActionReceiptIssues(nestedReceipt, links));
+  if (!parsed.success || receiptIssues.length > 0) {
     try {
       onInvalidResult?.(
         new Error(
           `Capability ${operation.manifest.localId} returned data outside its registered schema: ${JSON.stringify(
-            parsed.error.issues.map(({ code, path, message }) => ({ code, path, message })),
+            parsed.success ? receiptIssues : parsed.error.issues.map(({ code, path, message }) => ({ code, path, message })),
           )}`,
         ),
       );
@@ -1468,27 +1501,18 @@ export const reviewCompiledCapability = async (params: {
     if (!reviewed.ok) {
       return normalizeProviderError(reviewed.error, "Capability review returned an invalid error", params.onUnexpectedError);
     }
-    const parsed = CapabilityActionReviewSchema.safeParse(reviewed.data);
-    // A rememberable Action may leave out its scope for arguments that should ask every time; any other Action has none.
-    const approvalScopeIsValid =
-      parsed.success && (operation.manifest.approval === "rememberable" || parsed.data.approvalScope === undefined);
-    if (!parsed.success || !approvalScopeIsValid) {
+    const issues = capabilityActionReviewIssues(reviewed.data, compiledReviewContext(params.compiled, params.localId));
+    if (issues.length > 0) {
       try {
         params.onUnexpectedError?.(
-          new Error(
-            parsed.success
-              ? `Capability ${operation.manifest.localId} review returned an approval scope inconsistent with its manifest`
-              : `Capability ${operation.manifest.localId} review returned data outside its registered schema: ${JSON.stringify(
-                  parsed.error.issues.map(({ code, path, message }) => ({ code, path, message })),
-                )}`,
-          ),
+          new Error(`Capability ${operation.manifest.localId} review returned an invalid result: ${issues.join("; ")}`),
         );
       } catch {
-        // Observability must not change the public failure contract.
+        /* Observability must not change the public failure contract. */
       }
     }
-    return parsed.success && approvalScopeIsValid
-      ? { ok: true, data: parsed.data }
+    return issues.length === 0
+      ? { ok: true, data: reviewed.data }
       : {
           ok: false,
           error: {

@@ -1,6 +1,7 @@
 import type { KeyboardPlatform } from "@k2b/ui";
 import { createContext, type JSX, useContext } from "solid-js";
 import type { AppSearchLink } from "../contracts/app";
+import type { PanelConsentSnapshot, PanelPageContext } from "../contracts/panel-context";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { CloudThemePreference } from "../shared/theme";
 import type { AppLaunchpadLegalLink } from "./app-launchpad";
@@ -8,7 +9,7 @@ import type { PanelProvider } from "./app-navigation";
 import type { RailApp } from "./rail-navigation";
 
 export type ShellData = {
-  panel?: { providers: PanelProvider[]; provider?: string };
+  panel?: { providers: PanelProvider[]; provider?: string; context: PanelPageContext | null; consent?: PanelConsentSnapshot };
   /** The authorized navigation catalog, sorted for the request locale: the rail, the app grid and the phone menu show it. */
   apps: RailApp[];
   /** Signed-in pages: the person's rail preferences. */

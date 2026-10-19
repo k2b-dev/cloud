@@ -19,8 +19,8 @@ let sourceId = "";
 
 beforeAll(async () => {
   if (!enabled) return;
-  const { initializeSchema } = await import("../schema");
-  await initializeSchema();
+  const { migrate } = await import("../migrate");
+  await migrate();
   endpoint = Bun.serve({
     port: 0,
     fetch: () => new Response("# TYPE scrape_probe gauge\nscrape_probe 1\n", { headers: { "content-type": "text/plain" } }),

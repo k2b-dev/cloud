@@ -2981,6 +2981,10 @@ export const setComposeSignatureDefaultInputSchema = z
   .strict();
 export type SetComposeSignatureDefaultInput = z.infer<typeof setComposeSignatureDefaultInputSchema>;
 
+/** Reserves the logo's display height while preserving its pixel aspect ratio. */
+export const mailboxLogoDisplayHeight = (logo: { displayWidth: number; pixelWidth: number; pixelHeight: number }): number =>
+  Math.max(1, Math.round((logo.displayWidth * logo.pixelHeight) / logo.pixelWidth));
+
 export const mailboxComposeLogoSchema = z.object({
   logo: z
     .object({

@@ -17,6 +17,8 @@ describe("Cloud popover reset", () => {
   test("places the portable UI scope on the shared HTML shell", async () => {
     const source = await Bun.file(resolve(import.meta.dir, "../_internal/define-app.ts")).text();
 
-    expect(source).toContain('<body class="k2b-ui" data-k2b-app-workspace-controller="global">');
+    // The body may add the current app's accent scope; Layout.render.test.tsx checks the rendered tag.
+    expect(source).toContain('<body class="k2b-ui${');
+    expect(source).toContain('data-k2b-app-workspace-controller="global">');
   });
 });

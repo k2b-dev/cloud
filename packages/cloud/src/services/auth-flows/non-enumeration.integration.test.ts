@@ -32,6 +32,7 @@ const sender: AuthNotificationSender = {
   sendMagicLink: blocked("magic-link"),
   sendIpaLoginHint: blocked("ipa-hint"),
   sendPasswordReset: blocked("password-reset"),
+  sendNewBrowserSignIn: async () => {},
 };
 const routes = new Hono().route("/auth", createAuthRoutes(sender));
 let client = 0;

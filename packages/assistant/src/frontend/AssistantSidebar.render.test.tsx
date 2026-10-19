@@ -85,7 +85,7 @@ describe("Assistant sidebar", () => {
     expect(html).toContain('class="assistant-chat-marker" data-tone="progress" title="Running"');
     expect(html).toContain('class="assistant-chat-marker" data-tone="attention" title="Waiting for you"');
     expect(html).not.toContain('role="progressbar"');
-    expect(html).not.toContain('class="k2b-app-workspace__sidebar-item-description"');
+    expect(html).not.toContain("k2b-app-workspace__sidebar-item-description");
   });
 
   test("selects only the visible project or Studio despite a retained chat", () => {
@@ -183,7 +183,7 @@ describe("Assistant sidebar", () => {
     expect((await selectHtml(html, "h2")).map(({ text }) => text)).toContain("Pinned");
     expect(html).not.toContain("Mark chat done");
     expect(html).not.toContain(">Ready<");
-    expect(html).not.toContain('class="k2b-app-workspace__sidebar-item-description"');
+    expect(html).not.toContain("k2b-app-workspace__sidebar-item-description");
   });
 
   test("shows empty chat, Done, Studio, and Project lists as inline lines where their first rows would be", async () => {
