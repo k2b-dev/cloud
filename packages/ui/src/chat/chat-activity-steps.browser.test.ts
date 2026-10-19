@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-chat-activity-steps-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -62,7 +62,7 @@ async function content(page: Page, html: string, dark: boolean) {
   await page.setContent(`<!doctype html><html lang="en"><head><style>${css}\n${icons}
     html { font-size:16px; } body { margin:0; padding:16px; font-family:Arial,sans-serif; line-height:1.5; }
   </style></head><body class="k2b-ui${dark ? " k2b-dark" : ""}">${html}</body></html>`);
-  await page.evaluate(() => document.fonts.ready);
+  await settled(page);
 }
 const activity = (props: Parameters<typeof Chat.Activity>[0]) => renderToString(() => createComponent(Chat.Activity, props));
 const fixedBoxes = (page: Page) =>
@@ -83,7 +83,7 @@ for (const dark of [false, true]) {
       // Use the same component with the Solid DOM transform for event handlers, as in the decision harness.
       await page.locator("#toggle-root").evaluate((root) => root.replaceChildren());
       await page.addScriptTag({ content: bundle });
-      await page.evaluate(() => document.fonts.ready);
+      await settled(page);
       const row = page.locator(".k2b-chat-activity__row");
       const toggle = row.getByRole("button", { name: "3 of 4 tasks", exact: true });
       expect(await row.evaluate((e) => e.tagName)).toBe("DIV");
@@ -97,6 +97,7 @@ for (const dark of [false, true]) {
       const chip = row.getByRole("link", { name: "Team Ops", exact: true });
       expect(await chip.getAttribute("href")).toBe("#chip");
       await chip.click();
+      await settled(page);
       expect(await toggle.getAttribute("aria-expanded")).toBe("false");
       expect(await body.isVisible()).toBe(false);
       const geometry = await toggle.evaluate((button) => {
@@ -118,6 +119,7 @@ for (const dark of [false, true]) {
       expect(geometry.center).toBeLessThanOrEqual(2);
       const before = await fixedBoxes(page);
       await toggle.click();
+      await settled(page);
       expect(await toggle.getAttribute("aria-expanded")).toBe("true");
       expect(await body.isVisible()).toBe(true);
       expect(await fixedBoxes(page)).toEqual(before);
@@ -144,6 +146,7 @@ for (const dark of [false, true]) {
         await page.locator(".k2b-chat-activity").evaluate((e, html) => {
           e.outerHTML = html;
         }, done);
+        await settled(page);
         expect(await page.locator("#sentinel").evaluate((e) => e.getBoundingClientRect().y)).toBe(before);
       } finally {
         await page.close();

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import type {} from "../../test/chat-decision.browser-harness";
 
 let browser: Browser;
@@ -330,6 +330,7 @@ for (const timelineWidth of ["narrow", "wide"] as const)
   test(`a ${timelineWidth} timeline owns decision typography and answer growth on a 1440px window`, async () => {
     const page = await open(1440, false, timelineWidth);
     try {
+      await settled(page);
       const metrics = await page.evaluate(() => ({
         window: window.innerWidth,
         timeline: document.querySelector(".k2b-chat-timeline")!.getBoundingClientRect().width,
