@@ -158,6 +158,8 @@ if (!isServer) {
             managementOpening={null}
             settingsOpening={false}
             detailsOpening={false}
+            composeStarting={false}
+            onCompose={() => {}}
             onOpenDetails={() => {}}
             onOpenHealth={() => {}}
             onOpenSharedLinks={() => {}}

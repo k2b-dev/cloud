@@ -17,6 +17,7 @@ import { batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, 
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
+import type { MailDraftSeed } from "../contracts";
 import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesListing } from "../folder-display-rules";
 import { mailFolderPaths } from "../folder-tree";
 import { parseMailLiveEvent } from "../live-event";
@@ -48,6 +49,8 @@ import {
 import { chooseMailAssignee } from "./_components/mail-assign-picker";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
+import { mailDraftSeedHref } from "./_components/mail-compose-route";
+import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import {
   emptyMailConversationSelection,
@@ -87,6 +90,7 @@ import {
 } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
 import { emptyMailSelection, mailRowOlderThanDetail, pickMailSelection } from "./_components/mail-selection-detail";
+import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./_components/mail-sender-preference";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
 import {
   decideMailAutoReadIntent,
@@ -856,6 +860,78 @@ function MailWorkspaceView(props: {
     if (!response.ok) throw new Error(await readApiError(response, t().mailboxDetailsFailed));
     return response.json();
   };
+
+  const [composeStarting, setComposeStarting] = createSignal(false);
+  let composeRequest: AbortController | null = null;
+  let composeProgress: ToastHandle | null = null;
+  const endComposeStart = () => {
+    composeRequest = null;
+    composeProgress?.dismiss();
+    composeProgress = null;
+    setComposeStarting(false);
+  };
+  /**
+   * Compose from this mailbox: prepares the draft seed here and opens its composer as the one page load, as Reply and
+   * Forward do, with the compose page's sender rule, request and return target. Without a selectable sender, `fallback`
+   * opens the compose page, which explains why. A trigger without its own pending spot (the phone menu, the command)
+   * asks for the progress toast.
+   */
+  const startCompose = async (options: { fallback: () => void; progressToast: boolean }) => {
+    if (disposed || composeStarting()) return;
+    const mailboxId = data.mailbox.id;
+    const identity = selectComposeSenderIdentity(data.identities, readMailSenderPreference(localStorage, mailboxId), true);
+    if (!identity) return options.fallback();
+    setComposeStarting(true);
+    const request = new AbortController();
+    composeRequest = request;
+    if (options.progressToast)
+      composeProgress = toast(t().preparingMessage, { progress: "indeterminate", duration: 0, iconClass: "ti ti-pencil" });
+    let seed: MailDraftSeed;
+    let store: typeof import("./_components/mail-draft-seed-store") | undefined;
+    try {
+      // The seed store is loaded on demand, as in the reader, and in parallel with the request.
+      const [response, loaded] = await Promise.all([
+        apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
+          { param: { mailboxId }, json: mailComposeDraftSeedInput(identity.id) },
+          { init: { signal: request.signal } },
+        ),
+        importOnDemand(() => import("./_components/mail-draft-seed-store")),
+      ]);
+      if (!response.ok) throw new Error(await readApiError(response, t().draftCreateFailed));
+      seed = await response.json();
+      store = loaded;
+    } catch (error) {
+      if (disposed || request.signal.aborted) return;
+      endComposeStart();
+      void prompts.error(error instanceof Error ? error.message : t().draftCreateFailed, { title: t().startMessageFailed });
+      return;
+    }
+    if (disposed) return;
+    // importOnDemand already offers a reload when the code cannot load.
+    if (!store) return endComposeStart();
+    writeMailSenderPreference(localStorage, seed.mailboxId, identity.id);
+    try {
+      store.storeMailDraftSeed(localStorage, seed);
+    } catch {
+      endComposeStart();
+      void prompts.error(t().localMessageFailed, { title: t().startMessageFailed });
+      return;
+    }
+    // Stays pending until the composer replaces this page, so another activation meanwhile starts no second seed.
+    documentNavigate(mailDraftSeedHref(seed.mailboxId, seed.id, `/app/mail/${seed.mailboxId}`));
+  };
+  onMount(() => {
+    // A page restored from the back-forward cache shows Compose ready again.
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) endComposeStart();
+    };
+    window.addEventListener("pageshow", restored);
+    onCleanup(() => window.removeEventListener("pageshow", restored));
+  });
+  onCleanup(() => {
+    composeRequest?.abort();
+    composeProgress?.dismiss();
+  });
 
   const openHealth = async () => {
     if (disposed || managementOpening()) return;
@@ -2297,6 +2373,8 @@ function MailWorkspaceView(props: {
         managementOpening={managementOpening()}
         settingsOpening={settingsOpening()}
         detailsOpening={detailsOpening()}
+        composeStarting={composeStarting()}
+        onCompose={(options) => void startCompose(options)}
         onOpenDetails={() => void openDetails()}
         onOpenHealth={() => void openHealth()}
         onOpenSharedLinks={() => void openSharedLinks()}

@@ -184,6 +184,48 @@ const openDialog = async (page: Page, label = "Mailbox details") => {
 };
 
 describe("Mailbox details", () => {
+  test("Compose and mailbox details keep their layout while Compose starts and resets", async () => {
+    const page = await load({ theme: "light" });
+    try {
+      await page.waitForSelector(".mail-compose-action .ti-pencil", { state: "attached" });
+      const before = [await layoutBox(page, ".mail-compose-action"), await layoutBox(page, ".mail-details-action")];
+      await page.evaluate(() => window.setMailboxComposeStarting(true));
+      await page.waitForSelector(".mail-compose-action[aria-busy='true'] .ti-loader-2", { state: "attached" });
+      expect(await page.locator(".mail-compose-action .ti-pencil").count()).toBe(0);
+      expect([await layoutBox(page, ".mail-compose-action"), await layoutBox(page, ".mail-details-action")]).toEqual(before);
+      await page.evaluate(() => window.setMailboxComposeStarting(false));
+      await page.waitForSelector(".mail-compose-action:not([aria-busy]) .ti-pencil", { state: "attached" });
+      expect(await page.locator(".mail-compose-action .ti-loader-2").count()).toBe(0);
+      expect([await layoutBox(page, ".mail-compose-action"), await layoutBox(page, ".mail-details-action")]).toEqual(before);
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("the phone Compose row keeps its layout while disabled and enabled again", async () => {
+    const page = await load({ context: phone, phoneMenu: true });
+    const row = ".mail-phone-menu .k2b-navigation__row";
+    const compose = page.locator(row).first().locator(".k2b-navigation__control");
+    try {
+      await compose.waitFor();
+      const before = await layoutBox(page, row);
+      await page.evaluate(() => window.setMailboxComposeStarting(true));
+      await page.waitForFunction(
+        () => document.querySelector(".mail-phone-menu .k2b-navigation__control")?.getAttribute("aria-disabled") === "true",
+      );
+      expect(await layoutBox(page, row)).toEqual(before);
+      await page.evaluate(() => window.setMailboxComposeStarting(false));
+      await page.waitForFunction(
+        () => document.querySelector(".mail-phone-menu .k2b-navigation__control")?.getAttribute("aria-disabled") !== "true",
+      );
+      expect(await layoutBox(page, row)).toEqual(before);
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
   for (const theme of ["light", "dark"] as const) {
     test(`sits square beside Compose and keeps its place while loading in ${theme} mode`, async () => {
       const page = await load({ theme, locale: theme === "dark" ? "de" : "en" });
