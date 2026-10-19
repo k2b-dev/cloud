@@ -24,15 +24,18 @@ initial refs when it creates a conversation draft.
 ## Recently sent references
 
 `GET /api/ai/resources/recent` returns up to eight distinct refs from the
-person's own sent messages. Each app reader runs as the request's actor with
+person's own sent messages. An OAuth token needs the `read` or `admin` scope,
+as for the capability routes. Each app reader runs as the request's actor with
 its current access subject through the audited capability path, before any
 ref or display metadata is returned. Missing readers, denied access, invalid
 answers, failures, and timeouts omit that ref. Stored marker titles, icons,
 and links are never returned. A reader must return its own matching ref with
-a current title. Skills use one current Skills visibility list and omit
-disabled entries. Studio apps use the authorized `code_read` path for ordinary
-user sessions; credentials whose restrictions that path cannot preserve omit
-Studio refs.
+a current title. Skills are looked up by the sent short IDs through the
+current Skills visibility; disabled Skills are omitted. Studio apps use the
+authorized `code_read` path for ordinary user sessions; credentials whose
+restrictions that path cannot preserve omit Studio refs. If the sent history
+itself cannot be read, the request fails instead of answering with no
+references, so the slash menu asks again at its next opening.
 
 A call makes at most eight reads in parallel under one 15-second query budget
 and the request's cancellation signal. Preview text contains only the first

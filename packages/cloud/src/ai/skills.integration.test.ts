@@ -395,6 +395,11 @@ databaseSuite()("aiSkills (integration)", () => {
       const name = updated!.name;
       expect(await aiSkills.list(member, { name })).toEqual([expect.objectContaining({ id: skill.id, name, enabled: false })]);
       expect(await aiSkills.list(member, { name: `${name}-missing` })).toEqual([]);
+      // "Recent" asks for exactly the Skills a person sent, with the same visibility and enabled state.
+      expect(await aiSkills.list(member, { shortIds: [skill.shortId, "Missing1"] })).toEqual([
+        expect.objectContaining({ id: skill.id, enabled: false }),
+      ]);
+      expect(await aiSkills.list(member, { shortIds: [] })).toEqual([]);
       expect((await aiSkills.search(member, name)).skills.some((entry) => entry.id === skill.id)).toBe(false);
       expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, member)).toBeNull();
       expect(await aiSkills.listTurnFiles(turn!.id, member)).toEqual([]);
@@ -405,6 +410,7 @@ databaseSuite()("aiSkills (integration)", () => {
       expect((await aiSkills.listTurnFiles(turn!.id, member)).length).toBe(2);
 
       expect(await aiSkills.revokeAccess(skill.id, grant!.id, owner)).toBe(true);
+      expect(await aiSkills.list(member, { shortIds: [skill.shortId] })).toEqual([]);
       expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, member)).toBeNull();
       expect(await aiSkills.listTurnFiles(turn!.id, member)).toEqual([]);
       expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, member)).toBeNull();

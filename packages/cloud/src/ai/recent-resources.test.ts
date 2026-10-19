@@ -106,9 +106,11 @@ test("lists skills once by accessSubject and never calls readers for disabled, i
       ],
     },
     skills: {
-      list: async (subject) => {
+      list: async (subject, options) => {
         calls++;
         expect(subject).toBe(recentTestAuthority.accessSubject);
+        // Only the sent Skills, never a page of the whole catalog.
+        expect(options).toEqual({ shortIds: ["enabled", "disabled", "invisible"] });
         return [recentTestSkill("enabled"), recentTestSkill("disabled", false)];
       },
     },
@@ -144,7 +146,8 @@ test("bounds dispatch calls to eight and does not start readers after request ca
   };
   expect(await run(deps)).toHaveLength(8);
   expect(calls).toBe(8);
-  expect(await run(deps, AbortSignal.abort())).toEqual([]);
+  // A cancelled request ends before any reader starts.
+  await expect(run(deps, AbortSignal.abort())).rejects.toBeDefined();
   expect(calls).toBe(8);
 });
 
@@ -182,4 +185,17 @@ test("a hung registry does not discard skills whose visibility already succeeded
       })
     ).map((item) => item.ref.id),
   ).toEqual(["enabled"]);
+});
+
+test("unreadable history fails the request instead of answering with no history", async () => {
+  await expect(
+    run({
+      store: {
+        listRecentSentResourceRefs: async () => {
+          throw new Error("database unavailable");
+        },
+      },
+    }),
+  ).rejects.toThrow("database unavailable");
+  await expect(run({ timeoutMs: 30, store: { listRecentSentResourceRefs: async () => new Promise(() => {}) } })).rejects.toBeDefined();
 });

@@ -522,7 +522,15 @@ const skillSnapshotFiles = (skill: AiSkill): { path: string; content: string }[]
   ...skill.references.map((reference) => ({ path: `${skill.name}/${reference.path}`, content: reference.content })),
 ];
 
-type SkillListOptions = { name?: string; query?: string; enabledOnly?: boolean; modelInvocableOnly?: boolean; limit?: number };
+type SkillListOptions = {
+  name?: string;
+  /** Only these Skills, by short ID, such as the ones a person recently sent. */
+  shortIds?: readonly string[];
+  query?: string;
+  enabledOnly?: boolean;
+  modelInvocableOnly?: boolean;
+  limit?: number;
+};
 async function listSkillSummaries(
   subject: AccessSubject | null,
   options: SkillListOptions & {
@@ -551,6 +559,7 @@ async function listSkillSummaries(
       ON disabled.skill_id = skill.id AND disabled.user_id = ${userId}::uuid
     WHERE access.permission <> 'none'
       AND ${options.name === undefined ? sql`true` : sql`skill.name = ${options.name}`}
+      AND ${options.shortIds === undefined ? sql`true` : sql`skill.short_id = ANY(${toPgTextArray([...options.shortIds])}::text[])`}
       AND (${!options.manageOnly} OR access.permission='admin')
       AND ${options.project ? sql`EXISTS(SELECT 1 FROM ai.project_skills link WHERE link.skill_id=skill.id AND link.project_id=${options.project.id}::uuid) = ${options.project.linked}` : sql`true`}
       AND (${!options.modelInvocableOnly} OR NOT manual_only)

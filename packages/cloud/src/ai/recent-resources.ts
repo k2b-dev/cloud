@@ -109,13 +109,16 @@ export const listAiRecentResources = async (input: {
 }): Promise<AiRecentResource[]> => {
   const deps = input.dependencies ?? {};
   const signal = AbortSignal.any([input.signal, AbortSignal.timeout(deps.timeoutMs ?? QUERY_TIMEOUT_MS)]);
+  // Unreadable history is no answer, not an empty one: the request fails, so the browser asks again at its next opening.
   const sent = await withinBudget(signal, () =>
     (deps.store ?? aiConversations).listRecentSentResourceRefs({ ownerUserId: input.ownerUserId }),
-  ).catch(() => []);
+  );
   if (!sent.length || signal.aborted) return [];
   const candidates = sent.slice(0, RECENT_SENT_REF_LIMIT);
-  const skills = candidates.some(({ ref }) => ref.type === "core.ai.skill")
-    ? withinBudget(signal, () => (deps.skills ?? aiSkills).list(input.authority.accessSubject)).catch(() => [])
+  const skillIds = candidates.flatMap(({ ref }) => (ref.type === "core.ai.skill" ? [ref.id] : []));
+  // Exactly the sent Skills, so a large Skill catalog never pushes one out; failing, they are left out like a reader.
+  const skills = skillIds.length
+    ? withinBudget(signal, () => (deps.skills ?? aiSkills).list(input.authority.accessSubject, { shortIds: skillIds })).catch(() => [])
     : Promise.resolve([]);
   const registry = candidates.some(({ ref }) => ref.type !== "core.ai.skill" && ref.type !== "assistant.artifact")
     ? withinBudget(signal, deps.listRegistry ?? listCapabilities).catch(() => [])
