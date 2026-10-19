@@ -96,8 +96,9 @@ export const registerIngestBatch = async (params: {
   db: PulseSqlClient;
   store: IngestStore;
   now: Date;
+  acceptedAt: Date;
 }) => {
-  const { baseId, sourceId, batch, db, store, now } = params;
+  const { baseId, sourceId, batch, db, store, now, acceptedAt } = params;
   const [limits] =
     await db`SELECT s.max_series,s.max_event_kinds,s.max_state_keys,b.retention_days FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id WHERE base_id=${baseId}::uuid`;
   if (!limits) throw err.notFound("Pulse base store");
@@ -186,7 +187,7 @@ export const registerIngestBatch = async (params: {
           series: `[${chunk.map((s) => `'${s.series_id}'`).join(",")}]`,
           times: JSON.stringify(chunk.map((s) => Date.parse(s.ts))),
           minTime: Math.min(...chunk.map((s) => Date.parse(s.ts))),
-          cutoff: now.getTime() - Number(limits.retention_days) * 86_400_000,
+          cutoff: Math.min(now.getTime(), acceptedAt.getTime()) - Number(limits.retention_days) * 86_400_000,
         },
       );
       touched.push(...next.map((r) => new Date(Number(r.next_ms)).toISOString()));

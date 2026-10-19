@@ -216,6 +216,48 @@ suiteFor(
       await f.cleanup();
     }
   }, 60000);
+  test("a keyed correction retry dirties its successor hour after the fresh retention cutoff passes it", async () => {
+    const f = await writeFixture("retry-counter-successor"),
+      run = createHourlyRollup({ store: f.store });
+    try {
+      await f.stopMerges();
+      await sql`UPDATE pulse.bases SET retention_days=1 WHERE id=${f.base.id}::uuid`;
+      assertWrite(
+        await f.write({
+          metrics: [
+            { name: "requests", type: "counter", value: 10, ts: "2026-10-16T12:05:00Z" },
+            { name: "requests", type: "counter", value: 30, ts: "2026-10-16T13:05:00Z" },
+            { name: "requests", type: "counter", value: 40, ts: "2026-10-17T10:05:00Z" },
+          ],
+        }),
+      );
+      const correction: Parameters<typeof f.write>[0] = {
+        metrics: [{ name: "requests", type: "counter", value: 12, ts: "2026-10-16T12:05:00Z" }],
+      };
+      f.setTime("2026-10-17T12:00:00.001Z");
+      f.failInsert(1); // T1 commits, but the correction's _samples insert fails.
+      expect(await f.write(correction, "correction")).toMatchObject({ ok: false, error: { status: 503 } });
+      f.recover();
+      await sql`UPDATE pulse.metric_hours SET lease_until=${f.clock()} WHERE base_id=${f.base.id}::uuid`;
+      for (let i = 0; i < 3; i++) expect(await run(f.base.id)).toEqual({ buckets: 1, done: false });
+      expect(await run(f.base.id)).toEqual({ buckets: 0, done: true });
+      expect(await f.read("rollups", "increase", "WHERE bucket=toDateTime('2026-10-16 13:00:00','UTC')")).toEqual([{ increase: 20 }]);
+
+      // The successor is inside the original retention window, but outside the retry's fresh window.
+      f.setTime("2026-10-17T14:00:00Z");
+      assertWrite(await f.write(correction, "correction"));
+      const dirty = await sql<
+        { hour: Date }[]
+      >`SELECT hour FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid AND state='dirty' ORDER BY hour`;
+      expect(dirty.map((r) => r.hour.toISOString())).toEqual([
+        "2026-10-16T12:00:00.000Z",
+        "2026-10-16T13:00:00.000Z",
+        "2026-10-17T10:00:00.000Z",
+      ]);
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
   test("#3 sparse counters, resets, late corrections, empty hours, and a predecessor after the raw partition is dropped", async () => {
     const f = await writeFixture("rollups"),
       run = createHourlyRollup({ store: f.store });

@@ -267,6 +267,7 @@ export const createIngestWriter = ({
           db: tx,
           store: connectedStore,
           now,
+          acceptedAt,
         });
         if (plannedStates === null) {
           plannedStates = await planIngestStates(params.baseId, params.sourceId, prepared, tx);
