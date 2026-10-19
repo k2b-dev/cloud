@@ -74,6 +74,8 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
         const text = ytext.toString();
         const next = await update({ text, contributors, state: () => Y.encodeStateAsUpdate(doc) });
         if (next === text) return { status: "unchanged", text };
+        // A request cancelled while the callback ran must not publish a write.
+        options.signal?.throwIfAborted();
         const diff = minimalTextDiff(text, next);
         const beforeEditState = Y.encodeStateVector(doc);
         doc.transact(() => {

@@ -190,3 +190,18 @@ for (const step of ["load", "latest", "publish"] as const) {
     expect(f.saves).toHaveLength(0);
   });
 }
+
+test("edit cancelled during the callback publishes and saves nothing", async () => {
+  const f = fixture();
+  await f.append("current");
+  const abort = new AbortController();
+  await expect(
+    f.documents.edit("doc", { actor: null, signal: abort.signal }, ({ text }) => {
+      abort.abort(new Error("cancelled"));
+      return `${text}!`;
+    }),
+  ).rejects.toThrow("cancelled");
+  expect(f.events).toHaveLength(1);
+  expect(f.saves).toHaveLength(0);
+  expect(f.docs.every((doc) => doc.isDestroyed)).toBe(true);
+});
