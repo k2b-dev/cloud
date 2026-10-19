@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
+import { appAccentStyle } from "./app-appearance";
+import type { RuntimeContext } from "./runtime";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-layout-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -37,6 +39,8 @@ const withoutIslands = (html: string) => html.replace(/<solid-island\b[\s\S]*?<\
 type MinimalLayoutContextArg = Parameters<typeof MinimalLayout>[0]["c"];
 const legalApp = {
   id: "legal-probe",
+  routes: ["/minimal"],
+  appearance: { accent: "#0f766e" },
   legalLinks: [{ label: "Imprint", href: "/legal/imprint" }],
   presentation: { baseLocale: "en", translations: { de: { legalLinks: { "/legal/imprint": "Impressum" } } } },
 };
@@ -149,7 +153,62 @@ const server = new Hono()
     }),
   );
 
+const accentServer = new Hono<{ Variables: { runtime: RuntimeContext } }>()
+  .use("*", async (c, next) => {
+    const accent = c.req.query("accent");
+    // Deliberately malformed registry accents exercise the shell's runtime validation.
+    // @ts-expect-error The fixture includes values forbidden by AppAppearance's hex type.
+    c.set("runtime", {
+      apps: [
+        {
+          id: "accent-probe",
+          name: "Accent probe",
+          icon: "ti ti-palette",
+          description: "App color scope",
+          routes: ["/accent", "/admin/accent"],
+          ...(accent === undefined ? {} : { appearance: { accent } }),
+        },
+        { id: "core", name: "Core", icon: "ti ti-cloud", description: "Help host", routes: ["/help"], appearance: { accent: "#2563eb" } },
+      ],
+    });
+    await next();
+  })
+  .get(
+    "/accent",
+    ...app.ssr(
+      (c) => () =>
+        createComponent(Layout, { c, title: "App colors", focusMode: c.req.query("focusMode") === "true", children: "App content" }),
+    ),
+  )
+  .get("/help/apps/accent-probe", ...app.ssr((c) => () => createComponent(Layout, { c, title: "App Help", children: "Help content" })))
+  .get("/admin/accent", ...app.ssr((c) => () => createComponent(AdminLayout, { c, title: "App admin", children: "Admin content" })));
+
 describe("Cloud layouts SSR", () => {
+  test("the page shell gives portalled dialogs the current app's accent without its canvas background", async () => {
+    const style = appAccentStyle("#0f766e");
+    expect(style).toBeDefined();
+    expect(style).not.toContain("--app-canvas-");
+    for (const path of ["/accent", "/accent?focusMode=true", "/help/apps/accent-probe", "/admin/accent"]) {
+      const response = await accentServer.request(`${path}${path.includes("?") ? "&" : "?"}accent=%230f766e`);
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html.match(/<body\b[^>]*>/)?.[0]).toBe(
+        `<body class="k2b-ui app-accent-scope" style="${style}" data-k2b-app-workspace-controller="global">`,
+      );
+    }
+  });
+
+  test("invalid or absent app accents and minimal pages keep the plain page shell", async () => {
+    for (const accent of [undefined, "red", "#fff", "#12345g", "#0f766e;color:red", '#0f766e" onload="x']) {
+      const response = await accentServer.request(`/accent${accent === undefined ? "" : `?accent=${encodeURIComponent(accent)}`}`);
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html.match(/<body\b[^>]*>/)?.[0]).toBe('<body class="k2b-ui" data-k2b-app-workspace-controller="global">');
+    }
+    const minimal = await (await server.request("/minimal/default")).text();
+    expect(minimal.match(/<body\b[^>]*>/)?.[0]).toBe('<body class="k2b-ui" data-k2b-app-workspace-controller="global">');
+  });
+
   test("server-renders shell focus only on signed-in pages outside focusMode", async () => {
     const spies = [
       spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),

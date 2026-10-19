@@ -199,6 +199,7 @@ export default function Layout(props: LayoutProps) {
   const page = c.get("page") as Record<string, unknown>;
   const pageTitle = typeof title === "string" ? title : (title?.at(-1)?.title ?? appName);
   if (!page.title) page.title = pageTitle;
+  page.appAccent = currentApp?.appearance?.accent;
   const breadcrumbs: Breadcrumb[] = !title ? [{ title: appName }] : typeof title === "string" ? [{ title }] : title;
   // The way up is derived from the title array by one rule (see `derivePageTrail`). Anonymous pages keep their
   // header breadcrumbs, and focus surfaces such as pop-out editors have no way up; both show the title alone. The

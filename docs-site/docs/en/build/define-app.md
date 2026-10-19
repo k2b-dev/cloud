@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-10-10
+updated: 2026-10-19
 ---
 
 # Define an application
@@ -200,6 +200,8 @@ when their containing object is present.
 derives readable text with at least 4.5:1 contrast (WCAG AA) and soft selection
 fills for light and dark mode. Any six-digit hex accent is accepted. A light
 accent such as yellow is darkened only as far as needed.
+The accent also reaches dialogs and sheets opened from the app's pages,
+with no application code.
 
 | Background field | Default | Accepted range |
 | --- | --- | --- |
