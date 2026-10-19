@@ -131,6 +131,9 @@ const load = async () => {
 const RecordsView = isServer ? undefined : await load();
 ```
 
+A browser test has the same 5 s budget for its pages, documents, and scans;
+see [Test in Chromium and WebKit](#test-in-chromium-and-webkit).
+
 Solid attaches its delegated event listeners, such as the one for `click`, to
 the document that exists while a module evaluates, here the temporary one. A
 test that clicks therefore calls `delegateEvents(["click"], dom.document)` for
@@ -297,6 +300,21 @@ or a link. In [#1367](https://github.com/k2b-dev/cloud/issues/1367), an in-place
 and a Back to a graph page in a third. The cause was a collapsed receive
 queue on the CI runner's kernel; see
 [When a page never fires load](#when-a-page-never-fires-load).
+
+States that a test sets with `setContent`, a fixture call, or another change
+inside the page share one page per test. Open the page at the start of the
+test, change the state inside it, and close the page at the end. Each new page
+and each new document has a fixed cost. On a busy machine, a WebKit page takes
+about 300 ms to open. Each `setContent` parses an inlined `dist/styles.css`
+(857 KB) again, and each document runs its `addScriptTag` bundle again. These
+costs fit the 5 s test timeout on an idle machine, but not under three heavy
+slots ([#1485](https://github.com/k2b-dev/cloud/issues/1485),
+[#1497](https://github.com/k2b-dev/cloud/issues/1497)). When many states use
+one stylesheet, load it once and replace the body for each state, as `show()`
+does in `packages/ui/src/styles/touch-targets.browser.test.ts`. An exhaustive
+check, such as a tap on every pixel, looks only where its result can change,
+and a test compares it with the full check; see `takenPixels` in the same
+file.
 
 When `goto`, `reload`, `goBack`, or `goForward` on a launcher page fails or
 times out, the error appends a navigation diagnosis. It names the call and how long it
