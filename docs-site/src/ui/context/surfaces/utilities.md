@@ -90,6 +90,25 @@ subtitle, sidebar items shown as chips on narrow workspaces use 13px semibold
 labels, and the [mobile shell](../layout/mobile-shell) applies its touch type
 scale.
 
+## Icon tile
+
+Use `k2b-icon-tile` for app, file-type, and model icons. Do not use it for
+status icons or avatars.
+
+The glyph color (`currentColor`) drives the fill: `--k2b-icon-tile-fill`
+sets its share (12% light, 22% dark) over whatever surface lies below.
+The radius is 28%. The owning element sets a fixed box and the glyph color.
+Hover, focus, and selection never change the tile.
+
+```tsx
+<span
+  class="k2b-icon-tile"
+  style={{ width: "2.25rem", height: "2.25rem", color: "var(--k2b-app-workspace-active)" }}
+>
+  <i class="ti ti-notebook" />
+</span>
+```
+
 ## Accessibility
 
 Keep contrast between semantic text and surfaces when overriding color stacks. Focus, danger, success, and warning treatments must remain distinguishable without relying on hue alone.

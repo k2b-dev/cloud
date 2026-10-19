@@ -76,6 +76,46 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Control: hover feedback of a pressed formatting toolbar button.",
   },
   {
+    file: "packages/cloud/src/styles/global.css",
+    subject: ".dark .cloud-app-canvas { --cloud-shell-selected }",
+    reason: "Shell frame: owned by shell-soft-white-canvas.",
+  },
+  {
+    file: "packages/cloud/src/styles/global.css",
+    subject: ".dark .cloud-app-canvas[data-layout-authenticated] > .layout-rail { box-shadow }",
+    reason: "Shell frame: owned by shell-soft-white-canvas.",
+  },
+  {
+    file: "packages/cloud/src/styles/utilities-navigation.css",
+    subject: "@utility rail-item-active { border }",
+    reason: "Shell frame: owned by shell-soft-white-canvas.",
+  },
+  {
+    file: "packages/cloud/src/styles/utilities-navigation.css",
+    subject: "@utility rail-item-active { color }",
+    reason: "Shell frame: owned by shell-soft-white-canvas.",
+  },
+  {
+    file: "packages/cloud/src/styles/utilities-navigation.css",
+    subject: ".rail-item-active:hover { color }",
+    reason: "Shell frame: owned by shell-soft-white-canvas.",
+  },
+  {
+    file: "packages/cloud/src/styles/utilities-navigation.css",
+    subject: ".dark .rail-item-active { border-color }",
+    reason: "Shell frame: owned by shell-soft-white-canvas.",
+  },
+  {
+    file: "packages/cloud/src/styles/utilities-navigation.css",
+    subject: ".dark .rail-item-active { color }",
+    reason: "Shell frame: owned by shell-soft-white-canvas.",
+  },
+  {
+    file: "packages/cloud/src/styles/utilities-navigation.css",
+    subject: ".dark .rail-item-active:hover { color }",
+    reason: "Shell frame: owned by shell-soft-white-canvas.",
+  },
+  {
     file: "packages/core/src/styles/app.css",
     subject: ".k2b-ui .ai-usage-filter--active .k2b-choice-trigger { background }",
     reason: "Control: the trigger of a select that shows its applied filter value; select controls keep the platform fill.",
