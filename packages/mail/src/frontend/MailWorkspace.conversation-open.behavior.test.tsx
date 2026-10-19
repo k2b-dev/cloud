@@ -151,6 +151,8 @@ describe("Mail workspace conversation open", () => {
   let flagged: Set<string>;
   /** Conversations whose message also lies unread and flagged in Archive, which the detail names as its folder. */
   let elsewhere: Set<string>;
+  /** The mailbox's tags on the server. */
+  let mailboxTags: MailboxPageData["localTags"];
   /** Holds a detail response until the test releases it. */
   let detailGate: Map<string, Promise<void>>;
   let detailStatus: (id: string) => number;
@@ -181,10 +183,10 @@ describe("Mail workspace conversation open", () => {
       draftsMode: false,
       draftsPage: null,
       draftsError: null,
-      activeView: null,
+      activeView: url.searchParams.has("view") ? "needs_action" : null,
       savedViewId: null,
       listMode: "conversations",
-      folderId: FOLDER,
+      folderId: url.searchParams.has("view") ? null : FOLDER,
       query: resolveMailSearchRoute(url).query,
       search: resolveMailSearchRoute(url),
       listItems: page.rows.map(row),
@@ -198,7 +200,7 @@ describe("Mail workspace conversation open", () => {
     const reply = replies.get(conversationId);
     return {
       conversationId,
-      localTags: [],
+      localTags: mailboxTags,
       selectedSubject: `Subject ${conversationId}`,
       detailMessages: [
         {
@@ -296,6 +298,7 @@ describe("Mail workspace conversation open", () => {
     revisions = new Map();
     flagged = new Set();
     elsewhere = new Set();
+    mailboxTags = [];
     detailGate = new Map();
     detailStatus = () => 200;
     routeGate = undefined;
@@ -694,6 +697,32 @@ describe("Mail workspace conversation open", () => {
     await until(() => shows(rowId(20)), "the opened conversation");
     await until(() => routeRequests.length === 1, "the list refresh");
     await until(() => dom.root.querySelector('[aria-label="Flagged conversation"]') === null, "the flag gone from the reader");
+  });
+
+  test("a flag removed elsewhere refreshes a row of a folderless list that lies in one folder", async () => {
+    flagged.add(rowId(21));
+    mount(`${path}?view=needs_action`);
+    flagged.delete(rowId(21));
+    open(rowId(21));
+    await until(() => shows(rowId(21)), "the opened conversation");
+    await until(() => routeRequests.length === 1, "the list refresh");
+    expect(routeRequests).toEqual([`${path}?view=needs_action&conversation=${rowId(21)}`]);
+  });
+
+  test("tags a detail brought stay when another page is applied", async () => {
+    mount();
+    const socket = FakeWebSocket.instances.at(-1)!;
+    socket.open();
+    socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+    socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: rowId(1) } });
+    await until(() => routeRequests.length === 1, "the live refresh");
+    await settle();
+    mailboxTags = [{ id: "Tag001", mailboxId: MAILBOX_ID, name: "Urgent", color: "#ff0000", revision: 1, createdAt: now, updatedAt: now }];
+    open(rowId(10));
+    await until(() => shows(rowId(10)), "the opened conversation");
+    await until(() => dom.document.body.textContent?.includes("Urgent") === true, "the new tag");
+    await loadSecondPage();
+    expect(dom.document.body.textContent).toContain("Urgent");
   });
 
   test("a message in another folder does not make the folder's row look older", async () => {

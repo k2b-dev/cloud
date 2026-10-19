@@ -62,8 +62,8 @@ export const emptyMailSelection = (): MailSelection => ({
  * Whether the detail shows that the row is older: a newer revision, more messages, or a flag or an unread message in a
  * folder the row does not know. Only messages in folders the list covers count (`listed`), because the row leaves the
  * others out. The detail shows one placement per message, so a flag or unread state the row shows but no message has
- * anymore counts only for a list of one folder (`onePlacement`), where that placement is the folder's, and only when
- * the detail holds every message. A missing row (not loaded) is never older.
+ * anymore counts only when that placement is the row's (`onePlacement`: a list of one folder, or a row in one folder
+ * only), and only when the detail holds every message. A missing row (not loaded) is never older.
  */
 export const mailRowOlderThanDetail = (
   item: Pick<MailListItem, "revision" | "messageCount" | "flagged" | "unread" | "unreadFolderIds"> | undefined,

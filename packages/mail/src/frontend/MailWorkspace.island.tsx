@@ -535,7 +535,10 @@ function MailWorkspaceView(props: {
       if (otherSelection && routeListKey(committedRouteSource) !== key) return;
       const scopeChanged = mailListScope(requestPath()) !== mailListScope(target.href);
       let next = applyPendingListState(
-        otherSelection ? { ...first.snapshot, ...pickMailSelection(unwrap(data)) } : preserveCurrentDetail(first.snapshot),
+        // The kept detail also brought the mailbox's tags, which are newer than this page 1's.
+        otherSelection
+          ? { ...first.snapshot, ...pickMailSelection(unwrap(data)), localTags: unwrap(data).localTags }
+          : preserveCurrentDetail(first.snapshot),
       );
       for (const page of pages.slice(1)) {
         const reconciled = applyPendingListState(pageList(page));
@@ -1143,7 +1146,8 @@ function MailWorkspaceView(props: {
     const folderList = data.search.expression === null && !data.savedViewId ? data.folderId : null;
     const listedFolderIds = (folderId: string | null) =>
       folderList ? folderId === folderList : folderId === null || !excludedListingFolderIds().has(folderId);
-    const rowOlder = mailRowOlderThanDetail(row, selection, listedFolderIds, folderList !== null);
+    // The detail's placement is the row's when the list has one folder, or the row lies in one folder only.
+    const rowOlder = mailRowOlderThanDetail(row, selection, listedFolderIds, folderList !== null || row?.activeFolderIds.length === 1);
     commitSelectionInList(href, {
       ...selection,
       selectedConversationId: conversationId,
