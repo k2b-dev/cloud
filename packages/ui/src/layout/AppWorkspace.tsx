@@ -18,7 +18,8 @@ import {
   useContext,
 } from "solid-js";
 import { Dynamic, isServer } from "solid-js/web";
-import { Button, IconButton, IconButtonLink } from "../actions/Button";
+import { Button, ButtonLink, IconButton, IconButtonLink } from "../actions/Button";
+import { useFilterMessages } from "../actions/filter-messages";
 import { dialogCore } from "../feedback/dialog-core";
 import { RenderErrorBoundary } from "../internal/render-error";
 import {
@@ -65,6 +66,9 @@ const WorkspaceContext = createContext<{
   initialLayoutState: () => AppWorkspaceLayoutState | null | undefined;
 }>();
 const LayoutStateContext = createContext<AppWorkspaceLayoutState | null>(null);
+const HEAD = Symbol("AppWorkspace.Head");
+type HeadSlot = { kind: typeof HEAD; props: AppWorkspaceHeadProps };
+const headSlot = (value: unknown): value is HeadSlot => !!value && typeof value === "object" && "kind" in value && value.kind === HEAD;
 const MAIN_PANE = Symbol("AppWorkspace.MainPane");
 const SIDEBAR_DESKTOP = Symbol("AppWorkspace.SidebarDesktop");
 const SIDEBAR_ITEM_ICON = Symbol("AppWorkspace.SidebarItemIcon");
@@ -107,6 +111,29 @@ const sidebarItemSlot = (value: unknown): value is SidebarItemSlot =>
   );
 const navTreeItemSlot = (value: unknown): value is NavTreeItemSlot =>
   Boolean(value && typeof value === "object" && "kind" in value && (value as NavTreeItemSlot).kind === NAV_TREE_ITEM);
+
+export type AppWorkspaceHeadProps = {
+  /** View tabs, usually a ViewTabs. */
+  views?: JSX.Element;
+  /** Filter chips, usually FilterChip elements. */
+  filters?: JSX.Element;
+  /** Any filter is active: shows Reset and the quiet result count. */
+  filtered?: boolean;
+  /** Reset target while filtered: a URL (works without JavaScript) and/or a callback. */
+  resetHref?: string;
+  onReset?: () => void;
+  /** Quiet result count shown only while filtered; CSS drops it first when space is short. */
+  count?: JSX.Element;
+  /** Secondary actions at the end of the row. Never a filled button. */
+  actions?: JSX.Element;
+  /** The one filled primary action. Below 48rem it becomes a round icon button beside the host's bottom bar. */
+  primary?: { label: string; icon: string; href?: string; onClick?: (event: MouseEvent) => void };
+};
+
+/** Head row slot. Must be a direct child of AppWorkspace; its parts may be islands. */
+function AppWorkspaceHeadSlot(props: AppWorkspaceHeadProps): JSX.Element {
+  return { kind: HEAD, props } satisfies HeadSlot as unknown as JSX.Element;
+}
 
 type ResizeHandleProps = {
   kind: "sidebar" | "pane" | "detail" | "drawer";
@@ -2060,6 +2087,7 @@ const AppWorkspaceSidebarIconAction = (props: AppWorkspaceSidebarIconActionProps
 
 type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
   LayoutStateProvider: (props: AppWorkspaceLayoutStateProviderProps) => JSX.Element;
+  Head: (props: AppWorkspaceHeadProps) => JSX.Element;
   Content: (props: AppWorkspaceContentProps) => JSX.Element;
   Main: (props: AppWorkspaceMainProps) => JSX.Element;
   MainPane: (props: AppWorkspaceMainPaneProps) => JSX.Element;
@@ -2089,36 +2117,140 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
  * host's page title with the way up (see `PageTitle`); the page's own
  * `PageTitle` takes its place. The visible title is no heading, because many
  * pages render their own `h1`. From 64 rem a sidebar that marks the current
- * page names it already: the row hides, and only on a page without its own
- * `h1` its heading stays for assistive technology. It is one fixed height
- * and draws no line; CSS decides when it shows, so the server-rendered page
- * already has its final geometry.
+ * page names it already: the title and the way up hide, and only on a page
+ * without its own `h1` its heading stays for assistive technology. With an
+ * `AppWorkspace.Head` slot the row is always there and also carries the
+ * views, the filters, the result count, and the actions; only its title
+ * follows the rules above. It draws no line; CSS decides what shows and when
+ * the filters wrap, so the server-rendered page already has its final
+ * geometry.
  */
-function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean }): JSX.Element {
+function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; head?: AppWorkspaceHeadProps }): JSX.Element {
   const messages = useWorkspaceMessages();
+  const filters = useFilterMessages();
+  // JSX prop getters construct their elements on every read. Share each
+  // resolved slot between its presence check and its rendered content.
+  const resolvedViews = children(() => props.head?.views);
+  const resolvedFilters = children(() => props.head?.filters);
+  const resolvedActions = children(() => props.head?.actions);
+  const resolvedCount = children(() => props.head?.count);
   // A nested workspace is part of a page that already shows its title.
   const trail = props.nested ? () => undefined : usePageTrail();
+  const resetContent = () => filters().reset;
+  const primaryContent = () => (
+    <>
+      <i class={props.head?.primary?.icon} aria-hidden="true" />
+      <span class="k2b-app-workspace__head-primary-label">{props.head?.primary?.label}</span>
+    </>
+  );
   return (
-    <div class="k2b-app-workspace__head" data-trail={trail()?.ancestors.length ? "up" : trail() ? "title" : undefined}>
-      <IconButton
-        class="k2b-app-workspace__head-toggle"
-        label={messages().showNavigation}
-        aria-controls={props.sidebarId()}
-        aria-expanded="false"
-        data-app-workspace-sidebar-toggle=""
-      >
-        <i class="ti ti-layout-sidebar" aria-hidden="true" />
-      </IconButton>
-      <Show when={trail()}>
-        {(current) => (
-          <>
-            <PageTitle trail={current()} as="p" fallback />
-            {/* A head that never hydrates follows a new trail through `followPageTrail`. */}
-            <h1 class="k2b-app-workspace__head-heading" data-k2b-page-trail-title="" data-k2b-server={isServer ? "" : undefined}>
-              {current().title}
-            </h1>
-          </>
-        )}
+    <div
+      class="k2b-app-workspace__head"
+      data-trail={trail()?.ancestors.length ? "up" : trail() ? "title" : undefined}
+      data-row={props.head ? "" : undefined}
+    >
+      <div class="k2b-app-workspace__head-lead">
+        <IconButton
+          class="k2b-app-workspace__head-toggle"
+          label={messages().showNavigation}
+          aria-controls={props.sidebarId()}
+          aria-expanded="false"
+          data-app-workspace-sidebar-toggle=""
+        >
+          <i class="ti ti-layout-sidebar" aria-hidden="true" />
+        </IconButton>
+        <Show when={trail()}>
+          {(current) => (
+            <>
+              <PageTitle trail={current()} as="p" fallback />
+              {/* A head that never hydrates follows a new trail through followPageTrail. */}
+              <h1 class="k2b-app-workspace__head-heading" data-k2b-page-trail-title="" data-k2b-server={isServer ? "" : undefined}>
+                {current().title}
+              </h1>
+            </>
+          )}
+        </Show>
+        <Show when={resolvedViews.toArray().some(Boolean)}>
+          <div class="k2b-app-workspace__head-views">{resolvedViews()}</div>
+        </Show>
+        <Show when={resolvedFilters.toArray().some(Boolean) || props.head?.filtered}>
+          <div class="k2b-app-workspace__head-filters" role="group" aria-label={filters().filters}>
+            {resolvedFilters()}
+            <Show when={props.head?.filtered}>
+              <Show
+                when={props.head?.resetHref}
+                fallback={
+                  <Button variant="ghost" size="sm" class="k2b-app-workspace__head-reset" onClick={() => props.head?.onReset?.()}>
+                    {resetContent()}
+                  </Button>
+                }
+              >
+                {(href) => (
+                  <ButtonLink
+                    variant="ghost"
+                    size="sm"
+                    class="k2b-app-workspace__head-reset"
+                    href={href()}
+                    onClick={
+                      props.head?.onReset
+                        ? (event) => {
+                            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                            event.preventDefault();
+                            props.head?.onReset?.();
+                          }
+                        : undefined
+                    }
+                  >
+                    {resetContent()}
+                  </ButtonLink>
+                )}
+              </Show>
+            </Show>
+          </div>
+        </Show>
+        <Show
+          when={props.head?.filtered && resolvedCount.toArray().some((value) => value !== undefined && value !== null && value !== false)}
+        >
+          <span class="k2b-app-workspace__head-count">
+            <span>{resolvedCount()}</span>
+          </span>
+        </Show>
+      </div>
+      <Show when={resolvedActions.toArray().some(Boolean) || props.head?.primary}>
+        <div class="k2b-app-workspace__head-actions">
+          {resolvedActions()}
+          <Show when={props.head?.primary}>
+            {(primary) => (
+              <Show
+                when={primary().href}
+                fallback={
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    class="k2b-app-workspace__head-primary"
+                    data-workspace-primary=""
+                    onClick={primary().onClick}
+                  >
+                    {primaryContent()}
+                  </Button>
+                }
+              >
+                {(href) => (
+                  <ButtonLink
+                    variant="primary"
+                    size="sm"
+                    class="k2b-app-workspace__head-primary"
+                    data-workspace-primary=""
+                    href={href()}
+                    onClick={primary().onClick}
+                  >
+                    {primaryContent()}
+                  </ButtonLink>
+                )}
+              </Show>
+            )}
+          </Show>
+        </div>
       </Show>
     </div>
   );
@@ -2148,6 +2280,20 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
     );
   });
 
+  const contents = () => {
+    const resolved = children(() => props.children);
+    const slots = createMemo(() => flatten(resolved()));
+    // Same props object, same memo value: a sibling change must not rebuild the head's slots.
+    const head = createMemo(() => slots().find(headSlot)?.props);
+    const content = () => slots().filter((value) => !headSlot(value)) as JSX.Element;
+    return (
+      <>
+        <AppWorkspaceHead sidebarId={sidebarId} nested={nested} head={head()} />
+        {content()}
+      </>
+    );
+  };
+
   return (
     <ResizeContext.Provider value={props.resizable !== false}>
       <WorkspaceContext.Provider value={workspace}>
@@ -2163,8 +2309,7 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
           data-workspace-resizable={props.resizable === false ? "false" : "true"}
           style={appWorkspaceLayoutStyle(initialLayoutState())}
         >
-          <AppWorkspaceHead sidebarId={sidebarId} nested={nested} />
-          {props.children}
+          {contents()}
         </div>
       </WorkspaceContext.Provider>
     </ResizeContext.Provider>
@@ -2174,6 +2319,7 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
 AppWorkspace.LayoutStateProvider = (props) => (
   <LayoutStateContext.Provider value={props.state ?? null}>{props.children}</LayoutStateContext.Provider>
 );
+AppWorkspace.Head = AppWorkspaceHeadSlot;
 AppWorkspace.Content = (props) => <div class={`k2b-app-workspace__content ${props.class ?? ""}`}>{props.children}</div>;
 AppWorkspace.Main = AppWorkspaceMain;
 AppWorkspace.MainPane = AppWorkspaceMainPane;

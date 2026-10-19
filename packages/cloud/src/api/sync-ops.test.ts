@@ -88,7 +88,7 @@ describe("Core Sync operations broker", () => {
     const routes = mount({ listApps: async () => apps });
     const response = await routes.request("/api/admin/sync");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("no-store, no-transform");
     expect(await response.json()).toEqual({ apps });
     let reads = 0;
     const denied = mount({
@@ -133,7 +133,7 @@ describe("Core Sync operations broker", () => {
       body: JSON.stringify({ requestId: "run-1" }),
     });
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("no-store, no-transform");
     expect(forwarded).toBeTrue();
   });
 
