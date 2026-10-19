@@ -25,6 +25,7 @@ import { enqueueMailInvalidation, mailLive } from "./live";
 import { assertMailboxTransportFence, loadMailboxTransportFence, type MailboxTransportFence } from "./mailbox-transport-fence";
 import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-blobs";
 import { assessMessageSourceSize } from "./message-source-size";
+import { estimateHydrationWorkingSet, withProcessingMemory } from "./processing-memory-budget";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { providerErrorCode, providerErrorMessage } from "./provider-errors";
 import {
@@ -1415,7 +1416,20 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
         const parsedBlobId = mimeBlobId;
         await assertLeaseActive();
         await assertMailboxTransportFence(fence);
-        const parsed = await parseRemoteDraft(() => createBlobReadable(parsedBlobId));
+        const sourceBlob = await getStoredBlob(parsedBlobId);
+        // Draft snapshots have no BODYSTRUCTURE, and the parser rejects bodies above MAX_BODY_BYTES.
+        const parsed = await withProcessingMemory(
+          {
+            weightBytes:
+              estimateHydrationWorkingSet({
+                sourceBytes: sourceBlob.byteLength,
+                htmlBytes: Math.min(sourceBlob.byteLength, MAX_BODY_BYTES),
+              }) || 1,
+            label: "draft import",
+            signal,
+          },
+          () => parseRemoteDraft(() => createBlobReadable(parsedBlobId)),
+        );
         await assertLeaseActive();
         if (
           parsed.cloudDraftId &&
