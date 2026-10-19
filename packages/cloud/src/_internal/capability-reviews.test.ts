@@ -4,11 +4,11 @@ import { assertCapabilityReview, checkActionReviewMessages } from "../capabiliti
 import { ApprovalPageSchema } from "../contracts/approvals";
 import {
   CAPABILITY_MAX_REVIEW_BYTES,
+  CapabilityActionCallReviewSchema,
   type CapabilityActionDefinition,
   CapabilityActionManifestSchema,
   type CapabilityActionPolicy,
   CapabilityActionReviewDataSchema,
-  CapabilityActionReviewSchema,
   CapabilityManifestSchema,
   type CapabilitySlot,
   capabilityActionPolicy,
@@ -120,6 +120,23 @@ describe("shared review validation at the producer", () => {
     expect(issues).toHaveLength(3);
     expect(issues.filter((issue) => issue === "A sends message requires from")).toHaveLength(1);
     expect(new Set(issues).size).toBe(issues.length);
+  });
+  test("a declared sends policy keeps from required when the call asks for another reason", () => {
+    const review = reviewFixture();
+    if (review.preview?.kind !== "message") throw new Error("Expected message preview");
+    delete review.preview.from;
+    for (const ask of [undefined, "involves_people", "sends"] as const) {
+      review.ask = ask;
+      expect(capabilityActionReviewIssues(review, reviewContext)).toContain("A sends message requires from");
+    }
+    review.ask = "sends";
+    expect(
+      capabilityActionReviewIssues(review, { policy: { ask: "involves_people" }, queries: [], validateQueryInput: () => false }),
+    ).toContain("A sends message requires from");
+    review.ask = "deletes";
+    expect(
+      capabilityActionReviewIssues(review, { policy: { ask: "involves_people" }, queries: [], validateQueryInput: () => false }),
+    ).not.toContain("A sends message requires from");
   });
   test("receipt validation at the result seam and consumer future receipt tolerance", () => {
     const compiled = compileReviewFixture(),
@@ -261,7 +278,7 @@ describe("review helpers", () => {
     for (const form of ["rejected", "notRun", "short"]) {
       const review = reviewFixture();
       const forms = { locale: review.locale, sentence: { ...review.sentence, [form]: undefined } };
-      expect(CapabilityActionReviewSchema.safeParse({ ...review, ...forms }).success).toBe(true);
+      expect(CapabilityActionCallReviewSchema.safeParse({ ...review, ...forms }).success).toBe(true);
       expect(actionReview(forms, review.slots).sentence).toEqual(forms.sentence);
     }
   });

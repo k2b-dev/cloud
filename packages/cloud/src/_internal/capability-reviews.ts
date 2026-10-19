@@ -65,7 +65,8 @@ export const capabilityActionReviewIssues = (review: unknown, context: Capabilit
     ...capabilityPreviewIssues(
       data.preview,
       data.links,
-      (data.ask ?? ("ask" in context.policy ? context.policy.ask : undefined)) === "sends",
+      // A per-call reason never lifts the declared `sends` completeness rule.
+      data.ask === "sends" || ("ask" in context.policy && context.policy.ask === "sends"),
     ),
   );
   return [...new Set(issues)];
