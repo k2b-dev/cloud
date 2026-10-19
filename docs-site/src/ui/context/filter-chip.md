@@ -13,6 +13,8 @@ Keep frequently changed or required controls visible instead. Use `Select` for o
 ```tsx
 import {
   FilterChip,
+  FilterToggle,
+  type FilterToggleProps,
   type FilterChipSection,
 } from "@k2b/ui";
 ```
@@ -141,4 +143,47 @@ const sections: FilterChipSection[] = [
   value={filters()}
   onValueChange={setFilters}
 />;
+```
+
+## FilterToggle
+
+Use `FilterToggle` for one on/off filter, such as **Service accounts** or
+**Only mine**. The parent owns `active` and updates the URL or filter state.
+It has the same look and app selection tint as an active `FilterChip`.
+Selection changes only color and background, so neighboring chips stay in place.
+
+Pass `href` to render a native link that works without JavaScript. The active
+link carries `aria-current="true"`. Without `href`, it renders a button with
+`aria-pressed`; use `onClick` to update the controlled state. A disabled toggle
+renders a disabled button even when `href` is supplied.
+
+```tsx
+const [onlyMine, setOnlyMine] = createSignal(false);
+
+<FilterToggle
+  label="Only mine"
+  icon="ti ti-user"
+  active={onlyMine()}
+  onClick={() => setOnlyMine(!onlyMine())}
+/>;
+
+<FilterToggle
+  label="Service accounts"
+  icon="ti ti-user-key"
+  active={showServiceAccounts}
+  href={serviceAccountsToggleUrl}
+/>;
+```
+
+```ts
+type FilterToggleProps = {
+  label: JSX.Element;
+  icon: string;
+  active: boolean;
+  href?: string;
+  onClick?: (event: MouseEvent) => void;
+  title?: string;
+  disabled?: boolean;
+  class?: string;
+};
 ```

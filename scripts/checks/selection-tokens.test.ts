@@ -356,3 +356,98 @@ test("baseline counts are separate for selection and accent-mix, after allowlist
     await rm(root, { recursive: true, force: true });
   }
 });
+
+for (const variant of ["subtle", "secondary", "ghost"]) {
+  test(`selected-button flags single and multiline primary/${variant} selections with either quote style`, () => {
+    const single = `  <ButtonLink variant={status === value ? "primary" : "${variant}"} />`;
+    const multi = `  <Button\n    variant={\n      active()\n        ? 'primary'\n        : '${variant}'\n    }\n  />`;
+    expect(check(single)).toMatchObject([{ kind: "selected-button", line: 1, subject: single.trim() }]);
+    expect(check(multi)).toMatchObject([{ kind: "selected-button", line: 2, subject: "variant={" }]);
+    expect(check(single)[0]!.message).toContain("ViewTabs, Tabs, SegmentedControl, FilterChip or FilterToggle");
+    expect(check(single)[0]!.message).toContain("with a reason");
+  });
+}
+
+test("selected-button ignores other variant ternaries, static variants and comments", () => {
+  expect(
+    check(`
+<Button variant={x ? "primary" : "danger"} />
+<Button variant={x ? "secondary" : "primary"} />
+<Button variant={x ? "ai" : "primary"} />
+<Button variant="primary" />
+<Button data-variant={x ? "primary" : "subtle"} />
+// <Button variant={x ? "primary" : "ghost"} />
+/* <Button variant={x ? "primary" : "secondary"} /> */
+`),
+  ).toEqual([]);
+  expect(check('<Button variant={x ? "primary" : "subtle"} />', "packages/demo/src/view.ts")).toEqual([]);
+});
+
+test("selected-button collector excludes ui, tests, browser harnesses, suites and fixtures", async () => {
+  const excluded = [
+    "packages/ui/src/Toggle.tsx",
+    "packages/demo/src/page.render.test.tsx",
+    "packages/demo/src/page.behavior.test.tsx",
+    "packages/demo/src/page.browser.test.tsx",
+    "packages/demo/src/browser-harness.tsx",
+    "packages/demo/src/page.browser-suite.tsx",
+    "packages/demo/src/page-browser-fixture.tsx",
+    "packages/demo/src/fixtures/page.tsx",
+  ];
+  const { root, locations } = await workspace(
+    Object.fromEntries([file, ...excluded].map((path) => [path, '<Button variant={active ? "primary" : "subtle"} />'])),
+  );
+  try {
+    expect(await locations()).toEqual([`${file}:1`]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("selected-button allows a real action by source-line substring and rejects a stale allowance", async () => {
+  const source = '  <Button variant={touch() ? "primary" : "secondary"} onClick={copy}>Copy link</Button>';
+  const allowances = [
+    { file, subject: 'variant={touch() ? "primary" : "secondary"}', reason: "Action: copy the pairing link on touch devices." },
+  ];
+  const { root, run } = await workspace({ [file]: source }, undefined, allowances);
+  try {
+    expect(await run()).toEqual([]);
+    await writeFile(join(root, file), "<Button onClick={copy}>Copy link</Button>");
+    expect(await run()).toMatchObject([{ message: expect.stringContaining("Stale selection-tokens allowlist entry") }]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("selected-button cannot be hidden in a baseline, including with --fix", async () => {
+  const counts = new Map([[`${file} | selected-button`, 1]]);
+  expect(() => formatSelectionBaseline(counts)).toThrow("selected-button cannot be baselined");
+  const { root, run } = await workspace({
+    [file]: '<Button variant={active ? "primary" : "ghost"} />',
+    [baseline]: `${file} | selected-button | 1\n`,
+  });
+  try {
+    await expect(run()).rejects.toThrow("selected-button cannot be baselined");
+    await expect(run(true)).rejects.toThrow("selected-button cannot be baselined");
+    expect(await readFile(join(root, baseline), "utf8")).toBe(`${file} | selected-button | 1\n`);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("regression: origin/main requests and gateway range variant swaps fail without a baseline", async () => {
+  // Exact old variant lines from origin/main, before migration to ViewTabs/RangeTabs.
+  const sources = {
+    "packages/demo/src/requests.tsx": '                variant={status === value ? "primary" : "subtle"}',
+    "packages/demo/src/gateway.tsx": '              variant={option === range ? "primary" : "secondary"}',
+  };
+  const { root, run } = await workspace(sources);
+  try {
+    expect(await run()).toHaveLength(2);
+    for (const finding of await run()) expect(finding).toMatchObject({ kind: "selected-button", line: 1 });
+    expect(await run(true)).toHaveLength(2);
+    expect(await Bun.file(join(root, baseline)).exists()).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

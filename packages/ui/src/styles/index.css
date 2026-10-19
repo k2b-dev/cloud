@@ -5737,6 +5737,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     color 150ms ease-out;
 }
 
+/* A FilterToggle link looks like the chip button beside it. */
+.k2b-ui a.k2b-filter-chip {
+  text-decoration: none;
+}
+
 .k2b-ui .k2b-filter-chip:hover {
   color: var(--k2b-text);
   background: color-mix(in srgb, var(--k2b-text) 6%, var(--k2b-field-surface, var(--k2b-surface-muted)));

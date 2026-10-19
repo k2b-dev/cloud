@@ -169,3 +169,59 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
 }
 
 export default FilterChip;
+
+export type FilterToggleProps = {
+  label: JSX.Element;
+  icon: string;
+  /** Whether the filter is on. An active toggle carries the same tint as an active `FilterChip`. */
+  active: boolean;
+  /** Link to the URL with the filter switched. The link keeps working without JavaScript. */
+  href?: string;
+  onClick?: (event: MouseEvent) => void;
+  title?: string;
+  disabled?: boolean;
+  class?: string;
+};
+
+/**
+ * One on/off filter in the chip look: a link marked `aria-current="true"` while active, or a button with
+ * `aria-pressed`. Selection changes only colour and background, so neighbouring chips never move.
+ */
+export function FilterToggle(props: FilterToggleProps): JSX.Element {
+  const content = () => (
+    <>
+      <i class={props.icon} aria-hidden="true" />
+      <span class="k2b-filter-chip__label">{props.label}</span>
+    </>
+  );
+  const className = () => `k2b-filter-chip ${props.class ?? ""}`;
+  return (
+    <Show
+      when={props.href !== undefined && !props.disabled}
+      fallback={
+        <button
+          type="button"
+          class={className()}
+          data-active={props.active ? "true" : undefined}
+          aria-pressed={props.active}
+          title={props.title}
+          disabled={props.disabled}
+          onClick={(event) => props.onClick?.(event)}
+        >
+          {content()}
+        </button>
+      }
+    >
+      <a
+        class={className()}
+        href={props.href}
+        data-active={props.active ? "true" : undefined}
+        aria-current={props.active ? "true" : undefined}
+        title={props.title}
+        onClick={(event) => props.onClick?.(event)}
+      >
+        {content()}
+      </a>
+    </Show>
+  );
+}

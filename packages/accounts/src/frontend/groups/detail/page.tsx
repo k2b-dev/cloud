@@ -3,7 +3,7 @@ import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
 import { canManageGroup, getDefaultGroupScope, groupDisplayName, isAdminUser } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
-import { ButtonLink, NoticeCard, Tag } from "@k2b/ui";
+import { NoticeCard, Tag, ViewTabs } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { z } from "zod";
 import { createPagination } from "@/contracts";
@@ -286,26 +286,22 @@ export default ssr<AuthContext>(async (c) => {
           {!canMutateGroup && <NoticeCard tone="warning">{t.ipaDisabledMutations}</NoticeCard>}
 
           <div class="flex flex-wrap items-start justify-between gap-2" style="view-transition-name: accounts-group-tabs">
-            <nav class="flex flex-wrap items-center gap-1" aria-label={t.groupDetailSections}>
-              {getVisibleGroupDetailTabs(isAdmin).map((entryTab) => (
-                <ButtonLink
-                  href={buildDetailHref(groupId, {
-                    tab: entryTab,
-                    search: null,
-                    page: null,
-                    indirect: null,
-                    service_accounts: null,
-                  })}
-                  size="sm"
-                  variant={tab === entryTab ? "primary" : "subtle"}
-                  role="tab"
-                  aria-selected={tab === entryTab}
-                >
-                  <i class={`${GROUP_DETAIL_TAB_META[entryTab].icon} text-sm`} />
-                  <span>{entryTab === "members" ? t.members : entryTab === "managers" ? t.managers : t.memberOf}</span>
-                </ButtonLink>
-              ))}
-            </nav>
+            <ViewTabs
+              label={t.groupDetailSections}
+              current={tab}
+              items={getVisibleGroupDetailTabs(isAdmin).map((entryTab) => ({
+                id: entryTab,
+                label: entryTab === "members" ? t.members : entryTab === "managers" ? t.managers : t.memberOf,
+                icon: GROUP_DETAIL_TAB_META[entryTab].icon,
+                href: buildDetailHref(groupId, {
+                  tab: entryTab,
+                  search: null,
+                  page: null,
+                  indirect: null,
+                  service_accounts: null,
+                }),
+              }))}
+            />
             <p class="px-1 py-2 text-xs text-dimmed">{activeCountText}</p>
           </div>
 
