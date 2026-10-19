@@ -21,6 +21,7 @@ import {
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { formatDeadline } from "@/presentation/deadline";
+import { spaceCommandMessages } from "../commands";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import SpacesSidebarList from "./[id]/_components/sidebar/SpacesSidebarList";
 import {
@@ -30,6 +31,7 @@ import {
   listenSpacesNavigationHints,
   type SidebarSpace,
 } from "./[id]/_components/sidebar/spaces-navigation";
+import { createRetryToasts } from "./lib/feedback";
 import { readResponseError } from "./lib/response";
 import { overviewMessages } from "./overview-messages";
 import { createSpaceCommands } from "./space-commands";
@@ -198,6 +200,16 @@ export default function SpacesOverview(props: Props) {
       }),
     );
   });
+  const retryToast = createRetryToasts();
+  /** A failed command (the Space no longer allows it, or the request failed) says so and offers the same step again. */
+  const composeTask = (): Promise<void> =>
+    openCommand("spaces.task.compose", {}).catch((error: unknown) =>
+      retryToast(
+        error instanceof Error && error.message ? error.message : spaceCommandMessages.resolve([locale()]).t.failed,
+        t.retry,
+        composeTask,
+      ),
+    );
   const openSearch = () => openGlobalSearch({ scope: { appId: "spaces", label: "Spaces", icon: "ti ti-layout-kanban" } });
 
   const activityFeed = () => (
@@ -392,7 +404,7 @@ export default function SpacesOverview(props: Props) {
             </Button>
           </>
         }
-        primary={{ label: t.newTask, icon: "ti ti-plus", onClick: () => void openCommand("spaces.task.compose", {}) }}
+        primary={{ label: t.newTask, icon: "ti ti-plus", onClick: () => void composeTask() }}
       />
       <AppWorkspace.Content>
         <AppWorkspace.Main class="spaces-overview-main" width="content" aria-busy={work.loading()}>
