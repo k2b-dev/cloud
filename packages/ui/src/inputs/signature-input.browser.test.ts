@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 // Pointer capture, coalesced pen samples, SVG screen matrices, and box sizes only exist in a real engine.
 const ui = resolve(import.meta.dir, "../..");
@@ -90,6 +90,8 @@ type FixtureWindow = Window & {
   setReadOnly: (readOnly: boolean) => void;
   current: () => Value;
   lastPointer: number;
+  /** The last touch event type that `swipe` waits for, once the page handled it. */
+  handledTouch: string;
   png: () => Promise<{ prefix: string; width: number; height: number; ink: number }>;
   pngError: (svg: string) => Promise<string>;
 };
@@ -192,8 +194,24 @@ const drawWithMouse = async (page: Page, points: [number, number][], { up = true
   for (const [x, y] of rest) await page.mouse.move(pad.x + x, pad.y + y, { steps: 3 });
   if (up) await page.mouse.up();
 };
-/** Swipes a finger through Chromium's input protocol, which Playwright offers for moving touches; WebKit only gets taps. */
-const swipe = async (page: Page, from: [number, number], to: [number, number], end: "touchEnd" | "touchCancel" = "touchEnd") => {
+/**
+ * Swipes a finger through Chromium's input protocol, which Playwright offers for moving touches; WebKit only gets taps.
+ * Chromium answers a touch call once the browser sent the touch on, not once the page handled it, so the swipe returns
+ * only after the page's own listener saw its last touch. `beforeEnd` runs while the finger is still down.
+ */
+const swipe = async (
+  page: Page,
+  from: [number, number],
+  to: [number, number],
+  { end = "touchEnd", beforeEnd }: { end?: "touchEnd" | "touchCancel"; beforeEnd?: () => Promise<unknown> } = {},
+) => {
+  const last = end === "touchEnd" ? "touchend" : "touchcancel";
+  await page.evaluate((type) => {
+    const target = window as unknown as FixtureWindow;
+    target.handledTouch = "";
+    // Touch events follow the pointer events of the same touch, so the component has handled those too.
+    document.addEventListener(type, () => (target.handledTouch = type), { capture: true, once: true, passive: true });
+  }, last);
   const cdp = await page.context().newCDPSession(page);
   const steps = 10;
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from[0], y: from[1] }] });
@@ -202,7 +220,11 @@ const swipe = async (page: Page, from: [number, number], to: [number, number], e
     const y = from[1] + ((to[1] - from[1]) * step) / steps;
     await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y }] });
   }
+  await beforeEnd?.();
   await cdp.send("Input.dispatchTouchEvent", { type: end, touchPoints: [] });
+  await page.waitForFunction((type) => (window as unknown as FixtureWindow).handledTouch === type, last);
+  await frames(page);
+  await cdp.detach();
 };
 const inkPaths = (page: Page) => page.locator(".k2b-signature-input__canvas path").count();
 const frames = (page: Page) =>
@@ -537,7 +559,6 @@ describe(`SignatureInput in ${browserName}`, () => {
         await frames(page);
         const pad = await box(page, ".k2b-signature-input__canvas");
         await swipe(page, [pad.x + 100, pad.y + pad.height - 20], [pad.x + 140, pad.y + 20]);
-        await frames(page);
         if (readOnly) {
           await page.waitForFunction(() => window.scrollY > 0, undefined, { timeout: 5_000 });
           expect(await fixture(page, (window) => window.changes.length)).toBe(0);
@@ -552,12 +573,40 @@ describe(`SignatureInput in ${browserName}`, () => {
 
   test.skipIf(browserName === "webkit")("a cancelled touch is not a stroke", async () => {
     const page = await open({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, "lang=en");
+    await settled(page);
     const pad = await box(page, ".k2b-signature-input__canvas");
-    await swipe(page, [pad.x + 40, pad.y + 40], [pad.x + 240, pad.y + 90], "touchCancel");
+    // The finger's ink shows while it is down, so the cancel has a stroke to drop.
+    await swipe(page, [pad.x + 40, pad.y + 40], [pad.x + 240, pad.y + 90], {
+      end: "touchCancel",
+      beforeEnd: () => page.waitForFunction(() => document.querySelectorAll(".k2b-signature-input__canvas path").length === 1),
+    });
     expect(await inkPaths(page)).toBe(0);
     expect(await fixture(page, (window) => window.changes.length)).toBe(0);
     await swipe(page, [pad.x + 40, pad.y + 40], [pad.x + 240, pad.y + 90]);
     expect(await fixture(page, (window) => window.commits.length)).toBe(1);
     await page.context().close();
+  });
+
+  test.skipIf(browserName === "webkit")("a swipe returns only after the page handled its last touch, even on a busy page", async () => {
+    for (const end of ["touchEnd", "touchCancel"] as const) {
+      const page = await open({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, "lang=en");
+      await settled(page);
+      const pad = await box(page, ".k2b-signature-input__canvas");
+      // Chromium answers the last touch call before the page dispatched it; a busy main thread holds it back for 500 ms.
+      await page.evaluate(
+        (type) => {
+          const block = () => {
+            const start = performance.now();
+            while (performance.now() - start < 500);
+          };
+          document.addEventListener(type, block, { capture: true, once: true });
+        },
+        end === "touchEnd" ? "pointerup" : "pointercancel",
+      );
+      const start = performance.now();
+      await swipe(page, [pad.x + 40, pad.y + 40], [pad.x + 240, pad.y + 90], { end });
+      expect(performance.now() - start).toBeGreaterThanOrEqual(500);
+      await page.context().close();
+    }
   });
 });
