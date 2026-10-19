@@ -99,6 +99,7 @@ type SignIn = {
   country: string | null;
   city: string | null;
   now: Date;
+  announce: boolean;
 };
 
 /** Caller holds the existing session issuance lock on this account's auth.users row. */
@@ -141,7 +142,7 @@ export const rememberSignIn = async (tx: SQL, input: SignIn): Promise<NewBrowser
     await tx`UPDATE auth.device_trust_state SET geoip_since = ${now} WHERE id = true AND geoip_since IS NULL`;
   }
   if (!row || row.first_seen_at.getTime() !== now.getTime()) return null;
-  if ((await trustState(tx, now)).introActive) {
+  if (!input.announce || (await trustState(tx, now)).introActive) {
     await tx`UPDATE auth.known_browsers SET notified_at = ${now}, notice = NULL, notice_attempted_at = NULL WHERE id = ${row.id}::uuid`;
     return null;
   }

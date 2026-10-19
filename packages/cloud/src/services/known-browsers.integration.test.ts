@@ -24,7 +24,7 @@ import { createTestAppSession } from "./session/session.test-fixture";
 
 const suite = databaseSuite();
 const START = new Date("2026-10-18T12:00:00.000Z");
-const signIn = { firstName: null, method: "password", device: null, locale: null } as const;
+const signIn = { firstName: null, method: "password", device: null, locale: null, announce: true } as const;
 const DAY = 86_400_000;
 const cookieName = () => (env.IS_DEVELOPMENT ? "cloud_browser" : "__Host-cloud_browser");
 const cookieHeader = (cookie: string) => `${cookieName()}=${cookie}`;
@@ -68,6 +68,7 @@ const rows = async (id: string) => [
       last_seen_at: Date;
       notified_at: Date | null;
       notice: unknown;
+      notice_attempted_at: Date | null;
       browser: string;
       os: string;
       country: string | null;
@@ -308,6 +309,7 @@ suite("known browsers at the web session boundary", () => {
           ttlSeconds: 60,
           // Even an accidentally supplied option cannot turn mobile issuance into web tracking.
           knownBrowser: {
+            announce: true,
             method: "password",
             device: null,
             locale: null,
@@ -403,6 +405,35 @@ suite("known browsers at the web session boundary", () => {
     setSystemTime(new Date(START.getTime() + 15 * DAY));
     await maintainNotices(sql, notify);
     expect(notices).toEqual([]);
+  });
+
+  test("unannounced sign-ins are marked done outside introduction and never announced by maintenance", async () => {
+    const id = await account();
+    expect((await trustState(sql, START)).introActive).toBe(false);
+    const notice = await sql.begin(async (tx) => {
+      await tx`SELECT id FROM auth.users WHERE id = ${id}::uuid FOR UPDATE`;
+      return rememberSignIn(tx, {
+        ...signIn,
+        announce: false,
+        userId: id,
+        cookie: newBrowserCookie(),
+        browser: "chrome",
+        os: "windows",
+        country: "AT",
+        city: "Wien",
+        now: START,
+      });
+    });
+    expect(notice).toBeNull();
+    expect(await rows(id)).toMatchObject([{ notified_at: START, notice: null, notice_attempted_at: null }]);
+    const sender = { notify: async () => {} };
+    const notify = spyOn(sender, "notify");
+    try {
+      expect(await maintainNotices(sql, notify)).toBe(0);
+      expect(notify).not.toHaveBeenCalled();
+    } finally {
+      notify.mockRestore();
+    }
   });
 
   test("one notice per new browser, including the same row after retention", async () => {

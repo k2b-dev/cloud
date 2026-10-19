@@ -239,7 +239,8 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         // Create session (no IPA session for email-only users)
         const sessionToken = await auth.session.create(c, verifyResult.userId, {
           method: "email_code",
-          notify: notificationSender.sendNewBrowserSignIn,
+          // An account created by this sign-in has nobody else to warn.
+          notify: verifyResult.createdGuest ? null : notificationSender.sendNewBrowserSignIn,
         });
 
         if (verifyResult.createdGuest) {

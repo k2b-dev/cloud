@@ -152,9 +152,11 @@ After a successful web sign-in from a new browser, Core hands over
 **New sign-in from a new browser** after the session transaction commits and
 before the response returns to the browser. This includes password, passkey,
 email-code, Cloud Login, password-reset, expired-password, and emergency-admin
-sign-ins. Mobile app session issuance is excluded.
+sign-ins. Mobile app session issuance is excluded. An email-code sign-in that
+creates a guest account sends no notice, because the account did not exist
+before.
 
-The browser notice shows browser, system, and time, and opens **Account ›
+The browser notice shows browser, system, and time, and opens **My account →
 Sign-in** (`/me/security`). The email also shows the sign-in method and, when
 available, the approximate place. Cloud Login includes the approving device's
 name. The time uses the installation's `app.timezone` setting, default `UTC`,
@@ -166,7 +168,8 @@ there is no email address. The person can turn it off under **My account →
 Notifications**, entry **New sign-in from a new browser**. Preferences are read
 at handoff, when delivery plans are persisted. They are not captured with the
 sign-in snapshot. The handoff precedes the response so the person signing in
-cannot turn the notice off first.
+cannot turn the notice off first. A notice that maintenance catches up after
+a failed handoff uses the preferences at that later time.
 
 A failed handoff does not fail the sign-in. The fixed snapshot stays in
 `notice`, with `notified_at = NULL`. Later sign-ins can update the row's latest

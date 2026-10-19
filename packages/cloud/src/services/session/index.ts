@@ -162,7 +162,7 @@ export type SessionIssueOptions = {
   /** Only web session.create supplies browser persistence, never mobile issuance. */
   knownBrowser?: Pick<
     Parameters<typeof rememberSignIn>[1],
-    "cookie" | "browser" | "os" | "country" | "city" | "method" | "device" | "locale"
+    "cookie" | "browser" | "os" | "country" | "city" | "method" | "device" | "locale" | "announce"
   >;
   /** Pre-chosen family id, for callers that record it in the same transaction. */
   sid?: string;
@@ -383,7 +383,12 @@ export const session = {
   create: async (
     c: Context,
     userId: string,
-    signIn: { method: SignInMethod; device?: string | null; notify: NewBrowserSignInNotifier },
+    signIn: {
+      method: SignInMethod;
+      device?: string | null;
+      /** Null means this sign-in announces nothing, including during maintenance. */
+      notify: NewBrowserSignInNotifier | null;
+    },
   ): Promise<string> => {
     const expiryHours = await settings.get<number>("user.session.expiry_hours");
     if (!Number.isFinite(expiryHours) || expiryHours < 1) throw new Error("user.session.expiry_hours must be a positive number");
@@ -392,10 +397,20 @@ export const session = {
     const { browser, os, country, city } = describeRequest(c);
     const { token: clientToken, notice } = await issueJwtSession(c, userId, {
       ttlSeconds,
-      knownBrowser: { cookie, browser, os, country, city, method: signIn.method, device: signIn.device ?? null, locale: getLocale(c) },
+      knownBrowser: {
+        cookie,
+        browser,
+        os,
+        country,
+        city,
+        method: signIn.method,
+        device: signIn.device ?? null,
+        locale: getLocale(c),
+        announce: signIn.notify !== null,
+      },
     });
     // Handoff precedes the response so the person signing in cannot turn the notice off first.
-    if (notice) await announceNewBrowser(signIn.notify, notice);
+    if (signIn.notify !== null && notice) await announceNewBrowser(signIn.notify, notice);
 
     setCookie(c, "session_token", clientToken, {
       httpOnly: true,

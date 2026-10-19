@@ -238,6 +238,28 @@ suite("every successful web sign-in route remembers its browser", () => {
     });
   }
 
+  test("verify-token: a newly created guest remembers the browser without a sign-in notice", async () => {
+    const user = await loadCurrentUser({ userId, groupsAdmin: [] });
+    if (!user) throw new Error("Missing route fixture user");
+    const email = spyOn(authFlows.magicLink, "verify").mockResolvedValue({ ok: true, userId, user, email: null, createdGuest: true });
+    const sender = { notify: async () => {} };
+    const notification = spyOn(sender, "notify");
+    notify = sender.notify;
+    const cookie = newBrowserCookie();
+    try {
+      const response = await post("verify-token", { token: crypto.randomUUID() }, cookie);
+      expect(response.ok).toBe(true);
+      expect(notification).not.toHaveBeenCalled();
+      const rows = await browserRows(userId, cookie);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].notified_at).not.toBeNull();
+      expect(rows[0].notice).toBeNull();
+    } finally {
+      email.mockRestore();
+      notification.mockRestore();
+    }
+  });
+
   test("admin-login: real emergency login remembers the browser only with the right token", async () => {
     const originalToken = process.env.ADMIN_LOGIN_TOKEN;
     const [before] = await sql<{ id: string; provider: string; profile: string; admin: boolean }[]>`
