@@ -107,6 +107,7 @@ describe("Pulse base page after the cut", () => {
       new URL(url).pathname === "/api/pulse/bases/Lad001/sources" ? { status: 200, json: recovered } : { status: 500, json: {} },
     );
     try {
+      await tab.getByText("Gedrosselt", { exact: true }).filter({ visible: true }).first().waitFor();
       const throttled = () =>
         tab.evaluate(
           () =>
@@ -125,6 +126,33 @@ describe("Pulse base page after the cut", () => {
       expect(await throttled()).toBe(0);
       expect(calls).toEqual(["/api/pulse/bases/Lad001/sources"]);
       expect(await rows()).toEqual(before);
+    } finally {
+      await tab.close();
+    }
+  }, 60_000);
+
+  test("open settings follow a running clear to its failure and offer Retry in place", async () => {
+    const base = workspaceFixture.initialBases[0]!;
+    const clearing = { ...base, store: { ...base.store, state: "clearing" as const, operation: "clear" as const } };
+    const failed = {
+      ...base,
+      store: { ...clearing.store, state: "failed" as const, errorCode: "STORE_UNAVAILABLE", errorAt: "2026-10-19T12:40:03.000Z" },
+    };
+    const { tab, calls } = await open(
+      views[1]!,
+      { ...workspaceFixture, initialBases: [clearing], initialRouteState: { view: "coming-back", sourceId: "" } },
+      "de",
+      (url) => (new URL(url).pathname === "/api/pulse/bases" ? { status: 200, json: [failed] } : { status: 500, json: {} }),
+    );
+    try {
+      await tab.getByRole("button", { name: "Einstellungen" }).click();
+      const settings = tab.locator("dialog[open]");
+      const retry = settings.getByRole("button", { name: "Erneut versuchen" });
+      await settings.getByText("Allgemein").first().waitFor();
+      expect(await retry.count()).toBe(0);
+      await tab.clock.runFor(5_100);
+      await retry.waitFor();
+      expect(calls).toContain("/api/pulse/bases");
     } finally {
       await tab.close();
     }

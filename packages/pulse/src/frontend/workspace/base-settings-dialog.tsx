@@ -41,7 +41,9 @@ type BaseSettingsDialogOptions = {
     },
   ) => Promise<BaseSettingsSaveResult>;
   writeBlocked: Accessor<boolean>;
-  /** Resumes the failed lifecycle step; resolves with the updated base, or null when it did not start. */
+  /** The base's store as the workspace's base list currently has it; it refreshes while an operation runs. */
+  currentStore: Accessor<BaseStoreStatus | null>;
+  /** Resumes the failed lifecycle step and refreshes the base list; resolves with the updated base, or null when it did not start. */
   retryStore: () => Promise<PulseBase | null>;
   clearBaseData: () => Promise<void>;
   deleteBase: () => Promise<boolean>;
@@ -132,7 +134,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       const locale = useLocale();
       const storeT = createMemo(() => baseStoreMessages.resolve([locale()]).t);
       let disposed = false;
-      const [store, setStore] = createSignal(options.base.store);
+      const store = () => options.currentStore() ?? options.base.store;
       // A Cloud admin decides about a checkpoint mismatch first; clearing would take away the restore option.
       const clearBlocked = () => Boolean(store().writeBlockReason);
       const [retrying, setRetrying] = createSignal(false);
@@ -140,8 +142,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
         if (retrying()) return;
         setRetrying(true);
         try {
-          const next = await options.retryStore();
-          if (next && !disposed) setStore(next.store);
+          await options.retryStore();
         } finally {
           setRetrying(false);
         }

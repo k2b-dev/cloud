@@ -222,6 +222,7 @@ export const createBaseController = (deps: BaseControllerDeps) => {
         loading: deps.loading,
         writeBlocked: deps.writeBlocked,
         updateBaseSettings: updateSettings,
+        currentStore: () => deps.selectedBase()?.store ?? null,
         retryStore: () => retryStore(base),
         clearBaseData: () => clearData(base),
         deleteBase: () => deleteBase(base),

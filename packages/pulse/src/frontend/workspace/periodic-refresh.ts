@@ -4,11 +4,12 @@ const INTERVAL_MS = 5_000;
 const MAX_BACKOFF_MS = 60_000;
 
 /**
- * Source status (newest data, throttling, errors) changes while the page stays open. While the sources view is
- * visible, refresh it every 5 s like the removed workspace controller did; skip hidden tabs and back off after
- * failures, up to one minute. A failed refresh keeps the last data and shows the existing retry notice.
+ * Status changes while the page stays open: source status (newest data, throttling, errors) while the sources
+ * view is visible, and a base's lifecycle operation while its settings are open. Refresh every 5 s while
+ * `active`; skip hidden tabs and back off after failures, up to one minute. A failed refresh keeps the last data
+ * and shows the existing retry notice.
  */
-export const installSourceRefresh = (deps: { active: Accessor<boolean>; refresh: () => Promise<void> }): void => {
+export const installPeriodicRefresh = (deps: { active: Accessor<boolean>; refresh: () => Promise<void> }): void => {
   createEffect(() => {
     if (!deps.active()) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
