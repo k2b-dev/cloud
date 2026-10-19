@@ -7,7 +7,15 @@
  */
 import { type JSX, mergeProps, splitProps } from "solid-js";
 import { createDynamic } from "solid-js/web";
-import { captureScroll, documentNavigate, navigate, resolveNavigationUrl, restoreScroll, startViewTransition } from "./nav-history";
+import {
+  cancelPageSwap,
+  captureScroll,
+  documentNavigate,
+  navigate,
+  resolveNavigationUrl,
+  restoreScroll,
+  startViewTransition,
+} from "./nav-history";
 
 export {
   captureScroll,
@@ -117,6 +125,8 @@ export function Link(props: LinkProps) {
     const scrollSnapshot = captureScroll();
 
     event.preventDefault();
+    // The island owns this navigation now; a pending page swap must not commit while onNavigate loads.
+    cancelPageSwap();
 
     let navigationOutcome: "none" | "history" | "document" = "none";
     const runNavigation = async () => {

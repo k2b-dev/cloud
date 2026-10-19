@@ -6,7 +6,7 @@ const SCROLL_PRESERVE_SELECTOR = "[data-scroll-preserve]";
 export const swapKey = Symbol.for("@k2b/ssr/nav-swap");
 
 /** Any newer navigation wins over a pending page swap. Without an installed swap this does nothing. */
-const cancelPageSwap = (): void => {
+export const cancelPageSwap = (): void => {
   const shared: typeof globalThis & { [swapKey]?: { active?: AbortController } } = globalThis;
   shared[swapKey]?.active?.abort();
 };

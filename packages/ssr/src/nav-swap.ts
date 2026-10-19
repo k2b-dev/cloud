@@ -43,9 +43,13 @@ const hashJump = (url: URL): boolean =>
   url.origin === window.location.origin &&
   url.pathname === window.location.pathname &&
   url.search === window.location.search &&
-  url.hash !== "";
+  // `href="#"` has an empty hash but still jumps natively.
+  (url.hash !== "" || url.href.endsWith("#"));
 /** The base URL of a parsed page: its own <base href>, resolved against the response URL, as the browser would. */
 const baseOf = (doc: Document, url: URL): string => new URL(doc.querySelector("base[href]")?.getAttribute("href") ?? url.href, url).href;
+/** A fetched page keeps the current head, so its <base> must already match. */
+const baseElement = (doc: Document): string =>
+  JSON.stringify([doc.querySelector("base[href]")?.getAttribute("href"), doc.querySelector("base[target]")?.getAttribute("target")]);
 const stylesheets = (doc: Document, base: string): string =>
   JSON.stringify(
     [
@@ -94,7 +98,12 @@ export function installPageSwap(): () => void {
     // The composed path reaches an anchor inside a shadow root, where event.target is the host.
     const anchor = event.composedPath().find((node) => node instanceof HTMLAnchorElement && node.hasAttribute("href"));
     if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute("download")) return;
-    const target = anchor.target || document.querySelector("base[target]")?.getAttribute("target") || "";
+    // An explicit target="" means this tab even under <base target>; reserved names are case-insensitive.
+    const target = (
+      anchor.hasAttribute("target") ? anchor.getAttribute("target") : document.querySelector("base[target]")?.getAttribute("target")
+    )
+      ?.trim()
+      .toLowerCase();
     if (target && !["_self", "_top", "_parent"].includes(target)) return;
     let url: URL;
     try {
@@ -104,7 +113,8 @@ export function installPageSwap(): () => void {
     }
     if (hashJump(url)) return;
     const context = shellContext(document);
-    const eligible = (!target || target === "_self") && !anchor.relList.contains("external") && !anchor.hasAttribute("data-nav-document");
+    const eligible =
+      (!target || target === "_self") && !/(^|\s)external(\s|$)/i.test(anchor.rel) && !anchor.hasAttribute("data-nav-document");
     if (eligible && context && inScope(url, context.scope)) {
       event.preventDefault();
       void swapPage(url.href, { replace: url.href === window.location.href });
@@ -185,6 +195,7 @@ export async function swapPage(href: string, options: { replace?: boolean } = {}
       parsed.scope !== context.scope ||
       prefix !== document.querySelector("script[data-ssr-assets]")?.getAttribute("data-ssr-assets") ||
       (!prefix && wrappers(parsed.root).length > 0) ||
+      baseElement(fetched) !== baseElement(document) ||
       stylesheets(document, document.baseURI) !== stylesheets(fetched, baseOf(fetched, finalUrl))
     ) {
       fail();
@@ -224,12 +235,13 @@ const commit = (
   options: { replace?: boolean },
 ): void => {
   const fallback = (replace: boolean) => loadDocument(requested.href, { replace });
-  // The commit owns the page from here; a navigation that cleanups or new islands start is newer and wins later.
+  // The commit owns the page from here: a navigation that cleanups or new islands start cannot stop it halfway.
+  // A swap they start finds its captured root detached and loads its document; cleanups should not navigate.
   state.active = undefined;
-  const owned = () => !state.active && shared[swapKey] === state && context.root.isConnected && context.shell.contains(context.root);
+  const owned = () => shared[swapKey] === state && context.root.isConnected && context.shell.contains(context.root);
   // An island may have replaced the column while modules loaded; replacing a detached root would commit only history.
   if (!owned()) {
-    if (!state.active) fallback(Boolean(options.replace));
+    fallback(Boolean(options.replace));
     return;
   }
   let committed = false;
@@ -245,8 +257,8 @@ const commit = (
     const snapshot = captureScroll();
     disposeIslands(context.root);
     if (!owned()) {
-      // A newer swap started during cleanup and owns the page; otherwise the old islands are gone and only a load is safe.
-      if (!state.active) fallback(Boolean(options.replace));
+      // A cleanup uninstalled the swap or replaced the column: the old islands are gone, so only a load is safe.
+      fallback(Boolean(options.replace));
       return;
     }
     const pageId = `${state.token}:${++state.counter}`;

@@ -202,15 +202,20 @@ A swap is one transaction, and its order is the contract:
 1. Abort the previous swap. Only the newest navigation may commit: a newer
    swap, `popstate`, a native same-tab link, and the history helpers
    (`navigate()`, `documentNavigate()`, `navigateTo()`,
-   `refreshCurrentPath()`) abort a pending swap.
+   `refreshCurrentPath()`) abort a pending swap, and so does a `Link` when it
+   takes an enhanced click.
 2. Fetch the target as HTML with the abort signal. Check status 200, HTML,
    final URL in scope, shell signature and scope, the loader's
-   `data-ssr-assets` prefix, and the head stylesheet set.
-3. Preload and import the island entries of the fetched column. Nothing in
-   the old column changes before every module loaded.
+   `data-ssr-assets` prefix, the `<base>` element, and the head stylesheet
+   set.
+3. Preload and import the island entries of the fetched column. The old
+   column stays as it is until every module loaded. Evaluation cannot be
+   cancelled: an entry also mounts wrappers already waiting for it in the
+   document, as on the first load.
 4. Commit without an `await`: dispose the old islands while they are still
    in the document, then re-check ownership, because their cleanups may
-   navigate, uninstall, or replace the column. Push history with an absolute
+   uninstall the swap or replace the column. A navigation that a cleanup
+   starts does not stop the commit; cleanups should not navigate. Push history with an absolute
    URL before inserting the root, so relative URLs in it resolve against the
    new page. Then replace the root, copy title and attributes, mount the new
    islands, restore keyed scroll regions, focus the first heading, and
@@ -225,7 +230,10 @@ prevent a swap first.
 Back and Forward are not swapped yet. Swap entries carry a page marker in
 `history.state`, and a reload keeps it. A `popstate` onto an entry with the
 marker of the shown page (none on a page loaded normally) stays with the
-islands; any other entry loads the document.
+islands; any other entry loads the document. An island that replaces the
+swap entry's state with its own drops the marker; after a reload of that
+entry, Back can then keep the wrong column. The history slice gives every
+entry its page ID and closes this.
 
 Cover every change in the unit, Happy DOM, and `test/engine` suites: history
 push and replace, Back and Forward, hash links, async fallbacks, reactive

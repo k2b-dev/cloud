@@ -163,17 +163,18 @@ scope, and hash links on the same page stay native. `swapPage(href, {
 replace })` starts a swap from code.
 
 The swap fetches the page and loads its island modules before it changes the
-old column. Then it disposes the old islands, replaces the column, sets the
-title, pushes history, mounts the new islands, focuses the first heading of the
-column, and announces the title. A newer navigation cancels a pending swap,
-also an island's `navigate()` call.
+old column. Then it disposes the old islands, pushes history, replaces the
+column, sets the title, mounts the new islands, focuses the first heading of
+the column, and announces the title. A newer navigation cancels a pending
+swap, also an island's `Link` click or `navigate()` call. Island cleanups
+should not navigate: they run inside the swap.
 
 Any failure loads the requested URL as a document, so the person sees what a
 reload shows: a status other than 200 such as an expired session's 403, a
 response that is not HTML, a redirect out of the scope, a different
-signature, a new build with another module prefix or other stylesheets, or a
-module that fails. Inline scripts in the fetched page do not run; give page
-data to islands as props.
+signature, another `<base>`, a new build with another module prefix or other
+stylesheets, or a module that fails. Inline scripts in the fetched page do not
+run; give page data to islands as props.
 
 Back and Forward are not swapped yet. On a page loaded normally, islands
 handle their history entries with `listenPopState()` as before. On a page

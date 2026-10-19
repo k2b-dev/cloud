@@ -61,8 +61,8 @@ onMount(() => onCleanup(installPageSwap()));
 - `data-nav-shell` is an opaque signature; a fetched page with a different one loads as a document, so put app, user, locale, layout kind, and build into it
 - `data-nav-scope` is a path prefix (`/demo` takes `/demo/x`, not `/demobox`); `data-nav-root` is the replaced column; `data-nav-attributes` lists shell attributes the fetched page sets or removes
 - `data-nav-document` on a link keeps document navigation; prevented clicks, modifier keys, `target`, `download`, `rel="external"`, other origins, and same-page hash links stay native too
-- the swap loads the new page's island modules before it disposes the old islands; then it replaces the column, sets title and attributes, pushes history, mounts, focuses the first heading, and announces the title
-- the newest navigation wins (another swap, Back/Forward, a native link, `navigate()`, `documentNavigate()`); any failure (status, not HTML, redirect out of scope, signature, module prefix, stylesheet set, module error) loads the requested URL as a document
+- the swap loads the new page's island modules before it disposes the old islands; then it pushes history, replaces the column, sets title and attributes, mounts, focuses the first heading, and announces the title; island cleanups should not navigate
+- the newest navigation wins (another swap, Back/Forward, a native link, an enhanced `Link` click, `navigate()`, `documentNavigate()`); any failure (status, not HTML, redirect out of scope, signature, module prefix, `<base>`, stylesheet set, module error) loads the requested URL as a document
 - `swapPage(href, { replace })` swaps from code
 - inline scripts in the fetched page do not run; keep page data in island props
 - Back and Forward are not swapped yet: on a page loaded normally islands handle their entries with `listenPopState()`; on a page a swap showed (also after a reload), Back or Forward loads the document except onto that page's own entry

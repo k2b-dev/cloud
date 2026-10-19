@@ -260,7 +260,7 @@ test.each([
   expect(click("/app/A", attributes, options).defaultPrevented).toBe(false);
   expect(fetch).not.toHaveBeenCalled();
 });
-test.each(["https://other.test/app/A", "/appbox", "/app/old#heading"])("does not take %s", (href) => {
+test.each(["https://other.test/app/A", "/appbox", "/app/old#heading", "#"])("does not take %s", (href) => {
   install();
   const fetch = spyOn(globalThis, "fetch");
   expect(click(href).defaultPrevented).toBe(false);
@@ -616,7 +616,7 @@ test.each(["replace root", "uninstall"])("disposal can %s without committing the
   }
 });
 
-test("a newer swap started during disposal owns the page", async () => {
+test("a swap that a cleanup starts cannot stop the commit and then loads its document", async () => {
   install();
   const requests = deferredFetch();
   let b = Promise.resolve();
@@ -628,16 +628,17 @@ test("a newer swap started during disposal owns the page", async () => {
     const a = swapPage("/app/A");
     requests[0]!.resolve(response(html("A"), {}, "https://example.test/app/A"));
     await a;
+    // A commits completely: no disposed column is left waiting for B.
     expect(requests).toHaveLength(2);
-    expect(window.location.pathname).toBe("/app/old");
-    expect(document.title).toBe("old");
+    expect(window.location.pathname).toBe("/app/A");
+    expect(document.title).toBe("A");
+    expect(document.querySelector("main b")!.textContent).toBe("A");
     requests[1]!.resolve(response(html("B"), {}, "https://example.test/app/B"));
     await b;
-    expect(window.location.href).toBe("https://example.test/app/B");
-    expect(document.title).toBe("B");
-    expect(document.querySelector("main b")!.textContent).toBe("B");
-    expect(events).toEqual(["cleanup:old", "mount:B"]);
-    expect(assign).not.toHaveBeenCalled();
+    // B captured the column A replaced, so it cannot swap and loads its document once.
+    expect(window.location.pathname).toBe("/app/A");
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith("https://example.test/app/B");
     expect(replace).not.toHaveBeenCalled();
   } finally {
     window.removeEventListener("ssr:island-dispose", dispose);
@@ -873,4 +874,71 @@ test("a fetch ignoring abort cannot read or commit A after B has committed", asy
   expect(events).toEqual(["cleanup:old", "mount:B"]);
   expect(assign).not.toHaveBeenCalled();
   expect(replace).not.toHaveBeenCalled();
+});
+
+test.each([
+  ["rel=EXTERNAL", 'rel="EXTERNAL"', false],
+  ["target=_SELF", 'target="_SELF"', true],
+] as const)("normalizes %s", (_name, attributes, taken) => {
+  install();
+  const fetch = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(() => new Promise<Response>(() => {}), { preconnect: globalThis.fetch.preconnect }),
+  );
+  expect(click("/app/A", attributes).defaultPrevented).toBe(taken);
+  expect(fetch).toHaveBeenCalledTimes(taken ? 1 : 0);
+});
+
+test("an explicit empty target stays in this tab under <base target>", () => {
+  install();
+  const base = document.createElement("base");
+  base.target = "_blank";
+  document.head.append(base);
+  const fetch = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(() => new Promise<Response>(() => {}), { preconnect: globalThis.fetch.preconnect }),
+  );
+  expect(click("/app/A", 'target=""').defaultPrevented).toBe(true);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+test("a fetched page with another <base> loads as a document", async () => {
+  install();
+  spyOn(globalThis, "fetch").mockResolvedValue(response(html("new").replace("<head>", '<head><base href="/assets/">')));
+  await swapPage("/app/new");
+  expect(assign).toHaveBeenCalledTimes(1);
+  expect(assign).toHaveBeenCalledWith("https://example.test/app/new");
+  expect(document.title).toBe("old");
+});
+
+test("an enhanced Link cancels a pending swap when it takes the click, before its handler loads", async () => {
+  install();
+  const requests = deferredFetch();
+  const loaded = Promise.withResolvers<void>();
+  const linkRoot = document.createElement("div");
+  document.querySelector("nav")!.append(linkRoot);
+  const dispose = render(
+    () =>
+      Link({
+        href: "/app/island",
+        onNavigate: async ({ push }) => {
+          await loaded.promise;
+          push();
+        },
+        children: "island",
+      }),
+    linkRoot,
+  );
+  try {
+    const pending = swapPage("/app/A");
+    linkRoot.querySelector("a")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+    expect(requests[0]!.aborted).toBe(true);
+    await pending;
+    loaded.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(window.location.pathname).toBe("/app/island");
+    expect(document.querySelector("main b")!.textContent).toBe("old");
+    expect(assign).not.toHaveBeenCalled();
+  } finally {
+    dispose();
+  }
 });
