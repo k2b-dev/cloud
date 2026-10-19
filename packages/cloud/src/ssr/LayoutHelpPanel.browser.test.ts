@@ -105,7 +105,7 @@ document.documentElement.dataset.helpMounted = "true";
       const response = await server.fetch(request);
       if (!response.headers.get("content-type")?.includes("text/html")) return response;
       const html = (await response.text())
-        .replace(/<script type="module">[^<]*solid-island[^<]*<\/script>/g, "")
+        .replace(/<script type="module"[^>]*>[^<]*solid-island[^<]*<\/script>/g, "")
         .replace(
           "</head>",
           `<style>${css}</style><style>*,*::before,*::after{transition:none!important;animation:none!important}</style></head>`,
