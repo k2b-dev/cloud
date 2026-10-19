@@ -9,6 +9,9 @@ navigation, keyboard behavior, and the active panel. The application owns
 loading, form state, validation, persistence, and the surrounding dialog or
 page.
 
+The active category uses `--k2b-app-workspace-selected` with `--k2b-app-workspace-active`
+ink, without changing its text weight.
+
 ## Use SettingsModal
 
 Use `SettingsPage` for a full settings route. Use `SettingsModal` when one

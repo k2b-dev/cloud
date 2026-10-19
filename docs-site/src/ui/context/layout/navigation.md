@@ -7,6 +7,8 @@ with the owning Solid component. `Navigation` renders readable, nested rows.
 The library does not own the app router, subscriptions, permissions, or a
 mobile launcher.
 
+Active rows use `--k2b-app-workspace-selected` with `--k2b-app-workspace-active` ink.
+
 ## Label overflow
 
 Navigation labels fade, never end in an ellipsis. Use the shared utilities for

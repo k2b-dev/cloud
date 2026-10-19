@@ -650,14 +650,11 @@ action visible and interactive until the menu closes.
 Section titles are quiet sentence-case labels. Keep them short and let the
 navigation rows carry the stronger visual emphasis.
 
-Active rows use the workspace accent color and a stronger text weight without
-a persistent fill. Hover uses one quiet neutral fill, `--k2b-app-workspace-hover`,
-on rows, cards, tree toggles, icon actions, and the switcher head, so no
-platform blue sits beside the accent; an active card keeps that fill with an
-accent-tinted border. Keyboard focus keeps the shared focus ring. Standalone
-themes can override `--k2b-app-workspace-active` and
-`--k2b-app-workspace-hover`; Cloud maps the active color to the current
-application accent.
+Active rows use `--k2b-app-workspace-selected` with `--k2b-app-workspace-active` ink
+and weight 600, and keep their fill on hover. Ordinary hover uses
+`--k2b-app-workspace-hover`; active cards also keep an accent-tinted border.
+Keyboard focus keeps the shared focus ring. See [Theme and styles](/en/ui/surfaces/utilities)
+for standalone defaults and Cloud mappings.
 
 Mark the exact current page with `active`; on a page deeper than the sidebar
 lists, use `active="ancestor"` on the containing item to keep its highlight and
@@ -1530,7 +1527,8 @@ Hosts can set `--k2b-workspace-chip-inset` for the row's content inset
 (default `clamp(1rem, 3vw, 2.5rem)`, `1rem` below a 40 rem viewport),
 `--k2b-workspace-chip-background` for chip fill (default
 `--k2b-surface-muted`), and `--k2b-app-workspace-selected` for selected fill
-(default `--k2b-selected`). Cloud maps selected fill to `--ui-app-selected-nav`.
+(default `--k2b-selected`), the same hook as a selected sidebar row. Cloud maps
+selected fill to `--ui-app-selected-nav`.
 
 Leave the default `mobile="hidden"` when the host's phone navigation already
 provides the object list. Views of an object belong in the head.
