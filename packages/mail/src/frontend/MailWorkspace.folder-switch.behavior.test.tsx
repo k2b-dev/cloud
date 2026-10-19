@@ -397,6 +397,21 @@ describe("Mail workspace folder switches", () => {
     await settle();
   };
 
+  test("a list that arrives with another access scope loads the whole snapshot", async () => {
+    // Folders and counts depend on the scope, for example after a group membership change made the reader assigned-only.
+    mount();
+    await caughtUp();
+    truth = { ...truth, access: { scope: "assigned", permission: "write" }, unread: 7, total: 12, needsAction: 9 };
+    await switchTo("folder=Filed1");
+    expect(requests.map(({ route, href }) => ({ route, href }))).toEqual([
+      { route: "workspace-list", href: `${path}?folder=Filed1` },
+      { route: "workspace-route", href: `${path}?folder=Filed1` },
+    ]);
+    expect(heading()).toBe("Filed");
+    expect(location()).toBe(`${path}?folder=Filed1`);
+    counts(7, 9);
+  });
+
   test("caught-up folder, view, saved view, Drafts, Scheduled and search switches keep the mailbox frame", async () => {
     mount();
     await caughtUp();

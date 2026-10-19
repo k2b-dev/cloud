@@ -485,8 +485,11 @@ function MailWorkspaceView(props: {
         if (cause.type === "source" && cause.invalidations.length === 0 && keepsMailboxFrame(target)) {
           const list = await fetchWorkspaceList(url.toString(), abortSignal, target.listMode);
           if (!list) throw new Error(t().loadViewFailed);
-          // The frame shown when the list arrives: a live refresh queued meanwhile reloads the snapshot after it.
-          return { source, snapshot: composeMailListSnapshot(pickMailWorkspaceFrame(unwrap(data)), list), generation };
+          const shown = unwrap(data);
+          // The frame shown when the list arrives: a live refresh queued meanwhile reloads the snapshot after it. Folders
+          // and counts depend on the access scope, so a scope that changed meanwhile loads the whole snapshot.
+          if (list.access.scope === shown.access.scope)
+            return { source, snapshot: composeMailListSnapshot(pickMailWorkspaceFrame(shown), list), generation };
         }
         const snapshot = await fetchWorkspaceRoute(url.toString(), abortSignal, target.listMode);
         if (!snapshot) throw new Error(t().loadViewFailed);
