@@ -10,6 +10,7 @@ import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { parseMandatePolicy } from "../services/mandates/policy";
 import { aiChatAccessSubject } from "./assistant-models";
+import { authorizeBackgroundAction } from "./background-review";
 import {
   aiCapabilityInputSchema,
   aiCapabilityToolName,
@@ -26,6 +27,7 @@ import {
   reduceAiCapabilityInputSchema,
   searchAiTools,
 } from "./capabilities";
+import { aiChatTasks } from "./chat-tasks";
 import * as credentials from "./credentials";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiModelAccess } from "./model-access";
@@ -1290,6 +1292,171 @@ describe("AI capability catalog", () => {
     allow = true;
     for (const action of prepared.tools) if (action.kind === "server") await action.execute({ title: "Example" }, context);
     expect(calls.filter((call) => call.startsWith("execute:"))).toHaveLength(2);
+  });
+
+  for (const outcome of ["no scope", "scope", "review error", "mandate denied"] as const) {
+    test(`background loaded capability ${outcome} runs the shared review gate before execute`, async () => {
+      const app = capabilityApp("contacts");
+      app.manifest.actions[0]!.approval = "rememberable";
+      app.manifest.actions[0]!.review = true;
+      const review = mock(async (): Promise<CapabilityActionReview> => {
+        if (outcome === "review error") throw new Error("Review unavailable");
+        return { message: "Create item?", ...(outcome === "scope" ? { approvalScope: "contacts:own" } : {}) };
+      });
+      spyOn(aiChatTasks, "authorizeCapability").mockImplementation(async () => {
+        if (outcome === "mandate denied") throw new Error("Grant denied");
+      });
+      const markNeedsApproval = spyOn(aiChatTasks, "markNeedsApproval").mockImplementation(async () => {});
+      const execute = mock(async () => ({ data: {} }));
+      const prepared = prepareAiTools({
+        tools: createLoadedAiCapabilityTools({
+          apps: [],
+          catalog: buildAiCapabilityCatalog([app]),
+          actor,
+          loadedNames: ["contacts.create"],
+          authorizeBackground: async (entry, args, context) => {
+            await authorizeBackgroundAction({
+              turnId: "turn",
+              mandate: { id: "mandate", revision: 1 },
+              appId: entry.appId,
+              capabilityId: entry.operation.localId,
+              kind: entry.kind,
+              args,
+              approval: "approval" in entry.operation ? entry.operation.approval : undefined,
+              hasReview: "review" in entry.operation && entry.operation.review === true,
+              action: entry.display.title,
+              review,
+              signal: context.signal,
+            });
+          },
+          review: async () => {
+            throw new Error("Unexpected interactive review");
+          },
+          execute,
+        }),
+        actor,
+        conversationId: "conversation-1",
+      });
+      const tool = prepared.tools[0];
+      if (!tool || tool.kind !== "server") throw new Error("Missing server tool");
+      const call = tool.execute(
+        { title: "Example" },
+        {
+          signal: new AbortController().signal,
+          requestApproval: async () => {
+            throw new Error("Unexpected approval");
+          },
+          requestClientTool: async <T>(): Promise<T> => {
+            throw new Error("Unexpected client");
+          },
+        },
+      );
+      if (outcome === "scope") {
+        await call;
+        expect(execute).toHaveBeenCalledTimes(1);
+        expect(markNeedsApproval).not.toHaveBeenCalled();
+      } else {
+        await expect(call).rejects.toThrow(outcome === "mandate denied" ? "Grant denied" : "NEEDS_APPROVAL:");
+        expect(execute).not.toHaveBeenCalled();
+        if (outcome === "mandate denied") {
+          expect(review).not.toHaveBeenCalled();
+          expect(markNeedsApproval).not.toHaveBeenCalled();
+        } else expect(markNeedsApproval).toHaveBeenCalledTimes(1);
+      }
+      if (outcome !== "mandate denied") expect(review).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  test("a background refusal reaches the model as the exact NEEDS_APPROVAL tool error and allows its final sentence", async () => {
+    const catalog = buildAiCapabilityCatalog([capabilityApp("contacts")]);
+    const execute = mock(async () => ({ data: {} }));
+    spyOn(aiChatTasks, "authorizeCapability").mockImplementation(async () => {});
+    const markNeedsApproval = spyOn(aiChatTasks, "markNeedsApproval").mockImplementation(async () => {});
+    const prepared = prepareAiTools({
+      actor,
+      conversationId: "conversation-1",
+      tools: createLoadedAiCapabilityTools({
+        apps: [],
+        catalog,
+        loadedNames: ["contacts.create"],
+        actor,
+        authorizeBackground: async (entry, args, context) => {
+          await authorizeBackgroundAction({
+            turnId: "turn",
+            mandate: { id: "mandate", revision: 1 },
+            appId: entry.appId,
+            capabilityId: entry.operation.localId,
+            kind: entry.kind,
+            args,
+            approval: "approval" in entry.operation ? entry.operation.approval : undefined,
+            hasReview: "review" in entry.operation && entry.operation.review === true,
+            action: entry.display.title,
+            review: async () => ({ message: "Create item?" }),
+            signal: context.signal,
+          });
+        },
+        execute,
+      }),
+    });
+    const message =
+      "NEEDS_APPROVAL: Create item needs the user's approval every time, and routines never ask. Stop and say in one sentence what was missing.";
+    const entries: StoreEntry[] = [];
+    const requests: ProviderRequest[] = [];
+    const provider: Provider = {
+      name: "background-review",
+      family: "openai-compatible",
+      model: "fixture",
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+      async complete() {
+        throw new Error("Unexpected completion");
+      },
+      async *stream(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield { type: "block_start", blockId: "call", index: 0, kind: "tool_call", callId: "call", name: "contacts__action__create" };
+          yield {
+            type: "block_end",
+            blockId: "call",
+            index: 0,
+            block: { type: "tool_call", id: "call", name: "contacts__action__create", args: { title: "Example" } },
+          };
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" };
+        } else {
+          yield { type: "block_start", blockId: "answer", index: 0, kind: "text" };
+          yield {
+            type: "block_end",
+            blockId: "answer",
+            index: 0,
+            block: { type: "text", text: "I needed your approval to create the item." },
+          };
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+        }
+      },
+    };
+    for await (const _event of nessi({
+      provider,
+      systemPrompt: "test",
+      input: "Run",
+      tools: prepared.tools,
+      maxTurns: 3,
+      store: {
+        load: async () => entries,
+        append: async (message) => {
+          entries.push({ seq: entries.length + 1, kind: "message", message });
+        },
+      },
+    })) {
+      /* drain */
+    }
+    const result = requests[1]?.messages.find((message) => message.role === "tool_result");
+    expect(result).toMatchObject({ role: "tool_result", isError: true, result: message });
+    expect(entries.at(-1)?.message).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "I needed your approval to create the item." }],
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(markNeedsApproval).toHaveBeenCalledTimes(1);
+    expect(requests[0]?.tools?.[0]?.description).toContain("Never retry ACTION_OUTCOME_UNKNOWN or NEEDS_APPROVAL.");
   });
 
   test("background discovery keeps loaded tool names isolated with the existing eviction contract", async () => {

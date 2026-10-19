@@ -9,6 +9,7 @@ import {
   type AppDeviceProof,
   AppDevicePublicKeySchema,
   AppDeviceRequestSchema,
+  AppLoginContextSchema,
   AppPairingClaimSchema,
   AppPendingLoginSchema,
   appActionDigest,
@@ -230,4 +231,55 @@ test("terminal consent is strict, plain and bounded within a five-login inbox", 
     expect(AppPendingLoginSchema.safeParse({ ...login, terminal: change }).success).toBe(false);
   const inbox = AppDeviceInboxSchema.parse({ logins: Array(5).fill(login), actions: [], moreActions: 0, pollAfterSeconds: 5 });
   expect(new TextEncoder().encode(JSON.stringify(inbox)).length).toBeLessThanOrEqual(APP_APPROVAL_LIMITS.bodyBytes);
+});
+
+test("literal legacy proofs remain stable; context opt-in is one nested appendix", () => {
+  expect(appDeviceProofMessage(proof)).toBe(
+    '["cloud-app-approval-v1","device","https://cloud.example","ab811792-7476-4a8c-b676-2c6007bb9b5b","ab811792-7476-4a8c-b676-2c6007bb9b5b",100,160,"pending"]',
+  );
+  expect(appDeviceProofMessage({ ...proof, command: { operation: "inbox" } })).toBe(
+    '["cloud-app-approval-v1","device","https://cloud.example","ab811792-7476-4a8c-b676-2c6007bb9b5b","ab811792-7476-4a8c-b676-2c6007bb9b5b",100,160,"inbox"]',
+  );
+  expect(appDeviceProofMessage({ ...proof, command: { operation: "inbox", accept: ["terminal-logins"] } })).toBe(
+    '["cloud-app-approval-v1","device","https://cloud.example","ab811792-7476-4a8c-b676-2c6007bb9b5b","ab811792-7476-4a8c-b676-2c6007bb9b5b",100,160,"inbox",["terminal-logins"]]',
+  );
+  for (const operation of ["pending", "inbox"] as const) {
+    const command = { operation, accept: ["login-context"] as ["login-context"] };
+    expect(JSON.parse(appDeviceProofMessage({ ...proof, command })).slice(7)).toEqual([operation, ["login-context"]]);
+    expect(AppDeviceCommandSchema.safeParse(command).success).toBe(true);
+    for (const accept of [[], ["future"], ["login-context", "login-context"], Array(9).fill("login-context")])
+      expect(AppDeviceCommandSchema.safeParse({ operation, accept }).success).toBe(false);
+  }
+  expect(AppDeviceCommandSchema.safeParse({ operation: "pending", accept: ["terminal-logins"] }).success).toBe(false);
+  expect(AppDeviceCommandSchema.safeParse({ operation: "inbox", accept: ["terminal-logins", "login-context"] }).success).toBe(true);
+});
+
+test("login context has strict codes, plain 96-byte names and nullable history", () => {
+  const context = {
+    level: "info",
+    browser: "firefox",
+    os: "linux",
+    country: "AT",
+    city: "界".repeat(32),
+    network: null,
+    history: null,
+  } as const;
+  expect(AppLoginContextSchema.parse(context)).toEqual(context);
+  for (const change of [
+    { city: "界".repeat(33) },
+    { network: "界".repeat(33) },
+    { city: "" },
+    { network: "" },
+    { city: "hi\nthere" },
+    { network: "hi\u202ethere" },
+    { city: "hi\u200bthere" },
+    { country: "at" },
+    { country: "AUT" },
+    { browser: "unknown" },
+    { os: "unknown" },
+    { extra: true },
+    { sameNetwork: false },
+    { history: { knownSince: null, newCountry: false, countriesSince: null, extra: true } },
+  ])
+    expect(AppLoginContextSchema.safeParse({ ...context, ...change }).success).toBe(false);
 });

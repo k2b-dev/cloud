@@ -872,7 +872,7 @@ describe("Spaces item detail in a browser", () => {
 
       // An existing timed deadline opens with its time, 17:00 in Berlin.
       await clickLabel(page, "Due");
-      await expect(panel.getByRole("textbox", { name: "Time" }).inputValue()).resolves.toBe("17:00");
+      expect(await panel.getByRole("textbox", { name: "Time" }).inputValue()).toBe("17:00");
       await panel.getByRole("button", { name: "Remove time" }).click();
       await panel.getByRole("button", { name: "Apply" }).click();
       await writesReach(1);
@@ -884,7 +884,7 @@ describe("Spaces item detail in a browser", () => {
 
       // Without a time, a day is the deadline at once, and a preset is a day too.
       await clickLabel(page, "Due");
-      await expect(panel.getByRole("button", { name: "Add time" }).isVisible()).resolves.toBe(true);
+      expect(await panel.getByRole("button", { name: "Add time" }).isVisible()).toBe(true);
       await panel.locator('[data-date-day="2026-10-09"]').click();
       await writesReach(2);
       expect(writes[1]?.body).toEqual({ deadline: "2026-10-09" });
@@ -892,7 +892,7 @@ describe("Spaces item detail in a browser", () => {
       // Add time starts at the deadline default and saves an instant.
       await clickLabel(page, "Due");
       await panel.getByRole("button", { name: "Add time" }).click();
-      await expect(panel.getByRole("textbox", { name: "Time" }).inputValue()).resolves.toBe("17:00");
+      expect(await panel.getByRole("textbox", { name: "Time" }).inputValue()).toBe("17:00");
       await page.keyboard.press("ControlOrMeta+a");
       await page.keyboard.type("0930");
       await panel.getByRole("button", { name: "Apply" }).click();

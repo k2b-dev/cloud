@@ -244,6 +244,7 @@ const portableSections = [
         "ti ti-bell",
         "Scoped transient feedback with updates, actions, and dismissal, plus screen-reader announcements.",
       ),
+      page("moved-hint", "MovedHint", "ti ti-arrow-move-right", "A one-time anchored hint to a familiar path’s new place."),
       page("tooltip", "Tooltip", "ti ti-message", "Concise accessible hints with viewport-aware positioning."),
       page(
         "hover-preview",
@@ -389,7 +390,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 147;
+export const portableUiComponentCount = 148;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({

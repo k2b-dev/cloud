@@ -37,6 +37,7 @@ import feedbackBadges from "./feedback/badges.md" with { type: "text" };
 import feedbackBlocks from "./feedback/blocks.md" with { type: "text" };
 import feedbackHoverPreview from "./feedback/hover-preview.md" with { type: "text" };
 import feedbackInstallGuide from "./feedback/install-guide.md" with { type: "text" };
+import feedbackMovedHint from "./feedback/moved-hint.md" with { type: "text" };
 import feedbackPrompts from "./feedback/prompts.md" with { type: "text" };
 import feedbackToast from "./feedback/toast.md" with { type: "text" };
 import feedbackTooltip from "./feedback/tooltip.md" with { type: "text" };
@@ -164,6 +165,7 @@ const catalogContextSources = {
   "feedback/blocks": { file: "feedback/blocks.md", content: feedbackBlocks },
   "feedback/badges": { file: "feedback/badges.md", content: feedbackBadges },
   "feedback/toast": { file: "feedback/toast.md", content: feedbackToast },
+  "feedback/moved-hint": { file: "feedback/moved-hint.md", content: feedbackMovedHint },
   "feedback/tooltip": { file: "feedback/tooltip.md", content: feedbackTooltip },
   "feedback/hover-preview": { file: "feedback/hover-preview.md", content: feedbackHoverPreview },
   "feedback/prompts": { file: "feedback/prompts.md", content: feedbackPrompts },

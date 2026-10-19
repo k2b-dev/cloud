@@ -10,6 +10,8 @@ export type { InstallGuideProps } from "./InstallGuide";
 export { default as InstallGuide } from "./InstallGuide";
 export type { InstallationPlatform, InstallPrompt } from "./install";
 export { createInstallPrompt, installationPlatform } from "./install";
+export type { MovedHintAction, MovedHintProps } from "./MovedHint";
+export { MovedHint } from "./MovedHint";
 export type {
   ConfirmOptions,
   DialogOptions,

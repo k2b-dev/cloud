@@ -18,6 +18,7 @@ const { LinkCard } = await import("./LinkCard");
 const { NotFoundState } = await import("./NotFoundState");
 const { NoticeCard } = await import("./NoticeCard");
 const { Paper } = await import("./Paper");
+const { LocaleProvider } = await import("../intl/locale");
 const { default: Placeholder } = await import("./Placeholder");
 const { ProgressBar } = await import("./ProgressBar");
 const { ProgressRing } = await import("./ProgressRing");
@@ -567,4 +568,46 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
 
     expect(foreign).toEqual([]);
   });
+});
+
+test("empty, no results, and no access remain quiet, with chips only on stacked placeholders", () => {
+  for (const [state, icon] of [
+    ["empty", undefined],
+    ["no-results", "ti ti-search-off"],
+    ["no-access", "ti ti-lock"],
+  ] as const) {
+    const html = renderToString(() => createComponent(Placeholder, { state }));
+    expect(html).toContain(`data-state="${state}"`);
+    expect(html).not.toContain("role=");
+    expect(html).not.toContain("aria-live");
+    if (icon) {
+      expect(html).toContain(icon);
+      expect(html).toContain("k2b-icon-tile");
+    } else expect(html).not.toContain("k2b-placeholder__icon");
+    const inline = renderToString(() => createComponent(Placeholder, { state, variant: "inline", icon: "ti ti-inbox" }));
+    expect(inline).not.toContain("k2b-icon-tile");
+  }
+});
+
+test("load errors append a localized Try again button after the owner's action", () => {
+  for (const [locale, label] of [
+    ["en", "Try again"],
+    ["de", "Erneut versuchen"],
+  ]) {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: locale!,
+        get children() {
+          return createComponent(Placeholder, { state: "error", action: "Other recovery", onRetry: () => {} });
+        },
+      }),
+    );
+    expect(html).toContain(label!);
+    expect(html).toContain('type="button"');
+    expect(html).toContain('data-size="sm"');
+    expect(html).toContain('data-variant="secondary"');
+    expect(html.indexOf("Other recovery")).toBeLessThan(html.indexOf(label!));
+  }
+  const idle = renderToString(() => createComponent(Placeholder, { onRetry: () => {} }));
+  expect(idle).not.toContain("Try again");
 });

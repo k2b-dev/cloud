@@ -11,6 +11,7 @@ export {
   visiblePanelProviders,
   visiblePwaParts,
 } from "./app-navigation";
+export { hintOpen, markHintSeen } from "./hints";
 export { default as Layout } from "./Layout";
 export {
   default as MinimalLayout,

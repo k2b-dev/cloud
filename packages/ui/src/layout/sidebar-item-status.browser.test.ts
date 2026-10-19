@@ -410,7 +410,7 @@ describe("@k2b/ui sidebar item status", () => {
       });
       expect(layout.header?.height).toBeGreaterThan(0);
       expect(layout.header!.bottom).toBeLessThanOrEqual(layout.firstRow!.top);
-      await expect(page.getByRole("button", { name: "Chat actions" }).isVisible()).resolves.toBe(true);
+      expect(await page.getByRole("button", { name: "Chat actions" }).isVisible()).toBe(true);
     } finally {
       await page.close();
     }

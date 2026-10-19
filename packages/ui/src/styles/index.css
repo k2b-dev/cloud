@@ -65,9 +65,15 @@
   --k2b-action: var(--k2b-accent-700);
   --k2b-action-hover: var(--k2b-accent-800);
   --k2b-app-workspace-active: var(--k2b-action);
-  /* The fill of a selected object chip on the workspace surface; an optional
-     host hook like the active color. */
+  /* `--k2b-app-workspace-selected` is the fill of a selected navigation row
+     or object chip, beside the selected ink above; the soft tabs, view tabs,
+     segments, and active filter chips share it. `--k2b-row-selected` fills a
+     selected content row. Optional host hooks: standalone both keep the
+     platform selection fill; Cloud maps them to the active app's navigation
+     and row selection fills. Other control options and pressed states keep
+     `--k2b-selected`. */
   --k2b-app-workspace-selected: var(--k2b-selected);
+  --k2b-row-selected: var(--k2b-selected);
   /* Neutral and translucent, so sidebar hover shows on any sidebar surface and
      never sits in the platform blue beside an app's accent. */
   --k2b-app-workspace-hover: color-mix(in srgb, var(--k2b-text) 5%, transparent);
@@ -1263,12 +1269,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-app-workspace__sidebar-item.is-active {
   color: var(--k2b-app-workspace-active);
-  background: transparent;
+  background: var(--k2b-app-workspace-selected);
   font-weight: 600;
 }
 
+/* The current row keeps its selection fill under the pointer. */
 .k2b-ui .k2b-app-workspace__sidebar-item.is-active:hover {
-  background: var(--k2b-app-workspace-hover);
+  background: var(--k2b-app-workspace-selected);
+}
+
+/* Secondary text on a selection fill steps up one ink level, so descriptions,
+   counts and context lines keep AA contrast on any app's navigation fill. */
+.k2b-ui :is(.k2b-app-workspace__sidebar-item.is-active, .k2b-navigation__row[data-active] > .k2b-navigation__control) {
+  --k2b-text-muted: var(--k2b-text-secondary);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item:disabled {
@@ -5276,12 +5289,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-app-workspace__sidebar-icon-action.is-active {
   color: var(--k2b-app-workspace-active);
-  background: transparent;
+  background: var(--k2b-app-workspace-selected);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-icon-action.is-active:hover {
   color: var(--k2b-app-workspace-active);
-  background: var(--k2b-app-workspace-hover);
+  background: var(--k2b-app-workspace-selected);
 }
 
 /* The collapsed rail exists only beside the work area from 64 rem. Narrower,
@@ -7590,8 +7603,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   pointer-events: none;
 }
 
-/* The panel already owns the enclosing surface. A directly nested table only
-   contributes its header and row separators, avoiding a doubled frame. */
+/* The panel already owns the enclosing surface, so a directly nested table
+   draws no frame of its own. */
 .k2b-ui .k2b-data-panel > .k2b-table-shell[data-surface="paper"] {
   border: 0;
   border-radius: 0;
@@ -7674,6 +7687,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-data-table {
   @apply w-full text-xs;
   border-collapse: collapse;
+  /* Digits share one width, so amounts, counts, and dates line up down a column. */
+  font-variant-numeric: tabular-nums;
 }
 
 .k2b-ui .k2b-data-table[data-fill="true"] {
@@ -7684,8 +7699,39 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply px-3 py-2 text-left align-middle;
 }
 
+/* The minimal reference table (Grids): rows are read by space and a hover fill,
+   not by lines. A body row is 44 px (40 px compact) and grows only for content
+   that wraps; the header is a quiet 34 px line of muted text. */
+.k2b-ui .k2b-data-table td:not(.k2b-data-table__fill) {
+  height: 2.75rem;
+}
+
+.k2b-ui .k2b-data-table__head-row > th {
+  height: 2.125rem;
+  padding-block: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1rem;
+}
+
+/* The column the rows are sorted by keeps full text color, so the order is legible at a glance. */
+.k2b-ui .k2b-data-table__head-row > th:is([aria-sort="ascending"], [aria-sort="descending"]) {
+  color: var(--k2b-text);
+}
+
+/* Totals stand apart by weight, not by a line above them. */
+.k2b-ui .k2b-data-table__foot-row {
+  font-weight: 500;
+}
+
 .k2b-ui .k2b-table-wrap[data-density="compact"] .k2b-data-table :is(th, td) {
   @apply py-1.5;
+}
+
+/* The fill spacer of a `fillHeight` table keeps taking the spare height, so rows stay compact. */
+.k2b-ui .k2b-table-wrap[data-density="compact"] .k2b-data-table td:not(.k2b-data-table__fill) {
+  height: 2.5rem;
 }
 
 .k2b-ui .k2b-data-table td {
@@ -7721,7 +7767,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-data-table__foot[data-sticky="true"] {
   @apply z-10;
   position: sticky;
-  background: var(--k2b-surface-muted);
+  /* The table's own surface, so a sticky header reads as part of the page, not as a band. */
+  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-data-table__head[data-sticky="true"] {
@@ -7730,14 +7777,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-data-table__foot[data-sticky="true"] {
   bottom: 0;
-}
-
-.k2b-ui .k2b-data-table__head-row {
-  border-bottom: 1px solid var(--k2b-border);
-}
-
-.k2b-ui .k2b-data-table__foot-row {
-  border-top: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-data-table__header-content {
@@ -7773,8 +7812,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__header-title {
-  @apply font-semibold;
-  color: var(--k2b-text);
+  font-weight: inherit;
+  color: inherit;
 }
 
 .k2b-ui .k2b-data-table__header-subtitle {
@@ -7790,13 +7829,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply opacity-30;
 }
 
-.k2b-ui .k2b-data-table__row {
+/* Approved exception for wide editing tables: above 8 columns (`data-wide`)
+   the eye loses the row without a guide, so rows get a hairline. */
+.k2b-ui .k2b-data-table[data-wide="true"] .k2b-data-table__row:not(:last-child) {
   border-bottom: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
-}
-
-/* Cloud writes this as `last:border-0` on the row itself. */
-.k2b-ui .k2b-data-table tbody tr:last-child {
-  border-bottom: 0;
 }
 
 .k2b-ui .k2b-data-table__row[data-hover="true"]:not([data-selected="true"]):hover {
@@ -7804,7 +7840,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__row[data-selected="true"] {
-  background: var(--k2b-selected);
+  background: var(--k2b-row-selected);
 }
 
 .k2b-ui .k2b-data-table__row[data-selected="true"] > td[data-highlighted="true"] {
@@ -7835,6 +7871,32 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-data-table__cell-text {
   @apply truncate;
+}
+
+/* Loading rows keep the real row height; a static bar per cell, so nothing moves while it waits. */
+.k2b-ui .k2b-data-table__skeleton {
+  display: block;
+  width: 60%;
+  max-width: 10rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-data-table td:nth-child(3n + 2) > .k2b-data-table__skeleton {
+  width: 42%;
+}
+
+.k2b-ui .k2b-data-table td:nth-child(3n) > .k2b-data-table__skeleton {
+  width: 52%;
+}
+
+.k2b-ui .k2b-data-table td[data-align="right"] > .k2b-data-table__skeleton {
+  margin-inline-start: auto;
+}
+
+.k2b-ui .k2b-data-table td[data-align="center"] > .k2b-data-table__skeleton {
+  margin-inline: auto;
 }
 
 .k2b-ui .k2b-data-table__sentinel {
@@ -8195,8 +8257,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-settings__tabs button[data-active="true"] {
-  color: var(--k2b-action);
-  background: var(--k2b-selected);
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-selected);
 }
 
 .k2b-ui .k2b-settings__tabs button[data-tone="danger"] {
@@ -13219,7 +13281,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui [data-scroll-fade], .k2b-ui [data-scroll-fade][data-scroll-fade-axis="horizontal"] { mask-image: none; }
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"].is-active {
-  background: var(--k2b-app-workspace-hover);
+  background: var(--k2b-app-workspace-selected);
   border-color: color-mix(in srgb, var(--k2b-app-workspace-active) 25%, var(--k2b-border));
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.has-action),
@@ -13249,6 +13311,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.625rem;
   padding: 0.375rem 0.5625rem;
   color: var(--k2b-text);
+}
+/* The current object row reads the selected ink, as every current row does. */
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"].is-active:not(.has-action),
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"].is-active .k2b-app-workspace__sidebar-item-main {
+  color: var(--k2b-app-workspace-active);
 }
 /* A fixed 2rem box beside the two-line copy; a plain glyph gets the shared
    `k2b-icon-tile` chip, custom icon content keeps the same box. */
@@ -13434,7 +13501,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border: 0; border-radius: var(--k2b-radius-control); text-decoration: none; cursor: pointer;
 }
 .k2b-ui .k2b-navigation__row[data-active] > .k2b-navigation__control {
-  color: var(--k2b-app-workspace-active); font-weight: 600; background: var(--k2b-surface-muted);
+  color: var(--k2b-app-workspace-active); font-weight: 600; background: var(--k2b-app-workspace-selected);
 }
 .k2b-ui .k2b-navigation__control:hover { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-navigation__control:focus-visible,

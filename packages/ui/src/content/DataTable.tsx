@@ -8,6 +8,7 @@ import {
   For,
   type JSX,
   Match,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -15,6 +16,7 @@ import {
   useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { announce } from "../feedback/announce";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -23,6 +25,8 @@ import { Paper } from "../surfaces/Paper";
 import Placeholder from "../surfaces/Placeholder";
 import type { CollectionSelection } from "./collection-selection";
 import { useDataTableMessages } from "./data-table-messages";
+
+const WIDE_TABLE_COLUMNS = 8;
 
 export type DataTableColumn<T> = {
   id: string;
@@ -100,6 +104,9 @@ export type DataTableProps<T> = {
   footer?: DataTableFooter<T>;
   hasMore?: boolean;
   loadingMore?: boolean;
+  loading?: boolean;
+  /** Initial placeholder count, clamped to an integer from 1 to 50. Defaults to 5. */
+  loadingRows?: number;
   onLoadMore?: () => void;
   empty?: JSX.Element;
   density?: "compact" | "normal";
@@ -227,6 +234,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   let previousRowsLength = props.rows.length;
   let previousLoadingMore = !!props.loadingMore;
   let previousHasMore = !!props.hasMore;
+  const loadingRows = () => Math.min(50, Math.max(1, Math.trunc(Number.isNaN(props.loadingRows) ? 5 : (props.loadingRows ?? 5))));
   const rowId = (row: T) => props.getRowId?.(row);
   const isInteractive = () => !!props.selection || !!props.onRowClick || !!props.onRowDoubleClick;
   const shouldHoverRows = () => props.hoverRows ?? isInteractive();
@@ -485,6 +493,16 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     });
   });
 
+  // Announced once per wait, outside the region that `aria-busy` keeps quiet.
+  createEffect(
+    on(
+      () => !!props.loading && props.rows.length === 0,
+      (waiting) => {
+        if (waiting) announce(dataTableMessages().loadingRows);
+      },
+    ),
+  );
+
   createEffect(() => {
     const rowsLength = props.rows.length;
     const nextHasMore = !!props.hasMore;
@@ -520,6 +538,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
           role="region"
           aria-label={labelledBy() ? undefined : (props.ariaLabel ?? dataTableMessages().dataTable)}
           aria-labelledby={labelledBy()}
+          aria-busy={props.loading ? "true" : undefined}
           tabIndex={0}
           class={`k2b-table-wrap${props.scrollClass ? ` ${props.scrollClass}` : ""}`}
           data-density={props.density === "compact" ? "compact" : undefined}
@@ -528,7 +547,16 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
           data-scroll-preserve={props.scrollPreserveKey || undefined}
           onScroll={onScroll}
         >
-          <table ref={tableRef} class={tableClass()} data-fill={props.fillHeight ? "true" : undefined}>
+          <table
+            ref={tableRef}
+            class={tableClass()}
+            data-fill={props.fillHeight ? "true" : undefined}
+            data-wide={props.columns.length > WIDE_TABLE_COLUMNS ? "true" : undefined}
+          >
+            <Show when={props.loading}>
+              {/* Names the table while it waits; the announcement goes through the shared live region outside the busy region. */}
+              <caption class="k2b-sr-only">{dataTableMessages().loadingRows}</caption>
+            </Show>
             <thead class="k2b-data-table__head" data-sticky={props.stickyHeader === false ? undefined : "true"}>
               <tr class="k2b-data-table__head-row">
                 <For each={props.columns}>
@@ -551,11 +579,36 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
               <Show
                 when={props.rows.length > 0}
                 fallback={
-                  <tr>
-                    <td class="k2b-data-table__empty" colspan={props.columns.length}>
-                      <Placeholder description={<>{props.empty ?? dataTableMessages().noRecords}</>} />
-                    </td>
-                  </tr>
+                  <Show
+                    when={props.loading}
+                    fallback={
+                      <tr>
+                        <td class="k2b-data-table__empty" colspan={props.columns.length}>
+                          <Placeholder description={<>{props.empty ?? dataTableMessages().noRecords}</>} />
+                        </td>
+                      </tr>
+                    }
+                  >
+                    <For each={Array.from({ length: loadingRows() })}>
+                      {() => (
+                        <tr class="k2b-data-table__row" data-loading="true" aria-hidden="true">
+                          <For each={props.columns}>
+                            {(col) => (
+                              <td data-align={alignAttr(col)}>
+                                <span class="k2b-data-table__skeleton" />
+                              </td>
+                            )}
+                          </For>
+                        </tr>
+                      )}
+                    </For>
+                    {/* The spacer takes the spare height while loading too, so rows keep their height when data arrives. */}
+                    <Show when={props.fillHeight}>
+                      <tr aria-hidden="true">
+                        <td class="k2b-data-table__fill" colspan={props.columns.length} />
+                      </tr>
+                    </Show>
+                  </Show>
                 }
               >
                 <For each={props.rows}>

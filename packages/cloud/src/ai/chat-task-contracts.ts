@@ -55,7 +55,10 @@ export type AiChatTaskOccurrenceView = {
 export const toAiChatTaskView = (task: AiChatTask): AiChatTaskView => ({
   title: task.title,
   name: task.name,
-  reason: task.reasonCode && task.reasonAt ? { code: task.reasonCode, at: task.reasonAt } : null,
+  reason:
+    task.reasonCode && task.reasonAt
+      ? { code: task.reasonCode, at: task.reasonAt, ...(task.reasonAction ? { action: task.reasonAction } : {}) }
+      : null,
   id: task.shortId,
   chatId: task.chatId,
   chatTitle: task.chatTitle,
