@@ -9,6 +9,7 @@ import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview }
 export { AI_TOOL_CHECK_STALE_MS };
 
 import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
+import { projectSettledAiToolChecks } from "./capability-result";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
@@ -3770,7 +3771,7 @@ export const aiConversations: AiConversationService = {
       if (input.background && input.turnId) {
         const own = await aiConversations.listTurnMessages({ conversationId: input.conversationId, loopId: input.turnId });
         const context = input.background.context;
-        return [...context, ...own.map((row) => ({ seq: context.length + row.seq, kind: row.kind, message: row.message }))];
+        return [...context, ...projectSettledAiToolChecks(own.map((row) => ({ ...row, seq: context.length + row.seq })))];
       }
       // Results delivered after this turn started belong to the next turn's context.
       // Compare durable message sequences rather than wall-clock timestamps.
@@ -3784,20 +3785,23 @@ export const aiConversations: AiConversationService = {
           `
           ).map(rowToMessage)
         : await aiConversations.listContextMessages({ conversationId: input.conversationId });
-      return rows.map((row) => ({
-        seq: row.seq,
-        kind: row.kind,
-        message:
-          input.turnInput !== undefined && input.turnId === row.loopId && row.message.role === "user" && !row.meta?.steerId
-            ? {
-                role: "user" as const,
-                content:
-                  typeof input.turnInput === "string"
-                    ? [{ type: "text" as const, text: input.turnInput }]
-                    : input.turnInput.map((part) => (typeof part === "string" ? { type: "text" as const, text: part } : part)),
-              }
-            : row.message,
-      }));
+      return projectSettledAiToolChecks(
+        rows.map((row) => ({
+          seq: row.seq,
+          kind: row.kind,
+          meta: row.meta,
+          message:
+            input.turnInput !== undefined && input.turnId === row.loopId && row.message.role === "user" && !row.meta?.steerId
+              ? {
+                  role: "user" as const,
+                  content:
+                    typeof input.turnInput === "string"
+                      ? [{ type: "text" as const, text: input.turnInput }]
+                      : input.turnInput.map((part) => (typeof part === "string" ? { type: "text" as const, text: part } : part)),
+                }
+              : row.message,
+        })),
+      );
     },
     append: async (message, opts) => {
       // Initial input and durable steering are already persisted transactionally before Nessi appends them.

@@ -19,8 +19,11 @@ import { withoutAdminRole } from "../services/session/user";
 import { LOCALE_HEADER } from "../shared/locale";
 import type { AiActionCheck } from "./action-review";
 import type { AiCapabilityCatalogEntry } from "./capabilities";
+import { AiCapabilityExecutionError } from "./capability-result";
 import { aiToolAudit } from "./tool-audit";
 import type { AiConversationService } from "./types";
+
+export { AiCapabilityExecutionError, aiCapabilityCheckResult } from "./capability-result";
 
 type CapabilityActor = Extract<RequestActor, { kind: "user" }>;
 
@@ -45,18 +48,6 @@ export const resolveAiCapabilityActor = async (input: {
   }
   return { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } };
 };
-
-export class AiCapabilityExecutionError extends Error {
-  constructor(
-    readonly code: string,
-    readonly status: number,
-    message: string,
-    readonly dispatched: boolean = false,
-  ) {
-    super(`${code}: ${message}`);
-    this.name = "AiCapabilityExecutionError";
-  }
-}
 
 const idempotencyKey = (conversationId: string, callId: string): string =>
   `ai-${createHash("sha256").update(`${conversationId}\0${callId}`).digest("hex")}`;
@@ -203,30 +194,6 @@ export const checkAiCapability = async (
   } catch {
     return { state: "failed", at: new Date().toISOString() };
   }
-};
-
-/** A check settles only what the app knows; it never authorizes another Action attempt. */
-export const aiCapabilityCheckResult = (check: AiActionCheck): unknown => {
-  if (check.state === "done")
-    return {
-      data: null,
-      ...(check.receipt ? { receipt: check.receipt } : {}),
-      outcomeCheck: "done",
-      message: "The app's check confirmed the Action happened. Do not run it again.",
-    };
-  if (check.state === "not_done")
-    throw new AiCapabilityExecutionError(
-      "ACTION_NOT_DONE",
-      409,
-      "The app's check confirmed nothing happened. Ask the person before trying again.",
-    );
-  throw new AiCapabilityExecutionError(
-    "ACTION_OUTCOME_UNKNOWN",
-    409,
-    check.state === "pending"
-      ? "The app does not know the outcome yet. Do not retry the Action."
-      : "The outcome check failed. Do not retry the Action.",
-  );
 };
 
 /**

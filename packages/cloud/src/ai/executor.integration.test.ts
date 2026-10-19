@@ -42,6 +42,7 @@ import { AiQuotaError } from "./quotas";
 import { listPendingAiTurnActions } from "./runtime";
 import * as settings from "./settings";
 import { aiSkills } from "./skills";
+import * as conversationStore from "./store";
 import { aiConversations } from "./store";
 import * as stream from "./stream";
 import { type AiLiveTopicEvent, aiStreamTopic } from "./stream";
@@ -4006,6 +4007,7 @@ suiteFor(
     { outcome: "not_done", code: "IDEMPOTENCY_UNCERTAIN", status: 409, legacy: false, withCheck: true, dispatched: false },
     { outcome: "pending", code: "IDEMPOTENCY_IN_PROGRESS", status: 409, legacy: false, withCheck: true, dispatched: false },
     { outcome: "failed", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: true, dispatched: true, claimFails: true },
     // A timeout after dispatch proves nothing either: it is checked like a lost answer.
     { outcome: "not_done", code: "DEADLINE_EXCEEDED", status: 504, legacy: false, withCheck: true, dispatched: true },
     { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: false, dispatched: true },
@@ -4017,7 +4019,8 @@ suiteFor(
     { outcome: "pending", code: "REQUEST_CANCELLED", status: 499, legacy: false, withCheck: true, dispatched: true },
   ] as const)(
     "Action failure $code: $outcome, check=$withCheck, legacy=$legacy, dispatched=$dispatched",
-    async ({ outcome, code, status, legacy, withCheck, dispatched }) => {
+    async ({ outcome, code, status, legacy, withCheck, dispatched, ...failure }) => {
+      const claimFails = "claimFails" in failure && failure.claimFails;
       const userId = await insertUser();
       const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["demo.send"] });
       const compiled = compileReviewFixture(legacy ? null : { silent: "you" });
@@ -4056,6 +4059,13 @@ suiteFor(
           ? Response.json({ data: { outcome: "invalid" } })
           : Response.json({ data: { outcome, ...(outcome === "done" ? { receipt } : {}) } });
       });
+      const claimSpy = claimFails
+        ? spyOn(conversationStore, "claimAiToolCheck").mockRejectedValue(new Error("Transient check claim failure"))
+        : undefined;
+      const modelRequests: unknown[] = [];
+      onCompletionRequest = (body) => {
+        modelRequests.push(body);
+      };
       try {
         // Existing global approvals continue to apply, even though new cards no longer offer that choice.
         await rememberAiToolApproval({ actorUserId: userId }, { toolName: "demo.send", approvalScope: "one" });
@@ -4091,7 +4101,7 @@ suiteFor(
         });
         expect(calls.filter((call) => call.kind === "actions" && !call.review)).toHaveLength(1);
         const preDispatchFailure = !dispatched && code === "APP_UNAVAILABLE";
-        expect(calls.filter((call) => call.kind === "queries")).toHaveLength(withCheck && !preDispatchFailure ? 1 : 0);
+        expect(calls.filter((call) => call.kind === "queries")).toHaveLength(withCheck && !preDispatchFailure && !claimFails ? 1 : 0);
         expect(await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).toEqual([]);
         liveReview = legacy
           ? { message: "Changed draft?" }
@@ -4099,7 +4109,13 @@ suiteFor(
         const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
         const block = buildBlocksFromMessages(messages).find((block) => block.kind === "tool" && block.callId === "send-1");
         expect(block).toMatchObject({ review: legacy ? { legacy: { question: "Original draft?", rows: [] } } : originalReview });
-        if (withCheck && !preDispatchFailure) {
+        if (claimFails) {
+          expect(claimSpy).toHaveBeenCalledTimes(1);
+          expect(block).toMatchObject({ status: "failed", isError: true });
+          expect(JSON.stringify(block)).toContain("ACTION_OUTCOME_UNKNOWN");
+          expect(JSON.stringify(modelRequests.at(-1))).toContain("ACTION_OUTCOME_UNKNOWN");
+          expect(JSON.stringify(modelRequests.at(-1))).not.toContain("Transient check claim failure");
+        } else if (withCheck && !preDispatchFailure) {
           expect(block).toMatchObject({ check: { state: outcome }, status: outcome === "done" ? "completed" : "failed" });
           if (outcome === "done")
             expect(block).toMatchObject({ check: { receipt }, result: { receipt, data: null, outcomeCheck: "done" }, isError: false });
@@ -4112,6 +4128,8 @@ suiteFor(
           if (preDispatchFailure) expect(JSON.stringify(block)).not.toContain("ACTION_OUTCOME_UNKNOWN");
         }
       } finally {
+        claimSpy?.mockRestore();
+        onCompletionRequest = null;
         dispatch.mockRestore();
         registrySpy.mockRestore();
         completionQueue = [];

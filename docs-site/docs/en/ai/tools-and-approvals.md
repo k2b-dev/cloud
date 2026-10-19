@@ -655,7 +655,9 @@ starts that check. When a new review supplies
 `pending` keeps the unknown line. An unavailable or invalid check also keeps
 that line. **Check again** runs only the Query once per press for a pending or
 failed check, with the person's current access; concurrent presses conflict.
-It never repeats the Action. Without a check, the card can link the object but
+It never repeats the Action. A result that check settles also reaches the
+Assistant in later turns, so it knows the call happened or did not. Without a
+check, the card can link the object but
 offers no repeat button. Background checks follow the same rules and never ask.
 
 ### Approvals from an editor
