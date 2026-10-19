@@ -1,4 +1,4 @@
-import { type AuthContext, auth, middleware, rateLimit } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware, rateLimit, respond } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { PULSE_NOT_CONFIGURED } from "../store/gate";
 import { pulseStoreConfigured } from "../store/service";
@@ -22,7 +22,7 @@ const app = new Hono<AuthContext>()
       !/^(?:\/api\/pulse)?\/(?:openapi\.json|health)\/?$/.test(path) &&
       !(await pulseStoreConfigured())
     )
-      return c.json(PULSE_NOT_CONFIGURED, 503);
+      return respond(c, { ok: false, status: 503, code: PULSE_NOT_CONFIGURED.code, error: PULSE_NOT_CONFIGURED.message });
     await next();
   })
   .use(rateLimit())

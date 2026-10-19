@@ -21,9 +21,9 @@ render(
           label={t.tabsLabel}
           current={snapshot.view}
           items={[
-            { id: "store", label: t.tabStore, href: "?view=store", icon: "ti ti-database" },
-            { id: "bases", label: t.tabBases, href: "?view=bases", icon: "ti ti-stack-2", count: 3 },
-            { id: "targets", label: t.tabTargets, href: "?view=targets", icon: "ti ti-route", count: 3 },
+            { id: "store", label: t.tabStore, href: "?view=store" },
+            { id: "bases", label: t.tabBases, href: "?view=bases", count: 3 },
+            { id: "targets", label: t.tabTargets, href: "?view=targets", count: 3 },
           ]}
         />
         {snapshot.view === "bases" ? (

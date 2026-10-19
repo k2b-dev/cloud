@@ -37,9 +37,9 @@ const page = ssr<AuthContext>(async (c) => {
   ]);
   const t = pulseAdminMessages.resolve([getLocale(c)]).t;
   const tabs = [
-    { id: "store", label: t.tabStore, href: "?view=store", icon: "ti ti-database" },
-    { id: "bases", label: t.tabBases, href: "?view=bases", icon: "ti ti-stack-2", count: bases?.total },
-    { id: "targets", label: t.tabTargets, href: "?view=targets", icon: "ti ti-route", count: targets?.total },
+    { id: "store", label: t.tabStore, href: "?view=store" },
+    { id: "bases", label: t.tabBases, href: "?view=bases", count: bases?.total },
+    { id: "targets", label: t.tabTargets, href: "?view=targets", count: targets?.total },
   ];
   return () => (
     <AdminLayout c={c} title={t.pageTitle}>

@@ -200,7 +200,15 @@ const openDefaultsDialog = (t: PulseAdminMessages, policy: PulsePolicy, signal: 
     { title: t.defaultsDialogTitle, icon: "ti ti-adjustments", size: "medium" },
   );
 
-const openLimitsDialog = (t: PulseAdminMessages, row: AdminBaseRow, locale: string, signal: AbortSignal) =>
+type BaseAction = "retry" | "recheck" | "recreate";
+/** Limits of one base; also the place where a phone reaches the state actions of its row. */
+const openLimitsDialog = (
+  t: PulseAdminMessages,
+  row: AdminBaseRow,
+  locale: string,
+  signal: AbortSignal,
+  onAction: (action: BaseAction) => void,
+) =>
   prompts.dialog<AdminBaseRow>(
     (close, context) => {
       const [profile, setProfile] = createSignal(row.store.profile);
@@ -230,6 +238,58 @@ const openLimitsDialog = (t: PulseAdminMessages, row: AdminBaseRow, locale: stri
             void submit();
           }}
         >
+          <Show when={row.store.state === "failed"}>
+            <NoticeCard
+              tone="danger"
+              title={t.stateFailed}
+              detail={failedOperationText(t, row.store)}
+              meta={row.store.errorCode ?? undefined}
+            >
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  close();
+                  onAction("retry");
+                }}
+              >
+                {t.retry}
+              </Button>
+            </NoticeCard>
+          </Show>
+          <Show when={row.store.state === "active" && row.store.writeBlockReason}>
+            <NoticeCard
+              tone="warning"
+              title={t.stateWriteBlocked}
+              detail={row.store.writeBlockReason === "database_missing" ? t.blockedMissing : t.blockedMismatch}
+            >
+              <span class="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    close();
+                    onAction("recheck");
+                  }}
+                >
+                  {t.recheck}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    close();
+                    onAction("recreate");
+                  }}
+                >
+                  {t.recreate}
+                </Button>
+              </span>
+            </NoticeCard>
+          </Show>
           <div class="flex flex-col gap-1">
             <p class="text-sm text-secondary">{t.limitsIntro}</p>
             <Show when={row.store.usage}>
@@ -331,7 +391,7 @@ const Orphans = (props: { t: PulseAdminMessages; signal: AbortSignal }) => {
                   <li class="flex min-h-11 flex-wrap items-center justify-between gap-2">
                     <span class="flex min-w-0 items-center gap-2">
                       <span class="truncate font-mono text-sm text-primary">{item.database}</span>
-                      <StatusBadge tone="warning" variant="text" icon="ti ti-unlink" label={props.t.orphanBadge} />
+                      <StatusBadge class="shrink-0" tone="warning" variant="text" icon="ti ti-unlink" label={props.t.orphanBadge} />
                     </span>
                     <Button
                       size="xs"
@@ -444,13 +504,13 @@ export default function BasesAdmin(props: { initialPolicy: PulsePolicy | null; i
     }
   };
   const editLimits = async (row: AdminBaseRow) => {
-    const next = await openLimitsDialog(t(), row, locale(), controller.signal);
+    const next = await openLimitsDialog(t(), row, locale(), controller.signal, (action) => void act(row, action));
     if (next) {
       replace(next);
       toast.success(t().saved);
     }
   };
-  const act = async (row: AdminBaseRow, action: "retry" | "recheck" | "recreate") => {
+  const act = async (row: AdminBaseRow, action: BaseAction) => {
     if (rowBusy()) return;
     if (action === "recreate") {
       const confirmed = await prompts.confirm(t().recreateConfirmText, {
@@ -509,8 +569,8 @@ export default function BasesAdmin(props: { initialPolicy: PulsePolicy | null; i
       class: "max-md:hidden",
     },
     { id: "retention", header: t().colRetention, align: "right", nowrap: true, value: "rawRetentionDays", class: "max-md:hidden" },
-    { id: "profile", header: t().colProfile, value: (row) => row.store.profile, class: "max-md:hidden" },
-    { id: "actions", header: <span class="sr-only">{t().colActions}</span>, align: "right", nowrap: true },
+    // On a phone the row itself opens the limits dialog, which also carries the state actions.
+    { id: "actions", header: <span class="sr-only">{t().colActions}</span>, align: "right", nowrap: true, class: "max-sm:hidden" },
   ];
 
   return (
@@ -569,7 +629,7 @@ export default function BasesAdmin(props: { initialPolicy: PulsePolicy | null; i
               <For each={blocked()}>
                 {(row) => (
                   <li class="flex flex-wrap items-center justify-between gap-2">
-                    <span class="min-w-0 text-sm">
+                    <span class="min-w-0">
                       <span class="font-medium text-primary">{row.name}</span>
                       <span class="text-secondary">
                         {" · "}
@@ -603,6 +663,7 @@ export default function BasesAdmin(props: { initialPolicy: PulsePolicy | null; i
             hasMore={nextOffset() !== null}
             loadingMore={loadingMore()}
             onLoadMore={() => void more()}
+            onRowClick={(row) => row.store.state !== "deleting" && void editLimits(row)}
             empty={<Placeholder title={t().basesEmpty} description={t().basesEmptyDescription} icon="ti ti-database" />}
             renderCell={({ row, col, render }) => {
               const badge = () => storeBadge(t(), row.store);
@@ -642,9 +703,9 @@ export default function BasesAdmin(props: { initialPolicy: PulsePolicy | null; i
                     {t().retentionOf({ days: row.rawRetentionDays, max: policy()?.maxRawRetentionDays ?? row.rawRetentionDays })}
                   </span>
                 );
-              if (col.id === "profile") return <span>{profileLabel(t(), row.store.profile)}</span>;
               if (col.id === "actions")
                 return (
+                  // DataTable ignores row clicks from nested controls, so these never open the dialog twice.
                   <span class="flex justify-end gap-1">
                     <Show when={row.store.state === "failed"}>
                       <Button

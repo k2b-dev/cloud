@@ -172,7 +172,7 @@ export default function TargetsAdmin(props: { initialPage: InternalTargetsPage |
   const columns = (): DataTableColumn<InternalTarget>[] => [
     { id: "entry", header: t().colTarget, value: "entry" },
     { id: "scope", header: t().colScope, value: (row) => scopeText(t(), row), class: "max-sm:hidden" },
-    { id: "base", header: t().colBase, value: "baseName" },
+    { id: "base", header: t().colBase, value: "baseName", class: "max-sm:hidden" },
     { id: "actions", header: <span class="sr-only">{t().colActions}</span>, align: "right", nowrap: true },
   ];
 
@@ -202,7 +202,16 @@ export default function TargetsAdmin(props: { initialPage: InternalTargetsPage |
             onLoadMore={() => void more()}
             empty={<Placeholder title={t().targetsEmpty} description={t().targetsEmptyDescription} icon="ti ti-route" />}
             renderCell={({ row, col, render }) => {
-              if (col.id === "entry") return <span class="truncate font-mono text-sm text-primary">{row.entry}</span>;
+              if (col.id === "entry")
+                return (
+                  <span class="flex min-w-0 flex-col">
+                    <span class="truncate font-mono text-sm text-primary">{row.entry}</span>
+                    {/* A phone shows only this column and the remove button; scope and base move under the entry. */}
+                    <span class="truncate text-xs text-dimmed sm:hidden">
+                      {row.baseName} · {scopeText(t(), row)}
+                    </span>
+                  </span>
+                );
               if (col.id === "scope") return <span class="text-secondary">{scopeText(t(), row)}</span>;
               if (col.id === "base") return <span class="truncate">{row.baseName}</span>;
               if (col.id === "actions")

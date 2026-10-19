@@ -205,7 +205,13 @@ describe("Pulse administration tabs in a browser", () => {
         expect(done.orphans).toEqual(waiting.orphans);
         expect(done.overflow).toBeLessThanOrEqual(0);
         expect(await page.getByText("1 Base ist für Schreiben gesperrt").count()).toBe(1);
-        expect(await page.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(1);
+        if (view === desktop) expect(await page.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(1);
+        else {
+          // A phone hides the action column; tapping the row opens its dialog with the same state action.
+          expect(await page.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(0);
+          await page.getByRole("row", { name: /Laden/ }).click();
+          await page.getByRole("dialog").getByRole("button", { name: "Erneut versuchen" }).waitFor();
+        }
       } finally {
         await page.close();
       }
@@ -305,7 +311,7 @@ describe("Pulse administration tabs in a browser", () => {
       expect(
         await page
           .getByRole("row", { name: /db-02:5432/ })
-          .getByText("port 5432")
+          .getByRole("cell", { name: "port 5432", exact: true })
           .count(),
       ).toBe(1);
       await page.getByRole("button", { name: "Remove shop-01:9100?" }).click();
