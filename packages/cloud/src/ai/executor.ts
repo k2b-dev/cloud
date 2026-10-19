@@ -78,7 +78,15 @@ import { isAiVisionModelConfigured, type resolveAiModel } from "./settings";
 import { mergeAiSkillCatalog, selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool, loadSelectedAiSkills } from "./skill-tool";
 import { aiSkills } from "./skills";
-import { aiConversations, recordAiToolCheck, recordAiToolReview, recordAiWebsiteReceipts } from "./store";
+import {
+  AI_TOOL_CHECK_STALE_MS,
+  aiConversations,
+  claimAiToolCheck,
+  readAiToolCheck,
+  recordAiToolReview,
+  recordAiWebsiteReceipts,
+  settleAiToolCheck,
+} from "./store";
 import { AI_LIVE_SNAPSHOT_INTERVAL_MS, publishAiWireEvent } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
@@ -1345,16 +1353,25 @@ export class AiTurnExecutor {
                               `The outcome is unknown after ${error.code}; do not retry automatically.`,
                             );
                       if (!review || !("sentence" in review) || !review.check || !context.callId) throw unknown;
-                      // Durable first: if this worker stops during the Query, history keeps an open outcome that the
-                      // person can check again, instead of a call with no check at all.
-                      await recordAiToolCheck({
-                        conversationId,
-                        turnId,
-                        callId: context.callId,
-                        check: { state: "pending", at: new Date().toISOString() },
+                      // Durable first: the claim stores `checking` before the Query runs. If this worker stops, the
+                      // claim goes stale and the person can check again; while it holds, no re-check runs beside it.
+                      const target = { conversationId, turnId, callId: context.callId };
+                      const claimedAt = new Date().toISOString();
+                      const claimed = await claimAiToolCheck({
+                        ...target,
+                        at: claimedAt,
+                        staleBefore: new Date(Date.now() - AI_TOOL_CHECK_STALE_MS).toISOString(),
+                        first: true,
                       });
+                      if (!claimed) {
+                        // A person's check holds or settled the call already; its stored result is the outcome.
+                        const stored = await readAiToolCheck(target);
+                        const known = stored && stored.state !== "checking" ? stored : { state: "pending" as const };
+                        await pipeline.setToolCheck(context.callId, known);
+                        return aiCapabilityCheckResult(known);
+                      }
                       await pipeline.setToolCheck(context.callId, { state: "checking" });
-                      const check = await checkAiCapability({
+                      const answered = await checkAiCapability({
                         conversationId,
                         turnId,
                         authority: capabilityAuthority!,
@@ -1366,7 +1383,10 @@ export class AiTurnExecutor {
                         catalog: buildAiCapabilityCatalog([entry.app], promptLocale),
                         context,
                       });
-                      await recordAiToolCheck({ conversationId, turnId, callId: context.callId, check });
+                      // A claim that went stale and was taken over loses to the newer check's stored result.
+                      const check = (await settleAiToolCheck({ ...target, claimedAt, check: answered }))
+                        ? answered
+                        : ((await readAiToolCheck(target)) ?? answered);
                       await pipeline.setToolCheck(context.callId, check);
                       return aiCapabilityCheckResult(check);
                     });

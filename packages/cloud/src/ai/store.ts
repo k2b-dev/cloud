@@ -1000,17 +1000,86 @@ export const recordAiToolReview = (input: { conversationId: string; turnId: stri
 export const recordAiToolCheck = (input: { conversationId: string; turnId: string; callId: string; check: AiActionCheck }, db = sql) =>
   recordAiToolMeta(input, "toolChecks", input.check, db);
 
-/** A transaction-scoped lock rejects overlapping re-checks across Core replicas and releases on failure or process exit. */
-export const withAiToolCheckLock = <T>(
+/**
+ * Writes one call's check only where `allowed` holds for its current state, in one statement per table, so two Core
+ * replicas or the executor and a person's re-check can never both hold a check, and a settled result is never replaced.
+ */
+const writeAiToolCheckWhere = async (
   input: { conversationId: string; turnId: string; callId: string },
-  run: (db: typeof sql) => Promise<T>,
-): Promise<T | null> =>
-  sql.begin(async (db) => {
-    const [lock] = await db<{ acquired: boolean }[]>`SELECT pg_try_advisory_xact_lock(
-    hashtextextended(${`ai-tool-check:${input.conversationId}:${input.turnId}:${input.callId}`}, 0)
-  ) AS acquired`;
-    return lock?.acquired ? run(db) : null;
-  });
+  check: AiActionCheck,
+  allowed: (current: SQL.Query<unknown>) => SQL.Query<unknown>,
+): Promise<boolean> => {
+  let written = false;
+  for (const table of ["ai.messages", "ai.task_messages"]) {
+    const current = sql`meta->'toolChecks'->${input.callId}::text`;
+    const rows = await sql<{ id: string }[]>`
+      UPDATE ${sql(table)}
+      SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
+        'toolChecks', COALESCE(meta->'toolChecks', '{}'::jsonb) ||
+          jsonb_build_object(${input.callId}::text, ${JSON.stringify(check)}::text::jsonb)
+      )
+      WHERE conversation_id = ${input.conversationId}::uuid AND loop_id = ${input.turnId}::text
+        AND role = 'assistant'
+        AND message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', ${input.callId}::text))
+        AND (${allowed(current)})
+      RETURNING id`;
+    written ||= rows.length > 0;
+  }
+  return written;
+};
+
+/** A claim older than this belonged to a worker or request that stopped: twice a Query's budget, plus a margin. */
+export const AI_TOOL_CHECK_STALE_MS = 2 * 15_000 + 30_000;
+
+/**
+ * Claims the check of one call: stores `checking` at `at`, which is the claim's token, when no check holds and none
+ * settled. A call without any check yet may be claimed only with `first`, which the executor uses after an unknown
+ * outcome. A `checking` older than `staleBefore` belonged to a worker or request that stopped and may be taken over.
+ */
+export const claimAiToolCheck = (input: {
+  conversationId: string;
+  turnId: string;
+  callId: string;
+  at: string;
+  staleBefore: string;
+  first?: boolean;
+}): Promise<boolean> =>
+  writeAiToolCheckWhere(
+    input,
+    { state: "checking", at: input.at },
+    (current) => sql`
+      ${input.first ? sql`${current} IS NULL OR` : sql``}
+      ${current}->>'state' IN ('pending', 'failed')
+      OR (${current}->>'state' = 'checking' AND COALESCE(${current}->>'at', '') < ${input.staleBefore}::text)`,
+  );
+
+/** Stores the result of the claim made at `claimedAt`, only while that claim still holds. */
+export const settleAiToolCheck = (input: {
+  conversationId: string;
+  turnId: string;
+  callId: string;
+  claimedAt: string;
+  check: AiActionCheck;
+}): Promise<boolean> =>
+  writeAiToolCheckWhere(
+    input,
+    input.check,
+    (current) => sql`${current}->>'state' = 'checking' AND ${current}->>'at' = ${input.claimedAt}::text`,
+  );
+
+/** The stored check of one call, or null. */
+export const readAiToolCheck = async (input: { conversationId: string; turnId: string; callId: string }): Promise<AiActionCheck | null> => {
+  for (const table of ["ai.messages", "ai.task_messages"]) {
+    const [row] = await sql<{ check: AiActionCheck | null }[]>`
+      SELECT meta->'toolChecks'->${input.callId}::text AS check FROM ${sql(table)}
+      WHERE conversation_id = ${input.conversationId}::uuid AND loop_id = ${input.turnId}::text
+        AND role = 'assistant'
+        AND message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', ${input.callId}::text))
+      LIMIT 1`;
+    if (row?.check) return row.check;
+  }
+  return null;
+};
 
 /** Insert a message inside an open conversation-lock transaction and bump the conversation. */
 const insertMessageLocked = async (

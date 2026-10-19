@@ -100,7 +100,11 @@ const flowOf = (input: {
   // A lost answer holds only while the question still waits; the server's own outcome always wins over it.
   if (input.lost && block.status === "awaiting_approval") return { flow: "lost" };
   if (block.status === "awaiting_approval") return input.answer === "decline" ? { flow: "rejected" } : { flow: "run", current: "running" };
-  if (check?.state === "checking") return { flow: "check", current: "checking" };
+  // A check runs only inside a live turn; one that history still shows as running was cut off and is open.
+  if (check?.state === "checking")
+    return input.phase === "completed" || input.phase === "stopped" || input.phase === "failed"
+      ? { flow: "check", current: "pending" }
+      : { flow: "check", current: "checking" };
   if (check?.state === "done") return { flow: "check", current: "checkedDone" };
   if (check?.state === "not_done") return { flow: "check", current: "checkedNotDone" };
   // An open check stays open whatever the call's own end looked like, such as a turn stopped while it checked.

@@ -95,7 +95,7 @@ import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
 import { aiSkills } from "./skills";
-import { aiConversations, recordAiToolCheck, withAiToolCheckLock } from "./store";
+import { AI_TOOL_CHECK_STALE_MS, aiConversations, claimAiToolCheck, readAiToolCheck, settleAiToolCheck } from "./store";
 import { createAiConversationStreamResponse, loadAiStreamState } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolPromptHints } from "./tools";
@@ -1220,59 +1220,71 @@ export const aiRoutes = (() => {
         // The app's Query may take its whole budget; the request must outlast it.
         setRequestTimeout(c, Math.ceil(QUERY_TIMEOUT_MS / 1000) + REQUEST_IDLE_TIMEOUT_SECONDS);
         try {
-          const response = await withAiToolCheckLock(target, async (db) => {
-            const messages = await aiConversations.listTurnMessages({
-              conversationId: conversation.id,
-              loopId: turn.id,
-              includeCompacted: true,
-            });
-            const message = messages.find(
-              ({ message }) =>
-                message.role === "assistant" && message.content.some((block) => block.type === "tool_call" && block.id === callId),
-            );
-            if (!message) return notFound(c);
-            const review = message.meta?.toolReviews?.[callId];
-            const previous = message.meta?.toolChecks?.[callId];
-            if (!review || !("sentence" in review) || !review.check || !previous)
-              return respond(c, fail(err.conflict("This call has no outcome check.")));
-            // A settled check answers again as it was stored, so a client whose last response got lost can recover
-            // without running the Query again.
-            if (previous.state === "done" || previous.state === "not_done") return respond(c, ok(previous));
-            if (previous.state !== "pending" && previous.state !== "failed")
-              return respond(c, fail(err.conflict("This call's outcome check is still running.")));
-            const block =
-              message.message.role === "assistant"
-                ? message.message.content.find((block) => block.type === "tool_call" && block.id === callId)
-                : undefined;
-            const catalog = buildAiCapabilityCatalog(await listCapabilities());
-            const presentation = message.meta?.toolPresentations?.[callId];
-            const entry = catalog.find(
-              (entry) =>
-                entry.kind === "action" &&
-                (entry.name === (block?.type === "tool_call" ? block.name : undefined) ||
-                  entry.providerName === (block?.type === "tool_call" ? block.name : undefined)) &&
-                (!presentation || presentation.appId === entry.appId),
-            );
-            if (!entry) return respond(c, fail(err.conflict("The Action's app is unavailable. Try the check again when it returns.")));
-            const authority = await resolveAiCapabilityActor({
-              conversationId: conversation.id,
-              persistedActor: ctx.actor,
-              store: aiConversations,
-            });
-            const check = await checkAiCapability({
-              ...target,
-              entry,
-              check: review.check,
-              catalog,
-              authority,
-              // The receipt joins the stored review's sentence, so it is asked for in that language.
-              locale: review.locale,
-              context: { callId, signal: c.req.raw.signal },
-            });
-            await recordAiToolCheck({ ...target, check }, db);
-            return respond(c, ok(check));
+          const messages = await aiConversations.listTurnMessages({
+            conversationId: conversation.id,
+            loopId: turn.id,
+            includeCompacted: true,
           });
-          return response ?? respond(c, fail(err.conflict("An outcome check is already running for this call.")));
+          const message = messages.find(
+            ({ message }) =>
+              message.role === "assistant" && message.content.some((block) => block.type === "tool_call" && block.id === callId),
+          );
+          if (!message) return notFound(c);
+          const review = message.meta?.toolReviews?.[callId];
+          const previous = message.meta?.toolChecks?.[callId];
+          if (!review || !("sentence" in review) || !review.check || !previous)
+            return respond(c, fail(err.conflict("This call has no outcome check.")));
+          // A settled check answers again as it was stored, so a client whose last response got lost can recover
+          // without running the Query again.
+          if (previous.state === "done" || previous.state === "not_done") return respond(c, ok(previous));
+          const block =
+            message.message.role === "assistant"
+              ? message.message.content.find((block) => block.type === "tool_call" && block.id === callId)
+              : undefined;
+          const catalog = buildAiCapabilityCatalog(await listCapabilities());
+          const presentation = message.meta?.toolPresentations?.[callId];
+          const entry = catalog.find(
+            (entry) =>
+              entry.kind === "action" &&
+              (entry.name === (block?.type === "tool_call" ? block.name : undefined) ||
+                entry.providerName === (block?.type === "tool_call" ? block.name : undefined)) &&
+              (!presentation || presentation.appId === entry.appId),
+          );
+          if (!entry) return respond(c, fail(err.conflict("The Action's app is unavailable. Try the check again when it returns.")));
+          const authority = await resolveAiCapabilityActor({
+            conversationId: conversation.id,
+            persistedActor: ctx.actor,
+            store: aiConversations,
+          });
+          // One check at a time per call, across Core replicas and the executor: the claim is one conditional write,
+          // and no transaction stays open while the app's Query runs.
+          const claimedAt = new Date().toISOString();
+          const claimed = await claimAiToolCheck({
+            ...target,
+            at: claimedAt,
+            staleBefore: new Date(Date.now() - AI_TOOL_CHECK_STALE_MS).toISOString(),
+          });
+          if (!claimed) {
+            const stored = await readAiToolCheck(target);
+            if (stored?.state === "done" || stored?.state === "not_done") return respond(c, ok(stored));
+            return respond(c, fail(err.conflict("An outcome check is already running for this call.")));
+          }
+          const answered = await checkAiCapability({
+            ...target,
+            entry,
+            check: review.check,
+            catalog,
+            authority,
+            // The receipt joins the stored review's sentence, so it is asked for in that language.
+            locale: review.locale,
+            context: { callId, signal: c.req.raw.signal },
+          });
+          if (await settleAiToolCheck({ ...target, claimedAt, check: answered })) return respond(c, ok(answered));
+          // The claim went stale and a newer check took over; its stored result is the answer.
+          const stored = await readAiToolCheck(target);
+          return stored && stored.state !== "checking"
+            ? respond(c, ok(stored))
+            : respond(c, fail(err.conflict("An outcome check is already running for this call.")));
         } finally {
           setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
         }

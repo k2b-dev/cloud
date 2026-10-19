@@ -692,7 +692,10 @@ show recovery. Core serves
 `POST /api/ai/conversations/:conversationId/turns/:turnId/calls/:callId/check`
 for the conversation owner in a signed-in browser session; API keys and other
 clients get `403`. Unknown calls return `404`. Calls without a check, and a
-second press while one check runs, return `409`. A settled check answers again
+second press while one check runs, return `409`. The executor and a person's
+press claim the check with one conditional write, so only one runs at a time and
+a settled result is never replaced; a claim whose worker stopped goes stale after
+a minute and can be checked again. A settled check answers again
 with its stored result without running the Query, so a client whose response
 got lost can recover. The response is `{ state, receipt?, at }`.
 

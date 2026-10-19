@@ -29,7 +29,7 @@ import { buildBlocksFromMessages } from "./protocol";
 import { __aiRoutesTest, aiRoutes } from "./routes";
 import * as aiRuntime from "./runtime";
 import { createAiShortId } from "./short-id";
-import { aiConversations, recordAiToolCheck, recordAiToolReview } from "./store";
+import { aiConversations, recordAiToolCheck, recordAiToolReview, settleAiToolCheck } from "./store";
 import { publishAiWireEvent } from "./stream";
 
 const suite = databaseSuite();
@@ -1076,6 +1076,8 @@ suiteFor(
         if (!apiToken.ok) throw new Error(apiToken.error.message);
         expect((await post("send", apiToken.data.token)).status).toBe(403);
         expect(dispatch).not.toHaveBeenCalled();
+        // A claim that went stale (its worker stopped during the Query) can be taken over by the person's check.
+        await recordAiToolCheck({ ...target, check: { state: "checking", at: "2000-01-01T00:00:00.000Z" } });
         const first = Promise.resolve(post("send"));
         inFlight = first;
         await Promise.race([
@@ -1095,6 +1097,8 @@ suiteFor(
         const second = await post("send");
         expect(second.status).toBe(200);
         expect(await second.json()).toMatchObject({ state: "done", receipt: { text: "Saved" } });
+        // An older claim that lost its hold, such as an automatic check whose worker stopped, never replaces the settled result.
+        expect(await settleAiToolCheck({ ...target, claimedAt: "2000-01-01T00:00:00.000Z", check: { state: "pending" } })).toBe(false);
         // A settled check answers again as stored, without running the Query, so a lost response can be recovered.
         const replay = await post("send");
         expect(replay.status).toBe(200);
