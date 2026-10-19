@@ -1,4 +1,5 @@
 import { commandPath } from "@k2b/cloud/contracts/commands";
+import { SPACES_DETAIL_NAVIGATION_EVENT, type SpacesDetailNavigation } from "../workspace/workspace-events";
 import type { SpaceContext } from "./types";
 
 export const spacePrimaryHref = (ctx: Pick<SpaceContext, "query" | "currentView"> & { space: { id: string } }) => {
@@ -13,14 +14,31 @@ export const spacePrimaryHref = (ctx: Pick<SpaceContext, "query" | "currentView"
   }
 };
 
+export const syncSpacePrimaryHref = (document: Document, ctx: Parameters<typeof spacePrimaryHref>[0]) => {
+  const path = `/app/spaces/${ctx.space.id}`;
+  const sync = (url: URL) => {
+    if (url.pathname !== path) return;
+    document.querySelector("a[data-workspace-primary]")?.setAttribute("href", spacePrimaryHref({ ...ctx, query: url.search.slice(1) }));
+  };
+  sync(new URL(window.location.href));
+  const onCommitted = (event: Event) => {
+    if (!(event instanceof CustomEvent)) return;
+    const detail: SpacesDetailNavigation = event.detail;
+    if (detail.history === "none") sync(new URL(detail.href, window.location.origin));
+  };
+  window.addEventListener(SPACES_DETAIL_NAVIGATION_EVENT, onCommitted);
+  return () => window.removeEventListener(SPACES_DETAIL_NAVIGATION_EVENT, onCommitted);
+};
+
 /** Preserve native links before hydration, reloads, and modified clicks. */
-export const interceptSpacePrimaryClick = (document: Document, href: string, create: () => void) => {
+export const interceptSpacePrimaryClick = (document: Document, create: () => void) => {
   const onClick = (event: MouseEvent) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
     const anchor = target.closest("a");
-    if (anchor?.getAttribute("href") !== href || anchor.hasAttribute("download") || (anchor.target && anchor.target !== "_self")) return;
+    if (!anchor?.hasAttribute("data-workspace-primary") || anchor.hasAttribute("download") || (anchor.target && anchor.target !== "_self"))
+      return;
     event.preventDefault();
     create();
   };

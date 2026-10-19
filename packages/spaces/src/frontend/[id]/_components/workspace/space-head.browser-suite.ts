@@ -251,8 +251,9 @@ let controller = "";
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 
-// Recorded before island imports, after fonts load. The same selectors measure the hydrated frame.
-const geometryScript = `window.headGeometry = () => Array.from(document.querySelectorAll('.k2b-app-workspace__head-views,.k2b-app-workspace__head-filters,.k2b-app-workspace__head-actions,[data-workspace-primary],.spaces-sidebar-list .k2b-app-workspace__sidebar-item')).map(e => {const r=e.getBoundingClientRect(); return {class:e.className.trim().split(/\\s+/).sort().join(" "),x:r.x,y:r.y,width:r.width,height:r.height}});`;
+// Recorded before island imports, after fonts load. The same selectors measure the hydrated frame. The collapsed rail's
+// own rows are hidden at these widths, so the frame records the four expanded rows.
+const geometryScript = `window.headGeometry = () => Array.from(document.querySelectorAll('.k2b-app-workspace__head-views,.k2b-app-workspace__head-filters,.k2b-app-workspace__head-actions,[data-workspace-primary],.spaces-sidebar-list .k2b-app-workspace__sidebar-item:not([data-sidebar-mode=collapsed])')).map(e => {const r=e.getBoundingClientRect(); return {class:e.className.trim().split(/\\s+/).sort().join(" "),x:r.x,y:r.y,width:r.width,height:r.height}});`;
 const pageHtml = (url: URL, cookie: string | undefined) => {
   const view = resolveView(url, cookie);
   const wanted = url.searchParams.get("hint");
@@ -370,7 +371,7 @@ const geometry = (page: Page) =>
   page.evaluate(() =>
     Array.from(
       document.querySelectorAll<HTMLElement>(
-        ".k2b-app-workspace__head-views,.k2b-app-workspace__head-filters,.k2b-app-workspace__head-actions,[data-workspace-primary],.spaces-sidebar-list .k2b-app-workspace__sidebar-item",
+        ".k2b-app-workspace__head-views,.k2b-app-workspace__head-filters,.k2b-app-workspace__head-actions,[data-workspace-primary],.spaces-sidebar-list .k2b-app-workspace__sidebar-item:not([data-sidebar-mode=collapsed])",
       ),
     ).map((element) => {
       const rect = element.getBoundingClientRect();

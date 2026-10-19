@@ -8,7 +8,7 @@ import { overviewMessages } from "../../../overview-messages";
 import { createSpaceCommands } from "../../../space-commands";
 import { useSpaceMessages } from "../../messages";
 import { createItemController } from "./CreateItemButton";
-import { interceptSpacePrimaryClick, spacePrimaryHref } from "./space-primary";
+import { interceptSpacePrimaryClick, syncSpacePrimaryHref } from "./space-primary";
 import {
   createNewSpace,
   createPinnedSpaces,
@@ -59,8 +59,8 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; sidebar: Spa
   onMount(() => {
     onCleanup(listenSpacesNavigationHints(document, props.sidebar.spaces));
     if (!props.ctx.canWrite) return;
-    const href = spacePrimaryHref(props.ctx);
-    onCleanup(interceptSpacePrimaryClick(document, href, () => void create.createItem()));
+    onCleanup(syncSpacePrimaryHref(document, props.ctx));
+    onCleanup(interceptSpacePrimaryClick(document, () => void create.createItem()));
   });
   const { t: overview } = overviewMessages.resolve([locale()]);
   const createSpace = createNewSpace(overview);

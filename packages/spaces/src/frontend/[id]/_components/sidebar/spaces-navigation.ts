@@ -9,6 +9,7 @@ export type SpacesSidebarCurrent = { kind: "overview" } | { kind: "space"; id: s
 export type SpacesSidebarData = { spaces: SidebarSpace[]; pinnedSpaceIds: string[]; myWorkCount: number };
 
 const PINS_CHANGED_EVENT = "spaces-pins-changed";
+const PINS_REQUEST_EVENT = "spaces-pins-request";
 
 /**
  * The pins this page shows, shared by the sidebar and the phone title menu, which live in different islands: a pin
@@ -16,14 +17,25 @@ const PINS_CHANGED_EVENT = "spaces-pins-changed";
  */
 export function createPinnedSpaces(initial: string[]) {
   const [pinned, setPinned] = createSignal(initial);
+  let changed = false;
   onMount(() => {
-    const changed = (event: Event) => {
+    const onChanged = (event: Event) => {
       if (event instanceof CustomEvent && Array.isArray(event.detail)) setPinned(event.detail);
     };
-    window.addEventListener(PINS_CHANGED_EVENT, changed);
-    onCleanup(() => window.removeEventListener(PINS_CHANGED_EVENT, changed));
+    const onRequest = () => {
+      if (changed) window.dispatchEvent(new CustomEvent(PINS_CHANGED_EVENT, { detail: pinned() }));
+    };
+    window.addEventListener(PINS_CHANGED_EVENT, onChanged);
+    // Request before answering so this island cannot overwrite a newer snapshot with its server pins.
+    window.dispatchEvent(new Event(PINS_REQUEST_EVENT));
+    window.addEventListener(PINS_REQUEST_EVENT, onRequest);
+    onCleanup(() => {
+      window.removeEventListener(PINS_CHANGED_EVENT, onChanged);
+      window.removeEventListener(PINS_REQUEST_EVENT, onRequest);
+    });
   });
   const update = (next: string[]) => {
+    changed = true;
     setPinned(next);
     window.dispatchEvent(new CustomEvent(PINS_CHANGED_EVENT, { detail: next }));
   };
