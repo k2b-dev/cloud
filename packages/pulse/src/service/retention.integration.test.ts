@@ -7,7 +7,11 @@ import { listAdminBases } from "./base-admin";
 import { createRetention } from "./retention";
 import { assertWrite, writeFixture } from "./write.test-fixture";
 
-suiteFor("database", "clickhouse")("Pulse sealed raw partition retention", () => {
+suiteFor(
+  "database",
+  "valkey",
+  "clickhouse",
+)("Pulse sealed raw partition retention", () => {
   beforeAll(installFixtureStore, 30000);
   test("#7 sealed hours reject writes, whole days require sealing, and lag reaches the admin contract", async () => {
     const f = await writeFixture("retention"),

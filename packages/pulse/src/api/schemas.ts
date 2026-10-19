@@ -2,6 +2,7 @@ import { PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema 
 import { z } from "zod";
 import { METRIC_TYPES, SOURCE_KINDS } from "../contracts";
 import { PULSE_EXTERNAL_INGEST_BATCH_LIMIT, PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT } from "../ingest-limits";
+import { MetricFiltersSchema } from "../metric-filters";
 import { BaseStoreStatusSchema } from "../store/admin-schemas";
 import {
   jsonBytes,
@@ -139,12 +140,23 @@ export const UpdateBaseAccessSchema = z.object({
   permission: PermissionLevelSchema.exclude(["none"]),
 });
 
+export const SourceStatusSchema = z.object({
+  newestDataAt: z.string().nullable(),
+  throttled: z.boolean(),
+  throttledAt: z.string().nullable(),
+  refusedHistograms: z.array(z.object({ family: z.string(), reason: z.string() })).max(20),
+  skippedSummaries: z.number().int().nonnegative(),
+  lastError: z.string().nullable(),
+  lastErrorAt: z.string().nullable(),
+});
+
 export const CreateSourceSchema = z.strictObject({
   kind: z.enum(SOURCE_KINDS),
   name: z.string().trim().min(1).max(120),
   endpointUrl: z.string().trim().min(1).max(2_000).nullable().optional(),
   bearerToken: z.string().trim().min(1).nullable().optional(),
   scrapeIntervalSeconds: z.number().int().min(60).max(86_400).multipleOf(60).nullable().optional(),
+  metricFilters: MetricFiltersSchema.optional(),
 });
 
 export const CreateSourceApiKeySchema = z.object({
@@ -159,6 +171,7 @@ export const UpdateSourceSchema = z.strictObject({
   endpointUrl: z.string().trim().min(1).max(2_000).nullable().optional(),
   bearerToken: z.string().trim().min(1).nullable().optional(),
   scrapeIntervalSeconds: z.number().int().min(60).max(86_400).multipleOf(60).nullable().optional(),
+  metricFilters: MetricFiltersSchema.optional(),
 });
 
 export const MessageSchema = z.object({ message: z.string() });
@@ -192,6 +205,8 @@ export const SourceSchema = z.object({
   endpointUrl: z.string().nullable(),
   bearerTokenConfigured: z.boolean(),
   scrapeIntervalSeconds: z.number().nullable(),
+  metricFilters: MetricFiltersSchema,
+  status: SourceStatusSchema,
   lastSeenAt: z.string().nullable(),
   lastError: z.string().nullable(),
   lastErrorAt: z.string().nullable(),

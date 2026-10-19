@@ -1,6 +1,8 @@
 import { CapabilitySemanticLinkSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
+import { SourceStatusSchema } from "./api/schemas";
 import { SOURCE_KINDS } from "./contracts";
+import { MetricFiltersSchema } from "./metric-filters";
 import { BaseStoreStatusSchema } from "./store/admin-schemas";
 
 const TimestampSchema = z.string().datetime({ offset: true });
@@ -37,6 +39,8 @@ export const SourceDataSchema = z
     kind: z.enum(SOURCE_KINDS),
     name: z.string().min(1).max(120),
     enabled: z.boolean(),
+    metricFilters: MetricFiltersSchema,
+    status: SourceStatusSchema,
     lastSeenAt: TimestampSchema.nullable(),
     lastError: z.string().max(2_000).nullable(),
     lastErrorAt: TimestampSchema.nullable(),

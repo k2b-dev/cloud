@@ -26,8 +26,10 @@ import {
   registerIngestBatch,
   writePreparedIngestBatchInTransaction,
 } from "./ingest-bulk";
+import { type IngestQuota, ingestQuota, type QuotaError } from "./ingest-quota";
 import { MetricSeriesLimitError } from "./metric-cardinality";
 import { PULSE_INGEST_SCOPE, resolveIngestSourceForServiceAccount } from "./source-management";
+import { recordStoreOutage } from "./store-health";
 
 const log = logger("pulse:ingest");
 class IngestTransactionFailure extends Error {
@@ -120,9 +122,16 @@ const validateBatch = (batch: PulseIngestBatch): Result<void> => {
 };
 
 export type IngestCounts = { metrics: number; events: number; states: number };
-export type IngestResult =
-  | { ok: true; data: IngestCounts }
-  | { ok: false; error: ServiceError | { code: "PULSE_STORE_UNAVAILABLE"; status: 503; message: string; retryAfter: 30 } };
+export type IngestFailure =
+  | ServiceError
+  | QuotaError
+  | { code: "PULSE_STORE_UNAVAILABLE" | "PULSE_STORE_DISK_LOW"; status: 503; message: string; retryAfter: number };
+export type IngestResult = { ok: true; data: IngestCounts } | { ok: false; error: IngestFailure };
+class IngestRefusal extends Error {
+  constructor(readonly failure: IngestFailure) {
+    super(failure.message);
+  }
+}
 
 export const validateIngestTimestamps = (batch: PulseIngestBatch, now: Date): Result<void> => {
   for (const collection of ["metrics", "events", "states"] as const) {
@@ -154,15 +163,24 @@ const lockIngestScope = async (baseId: string, sourceId: string, db: PulseSqlCli
   return { ...base, lastAcceptedAt: source.last_accepted_at };
 };
 type KeyRow = { request_hash: string; state: "pending" | "done"; accepted_at: Date; response: IngestCounts | null };
-export type IngestParams = { baseId: string; sourceId: string; batch: PulseIngestBatch; idempotencyKey?: string | null };
+export type IngestParams = {
+  baseId: string;
+  sourceId: string;
+  batch: PulseIngestBatch;
+  idempotencyKey?: string | null;
+  requestBytes?: number;
+  locale?: string;
+};
 export const createIngestWriter = ({
   store = baseStore,
   database = sql,
   clock = store.clock,
+  quota = ingestQuota,
 }: {
   store?: IngestStore;
   database?: typeof sql;
   clock?: () => Date;
+  quota?: IngestQuota;
 } = {}) => {
   const ingest = async (params: IngestParams): Promise<IngestResult> => {
     const count = countBatchItems(params.batch),
@@ -202,9 +220,34 @@ export const createIngestWriter = ({
             return { response: existing.response, acceptedAt: existing.accepted_at, base };
           acceptedAt = existing.accepted_at;
         }
+        const [limits] =
+          await tx`SELECT values_per_minute,bytes_per_minute,storage_bytes,usage_bytes FROM pulse.base_stores WHERE base_id=${params.baseId}::uuid`;
+        if (!limits) throw new IngestTransactionFailure(err.notFound("Pulse base store"));
+        if (limits.usage_bytes !== null && Number(limits.usage_bytes) >= Number(limits.storage_bytes))
+          throw new IngestTransactionFailure({
+            code: "PULSE_BASE_STORAGE_FULL",
+            status: 409,
+            message: "Pulse base storage threshold reached. A base admin can shorten retention or a Cloud admin can raise the threshold.",
+          });
+        const [disk] = await tx`SELECT free_bytes,total_bytes FROM pulse.store_instance WHERE singleton`;
+        if (disk?.total_bytes && Number(disk.total_bytes) > 0 && Number(disk.free_bytes) / Number(disk.total_bytes) < 0.1)
+          throw new IngestRefusal({
+            code: "PULSE_STORE_DISK_LOW",
+            status: 503,
+            message: "Pulse data store disk space is low. Retry later.",
+            retryAfter: 300,
+          });
         const prepared = prepareIngestBatch(params.batch, params.sourceId, acceptedAt, key);
         if (prepared.metrics.some((m) => Date.parse(m.ts) < acceptedAt.getTime() - base.retention_days * 86_400_000))
           throw err.badInput("Metric timestamps must be within the raw retention window");
+        const quotaError = await quota.consume({
+          baseId: params.baseId,
+          values: count,
+          bytes: params.requestBytes ?? new TextEncoder().encode(JSON.stringify(params.batch)).byteLength,
+          valuesPerMinute: Number(limits.values_per_minute),
+          bytesPerMinute: Number(limits.bytes_per_minute),
+        });
+        if (quotaError) throw new IngestRefusal(quotaError);
         await registerIngestBatch({
           baseId: params.baseId,
           sourceId: params.sourceId,
@@ -226,7 +269,8 @@ export const createIngestWriter = ({
         await tx`SET LOCAL lock_timeout='30s'`.simple();
         const base = await lockIngestScope(params.baseId, params.sourceId, tx);
         // Source and state-variant locks serialize their own identities; lifecycle SHARE locks protect all inserts.
-        if (base.clear_revision !== preflight.base.clear_revision) throw new Error("Base was cleared during ingest");
+        if (base.clear_revision !== preflight.base.clear_revision)
+          throw new IngestTransactionFailure(err.conflict("Base was cleared during ingest"));
         if (key) {
           const [existing] = await tx<
             KeyRow[]
@@ -258,17 +302,31 @@ export const createIngestWriter = ({
         return ok(counts);
       });
     } catch (error) {
-      if (!reserved && !writing) {
-        if (error instanceof MetricSeriesLimitError) return fail(err.badInput(error.message));
-        if (error instanceof IngestTransactionFailure) return fail(error.serviceError);
-        if (isServiceError(error)) return fail(error);
+      if (error instanceof IngestRefusal) {
+        if (error.failure.code === "PULSE_BASE_THROTTLED")
+          await database`UPDATE pulse.sources SET throttled_at=${now} WHERE id=${params.sourceId}::uuid`;
+        return { ok: false, error: error.failure };
+      }
+      if (error instanceof IngestTransactionFailure) return fail(error.serviceError);
+      if (isServiceError(error)) return fail(error);
+      if (!reserved && !writing && error instanceof MetricSeriesLimitError) return fail(err.badInput(error.message));
+      if (error instanceof StoreQueryError && error.kind === "unreachable") {
+        try {
+          await recordStoreOutage(clock(), database, params.locale);
+        } catch (outageError) {
+          log.error("Pulse outage could not be recorded", {
+            errorClass: outageError instanceof Error ? outageError.constructor.name : typeof outageError,
+          });
+        }
       }
       // Do not log queries, endpoints, credentials or remote bodies.
       log.error("Pulse ingest unavailable", {
         baseId: params.baseId,
         sourceId: params.sourceId,
         idempotent: Boolean(key),
+        errorClass: error instanceof Error ? error.constructor.name : typeof error,
         storeError: error instanceof StoreQueryError || error instanceof BaseStoreError,
+        ...(error instanceof StoreQueryError ? { storeKind: error.kind, storeCode: error.code } : {}),
       });
       return {
         ok: false,
@@ -294,10 +352,19 @@ export const ingestByApiKey = async (params: {
   scopes: string[];
   batch: PulseIngestBatch;
   idempotencyKey?: string | null;
+  requestBytes?: number;
+  locale?: string;
 }): Promise<IngestResult> => {
   if (!params.scopes.some((s) => [PULSE_INGEST_SCOPE, "write", "admin"].includes(s)))
     return fail(err.forbidden("API key cannot ingest Pulse data"));
   const source = await resolveIngestSourceForServiceAccount(params.serviceAccount);
   if (!source.ok) return source;
-  return ingestBatch({ baseId: source.data.baseId, sourceId: source.data.id, batch: params.batch, idempotencyKey: params.idempotencyKey });
+  return ingestBatch({
+    baseId: source.data.baseId,
+    sourceId: source.data.id,
+    batch: params.batch,
+    idempotencyKey: params.idempotencyKey,
+    requestBytes: params.requestBytes,
+    locale: params.locale,
+  });
 };

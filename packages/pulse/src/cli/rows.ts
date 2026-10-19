@@ -22,7 +22,8 @@ export const sourceRows = (sources: PulseSource[]) =>
     endpoint: source.endpointUrl ?? "",
     interval: source.scrapeIntervalSeconds ?? "",
     token: yesNo(source.bearerTokenConfigured),
-    lastSeenAt: formatDate(source.lastSeenAt),
+    newestDataAt: formatDate(source.status.newestDataAt),
+    throttled: yesNo(source.status.throttled),
   }));
 
 export const scrapeRows = (scrapes: PulseSourceScrape[]) =>

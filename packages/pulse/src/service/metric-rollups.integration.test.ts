@@ -6,7 +6,11 @@ import { createHourlyRollup } from "./metric-rollups";
 import { createRetention } from "./retention";
 import { assertWrite, writeFixture } from "./write.test-fixture";
 
-suiteFor("database", "clickhouse")("Pulse ClickHouse hourly values", () => {
+suiteFor(
+  "database",
+  "valkey",
+  "clickhouse",
+)("Pulse ClickHouse hourly values", () => {
   beforeAll(installFixtureStore, 30000);
   test("#3 sparse counters, resets, late corrections, empty hours, and a predecessor after the raw partition is dropped", async () => {
     const f = await writeFixture("rollups"),

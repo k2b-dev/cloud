@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import type { sql } from "bun";
+import { recordInstanceDisk, recordStorageThreshold, recordStoreOutage } from "../service/store-health";
 import { assertStoreName } from "./base-schema";
 import { BaseOperationSuperseded, baseStore, loadStoreRow, type StoreRow } from "./base-store";
 import { StoreQueryError } from "./client";
@@ -64,9 +65,14 @@ export const writeBaseCheckpoint = async (baseId: string, id: string, store = ba
   await store.step(baseId, "reconcile", "checkpoint_accept", async (row, db) => acceptCheckpoint(row, db, store.clock));
 };
 export const measureInstanceDisk = async (store = baseStore) => {
-  const [disk] = await store.query("SELECT free_space, total_space FROM system.disks WHERE name='default'");
-  if (!disk) throw new Error("STORE_UNREACHABLE");
-  await sql`INSERT INTO pulse.store_instance(singleton,free_bytes,total_bytes,measured_at) VALUES(true,${Number(disk.free_space)},${Number(disk.total_space)},${store.clock()}) ON CONFLICT(singleton) DO UPDATE SET free_bytes=EXCLUDED.free_bytes,total_bytes=EXCLUDED.total_bytes,measured_at=EXCLUDED.measured_at`;
+  try {
+    const [disk] = await store.query("SELECT free_space, total_space FROM system.disks WHERE name='default'");
+    if (!disk) throw new StoreQueryError("unreachable");
+    await recordInstanceDisk(Number(disk.free_space), Number(disk.total_space), store.clock());
+  } catch (error) {
+    if (error instanceof StoreQueryError && error.kind === "unreachable") await recordStoreOutage(store.clock());
+    throw error;
+  }
 };
 export const measureBaseUsage = async (baseId: string, store = baseStore) => {
   await store.step(baseId, "reconcile", "usage", async (row, db) => {
@@ -74,6 +80,7 @@ export const measureBaseUsage = async (baseId: string, store = baseStore) => {
       "SELECT sum(bytes_on_disk) AS bytes, sum(rows) AS rows FROM system.parts WHERE active AND database={database:String}",
       { database: row.database_name },
     );
+    await recordStorageThreshold(baseId, Number(size?.bytes ?? 0), store.clock(), db);
     await db`UPDATE pulse.base_stores SET usage_bytes=${Number(size?.bytes ?? 0)},usage_rows=${Number(size?.rows ?? 0)},usage_measured_at=${store.clock()} WHERE base_id=${baseId}::uuid`;
   });
 };

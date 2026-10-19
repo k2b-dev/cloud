@@ -66,6 +66,8 @@ const mapSource = (source: PulseSource) => ({
   kind: source.kind,
   name: source.name.slice(0, 120),
   enabled: source.enabled,
+  metricFilters: source.metricFilters,
+  status: { ...source.status, lastError: source.status.lastError?.slice(0, 2_000) ?? null },
   lastSeenAt: source.lastSeenAt,
   lastError: source.lastError?.slice(0, 2_000) ?? null,
   lastErrorAt: source.lastErrorAt,

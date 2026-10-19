@@ -34,6 +34,16 @@ export type PulseSource = {
   endpointUrl: string | null;
   bearerTokenConfigured: boolean;
   scrapeIntervalSeconds: number | null;
+  metricFilters: string[];
+  status: {
+    newestDataAt: string | null;
+    throttled: boolean;
+    throttledAt: string | null;
+    refusedHistograms: { family: string; reason: string }[];
+    skippedSummaries: number;
+    lastError: string | null;
+    lastErrorAt: string | null;
+  };
   lastSeenAt: string | null;
   lastError: string | null;
   lastErrorAt: string | null;

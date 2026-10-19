@@ -5,7 +5,7 @@ section: Operations
 order: 420
 description: Collect metrics, events, and states from your sources.
 tags: [pulse, telemetry, metrics]
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 
 # Pulse
@@ -79,6 +79,19 @@ orphans and can be deleted separately.
 Open a base to manage its sources. Check Sources when expected data is missing
 or stale. Earlier dashboards and saved queries were removed with this update;
 existing view URLs explain the change and link to Sources.
+
+For a metrics source, **Only these metrics (empty = all)** accepts family names
+or prefixes ending in `*`, separated by commas or newlines. The same filter is
+available as repeatable `cld pulse sources create|update --metric-filter`;
+`--clear-metric-filters` includes all families again. Filters apply before sample
+and series limits. Pulse stores valid Prometheus histogram buckets, sums and
+counts. Source status reports refused histogram families and skipped summaries
+from the latest scrape, newest data, recent throttling and the last error.
+
+`cld pulse source-tokens create` requires `--output-file <path>`. It creates a
+new file with mode 0600; stdout, including JSON, contains only the ID, name and
+path. Changing a metrics endpoint’s origin clears its stored bearer token
+unless a replacement is supplied.
 
 ## Understand the Pulse model
 

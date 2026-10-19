@@ -6,7 +6,11 @@ import { deterministicRowId } from "./ingest-bulk";
 import { createIngestWriter } from "./ingest-writer";
 import { assertWrite, writeFixture } from "./write.test-fixture";
 
-suiteFor("database", "clickhouse")("Pulse control-plane registry caps", () => {
+suiteFor(
+  "database",
+  "valkey",
+  "clickhouse",
+)("Pulse control-plane registry caps", () => {
   beforeAll(installFixtureStore, 30000);
   test("series per metric/base, kinds, keys, and write blocking refuse whole batches", async () => {
     const f = await writeFixture("caps");

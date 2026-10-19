@@ -95,7 +95,8 @@ export const registerIngestBatch = async (params: {
   now: Date;
 }) => {
   const { baseId, sourceId, batch, db, store, now } = params;
-  const [limits] = await db`SELECT max_series,max_event_kinds,max_state_keys FROM pulse.base_stores WHERE base_id=${baseId}::uuid`;
+  const [limits] =
+    await db`SELECT s.max_series,s.max_event_kinds,s.max_state_keys,b.retention_days FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id WHERE base_id=${baseId}::uuid`;
   if (!limits) throw err.notFound("Pulse base store");
   if (batch.metrics.length) {
     const input = JSON.stringify(batch.metrics);
@@ -163,9 +164,16 @@ export const registerIngestBatch = async (params: {
       `SELECT toUnixTimestamp64Milli(r.ts) AS next_ms FROM
       (SELECT pair.1 AS series_id,fromUnixTimestamp64Milli(pair.2) AS ts
        FROM (SELECT arrayJoin(arrayZip({series:Array(UUID)},{times:Array(Int64)})) AS pair) ORDER BY series_id,ts) l
-      ASOF LEFT JOIN (SELECT series_id,ts FROM ${database}.samples ORDER BY series_id,ts) r
+      ASOF LEFT JOIN (SELECT DISTINCT series_id,ts FROM ${database}._samples
+        WHERE series_id IN {series:Array(UUID)} AND ts>fromUnixTimestamp64Milli({minTime:Int64})
+        AND ts>=fromUnixTimestamp64Milli({cutoff:Int64}) ORDER BY series_id,ts) r
       ON l.series_id=r.series_id AND l.ts<r.ts WHERE r.ts>l.ts`,
-      { series: `[${late.map((s) => `'${s.series_id}'`).join(",")}]`, times: JSON.stringify(late.map((s) => Date.parse(s.ts))) },
+      {
+        series: `[${late.map((s) => `'${s.series_id}'`).join(",")}]`,
+        times: JSON.stringify(late.map((s) => Date.parse(s.ts))),
+        minTime: Math.min(...late.map((s) => Date.parse(s.ts))),
+        cutoff: now.getTime() - Number(limits.retention_days) * 86_400_000,
+      },
     );
     touched.push(...next.map((r) => new Date(Number(r.next_ms)).toISOString()));
   }

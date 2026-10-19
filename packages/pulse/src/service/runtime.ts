@@ -6,8 +6,10 @@ import { pulseStoreConfigured } from "../store/service";
 import { startPulseBaseJobs, stopPulseBaseJobs } from "./base-lifecycle";
 import { startBaseMaintenance, stopBaseMaintenance } from "./base-maintenance-runtime";
 import { scrapeMetricsSource } from "./index";
+import { ingestQuota } from "./ingest-quota";
 import { runHourlyRollup } from "./metric-rollups";
 import { runRetentionBatch } from "./retention";
+import { notificationOutbox } from "./store-health";
 
 export { runRetentionBatch } from "./retention";
 
@@ -201,6 +203,7 @@ export const pulseRuntime = {
     workers.push(await pulseScheduler().process());
     await startPulseBaseJobs();
     await startBaseMaintenance();
+    notificationOutbox.start();
     started = true;
   },
   stop: async (): Promise<void> => {
@@ -208,6 +211,8 @@ export const pulseRuntime = {
     workers = [];
     await stopPulseBaseJobs();
     await stopBaseMaintenance();
+    await notificationOutbox.stop();
+    ingestQuota.close();
     started = false;
   },
 };

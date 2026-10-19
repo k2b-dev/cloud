@@ -103,10 +103,10 @@ cld pulse sources scrapes "API metrics" --json
 
 `sources scrape` applies only to `metrics` sources. `sources scrapes` shows recent success, finish time, ingested counts, duration, and errors.
 
-Create a separate labeled credential for each importer, server, or job. The raw token is returned only when created:
+Create a separate labeled credential for each importer, server, or job. The token is written only to a new private file:
 
 ```bash
-cld pulse source-tokens create "Warehouse importer" --name production-job --json
+cld pulse source-tokens create "Warehouse importer" --name production-job --output-file ./pulse.token --json
 cld pulse source-tokens list "Warehouse importer" --json
 cld pulse source-tokens revoke "Warehouse importer" production-job --yes
 ```
@@ -173,25 +173,30 @@ Use `--json` whenever another command or agent consumes one complete result. Use
   "bearerTokenConfigured": false,
   "scrapeIntervalSeconds": null,
   "lastSeenAt": "2026-07-12T12:00:00.000Z",
-  "lastError": null,
-  "lastErrorAt": null
+  "metricFilters": [],
+  "status": {
+    "newestDataAt": "2026-07-12T12:00:00.000Z",
+    "throttled": false,
+    "throttledAt": null,
+    "refusedHistograms": [],
+    "skippedSummaries": 0,
+    "lastError": null,
+    "lastErrorAt": null
+  }
 }
 ```
 
 ### One-time credentials
 
-`source-tokens create --json` returns metadata and the only copy of the raw token:
+`source-tokens create` requires `--output-file`. It writes the raw token with
+mode 0600 and refuses an existing path. Text, JSON and JSONL output contain
+only the token ID, name and file path:
 
 ```json
 {
-  "credential": {
-    "id": "credential-uuid",
-    "name": "production-job",
-    "tokenPrefix": "cld_...",
-    "permission": "write",
-    "expiresAt": null
-  },
-  "token": "raw-secret-returned-once"
+  "id": "credential-uuid",
+  "name": "production-job",
+  "path": "/private/pulse.token"
 }
 ```
 
@@ -200,7 +205,7 @@ Agent rules:
 - Resolve exact names or IDs before mutation; prefer IDs when names are ambiguous.
 - Do not parse human tables.
 - Use `--file` or `--stdin` for ingest JSON.
-- Do not echo source tokens unless the requested workflow requires the value.
+- Keep source tokens in the private output file or move them into the collector’s secret store. Never echo them.
 
 ## Destructive operations
 
@@ -255,7 +260,7 @@ Sources and ingest:
 cld pulse sources list [base]
 cld pulse sources create [base] --name <name> --kind <metrics|http_ingest>
   [--endpoint-url <url>] [--bearer-token-file <path> | --bearer-token-stdin]
-  [--scrape-interval-seconds <seconds>]
+  [--scrape-interval-seconds <seconds>] [--metric-filter <family-or-prefix> ... | --clear-metric-filters] [--metric-filter <family-or-prefix> ...]
 cld pulse sources update [base] <source>
   [--name <name>] [--enabled <true|false>] [--endpoint-url <url>]
   [--bearer-token-file <path> | --bearer-token-stdin | --clear-bearer-token]
@@ -265,7 +270,7 @@ cld pulse sources scrape [base] <source>
 cld pulse sources scrapes [base] <source>
 
 cld pulse source-tokens list [base] <source>
-cld pulse source-tokens create [base] <source> --name <label> [--expires-at <ISO-datetime>]
+cld pulse source-tokens create [base] <source> --name <label> --output-file <path> [--expires-at <ISO-datetime>]
 cld pulse source-tokens revoke [base] <source> <token-id-or-name-or-prefix> --yes
 cld pulse ingest [base] --source <source> (--batch <json> | --file <path> | --stdin)
 ```

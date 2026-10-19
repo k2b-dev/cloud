@@ -13,6 +13,7 @@ export type CreateSourceInput = {
   endpointUrl?: string;
   bearerToken?: string;
   scrapeIntervalSeconds?: number;
+  metricFilters?: string[];
 };
 export type PulseWorkspaceProps = {
   initialBases: PulseBase[];

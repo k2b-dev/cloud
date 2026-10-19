@@ -4,6 +4,7 @@ import { encryptSecret, serviceAccountCredentials, serviceAccounts } from "@k2b/
 import { sql } from "bun";
 import type { PulseSource, PulseSourceScrape, SourceKind } from "../contracts";
 import { withShortId } from "../lib/short-id";
+import { SourceConfigSchema } from "../metric-filters";
 import { type AccessScope, requireBaseAccess, requireBaseActive, type UserScope } from "./access-control";
 import { checkScrapeTarget } from "./scrape-target";
 import { tryMirrorSource } from "./source-mirror";
@@ -23,6 +24,11 @@ type SourceRow = {
   endpoint_url: string | null;
   bearer_token_encrypted: string | null;
   scrape_interval_seconds: number | null;
+  config: { metricFilters?: string[] };
+  last_data_at: Date | string | null;
+  throttled_at: Date | string | null;
+  refused_histograms: PulseSource["status"]["refusedHistograms"];
+  skipped_summaries: number;
   last_seen_at: Date | string | null;
   last_error: string | null;
   last_error_at: Date | string | null;
@@ -54,6 +60,7 @@ type UpdateSourceParams = {
   endpointUrl?: string | null;
   bearerToken?: string | null;
   scrapeIntervalSeconds?: number | null;
+  metricFilters?: string[];
 };
 
 type SourceUpdateValues = {
@@ -62,9 +69,10 @@ type SourceUpdateValues = {
   endpointUrl: string | null;
   bearerTokenEncrypted: string | null;
   scrapeIntervalSeconds: number | null;
+  config: { metricFilters?: string[] };
 };
 
-const mapSource = (row: SourceRow): PulseSource => ({
+const mapSource = (row: SourceRow, now = new Date()): PulseSource => ({
   id: row.id,
   baseId: row.base_id,
   kind: row.kind,
@@ -73,6 +81,19 @@ const mapSource = (row: SourceRow): PulseSource => ({
   endpointUrl: row.endpoint_url,
   bearerTokenConfigured: Boolean(row.bearer_token_encrypted),
   scrapeIntervalSeconds: row.scrape_interval_seconds,
+  metricFilters: row.config.metricFilters ?? [],
+  status: {
+    newestDataAt: isoNullable(row.last_data_at),
+    throttled:
+      row.throttled_at !== null &&
+      new Date(row.throttled_at).getTime() > now.getTime() - 5 * 60_000 &&
+      new Date(row.throttled_at).getTime() <= now.getTime(),
+    throttledAt: isoNullable(row.throttled_at),
+    refusedHistograms: row.refused_histograms,
+    skippedSummaries: row.skipped_summaries,
+    lastError: row.last_error,
+    lastErrorAt: isoNullable(row.last_error_at),
+  },
   lastSeenAt: isoNullable(row.last_seen_at),
   lastError: row.last_error,
   lastErrorAt: isoNullable(row.last_error_at),
@@ -129,7 +150,7 @@ const ensureHttpIngestSource = async (params: { baseId: string; sourceId: string
 export const listSources = async (
   baseId: string,
   user: AccessScope,
-  params: { query?: string | null; limit?: number; offset?: number } = {},
+  params: { query?: string | null; limit?: number; offset?: number; now?: Date } = {},
 ): Promise<Result<PulseSource[]>> => {
   const access = await requireBaseAccess(baseId, user, "read");
   if (!access.ok) return fail(access.error);
@@ -146,14 +167,15 @@ export const listSources = async (
     LIMIT ${limit}
     OFFSET ${offset}
   `;
-  return ok(rows.map(mapSource));
+  const now = params.now ?? new Date();
+  return ok(rows.map((row) => mapSource(row, now)));
 };
 
-export const getSource = async (sourceId: string, user: AccessScope): Promise<Result<PulseSource>> => {
+export const getSource = async (sourceId: string, user: AccessScope, now = new Date()): Promise<Result<PulseSource>> => {
   const [row] = await sql<SourceRow[]>`SELECT * FROM pulse.sources WHERE NOT deleted AND id = ${sourceId}::uuid`;
   if (!row) return fail(err.notFound("Source"));
   const access = await requireBaseAccess(row.base_id, user, "read");
-  return access.ok ? ok(mapSource(row)) : fail(access.error);
+  return access.ok ? ok(mapSource(row, now)) : fail(access.error);
 };
 
 export const listSourceScrapes = async (params: {
@@ -182,6 +204,7 @@ export const createSource = async (params: {
   endpointUrl?: string | null;
   bearerToken?: string | null;
   scrapeIntervalSeconds?: number | null;
+  metricFilters?: string[];
 }): Promise<Result<PulseSource>> => {
   if (
     params.scrapeIntervalSeconds != null &&
@@ -198,6 +221,10 @@ export const createSource = async (params: {
     const active = await requireBaseActive(params.baseId, db);
     if (!active.ok) return fail(active.error);
 
+    if (params.metricFilters !== undefined && params.kind !== "metrics")
+      return fail(err.badInput("Metric filters are only supported for metrics sources"));
+    const config = SourceConfigSchema.safeParse({ ...(params.metricFilters === undefined ? {} : { metricFilters: params.metricFilters }) });
+    if (!config.success) return fail(err.badInput("Invalid metric filters or source config exceeds 16 KiB"));
     const encryptedBearer = params.bearerToken?.trim() ? await encryptSecret(params.bearerToken.trim()) : null;
     const endpointUrl = normalizeEndpointUrl(params.endpointUrl);
     if (params.kind === "metrics" && !endpointUrl) return fail(err.badInput("A valid metrics endpoint URL is required"));
@@ -217,7 +244,7 @@ export const createSource = async (params: {
       name,
       endpoint_url,
       bearer_token_encrypted,
-      scrape_interval_seconds
+      scrape_interval_seconds, config
     )
     VALUES (
       ${shortId},
@@ -226,7 +253,7 @@ export const createSource = async (params: {
       ${params.name.trim()},
       ${endpointUrl},
       ${encryptedBearer},
-      ${params.scrapeIntervalSeconds ?? null}
+      ${params.scrapeIntervalSeconds ?? null}, (${JSON.stringify(config.data)}::jsonb #>> '{}')::jsonb
     )
     RETURNING *
   `;
@@ -292,7 +319,15 @@ const normalizeSourceUpdateValues = async (
     const target = await checkScrapeTarget(endpointUrl, params.baseId, undefined, undefined, db);
     if (!target.ok) return target;
   }
+  if (params.metricFilters !== undefined && existing.kind !== "metrics")
+    return fail(err.badInput("Metric filters are only supported for metrics sources"));
+  const config = SourceConfigSchema.safeParse({
+    ...existing.config,
+    ...(params.metricFilters === undefined ? {} : { metricFilters: params.metricFilters }),
+  });
+  if (!config.success) return fail(err.badInput("Invalid metric filters or source config exceeds 16 KiB"));
   return ok({
+    config: config.data,
     name: sourceUpdateName(existing, params.name),
     enabled: params.enabled ?? existing.enabled,
     endpointUrl,
@@ -328,7 +363,7 @@ export const updateSource = async (params: UpdateSourceParams): Promise<Result<P
     SELECT *
     FROM pulse.sources
     WHERE NOT deleted AND id = ${params.sourceId}::uuid
-      AND base_id = ${params.baseId}::uuid
+      AND base_id = ${params.baseId}::uuid FOR UPDATE
   `;
     if (!existing) return fail(err.notFound("Pulse source"));
 
@@ -343,6 +378,7 @@ export const updateSource = async (params: UpdateSourceParams): Promise<Result<P
       endpoint_url = ${values.data.endpointUrl},
       bearer_token_encrypted = ${values.data.bearerTokenEncrypted},
       scrape_interval_seconds = ${values.data.scrapeIntervalSeconds},
+      config = (${JSON.stringify(values.data.config)}::jsonb #>> '{}')::jsonb,
       mirror_pending = true,
       updated_at = greatest(clock_timestamp(),updated_at+interval '1 microsecond')
     WHERE NOT deleted AND id = ${params.sourceId}::uuid

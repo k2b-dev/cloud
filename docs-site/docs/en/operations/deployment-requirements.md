@@ -528,6 +528,28 @@ Remote response bodies are never echoed in errors. The answer time can still
 tell a closed port from an open one, so the Cloud admin role carries reach into
 the internal network that Cloud can connect to.
 
+Pulse shares per-base value and byte quotas through Cloud Valkey across all
+replicas and write paths. Buckets hold one minute’s allowance and refill
+continuously. Throttled ingest returns `429 PULSE_BASE_THROTTLED` with
+`Retry-After`; unavailable Valkey returns `503 PULSE_QUOTA_UNAVAILABLE` with
+`Retry-After: 30`. Scrapes record the refusal and wait for the next tick.
+
+Every five minutes, Pulse measures storage and disk. A base at its storage
+threshold refuses new values with `409 PULSE_BASE_STORAGE_FULL`; a base admin
+can shorten retention or a Cloud admin can raise the threshold. Below 10% free
+instance disk, all bases refuse new values with `503 PULSE_STORE_DISK_LOW` and
+`Retry-After: 300`. Existing data stays readable. Pulse queues one notification
+per crossing to direct user base admins (storage) or effective Cloud admins
+(disk). Group base grants are not expanded. Delivery follows user preferences.
+
+An unreachable store returns `503 PULSE_STORE_UNAVAILABLE` and
+`Retry-After: 30`. The first failed write or disk measurement opens one outage
+and queues a notification for each Cloud admin. A successful disk measurement
+closes it and records recovery. Notification outbox rows commit with each
+transition and are dispatched afterwards; background notifications use the
+operator’s `app.locale` setting, and request-triggered outages retain the
+request locale.
+
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
 

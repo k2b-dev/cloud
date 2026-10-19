@@ -5,7 +5,12 @@ import { installFixtureStore } from "../store/base-store.test-fixture";
 import { createHourlyRollup } from "./metric-rollups";
 import { assertWrite, writeFixture } from "./write.test-fixture";
 
-testFor("database", "nats", "clickhouse")(
+testFor(
+  "database",
+  "nats",
+  "valkey",
+  "clickhouse",
+)(
   "#3 NATS resubmits one-hour ClickHouse rollups until catch-up finishes",
   async () => {
     await installFixtureStore();

@@ -3,6 +3,7 @@ import {
   auth,
   err,
   fail,
+  getLocale,
   jsonResponse,
   ok,
   REQUEST_IDLE_TIMEOUT_SECONDS,
@@ -38,7 +39,10 @@ const routes = new Hono<AuthContext>()
         403: jsonResponse(MessageSchema, "Ingest permission required"),
         409: jsonResponse(MessageSchema, "Idempotency conflict, disabled source, or base not writable"),
         429: jsonResponse(MessageSchema, "Ingest rate limit exceeded; retry after the indicated delay"),
-        503: jsonResponse(MessageSchema, "Store unavailable; Retry-After: 30. Retry a pending batch with the same Idempotency-Key"),
+        503: jsonResponse(
+          MessageSchema,
+          "Quota/store unavailable (Retry-After: 30) or disk low (Retry-After: 300). Retry pending batches with the same Idempotency-Key",
+        ),
         404: jsonResponse(MessageSchema, "Unknown ingest source"),
       },
     }),
@@ -51,12 +55,14 @@ const routes = new Hono<AuthContext>()
         scopes: actor.scopes,
         batch: c.req.valid("json"),
         idempotencyKey: c.req.header("idempotency-key"),
+        requestBytes: new TextEncoder().encode(await c.req.text()).byteLength,
+        locale: getLocale(c),
       });
       if (!result.ok) {
         const error = result.error;
-        if (error.status === 503) {
-          c.header("Retry-After", "30");
-          return c.json({ code: error.code, message: error.message }, 503);
+        if ("retryAfter" in error) {
+          c.header("Retry-After", String(error.retryAfter));
+          return c.json({ code: error.code, message: error.message }, error.status);
         }
         return respond(c, fail(error));
       }

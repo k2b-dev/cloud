@@ -1,4 +1,5 @@
 import { defineApp } from "@k2b/cloud";
+import { NOTIFICATIONS } from "./notifications";
 import { SKILLS } from "./skills";
 
 export const app = defineApp({
@@ -28,6 +29,7 @@ export const app = defineApp({
     requiresRoles: ["user"],
   },
   skills: SKILLS,
+  notifications: NOTIFICATIONS,
   adminHref: "/admin/pulse",
   adminNav: [{ id: "pulse", label: "Pulse", links: [{ label: "Pulse", href: "/admin/pulse", icon: "ti ti-activity-heartbeat" }] }],
   settings: {

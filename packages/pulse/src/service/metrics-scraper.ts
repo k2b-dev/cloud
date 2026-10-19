@@ -2,6 +2,7 @@ import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { decryptSecret, logger } from "@k2b/cloud/services";
 import { sql, type TransactionSQL } from "bun";
 import type { MetricType, PulseIngestBatch, PulseMetric } from "../contracts";
+import { metricFamilyIncluded } from "../metric-filters";
 import { requireBaseWritable } from "./access-control";
 import type { IngestResult } from "./ingest-writer";
 import { type MetricsHttpDeps, requestMetrics } from "./metrics-http";
@@ -13,7 +14,14 @@ const PROMETHEUS_SAMPLE_LINE =
   /^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{([^}]*)\})?\s+(-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?|NaN|Inf|\+Inf|-Inf)(?:\s+\d+)?$/i;
 type PrometheusType = MetricType | "histogram" | "summary" | "untyped";
 const PROMETHEUS_METRIC_TYPES = new Set<string>(["gauge", "counter", "histogram", "summary", "untyped"]);
-type ParsedMetrics = { metrics: PulseMetric[]; skippedSamples: number };
+export type RefusedHistogram = { family: string; reason: "missing_inf" | "not_cumulative" | "count_mismatch" | "negative_sum" };
+type ParsedMetrics = {
+  metrics: PulseMetric[];
+  skippedSamples: number;
+  skippedSummaries: number;
+  refusedHistograms: RefusedHistogram[];
+  sampleCount: number;
+};
 const log = logger("pulse:metrics-scraper");
 
 type IngestCounts = { metrics: number; events: number; states: number };
@@ -26,6 +34,7 @@ type MetricsScraperDeps = {
 type MetricsSourceConfig = {
   endpointUrl: string;
   bearerTokenEncrypted: string | null;
+  metricFilters?: string[];
 };
 
 const markSourceError = async (
@@ -252,8 +261,8 @@ const loadMetricsSourceConfig = async (
   params: { baseId: string; sourceId: string },
   db: TransactionSQL,
 ): Promise<MetricsSourceConfig | null> => {
-  const [source] = await db<{ endpoint_url: string | null; bearer_token_encrypted: string | null }[]>`
-    SELECT s.endpoint_url, s.bearer_token_encrypted
+  const [source] = await db<{ endpoint_url: string | null; bearer_token_encrypted: string | null; config: { metricFilters?: string[] } }[]>`
+    SELECT s.endpoint_url, s.bearer_token_encrypted, s.config
     FROM pulse.sources s
     JOIN pulse.bases b ON b.id = s.base_id
     WHERE s.id = ${params.sourceId}::uuid
@@ -266,7 +275,13 @@ const loadMetricsSourceConfig = async (
         OR b.data_clear_completed_at IS NOT NULL
       )
   `;
-  return source?.endpoint_url ? { endpointUrl: source.endpoint_url, bearerTokenEncrypted: source.bearer_token_encrypted } : null;
+  return source?.endpoint_url
+    ? {
+        endpointUrl: source.endpoint_url,
+        bearerTokenEncrypted: source.bearer_token_encrypted,
+        metricFilters: source.config.metricFilters ?? [],
+      }
+    : null;
 };
 
 const buildMetricsScrapeHeaders = async (bearerTokenEncrypted: string | null): Promise<Record<string, string>> => {
@@ -286,11 +301,8 @@ export const fetchPrometheusMetrics = async (
   const headers = await buildMetricsScrapeHeaders(source.bearerTokenEncrypted);
   const response = await requestMetrics(source.endpointUrl, headers.Authorization, timeoutMs, deps);
   if (!response.ok) return response;
-  const parsed = parsePrometheusMetrics(response.data, new URL(source.endpointUrl).host);
-  if (parsed.metrics.length === 0)
-    return fail(err.badInput(`Metrics endpoint returned no supported samples (${parsed.skippedSamples} skipped)`));
-  if (parsed.metrics.length + parsed.skippedSamples > MAX_SCRAPE_SAMPLES)
-    return fail(err.badInput(`Metrics endpoint exceeds the ${MAX_SCRAPE_SAMPLES} sample limit`));
+  const parsed = parsePrometheusMetrics(response.data, new URL(source.endpointUrl).host, source.metricFilters);
+  if (parsed.sampleCount > MAX_SCRAPE_SAMPLES) return fail(err.badInput(`Metrics endpoint exceeds the ${MAX_SCRAPE_SAMPLES} sample limit`));
   return ok(parsed);
 };
 
@@ -299,32 +311,86 @@ const metricsScrapeErrorMessage = (scrapeError: unknown): string => {
   return "Metrics scrape failed";
 };
 
-export const parsePrometheusMetrics = (text: string, defaultTarget?: string): ParsedMetrics => {
+type HistogramSample = NonNullable<ReturnType<typeof parsePrometheusSampleLine>>;
+const histogramReason = (family: string, samples: HistogramSample[]): RefusedHistogram["reason"] | null => {
+  const groups = new Map<string, HistogramSample[]>();
+  for (const sample of samples) {
+    const labels = Object.entries(sample.dimensions)
+      .filter(([key]) => key !== "le")
+      .sort(([a], [b]) => a.localeCompare(b));
+    const key = JSON.stringify(labels);
+    const group = groups.get(key) ?? [];
+    group.push(sample);
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    const buckets = group.filter((s) => s.name === `${family}_bucket`);
+    const inf = buckets.find((s) => s.dimensions.le === "+Inf");
+    if (!inf) return "missing_inf";
+    const bound = (s: HistogramSample) => (s.dimensions.le === "+Inf" ? Infinity : Number(s.dimensions.le));
+    if (buckets.some((s) => (s.dimensions.le !== "+Inf" && !Number.isFinite(bound(s))) || s.value < 0)) return "not_cumulative";
+    buckets.sort((a, b) => bound(a) - bound(b));
+    if (buckets.some((s, i) => i > 0 && s.value < buckets[i - 1]!.value)) return "not_cumulative";
+    if (group.some((s) => s.name === `${family}_count` && s.value !== inf.value)) return "count_mismatch";
+    if (group.some((s) => s.name === `${family}_sum` && s.value < 0)) return "negative_sum";
+  }
+  return null;
+};
+
+export const parsePrometheusMetrics = (text: string, defaultTarget?: string, filters: readonly string[] = []): ParsedMetrics => {
   const metrics: PulseMetric[] = [];
   const typeByName = new Map<string, PrometheusType>();
+  const histograms = new Map<string, HistogramSample[]>();
   const lines = text.split(/\r?\n/).map((line) => line.trim());
-  let skippedSamples = 0;
+  let skippedSamples = 0,
+    skippedSummaries = 0,
+    sampleCount = 0;
   for (const line of lines) {
     const declaration = parsePrometheusTypeLine(line);
     if (declaration) typeByName.set(declaration.name, declaration.type);
   }
-  for (const line of lines) {
-    if (!line || line.startsWith("#")) continue;
-    const sample = parsePrometheusSampleLine(line);
-    if (!sample) {
-      skippedSamples += 1;
-      continue;
-    }
-    const family = sample.name.replace(/_(bucket|sum|count)$/, "");
-    const type = typeByName.get(sample.name) ?? typeByName.get(family);
-    if (type !== "gauge" && type !== "counter") {
-      skippedSamples += 1;
-      continue;
-    }
+  const append = (sample: HistogramSample, type: MetricType) => {
     const target = resourceKeyFromDimensions(sample.dimensions) ?? defaultTarget;
     metrics.push({ ...sample, type, resource: target ? { type: "target", id: target } : null });
+  };
+  for (const line of lines) {
+    if (!line || line.startsWith("#")) continue;
+    const name = line.match(/^([a-zA-Z_:][a-zA-Z0-9_:]*)/)?.[1] ?? "";
+    const parent = name.replace(/_(bucket|sum|count)$/, "");
+    const family = ["histogram", "summary"].includes(typeByName.get(parent) ?? "") ? parent : name;
+    // Filter families before any sample budget or cardinality decision.
+    if (!metricFamilyIncluded(family, filters)) continue;
+    sampleCount++;
+    const type = typeByName.get(family);
+    if (type === "summary") {
+      skippedSummaries++;
+      skippedSamples++;
+      continue;
+    }
+    const sample = parsePrometheusSampleLine(line);
+    if (!sample) {
+      skippedSamples++;
+      continue;
+    }
+    if (type === "histogram") {
+      const values = histograms.get(family) ?? [];
+      if (sample.name === `${family}_bucket` && sample.dimensions.le !== "+Inf" && sample.dimensions.le !== undefined) {
+        sample.dimensions.le = String(Number(sample.dimensions.le));
+      }
+      values.push(sample);
+      histograms.set(family, values);
+    } else if (type === "gauge" || type === "counter") append(sample, type);
+    else skippedSamples++;
   }
-  return { metrics, skippedSamples };
+  const refusedHistograms: RefusedHistogram[] = [];
+  for (const [family, samples] of histograms) {
+    const reason = histogramReason(family, samples);
+    if (reason) {
+      if (refusedHistograms.length < 20) refusedHistograms.push({ family, reason });
+      skippedSamples += samples.length;
+    } else for (const sample of samples) append(sample, "counter");
+  }
+  return { metrics, skippedSamples, skippedSummaries, refusedHistograms, sampleCount };
 };
 
 const scrapeSource = async (
@@ -359,6 +425,7 @@ const scrapeSource = async (
     metricsResult = fail(err.internal(metricsScrapeErrorMessage(scrapeError)));
   }
   if (!metricsResult.ok) {
+    await db`UPDATE pulse.sources SET refused_histograms='[]'::jsonb,skipped_summaries=0 WHERE id=${params.sourceId}::uuid`;
     await db`UPDATE pulse.sources SET last_scrape_slot_at = GREATEST(last_scrape_slot_at, ${slot}) WHERE id = ${params.sourceId}::uuid`;
     await recordFailedSourceScrape(
       { baseId: params.baseId, sourceId: params.sourceId, startedAt, message: metricsResult.error.message },
@@ -368,11 +435,10 @@ const scrapeSource = async (
     return fail(metricsResult.error);
   }
   const metrics = metricsResult.data.metrics.map((metric) => ({ ...metric, ts: startedAt.toISOString() }));
-  const result = await deps.ingestBatch({ baseId: params.baseId, sourceId: params.sourceId, batch: { metrics } });
-  // The ingest writer turns database failures into internal errors. Those are
-  // infrastructure, not a property of the endpoint: throw so the job retries
-  // instead of recording them as a scrape outcome.
-  if (!result.ok && result.error.status >= 500) throw new Error(`Metrics ingest failed: ${result.error.message}`);
+  const result = metrics.length
+    ? await deps.ingestBatch({ baseId: params.baseId, sourceId: params.sourceId, batch: { metrics } })
+    : ok({ metrics: 0, events: 0, states: 0 });
+  await db`UPDATE pulse.sources SET refused_histograms=(${JSON.stringify(metricsResult.data.refusedHistograms)}::jsonb #>> '{}')::jsonb,skipped_summaries=${metricsResult.data.skippedSummaries} WHERE id=${params.sourceId}::uuid`;
   await db`UPDATE pulse.sources SET last_scrape_slot_at = GREATEST(last_scrape_slot_at, ${slot}) WHERE id = ${params.sourceId}::uuid`;
   await recordIngestResult(
     {
@@ -381,7 +447,7 @@ const scrapeSource = async (
       startedAt,
       result,
       warning: metricsResult.data.skippedSamples
-        ? `${metricsResult.data.skippedSamples} unsupported, invalid or nonfinite samples skipped; only declared gauge/counter families are supported`
+        ? `${metricsResult.data.skippedSamples} unsupported, refused or nonfinite samples skipped; declared gauge, counter and valid histogram families are supported`
         : null,
     },
     db,
@@ -389,7 +455,11 @@ const scrapeSource = async (
   );
   return result.ok
     ? ok(result.data)
-    : fail({ code: result.error.code, message: result.error.message, status: result.error.status === 503 ? 500 : result.error.status });
+    : fail({
+        code: result.error.code,
+        message: result.error.message,
+        status: result.error.status === 503 || result.error.status === 429 ? 500 : result.error.status,
+      });
 };
 
 export const runMetricsSourceScrape = async (

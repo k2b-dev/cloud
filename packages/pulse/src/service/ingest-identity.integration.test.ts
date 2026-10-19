@@ -6,7 +6,11 @@ import { deterministicRowId } from "./ingest-bulk";
 import { createIngestWriter } from "./ingest-writer";
 import { assertWrite, writeFixture } from "./write.test-fixture";
 
-suiteFor("database", "clickhouse")("Pulse ClickHouse write identity", () => {
+suiteFor(
+  "database",
+  "valkey",
+  "clickhouse",
+)("Pulse ClickHouse write identity", () => {
   beforeAll(installFixtureStore, 30000);
   test("#1 abort between inserts leaves pending; retry is one clean run, conflicting body is 409", async () => {
     const f = await writeFixture("retry"),

@@ -105,7 +105,9 @@ export const listAdminBases = async (
   const [count] = await sql<
     { count: number }[]
   >`SELECT count(*)::int AS count FROM pulse.bases WHERE (${pattern}::text IS NULL OR name ILIKE ${pattern} ESCAPE '\\' OR short_id=${query})`;
-  const [disk] = await sql<{ free_bytes: string; total_bytes: string; measured_at: Date }[]>`SELECT * FROM pulse.store_instance`;
+  const [disk] = await sql<
+    { free_bytes: string | null; total_bytes: string | null; measured_at: Date | null }[]
+  >`SELECT * FROM pulse.store_instance`;
   const [used] = await sql<
     { bytes: string }[]
   >`SELECT COALESCE(sum(s.usage_bytes),0)::text AS bytes FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id`;
@@ -115,7 +117,9 @@ export const listAdminBases = async (
     total,
     nextOffset: offset + rows.length < total ? offset + rows.length : null,
     usedBytes: Number(used?.bytes ?? 0),
-    disk: disk ? { freeBytes: Number(disk.free_bytes), totalBytes: Number(disk.total_bytes), measuredAt: iso(disk.measured_at) } : null,
+    disk: disk?.measured_at
+      ? { freeBytes: Number(disk.free_bytes), totalBytes: Number(disk.total_bytes), measuredAt: iso(disk.measured_at) }
+      : null,
   };
 };
 export const updateBaseLimits = async (identity: StoreIdentity, id: string, input: unknown) => {

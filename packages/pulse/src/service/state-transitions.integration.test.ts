@@ -5,7 +5,11 @@ import { installFixtureStore } from "../store/base-store.test-fixture";
 import { valueHash } from "./ingest-bulk";
 import { assertWrite, writeFixture } from "./write.test-fixture";
 
-suiteFor("database", "clickhouse")("Pulse state decisions and timestamp validation", () => {
+suiteFor(
+  "database",
+  "valkey",
+  "clickhouse",
+)("Pulse state decisions and timestamp validation", () => {
   beforeAll(installFixtureStore, 30000);
   test("#5 a 2099 state cannot poison the current state; all collections enforce 4:59/5:01", async () => {
     const f = await writeFixture("timestamps");
@@ -88,7 +92,11 @@ suiteFor("database", "clickhouse")("Pulse state decisions and timestamp validati
   }, 60000);
 });
 
-suiteFor("database", "clickhouse")("Pulse physical state replacement ordering", () => {
+suiteFor(
+  "database",
+  "valkey",
+  "clickhouse",
+)("Pulse physical state replacement ordering", () => {
   beforeAll(installFixtureStore, 30000);
   test("timestamp priority survives a physical merge and replay of schema v2", async () => {
     const f = await writeFixture("state-physical-order");

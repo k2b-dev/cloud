@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { unlink } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@k2b/cloud/cli";
@@ -104,6 +104,16 @@ const source = {
   endpointUrl: null,
   bearerTokenConfigured: false,
   scrapeIntervalSeconds: null,
+  metricFilters: [],
+  status: {
+    newestDataAt: "2026-07-07T00:00:00.000Z",
+    throttled: false,
+    throttledAt: null,
+    refusedHistograms: [],
+    skippedSummaries: 0,
+    lastError: null,
+    lastErrorAt: null,
+  },
   lastSeenAt: "2026-07-07T00:00:00.000Z",
   lastError: null,
   lastErrorAt: null,
@@ -282,23 +292,60 @@ describe("pulse CLI", () => {
     ]);
   });
 
-  test("creates source ingest tokens through the source-token command group", async () => {
-    const { ctx, calls, lines } = createContext(["source-tokens", "create", baseId, "docker"], { name: "docker-host" }, [
+  test.each(["text", "json", "jsonl"] as const)(
+    "#11 token creation writes a private file without printing the token (%s)",
+    async (output) => {
+      const directory = await mkdtemp(join(tmpdir(), "pulse-token-"));
+      const path = join(directory, "token");
+      try {
+        const { ctx, calls, lines } = createContext(
+          ["source-tokens", "create", baseId, "docker"],
+          { name: "docker-host", "output-file": path },
+          [jsonResponse(base), jsonResponse([source]), jsonResponse({ credential: sourceToken, token: "secret-token" }, 201)],
+          output,
+        );
+        await pulseCli.run(ctx);
+        expect(calls[2]?.init?.method).toBe("POST");
+        expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ name: "docker-host", permission: "write", expiresAt: null });
+        expect(await readFile(path, "utf8")).toBe("secret-token");
+        expect((await stat(path)).mode & 0o777).toBe(0o600);
+        expect(lines.join("\n")).not.toContain("secret-token");
+        expect(lines.join("\n")).toContain(path);
+        if (output !== "text") expect(JSON.parse(lines[0]!)).toEqual({ id: sourceToken.id, name: sourceToken.name, path });
+        const second = createContext(["source-tokens", "create", baseId, "docker"], { name: "other", "output-file": path }, [
+          jsonResponse(base),
+          jsonResponse([source]),
+        ]);
+        await expect(pulseCli.run(second.ctx)).rejects.toThrow("EEXIST");
+        expect(second.calls).toHaveLength(2);
+        expect(await readFile(path, "utf8")).toBe("secret-token");
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test("#11 token creation requires --output-file before making API calls", async () => {
+    const { ctx, calls } = createContext(["source-tokens", "create", baseId, "docker"], { name: "docker-host" });
+    await expect(pulseCli.run(ctx)).rejects.toThrow("--output-file");
+    expect(calls).toHaveLength(0);
+  });
+
+  test("#12 source CLI sends repeated filters and can clear them", async () => {
+    const create = createContext(
+      ["sources", "create", baseId],
+      { name: "filtered", kind: "metrics", "endpoint-url": "https://example.org/metrics", "metric-filter": ["node_*", "up"] },
+      [jsonResponse(base), jsonResponse(source)],
+    );
+    await pulseCli.run(create.ctx);
+    expect(JSON.parse(String(create.calls[1]?.init?.body)).metricFilters).toEqual(["node_*", "up"]);
+    const update = createContext(["sources", "update", baseId, "docker"], { "clear-metric-filters": true }, [
       jsonResponse(base),
       jsonResponse([source]),
-      jsonResponse({ credential: sourceToken, token: "secret-token" }, 201),
+      jsonResponse(source),
     ]);
-
-    await pulseCli.run(ctx);
-
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/sources`,
-      `/api/pulse/bases/${baseId}/sources/${sourceId}/api-keys`,
-    ]);
-    expect(calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ name: "docker-host", permission: "write", expiresAt: null });
-    expect(lines).toEqual([`Created token docker-host (${sourceToken.id}).`, "secret-token"]);
+    await pulseCli.run(update.ctx);
+    expect(JSON.parse(String(update.calls[2]?.init?.body)).metricFilters).toEqual([]);
   });
 
   test("revokes source ingest tokens through the source-token command group", async () => {

@@ -152,9 +152,12 @@ export const installBaseline = async (sql: TransactionSQL): Promise<void> => {
     FOREIGN KEY(base_id,state_key) REFERENCES pulse.state_keys(base_id,state_key) ON DELETE CASCADE
   )`.simple();
   await sql`CREATE TABLE pulse.notification_outbox (
-    seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, kind TEXT, user_id UUID, data JSONB,
+    seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    kind TEXT NOT NULL, user_id UUID NOT NULL, data JSONB NOT NULL, locale TEXT NOT NULL,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(), claimed_until TIMESTAMPTZ, last_error TEXT,
     attempts INT NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`.simple();
+  await sql`CREATE INDEX ON pulse.notification_outbox(user_id) WHERE claimed_until IS NOT NULL OR attempts > 0`.simple();
   await sql`CREATE TABLE pulse.base_stores (
     base_id UUID PRIMARY KEY REFERENCES pulse.bases(id) ON DELETE CASCADE,
     state TEXT NOT NULL CHECK (state IN ('provisioning','active','clearing','deleting','failed')),
@@ -168,7 +171,7 @@ export const installBaseline = async (sql: TransactionSQL): Promise<void> => {
     max_series BIGINT NOT NULL CHECK (max_series > 0),
     max_event_kinds BIGINT NOT NULL CHECK (max_event_kinds > 0),
     max_state_keys BIGINT NOT NULL CHECK (max_state_keys > 0),
-    usage_bytes BIGINT, usage_rows BIGINT, usage_measured_at TIMESTAMPTZ,
+    usage_bytes BIGINT, usage_rows BIGINT, usage_measured_at TIMESTAMPTZ, storage_exceeded_at TIMESTAMPTZ,
     last_error TEXT CHECK (last_error ~ '^[A-Z0-9_:]{1,64}$'), last_error_at TIMESTAMPTZ,
     attempts INT NOT NULL DEFAULT 0,
     checkpoint_id UUID, pending_checkpoint_id UUID, checkpoint_at TIMESTAMPTZ,
@@ -184,7 +187,8 @@ export const installBaseline = async (sql: TransactionSQL): Promise<void> => {
   )`.simple();
   await sql`CREATE INDEX ON pulse.base_internal_targets (created_at, id)`.simple();
   await sql`CREATE TABLE pulse.store_instance (
-    singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton), free_bytes BIGINT NOT NULL,
-    total_bytes BIGINT NOT NULL, measured_at TIMESTAMPTZ NOT NULL
+    singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton), free_bytes BIGINT,
+    total_bytes BIGINT, measured_at TIMESTAMPTZ, disk_low_at TIMESTAMPTZ,
+    outage_started_at TIMESTAMPTZ, last_outage_ended_at TIMESTAMPTZ
   )`.simple();
 };

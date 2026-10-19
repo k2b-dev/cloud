@@ -31,11 +31,12 @@ Do not use a personal Cloud session in a long-running collector. Create an `http
 cld pulse sources create --name "Warehouse importer" --kind http_ingest --json
 cld pulse source-tokens create "Warehouse importer" \
   --name production-job \
+  --output-file ./pulse.token \
   --expires-at 2027-01-01T00:00:00Z \
   --json
 ```
 
-Token creation returns credential metadata and the raw token. The raw token is shown once. Store it in the collector's secret store before leaving the workflow.
+Token creation writes the raw token to a new file with mode 0600; an existing file is refused. All output modes print only its ID, name and path. Move the private file into the collector’s secret store.
 
 Listing, creating, and revoking source tokens requires `admin` permission on the base. Creating or editing the source itself requires `write` permission.
 
@@ -323,6 +324,20 @@ stays pending until all writes finish. A failed unkeyed batch may already be par
 stored; repeated events can duplicate. Use a key from the first attempt when a
 collector needs safe retries.
 
+All write paths share continuously refilled per-base value and byte quotas.
+The HTTP API counts original request-body bytes; scrapes count their serialized
+batch. `429 PULSE_BASE_THROTTLED` includes a whole-second `Retry-After` and
+marks the source as throttled for five minutes. Completed idempotency keys
+return their stored counts without consuming quota. A Valkey failure returns
+`503 PULSE_QUOTA_UNAVAILABLE` with `Retry-After: 30`.
+
+A measured storage threshold refuses new values with
+`409 PULSE_BASE_STORAGE_FULL`. A base admin can shorten retention or a Cloud
+admin can raise the threshold. Instance disk space below 10% free refuses all
+bases with `503 PULSE_STORE_DISK_LOW` and `Retry-After: 300`. Existing data
+remains readable. Failed or throttled scrapes record their error and wait for
+the next scheduled tick.
+
 The source-token route returns 200 for success, 403 without ingest permission,
 404 for an unknown source, 409 for key conflicts or an unwritable base, and 429
 for rate limiting. A future timestamp error names its collection, index and
@@ -360,4 +375,20 @@ The first accepted sample fixes the metric type and unit within its base. Later 
 
 Scheduled metrics sources use whole-minute intervals from 60 through 86400 seconds. Scheduling is based on the scheduled slot, so completion time does not postpone the next minute. Only one scrape per source runs at a time. Fetching headers and the complete body share a 15-second timeout; the response limit is 10 MiB and the sample limit is 50000. All accepted samples in an attempt use the same collection time.
 
-The Prometheus adapter accepts explicitly declared gauge and counter families. It reports skipped histogram, summary, undeclared, malformed, and nonfinite samples in the source diagnostics and scrape history. It does not reinterpret histogram or summary suffixes as counters. The adapter uses `instance`, `host`, or `node` as target identity, falling back to the endpoint host and port. This inference belongs to the adapter. HTTP ingest creates a resource association only when you supply `resource`; omitting it or sending null records the signal without a resource.
+The Prometheus adapter accepts declared gauge, counter and histogram families.
+Histograms store `_bucket` with canonical `le` dimensions, `_sum` and `_count`
+as counters. Every label group needs a `+Inf` bucket, cumulative buckets,
+matching count (when present), and a nonnegative sum. One invalid group refuses
+the whole family. `status.refusedHistograms` records up to 20 family/reason
+pairs; `status.skippedSummaries` counts skipped summary samples. Both describe
+the latest scrape. Untyped, malformed and nonfinite samples remain skipped.
+
+For metrics sources, repeat `--metric-filter node_* --metric-filter up` to
+include family prefixes or exact names. Filters apply before the 50,000-sample
+and series caps. Empty filters include all families; use
+`--clear-metric-filters` when updating. At most 100 entries, each up to 128
+characters, are accepted. Only a trailing `*` is allowed; the rest follows
+Prometheus metric-name syntax. Changing the endpoint origin clears its bearer
+token unless you supply a replacement.
+
+ The adapter uses `instance`, `host`, or `node` as target identity, falling back to the endpoint host and port. This inference belongs to the adapter. HTTP ingest creates a resource association only when you supply `resource`; omitting it or sending null records the signal without a resource.

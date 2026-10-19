@@ -5,7 +5,11 @@ import { installFixtureStore } from "../store/base-store.test-fixture";
 import { mirrorPendingSources } from "./source-mirror";
 import { writeFixture } from "./write.test-fixture";
 
-suiteFor("database", "clickhouse")("Pulse source mirrors", () => {
+suiteFor(
+  "database",
+  "valkey",
+  "clickhouse",
+)("Pulse source mirrors", () => {
   beforeAll(installFixtureStore, 30000);
   test("pending creates/updates/deletes retry after a failed insert and tombstones hide immediately", async () => {
     const f = await writeFixture("source-mirror");
