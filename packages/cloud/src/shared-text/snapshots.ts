@@ -235,16 +235,22 @@ const createSnapshots = <Input>(
             /* Legacy cursor: load anchors it. */
           }
         }
-        if (!shared) stored = (await store.load(candidate.docId, { signal: config.signal }))?.cursor ?? null;
-        if (!stored) continue;
+        if (!shared) {
+          const loaded = await store.load(candidate.docId, { signal: config.signal });
+          if (!loaded) continue;
+          stored = loaded.cursor;
+        }
         const latest = await topic.latestCursor({ tenantId: candidate.docId });
-        if (latest && compareStreamCursor(latest, stored) > 0) {
+        // A document without a stored cursor replays from the log's start, like the job does.
+        if (latest && (!stored || compareStreamCursor(latest, stored) > 0)) {
           await queue({ docId: candidate.docId, targetCursor: latest, reason: "reconcile" });
           queued++;
-          const storedSeq = topic.cursorSequence(stored);
-          if (!oldest || storedSeq < oldest.storedSeq) oldest = { docId: candidate.docId, stored, storedSeq, latest };
+          const from = stored ?? topic.cursorAt(0);
+          const storedSeq = topic.cursorSequence(from);
+          if (!oldest || storedSeq < oldest.storedSeq) oldest = { docId: candidate.docId, stored: from, storedSeq, latest };
           continue;
         }
+        if (!stored) continue;
         if (topic.cursorSequence(stored) < refreshBelow && (await store.advance(candidate.docId, { from: stored, to: head, latest })))
           advanced++;
       }

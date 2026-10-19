@@ -232,9 +232,10 @@ missing; recovery preserves the valid retained updates and pending dependencies.
 The application schedules `reconcile({ signal?, heartbeat? })`, for example
 hourly, and forwards the scheduler's cancellation signal and heartbeat.
 Reconcile scans pages of 5,000 documents and heartbeats before each group of
-200, starting with the first document. It queues snapshots whose latest event
-is newer, and moves idle cursors in the older half of the retained window to
-the captured head. It returns exactly `{ checked, queued, advanced }`.
+200, starting with the first document. It queues a snapshot for every
+document whose latest event is newer than its stored cursor, or that has
+events but no stored cursor yet. It moves idle cursors in the older half of
+the retained window to the captured head. It returns exactly `{ checked, queued, advanced }`.
 `log.firstSequence()` reads the first retained sequence for this exact log,
 or returns zero when the log is absent.
 

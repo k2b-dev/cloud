@@ -429,6 +429,21 @@ test("reconcile uses 5000-row keyset pages, 26 heartbeats for 5001 documents, an
   expect(f.calls.indexOf("head")).toBeLessThan(f.calls.indexOf("latest"));
 });
 
+test("reconcile queues an existing document without a stored cursor and skips a missing one", async () => {
+  const f = fixture();
+  f.head.value = cursor(100);
+  f.rows.push({ docId: "fresh", cursor: null }, { docId: "gone", cursor: null }, { docId: "quiet", cursor: null });
+  f.states.set("fresh", { state: null, text: "seed", cursor: null, restoreRevision: "r" });
+  f.states.set("quiet", { state: null, text: "seed", cursor: null, restoreRevision: "r" });
+  f.latest.set("fresh", cursor(42));
+  f.latest.set("gone", cursor(43));
+  f.events.push(event(42, "fresh"));
+  expect(await f.pipeline.reconcile()).toEqual({ checked: 3, queued: 1, advanced: 0 });
+  expect(f.submitted.map((entry) => entry.input)).toEqual([{ docId: "fresh", targetCursor: cursor(42), reason: "reconcile" }]);
+  expect(f.advances).toEqual([]);
+  expect(f.pipeline.backlog()).toMatchObject({ documents: 1, oldest: { docId: "fresh", sequence: 42, sequenceDistance: 58 } });
+});
+
 test("reconcile advances only below the older half and honours a store's rejected advance", async () => {
   const f = fixture();
   f.head.value = cursor(100);
