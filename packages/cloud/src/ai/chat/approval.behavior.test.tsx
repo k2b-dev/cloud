@@ -299,6 +299,52 @@ domTest("a turn stopped while it checked keeps the open outcome and its check", 
   }
 });
 
+domTest("a live check whose claim went stale offers to check again", async () => {
+  const { actionFixtures } = await import("./action-question.fixtures");
+  const mail = actionFixtures("en").mail!.block;
+  const view = await mountTurn(
+    [
+      {
+        ...mail,
+        approval: undefined,
+        approved: true,
+        status: "running",
+        check: { state: "checking", at: new Date(Date.now() - 120_000).toISOString() },
+      },
+    ],
+    { phase: "running", check: async () => ({ state: "done", at: new Date().toISOString() }) },
+  );
+  try {
+    expect(view.line()).toContain("Not known yet whether this happened");
+    expect(view.button("Check again")).toBeDefined();
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a lost answer to an earlier question never marks the next one", async () => {
+  const ask = (index: number): Extract<AiTurnBlock, { kind: "tool" }> => ({
+    ...runCode,
+    callId: `run-approval-${index}`,
+    approval: { message: `Step ${index}`, allowAlways: false },
+  });
+  let fail!: (error: Error) => void;
+  const view = await mountTurn([ask(0)], { approve: () => new Promise<void>((_resolve, reject) => (fail = reject)) });
+  try {
+    view.button("Run code").click();
+    await settle();
+    // The server took the first answer and the code asks for the next website before the first response is lost.
+    view.setBlocks([{ ...ask(1), approved: true }]);
+    await settle();
+    fail(new Error("response lost"));
+    await settle();
+    expect(view.question()?.textContent).toContain("Step 1");
+    expect(view.place().textContent).not.toContain("didn't arrive");
+  } finally {
+    view.cleanup();
+  }
+});
+
 domTest("a check that could not settle the outcome is asked again only on request, and never repeats the call", async () => {
   const { actionFixtures } = await import("./action-question.fixtures");
   const mail = actionFixtures("en").mail!.block;

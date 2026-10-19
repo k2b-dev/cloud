@@ -4,7 +4,10 @@ import { type SQL, sql } from "bun";
 import { type CapabilityActionReviewData, CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
-import type { AiActionCheck, AiStoredActionReview } from "./action-review";
+import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";
+
+export { AI_TOOL_CHECK_STALE_MS };
+
 import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
@@ -1027,9 +1030,6 @@ const writeAiToolCheckWhere = async (
   }
   return written;
 };
-
-/** A claim older than this belonged to a worker or request that stopped: twice a Query's budget, plus a margin. */
-export const AI_TOOL_CHECK_STALE_MS = 2 * 15_000 + 30_000;
 
 /**
  * Claims the check of one call: stores `checking` at `at`, which is the claim's token, when no check holds and none

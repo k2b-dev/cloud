@@ -1,9 +1,9 @@
 import { dates } from "@k2b/stdlib";
 import { Button, ButtonLink, type ChatDecisionState, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, on, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
 import { capabilityUnknownText } from "../../_internal/capability-sentences";
 import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
-import type { AiActionCheck } from "../action-review";
+import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import { toolOutcome } from "../tool-wording";
 import { type ActionCard, type ActionText, actionReceiptText, toolActionCard } from "./action-card";
@@ -95,14 +95,17 @@ const flowOf = (input: {
   lost: boolean;
   check: AiActionCheck | undefined;
   phase?: AiTurnPhase;
+  /** The stored claim of a running check is older than the stale limit. */
+  staleCheck?: boolean;
 }): Flow => {
   const { block, check } = input;
   // A lost answer holds only while the question still waits; the server's own outcome always wins over it.
   if (input.lost && block.status === "awaiting_approval") return { flow: "lost" };
   if (block.status === "awaiting_approval") return input.answer === "decline" ? { flow: "rejected" } : { flow: "run", current: "running" };
-  // A check runs only inside a live turn; one that history still shows as running was cut off and is open.
+  // A check runs only inside a live turn and only for a while; one that history still shows as running, or whose
+  // claim went stale, was cut off and is open again.
   if (check?.state === "checking")
-    return input.phase === "completed" || input.phase === "stopped" || input.phase === "failed"
+    return input.staleCheck || input.phase === "completed" || input.phase === "stopped" || input.phase === "failed"
       ? { flow: "check", current: "pending" }
       : { flow: "check", current: "checking" };
   if (check?.state === "done") return { flow: "check", current: "checkedDone" };
@@ -176,12 +179,14 @@ export function ToolActionView(props: {
   const request = () => ({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
   const submit = async (input: { approved: boolean; remember?: "chat" }) => {
     if (answer() !== null || !actions.onApproval) return;
+    // A failure belongs to the question it answered: the next question of the same block may already show.
+    const submitted = props.block.callId;
     setLost(false);
     setAnswer(input.approved ? "approve" : "decline");
     try {
       await actions.onApproval(request(), input);
     } catch {
-      setLost(true);
+      if (props.block.callId === submitted) setLost(true);
     }
   };
   const reopen = () => {
@@ -197,8 +202,28 @@ export function ToolActionView(props: {
     if (stored.state === "done" || stored.state === "not_done") return stored;
     return (stored.at ?? "") > (local.at ?? "") ? stored : local;
   };
+  // A stored claim of a running check expires at a known moment; past it the card offers to check again.
+  const [now, setNow] = createSignal(Date.now());
+  const claimAge = () => {
+    const at = check()?.state === "checking" ? check()?.at : undefined;
+    return at ? now() - Date.parse(at) : null;
+  };
+  createEffect(() => {
+    const age = claimAge();
+    if (age === null || age > AI_TOOL_CHECK_STALE_MS) return;
+    const timer = setTimeout(() => setNow(Date.now()), AI_TOOL_CHECK_STALE_MS - age + 50);
+    onCleanup(() => clearTimeout(timer));
+  });
   const flow = createMemo(() =>
-    flowOf({ block: props.block, state: props.state, answer: answer(), lost: lost(), check: check(), phase: props.phase }),
+    flowOf({
+      block: props.block,
+      state: props.state,
+      answer: answer(),
+      lost: lost(),
+      check: check(),
+      phase: props.phase,
+      staleCheck: (claimAge() ?? 0) > AI_TOOL_CHECK_STALE_MS,
+    }),
   );
   const decisionState = (): ChatDecisionState => {
     if (props.block.status === "awaiting_approval") return answer() === null && !lost() ? "open" : "sending";

@@ -73,3 +73,9 @@ export const storedActionReview = (review: CapabilityActionReviewData, policy?: 
  */
 export type AiActionCheckState = "checking" | "done" | "not_done" | "pending" | "failed";
 export type AiActionCheck = { state: AiActionCheckState; receipt?: CapabilityActionReceipt; at?: string };
+
+/**
+ * A `checking` claim older than this belonged to a worker or request that stopped and is open again: twice a Query's
+ * 15-second budget, plus a margin. Core takes such a claim over, and the card offers to check again.
+ */
+export const AI_TOOL_CHECK_STALE_MS = 2 * 15_000 + 30_000;
