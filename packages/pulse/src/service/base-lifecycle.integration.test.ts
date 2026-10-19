@@ -17,7 +17,6 @@ import { clickhouseQuery } from "../store/client";
 import { quoteIdentifier as q } from "../store/validation";
 import { requireBaseActive, requireBaseWritable } from "./access-control";
 import { createBaseLifecycle } from "./base-lifecycle";
-import { createDashboard } from "./dashboard-management";
 import { ingestBatch } from "./ingest-writer";
 import { createSource } from "./source-management";
 
@@ -67,7 +66,7 @@ suite("Pulse per-base store lifecycle", () => {
       await cleanupFixtureBase(base);
     }
   }, 60_000);
-  test("ingest, source creation and dashboard saves refuse every non-active state", async () => {
+  test("ingest and source creation refuse every non-active state", async () => {
     const base = await fixtureBase();
     const [user] = await sql<
       { id: string }[]
@@ -81,7 +80,6 @@ suite("Pulse per-base store lifecycle", () => {
           false,
         );
         expect((await createSource({ baseId: base.id, user: { id: user!.id }, name: "Refused", kind: "http_ingest" })).ok).toBe(false);
-        expect((await createDashboard({ baseId: base.id, user: { id: user!.id }, name: "Refused" })).ok).toBe(false);
       }
     } finally {
       await cleanupFixtureBase(base);

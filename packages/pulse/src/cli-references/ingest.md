@@ -111,7 +111,7 @@ All three collections are optional, but the batch must contain at least one item
 | `value` | Yes | Finite number. `NaN` and infinities are rejected. |
 | `ts` | No | ISO datetime. Server time is used when omitted. |
 | `type` | No | `gauge` or `counter`; defaults to `gauge`. |
-| `unit` | No | Non-empty unit string or null. Common units are formatted automatically by dashboards. |
+| `unit` | No | Non-empty unit string or null. |
 | `resource` | No | Explicit `{type, id, label?}` for the observed object; omit or use null for no resource. |
 | `dimensions` | No | Exact-match labels distinguishing variants. |
 
@@ -160,13 +160,11 @@ One metric may have at most 10,000 variants in one base. Values such as visitor 
 | `actorId` | No | Actor responsible for the event. |
 | `sessionId` | No | Session grouping related events. |
 | `correlationId` | No | Identifier joining one process across events. |
-| `resource` | No | Explicit stable resource `{ type, id, label? }` for inventory and resource scoping. |
-| `dimensions` | No | Bounded exact-match labels used by `where` and `group by`. |
-| `attributes` | No | Discoverable, returned JSON for irregular or unique event fields. |
-| `sensitive` | No | Classified JSON with independent short retention; never returned by normal event queries. |
-| `payload` | No | Event-specific JSON returned with individual event rows but not listed by field. |
-
-Query DSL can count unique `actorId` and `sessionId` values without using them as dimensions. Individual event rows intentionally omit actor, session, and correlation identities.
+| `resource` | No | Explicit stable resource `{ type, id, label? }` for the observed object. |
+| `dimensions` | No | Bounded exact-match labels. |
+| `attributes` | No | JSON for irregular or unique event fields. |
+| `sensitive` | No | Classified JSON with independent short retention. |
+| `payload` | No | Nested event-specific JSON. |
 
 ## Classify event data
 
@@ -177,7 +175,7 @@ Classify fields by how Pulse must use and retain them. Do not duplicate one valu
 | `dimensions` | Stable fields users repeatedly filter or group by: campaign, channel, country, outcome | Request IDs, visitor IDs, full URLs, timestamps, raw IPs |
 | `attributes` | Unique or irregular fields that should remain visible on individual events: full URL, referrer, user agent, order ID | Secrets or fields requiring shorter retention |
 | `sensitive` | Raw IP, precise geolocation, or other classified event data | Data required after sensitive retention expires |
-| `payload` | Nested domain details that should be returned as one object | Fields that users must discover by name or use with `group by` |
+| `payload` | Nested domain details that should be returned as one object | Stable grouping labels |
 
 Example for a QR redirect:
 
@@ -210,8 +208,6 @@ Field limits are part of the public ingest contract:
 - `sensitive`: at most 32 top-level keys, 32 KiB encoded JSON, and 4 nested levels.
 - `payload`: at most 64 KiB encoded JSON and 8 nested levels.
 
-Pulse lists observed event field names, roles, value types, and counts. It does not list every distinct attribute or sensitive value.
-
 ### States
 
 ```json
@@ -234,7 +230,7 @@ Pulse lists observed event field names, roles, value types, and counts. It does 
 | `resource` | No | Explicit `{type, id, label?}` whose state is being set. |
 | `dimensions` | No | Labels distinguishing independently current state variants. |
 
-States represent current truth. Sending the same source, key, resource identity, and dimensions replaces the current value. Pulse records state history only for the initial value and real value changes; repeated equal snapshots update the current row without adding another transition. Source is part of current-state identity: different sources never overwrite each other. Late snapshots do not rewind the current value. Batch transitions are processed in timestamp order, with input order breaking ties; stored history preserves that order. Query DSL `states` returns current rows, not the state-change history.
+States represent current truth. Sending the same source, key, resource identity, and dimensions replaces the current value. Pulse records state history only for the initial value and real value changes; repeated equal snapshots update the current row without adding another transition. Source is part of current-state identity: different sources never overwrite each other. Late snapshots do not rewind the current value. Batch transitions are processed in timestamp order, with input order breaking ties; stored history preserves that order.
 
 ### Dimension values
 
@@ -244,7 +240,7 @@ Prefer stable dimensions that answer real filtering or grouping questions. Event
 
 ## Model resources and variants
 
-Resource modeling determines whether the Pulse UI remains understandable.
+Use stable resource identities across batches.
 
 Use this split:
 
@@ -273,7 +269,7 @@ Good container example:
 }
 ```
 
-Do not put the container name into the metric name. One stable metric name with one resource per container lets users browse a host, open a container, and see all its signals.
+Do not put the container name into the metric name. Use one stable metric name with one resource per container.
 
 Pulse uses only explicit resources. It does not infer Docker, host, or service
 objects from generic ingest dimensions. The Prometheus adapter can identify a
@@ -283,7 +279,7 @@ characters. The type distinguishes equal IDs belonging to different classes.
 
 Keep identity consistent across metrics, events, and states so Pulse groups all signals under the same resource.
 
-Only stable observed objects should become resources. A website, campaign, QR code, host, container, service, customer, or order can be a resource when users browse it as an object. Do not create resources for individual page views, visits, sessions, requests, IP addresses, or timestamps.
+Only stable observed objects should become resources. A website, campaign, QR code, host, container, service, customer, or order can be a resource when it represents a stable object. Do not create resources for individual page views, visits, sessions, requests, IP addresses, or timestamps.
 
 ## Retry safely
 
@@ -325,43 +321,27 @@ Split larger collector output into bounded batches. Give each batch its own idem
 
 ## Inspect the result
 
-Check source health before changing queries:
+Check source health:
 
 ```bash
 cld pulse sources list --json
 cld pulse source-tokens list "Warehouse importer" --json
-cld pulse resources list --source "Warehouse importer" --limit 100 --json
-cld pulse metrics --source "Warehouse importer" --limit 100 --json
-cld pulse events --source "Warehouse importer" --limit 100 --json
-cld pulse states --source "Warehouse importer" --limit 100 --json
-cld pulse fields list --source "Warehouse importer" --scope event --json
 ```
 
 HTTP ingest updates the source's `lastSeenAt` and the credential's `lastUsedAt`. Prometheus scrape attempts additionally appear in `sources scrapes`; push-ingest requests do not create scrape-attempt rows.
-
-`fields list` shows observed field names, roles, value types, and counts without listing their individual values. Confirm that resources, dimensions, field roles, units, and signal names match the intended model before building queries or dashboards.
-
-Verify one modeled resource end to end:
-
-```bash
-cld pulse resources get "container:host-01/f06a6893f7bd" --json
-cld pulse resources metrics "container:host-01/f06a6893f7bd" --json
-cld pulse resources states "container:host-01/f06a6893f7bd" --json
-cld pulse resources events "container:host-01/f06a6893f7bd" --json
-```
 
 ## Operational rules
 
 - Use one source for one logical integration boundary; use multiple labeled tokens for independently revocable deployments of that integration.
 - Use separate sources when ownership, health, provenance, or access to credentials must be distinguishable.
-- Keep source tokens out of logs, shell history, documentation, Dashboard DSL, and saved queries.
+- Keep source tokens out of logs, shell history, or documentation.
 - Revoke a token before deleting a collector deployment.
 - Check `lastSeenAt` and token `lastUsedAt` when data stops arriving.
-- Use `clear-data` to remove telemetry while preserving sources, credentials, dashboards, saved queries, settings, and access.
+- Use `clear-data` to remove telemetry while preserving sources, credentials, settings, and access.
 - Configure detailed telemetry, long-range metric summaries, and sensitive event fields independently. When sensitive retention expires, Pulse clears only the event's `sensitive` object; the remaining event follows raw retention.
 - Deleting a source makes its source-bound credentials unusable and removes source metadata, but retained historical telemetry loses its source association rather than being deleted.
 
-Return to the [Pulse CLI reference](index.md) for base discovery, queries, dashboards, access, and lifecycle operations.
+Return to the [Pulse CLI reference](index.md) for bases, sources, access, and lifecycle operations.
 
 ### Metric definitions and scrapes
 

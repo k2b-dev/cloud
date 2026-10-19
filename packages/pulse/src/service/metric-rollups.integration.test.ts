@@ -5,12 +5,11 @@ import { newShortId } from "../lib/short-id";
 import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { ingestBatch } from "./ingest-writer";
 import { runHourlyRollup, sealExpiredMetricHour } from "./metric-rollups";
-import { queryMetricData } from "./query-execution";
 
 const dbTest = testFor("database");
 
 dbTest(
-  "rollups catch up beyond 48 hours, recompute overwrites, merge raw head, and seal without history loss",
+  "rollups catch up beyond 48 hours, recompute overwrites, and seal without history loss",
   async () => {
     const baseId = crypto.randomUUID(),
       sourceId = crypto.randomUUID();
@@ -21,46 +20,20 @@ dbTest(
     const first = new Date(+hour + 60000).toISOString(),
       second = new Date(+hour + 120000).toISOString();
     const write = async (ts: string, value: number) => ingestBatch({ baseId, sourceId, batch: { metrics: [{ name: "load", value, ts }] } });
-    const query = {
-      kind: "metric" as const,
-      baseId,
-      metric: "load",
-      aggregation: "avg" as const,
-      bucket: "1h",
-      since: "7d",
-      dimensions: {},
-    };
     try {
       expect((await write(first, 10)).ok).toBe(true);
       expect((await write(second, 30)).ok).toBe(true);
       expect(await runHourlyRollup(baseId)).toMatchObject({ buckets: 1, done: false });
       expect((await runHourlyRollup(baseId)).done).toBe(true);
-      let result = await queryMetricData(query);
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.data.map((p) => p.value)).toEqual([20]);
       expect((await write(first, 50)).ok).toBe(true);
-      result = await queryMetricData(query);
-      if (!result.ok) throw Error("query failed");
-      expect(result.data.map((p) => p.value)).toEqual([40]);
       const concurrent = await Promise.all([runHourlyRollup(baseId), write(first, 50), runHourlyRollup(baseId)]);
       expect(concurrent[1].ok).toBe(true);
       await runHourlyRollup(baseId);
       expect((await write(new Date().toISOString(), 90)).ok).toBe(true);
-      result = await queryMetricData(query);
-      if (!result.ok) throw Error("query failed");
-      expect(result.data.map((p) => p.value)).toEqual([40, 90]);
       await sql`UPDATE pulse.bases SET retention_days=1 WHERE id=${baseId}::uuid`;
       expect(await sealExpiredMetricHour(baseId)).toBe(1);
       expect((await write(first, 99)).ok).toBe(false);
       await sql`DELETE FROM pulse.metric_samples WHERE base_id=${baseId}::uuid AND ts<${new Date(+hour + 3600000)}`;
-      result = await queryMetricData(query);
-      expect(result.ok).toBe(false);
-      const historical = { ...query, since: undefined, from: hour.toISOString(), to: new Date(+hour + 3600000).toISOString() };
-      const exact = await queryMetricData(historical);
-      if (!exact.ok) throw Error(exact.error.message);
-      expect(exact.data.map((p) => p.value)).toEqual([40]);
-      expect((await queryMetricData({ ...historical, to: new Date(+hour + 1800000).toISOString() })).ok).toBe(false);
-      expect((await queryMetricData({ ...query, aggregation: "p95" })).ok).toBe(false);
       const [rollup] = await sql`SELECT value_sum,sample_count,last_value FROM pulse.metric_rollups_hourly WHERE base_id=${baseId}::uuid`;
       expect(Number(rollup?.value_sum)).toBe(80);
       expect(Number(rollup?.sample_count)).toBe(2);

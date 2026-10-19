@@ -3,15 +3,14 @@ title: Pulse
 navTitle: Pulse
 section: Operations
 order: 420
-description: Explore metrics, events, states, resources, queries, and dashboards in one telemetry workspace.
-tags: [pulse, telemetry, metrics, dashboards]
+description: Collect metrics, events, and states from your sources.
+tags: [pulse, telemetry, metrics]
 updated: 2026-10-17
 ---
 
 # Pulse
 
-Pulse turns incoming metrics, events, and current states into browsable
-resources, reusable queries, and dashboards. It can describe infrastructure,
+Pulse collects metrics, events, and current states from sources. It can describe infrastructure,
 application behavior, or business activity without requiring one fixed domain
 model.
 
@@ -37,7 +36,7 @@ Without a saved connection, Pulse shows “not set up” and its data API return
 
 Each base is a tenant with its own ClickHouse database, read user and six SQL
 views. Read access excludes internal tables, sensitive fields, payloads and
-other bases. Base admins manage members, sources, tokens, queries, dashboards
+other bases. Base admins manage members, sources, tokens
 and retention; they do not need the Cloud admin role. By default, people and
 agents with write credentials can create a base and become its admin. A Cloud
 admin can restrict creation to people or Cloud admins and set the maximum
@@ -46,8 +45,8 @@ sends the request: a service account counts as an agent, also when it acts for
 a person, and the admin grant then goes to that person.
 
 New bases are `provisioning`, then `active`. Only active bases accept changes.
-Clearing (`clearing`) keeps sources, tokens, dashboards and queries. Deleting
-(`deleting`) revokes source tokens, public links and read access before removing
+Clearing (`clearing`) keeps sources and tokens. Deleting
+(`deleting`) revokes source tokens and read access before removing
 the store. A base in deletion stays on its admins' Pulse overview until the
 deletion finishes. After five failed runs, the operation is `failed`; a base
 admin can choose **Retry** in the base settings or on the overview, and a Cloud
@@ -77,25 +76,16 @@ orphans and can be deleted separately.
 
 ## Use Pulse
 
-- Check Sources first when expected data is missing or stale.
-- Browse Resources when the question concerns one host, container, service,
-  customer, order, or other observed object.
-- Open Metrics, Events, or States when the signal name is already known.
-- Test and save a query before using it in a dashboard.
-- Publish a focused dashboard when a read-only link should show results without
-  exposing the rest of the base.
-
-Pulse must be deployed and available to your account.
+Open a base to manage its sources. Check Sources when expected data is missing
+or stale. Earlier dashboards and saved queries were removed with this update;
+existing view URLs explain the change and link to Sources.
 
 ## Understand the Pulse model
 
-| Resource | Responsibility |
+| Concept | Purpose |
 | --- | --- |
-| Base | Access, retention, sources, queries, and dashboards for one telemetry context |
+| Base | Access, retention, and sources for one telemetry context |
 | Source | Metrics endpoint or HTTP ingest connection |
-| Resource | Stable observed object that groups its metrics, events, and states |
-| Signal | Named metric, event, or state published by one or more sources |
-| Query and dashboard | Reusable analysis and its operator-facing presentation |
 
 Dimensions distinguish stable variants such as region, route, mount, or
 service. Put unique request IDs, sessions, full URLs, and protected details in
@@ -103,15 +93,14 @@ event fields rather than metric dimensions.
 
 ## How Pulse fits Cloud
 
-Pulse owns ingestion, retention, inventory, query execution, saved queries,
-and dashboards inside each base. Cloud supplies identity, resource access,
+Pulse owns ingestion, retention, and source management inside each base. Cloud supplies identity, resource access,
 application routing, lifecycle hooks, and operational primitives. A source
 credential belongs to one source and does not grant access to unrelated bases.
 
 ## Find detailed product help
 
-Open **Help** inside Pulse for the data model, source health, query language,
-dashboard DSL, retention, public displays, and troubleshooting. Developers can
+Open **Help** inside Pulse for the data model, source health,
+retention, access, HTTP ingest, and troubleshooting. Developers can
 read [Observability](/en/docs/operations/observability),
 [Resource authorization](/en/docs/identity/authorization), and
 [Resource API keys](/en/docs/identity/resource-api-keys) for adjacent Cloud
@@ -126,8 +115,7 @@ cld pulse list --json
 cld pulse capabilities --json
 ```
 
-Run `cld pulse help` for bases, sources, signals, queries, dashboards, and
-access. Run `cld pulse <command> --help` before ingesting data or changing a
+Run `cld pulse help` for bases, sources, ingest, and access. Run `cld pulse <command> --help` before ingesting data or changing a
 base.
 
 ## Deployment requirements
@@ -144,7 +132,7 @@ application never deletes it on startup.
 
 ## Server collection before deployment
 
-Metrics support gauges and nonnegative counters. Type and unit are fixed per metric name within a base; conflicting input rejects the entire batch. Counter rates use observed consecutive samples and correct resets before combining series. Histogram and summary aggregation is not supported.
+Metrics support gauges and nonnegative counters. Type and unit are fixed per metric name within a base; conflicting input rejects the entire batch. Histogram and summary aggregation is not supported.
 
 Prometheus sources accept declared gauge/counter families and expose skipped samples in source diagnostics. Scrapes use whole-minute intervals (minimum 60 seconds), one collection timestamp, and a 15-second timeout covering lookup, connection, headers, and body. Sources with no instance, host, or node label use the endpoint host and port as their target resource.
 
@@ -162,9 +150,7 @@ The initial operator scenario is 20–50 servers, approximately ten websites, 60
 
 Pulse records whether each metric hour is dirty, complete or sealed. The hourly
 worker resumes unfinished hours after downtime without a fixed lookback limit.
-Late samples and corrections inside raw retention mark the hour dirty again;
-queries use its raw samples until recomputation completes. Each query combines
-complete rollups with remaining raw samples in one database snapshot.
+Late samples and corrections inside raw retention mark the hour dirty again.
 
 Raw metric retention preserves the entire boundary hour. Older raw hours are
 removed only after successful rollup and sealing. Sealed hours reject later
@@ -173,10 +159,7 @@ reconstructed. Metric ingestion rejects timestamps older than raw retention.
 Rollup retention also applies to full hours.
 
 Hourly rollups retain sample count, sum, minimum, maximum and the last value with
-its actual timestamp. They support count, sum, average, minimum, maximum and
-latest in whole-hour bucket sizes. Counter rate/increase and sample percentiles
-require raw data. Queries outside available retention fail explicitly; partial
-historical hours cannot be reconstructed from an hourly aggregate.
+its actual timestamp.
 
 Retention also removes expired scrape history and unreferenced metric series,
 definitions, resources and field metadata. Current state persists until replaced
@@ -184,14 +167,6 @@ or explicitly cleared, independently of history retention. A resource or field
 still needed by current state or retained observations remains in its catalog.
 Continuously creating new state identities therefore requires an explicit
 operator lifecycle; raw retention does not bound that inventory.
-
-On default Timescale installations, retention also releases closed empty chunks
-once ordinary vacuum has emptied their heap. Each candidate is checked again
-under lock; chunks containing another base's data or raw samples awaiting
-aggregation remain intact. Maintenance yields to concurrent readers and writers
-and uses bounded retries. Keep autovacuum enabled; physical space reclamation is
-asynchronous. This cleanup covers uncompressed partitions with a single time
-dimension.
 
 ## Website analytics from your backend
 
@@ -216,9 +191,7 @@ requests or visitors.
 | `payload` | Additional event details that should not become dimensions |
 
 Pulse does not derive identities from IP addresses or user agents and does not
-create sessions. Unique counts exclude missing IDs and distinguish identical IDs
-from different sources, including after source deletion. A period-wide unique
-count is calculated over all events in that period, never by adding daily counts.
+create sessions.
 
 A backend delivery can use this request. Persist the body and delivery ID before
 sending if delivery must survive a backend restart:
@@ -252,21 +225,3 @@ with the same delivery ID within 24 hours, using bounded backoff in your backend
 queue. Other client errors require correcting the request. A correlation ID is
 not a deduplication key. Automatic indefinite retries and durable backend queues
 are not provided by this example.
-
-Use either a relative `since` range or an absolute `from`/`to` pair. Absolute
-values require UTC or an explicit offset. Both forms use a fixed, exclusive upper
-bound: `[from,to)`. Queries older than the base's retained history fail explicitly.
-Metric historical ranges use exact UTC hours after raw data expires.
-
-```text
-events page.viewed unique actor every all from 2026-09-01T00:00:00+02:00 to 2026-10-01T00:00:00+02:00
-events page.viewed count every day timezone Europe/Berlin since 7d group by route
-events conversion.completed count every month timezone Europe/Berlin since 90d
-metric system.cpu.usage avg every 1h from 2026-09-01T00:00:00Z to 2026-09-02T00:00:00Z
-```
-
-`day`, `week` and `month` use calendar boundaries in the required IANA time zone;
-weeks begin on Monday. Daylight saving transitions can produce 23- or 25-hour
-days. Duration buckets such as `1d` remain fixed 24-hour UTC intervals. `every all`
-returns one point per group for the whole selected window. An empty ungrouped
-window returns zero for counts and uniques, and null for sum.

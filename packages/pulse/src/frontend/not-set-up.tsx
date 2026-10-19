@@ -13,35 +13,26 @@ export const notSetUpMessages = i18n.define({
       admin: "Pulse needs its data store first. Connect ClickHouse under Administration -> Pulse.",
       adminAction: "Open Administration -> Pulse",
       member: "Pulse needs its data store first. Please contact your Cloud admin.",
-      visitor: "This display is not available yet.",
     },
     de: {
       title: "Pulse ist noch nicht eingerichtet",
       admin: "Pulse braucht zuerst seinen Datenspeicher. Verbinde ClickHouse unter Verwaltung → Pulse.",
       adminAction: "Verwaltung → Pulse öffnen",
       member: "Pulse braucht zuerst seinen Datenspeicher. Bitte wende dich an deinen Cloud-Admin.",
-      visitor: "Diese Anzeige ist noch nicht verfügbar.",
     },
   },
 });
 
-/**
- * Until a Cloud admin connects the data store, every Pulse page answers 503 with the same state. Mount it after
- * the route's authentication, which resolves the actor; the public display page stays outside the Cloud shell
- * and names no admin path.
- */
-export const pulseNotSetUpGate =
-  (options: { publicDisplay?: boolean } = {}): MiddlewareHandler<AuthContext> =>
-  async (c, next) => {
-    if (await pulseStoreConfigured()) return next();
-    const user = userFromActor(c.get("actor"));
-    if (!user && !options.publicDisplay) return next();
-    const { t } = notSetUpMessages.resolve([getLocale(c)]);
-    if (!user || options.publicDisplay) return ssr.error(c, 503, { title: t.title, description: t.visitor, layout: "minimal" });
-    const cloudAdmin = hasRole(user, "admin");
-    return ssr.error(c, 503, {
-      title: t.title,
-      description: cloudAdmin ? t.admin : t.member,
-      ...(cloudAdmin ? { action: { label: t.adminAction, href: "/admin/pulse", icon: "ti ti-settings" } } : {}),
-    });
-  };
+/** Authentication runs first so signed-out people keep the sign-in redirect. */
+export const pulseNotSetUpGate = (): MiddlewareHandler<AuthContext> => async (c, next) => {
+  if (await pulseStoreConfigured()) return next();
+  const user = userFromActor(c.get("actor"));
+  if (!user) return next();
+  const { t } = notSetUpMessages.resolve([getLocale(c)]);
+  const cloudAdmin = hasRole(user, "admin");
+  return ssr.error(c, 503, {
+    title: t.title,
+    description: cloudAdmin ? t.admin : t.member,
+    ...(cloudAdmin ? { action: { label: t.adminAction, href: "/admin/pulse", icon: "ti ti-settings" } } : {}),
+  });
+};

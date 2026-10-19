@@ -2,7 +2,7 @@ import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { AppOverview, Button, LinkCard, NoticeCard, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import type { PulseBase, PulseCapabilitySnapshot } from "../contracts";
+import type { PulseBase } from "../contracts";
 import { jsonFetch } from "./http";
 import { usePulseMessages } from "./use-messages";
 import { baseStoreMessages } from "./workspace/base-store-messages";
@@ -12,7 +12,6 @@ type Props = {
   /** Bases the person administers whose deletion is still running or failed; they stay here until the deletion finishes. */
   deletingBases?: PulseBase[];
   initialQuery: string;
-  capabilities: PulseCapabilitySnapshot | null;
 };
 
 /** A base admin follows a running deletion and resumes a failed one from the overview, since the base itself is gone from the list. */
@@ -130,11 +129,6 @@ export default function PulseOverview(props: Props) {
           />
         }
       >
-        <Show when={props.capabilities && !props.capabilities.timescaleEnabled}>
-          <NoticeCard tone="warning" class="mb-3">
-            {t().timescaleWarning}
-          </NoticeCard>
-        </Show>
         <Show
           when={props.bases.length > 0}
           fallback={

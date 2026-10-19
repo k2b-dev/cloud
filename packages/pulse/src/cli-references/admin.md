@@ -92,8 +92,7 @@ Policy defaults use `--default-values-per-minute`, `--default-bytes-per-minute`,
 and `--default-max-state-keys`. Creation allows `everyone` (people and agents),
 `people`, or `admins`. Resource-bound credentials never create bases.
 
-**Recreate discards measurements** and, like orphan deletion, needs `--yes`. It keeps sources, tokens, dashboards and
-queries. Retry resumes a failed operation. Recheck verifies matching backups
+**Recreate discards measurements** and, like orphan deletion, needs `--yes`. It keeps sources and tokens. Retry resumes a failed operation. Recheck verifies matching backups
 and recreates read access after restore. Orphan deletion rechecks that no base
 references the database. Administration shows amounts and state, never contents.
 Host and CIDR target entries cover every port; host:port covers one. `/0` is

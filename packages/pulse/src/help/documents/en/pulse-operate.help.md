@@ -2,10 +2,10 @@
 id: pulse-operate
 title: Operate a base
 icon: ti ti-lifebuoy
-description: Check source health, retention, access, and public displays, send data with HTTP ingest, and fix common problems.
+description: Check source health, retention, access, send data with HTTP ingest, and fix common problems.
 order: 140
 ---
-Use this page when data is missing, when access must change, or when a public display must show only one dashboard.
+Use this page to check source health, manage access, and send data.
 
 ## Connect the data store (Cloud administrators) {icon="database"}
 
@@ -22,10 +22,9 @@ passwords only with `--password-file` or `--password-stdin`. Without this connec
 
 :::reference
 - **Source health:** **Sources** show recent updates, duration, errors, received data, and the use of API keys where relevant.
-- **Access:** Access to a base controls who can view, edit, or manage it. Public dashboards are separate read-only views behind a link.
-- **Public displays:** Anyone with the public link can see that dashboard and its results. They cannot see the browsers of the base, the source settings, saved queries, or API keys. Choose useful defaults, because public viewers do not edit controls.
+- **Access:** Access to a base controls who can view, edit, or manage it.
 - **Retention:** Pulse can keep detailed data, long-term summaries, and protected event fields for different periods. Protected fields can expire before the rest of an event.
-- **Clear data:** **Clear telemetry** discards the collected data. It keeps the base, sources, API keys, access, dashboards, saved queries, and settings.
+- **Clear data:** **Clear telemetry** discards the collected data. It keeps the base, sources, API keys, access, and settings.
 - **Long destructive operations:** Clearing or deleting a large base can take time after you confirm it. An accepted request means that the work started, not that all data disappeared immediately.
 :::
 
@@ -42,18 +41,15 @@ passwords only with `--password-file` or `--password-stdin`. Without this connec
 
 :::reference
 - **A metrics source is refused:** Pulse scrapes only public endpoints by default. Ask a Cloud administrator to release the host, host:port or CIDR for this base under Administration → Pulse → Internal targets. Then retry the source.
-- **No data appears:** Check the source first. It must report a successful update before resources, signals, or dashboards can show data.
-- **A query matches too much:** Open **Inventory** or the signal page. Then add `source`, `resource`, `resource_type`, or `where` filters.
-- **A chart is empty:** Check the time range and the aggregation. Counters usually need `rate` or `increase`. Gauges usually need `avg` or `latest`.
-- **Rows look duplicated:** Open the resource or signal page. Repeated rows are usually variants with different resources or dimensions.
+- **No data appears:** Check the source first. Check its last update and error message.
 - **A metric has too many variants:** Inspect its dimensions. Keep stable grouping labels. Move unique identities or event details into the identity fields, attributes, sensitive fields, or payload of an event.
 :::
 
 ## Recover a base {icon="database"}
 
 A new base provisions its own database and becomes active before accepting
-changes. Clearing keeps sources, tokens, dashboards and queries. Deletion
-revokes tokens and public links first and closes the database to queries. A
+changes. Clearing keeps sources and tokens. Deletion
+revokes tokens first and closes database read access. A
 base in deletion stays on your Pulse overview until it is gone. If an operation fails,
 choose **Retry**. A Cloud administrator can also retry it under Administration → Pulse
 → Bases, where profiles, limits and measured storage appear without contents.

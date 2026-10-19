@@ -2,10 +2,10 @@
 id: pulse-operate
 title: Basis betreiben
 icon: ti ti-lifebuoy
-description: Prüfe Quellenstatus, Aufbewahrung, Zugriff und öffentliche Ansichten, sende Daten per HTTP-Datenaufnahme und behebe häufige Probleme.
+description: Prüfe Quellen, Aufbewahrung und Zugriff, sende Daten per HTTP-Ingest und behebe Probleme.
 order: 140
 ---
-Nutze diese Seite, wenn Daten fehlen, wenn sich der Zugriff ändern muss oder wenn eine öffentliche Ansicht nur ein Dashboard zeigen soll.
+Nutze diese Seite, um Quellen und Zugriff zu prüfen und Daten zu senden.
 
 ## Datenspeicher verbinden (Cloud-Admins) {icon="database"}
 
@@ -25,10 +25,9 @@ die Pulse-Verwaltung verfügbar.
 
 :::reference
 - **Quellenstatus:** **Quellen** zeigen die letzten Aktualisierungen, Dauer, Fehler, empfangenen Daten und gegebenenfalls die Nutzung von API-Schlüsseln.
-- **Zugriff:** Der Zugriff auf eine Basis legt fest, wer sie ansehen, bearbeiten oder verwalten kann. Öffentliche Dashboards sind davon getrennte Leseansichten hinter einem Link.
-- **Öffentliche Ansichten:** Alle Personen mit dem öffentlichen Link können das Dashboard und seine Ergebnisse sehen. Die Browser der Basis, Quelleneinstellungen, gespeicherten Abfragen und API-Schlüssel sehen sie nicht. Wähle sinnvolle Standardwerte, weil Personen in öffentlichen Ansichten die Steuerelemente nicht bearbeiten können.
+- **Zugriff:** Der Zugriff auf eine Basis legt fest, wer sie ansehen, bearbeiten oder verwalten kann.
 - **Aufbewahrung:** Pulse kann detaillierte Daten, langfristige Zusammenfassungen und geschützte Ereignisfelder unterschiedlich lange aufbewahren. Geschützte Felder können vor dem übrigen Ereignis ablaufen.
-- **Daten löschen:** **Telemetriedaten löschen** verwirft die erfassten Daten. Basis, Quellen, API-Schlüssel, Zugriff, Dashboards, gespeicherte Abfragen und Einstellungen bleiben erhalten.
+- **Daten löschen:** **Telemetriedaten löschen** verwirft die erfassten Daten.
 - **Lange destruktive Vorgänge:** Das Leeren oder Löschen einer großen Basis kann nach deiner Bestätigung einige Zeit dauern. Eine angenommene Anfrage bedeutet, dass der Vorgang begonnen hat, nicht dass alle Daten bereits verschwunden sind.
 :::
 
@@ -45,18 +44,14 @@ die Pulse-Verwaltung verfügbar.
 
 :::reference
 - **Eine Metrikquelle wird abgelehnt:** Pulse ruft standardmäßig nur öffentliche Endpunkte ab. Ein Cloud-Admin kann Host, Host:Port oder CIDR für diese Base unter Verwaltung → Pulse → Interne Ziele freigeben. Versuche den Abruf danach erneut.
-- **Es erscheinen keine Daten:** Prüfe zuerst die Quelle. Sie muss eine erfolgreiche Aktualisierung melden, bevor Ressourcen, Signale oder Dashboards Daten anzeigen können.
-- **Eine Abfrage liefert zu viele Treffer:** Öffne das **Inventar** oder die Signalseite. Ergänze dann Filter für `source`, `resource`, `resource_type` oder `where`.
-- **Ein Diagramm ist leer:** Prüfe Zeitraum und Aggregation. Zähler brauchen meist `rate` oder `increase`. Messwerte brauchen meist `avg` oder `latest`.
-- **Zeilen wirken dupliziert:** Öffne die Ressourcen- oder Signalseite. Wiederholte Zeilen sind meist Varianten mit unterschiedlichen Ressourcen oder Dimensionen.
+- **Es erscheinen keine Daten:** Prüfe zuerst die Quelle.
 - **Eine Metrik hat zu viele Varianten:** Prüfe ihre Dimensionen. Behalte stabile Gruppierungsmerkmale. Verschiebe eindeutige Identitäten oder Ereignisdetails in die Identitätsfelder, Attribute, vertraulichen Felder oder die Payload eines Ereignisses.
 :::
 
 ## Eine Base wiederherstellen {icon="database"}
 
 Eine neue Base richtet ihre eigene Datenbank ein und nimmt erst im Zustand
-„Aktiv“ Änderungen an. Leeren behält Quellen, Tokens, Dashboards und Abfragen.
-Löschen widerruft zuerst Tokens, öffentliche Links und den Lese-Zugang. Eine
+„Aktiv“ Änderungen an. Das Leeren behält Quellen, Tokens und Zugriff. Das Löschen widerruft Tokens und den Lesezugriff. Eine
 Base, die gelöscht wird, bleibt auf deiner Pulse-Übersicht, bis sie weg ist. Nach
 einem Fehler setzt **Erneut versuchen** den Vorgang fort. Cloud-Admins sehen
 Zustand, Profil, Grenzen und gemessenen Speicher unter Verwaltung → Pulse →

@@ -78,13 +78,8 @@ suite("Pulse pages without a data store", () => {
     }
   });
 
-  test("signed-out visitors keep the sign-in redirect, and the public display names no admin path", async () => {
+  test("signed-out visitors keep the sign-in redirect", async () => {
     const signedOut = await pages.request("/app/pulse");
     expect(signedOut.status).toBe(302);
-    const display = await pages.request("/app/pulse/display/fixture-token");
-    expect(display.status).toBe(503);
-    const html = await display.text();
-    expect(html).toContain("Pulse is not set up yet");
-    expect(html).not.toContain("/admin/pulse");
   });
 });

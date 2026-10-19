@@ -75,8 +75,7 @@ export const pulseAdminMessages = i18n.define({
       recheck: "Check again",
       recreate: "Start empty",
       recreateConfirmTitle: (p: { name: string }) => `Start ${p.name} empty?`,
-      recreateConfirmText:
-        "Pulse empties the base's tables and accepts new values again. Sources, tokens and dashboards stay. This cannot be undone.",
+      recreateConfirmText: "Pulse empties the base's tables and accepts new values again. Sources and tokens stay. This cannot be undone.",
       // Limits dialog
       limitsTitle: (p: { name: string }) => `Limits of ${p.name}`,
       limitsIntro: "Admins of the base see these limits and their usage.",
@@ -214,7 +213,7 @@ export const pulseAdminMessages = i18n.define({
       recreate: "Leer neu anlegen",
       recreateConfirmTitle: (p: { name: string }) => `${p.name} leer neu anlegen?`,
       recreateConfirmText:
-        "Pulse leert die Tabellen der Base und nimmt danach wieder Werte an. Quellen, Tokens und Dashboards bleiben. Das lässt sich nicht rückgängig machen.",
+        "Pulse leert die Tabellen der Base und nimmt danach wieder Werte an. Quellen und Tokens bleiben. Das lässt sich nicht rückgängig machen.",
       limitsTitle: (p: { name: string }) => `Grenzen von ${p.name}`,
       limitsIntro: "Admins der Base sehen diese Grenzen und ihre Nutzung.",
       profile: "Profil je Abfrage",

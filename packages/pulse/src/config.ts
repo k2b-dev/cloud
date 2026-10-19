@@ -6,12 +6,12 @@ export const app = defineApp({
   cli: { pulse: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Pulse",
   icon: "ti ti-activity-heartbeat",
-  description: "Metrics, events, states, and realtime dashboards.",
+  description: "Collect metrics, events, and states.",
   presentation: {
     baseLocale: "en",
     translations: {
       de: {
-        description: "Metriken, Ereignisse, Zustände und Echtzeit-Dashboards.",
+        description: "Metriken, Ereignisse und Zustände sammeln.",
         adminGroups: { pulse: "Pulse" },
         adminLinks: { "/admin/pulse": "Pulse" },
       },

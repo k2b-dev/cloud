@@ -1,5 +1,5 @@
 import { type ResourceApiKey, ResourceApiKeys, type ResourceApiKeysProps } from "@k2b/cloud/access/ui";
-import { Button, DataTable, type DataTableColumn, DescriptionList, DetailPanel, IconButton, Tooltip, useLocale } from "@k2b/ui";
+import { Button, DataTable, type DataTableColumn, DescriptionList, DetailPanel, IconButton, Tooltip } from "@k2b/ui";
 import { type JSX, Show } from "solid-js";
 import type { PulseSource, PulseSourceScrape } from "../../contracts";
 import { localizedSourceError } from "../../messages";
@@ -8,7 +8,6 @@ import { compactDateWithDelta, type PulseDateContext } from "./helpers";
 
 type Props = {
   source: PulseSource;
-  published: { resources: number; metricVariants: number; states: number; events: number };
   origin: string;
   dateContext: PulseDateContext;
   loading: boolean;
@@ -17,7 +16,6 @@ type Props = {
   scrapeColumns: DataTableColumn<PulseSourceScrape>[];
   renderScrapeCell: (scrape: PulseSourceScrape, col: DataTableColumn<PulseSourceScrape>) => JSX.Element;
   copySetupText: (text: string, label: string) => void;
-  openSourceResources: (source: PulseSource) => void;
   editSource: (source: PulseSource) => void | Promise<void>;
   toggleSource: (source: PulseSource) => void | Promise<void>;
   close: () => void;
@@ -50,7 +48,6 @@ const httpIngestExample = (source: PulseSource, origin: string) =>
 
 export default function SourceDetailView(props: Props) {
   const t = usePulseMessages();
-  const locale = useLocale();
   const renderCodeSection = (params: { title: string; code: string }) => (
     <DetailPanel.Section
       title={params.title}
@@ -116,9 +113,6 @@ export default function SourceDetailView(props: Props) {
               <i class={`ti ${props.source.enabled ? "ti-player-pause" : "ti-player-play"}`} />
               {props.source.enabled ? t().pause : t().resume}
             </Button>
-            <Button type="button" variant="secondary" size="sm" onClick={() => props.openSourceResources(props.source)}>
-              <i class="ti ti-cube" /> {t().resources}
-            </Button>
             <Show when={props.source.kind === "metrics"}>
               <Button
                 type="button"
@@ -140,28 +134,6 @@ export default function SourceDetailView(props: Props) {
         </DetailPanel.Summary>
 
         <DetailPanel.Group label={t().sourceData}>
-          <DetailPanel.Section title={t().published} icon="ti ti-chart-dots" tone="accent">
-            <div class="flex flex-col gap-2">
-              <DetailPanel.Action
-                type="button"
-                title={t().resources}
-                description={t().publishedCount({ count: props.published.resources.toLocaleString(locale()) })}
-                leading={<i class="ti ti-cube" aria-hidden="true" />}
-                trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-                onClick={() => props.openSourceResources(props.source)}
-              />
-              <DescriptionList
-                items={[
-                  { term: t().metrics, description: t().variants({ count: props.published.metricVariants.toLocaleString(locale()) }) },
-                  { term: t().states, description: props.published.states.toLocaleString(locale()) },
-                  { term: t().events, description: t().recentCount({ count: props.published.events.toLocaleString(locale()) }) },
-                ]}
-                layout="rows"
-                size="sm"
-              />
-            </div>
-          </DetailPanel.Section>
-
           <DetailPanel.Section title={t().target} icon="ti ti-target" tone="neutral">
             <Show
               when={props.source.kind === "metrics"}

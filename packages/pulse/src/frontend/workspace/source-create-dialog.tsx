@@ -1,7 +1,6 @@
 import { Button, dialogCore, NoticeCard, NumberInput, PanelDialog, panelDialogOptions, Select, TextInput } from "@k2b/ui";
 import { type Accessor, createSignal, Show } from "solid-js";
 import { usePulseMessages } from "../use-messages";
-import { SOURCE_TYPE_OPTIONS } from "./helpers";
 import type { CreateSourceInput, SourceCreateKind } from "./types";
 
 type SourceCreateDialogOptions = {
@@ -56,8 +55,13 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
                 description={t().sourceTypeDescription}
                 icon="ti ti-plug-connected"
                 value={kind}
-                onValueChange={(value) => setKind(value as SourceCreateKind)}
-                options={SOURCE_TYPE_OPTIONS.map((option) => ({
+                onValueChange={(value) => {
+                  if (value === "http_ingest" || value === "metrics") setKind(value);
+                }}
+                options={[
+                  { id: "http_ingest", icon: "ti ti-webhook" },
+                  { id: "metrics", icon: "ti ti-plug" },
+                ].map((option) => ({
                   ...option,
                   label: option.id === "http_ingest" ? t().httpIngest : t().metricsEndpoint,
                   description: option.id === "http_ingest" ? t().ingestDescription : t().metricsEndpointEditDescription,

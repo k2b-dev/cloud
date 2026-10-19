@@ -7,7 +7,6 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { ingestBatch, ingestByApiKey } from "./ingest-writer";
-import { type CurrentStateRow, mapCurrentState } from "./telemetry-values";
 
 const enabled = testInfra.database !== undefined;
 const databaseTest = enabled ? test : test.skip;
@@ -98,10 +97,10 @@ describe("Pulse canonical ingest", () => {
         for (const value of values) {
           expect((await ingestBatch({ baseId, sourceId: sources[0], batch: { states: [{ key: "current", value }] } })).ok).toBe(true);
           const [row] = await sql<
-            CurrentStateRow[]
-          >`SELECT * FROM pulse.states_current WHERE base_id=${baseId}::uuid AND state_key='current'`;
+            { value: unknown }[]
+          >`SELECT value FROM pulse.states_current WHERE base_id=${baseId}::uuid AND state_key='current'`;
           if (!row) throw Error("missing state");
-          expect(mapCurrentState(row).value).toEqual(value);
+          expect(row.value).toEqual(value);
         }
         const [before] = await sql`SELECT count(*)::int AS count FROM pulse.state_changes WHERE base_id=${baseId}::uuid`;
         expect(

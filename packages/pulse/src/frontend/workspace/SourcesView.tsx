@@ -1,5 +1,5 @@
 import type { ResourceApiKey, ResourceApiKeysProps } from "@k2b/cloud/access/ui";
-import { Button, DataTable, type DataTableColumn, TextInput, useLocale } from "@k2b/ui";
+import { Button, DataTable, type DataTableColumn, TextInput } from "@k2b/ui";
 import { type Accessor, type JSX, Show } from "solid-js";
 import type { PulseSource, PulseSourceScrape } from "../../contracts";
 import { localizedSourceError, type pulseMessages } from "../../messages";
@@ -7,20 +7,11 @@ import { usePulseMessages } from "../use-messages";
 import { compactDateWithDelta, type PulseDateContext, sourceKindIcon, sourceStatus } from "./helpers";
 import SourceDetailView from "./SourceDetailView";
 
-type PublishedCounts = {
-  resources: number;
-  metricVariants: number;
-  states: number;
-  events: number;
-};
-
 type Messages = ReturnType<typeof pulseMessages.resolve>["t"];
 
 const sourceColumns = (t: Messages): DataTableColumn<PulseSource>[] => [
   { id: "source", header: t.source, value: "name", cellClass: "min-w-56" },
   { id: "status", header: t.status, cellClass: "w-28 whitespace-nowrap" },
-  { id: "resources", header: t.resources, cellClass: "w-24 whitespace-nowrap" },
-  { id: "signals", header: t.signals, cellClass: "w-32 whitespace-nowrap" },
   { id: "target", header: t.target, cellClass: "min-w-48" },
   { id: "seen", header: t.lastSeen, cellClass: "w-48 whitespace-nowrap" },
 ];
@@ -57,18 +48,6 @@ const renderSourceStatusCell = (source: PulseSource, t: Messages): JSX.Element =
   );
 };
 
-const renderSourceSignalsCell = (counts: PublishedCounts, locale: string): JSX.Element => {
-  const total = counts.metricVariants + counts.states + counts.events;
-  return (
-    <span class="text-xs text-secondary">
-      {total.toLocaleString(locale)}{" "}
-      <span class="text-dimmed">
-        ({counts.metricVariants}m/{counts.states}s/{counts.events}e)
-      </span>
-    </span>
-  );
-};
-
 const renderSourceTargetCell = (source: PulseSource, t: Messages): JSX.Element => {
   if (source.kind === "metrics") {
     return (
@@ -95,12 +74,10 @@ export type SourcesViewProps = {
   selectedSourceApiKeys: Accessor<ResourceApiKey[]>;
   origin: Accessor<string>;
   dateContext: Accessor<PulseDateContext>;
-  publishedCounts: (sourceId: string) => PublishedCounts;
   copySetupText: (text: string, label: string) => void;
   addSource: () => void | Promise<void>;
   selectSource: (source: PulseSource) => void;
   closeSource: () => void;
-  openSourceResources: (source: PulseSource) => void;
   editSource: (source: PulseSource) => void | Promise<void>;
   toggleSource: (source: PulseSource) => void | Promise<void>;
   scrape: (source: PulseSource) => void | Promise<void>;
@@ -114,7 +91,6 @@ export type SourcesViewProps = {
 
 export default function SourcesView(props: SourcesViewProps) {
   const t = usePulseMessages();
-  const locale = useLocale();
   const renderSourceCell = (
     source: PulseSource,
     col: DataTableColumn<PulseSource>,
@@ -122,11 +98,6 @@ export default function SourcesView(props: SourcesViewProps) {
   ): JSX.Element => {
     if (col.id === "source") return renderSourceTitleCell(source);
     if (col.id === "status") return renderSourceStatusCell(source, t());
-    if (col.id === "resources") {
-      const counts = props.publishedCounts(source.id);
-      return <span class="text-xs text-secondary">{counts.resources.toLocaleString(locale())}</span>;
-    }
-    if (col.id === "signals") return renderSourceSignalsCell(props.publishedCounts(source.id), locale());
     if (col.id === "target") return renderSourceTargetCell(source, t());
     if (col.id === "seen") return source.lastSeenAt ? compactDateWithDelta(source.lastSeenAt, props.dateContext()) : t().waiting;
     return render(source[col.id as keyof PulseSource]);
@@ -208,7 +179,6 @@ export function SourcesDetailPanel(props: SourcesViewProps) {
       {(source) => (
         <SourceDetailView
           source={source}
-          published={props.publishedCounts(source.id)}
           origin={props.origin()}
           dateContext={props.dateContext()}
           loading={props.loading()}
@@ -217,7 +187,6 @@ export function SourcesDetailPanel(props: SourcesViewProps) {
           scrapeColumns={sourceScrapeColumns(t())}
           renderScrapeCell={renderSourceScrapeCell}
           copySetupText={props.copySetupText}
-          openSourceResources={props.openSourceResources}
           editSource={props.editSource}
           toggleSource={props.toggleSource}
           close={props.closeSource}

@@ -1,11 +1,12 @@
 ---
 name: cloud-pulse
-description: Inspect Pulse telemetry and guide Cloud administrators through connecting its ClickHouse data store.
+description: Manage Pulse sources and ingest and guide Cloud administrators through connecting its ClickHouse data store.
 ---
 
 # Pulse
 
-Pulse records metrics, events and states in bases and displays dashboards.
+Pulse records metrics, events and states in bases. Manage sources and ingest
+with `cld pulse`; use `cld pulse reference ingest.md` for the batch contract.
 Each base owns a ClickHouse database and read user. The operator provides a
 dedicated ClickHouse instance; a Cloud admin connects it through Administration → Pulse
 → Data store. Without it, Pulse data APIs return PULSE_STORE_NOT_CONFIGURED; its admin routes

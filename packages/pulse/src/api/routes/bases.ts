@@ -22,10 +22,7 @@ const routes = new Hono<AuthContext>()
       tags: ["Pulse"],
       summary: "Get Pulse deployment capabilities",
       responses: {
-        200: jsonResponse(
-          z.object({ timescaleEnabled: z.boolean(), timeBucketAvailable: z.boolean(), continuousAggregatesAvailable: z.boolean() }),
-          "Capabilities",
-        ),
+        200: jsonResponse(z.object({}), "Capabilities"),
       },
     }),
     async (c) => respond(c, pulseService.capabilities()),

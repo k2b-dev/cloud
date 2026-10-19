@@ -5,11 +5,7 @@ import { pulseStoreConfigured } from "../store/service";
 import adminRoutes from "./routes/admin";
 import baseAdminRoutes from "./routes/base-admin";
 import basesRoutes from "./routes/bases";
-import dashboardsRoutes from "./routes/dashboards";
-import publicRoutes from "./routes/public";
-import queriesRoutes from "./routes/queries";
-import savedQueryRoutes from "./routes/saved-queries";
-import signalsRoutes from "./routes/signals";
+import ingestRoutes from "./routes/ingest";
 import sourcesRoutes from "./routes/sources";
 
 const app = new Hono<AuthContext>()
@@ -26,16 +22,12 @@ const app = new Hono<AuthContext>()
     await next();
   })
   .use(rateLimit())
-  .route("/", publicRoutes)
+  .route("/", ingestRoutes)
   .use(auth.requireRole("authenticated"))
   .route("/admin/store", adminRoutes)
   .route("/admin", baseAdminRoutes)
   .route("/", basesRoutes)
-  .route("/", sourcesRoutes)
-  .route("/", signalsRoutes)
-  .route("/", savedQueryRoutes)
-  .route("/", dashboardsRoutes)
-  .route("/", queriesRoutes);
+  .route("/", sourcesRoutes);
 
 export default app;
 export type ApiType = typeof app;

@@ -36,17 +36,3 @@ export const compactDateWithDelta = (value: string, context?: PulseDateContext) 
   const resolved = dateContext(context);
   return `${compactDate(value, resolved)} (${dates.formatTimeSpan(value, { ...resolved, base: context?.now ?? new Date() })})`;
 };
-
-/** Calendar buckets must be labelled in the query's zone, not the viewer's zone. */
-export const formatQueryBucket = (value: string, bucket: string, context?: DateContext): string => {
-  if (bucket === "day" || bucket === "week" || bucket === "month" || bucket === "all" || /^[1-9]\d*d$/.test(bucket)) {
-    const resolved = dateContext(context);
-    return new Intl.DateTimeFormat(resolved.locale ?? "en", {
-      timeZone: resolved.timeZone,
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-    }).format(new Date(value));
-  }
-  return compactDate(value, context);
-};

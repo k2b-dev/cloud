@@ -1,4 +1,4 @@
-import type { PulseBase, PulseDashboard, PulseSavedQuery, PulseSource, PulseSourceScrape } from "../contracts";
+import type { PulseBase, PulseSource, PulseSourceScrape } from "../contracts";
 import { compactId, formatDate, yesNo } from "./shared";
 import type { PulseSourceApiKey } from "./types";
 
@@ -44,22 +44,4 @@ export const keyRows = (keys: PulseSourceApiKey[]) =>
     expiresAt: formatDate(key.expiresAt),
     lastUsedAt: formatDate(key.lastUsedAt),
     createdAt: key.createdAt,
-  }));
-
-export const dashboardRows = (dashboards: PulseDashboard[]) =>
-  dashboards.map((dashboard) => ({
-    id: compactId(dashboard.id),
-    name: dashboard.name,
-    public: yesNo(dashboard.publicEnabled),
-    dsl: dashboard.config.dsl ? "yes" : "no",
-    refresh: dashboard.config.refreshIntervalSeconds === null ? "never" : `${dashboard.config.refreshIntervalSeconds ?? 5}s`,
-    updatedAt: dashboard.updatedAt,
-  }));
-
-export const savedQueryRows = (queries: PulseSavedQuery[]) =>
-  queries.map((query) => ({
-    id: compactId(query.id),
-    name: query.name,
-    query: query.query,
-    updatedAt: query.updatedAt,
   }));

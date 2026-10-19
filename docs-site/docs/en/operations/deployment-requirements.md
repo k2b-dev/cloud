@@ -326,7 +326,7 @@ or mutate real data without approval.
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
 | [Dashboard](/en/apps/dashboard) (`dashboard`) | Baseline | Selected widget-provider apps and Core's widget proxy; no fixed requirement to install every provider. | Open `/app/dashboard`; verify a selected provider's widget and its unavailable state when that provider is absent. |
-| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; boots ready before ClickHouse setup | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) is required to use Pulse. A Cloud admin connects it under Administration → Pulse. Each base owns a database and read user. Ingestion requires configured sources, source-bound credentials and producers. Its dashboards are separate from gateway observability. The release workflow publishes the Pulse image. | Ingest a disposable signal through its source credential and query it from the intended base. |
+| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; boots ready before ClickHouse setup | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) is required to use Pulse. A Cloud admin connects it under Administration → Pulse. Each base owns a database and read user. Ingestion requires configured sources, source-bound credentials and producers. The release workflow publishes the Pulse image. | Ingest a disposable signal through its source credential and inspect source health. |
 
 ### Work applications
 
@@ -564,15 +564,17 @@ compatibility; replacing an image does not restore migrated data.
 
 ### Prepare Pulse's new data store
 
-This release adds an optional ClickHouse connection and versioned Pulse
+Pulse uses a configured ClickHouse connection and versioned Pulse
 Postgres migrations. A complete existing Pulse installation is adopted without
 replaying its baseline; older images must not start against ledger versions
 they do not recognize. An incomplete Alpha schema still requires an explicit
 reset and is never upgraded automatically.
 
-Provision and [connect ClickHouse](#provide-clickhouse-for-pulse) before the
-later releases that move telemetry there. No data moves in this release, and
-an unset store does not change startup or existing Pulse features.
+Provision and [connect ClickHouse](#provide-clickhouse-for-pulse) before using
+Pulse. The rebuild is a hard cut: earlier dashboards, saved queries, data
+browsing, public dashboards, and the query and dashboard DSLs are removed.
+Existing workspace URLs show an explanation and a link to Sources. SQL questions
+and new dashboards return in later steps; sources and ingest remain available.
 
 ### Upgrade Spaces task deadlines
 
