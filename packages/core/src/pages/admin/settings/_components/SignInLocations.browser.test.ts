@@ -123,6 +123,7 @@ describe("sign-in locations block in a browser", () => {
             layouts.push({
               phase: phase.kind,
               status: statusName(status),
+              // settled: the server-rendered first frame without scripts is the subject; fonts are ready and nothing animates.
               ...(await tab.evaluate(() => {
                 const box = (element: Element | null) => {
                   const rect = element?.getBoundingClientRect();
