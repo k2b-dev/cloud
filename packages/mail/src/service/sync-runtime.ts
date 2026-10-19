@@ -1238,7 +1238,7 @@ const recordSyncFailure = async (params: {
   const code = normalizeSyncErrorCode(params.error);
   const authFailure = isProviderAuthenticationFailure(params.error, code);
   const message = providerErrorMessage(params.error, "Mail synchronization failed");
-  await sql
+  const healthChanged = await sql
     .begin(async (tx) => {
       const [folder] = await tx<{ remote_resource_id: string; mailbox_id: string }[]>`
       SELECT f.remote_resource_id, rr.mailbox_id
@@ -1254,7 +1254,7 @@ const recordSyncFailure = async (params: {
         )
       FOR UPDATE OF rr
     `;
-      if (!folder) return;
+      if (!folder) return false;
       if (params.bindingId) {
         await tx`
         UPDATE mail.provider_bindings pb
@@ -1313,7 +1313,7 @@ const recordSyncFailure = async (params: {
           )
       ) AS exists
     `;
-      if (alternative?.exists) return;
+      if (alternative?.exists) return false;
       await tx`
       UPDATE mail.remote_resources
       SET
@@ -1322,8 +1322,12 @@ const recordSyncFailure = async (params: {
         last_error_message = ${message}
       WHERE id = ${folder.remote_resource_id}::uuid
     `;
+      // Locked right where the update below locks it anyway, so the lock order stays the same.
+      const [before] = await tx<{ health: string; health_reason: string | null }[]>`
+        SELECT health, health_reason FROM mail.mailboxes WHERE id = ${folder.mailbox_id}::uuid FOR UPDATE
+      `;
       // Pausing does not fence a running sync; a late failure must not hide the pause.
-      await tx`
+      const [after] = await tx<{ health: string; health_reason: string | null }[]>`
       UPDATE mail.mailboxes
       SET
         health = CASE
@@ -1332,9 +1336,15 @@ const recordSyncFailure = async (params: {
         END,
         health_reason = CASE WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator' ELSE ${message} END
       WHERE id = ${folder.mailbox_id}::uuid
+      RETURNING health, health_reason
     `;
+      // Open pages show the mailbox health; a change reaches them like any other mailbox update.
+      const changed = !!after && (before?.health !== after.health || before?.health_reason !== after.health_reason);
+      if (changed) await enqueueMailInvalidation(tx, { mailboxId: folder.mailbox_id });
+      return changed;
     })
-    .catch(() => undefined);
+    .catch(() => false);
+  if (healthChanged) mailLive.wake();
 };
 
 type SyncRuntime = Awaited<ReturnType<typeof loadResolvedRuntime>>;
@@ -2106,7 +2116,11 @@ export const commitSyncBatch = async (params: {
       SET status = 'active', last_sync_at = now(), last_error_code = NULL, last_error_message = NULL
       WHERE id = ${params.folder.remote_resource_id}::uuid
     `;
-    await tx`
+    // Locked right where the update below locks it anyway, so the lock order stays the same.
+    const [healthBefore] = await tx<{ health: string; health_reason: string | null }[]>`
+      SELECT health, health_reason FROM mail.mailboxes WHERE id = ${params.folder.mailbox_id}::uuid FOR UPDATE
+    `;
+    const [healthAfter] = await tx<{ health: string; health_reason: string | null }[]>`
       UPDATE mail.mailboxes
       SET
         health = CASE
@@ -2130,7 +2144,11 @@ export const commitSyncBatch = async (params: {
           ELSE ${params.cursor.backfillComplete ? null : "Historical synchronization in progress"}
         END
       WHERE id = ${params.folder.mailbox_id}::uuid
+      RETURNING health, health_reason
     `;
+    // Open pages show the mailbox health, so a batch that only changed it still reaches them.
+    const healthChanged =
+      !!healthAfter && (healthBefore?.health !== healthAfter.health || healthBefore?.health_reason !== healthAfter.health_reason);
     await tx`
       UPDATE mail.sync_runs
       SET
@@ -2150,7 +2168,7 @@ export const commitSyncBatch = async (params: {
         finished_at = now()
       WHERE id = ${params.fence.runId}::uuid
     `;
-    const liveInvalidated = hydratedIds.length > 0 || flagsUpdated > 0 || removed > 0;
+    const liveInvalidated = hydratedIds.length > 0 || flagsUpdated > 0 || removed > 0 || healthChanged;
     if (liveInvalidated) {
       await enqueueMailInvalidation(tx, { mailboxId: params.folder.mailbox_id });
     }

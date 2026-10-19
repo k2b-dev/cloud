@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { unwrap } from "@k2b/stdlib";
 import { sql } from "bun";
@@ -25,6 +25,7 @@ import {
   updateSenderIdentity,
   verifySenderIdentity,
 } from "./sender-identities";
+import { claimFence, commitSyncBatch, syncFolderBatch } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 type Update = { payload: { v: number; k: string; d: { conversationId: string | null } }; transaction: string };
@@ -200,6 +201,99 @@ suite("Mail frame writers invalidate open mailboxes", () => {
     assertPair(mailboxId, await pending(mailboxId));
     expect(await pending(sentinelId)).toEqual([]);
   };
+
+  test("an empty sync batch invalidates changed health in both scopes, then stays quiet", async () => {
+    setSystemTime(new Date("2026-10-01T12:00:00.000Z"));
+    try {
+      const f = await connected();
+      const [folder] = await sql<Parameters<typeof commitSyncBatch>[0]["folder"][]>`
+        SELECT folder.id AS folder_id, resource.mailbox_id, resource.id AS remote_resource_id,
+          resource.sync_generation, folder.envelope_cursor, folder.role
+        FROM mail.folders folder
+        JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
+        JOIN mail.provider_bindings binding ON binding.remote_resource_id = resource.id
+        WHERE binding.id = ${f.bindingId}::uuid AND folder.role = 'inbox'
+      `;
+      expect(folder).toBeDefined();
+      await sql`
+        UPDATE mail.mailboxes SET health = 'bootstrapping', health_reason = 'Historical synchronization in progress'
+        WHERE id = ${f.mailboxId}::uuid
+      `;
+      const cursor = {
+        version: 1 as const,
+        uidValidity: "10",
+        highestSeenUid: 0,
+        backfillNextHigh: null,
+        backfillComplete: true,
+        incrementalTargetHigh: null,
+        incrementalNextHigh: null,
+        highestModseq: "1",
+        flagTargetModseq: null,
+        flagNextLow: null,
+        flagMaxUid: null,
+        reconcileNextLow: null,
+        lastFullReconcileAt: null,
+      };
+      const commit = async () => {
+        const fence = await claimFence(folder!.remote_resource_id, f.bindingId, "incremental", folder!.folder_id);
+        const result = await commitSyncBatch({
+          folder: folder!,
+          folderId: folder!.folder_id,
+          bindingId: f.bindingId,
+          secretRevision: 1,
+          fence,
+          status: { uidValidity: "10", uidNext: 1, highestModseq: "1", messages: 0 },
+          beforeCursor: cursor,
+          cursor: { ...cursor },
+          uidValidityChanged: false,
+          envelopeBatch: null,
+          envelopeKind: null,
+          flagChanges: [],
+          reconcileWindow: null,
+        });
+        expect(result).toMatchObject({ hydratedIds: [], flagsUpdated: 0, removed: 0 });
+        const [mailbox] = await sql`SELECT health, health_reason FROM mail.mailboxes WHERE id = ${f.mailboxId}::uuid`;
+        expect(mailbox).toEqual({ health: "active", health_reason: null });
+      };
+      await change(f.mailboxId, commit);
+      await clear(f.mailboxId);
+      await commit();
+      expect(await pending(f.mailboxId)).toEqual([]);
+      expect(await pending(sentinelId)).toEqual([]);
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  test("a failed folder sync invalidates mailbox health in both scopes, then stays quiet", async () => {
+    setSystemTime(new Date("2026-10-01T12:00:00.000Z"));
+    const failure = Object.assign(new Error("Fixture folder sync failed"), { code: "FIXTURE_SYNC_FAILED" });
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockRejectedValue(failure);
+    try {
+      const f = await connected();
+      const [folder] = await sql<{ id: string }[]>`
+        SELECT folder.id FROM mail.folders folder
+        JOIN mail.provider_bindings binding ON binding.remote_resource_id = folder.remote_resource_id
+        WHERE binding.id = ${f.bindingId}::uuid AND folder.role = 'inbox'
+      `;
+      expect(folder).toBeDefined();
+      await sql`UPDATE mail.mailboxes SET health = 'active', health_reason = NULL WHERE id = ${f.mailboxId}::uuid`;
+      const fail = async () => {
+        await expect(syncFolderBatch(folder!.id, async () => undefined)).rejects.toBe(failure);
+        const [mailbox] = await sql`SELECT health, health_reason FROM mail.mailboxes WHERE id = ${f.mailboxId}::uuid`;
+        expect(mailbox).toEqual({ health: "degraded", health_reason: failure.message });
+      };
+      await change(f.mailboxId, fail);
+      await clear(f.mailboxId);
+      await fail();
+      expect(status).toHaveBeenCalledTimes(2);
+      expect(await pending(f.mailboxId)).toEqual([]);
+      expect(await pending(sentinelId)).toEqual([]);
+    } finally {
+      status.mockRestore();
+      setSystemTime();
+    }
+  });
 
   test("updateMailbox notifies both scopes, and a no-op stays quiet", async () => {
     const mailboxId = await mailbox();
