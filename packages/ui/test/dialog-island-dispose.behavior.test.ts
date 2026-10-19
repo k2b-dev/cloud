@@ -77,7 +77,7 @@ for (const navigationApi of [true, false]) {
       });
     };
 
-    test("disposal closes the focused island's dialog, portal, focus trap and scroll lock", async () => {
+    test("disposal closes an open dialog, its portal, focus trap and scroll lock", async () => {
       const core = createDialogCore();
       const { parent, button } = trigger("a");
       document.body.style.overflow = "auto";
@@ -96,11 +96,9 @@ for (const navigationApi of [true, false]) {
       expect(await result).toBeUndefined();
     });
 
-    test("disposal listening moves with the window, without the old press, even for a dialog without history", async () => {
+    test("disposal listening moves with the window, even for a dialog without history", async () => {
       const core = createDialogCore();
       const remove = spyOn(window, "removeEventListener");
-      // A press in the old window must not claim dialogs opened in the new one.
-      trigger().button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
       dom.cleanup();
       dom = createDomTestHarness();
       const { parent, button } = trigger("a");
@@ -112,58 +110,27 @@ for (const navigationApi of [true, false]) {
       expect(await result).toBeUndefined();
     });
 
-    test("nested dialogs close top first while other-island and unowned levels below stay", async () => {
+    test("every level closes top first, whichever island's code opened it", async () => {
       const core = createDialogCore();
-      const outside = trigger();
-      const a = trigger("a");
-      const b = trigger("b", "solid-client");
-      outside.button.focus();
-      const unowned = core.open(view("Outside"));
-      b.button.focus();
-      const other = core.open(view("Other island"));
-      a.button.focus();
-      const owned = core.open(view("Owned"));
-      document.querySelector<HTMLButtonElement>("dialog > div:last-child button")!.focus();
-      const nested = core.open(view("Nested"));
+      document.body.style.overflow = "auto";
+      const rail = trigger("rail");
+      // The latest press and focus are in the rail, as after a click on a navigation link there.
+      rail.button.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
+      rail.button.focus();
       const order: string[] = [];
-      void owned.then(() => order.push("owned"));
-      void nested.then(() => order.push("nested"));
-      dispose(a.parent);
-      expect(await nested).toBeUndefined();
-      expect(await owned).toBeUndefined();
-      expect(order).toEqual(["nested", "owned"]);
-      expect(core.isOpen()).toBe(true);
-      expect(document.body.textContent).toContain("Other island");
-      expect(document.body.textContent).toContain("Outside");
-      expect(document.body.textContent).not.toContain("Owned");
-      dispose(b.parent);
-      expect(await other).toBeUndefined();
-      expect(core.isOpen()).toBe(true);
-      core.close();
-      await unowned;
-    });
-
-    test("the dispatch target owns a dialog even when WebKit leaves focus elsewhere", async () => {
-      const core = createDialogCore();
-      const { parent, button } = trigger("a");
-      const outside = trigger();
-      outside.button.focus();
-      let result: Promise<unknown> | undefined;
-      const descriptor = Object.getOwnPropertyDescriptor(window, "event");
-      button.addEventListener("click", (event) => {
-        // Happy DOM does not expose the browser's legacy window.event during dispatch.
-        Object.defineProperty(window, "event", { configurable: true, value: event });
-        result = core.open(view("Clicked"));
-      });
-      try {
-        button.click();
-      } finally {
-        if (descriptor) Object.defineProperty(window, "event", descriptor);
-        else Reflect.deleteProperty(window, "event");
-      }
-      dispose(parent);
+      const track = (name: string, result: Promise<unknown>) => void result.then(() => order.push(name));
+      track("unowned", core.open(view("Outside")));
+      // The new content opens dialogs in onMount or after an await: no event names it, and focus stays in the rail.
+      const content = trigger("content", "solid-client");
+      track("content", core.open(view("From content")));
+      // A surviving island's timer opens another level.
+      track("rail", core.open(view("From rail")));
+      dispose(content.parent);
       expect(core.isOpen()).toBe(false);
-      expect(await result).toBeUndefined();
+      expect(document.querySelector("dialog")).toBeNull();
+      expect(document.body.style.overflow).toBe("auto");
+      await settle();
+      expect(order).toEqual(["rail", "content", "unowned"]);
     });
 
     test("disposed history markers become ordinary traversals and later dialogs still own theirs", async () => {
@@ -172,8 +139,6 @@ for (const navigationApi of [true, false]) {
       window.addEventListener("popstate", application);
       const a = trigger("a");
       const outside = trigger();
-      outside.button.focus();
-      const remaining = core.open(view("Keep open"));
       a.button.focus();
       const result = core.open(view("Owned"), { history: true });
       const length = history.length;
@@ -191,11 +156,10 @@ for (const navigationApi of [true, false]) {
       history.back();
       await settle();
       expect(application).toHaveBeenCalledTimes(1);
-      expect(core.isOpen()).toBe(true);
       history.forward();
       await settle();
       expect(application).toHaveBeenCalledTimes(2);
-      expect(core.isOpen()).toBe(true);
+      expect(core.isOpen()).toBe(false);
       outside.button.focus();
       const next = core.open(view("Next"), { history: true });
       expect(history.length).toBe(length + 1);
@@ -203,52 +167,40 @@ for (const navigationApi of [true, false]) {
       // Back removes only the new level and its marker.
       history.back();
       expect(await next).toBeUndefined();
-      expect(core.isOpen()).toBe(true);
+      expect(core.isOpen()).toBe(false);
       expect(application).toHaveBeenCalledTimes(navigationApi ? 2 : 3);
-      core.close();
-      await remaining;
     });
 
-    test("a dead entry beside a live history dialog counts as a page entry above it", async () => {
-      const core = createDialogCore();
+    test("a dead entry above a live history holder counts as a page entry", async () => {
       const application = mock(() => {});
       window.addEventListener("popstate", application);
+      // A surviving island's transient UI, such as a sheet, holds an entry below the disposed dialog's.
+      const onBack = mock(() => {});
+      const release = holdDialogHistory(onBack);
       const a = trigger("a");
-      const b = trigger("b");
-      b.button.focus();
-      const lower = core.open(view("Live history"), { history: true });
       a.button.focus();
-      const upper = core.open(view("Disposed history"), { history: true });
+      const upper = dialogCore.open(view("Disposed history"), { history: true });
       dispose(a.parent);
-      expect(core.isOpen()).toBe(true);
       expect(document.body.textContent).not.toContain("Disposed history");
       expect(await upper).toBeUndefined();
-      // A dialog opened on the dead entry is removed by one Back onto it; the live dialog below stays.
-      b.button.focus();
-      const next = core.open(view("Next"), { history: true });
+      // A dialog opened on the dead entry is removed by one Back onto it; the holder below stays.
+      const next = dialogCore.open(view("Next"), { history: true });
       history.back();
       expect(await next).toBeUndefined();
-      expect(document.body.textContent).toContain("Live history");
-      expect(document.body.textContent).not.toContain("Next");
-      // Back off the dead entry reaches the live dialog's entry: the dialog stays open.
+      // Back off the dead entry reaches the holder's entry, and Forward onto the dead entry releases nothing either.
       history.back();
       await settle();
-      expect(core.isOpen()).toBe(true);
-      // Forward onto the dead entry closes nothing either.
       history.forward();
       await settle();
-      expect(core.isOpen()).toBe(true);
+      expect(onBack).not.toHaveBeenCalled();
       expect(application).toHaveBeenCalledTimes(navigationApi ? 0 : 3);
-      core.close();
-      await lower;
+      release();
+      await settle();
     });
 
     test("closing dialogs never goes Back across a forgotten entry", async () => {
       const core = createDialogCore();
       const a = trigger("a");
-      const b = trigger("b");
-      b.button.focus();
-      const lower = core.open(view("Live history"), { history: true });
       a.button.focus();
       const upper = core.open(view("Disposed history"), { history: true });
       const forgottenEntry = history.state;
@@ -256,35 +208,14 @@ for (const navigationApi of [true, false]) {
       expect(await upper).toBeUndefined();
       // The router may replace the forgotten entry with another page; a synthetic Back must never cross it.
       history.replaceState(forgottenEntry, "", "/elsewhere");
-      b.button.focus();
       const next = core.open(view("Next"), { history: true });
       const go = spyOn(history, "go");
       core.close();
       expect(await next).toBeUndefined();
-      expect(await lower).toBeUndefined();
       await settle();
       expect(go.mock.calls).toEqual([[-1]]);
       expect(location.pathname).toBe("/elsewhere");
       expect(history.state).toEqual(forgottenEntry);
-    });
-
-    test("a dialog opened after an await belongs to the island of the latest press", async () => {
-      const core = createDialogCore();
-      const { parent, button } = trigger("a");
-      const outside = trigger();
-      outside.button.focus();
-      button.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
-      await Promise.resolve();
-      const result = core.open(view("Loaded on demand"));
-      dispose(parent);
-      expect(core.isOpen()).toBe(false);
-      expect(await result).toBeUndefined();
-      // Disposal forgets the press, so a later dialog without a trigger belongs to no island.
-      const unowned = core.open(view("Unowned"));
-      dispose(parent);
-      expect(core.isOpen()).toBe(true);
-      core.close();
-      await unowned;
     });
 
     test.each(["wrapper", "window"])("holder release on %s during disposal never schedules Back", async (target) => {
@@ -345,7 +276,7 @@ for (const navigationApi of [true, false]) {
       window.removeEventListener("popstate", onLanded, { capture: true });
     });
 
-    test("a history dialog waiting for an earlier Back never opens once its island is disposed", async () => {
+    test("a history dialog waiting for an earlier Back never opens once islands are disposed", async () => {
       const core = createDialogCore();
       const outside = trigger();
       const b = trigger("b");
@@ -372,59 +303,6 @@ for (const navigationApi of [true, false]) {
       expect(document.querySelector("dialog")).toBeNull();
       expect(document.body.textContent).not.toContain("Waiting");
       expect(document.body.style.overflow).toBe("auto");
-    });
-
-    test("a nested history dialog waiting for an earlier Back never opens once its parent's island is disposed", async () => {
-      const core = createDialogCore();
-      const a = trigger("a");
-      document.body.style.overflow = "auto";
-      a.button.focus();
-      const parent = core.open(view("Parent"), { history: true });
-      const parentButton = document.querySelector<HTMLButtonElement>("dialog > div:last-child button")!;
-      parentButton.focus();
-      let closeChild = () => {};
-      const child = core.open(
-        (close) => {
-          closeChild = close;
-          return view("Child")();
-        },
-        { history: true },
-      );
-      const deferred = deferTraversals();
-      closeChild();
-      await Promise.resolve();
-      expect(deferred).toHaveBeenCalledWith(-1);
-      parentButton.focus();
-      const waiting = core.open(view("Waiting child"), { history: true });
-      dispose(a.parent);
-      expect(await child).toBeUndefined();
-      expect(await parent).toBeUndefined();
-      expect(await waiting).toBeUndefined();
-      expect(core.isOpen()).toBe(false);
-      expect(document.querySelector("dialog")).toBeNull();
-      expect(document.body.style.overflow).toBe("auto");
-    });
-
-    test("a dialog opened from a portalled menu item belongs to the island of the press that opened the menu", async () => {
-      const core = createDialogCore();
-      const { parent, button } = trigger("a");
-      button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-      // The context menu renders in a portal outside the island and closes before it runs the chosen action.
-      const menu = trigger();
-      menu.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-      menu.parent.remove();
-      const descriptor = Object.getOwnPropertyDescriptor(window, "event");
-      Object.defineProperty(window, "event", { configurable: true, value: { target: menu.button } });
-      let result: Promise<unknown>;
-      try {
-        result = core.open(view("From menu"));
-      } finally {
-        if (descriptor) Object.defineProperty(window, "event", descriptor);
-        else Reflect.deleteProperty(window, "event");
-      }
-      dispose(parent);
-      expect(core.isOpen()).toBe(false);
-      expect(await result).toBeUndefined();
     });
 
     test("the disposal window resets at the next microtask and normal close still goes Back", async () => {

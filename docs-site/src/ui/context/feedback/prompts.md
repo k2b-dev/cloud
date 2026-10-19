@@ -412,15 +412,13 @@ A Back or Forward that changes the address still reaches them, also when
 the application pushed or replaced an address while a dialog was open; closing
 such a dialog then leaves that history alone.
 
-A dialog closes when the island that opened it is disposed, together with the
-dialogs stacked above it. The opening island is the one around the element
-whose event opened the dialog, else around the latest click or key press, else
-around focus. An element outside every island, such as an item of a context
-menu, counts for the island of the latest press inside one. A dialog opened
-before any press inside an island stays open. A history dialog that waits for
-an earlier Back never opens when its island is disposed in the meantime. Its history entry stays in the browser and is left to the router; the
-dialog core then treats it like a page entry, so a later Back onto it closes
-only dialogs opened after it.
+When islands are disposed, for example because navigation replaces the page
+content, every open dialog closes, top first, whichever code opened it. The
+dismiss guard does not apply. A dialog that waits for an earlier Back never
+opens once islands were disposed in the meantime. A closed history dialog's
+entry stays in the browser and is left to the router. The dialog core then
+treats it like a page entry, so a later Back onto it closes only dialogs opened
+after it.
 
 Use the option for dialogs a person opens on purpose. Leave it off for
 confirmations inside another dialog, which Back closes together with their

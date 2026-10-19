@@ -27,4 +27,4 @@ Disposing an island also disposes its current fallback and runs its Solid
 cleanups. Register cleanup for listeners, timers, and subscriptions with
 `onCleanup`, including in custom fallbacks. The wrapper dispatches
 `ssr:island-dispose` just before disposal so portals can close what the island
-opened; `@k2b/ui` dialogs handle this automatically.
+opened; disposal closes every open `@k2b/ui` dialog.

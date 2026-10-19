@@ -32,7 +32,7 @@ timers, and release subscriptions.
 
 Just before cleanup, the wrapper dispatches a bubbling `ssr:island-dispose`
 event. Code that renders outside the wrapper, such as a portal, can close what
-the island opened. `@k2b/ui` dialogs close automatically.
+the island opened. Disposal closes every open `@k2b/ui` dialog.
 
 ## Size & Philosophy
 

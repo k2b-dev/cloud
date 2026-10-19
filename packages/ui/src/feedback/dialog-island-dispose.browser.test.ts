@@ -3,8 +3,7 @@ import { resolve } from "node:path";
 import type { Browser } from "playwright";
 import { browserName, launchBrowser } from "../../test/browser";
 
-// WebKit does not focus a clicked button, so only the event being dispatched names the island that opened a dialog.
-// Happy DOM has no window.event; a real engine checks that path.
+// Happy DOM has no native modal: a real engine checks that disposal releases inertness, focus and scroll lock.
 const ui = resolve(import.meta.dir, "../..");
 const entry = resolve(import.meta.dir, "dialog-island-dispose.fixture.ts");
 const fixture = `
@@ -30,7 +29,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-test(`a dialog opened by a click in an island closes when the island is disposed (${browserName})`, async () => {
+test(`an open dialog closes when an island is disposed and leaves history alone (${browserName})`, async () => {
   const page = await browser.newPage();
   try {
     // A real http document: WebKit keeps no same-URL history entries for about:blank.
@@ -44,7 +43,7 @@ test(`a dialog opened by a click in an island closes when the island is disposed
     );
     await page.goto("http://island.test/");
     await page.addScriptTag({ content: script });
-    // Focus sits outside the island, as WebKit leaves it after a click on a button.
+    // Focus sits outside the island, as WebKit leaves it after a click on a button; the dialog closes anyway.
     await page.focus("#elsewhere");
     const length = await page.evaluate(() => history.length);
     await page.click("#open");

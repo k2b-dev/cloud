@@ -21,8 +21,8 @@ export type OpenDialogOptions = {
    * instead of leaving the page. Normally closing the dialog removes the entry again; the returned promise settles after that.
    * With the Navigation API, same-URL traversals between this core's entries and the page do not reach application popstate listeners.
    * Without it, only the synthetic Back on close is suppressed.
-   * Island disposal closes its dialogs immediately and forgets their markers without traversing history.
-   * The same-URL entry remains for the router to replace and counts as a page entry above the dialogs opened before it.
+   * Island disposal closes every open dialog immediately and forgets its marker without traversing history.
+   * The same-URL entry remains for the router to replace and counts as a page entry for later dialogs.
    */
   history?: boolean;
 };
@@ -56,7 +56,6 @@ type DialogStackEntry = {
   cancelBehavior: NonNullable<OpenDialogOptions["cancelBehavior"]>;
   initialFocus: NonNullable<OpenDialogOptions["initialFocus"]>;
   opener?: HTMLElement;
-  island?: Element;
   openerRing: boolean;
   ariaLabel?: string;
   dismissHandler?: () => void | Promise<void>;
@@ -140,9 +139,6 @@ const focusUnclaimed = (dialog: HTMLDialogElement): boolean => {
 
 type HistoryEntry = { historyId?: number };
 type HistoryHolder = HistoryEntry & { onBack: () => void };
-/** The island that opened a dialog, and how often it had been disposed by then. */
-type DialogOwner = { island?: Element; disposals?: number };
-const ISLANDS = "solid-island,solid-client";
 
 export const createDialogCore = () => {
   const state: DialogState = { stack: [] };
@@ -155,12 +151,8 @@ export const createDialogCore = () => {
    */
   const forgotten = new Set<number>();
   const deadMarker = (marker: unknown): marker is number => typeof marker === "number" && forgotten.has(marker);
-  /** The target of the latest pointer or key press, for dialogs that open after an await. */
-  let lastInteraction: Element | undefined;
-  /** The island of the latest press inside one; a press in a portal such as a context menu leaves it. */
-  let lastIsland: Element | undefined;
-  /** How often each wrapper was disposed, so a dialog that waits to open notices that its island went away. */
-  const disposals = new WeakMap<Element, number>();
+  /** How often islands were disposed, so a dialog that waits to open notices that a content swap happened meanwhile. */
+  let disposals = 0;
   const ownMarker = (marker: unknown): marker is number => typeof marker === "number" && issued.has(marker);
   let seen: ReturnType<typeof historySnapshot> | undefined;
   let traversalFrom: { href: string; marker: unknown } | undefined;
@@ -230,7 +222,7 @@ export const createDialogCore = () => {
         event.stopImmediatePropagation();
       }
       // Own entries are ordered by id. A retired entry reached by Forward stays tracked, so closing the dialogs
-      // beneath it also removes it. A forgotten entry keeps the dialogs opened before it and stays a barrier.
+      // beneath it also removes it. A forgotten entry keeps the holders opened before it and stays a barrier.
       historyIds = ownMarker(marker) || deadMarker(marker) ? [...historyIds.filter((id) => id < marker), marker] : [];
       const gone = (entry: DialogStackEntry) => entry.historyId !== undefined && !historyIds.includes(entry.historyId);
       while (state.stack.some(gone)) popTop(undefined);
@@ -246,42 +238,20 @@ export const createDialogCore = () => {
     }
   };
 
-  const onIslandDispose = (event: Event) => {
+  /**
+   * Island disposal means the page content changes, as a document load would. Every dialog closes, top first, whichever
+   * code opened it: which island calls open() is not knowable after an await, in onMount or from a timer, and a modal
+   * left over the new content would block it.
+   */
+  const onIslandDispose = () => {
     if (!disposingIslands) {
       disposingIslands = true;
       queueMicrotask(() => {
         disposingIslands = false;
       });
     }
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    disposals.set(target, (disposals.get(target) ?? 0) + 1);
-    if (lastInteraction && target.contains(lastInteraction)) lastInteraction = undefined;
-    if (lastIsland && target.contains(lastIsland)) lastIsland = undefined;
-    const lowest = state.stack.findIndex((entry) => entry.island && target.contains(entry.island));
-    if (lowest < 0) return;
-    while (state.stack.length > lowest) popTop(undefined);
-  };
-
-  const onInteraction = (event: Event) => {
-    if (!(event.target instanceof Element)) return;
-    lastInteraction = event.target;
-    lastIsland = event.target.closest(ISLANDS) ?? lastIsland;
-  };
-
-  /**
-   * The island that opens a dialog now: the one around the target of the event being dispatched, else of the latest
-   * pointer or key press (WebKit does not focus a clicked button, and a dialog may open after an await), else of focus.
-   * A trigger outside every island, such as an item of a portalled menu, falls back to the island of the latest press
-   * inside one. A level opened from inside a dialog belongs to the island of that dialog, also while it waits to open.
-   */
-  const openingIsland = (): DialogOwner => {
-    const trigger = window.event?.target instanceof Element ? window.event.target : (lastInteraction ?? document.activeElement);
-    if (!(trigger instanceof Element)) return {};
-    const island = state.element?.contains(trigger)
-      ? (state.stack.find((entry) => entry.container.contains(trigger)) ?? state.stack.at(-1))?.island
-      : (trigger.closest(ISLANDS) ?? lastIsland);
-    return island ? { island, disposals: disposals.get(island) ?? 0 } : {};
+    disposals++;
+    while (state.stack.length > 0) popTop(undefined);
   };
 
   const onNavigate = (event: NavigateEvent) => {
@@ -291,19 +261,12 @@ export const createDialogCore = () => {
   let listening: { window: Window; navigation?: Navigation } | undefined;
   const listen = () => {
     if (listening?.window === window) return;
-    // A press in another window never names the island that opens a dialog here.
-    lastInteraction = undefined;
-    lastIsland = undefined;
     listening?.window.removeEventListener("popstate", onPopState, { capture: true });
     listening?.window.removeEventListener("ssr:island-dispose", onIslandDispose, { capture: true });
-    listening?.window.removeEventListener("pointerdown", onInteraction, { capture: true });
-    listening?.window.removeEventListener("keydown", onInteraction, { capture: true });
     listening?.navigation?.removeEventListener("navigate", onNavigate);
     window.addEventListener("popstate", onPopState, { capture: true });
     // Capture opens the disposal window before target listeners can release history holders.
     window.addEventListener("ssr:island-dispose", onIslandDispose, { capture: true });
-    window.addEventListener("pointerdown", onInteraction, { capture: true });
-    window.addEventListener("keydown", onInteraction, { capture: true });
     const current = typeof navigation !== "undefined" ? navigation : undefined;
     current?.addEventListener("navigate", onNavigate);
     listening = { window, navigation: current };
@@ -543,25 +506,23 @@ export const createDialogCore = () => {
   };
 
   const open = <T>(view: DialogRender<T>, options: OpenDialogOptions = {}): Promise<T | undefined> => {
-    listen();
-    return openOwned(view, options, openingIsland());
+    return openAfter(view, options, disposals);
   };
 
-  const openOwned = <T>(view: DialogRender<T>, options: OpenDialogOptions, owner: DialogOwner): Promise<T | undefined> => {
+  const openAfter = <T>(view: DialogRender<T>, options: OpenDialogOptions, requested: number): Promise<T | undefined> => {
     if (options.signal?.aborted) return Promise.resolve(undefined);
     if (options.history) {
       // Dialogs closed just now leave the history first, or this dialog's entry would be the one removed.
       if (historySyncScheduled) syncHistory();
-      if (returning) return returning.then(() => openOwned(view, options, owner));
+      if (returning) return returning.then(() => openAfter(view, options, requested));
     }
-    // An island disposed while its dialog waited for history never gets that dialog.
-    if (owner.island && (disposals.get(owner.island) ?? 0) !== owner.disposals) return Promise.resolve(undefined);
+    // A dialog that waited for history while islands were disposed would open over content it was never meant for.
+    if (disposals !== requested) return Promise.resolve(undefined);
     const dialog = ensureDialogElement();
     listen();
     const previousTop = state.stack[state.stack.length - 1];
     if (previousTop) previousTop.container.style.display = "none";
     const activeElement = document.activeElement;
-    const island = owner.island;
 
     const panelClassName = options.panelClassName ?? DEFAULT_PANEL_CLASS;
     const cancelBehavior = options.cancelBehavior ?? "resolve-undefined";
@@ -578,7 +539,6 @@ export const createDialogCore = () => {
       cancelBehavior,
       initialFocus,
       opener: activeElement instanceof HTMLElement ? activeElement : undefined,
-      island,
       openerRing: ringOnReturn(activeElement),
       ariaLabel: options.ariaLabel,
       modal: true,
