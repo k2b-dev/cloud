@@ -17,8 +17,21 @@ import type { AiTurnActionState, AiTurnPhase } from "./turn-layout";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 
-/** Codes that say Cloud could not see whether the Action happened; nothing may repeat it blindly. */
-const UNKNOWN_CODES = new Set(["ACTION_OUTCOME_UNKNOWN", "IDEMPOTENCY_UNCERTAIN", "IDEMPOTENCY_IN_PROGRESS"]);
+/**
+ * Codes that say Cloud could not see whether the Action happened; nothing may repeat it blindly. Core reports them as
+ * ACTION_OUTCOME_UNKNOWN now; older history still carries the transport codes, which prove nothing either.
+ */
+const UNKNOWN_CODES = new Set([
+  "ACTION_OUTCOME_UNKNOWN",
+  "IDEMPOTENCY_UNCERTAIN",
+  "IDEMPOTENCY_IN_PROGRESS",
+  "DEADLINE_EXCEEDED",
+  "APP_UNAVAILABLE",
+  "REQUEST_CANCELLED",
+  "INVALID_APP_RESPONSE",
+  "RESPONSE_TOO_LARGE",
+  "INTERNAL",
+]);
 
 /** The framework code of a failed call, from `CODE: message` or a structured error. */
 export const toolErrorCode = (result: unknown): string | null => {
@@ -170,7 +183,15 @@ export function ToolActionView(props: {
     setLost(false);
     setAnswer(null);
   };
-  const check = () => checked() ?? props.block.check;
+  // The stored check wins once it is settled or newer than the one this card asked for, so another window's check
+  // or a reload is never hidden behind an older local answer.
+  const check = () => {
+    const local = checked();
+    const stored = props.block.check;
+    if (!local || !stored) return local ?? stored;
+    if (stored.state === "done" || stored.state === "not_done") return stored;
+    return (stored.at ?? "") > (local.at ?? "") ? stored : local;
+  };
   const flow = createMemo(() =>
     flowOf({ block: props.block, state: props.state, answer: answer(), lost: lost(), check: check(), phase: props.phase }),
   );

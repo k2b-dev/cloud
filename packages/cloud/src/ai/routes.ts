@@ -1233,14 +1233,13 @@ export const aiRoutes = (() => {
             if (!message) return notFound(c);
             const review = message.meta?.toolReviews?.[callId];
             const previous = message.meta?.toolChecks?.[callId];
-            if (
-              !review ||
-              !("sentence" in review) ||
-              !review.check ||
-              !previous ||
-              (previous.state !== "pending" && previous.state !== "failed")
-            )
-              return respond(c, fail(err.conflict("This call has no unresolved outcome check.")));
+            if (!review || !("sentence" in review) || !review.check || !previous)
+              return respond(c, fail(err.conflict("This call has no outcome check.")));
+            // A settled check answers again as it was stored, so a client whose last response got lost can recover
+            // without running the Query again.
+            if (previous.state === "done" || previous.state === "not_done") return respond(c, ok(previous));
+            if (previous.state !== "pending" && previous.state !== "failed")
+              return respond(c, fail(err.conflict("This call's outcome check is still running.")));
             const block =
               message.message.role === "assistant"
                 ? message.message.content.find((block) => block.type === "tool_call" && block.id === callId)

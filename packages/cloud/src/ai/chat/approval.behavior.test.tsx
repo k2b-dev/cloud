@@ -471,6 +471,36 @@ domTest("without a done sentence the outcome is the app's own summary of the cal
   }
 });
 
+domTest("a check settled elsewhere replaces this card's own older check answer", async () => {
+  const { actionFixtures } = await import("./action-question.fixtures");
+  const mail = actionFixtures("en").mail!.block;
+  const failed = {
+    ...mail,
+    approval: undefined,
+    approved: true as const,
+    status: "failed" as const,
+    isError: true,
+    result: "ACTION_OUTCOME_UNKNOWN: lost",
+    at: "2026-10-17T12:02:00.000Z",
+  };
+  const view = await mountTurn([{ ...failed, check: { state: "failed", at: "2026-10-17T12:02:00.000Z" } }], {
+    phase: "completed",
+    check: async () => ({ state: "pending", at: "2026-10-17T12:03:00.000Z" }),
+  });
+  try {
+    view.button("Check again").click();
+    await settle();
+    expect(view.line()).toContain("Mail doesn't know yet either.");
+    // Another window's check settled the call; the refreshed history carries it.
+    view.setBlocks([{ ...failed, check: { state: "done", at: "2026-10-17T12:04:00.000Z" } }]);
+    await settle();
+    expect(view.line()).toContain("Mail already did it. I won't run it again.");
+    expect(view.button("Check again")).toBeUndefined();
+  } finally {
+    view.cleanup();
+  }
+});
+
 domTest("one click on a website receipt revokes the chat approval for its origin", async () => {
   const dom = createDomTestHarness();
   const { AiChatActionsProvider } = await import("./message-actions");

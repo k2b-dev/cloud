@@ -967,148 +967,154 @@ suiteFor(
   beforeAll(async () => {
     await migrateCloudAi();
   });
-  test.each(["pending", "failed"] as const)("re-checks %s once per press, rejects concurrent checks and settled calls", async (state) => {
-    const userId = await insertUser();
-    const strangerId = await insertUser();
-    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
-    const compiled = compileReviewFixture();
-    const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([
-      {
-        appId: "demo",
-        appName: "Demo",
-        appDescription: "Check fixture",
-        appIcon: "ti ti-box",
-        endpoint: "http://demo.invalid/api/_internal/capabilities/v1",
-        manifest: compiled.manifest,
-      },
-    ]);
-    let finishCheck: (() => void) | undefined;
-    let noteStarted: (() => void) | undefined;
-    const started = new Promise<void>((resolve) => {
-      noteStarted = resolve;
-    });
-    const blocked = new Promise<void>((resolve) => {
-      finishCheck = resolve;
-    });
-    let queryCount = 0;
-    let inFlight: Promise<Response> | Response | undefined;
-    const dispatch = spyOn(capabilityDispatch, "dispatchCapability").mockImplementation(async (input) => {
-      expect(input).toMatchObject({
-        kind: "queries",
-        capabilityId: "check",
-        appId: "demo",
-        review: false,
-        origin: "assistant",
-        input: { id: "original" },
-      });
-      expect(input.authority?.actor).toMatchObject({ kind: "user", user: { id: userId } });
-      queryCount++;
-      if (queryCount === 1) {
-        noteStarted?.();
-        await blocked;
-      }
-      return Response.json({
-        data: { outcome: queryCount === 1 ? "pending" : "done", ...(queryCount > 1 ? { receipt: { text: "Saved" } } : {}) },
-      });
-    });
-    try {
-      const { turn } = await aiConversations.submitChatTurn({
-        conversationId: conversation.id,
-        modelProfileId: "test-model",
-        runConfig: { kind: "chat", input: "Send", toolSource: { kind: "none" } },
-        userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
-      });
-      const store = aiConversations.createSessionStore({ conversationId: conversation.id, turnId: turn.id });
-      await store.append({
-        role: "assistant",
-        content: ["send", "no-check", "legacy"].map((id) => ({ type: "tool_call", id, name: "demo__action__send", args: {} })),
-      });
-      const target = { conversationId: conversation.id, turnId: turn.id, callId: "send" };
-      await recordAiToolReview({
-        ...target,
-        review: { ...reviewFixture(), ask: "sends", check: { query: "check", input: { id: "original" } } },
-      });
-      await recordAiToolCheck({ ...target, check: { state } });
-      await recordAiToolReview({ ...target, callId: "no-check", review: reviewFixture() });
-      await recordAiToolCheck({ ...target, callId: "no-check", check: { state } });
-      await recordAiToolReview({ ...target, callId: "legacy", review: { legacy: { question: "Original?", rows: [] } } });
-      await recordAiToolCheck({ ...target, callId: "legacy", check: { state } });
-      const claim = await aiConversations.claimTurn({
-        ...target,
-        leaseOwner: "recheck-fixture",
-        leaseMs: 30_000,
-        from: "queue",
-        maxAttempts: 5,
-        runBudgetMs: 60_000,
-      });
-      if (!claim) throw new Error("Expected claimed turn");
-      await aiConversations.saveTurnLiveState({
-        ...target,
-        leaseOwner: "recheck-fixture",
-        seq: 1,
-        blocks: [
-          {
-            id: "tool-send",
-            kind: "tool",
-            callId: "send",
-            name: "demo.send",
-            status: "failed",
-            check: { state },
-          },
-        ],
-      });
-      const token = await createTestSession(userId);
-      const post = (callId: string, auth = token) =>
-        aiRoutes.request(`/conversations/${conversation.shortId}/turns/${turn.shortId}/calls/${callId}/check`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${auth}` },
-        });
-      expect((await post("missing")).status).toBe(404);
-      expect((await post("no-check")).status).toBe(409);
-      expect((await post("legacy")).status).toBe(409);
-      expect((await post("send", await createTestSession(strangerId))).status).toBe(404);
-      // The check runs with the person's session authority; an API key of the same person cannot borrow it.
-      const owner = await accounts.users.get({ id: userId });
-      if (!owner) throw new Error("Missing fixture user");
-      const apiToken = await serviceAccountCredentials.createUserApiToken({ user: owner, name: "Outcome check" });
-      if (!apiToken.ok) throw new Error(apiToken.error.message);
-      expect((await post("send", apiToken.data.token)).status).toBe(403);
-      expect(dispatch).not.toHaveBeenCalled();
-      const first = Promise.resolve(post("send"));
-      inFlight = first;
-      await Promise.race([
-        started,
-        new Promise<never>((_, reject) => {
-          const timer = setTimeout(() => reject(new Error("Check did not start")), 2000);
-          started.finally(() => clearTimeout(timer));
-        }),
+  test.each(["pending", "failed"] as const)(
+    "re-checks %s once per press, rejects concurrent checks, and replays a settled check",
+    async (state) => {
+      const userId = await insertUser();
+      const strangerId = await insertUser();
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      const compiled = compileReviewFixture();
+      const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([
+        {
+          appId: "demo",
+          appName: "Demo",
+          appDescription: "Check fixture",
+          appIcon: "ti ti-box",
+          endpoint: "http://demo.invalid/api/_internal/capabilities/v1",
+          manifest: compiled.manifest,
+        },
       ]);
-      const concurrent = await post("send");
-      expect(concurrent.status).toBe(409);
-      expect(queryCount).toBe(1);
-      finishCheck?.();
-      const pending = await first;
-      expect(pending.status).toBe(200);
-      expect(await pending.json()).toMatchObject({ state: "pending" });
-      const second = await post("send");
-      expect(second.status).toBe(200);
-      expect(await second.json()).toMatchObject({ state: "done", receipt: { text: "Saved" } });
-      expect((await post("send")).status).toBe(409);
-      expect(queryCount).toBe(2);
-      expect((await aiConversations.getActiveTurn({ conversationId: conversation.id }))?.liveBlocks[0]).toMatchObject({
-        check: { state: "done", receipt: { text: "Saved" } },
+      let finishCheck: (() => void) | undefined;
+      let noteStarted: (() => void) | undefined;
+      const started = new Promise<void>((resolve) => {
+        noteStarted = resolve;
       });
-      const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
-      expect(buildBlocksFromMessages(messages).find((block) => block.kind === "tool" && block.callId === "send")).toMatchObject({
-        check: { state: "done", receipt: { text: "Saved" } },
+      const blocked = new Promise<void>((resolve) => {
+        finishCheck = resolve;
       });
-    } finally {
-      finishCheck?.();
-      await Promise.resolve(inFlight).catch(() => undefined);
-      dispatch.mockRestore();
-      registrySpy.mockRestore();
-      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${strangerId}::uuid)`;
-    }
-  });
+      let queryCount = 0;
+      let inFlight: Promise<Response> | Response | undefined;
+      const dispatch = spyOn(capabilityDispatch, "dispatchCapability").mockImplementation(async (input) => {
+        expect(input).toMatchObject({
+          kind: "queries",
+          capabilityId: "check",
+          appId: "demo",
+          review: false,
+          origin: "assistant",
+          input: { id: "original" },
+        });
+        expect(input.authority?.actor).toMatchObject({ kind: "user", user: { id: userId } });
+        queryCount++;
+        if (queryCount === 1) {
+          noteStarted?.();
+          await blocked;
+        }
+        return Response.json({
+          data: { outcome: queryCount === 1 ? "pending" : "done", ...(queryCount > 1 ? { receipt: { text: "Saved" } } : {}) },
+        });
+      });
+      try {
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelProfileId: "test-model",
+          runConfig: { kind: "chat", input: "Send", toolSource: { kind: "none" } },
+          userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
+        });
+        const store = aiConversations.createSessionStore({ conversationId: conversation.id, turnId: turn.id });
+        await store.append({
+          role: "assistant",
+          content: ["send", "no-check", "legacy"].map((id) => ({ type: "tool_call", id, name: "demo__action__send", args: {} })),
+        });
+        const target = { conversationId: conversation.id, turnId: turn.id, callId: "send" };
+        await recordAiToolReview({
+          ...target,
+          review: { ...reviewFixture(), ask: "sends", check: { query: "check", input: { id: "original" } } },
+        });
+        await recordAiToolCheck({ ...target, check: { state } });
+        await recordAiToolReview({ ...target, callId: "no-check", review: reviewFixture() });
+        await recordAiToolCheck({ ...target, callId: "no-check", check: { state } });
+        await recordAiToolReview({ ...target, callId: "legacy", review: { legacy: { question: "Original?", rows: [] } } });
+        await recordAiToolCheck({ ...target, callId: "legacy", check: { state } });
+        const claim = await aiConversations.claimTurn({
+          ...target,
+          leaseOwner: "recheck-fixture",
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        if (!claim) throw new Error("Expected claimed turn");
+        await aiConversations.saveTurnLiveState({
+          ...target,
+          leaseOwner: "recheck-fixture",
+          seq: 1,
+          blocks: [
+            {
+              id: "tool-send",
+              kind: "tool",
+              callId: "send",
+              name: "demo.send",
+              status: "failed",
+              check: { state },
+            },
+          ],
+        });
+        const token = await createTestSession(userId);
+        const post = (callId: string, auth = token) =>
+          aiRoutes.request(`/conversations/${conversation.shortId}/turns/${turn.shortId}/calls/${callId}/check`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${auth}` },
+          });
+        expect((await post("missing")).status).toBe(404);
+        expect((await post("no-check")).status).toBe(409);
+        expect((await post("legacy")).status).toBe(409);
+        expect((await post("send", await createTestSession(strangerId))).status).toBe(404);
+        // The check runs with the person's session authority; an API key of the same person cannot borrow it.
+        const owner = await accounts.users.get({ id: userId });
+        if (!owner) throw new Error("Missing fixture user");
+        const apiToken = await serviceAccountCredentials.createUserApiToken({ user: owner, name: "Outcome check" });
+        if (!apiToken.ok) throw new Error(apiToken.error.message);
+        expect((await post("send", apiToken.data.token)).status).toBe(403);
+        expect(dispatch).not.toHaveBeenCalled();
+        const first = Promise.resolve(post("send"));
+        inFlight = first;
+        await Promise.race([
+          started,
+          new Promise<never>((_, reject) => {
+            const timer = setTimeout(() => reject(new Error("Check did not start")), 2000);
+            started.finally(() => clearTimeout(timer));
+          }),
+        ]);
+        const concurrent = await post("send");
+        expect(concurrent.status).toBe(409);
+        expect(queryCount).toBe(1);
+        finishCheck?.();
+        const pending = await first;
+        expect(pending.status).toBe(200);
+        expect(await pending.json()).toMatchObject({ state: "pending" });
+        const second = await post("send");
+        expect(second.status).toBe(200);
+        expect(await second.json()).toMatchObject({ state: "done", receipt: { text: "Saved" } });
+        // A settled check answers again as stored, without running the Query, so a lost response can be recovered.
+        const replay = await post("send");
+        expect(replay.status).toBe(200);
+        expect(await replay.json()).toMatchObject({ state: "done", receipt: { text: "Saved" } });
+        expect(queryCount).toBe(2);
+        expect((await aiConversations.getActiveTurn({ conversationId: conversation.id }))?.liveBlocks[0]).toMatchObject({
+          check: { state: "done", receipt: { text: "Saved" } },
+        });
+        const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+        expect(buildBlocksFromMessages(messages).find((block) => block.kind === "tool" && block.callId === "send")).toMatchObject({
+          check: { state: "done", receipt: { text: "Saved" } },
+        });
+      } finally {
+        finishCheck?.();
+        await Promise.resolve(inFlight).catch(() => undefined);
+        dispatch.mockRestore();
+        registrySpy.mockRestore();
+        await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${strangerId}::uuid)`;
+      }
+    },
+  );
 });

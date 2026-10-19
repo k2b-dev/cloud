@@ -1327,16 +1327,24 @@ export class AiTurnExecutor {
                       context,
                     }).catch(async (error: unknown) => {
                       const review = context.callId ? storedReviews.get(context.callId) : undefined;
-                      if (
-                        entry.kind !== "action" ||
-                        !(error instanceof AiCapabilityExecutionError) ||
-                        !["ACTION_OUTCOME_UNKNOWN", "IDEMPOTENCY_UNCERTAIN", "IDEMPOTENCY_IN_PROGRESS"].includes(error.code) ||
-                        !review ||
-                        !("sentence" in review) ||
-                        !review.check ||
-                        !context.callId
-                      )
-                        throw error;
+                      if (entry.kind !== "action" || !(error instanceof AiCapabilityExecutionError)) throw error;
+                      // Only an answer from the app about the request itself (a 4xx) proves that nothing happened. A lost
+                      // response, a timeout, a cancelled or a server-side failure after dispatch leaves the outcome open,
+                      // and a same-key retry would only answer IDEMPOTENCY_UNCERTAIN: the call is unknown, not failed.
+                      const uncertain =
+                        ["ACTION_OUTCOME_UNKNOWN", "IDEMPOTENCY_UNCERTAIN", "IDEMPOTENCY_IN_PROGRESS"].includes(error.code) ||
+                        error.status >= 500 ||
+                        error.status === 499;
+                      if (!uncertain) throw error;
+                      const unknown =
+                        error.code === "ACTION_OUTCOME_UNKNOWN"
+                          ? error
+                          : new AiCapabilityExecutionError(
+                              "ACTION_OUTCOME_UNKNOWN",
+                              error.status,
+                              `The outcome is unknown after ${error.code}; do not retry automatically.`,
+                            );
+                      if (!review || !("sentence" in review) || !review.check || !context.callId) throw unknown;
                       await pipeline.setToolCheck(context.callId, { state: "checking" });
                       const check = await checkAiCapability({
                         conversationId,

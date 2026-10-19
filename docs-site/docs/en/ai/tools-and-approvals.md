@@ -641,9 +641,12 @@ The same card keeps one outcome line:
 | Not run | Cloud or the app confirmed nothing happened |
 | Unknown | Cloud has no usable answer after dispatch |
 
-When a new review supplies `check: { query, input }`, Cloud runs that app's
-Query once after `ACTION_OUTCOME_UNKNOWN`, `IDEMPOTENCY_UNCERTAIN`, or
-`IDEMPOTENCY_IN_PROGRESS`. `done` shows the receipt and settles the call;
+Only an app's answer about the request itself (a 4xx) proves that an Action did
+not happen. A lost response, a timeout, a cancellation, or a server-side failure
+after dispatch (`ACTION_OUTCOME_UNKNOWN`, `IDEMPOTENCY_UNCERTAIN`,
+`IDEMPOTENCY_IN_PROGRESS`, or any 5xx or 499) leaves the outcome unknown, and
+the model gets `ACTION_OUTCOME_UNKNOWN`. When a new review supplies
+`check: { query, input }`, Cloud then runs that app's Query once. `done` shows the receipt and settles the call;
 `not_done` shows not run and tells the model to ask before trying again.
 `pending` keeps the unknown line. An unavailable or invalid check also keeps
 that line. **Check again** runs only the Query once per press for a pending or
@@ -687,9 +690,11 @@ approval retains `allowChat` and `allowAlways`; a website request also carries
 Wire `onCheckAction` to `checkAction` and propagate failures so the card can
 show recovery. Core serves
 `POST /api/ai/conversations/:conversationId/turns/:turnId/calls/:callId/check`
-for the conversation owner. Unknown calls return `404`; settled checks and
-calls without a check return `409`, as do concurrent presses for the same call.
-The response is `{ state, receipt?, at }`.
+for the conversation owner in a signed-in browser session; API keys and other
+clients get `403`. Unknown calls return `404`. Calls without a check, and a
+second press while one check runs, return `409`. A settled check answers again
+with its stored result without running the Query, so a client whose response
+got lost can recover. The response is `{ state, receipt?, at }`.
 
 The owning app sets this policy in its manifest. Users and administrators
 cannot loosen it; a user can only remember an approval where the Action offers
