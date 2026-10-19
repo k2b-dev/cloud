@@ -264,53 +264,37 @@ export default function MailConversationContext(props: {
 
   return (
     <>
-      <section aria-label={messages().contacts} class="bg-[var(--ui-surface)] p-3">
-        <Show
-          when={context()}
-          fallback={
-            <Show when={contexts.error()} fallback={<Placeholder state="loading" align="center" title={messages().loadingContacts} />}>
-              {(error) => (
-                <Placeholder
-                  state="error"
-                  align="center"
-                  title={messages().contactsUnavailable}
-                  description={error().message}
-                  icon="ti ti-address-book-off"
-                  action={
-                    <Button variant="secondary" size="sm" type="button" onClick={() => void contexts.refresh()}>
-                      {messages().retry}
-                    </Button>
-                  }
-                />
-              )}
-            </Show>
-          }
-        >
+      <Show when={contactDirectory.resolve !== null && context()?.contacts.status !== "absent"}>
+        <section aria-label={messages().contacts} class="bg-[var(--ui-surface)] p-3">
           <Show
-            when={!contexts.error()}
+            when={context()}
             fallback={
-              <Placeholder
-                state="error"
-                align="center"
-                title={messages().contactsUnavailable}
-                description={contexts.error()?.message ?? ""}
-                icon="ti ti-address-book-off"
-                action={
-                  <Button variant="secondary" size="sm" type="button" onClick={() => void contexts.refresh()}>
-                    {messages().retry}
-                  </Button>
-                }
-              />
+              <Show when={contexts.error()} fallback={<Placeholder state="loading" align="center" title={messages().loadingContacts} />}>
+                {(error) => (
+                  <Placeholder
+                    state="error"
+                    align="center"
+                    title={messages().contactsUnavailable}
+                    description={error().message}
+                    icon="ti ti-address-book-off"
+                    action={
+                      <Button variant="secondary" size="sm" type="button" onClick={() => void contexts.refresh()}>
+                        {messages().retry}
+                      </Button>
+                    }
+                  />
+                )}
+              </Show>
             }
           >
             <Show
-              when={context()?.contacts.status === "ready"}
+              when={!contexts.error()}
               fallback={
                 <Placeholder
                   state="error"
                   align="center"
                   title={messages().contactsUnavailable}
-                  description={messages().contactContextRefreshFailed}
+                  description={contexts.error()?.message ?? ""}
                   icon="ti ti-address-book-off"
                   action={
                     <Button variant="secondary" size="sm" type="button" onClick={() => void contexts.refresh()}>
@@ -321,166 +305,186 @@ export default function MailConversationContext(props: {
               }
             >
               <Show
-                when={participantRows().length > 0}
-                fallback={<Placeholder align="center" title={messages().noExternalParticipants} icon="ti ti-user-off" />}
+                when={context()?.contacts.status === "ready"}
+                fallback={
+                  <Placeholder
+                    state="error"
+                    align="center"
+                    title={messages().contactsUnavailable}
+                    description={messages().contactContextRefreshFailed}
+                    icon="ti ti-address-book-off"
+                    action={
+                      <Button variant="secondary" size="sm" type="button" onClick={() => void contexts.refresh()}>
+                        {messages().retry}
+                      </Button>
+                    }
+                  />
+                }
               >
-                <div class="flex flex-col gap-2">
-                  <For each={participantRows()}>
-                    {(participant) => (
-                      <article class="min-w-0">
-                        <Show
-                          when={participant.contacts.length > 0}
-                          fallback={
-                            <Show
-                              when={!participant.hasMatch && canCreateContact}
-                              fallback={
-                                <div class="flex min-w-0 items-start gap-2 px-2 py-1.5">
-                                  <i class="ti ti-user mt-0.5 text-dimmed" aria-hidden="true" />
-                                  <div class="min-w-0 flex-1">
-                                    <p class="truncate text-sm font-medium text-primary">{participant.displayName || participant.email}</p>
-                                    <Show when={participant.hasMatch || participant.displayName}>
-                                      <p class="truncate text-xs text-dimmed">
-                                        {participant.hasMatch ? messages().matchingContactAvailable : participant.email}
+                <Show
+                  when={participantRows().length > 0}
+                  fallback={<Placeholder align="center" title={messages().noExternalParticipants} icon="ti ti-user-off" />}
+                >
+                  <div class="flex flex-col gap-2">
+                    <For each={participantRows()}>
+                      {(participant) => (
+                        <article class="min-w-0">
+                          <Show
+                            when={participant.contacts.length > 0}
+                            fallback={
+                              <Show
+                                when={!participant.hasMatch && canCreateContact}
+                                fallback={
+                                  <div class="flex min-w-0 items-start gap-2 px-2 py-1.5">
+                                    <i class="ti ti-user mt-0.5 text-dimmed" aria-hidden="true" />
+                                    <div class="min-w-0 flex-1">
+                                      <p class="truncate text-sm font-medium text-primary">
+                                        {participant.displayName || participant.email}
                                       </p>
-                                    </Show>
+                                      <Show when={participant.hasMatch || participant.displayName}>
+                                        <p class="truncate text-xs text-dimmed">
+                                          {participant.hasMatch ? messages().matchingContactAvailable : participant.email}
+                                        </p>
+                                      </Show>
+                                    </div>
                                   </div>
-                                </div>
-                              }
-                            >
-                              <DetailPanel.Action
-                                type="button"
-                                aria-busy={contactOpening() || createParticipantContact.loading() || undefined}
-                                onClick={() => void chooseBookAndCreate(participant)}
-                                leading={
-                                  <Show
-                                    when={contactOpening() || createParticipantContact.loading()}
-                                    fallback={<i class="ti ti-user-plus app-accent-text" aria-hidden="true" />}
-                                  >
-                                    <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
-                                  </Show>
                                 }
-                                title={participant.email}
-                                trailing={<span class="text-[0.6875rem] font-normal">{messages().newContact}</span>}
-                              />
-                            </Show>
-                          }
-                        >
-                          <div class="flex flex-col gap-1">
-                            <Show when={participant.showParticipantHeading}>
-                              <div class="px-2 py-1">
-                                <p class="truncate text-xs font-medium text-secondary">{participant.displayName || participant.email}</p>
-                                <Show when={participant.displayName}>
-                                  <p class="truncate text-xs text-dimmed" title={participant.email}>
-                                    {participant.email}
-                                  </p>
-                                </Show>
-                              </div>
-                            </Show>
-                            <For each={participant.contacts}>
-                              {(contact) => {
-                                const relatedMailHref = buildExactParticipantSearchHref(
-                                  new URL(props.requestUrl, "https://mail.invalid"),
-                                  participant.email,
-                                );
-                                const description = () =>
-                                  [
-                                    participant.showParticipantHeading ? null : participant.email,
-                                    contact.jobTitle,
-                                    contact.companyName,
-                                    contact.bookName,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ");
-                                return (
-                                  <div class="min-w-0">
+                              >
+                                <DetailPanel.Action
+                                  type="button"
+                                  aria-busy={contactOpening() || createParticipantContact.loading() || undefined}
+                                  onClick={() => void chooseBookAndCreate(participant)}
+                                  leading={
                                     <Show
-                                      when={contact.openHref}
-                                      fallback={
-                                        <div class="flex min-w-0 items-start gap-2 px-2 py-1.5">
-                                          <i class="ti ti-address-book mt-0.5 text-dimmed" aria-hidden="true" />
-                                          <div class="min-w-0 flex-1">
-                                            <p class="truncate text-sm font-medium text-primary">{contact.displayName}</p>
-                                            <Show when={description()}>
-                                              <p class="truncate text-xs text-dimmed">{description()}</p>
-                                            </Show>
-                                          </div>
-                                        </div>
-                                      }
+                                      when={contactOpening() || createParticipantContact.loading()}
+                                      fallback={<i class="ti ti-user-plus app-accent-text" aria-hidden="true" />}
                                     >
-                                      {(href) => (
-                                        <Show
-                                          when={relatedMailHref}
-                                          fallback={
-                                            <DetailPanel.Action
-                                              href={href()}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              leading={<i class="ti ti-address-book" aria-hidden="true" />}
-                                              title={contact.displayName}
-                                              description={description() || undefined}
-                                            />
-                                          }
-                                        >
-                                          {(mailHref) => (
-                                            <DetailPanel.Action
-                                              href={href()}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              leading={<i class="ti ti-address-book" aria-hidden="true" />}
-                                              title={contact.displayName}
-                                              description={description() || undefined}
-                                              menuLabel={messages().moreActionsFor({ name: contact.displayName })}
-                                              menuItems={[
-                                                {
-                                                  label: messages().relatedMail,
-                                                  icon: "ti ti-mail",
-                                                  href: mailHref(),
-                                                  external: true,
-                                                },
-                                              ]}
-                                            />
-                                          )}
-                                        </Show>
-                                      )}
+                                      <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
                                     </Show>
-                                    <Show when={contact.phones[0]}>
-                                      {(phone) => (
-                                        <DetailPanel.Action
-                                          href={`tel:${phone().phone}`}
-                                          leading={<i class="ti ti-phone" aria-hidden="true" />}
-                                          title={phone().phone}
-                                          description={messages().phone}
-                                        />
-                                      )}
-                                    </Show>
-                                  </div>
-                                );
-                              }}
-                            </For>
-                          </div>
-                        </Show>
-                      </article>
-                    )}
-                  </For>
-                </div>
-                <Show when={contexts.hasMore()}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    class="mt-3"
-                    loading={contexts.loadingMore()}
-                    loadingLabel={messages().loadingMore}
-                    onClick={() => void contexts.loadMore()}
-                  >
-                    {messages().loadMore}
-                  </Button>
+                                  }
+                                  title={participant.email}
+                                  trailing={<span class="text-[0.6875rem] font-normal">{messages().newContact}</span>}
+                                />
+                              </Show>
+                            }
+                          >
+                            <div class="flex flex-col gap-1">
+                              <Show when={participant.showParticipantHeading}>
+                                <div class="px-2 py-1">
+                                  <p class="truncate text-xs font-medium text-secondary">{participant.displayName || participant.email}</p>
+                                  <Show when={participant.displayName}>
+                                    <p class="truncate text-xs text-dimmed" title={participant.email}>
+                                      {participant.email}
+                                    </p>
+                                  </Show>
+                                </div>
+                              </Show>
+                              <For each={participant.contacts}>
+                                {(contact) => {
+                                  const relatedMailHref = buildExactParticipantSearchHref(
+                                    new URL(props.requestUrl, "https://mail.invalid"),
+                                    participant.email,
+                                  );
+                                  const description = () =>
+                                    [
+                                      participant.showParticipantHeading ? null : participant.email,
+                                      contact.jobTitle,
+                                      contact.companyName,
+                                      contact.bookName,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ");
+                                  return (
+                                    <div class="min-w-0">
+                                      <Show
+                                        when={contact.openHref}
+                                        fallback={
+                                          <div class="flex min-w-0 items-start gap-2 px-2 py-1.5">
+                                            <i class="ti ti-address-book mt-0.5 text-dimmed" aria-hidden="true" />
+                                            <div class="min-w-0 flex-1">
+                                              <p class="truncate text-sm font-medium text-primary">{contact.displayName}</p>
+                                              <Show when={description()}>
+                                                <p class="truncate text-xs text-dimmed">{description()}</p>
+                                              </Show>
+                                            </div>
+                                          </div>
+                                        }
+                                      >
+                                        {(href) => (
+                                          <Show
+                                            when={relatedMailHref}
+                                            fallback={
+                                              <DetailPanel.Action
+                                                href={href()}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                leading={<i class="ti ti-address-book" aria-hidden="true" />}
+                                                title={contact.displayName}
+                                                description={description() || undefined}
+                                              />
+                                            }
+                                          >
+                                            {(mailHref) => (
+                                              <DetailPanel.Action
+                                                href={href()}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                leading={<i class="ti ti-address-book" aria-hidden="true" />}
+                                                title={contact.displayName}
+                                                description={description() || undefined}
+                                                menuLabel={messages().moreActionsFor({ name: contact.displayName })}
+                                                menuItems={[
+                                                  {
+                                                    label: messages().relatedMail,
+                                                    icon: "ti ti-mail",
+                                                    href: mailHref(),
+                                                    external: true,
+                                                  },
+                                                ]}
+                                              />
+                                            )}
+                                          </Show>
+                                        )}
+                                      </Show>
+                                      <Show when={contact.phones[0]}>
+                                        {(phone) => (
+                                          <DetailPanel.Action
+                                            href={`tel:${phone().phone}`}
+                                            leading={<i class="ti ti-phone" aria-hidden="true" />}
+                                            title={phone().phone}
+                                            description={messages().phone}
+                                          />
+                                        )}
+                                      </Show>
+                                    </div>
+                                  );
+                                }}
+                              </For>
+                            </div>
+                          </Show>
+                        </article>
+                      )}
+                    </For>
+                  </div>
+                  <Show when={contexts.hasMore()}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      class="mt-3"
+                      loading={contexts.loadingMore()}
+                      loadingLabel={messages().loadingMore}
+                      onClick={() => void contexts.loadMore()}
+                    >
+                      {messages().loadMore}
+                    </Button>
+                  </Show>
                 </Show>
               </Show>
             </Show>
           </Show>
-        </Show>
-      </section>
+        </section>
+      </Show>
       <section aria-label={messages().spaces} class="space-y-1 bg-[var(--ui-surface)] p-3">
         <Show
           when={context()}

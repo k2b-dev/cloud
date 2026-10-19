@@ -246,6 +246,25 @@ export const mailConversationContextQuerySchema = z
   .strict();
 export type MailConversationContextQuery = z.infer<typeof mailConversationContextQuerySchema>;
 
+export const mailRecipientSuggestionsQuerySchema = z
+  .object({
+    query: z.string().trim().min(2).max(320),
+    limit: z.coerce.number().int().min(1).max(20).default(8),
+  })
+  .strict();
+export type MailRecipientSuggestionsQuery = z.infer<typeof mailRecipientSuggestionsQuerySchema>;
+export const mailRecipientSuggestionSchema = z
+  .object({
+    address: normalizedContactEmailSchema.describe("Normalized recipient address."),
+    displayName: z.string().min(1).max(500).nullable().describe("Most recent non-empty display name."),
+    lastSeenAt: z.string().datetime().describe("Most recent message containing this address."),
+    writtenTo: z.boolean().describe("This mailbox sent a message to this address."),
+  })
+  .strict();
+export type MailRecipientSuggestion = z.infer<typeof mailRecipientSuggestionSchema>;
+export const mailRecipientSuggestionsSchema = z.object({ items: z.array(mailRecipientSuggestionSchema).max(20) }).strict();
+export type MailRecipientSuggestions = z.infer<typeof mailRecipientSuggestionsSchema>;
+
 export const mailConversationParticipantSchema = z
   .object({
     email: normalizedContactEmailSchema,
@@ -258,6 +277,17 @@ export const mailConversationContextSchema = z
     conversationId: ResourceShortIdSchema,
     participants: z.array(mailConversationParticipantSchema).max(100),
     contacts: z.discriminatedUnion("status", [
+      z
+        .object({
+          status: z.literal("absent"),
+          items: z.array(z.never()).length(0),
+          matchedEmails: z.array(z.never()).length(0),
+          nextCursor: z.null(),
+        })
+        .strict()
+        .describe(
+          "No contact directory is installed or mapped. Clients hide contact features. Unavailable means a configured directory failed and can be retried.",
+        ),
       z
         .object({
           status: z.literal("ready"),

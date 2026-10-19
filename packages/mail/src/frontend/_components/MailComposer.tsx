@@ -81,6 +81,7 @@ const intentIcon = (intent: DraftIntent): string =>
 
 export default function MailComposer(props: {
   mailboxId: string;
+  mailboxRecipientSuggestions?: boolean;
   currentActor: { kind: "user" | "service_account"; id: string };
   identities: SenderIdentity[];
   signatures: MailComposerSignatures;
@@ -1317,7 +1318,13 @@ export default function MailComposer(props: {
             <span class="text-dimmed">{t().to}</span>
             <div class="flex min-w-0 items-center gap-2">
               <div class="min-w-0 flex-1">
-                <MailRecipientInput placeholder={t().recipients} value={to} onChange={setTo} disabled={!editable()} />
+                <MailRecipientInput
+                  mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                  placeholder={t().recipients}
+                  value={to}
+                  onChange={setTo}
+                  disabled={!editable()}
+                />
               </div>
               <Show when={!showCc()}>
                 <Button variant="ghost" size="sm" type="button" disabled={!editable()} onClick={() => setShowCc(true)}>
@@ -1329,11 +1336,23 @@ export default function MailComposer(props: {
           <Show when={showCc()}>
             <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2">
               <span class="text-dimmed">Cc</span>
-              <MailRecipientInput placeholder={t().ccRecipients} value={cc} onChange={setCc} disabled={!editable()} />
+              <MailRecipientInput
+                mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                placeholder={t().ccRecipients}
+                value={cc}
+                onChange={setCc}
+                disabled={!editable()}
+              />
             </div>
             <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2">
               <span class="text-dimmed">Bcc</span>
-              <MailRecipientInput placeholder={t().bccRecipients} value={bcc} onChange={setBcc} disabled={!editable()} />
+              <MailRecipientInput
+                mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                placeholder={t().bccRecipients}
+                value={bcc}
+                onChange={setBcc}
+                disabled={!editable()}
+              />
             </div>
           </Show>
           <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2 lg:col-span-2">

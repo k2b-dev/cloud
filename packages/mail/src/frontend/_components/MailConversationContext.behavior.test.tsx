@@ -210,3 +210,55 @@ test.skipIf(isServer)("a failed contact-mutation code load neither creates a con
     dom.cleanup();
   }
 });
+
+if (!isServer)
+  test.each([
+    ["absent directory", false, "unavailable", false],
+    ["registered provider failure", true, "unavailable", true],
+    ["server reports absent", true, "absent", false],
+  ] as const)("contact section: %s", async (_label, mapped, status, visible) => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) => {
+        requests.push(input instanceof Request ? input.url : input.toString());
+        return Response.json({
+          conversationId: "Conv01",
+          participants: [],
+          contacts: { status, items: [], matchedEmails: [], nextCursor: null },
+          spaces: { status: "ready", items: [], truncated: false },
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: MailConversationContext } = await import("./MailConversationContext");
+    const { MailContactDirectoryProvider } = await import("./mail-contact-directory-context");
+    const directory = mapped
+      ? DEFAULT_MAIL_CONTACT_DIRECTORY
+      : { suggest: null, resolve: null, read: null, listWritableBooks: null, create: null };
+    delegateEvents(["click"]);
+    const dispose = render(
+      () => (
+        <MailContactDirectoryProvider value={directory}>
+          <MailConversationContext mailboxId="Box001" conversationId="Conv01" requestUrl="/app/mail/Box001" active />
+        </MailContactDirectoryProvider>
+      ),
+      dom.root,
+    );
+    try {
+      if (!mapped) expect(dom.root.querySelector('section[aria-label="Contacts"]')).toBeNull();
+      for (let i = 0; i < 100 && !dom.root.textContent?.includes("Spaces task"); i++) await Bun.sleep(10);
+      expect(dom.root.querySelector('section[aria-label="Spaces"]')).not.toBeNull();
+      expect(Boolean(dom.root.querySelector('section[aria-label="Contacts"]'))).toBe(visible);
+      expect(dom.root.textContent?.includes("Contacts unavailable")).toBe(visible);
+      expect(Boolean(Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Retry")))).toBe(
+        visible,
+      );
+      expect(requests.every((url) => url.includes("/context"))).toBe(true);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
