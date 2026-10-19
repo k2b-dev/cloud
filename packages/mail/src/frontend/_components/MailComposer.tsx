@@ -31,6 +31,7 @@ import {
   type ComposePreview,
   type ComposeSafetyApproval,
   type ComposeSafetyReview,
+  DRAFT_LEASE_ERROR_CODES,
   type DraftEditableContent,
   type DraftEditableContentInput,
   type DraftIntent,
@@ -525,19 +526,30 @@ export default function MailComposer(props: {
       if (!selected) return void (await prompts.error(t().recoveryCopyUnavailable));
       const currentLease = lease();
       if (!canEditDraft() || !currentLease) return void (await prompts.error(t().draftNotEditable));
-      const restoreResponse = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["recovery-copies"][
-        ":recoveryCopyId"
-      ].restore.$post(
-        {
-          param: {
-            mailboxId: props.mailboxId,
-            draftId: currentDraft.id,
-            recoveryCopyId: selected.id,
+      const restore = (leaseToken: string) =>
+        apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["recovery-copies"][":recoveryCopyId"].restore.$post(
+          {
+            param: {
+              mailboxId: props.mailboxId,
+              draftId: currentDraft.id,
+              recoveryCopyId: selected.id,
+            },
+            json: { expectedRevision: currentDraft.revision, leaseToken },
           },
-          json: { expectedRevision: currentDraft.revision, leaseToken: currentLease.token },
-        },
-        { init: { signal: controller.signal } },
-      );
+          { init: { signal: controller.signal } },
+        );
+      let restoreResponse = await restore(currentLease.token);
+      if (restoreResponse.status === 409) {
+        const body: unknown = await restoreResponse
+          .clone()
+          .json()
+          .catch(() => null);
+        if (typeof body === "object" && body !== null && "code" in body && body.code === DRAFT_LEASE_ERROR_CODES.NOT_OWNED) {
+          const acquired = await acquireLease(currentDraft);
+          if (!acquired) return;
+          restoreResponse = await restore(acquired.token);
+        }
+      }
       if (!restoreResponse.ok) throw new Error(await readApiError(restoreResponse, t().restoreFailed));
       const restored = await restoreResponse.json();
       if (disposed || recoveryController !== controller) return;

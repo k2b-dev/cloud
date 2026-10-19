@@ -24,6 +24,7 @@ import { classifyDraftLeaseAnswer, type DraftLeaseResult, recoverDraftLeaseReque
 import { isClosedMailDraft, type MailDraftLifecycleTransition, reconcileMailDraftLifecycle } from "./mail-draft-lifecycle";
 
 type ComposerStatus = "local" | "preparing" | "saved" | "saving" | "error" | "readonly";
+type RegainLeaseResult = AcquiredDraftLease | null | "cancelled";
 
 export type MailDraftLeaseConflict = {
   lease: DraftLease | null;
@@ -111,7 +112,7 @@ export const createMailDraftSession = (options: {
   let heartbeatController: AbortController | null = null;
   let heartbeatGeneration = 0;
   let initializePromise: Promise<MailDraft | null> | null = null;
-  let regainPromise: Promise<AcquiredDraftLease | null> | null = null;
+  let regainPromise: Promise<RegainLeaseResult> | null = null;
   // A retried acquire whose answer was lost gets this instance's lease back instead of reading it as another tab.
   const editorId = crypto.randomUUID();
   const seedBaseline = options.initialSeed ? serializeMailDraftContent(options.initialSeed.content) : null;
@@ -287,8 +288,9 @@ export const createMailDraftSession = (options: {
     currentDraft: MailDraft,
     reason: MailDraftLeaseConflict["reason"],
     { sameHolderGraceMs = 0, takeover = false }: { sameHolderGraceMs?: number; takeover?: boolean } = {},
-  ): Promise<AcquiredDraftLease | null> => {
-    if (lifecycleTransition() || isClosedMailDraft(currentDraft) || options.isDisposed()) return null;
+  ): Promise<RegainLeaseResult> => {
+    if (options.isDisposed()) return "cancelled";
+    if (lifecycleTransition() || isClosedMailDraft(currentDraft)) return null;
     stopHeartbeat();
     const generation = heartbeatGeneration;
     const controller = new AbortController();
@@ -324,7 +326,7 @@ export const createMailDraftSession = (options: {
           },
           signal: controller.signal,
         });
-        if (options.isDisposed() || generation !== heartbeatGeneration) {
+        if (options.isDisposed() || controller.signal.aborted || generation !== heartbeatGeneration) {
           if (result.kind === "ok")
             await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].lease
               .$delete({
@@ -332,7 +334,7 @@ export const createMailDraftSession = (options: {
                 json: { token: result.lease.token },
               })
               .catch(() => undefined);
-          return null;
+          return "cancelled";
         }
         if (result.kind === "ok") {
           acceptLease(result.lease);
@@ -340,7 +342,7 @@ export const createMailDraftSession = (options: {
         }
         if (result.kind === "held") {
           const current = await readCurrentLease(currentDraft);
-          if (options.isDisposed() || generation !== heartbeatGeneration) return null;
+          if (options.isDisposed() || controller.signal.aborted || generation !== heartbeatGeneration) return "cancelled";
           const sameActor = current?.holder.kind === options.currentActor.kind && current.holder.id === options.currentActor.id;
           if (!current || (sameActor && Date.now() < deadline)) {
             // An unreadable/released lease is not proof of another editor. Bound retries to one heartbeat.
@@ -371,11 +373,14 @@ export const createMailDraftSession = (options: {
         return null;
       }
     } catch (error) {
-      if (!options.isDisposed() && generation === heartbeatGeneration && !isAbortError(error)) waitForConnection();
+      if (!options.isDisposed() && !controller.signal.aborted && generation === heartbeatGeneration && !isAbortError(error)) {
+        waitForConnection();
+        return null;
+      }
     } finally {
       if (heartbeatController === controller) heartbeatController = null;
     }
-    return null;
+    return "cancelled";
   };
 
   /**
@@ -386,17 +391,24 @@ export const createMailDraftSession = (options: {
     currentDraft: MailDraft,
     reason: MailDraftLeaseConflict["reason"],
     options: { sameHolderGraceMs?: number; takeover?: boolean } = {},
-  ): Promise<AcquiredDraftLease | null> => {
+  ): Promise<RegainLeaseResult> => {
     if (regainPromise && !options.takeover) return regainPromise;
-    const work = runRegainLease(currentDraft, reason, options).finally(() => {
-      if (regainPromise === work) regainPromise = null;
-    });
+    // A takeover cancels the acquire in flight and starts once it settled, so that acquire cannot release the new lease.
+    const previous = regainPromise;
+    if (previous) stopHeartbeat();
+    const work = (previous ?? Promise.resolve(null))
+      .then(() => runRegainLease(currentDraft, reason, options))
+      .finally(() => {
+        if (regainPromise === work) regainPromise = null;
+      });
     regainPromise = work;
     return work;
   };
 
-  const acquireLease = (currentDraft: MailDraft, takeover = false, sameHolderGraceMs = 0) =>
-    regainLease(currentDraft, "occupied", { takeover, sameHolderGraceMs });
+  const acquireLease = async (currentDraft: MailDraft, takeover = false, sameHolderGraceMs = 0): Promise<AcquiredDraftLease | null> => {
+    const result = await regainLease(currentDraft, "occupied", { takeover, sameHolderGraceMs });
+    return result === "cancelled" ? null : result;
+  };
 
   const recoverJournal = (key: string, minimumRevision: number): boolean => {
     const journal = readMailDraftJournal(localStorage, key);
@@ -475,7 +487,6 @@ export const createMailDraftSession = (options: {
         }
         currentDraft = await response.json();
         lastSavedContent = serializeMailDraftContent(draftEditableContent(currentDraft));
-        setDraft(currentDraft);
         try {
           options.onMaterialized(currentDraft);
         } catch {
@@ -483,6 +494,7 @@ export const createMailDraftSession = (options: {
         }
         if (options.isDisposed()) return currentDraft;
         const acquired = await acquireLease(currentDraft, false, LEASE_HEARTBEAT_MS);
+        setDraft(currentDraft);
         // A retried materialization returns the draft its first request stored, which can predate the
         // editor's current content; the save below brings the draft up to date before anyone uses it.
         if (!acquired) return serializedContent() === lastSavedContent ? currentDraft : null;
@@ -563,13 +575,17 @@ export const createMailDraftSession = (options: {
   };
 
   /** `quiet` keeps a read-only composer as it is while the attempt runs. */
-  const resumeCurrentLease = async ({ quiet = false }: { quiet?: boolean } = {}) => {
+  const resumeCurrentLease = async ({ quiet = false }: { quiet?: boolean } = {}): Promise<void> => {
     const currentDraft = draft();
     const currentLease = lease();
     if (options.isDisposed() || !currentDraft) return;
     // A live echo during the initial grace must not cancel that acquire and turn it into a takeover warning.
     if (initializePromise) return void (await initializePromise);
-    if (regainPromise) return void (await regainPromise);
+    if (regainPromise) {
+      const result = await regainPromise;
+      if (result === "cancelled" && !options.isDisposed()) await resumeCurrentLease({ quiet });
+      return;
+    }
     if (!currentLease) return void (await ensureDraft());
     stopHeartbeat();
     const generation = heartbeatGeneration;

@@ -87,6 +87,34 @@ const initialDraft: MailDraft = {
   updatedAt: now,
 };
 
+const initialSeed: MailDraftSeed = {
+  id: "10000000-0000-4000-8000-000000000001",
+  mailboxId: "Box001",
+  conversationId: null,
+  intent: "new",
+  sourceMessageId: null,
+  derivedFromMessageId: null,
+  derivationKind: null,
+  content: draftEditableContentInputSchema.strip().parse(initialDraft),
+  attachments: [],
+  origin: {
+    kind: "compose",
+    input: {
+      senderIdentityId: "Send01",
+      to: [],
+      cc: [],
+      bcc: [],
+      subject: "",
+      body: "",
+      intent: "new",
+      conversationId: null,
+      sourceMessageId: null,
+      includeSourceAttachments: false,
+    },
+  },
+  createdAt: now,
+};
+
 // Sockets stay offline unless a test explicitly opens one.
 class OfflineWebSocket {
   static readonly CONNECTING = 0;
@@ -246,6 +274,134 @@ describe("MailComposer signature choice", () => {
     expect(option).toBeDefined();
     option!.click();
   };
+
+  test("restoring a recovery copy renews an expired own lease and retries once", async () => {
+    jest.useFakeTimers();
+    setSystemTime(Date.parse(now));
+    const flush = async () => {
+      for (let i = 0; i < 80; i++) await Promise.resolve();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    };
+    const { prompts, toast } = await import("@k2b/ui");
+    const form = spyOn(prompts, "form").mockResolvedValue({ recoveryCopyId: "10000000-0000-4000-8000-000000000002" });
+    const errors = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const restoredNotice = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    const fetchWithFixtures = globalThis.fetch;
+    const restoreTokens: string[] = [];
+    const operations: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        const path = new URL(request.url).pathname;
+        if (path.endsWith("/recovery-copies"))
+          return Response.json([
+            {
+              id: "10000000-0000-4000-8000-000000000002",
+              draftId: "Draft1",
+              baseRevision: 1,
+              content: { ...draftEditableContentInputSchema.strip().parse(initialDraft), body: "Recovered text" },
+              createdBy: initialDraft.createdBy,
+              createdAt: now,
+              restoredAt: null,
+              resultingRevision: null,
+            },
+          ]);
+        if (path.endsWith("/restore")) {
+          const body = await request.json();
+          restoreTokens.push(body.leaseToken);
+          operations.push("restore");
+          return restoreTokens.length === 1
+            ? Response.json({ code: "DRAFT_LEASE_NOT_OWNED", message: "Lease expired" }, { status: 409 })
+            : Response.json({ ...initialDraft, body: "Recovered text", revision: 2 });
+        }
+        if (path.endsWith("/lease") && request.method === "POST") {
+          operations.push("acquire");
+          return Response.json({
+            token: operations.length === 1 ? "expired-token" : "renewed-token",
+            holder: { kind: "user", id: "Usr001", displayName: "Ada", avatarHash: null },
+            acquiredAt: now,
+            expiresAt: now,
+          });
+        }
+        return fetchWithFixtures(request);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount("en", { ...initialDraft, recoveryCopyCount: 1 }, undefined, undefined, flush);
+      const recover = Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Recover changes"));
+      expect(recover).toBeDefined();
+      recover!.click();
+      await flush();
+      expect(restoreTokens).toEqual(["expired-token", "renewed-token"]);
+      expect(operations).toEqual(["acquire", "restore", "acquire", "restore"]);
+      expect(dom.root.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Recovered text");
+      expect(errors).not.toHaveBeenCalled();
+      expect(restoredNotice).toHaveBeenCalledTimes(1);
+    } finally {
+      form.mockRestore();
+      errors.mockRestore();
+      restoredNotice.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  test("the first autosave keeps the body enabled and focused while acquiring the seed draft lease", async () => {
+    jest.useFakeTimers();
+    setSystemTime(Date.parse(now));
+    const flush = async () => {
+      for (let i = 0; i < 80; i++) await Promise.resolve();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    };
+    const fetchWithFixtures = globalThis.fetch;
+    let grant: ((response: Response) => void) | undefined;
+    let heartbeats = 0;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        if (request.method === "POST" && new URL(request.url).pathname.endsWith("/lease")) {
+          return new Promise<Response>((resolve) => {
+            grant = resolve;
+          });
+        }
+        if (request.method === "PUT" && new URL(request.url).pathname.endsWith("/lease")) heartbeats++;
+        return fetchWithFixtures(request);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount("en", initialDraft, undefined, initialSeed, flush);
+      const editor = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
+      editor.focus();
+      editor.value = "First lines";
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      jest.advanceTimersByTime(700);
+      await flush();
+      expect(saves).toHaveLength(1);
+      expect(grant).toBeDefined();
+      expect(editor.disabled).toBe(false);
+      expect(dom.document.activeElement).toBe(editor);
+      grant?.(
+        Response.json({
+          token: "seed-token",
+          holder: { kind: "user", id: "Usr001", displayName: "Ada", avatarHash: null },
+          acquiredAt: now,
+          expiresAt: now,
+        }),
+      );
+      await flush();
+      expect(editor.disabled).toBe(false);
+      expect(dom.document.activeElement).toBe(editor);
+      expect(editor.value).toBe("First lines");
+      expect(saves[0]?.body).toBe("First lines");
+      jest.advanceTimersByTime(10_000);
+      await flush();
+      expect(heartbeats).toBe(1);
+      expect(saves).toHaveLength(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 
   test("an own live invalidation keeps the focused body editor enabled", async () => {
     jest.useFakeTimers();
@@ -496,35 +652,7 @@ describe("MailComposer signature choice", () => {
   });
 
   test("keeps a seed signature clean until a change, then materializes the chosen signature", async () => {
-    const content = draftEditableContentInputSchema.strip().parse(initialDraft);
-    const seed: MailDraftSeed = {
-      id: "10000000-0000-4000-8000-000000000001",
-      mailboxId: "Box001",
-      conversationId: null,
-      intent: "new",
-      sourceMessageId: null,
-      derivedFromMessageId: null,
-      derivationKind: null,
-      content,
-      attachments: [],
-      origin: {
-        kind: "compose",
-        input: {
-          senderIdentityId: "Send01",
-          to: [],
-          cc: [],
-          bcc: [],
-          subject: "",
-          body: "",
-          intent: "new",
-          conversationId: null,
-          sourceMessageId: null,
-          includeSourceAttachments: false,
-        },
-      },
-      createdAt: now,
-    };
-    await mount("en", initialDraft, undefined, seed);
+    await mount("en", initialDraft, undefined, initialSeed);
     expect(trigger().textContent).toContain("Personal signature");
     await Bun.sleep(800);
     expect(saves).toEqual([]);

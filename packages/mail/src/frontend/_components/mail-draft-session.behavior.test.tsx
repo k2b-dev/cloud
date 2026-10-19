@@ -417,6 +417,38 @@ describe("Mail draft session", () => {
       expect(requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease"))).toHaveLength(2);
     });
 
+    test("BFCache restore resumes after a pending silent re-acquire is cancelled", async () => {
+      const state = await mountSession();
+      let grant: (() => void) | undefined;
+      acquireAnswer = () =>
+        new Promise<Response>((resolve) => {
+          grant = () => resolve(Response.json({ ...lease, token: "cancelled-token" }));
+        });
+      heartbeatAnswers.push(Response.json({ code: "DRAFT_LEASE_NOT_OWNED" }, { status: 409 }));
+      await advance(10_000);
+      expect(grant).toBeDefined();
+      for (const type of ["pagehide", "pageshow"]) {
+        const event = new Event(type);
+        Object.defineProperty(event, "persisted", { value: true });
+        window.dispatchEvent(event);
+      }
+      await flush();
+      expect(requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease"))).toHaveLength(2);
+      acquireAnswer = () => Response.json({ ...lease, token: "resumed-token" });
+      heartbeatAnswers.push(Response.json({ code: "DRAFT_LEASE_NOT_OWNED" }, { status: 409 }));
+      grant?.();
+      await flush();
+
+      healthy(state);
+      expect(state.session.lease()?.token).toBe("resumed-token");
+      expect(requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease"))).toHaveLength(3);
+      expect(requests.filter((r) => r.method === "DELETE").map((r) => r.body)).toEqual([{ token: "cancelled-token" }]);
+      const heartbeats = requests.filter((r) => r.method === "PUT" && r.url.endsWith("/lease")).length;
+      await advance(10_000);
+      expect(requests.filter((r) => r.method === "PUT" && r.url.endsWith("/lease"))).toHaveLength(heartbeats + 1);
+      healthy(state);
+    });
+
     test("a live echo during a silent re-acquire waits for it instead of orphaning the granted lease", async () => {
       const state = await mountSession();
       state.trace.length = 0;
@@ -591,6 +623,24 @@ describe("Mail draft session", () => {
         title: "Draft open in another tab",
         takeoverLabel: "Edit in this tab",
       });
+    });
+
+    test("Take over during the same-tab grace waits for the cancelled acquire and then holds the lease", async () => {
+      acquireAnswer = (body) =>
+        (body as { takeover?: boolean }).takeover
+          ? Response.json({ ...lease, token: "takeover-token" })
+          : Response.json({ code: "DRAFT_LEASE_HELD" }, { status: 409 });
+      const state = await mountSession();
+      expect(state.session.status()).toBe("preparing");
+      state.session.stopHeartbeat();
+      const acquired = await state.session.acquireLease(state.session.draft()!, true);
+      await flush();
+      expect(acquired?.token).toBe("takeover-token");
+      healthy(state);
+      expect(requests.filter((r) => r.method === "POST" && r.url.endsWith("/lease")).map((r) => r.body)).toMatchObject([
+        { takeover: false },
+        { takeover: true },
+      ]);
     });
 
     test("a heartbeat followed by Grace's live lease opens the lost dialog without grace", async () => {
