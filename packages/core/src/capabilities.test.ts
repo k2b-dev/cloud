@@ -88,6 +88,7 @@ const scheduledTask: AiChatTask = {
   locale: null,
   reasonCode: null,
   reasonAt: null,
+  reasonAction: null,
   id: "88888888-8888-4888-8888-888888888888",
   shortId: "tSk234",
   chatId: chat.shortId,
@@ -1080,6 +1081,30 @@ test("routine reads word their reason in the reader's locale and expose stopped 
           lastError: "Raw English error",
         },
         occurrences: [{ state: "stopped" }],
+      },
+    },
+  });
+});
+
+test("routine reads include the refused action in the localized approval reason", async () => {
+  spyOn(aiChatTasks, "get").mockResolvedValue({
+    ...scheduledTask,
+    state: "needs_attention",
+    reasonCode: "needs_approval",
+    reasonAt: "2026-10-18T09:00:00.000Z",
+    reasonAction: "Aufgabe zuweisen",
+  });
+  spyOn(aiChatTasks, "listOccurrences").mockResolvedValue([]);
+  expect(await aiCapabilities.queries["ai.task.read"].run({ id: scheduledTask.shortId }, { ...context, locale: "de" })).toMatchObject({
+    ok: true,
+    data: {
+      data: {
+        task: {
+          reason: {
+            code: "needs_approval",
+            sentence: "Wollte Aufgabe zuweisen. Das macht der Assistant nur mit dir, und Routinen fragen nie.",
+          },
+        },
       },
     },
   });

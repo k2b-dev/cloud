@@ -1054,6 +1054,23 @@ ALTER TABLE ai.chat_tasks DROP CONSTRAINT IF EXISTS ai_chat_tasks_reason_state_c
 
 See [Routine names and stop reasons](/en/docs/ai/structured-and-background-ai#routine-names-and-stop-reasons).
 
+### Check the app's review before a routine changes anything
+
+Routines whose calls the app would ask about now stop with **Braucht dich** /
+**Needs you** instead of running. Before each Action with
+`approval: "rememberable"`, a routine asks the app's review. When the review
+gives no approval scope, fails, or is missing, the Action does not run, and
+the routine shows which Action needs the person. It needs no configuration
+change.
+
+The first Core start adds the column `reason_action` to `ai.chat_tasks` and the
+constraint `ai_chat_tasks_reason_action_length_check`, which only limits the
+action name to 200 characters. The change is backward-compatible: an earlier
+Core can run beside the new one and can be rolled back to without SQL. An
+earlier Core or Assistant still runs such Actions without the review, so
+finish the rollout of both before you rely on the stop. See
+[Routine Action reviews](/en/docs/ai/structured-and-background-ai#routine-action-reviews).
+
 ### Approve OAuth sign-ins in Cloud Login
 
 Update **Core before OAuth** to enable the

@@ -5,7 +5,7 @@ section: AI
 order: 1060
 description: Run validated model tasks outside an interactive chat request.
 tags: [ai, structured-output, background]
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # Structured and background AI
@@ -358,6 +358,29 @@ through `resolveModel`. Supply only verified server-side identities, not IDs fro
 the calculation's input. The calculations receive only the supplied prompt and
 input, with no tools or implicit conversation context.
 
+## Routine Action reviews
+
+Before each change, a routine checks its mandate first, then calls the app's
+review for every Action with `approval: "rememberable"`. An Action that needs
+approval and is not rememberable never runs in a routine, regardless of the
+review. This includes background Code Mode. A rememberable Action runs only
+when that review returns an `approvalScope`. A missing review, a review error,
+or a result without the scope refuses the call and the app's `run` never
+executes. The review only narrows a mandate; it never grants access or widens
+the routine's authority.
+
+The model gets a short `NEEDS_APPROVAL` error telling it to stop and explain
+what was missing in one sentence. The run fails and the routine becomes
+`needs_attention` with reason `needs_approval` and the action name, even if the
+model completes its reply normally. One-time routines need a new time rather
+than becoming completed. Queries and Actions with `approval: "none"` keep their
+mandate checks and skip this review gate.
+
+Core's routine hosts share the platform-owned `authorizeBackgroundAction` and
+`AiBackgroundApprovalRequiredError` exports from `@k2b/cloud/ai`. The gate records
+the first refused action on the turn; hosts cannot replace a refusal with a
+later successful model reply.
+
 ## Routine names and stop reasons
 
 A routine can have a short `title` in the user's language, up to 80 characters.
@@ -376,8 +399,12 @@ determines its state. A database CHECK enforces this relation.
 | `rights_changed` | `needs_attention` | What it may do changed. Please confirm again. |
 | `needs_approval` | `needs_attention` | Tried to {action}. That needs your approval every time, and routines never ask. |
 
-Without an action, `needs_approval` shows only its second sentence. No writer
-sets this code yet. The pause time uses `reason_at`, the reader's locale and
+For `needs_approval`, `reason_action` stores the first refused Action's title
+in the routine's locale. Dialogs, chat lines, and notifications include it in
+the sentence; without an action, only the second sentence appears. English
+lowercases an initial title-case word ("Create task" becomes "Tried to create
+task."); German titles and acronym starts stay unchanged. Other reason codes
+clear `reason_action`, and readers ignore it beside any other code. The pause time uses `reason_at`, the reader's locale and
 the routine's timezone. `chatTaskReasonSentence` from `@k2b/cloud/ai` renders
 these sentences in English and German. Browser code imports it from
 `@k2b/cloud/ai/browser`.

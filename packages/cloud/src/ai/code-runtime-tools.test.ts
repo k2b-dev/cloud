@@ -155,12 +155,17 @@ test("managed code rejects incomplete background authority before contacting a h
 test("a failed code call reaches the model as a tool error, while a failed run stays a snapshot", async () => {
   const results = {
     failed: { failed: true, error: "Browser operation timed out.", guidance: "Inspect effects before retrying." },
+    needs_approval: {
+      failed: true,
+      error:
+        "NEEDS_APPROVAL: Create task needs the user's approval every time, and routines never ask. Stop and say in one sentence what was missing.",
+    },
     snapshot: { runId: "run", status: "error", error: "Script threw" },
   };
   const tool = defineTool({
     name: "code_run",
     description: "Run",
-    inputSchema: z.object({ case: z.enum(["failed", "snapshot"]) }),
+    inputSchema: z.object({ case: z.enum(["failed", "snapshot", "needs_approval"]) }),
   }).server(async (input, context) =>
     waitForManagedCodeCall(async () => ({ status: "done", result: results[input.case], approvals: [] }), {
       ...context,
@@ -179,7 +184,7 @@ test("a failed code call reaches the model as a tool error, while a failed run s
     async *stream() {
       requests++;
       if (requests === 1) {
-        for (const [index, name] of ["failed", "snapshot"].entries()) {
+        for (const [index, name] of ["failed", "snapshot", "needs_approval"].entries()) {
           yield { type: "block_start", blockId: name, index, kind: "tool_call", callId: name, name: "code_run" };
           yield { type: "block_end", blockId: name, index, block: { type: "tool_call", id: name, name: "code_run", args: { case: name } } };
         }
@@ -207,12 +212,18 @@ test("a failed code call reaches the model as a tool error, while a failed run s
     result: "Browser operation timed out. Inspect effects before retrying.",
     isError: true,
   });
+  expect(ended.find((event) => event.callId === "needs_approval")).toEqual({
+    callId: "needs_approval",
+    result: results.needs_approval.error,
+    isError: true,
+  });
   expect(ended.find((event) => event.callId === "snapshot")).toEqual({ callId: "snapshot", result: results.snapshot, isError: undefined });
   expect(
     entries.flatMap(({ message }) => (message.role === "tool_result" ? [{ callId: message.callId, isError: message.isError }] : [])),
   ).toEqual([
     { callId: "failed", isError: true },
     { callId: "snapshot", isError: false },
+    { callId: "needs_approval", isError: true },
   ]);
 });
 

@@ -5,7 +5,7 @@ section: Operations
 order: 1180
 description: Diagnose common application registration, request, data, and runtime failures.
 tags: [troubleshooting, health, diagnostics]
-updated: 2026-10-07
+updated: 2026-10-18
 ---
 
 # Troubleshooting
@@ -182,6 +182,13 @@ policy and routine grants. A call rejected by a grant or fixed input returns a t
 error and lets the model continue. Check a routine (scheduled task) marked `needs_attention` for
 unavailable or changed mandate authority, a target app denying the sponsor,
 an unknown action outcome, or an operation requiring approval or a browser.
+A `needs_approval` reason names the first Action whose app review required
+confirmation for every call. The mandate is checked before that review, both
+for direct tools and background Code Mode. The refused Action never runs;
+missing reviews and review errors also refuse it. Handle that change in an
+interactive chat, then resume the routine (or give a one-time routine a new
+time). Widening grants cannot replace a missing `approvalScope`.
+
 Review the routine's grants in the normal chat before changing its scope. See
 [Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-routine).
 
