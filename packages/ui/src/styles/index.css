@@ -7689,7 +7689,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* The minimal reference table (Grids): rows are read by space and a hover fill,
    not by lines. A body row is 44 px (40 px compact) and grows only for content
    that wraps; the header is a quiet 34 px line of muted text. */
-.k2b-ui .k2b-data-table td {
+.k2b-ui .k2b-data-table td:not(.k2b-data-table__fill) {
   height: 2.75rem;
 }
 
@@ -7716,7 +7716,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply py-1.5;
 }
 
-.k2b-ui .k2b-table-wrap[data-density="compact"] .k2b-data-table td {
+/* The fill spacer of a `fillHeight` table keeps taking the spare height, so rows stay compact. */
+.k2b-ui .k2b-table-wrap[data-density="compact"] .k2b-data-table td:not(.k2b-data-table__fill) {
   height: 2.5rem;
 }
 

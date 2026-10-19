@@ -21,6 +21,7 @@ render(() => {
   return createComponent(DataTable, {
     columns, get rows() { return loading() ? [] : rows; }, get loading() { return loading(); },
     loadingRows: 3, hoverRows: true, surface: 'plain', density: params.has('compact') ? 'compact' : 'normal',
+    fillHeight: params.has('fill'), class: params.has('fill') ? 'fill-frame' : undefined,
   });
 }, document.getElementById('app'));
 `;
@@ -37,7 +38,7 @@ afterAll(async () => {
 const load = async (theme: string, params = "") => {
   const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
   await page.setContent(
-    `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" data-theme="${theme}"><div id="app"></div><span id="muted-probe" style="color:var(--k2b-text-muted)"></span></body></html>`,
+    `<!doctype html><html><head><style>${css}</style></head><style>.fill-frame{height:400px}</style><body class="k2b-ui" data-theme="${theme}"><div id="app"></div><span id="muted-probe" style="color:var(--k2b-text-muted)"></span></body></html>`,
   );
   await page.evaluate((params) => {
     location.hash = params;
@@ -122,6 +123,25 @@ for (const theme of ["light", "dark"])
             if (count === 9 && i < borders.length - 1) expect(border).toEqual({ width: "1px", style: "solid" });
             else expect(noBorder(border.width, border.style)).toBe(true);
           }
+        } finally {
+          await page.context().close();
+        }
+      }
+    });
+
+    test("a fill-height table keeps its rows at their height and gives the spare room to the spacer", async () => {
+      for (const [density, height] of [
+        ["normal", 44],
+        ["compact", 40],
+      ] as const) {
+        const page = await load(theme, `fill=1${density === "compact" ? "&compact=1" : ""}`);
+        try {
+          const rows = await page
+            .locator("tbody tr.k2b-data-table__row")
+            .evaluateAll((items) => items.map((row) => row.getBoundingClientRect().height));
+          expect(rows).toEqual([height, height, height]);
+          const spacer = await page.locator("td.k2b-data-table__fill").evaluate((cell) => cell.getBoundingClientRect().height);
+          expect(spacer).toBeGreaterThan(100);
         } finally {
           await page.context().close();
         }

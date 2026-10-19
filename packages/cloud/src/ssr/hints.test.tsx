@@ -86,6 +86,27 @@ test("using the new path appends a cookie and suppresses the old hint, including
   expect((await app.request("http://cloud.example/new")).headers.get("Set-Cookie")).not.toContain("; Secure");
 });
 
+test("several hints marked in one response all stay seen", async () => {
+  const probe = new Hono<AuthContext>()
+    .use("*", async (c, next) => {
+      c.set("actor", { kind: "user", user: person });
+      await next();
+    })
+    .get("/", (c) => {
+      markHintSeen(c, "files.tags");
+      markHintSeen(c, "files.views");
+      return c.text(String(hintOpen(c, "files.tags", { allowed: true })));
+    });
+  const response = await probe.request("/", { headers: { Cookie: "cloud_seen_hints=older.hint" } });
+  expect(await response.text()).toBe("false");
+  // The browser stores the last cookie of a name, so the last one carries every id.
+  const last = response.headers
+    .getSetCookie()
+    .filter((cookie) => cookie.startsWith("cloud_seen_hints="))
+    .at(-1);
+  expect(last?.split(";")[0]).toBe("cloud_seen_hints=older.hint~files.tags~files.views");
+});
+
 test("invalid server hint ids throw before testing access", async () => {
   const probe = new Hono().get("/", (c) => {
     expect(() => hintOpen(c, "Bad/id", { allowed: false })).toThrow("Invalid hint id");
