@@ -266,6 +266,13 @@ export default function SignInLocations(props: {
     unknownOutcome();
   };
 
+  // The page's route policy sends an expired session to sign-in and back here; a removed role gets the access page.
+  const signInAgain = () => (
+    <Button type="button" variant="secondary" size="sm" onClick={() => location.reload()}>
+      {t().signInAgain}
+    </Button>
+  );
+
   const resetText = (kind: GeoIpKind, source: GeoIpAdminDatabase["source"]) => {
     const type = typeName(kind);
     if (source === "uploaded") return t().resetDoneReplaced({ type });
@@ -440,6 +447,7 @@ export default function SignInLocations(props: {
                     {t().retry}
                   </Button>
                 </Show>
+                <Show when={failure().code === "not_allowed"}>{signInAgain()}</Show>
               </>
             )}
           </Match>
@@ -470,7 +478,7 @@ export default function SignInLocations(props: {
                 <StatusText tone="danger" icon="ti ti-alert-triangle">
                   {failure().code === "not_allowed" ? t().notAllowed : t().resetFailed}
                 </StatusText>
-                <Show when={failure().code !== "not_allowed"}>
+                <Show when={failure().code !== "not_allowed"} fallback={signInAgain()}>
                   <Button
                     type="button"
                     variant="secondary"

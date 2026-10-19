@@ -192,7 +192,11 @@ describe("sign-in locations block", () => {
     FakeXhr.last!.respond(403, { code: "FORBIDDEN" });
     await flush();
     expect(view.requests).toEqual([]);
-    expect(view.statusLine()).toBe("Your sign-in no longer allows this change. Sign in again as an administrator. Nothing was changed.");
+    expect(view.statusLine()).toBe("Your sign-in no longer allows this change. Nothing was changed. Sign in again");
+    // Reloading lets the page's route policy send an expired session to sign-in and back here.
+    const reload = spyOn(location, "reload").mockImplementation(() => {});
+    view.button("Sign in again")!.click();
+    expect(reload).toHaveBeenCalledTimes(1);
     await view.choose();
     FakeXhr.last!.respond(400, "Bad Request");
     await flush();
@@ -418,7 +422,7 @@ describe("sign-in locations block", () => {
     expect(view.source("city")).toBe("Hochgeladene Datei");
   });
 
-  test.each([401, 403])("a reset refused with %i asks for an admin sign-in without a retry", async (status) => {
+  test.each([401, 403])("a reset refused with %i offers a new sign-in instead of a retry", async (status) => {
     const view = await mount({ initial: uploadedStatus, locale: "de" });
     const statusLine = view.root.querySelector("[data-geoip-status]")!;
     const reservedHeight = statusLine.className;
@@ -427,10 +431,11 @@ describe("sign-in locations block", () => {
     await flush();
     await flush();
     expect(view.requests).toEqual([{ url: "/api/admin/core/geoip/city", method: "DELETE" }]);
-    expect(view.statusLine()).toBe(
-      "Deine Anmeldung erlaubt diese Änderung nicht mehr. Melde dich erneut als Administrator an. Nichts wurde geändert.",
-    );
+    expect(view.statusLine()).toBe("Deine Anmeldung erlaubt diese Änderung nicht mehr. Nichts wurde geändert. Erneut anmelden");
     expect(view.button("Erneut versuchen")).toBeUndefined();
+    const reload = spyOn(location, "reload").mockImplementation(() => {});
+    view.button("Erneut anmelden")!.click();
+    expect(reload).toHaveBeenCalledTimes(1);
     expect(view.source("city")).toBe("Hochgeladene Datei");
     expect(view.root.querySelectorAll("[data-geoip-status]")).toHaveLength(1);
     expect(view.root.querySelector("[data-geoip-status]")).toBe(statusLine);
