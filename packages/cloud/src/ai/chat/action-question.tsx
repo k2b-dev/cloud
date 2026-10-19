@@ -157,17 +157,19 @@ const mayOverflow = (text: string): boolean =>
 
 /**
  * The first lines of a text. With the app's link, its "read" link follows the preview; without one, a text that may
- * not fit offers to show the rest in place, so nothing a person approves stays out of reach.
+ * not fit offers to show the rest in place, and any other text stands whole, so nothing a person approves stays out of
+ * reach even where the estimate is short, such as for wide characters.
  */
 function PreviewExcerpt(props: { text: string; readMore?: string; label: string }) {
   const id = createUniqueId();
   const [expanded, setExpanded] = createSignal(false);
+  const offer = () => !props.readMore && mayOverflow(props.text);
   return (
     <>
-      <Chat.Preview.Excerpt id={id} expanded={expanded()}>
+      <Chat.Preview.Excerpt id={id} expanded={expanded() || (!props.readMore && !offer())}>
         {props.text}
       </Chat.Preview.Excerpt>
-      <Show when={!props.readMore && !expanded() && mayOverflow(props.text)}>
+      <Show when={offer() && !expanded()}>
         <Chat.Preview.ShowAll controls={id} onShow={() => setExpanded(true)}>
           {props.label}
         </Chat.Preview.ShowAll>

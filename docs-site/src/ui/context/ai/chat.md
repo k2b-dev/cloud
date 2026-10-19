@@ -160,7 +160,9 @@ will be sent. `Excerpt` preserves line breaks and fades after about three lines.
 page, `ShowAll` shows the rest of an excerpt in place: give the `Excerpt` an
 `id`, pass it as `controls`, set `expanded` on show, and remove the button. The
 focus then moves to the text. Decide whether to offer it from the text itself,
-not from a measurement, so the server and the first browser frame agree.
+not from a measurement, so the server and the first browser frame agree, and
+set `expanded` on every text without a page that you do not offer it for, so an
+estimate that is too short never clips anything.
 `Lines` names a list of
 consequences, and `Line` can also stand alone for an attachment or warning.
 `People` shows overlapping decorative avatars followed by readable names.

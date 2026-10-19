@@ -488,6 +488,15 @@ describe("card v4 outcome line", () => {
     if (review.preview?.kind !== "message") throw new Error("Expected a message preview");
     const short = renderTurn({ ...de.mail!.block, review: { ...review, links: [], preview: { ...review.preview, body: "Kurz." } } }, "de");
     expect(short).not.toContain("aria-controls");
+    // Where the estimate says it fits but wide characters wrap further, the text stands whole instead of clipped.
+    const wide = renderTurn(
+      { ...de.mail!.block, review: { ...review, links: [], preview: { ...review.preview, body: "Ｗ".repeat(100) } } },
+      "de",
+    );
+    expect(wide).not.toContain("aria-controls");
+    expect(wide).toMatch(/class="k2b-chat-preview__excerpt"[^>]*data-expanded="true"/);
+    // With the app's page to open, the excerpt keeps its three lines and the link reaches the rest.
+    expect(withPage).not.toMatch(/class="k2b-chat-preview__excerpt"[^>]*data-expanded/);
   });
 
   test("an old review's done line is the app's old summary", () => {

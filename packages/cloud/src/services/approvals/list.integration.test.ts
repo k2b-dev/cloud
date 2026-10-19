@@ -203,4 +203,19 @@ databaseSuite()("pending approval lists", () => {
       expect(presentPendingApproval(row, []).review).toEqual(storedReview);
     },
   );
+
+  test("a capability's own approval reads the review stored under its parent call", async () => {
+    const { userId, chat, turn, ask } = await fixture();
+    const review = reviewFixture();
+    const id = await ask({ review });
+    // Capability approvals wait as "<call>-approval-<n>"; the review belongs to the call itself.
+    await sql`UPDATE ai.pending_actions SET kind='custom_approval', call_id='write-1-approval-0' WHERE approval_id=${id}::uuid`;
+    const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id });
+    await store.append({ role: "assistant", content: [{ type: "tool_call", id: "write-1", name: "mail.draft.send", args: {} }] });
+    const storedReview = { ...review, ask: "sensitive" as const };
+    await recordAiToolReview({ conversationId: chat.id, turnId: turn.id, callId: "write-1", review: storedReview });
+    const row = (await listPending({ approverUserId: userId, id })).items[0]!;
+    expect(row.storedReview).toEqual(storedReview);
+    expect(presentPendingApproval(row, [], { ask: "sends" }).review).toEqual(storedReview);
+  });
 });
