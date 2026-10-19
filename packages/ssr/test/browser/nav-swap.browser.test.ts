@@ -136,6 +136,8 @@ beforeAll(async () => {
   await buildIslands({ pattern: "**/*.island.tsx", cwd: root, outdir: prefix, dev: true, verbose: false });
 });
 beforeEach(async () => {
+  // Each fixture represents a fresh document, though Happy DOM keeps the same Document object.
+  Reflect.deleteProperty(globalThis, Symbol.for("@k2b/ssr/nav-swap/swapped"));
   const settings = (window as unknown as Window).happyDOM.settings;
   previousLoadingSettings = {
     disableCSSFileLoading: settings.disableCSSFileLoading,
@@ -195,6 +197,31 @@ test("install leaves non-null island state alone", () => {
   window.history.replaceState({ island: 1 }, "");
   install();
   expect(window.history.state).toEqual({ island: 1 });
+});
+
+test("reinstall after a swap reloads an unmarked island entry from the earlier page", async () => {
+  const entry = {
+    name: window.location.href,
+    entryType: "navigation",
+    startTime: 0,
+    duration: 0,
+    type: "navigate",
+    toJSON: () => ({}),
+  };
+  spyOn(window.performance, "getEntriesByType").mockReturnValue([entry]);
+  window.history.replaceState({ island: 1 }, "");
+  install();
+  spyOn(globalThis, "fetch").mockResolvedValue(response());
+  await swapPage("/app/new");
+  expect(document.title).toBe("new");
+  uninstall();
+  install();
+  const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+  window.history.replaceState({ island: 1 }, "", "/app/old");
+  window.dispatchEvent(new PopStateEvent("popstate", { state: { island: 1 } }));
+  expect(reload).toHaveBeenCalledTimes(1);
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
 });
 
 test("an unmarked popstate after a reload loads the document", () => {
@@ -408,14 +435,17 @@ test("install is idempotent; uninstall removes listeners, live region and pendin
   const remove = spyOn(window, "removeEventListener");
   install();
   expect(installPageSwap()).toBe(uninstall);
-  expect(add.mock.calls.filter(([type]) => type === "click" || type === "submit" || type === "popstate")).toHaveLength(3);
+  expect(add.mock.calls.filter(([type]) => type === "click" || type === "submit" || type === "popstate")).toHaveLength(4);
+  expect(add).toHaveBeenCalledWith("click", expect.any(Function), true);
   expect(document.querySelectorAll("[data-nav-announcer]")).toHaveLength(1);
   const requests = deferredFetch();
   const pending = swapPage("/app/A");
   uninstall();
   await pending;
   expect(requests[0]!.aborted).toBe(true);
-  expect(remove.mock.calls.filter(([type]) => type === "click" || type === "submit" || type === "popstate")).toHaveLength(3);
+  expect(remove.mock.calls.filter(([type]) => type === "click" || type === "submit" || type === "popstate")).toHaveLength(4);
+  const capture = add.mock.calls.find(([type, , options]) => type === "click" && options === true)![1];
+  expect(remove).toHaveBeenCalledWith("click", capture, true);
   expect(document.querySelector("[data-nav-announcer]")).toBeNull();
   expect(assign).not.toHaveBeenCalled();
 });
@@ -428,6 +458,55 @@ test("a native same-tab link aborts pending work without causing an extra docume
   await pending;
   expect(requests[0]!.aborted).toBe(true);
   expect(assign).not.toHaveBeenCalled();
+});
+
+test("a native link that stops propagation prevents a pending swap from committing or loading a document", async () => {
+  install();
+  const requests = deferredFetch();
+  const pending = swapPage("/app/A");
+  const anchor = document.createElement("a");
+  anchor.href = "/outside";
+  anchor.addEventListener("click", (event) => event.stopPropagation());
+  document.body.append(anchor);
+  anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  const nativeUrl = window.location.href;
+  const before = window.history.length;
+  const state = window.history.state;
+  expect(requests[0]!.signal.aborted).toBe(false);
+  requests[0]!.resolve(response(html("A"), {}, "https://example.test/app/A"));
+  await pending;
+  expect(requests[0]!.signal.aborted).toBe(true);
+  expect(document.title).toBe("old");
+  expect(window.location.href).toBe(nativeUrl);
+  expect(window.history.length).toBe(before);
+  expect(window.history.state).toEqual(state);
+  expect(events).toEqual([]);
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+});
+
+test("a prevented link that stops propagation lets a pending swap commit", async () => {
+  install();
+  const requests = deferredFetch();
+  const pending = swapPage("/app/A");
+  const anchor = document.createElement("a");
+  anchor.href = "/outside";
+  anchor.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  document.body.append(anchor);
+  anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  const before = window.history.length;
+  requests[0]!.resolve(response(html("A"), {}, "https://example.test/app/A"));
+  await pending;
+  expect(requests[0]!.signal.aborted).toBe(false);
+  expect(document.title).toBe("A");
+  expect(window.location.pathname).toBe("/app/A");
+  expect(window.history.length).toBe(before + 1);
+  expect(events).toEqual(["cleanup:old", "mount:A"]);
+  expect(assign).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
 });
 
 test("a native same-tab form submission aborts a pending swap without committing or loading a document", async () => {

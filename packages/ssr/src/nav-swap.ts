@@ -6,6 +6,7 @@ type SwapState = {
   uninstall: () => void;
   announcer: HTMLElement;
   active?: AbortController;
+  click?: { event: MouseEvent; controller: AbortController };
   token: string;
   counter: number;
   /** The page marker of the shown server page; island-owned state may leave it undefined. */
@@ -13,7 +14,8 @@ type SwapState = {
   trusted: boolean;
   fragment?: string;
 };
-const shared: typeof globalThis & { [swapKey]?: SwapState } = globalThis;
+const swappedKey = Symbol.for("@k2b/ssr/nav-swap/swapped");
+const shared: typeof globalThis & { [swapKey]?: SwapState; [swappedKey]?: Document } = globalThis;
 const markerKey = "@k2b/ssr/nav";
 const loadDocument = (href: string, options: { replace?: boolean }): void => {
   try {
@@ -110,8 +112,9 @@ export function installPageSwap(): () => void {
     // A reload keeps the entry's marker; that document then also shares history with other server pages.
     currentPage: marker(window.history.state),
     // Only a fresh document without a swap can trust unmarked island entries.
-    trusted: navigation === undefined || ("type" in navigation && navigation.type === "navigate"),
+    trusted: shared[swappedKey] !== document && (navigation === undefined || ("type" in navigation && navigation.type === "navigate")),
     uninstall: () => {
+      window.removeEventListener("click", captureClick, true);
       window.removeEventListener("click", click);
       window.removeEventListener("submit", submit);
       window.removeEventListener("popstate", popstate);
@@ -124,6 +127,19 @@ export function installPageSwap(): () => void {
     state.currentPage = `${state.token}:${++state.counter}`;
     window.history.replaceState({ [markerKey]: state.currentPage }, "");
   }
+  const captureClick = (event: MouseEvent): void => {
+    if (!state.active || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const anchor = event.composedPath().find((node) => node instanceof HTMLAnchorElement && node.hasAttribute("href"));
+    if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute("download")) return;
+    const target = (
+      anchor.hasAttribute("target") ? anchor.getAttribute("target") : document.querySelector("base[target]")?.getAttribute("target")
+    )
+      ?.trim()
+      .toLowerCase();
+    if (target && !["_self", "_top", "_parent"].includes(target)) return;
+    // stopPropagation can hide a native click from the bubble listener; wait until handlers can prevent it.
+    state.click = { event, controller: state.active };
+  };
   const click = (event: MouseEvent): void => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     // The composed path reaches an anchor inside a shadow root, where event.target is the host.
@@ -201,6 +217,7 @@ export function installPageSwap(): () => void {
     window.location.reload();
   };
   shared[swapKey] = state;
+  window.addEventListener("click", captureClick, true);
   window.addEventListener("click", click);
   window.addEventListener("submit", submit);
   window.addEventListener("popstate", popstate);
@@ -227,7 +244,15 @@ export async function swapPage(href: string, options: { replace?: boolean } = {}
   }
   const controller = new AbortController();
   state.active = controller;
-  const active = () => !controller.signal.aborted && state.active === controller && shared[swapKey] === state;
+  const active = () => {
+    if (state.click?.controller === controller && state.click.event.eventPhase === Event.NONE && !state.click.event.defaultPrevented) {
+      // Dispatch finished without prevention, so the browser's native default action ran and wins.
+      if (state.active === controller) state.active = undefined;
+      controller.abort();
+      return false;
+    }
+    return !controller.signal.aborted && state.active === controller && shared[swapKey] === state;
+  };
   const fail = (error?: unknown): void => {
     if (!active()) return;
     state.active = undefined;
@@ -336,6 +361,7 @@ const commit = (
     else window.history.pushState({ [markerKey]: pageId }, "", target.href);
     committed = true;
     state.trusted = false;
+    shared[swappedKey] = document;
     state.currentPage = pageId;
     const root = document.adoptNode(next.root);
     context.root.replaceWith(root);
