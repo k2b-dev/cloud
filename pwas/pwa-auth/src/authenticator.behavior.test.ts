@@ -3,6 +3,7 @@ import { appApproval } from "@k2b/cloud/browser/app-approval";
 import { createRoot } from "solid-js";
 import { createDomTestHarness, type DomTestHarness } from "../../../packages/ui/test/dom";
 import type { Login } from "./authenticator";
+import type { Preferences } from "./preferences";
 import type { Vault } from "./vault";
 
 // Records are sealed with a real vault session and parsed with the real schemas. Only IndexedDB is replaced:
@@ -353,4 +354,47 @@ test("expired, hidden and offline Actions are refused before sending", async () 
   Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
   await expect(auth.act(binding, actionView(), "approve")).rejects.toThrow("stale");
   expect(operations).not.toContain("act");
+});
+
+test("an open sign-in stays open with its offline note when the phone loses its connection", async () => {
+  features = ["login-context"];
+  pendingLogins = [{ ...login(), context: loginContext }];
+  const { auth, binding } = await paired();
+  for (let i = 0; i < 100 && !auth.states()[binding.id]; i++) await Bun.sleep(10);
+  const { render } = await import("solid-js/web");
+  const { createComponent } = await import("solid-js");
+  const { Clouds } = await import("./Clouds");
+  const { closeDialogs } = await import("./dialog");
+  const preferences: Preferences = {
+    locale: () => "en",
+    language: () => "en",
+    theme: () => "light",
+    setLanguage: () => {},
+    setTheme: () => {},
+  };
+  const stop = render(() => createComponent(Clouds, { auth, preferences }), dom.root);
+  try {
+    for (let i = 0; i < 50 && !document.querySelector("dialog[open]"); i++) await Bun.sleep(10);
+    const dialog = document.querySelector<HTMLDialogElement>("dialog[open]")!;
+    expect(dialog.querySelector(".auth-decision__details[data-context]")).not.toBeNull();
+    // The real offline event clears the polled list; that is no answer about the request.
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    window.dispatchEvent(new Event("offline"));
+    await Bun.sleep(30);
+    expect(auth.states()[binding.id]).toBeUndefined();
+    expect(document.querySelector("dialog[open]")).toBe(dialog);
+    expect(dialog.querySelector(".auth-decision__hint")?.hasAttribute("data-offline")).toBe(true);
+    const choices = [...dialog.querySelectorAll<HTMLButtonElement>(".auth-decision-actions__choices button")];
+    expect(choices.every((button) => button.disabled)).toBe(true);
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    window.dispatchEvent(new Event("online"));
+    await Bun.sleep(30);
+    expect(document.querySelector("dialog[open]")).toBe(dialog);
+    expect(dialog.querySelector(".auth-decision__hint")?.hasAttribute("data-offline")).toBe(false);
+    expect(choices.every((button) => !button.disabled)).toBe(true);
+  } finally {
+    closeDialogs();
+    await Bun.sleep(20);
+    stop();
+  }
 });

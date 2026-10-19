@@ -347,6 +347,25 @@ test("the sheet keeps the lines it opened with when a later poll changes the sam
   }
 });
 
+test("only a poll that answers without the request closes the sheet; a cleared or failed list does not", async () => {
+  const sheet = await openSheet({ locale: "en", context: decisionStates.known });
+  try {
+    // Offline or hidden, the authenticator clears the list: no answer about this request.
+    sheet.setInbox({});
+    await Bun.sleep(20);
+    expect(document.querySelector("dialog[open]")).toBe(sheet.dialog);
+    sheet.setInbox({ fixture: { requests: [], actions: [], moreActions: 0, error: "unavailable" } });
+    await Bun.sleep(20);
+    expect(document.querySelector("dialog[open]")).toBe(sheet.dialog);
+    // Decided in another tab or on the Cloud: the next answered poll no longer lists it.
+    sheet.setInbox({ fixture: { requests: [], actions: [], moreActions: 0 } });
+    await Bun.sleep(20);
+    expect(document.querySelector("dialog[open]")).toBeNull();
+  } finally {
+    await sheet.cleanup();
+  }
+});
+
 for (const locale of ["en", "de"] as const) {
   test(`denying a warned sign-in ends in place with Denied and focused Done, ${locale}`, async () => {
     const sheet = await openSheet({ locale, context: decisionStates.warn, queued: true });

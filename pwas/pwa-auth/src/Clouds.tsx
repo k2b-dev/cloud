@@ -78,9 +78,12 @@ function Decision(props: {
     }
   };
   createEffect(() => {
-    const pending = props.auth.states()[props.binding.id]?.requests.some((r) => r.requestId === props.request.requestId);
+    // Only a poll that answered can say the request is gone: going offline or hidden clears the list without
+    // an answer, and the sheet then keeps the request with its offline note.
+    const state = props.auth.states()[props.binding.id];
+    const gone = state && !state.error && !state.requests.some((r) => r.requestId === props.request.requestId);
     // An expired request stays open with its ending, so the code never vanishes without a word.
-    if (!busy() && !error() && !denied() && !expired() && !pending) props.close();
+    if (!busy() && !error() && !denied() && !expired() && gone) props.close();
   });
   // A memo, so effects run when the ending changes, not on every clock tick.
   const ending = createMemo((): "uncertain" | "denied" | "expired" | undefined =>
