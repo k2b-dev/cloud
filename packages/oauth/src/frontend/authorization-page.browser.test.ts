@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { type AuthorizationState, authorizationStates, renderAuthorizationState } from "./authorization-page.test-fixture";
 
 // Where the card sits, whether it is framed or flat, and whether anything moves when a control is
@@ -44,27 +44,6 @@ afterAll(async () => {
 const card = 'section[aria-labelledby="oauth-page-title"]';
 
 /**
- * Waits until no animation with an end runs on the page's document timeline, then for two frames. A
- * scroll-driven animation never finishes, and an endless one never ends, so neither is waited for.
- */
-const settle = (page: Page) =>
-  page.evaluate(async () => {
-    for (;;) {
-      const running = document
-        .getAnimations()
-        .filter(
-          (animation) =>
-            animation.timeline === document.timeline &&
-            animation.playState === "running" &&
-            Number.isFinite(animation.effect?.getComputedTiming().endTime),
-        );
-      if (!running.length) break;
-      await Promise.allSettled(running.map((animation) => animation.finished));
-    }
-    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
-  });
-
-/**
  * The server-rendered document with the stylesheets and fonts it links, once the fonts are in and its
  * styles have settled. The pages need no script to show their state; the platform's MinimalLayout
  * test owns the first frame. Without the inline theme script, nothing stops the parser before
@@ -103,6 +82,7 @@ const open = async (
   const loaded = page.goto(`${origin}/authorization-page`);
   if (late !== undefined) {
     await page.waitForSelector(card, { state: "attached" });
+    // settled: styles the card once before the held stylesheet arrives; the unsettled moment is the subject.
     await page.evaluate((selector) => getComputedStyle(document.querySelector(selector)!).backgroundColor, card);
     styled();
   }
@@ -117,7 +97,7 @@ const open = async (
   });
   // Measured in a fallback font, a row that wraps for a person would pass.
   expect(fonts, state).toEqual(expect.arrayContaining(["IBM Plex Sans", "tabler-icons"]));
-  await settle(page);
+  await settled(page);
   return page;
 };
 
@@ -280,7 +260,7 @@ describe("OAuth authorization pages in a browser", () => {
         const page = await open(state, "en", viewport);
         try {
           await page.mouse.move(0, 0);
-          await settle(page);
+          await settled(page);
           const resting = await boxes(page);
           // The closed language menu is rendered but hidden.
           const controls = page
@@ -290,14 +270,14 @@ describe("OAuth authorization pages in a browser", () => {
           expect(count, state).toBeGreaterThan(0);
           for (let index = 0; index < count; index += 1) {
             await controls.nth(index).hover();
-            await settle(page);
+            await settled(page);
             expect(await boxes(page), `${state}: hover on control ${index}`).toEqual(resting);
           }
           await page.mouse.move(0, 0);
           await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
           for (let step = 0; step < count; step += 1) {
             await page.keyboard.press("Tab");
-            await settle(page);
+            await settled(page);
             expect(await boxes(page), `${state}: Tab ${step + 1}`).toEqual(resting);
           }
         } finally {
