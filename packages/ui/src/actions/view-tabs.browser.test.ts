@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-ui-view-tabs-"));
@@ -161,20 +161,17 @@ afterAll(async () => {
 });
 
 const listSelector = ".k2b-view-tabs__list";
-const frames = (page: Page) =>
-  page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 const load = async (page: Page, scenario: Record<string, string> = {}, hydrate = true) => {
   await page.goto(`${origin}/?${new URLSearchParams(scenario)}`);
-  await page.evaluate(() => document.fonts.ready.then(() => undefined));
-  await frames(page);
+  await settled(page);
   if (hydrate) {
     await page.addScriptTag({ url: `${origin}/client.js` });
     await page.waitForSelector('body[data-ready="true"]');
-    await frames(page);
+    await settled(page);
   }
 };
-// A change and its measurement share one evaluate: no microtask, timer, or frame can hide a delayed settle.
 const snapshot = (page: Page, id?: string, focused = false) =>
+  // settled: With an id, change and measure in one evaluate so no microtask, timer, or frame can hide a delayed settle.
   page.evaluate(
     ({ id, focused }) => {
       if (id) window.setView(id);
@@ -267,7 +264,7 @@ for (const dir of ["ltr", "rtl"]) {
       expect(Math.abs(before.scroll)).toBeGreaterThan(0);
       await page.addScriptTag({ url: `${origin}/client.js` });
       await page.waitForSelector('body[data-ready="true"]');
-      await frames(page);
+      await settled(page);
       const after = await snapshot(page);
       expectVisible(after);
       expect(after.scroll - before.scroll).toBe(0);
@@ -289,6 +286,7 @@ for (const reducedMotion of ["reduce", "no-preference"] as const) {
     try {
       await load(page);
       await page.evaluate(() => window.scrollTo({ top: 200, behavior: "instant" }));
+      await settled(page);
       const position = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
       expect(position.y).toBeGreaterThan(0);
       // The fourth view starts behind More and replaces compact slot three.
@@ -296,25 +294,25 @@ for (const reducedMotion of ["reduce", "no-preference"] as const) {
       expect(changed.id).toBe("?view=4");
       expectVisible(changed);
       expect({ x: changed.x, y: changed.y }).toEqual(position);
-      await frames(page);
+      await settled(page);
       const settledChange = await snapshot(page);
       expectVisible(settledChange);
       expect(settledChange.scroll).toBe(changed.scroll);
       expect({ x: settledChange.x, y: settledChange.y }).toEqual(position);
       await page.locator(listSelector).evaluate((list) => list.scrollTo({ left: list.scrollWidth, behavior: "instant" }));
-      await frames(page);
+      await settled(page);
       const first = await snapshot(page, "1");
       expect(first.id).toBe("?view=1");
       expectVisible(first);
       expect({ x: first.x, y: first.y }).toEqual(position);
-      await frames(page);
+      await settled(page);
       const settledFirst = await snapshot(page);
       expectVisible(settledFirst);
       expect(settledFirst.scroll).toBe(first.scroll);
       expect({ x: settledFirst.x, y: settledFirst.y }).toEqual(position);
       // Picking an already-visible view must preserve a person's intermediate scroll position.
       await page.locator(listSelector).evaluate((list) => list.scrollTo({ left: 8, behavior: "instant" }));
-      await frames(page);
+      await settled(page);
       const before = await snapshot(page);
       const same = await snapshot(page, "2");
       expectVisible(same);
@@ -354,7 +352,7 @@ for (const dir of ["ltr", "rtl"]) {
             }),
           fraction,
         );
-        await frames(page);
+        await settled(page);
         expect(await list.getAttribute("data-scroll-fade")).toBe(fraction === 0.5 ? "both" : dir === "rtl" ? "bottom" : "top");
       }
       await page.setViewportSize({ width: 1440, height: 900 });
@@ -380,7 +378,7 @@ for (const dir of ["ltr", "rtl"]) {
       expect(expected).toHaveLength(4);
       for (const id of expected) {
         await page.keyboard.press("Tab");
-        await frames(page);
+        await settled(page);
         const focused = await snapshot(page, undefined, true);
         expect(focused.id).toBe(id);
         expect(focused.outline).not.toBe("none");
@@ -432,7 +430,7 @@ test("resizing a narrow workspace host settles the current view again before pai
     await load(page, { width: "640", current: "5" });
     expectVisible(await snapshot(page));
     await page.locator("#app").evaluate((app) => (app.style.width = "390px"));
-    await frames(page);
+    await settled(page);
     const resized = await snapshot(page);
     expectVisible(resized);
     expect(Math.abs(resized.scroll)).toBeGreaterThan(0);
@@ -450,12 +448,13 @@ test("resizing a narrow workspace host keeps the focused More trigger visible", 
     let reachedMore = false;
     for (let press = 0; press < 10; press++) {
       await page.keyboard.press("Tab");
+      await settled(page);
       reachedMore = await page.evaluate(() => document.activeElement?.matches(".k2b-view-tabs__more-trigger") ?? false);
       if (reachedMore) break;
     }
     expect(reachedMore, "More trigger was not reached after 10 Tab presses").toBe(true);
     await page.locator("#app").evaluate((app) => (app.style.width = "390px"));
-    await frames(page);
+    await settled(page);
     const resized = await snapshot(page, undefined, true);
     expect(resized.id).toBe(moreLabel);
     expectVisible(resized);
