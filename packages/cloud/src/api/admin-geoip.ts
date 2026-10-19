@@ -28,6 +28,7 @@ export const createAdminGeoIpRoutes = (
     .get(
       "/",
       describeRoute({ tags: ["Sign-in locations"], summary: "Show active sign-in location databases and upload limits" }),
+      auth.requireOAuthScope("read", "admin"),
       async (c) => c.json(await service.status(c.get("user"))),
     )
     .put(
@@ -43,6 +44,7 @@ export const createAdminGeoIpRoutes = (
           },
         },
       }),
+      auth.requireOAuthScope("write", "admin"),
       async (c) => {
         setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_MAX_SECONDS);
         try {
@@ -70,6 +72,7 @@ export const createAdminGeoIpRoutes = (
     .delete(
       "/:kind",
       describeRoute({ tags: ["Sign-in locations"], summary: "Reset one sign-in database to the bundled snapshot" }),
+      auth.requireOAuthScope("write", "admin"),
       v("param", z.object({ kind: z.enum(["city", "asn"]) })),
       async (c) => c.json(await service.reset(c.get("user"), c.req.valid("param").kind)),
     );

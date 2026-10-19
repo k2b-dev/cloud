@@ -40,6 +40,38 @@ test("every route requires authentication and denies a non-admin before the serv
   }
 });
 
+test("an OAuth token needs the read scope to view and the write scope to upload or reset", async () => {
+  const calls: string[] = [];
+  const service: typeof unused = {
+    status: async () => (calls.push("status"), status),
+    upload: async () => (calls.push("upload"), { ...status, kind: "city" }),
+    reset: async () => (calls.push("reset"), { ...status, changed: true }),
+  };
+  const withScopes =
+    (scopes: string[]): MiddlewareHandler<AuthContext> =>
+    async (c, next) => {
+      c.set("user", actor);
+      c.set("oauthScopes", scopes);
+      await next();
+    };
+  const requests = [
+    ["/", "GET"],
+    ["/", "PUT"],
+    ["/city", "DELETE"],
+  ] as const;
+  const statuses = async (scopes: string[]) => {
+    const app = createAdminGeoIpRoutes(withScopes(scopes), service);
+    return Promise.all(
+      requests.map(async ([path, method]) => (await app.request(path, { method, body: method === "PUT" ? "x" : undefined })).status),
+    );
+  };
+  expect(await statuses(["read"])).toEqual([200, 403, 403]);
+  expect(calls).toEqual(["status"]);
+  expect(await statuses(["openid"])).toEqual([403, 403, 403]);
+  expect(await statuses(["read", "write"])).toEqual([200, 200, 200]);
+  expect(await statuses(["admin"])).toEqual([200, 200, 200]);
+});
+
 test("status, raw-body upload and reset expose the typed result and validate the kind", async () => {
   let upload: Uint8Array | undefined;
   let length: number | undefined;
