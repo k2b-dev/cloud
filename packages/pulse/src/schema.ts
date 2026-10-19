@@ -107,6 +107,7 @@ export const installBaseline = async (sql: TransactionSQL): Promise<void> => {
       request_hash TEXT NOT NULL,
       state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','done')),
       accepted_at TIMESTAMPTZ NOT NULL,
+      planned_states JSONB,
       response JSONB,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       expires_at TIMESTAMPTZ NOT NULL,

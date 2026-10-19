@@ -21,7 +21,9 @@ import {
 import { requireBaseWritable } from "./access-control";
 import {
   type IngestStore,
+  type PlannedStates,
   type PulseSqlClient,
+  planIngestStates,
   prepareIngestBatch,
   registerIngestBatch,
   writePreparedIngestBatchInTransaction,
@@ -162,7 +164,13 @@ const lockIngestScope = async (baseId: string, sourceId: string, db: PulseSqlCli
   if (!base) throw new IngestTransactionFailure(err.notFound("Pulse base"));
   return { ...base, lastAcceptedAt: source.last_accepted_at };
 };
-type KeyRow = { request_hash: string; state: "pending" | "done"; accepted_at: Date; response: IngestCounts | null };
+type KeyRow = {
+  request_hash: string;
+  state: "pending" | "done";
+  accepted_at: Date;
+  response: IngestCounts | null;
+  planned_states: PlannedStates | null;
+};
 export type IngestParams = {
   baseId: string;
   sourceId: string;
@@ -207,6 +215,7 @@ export const createIngestWriter = ({
         const base = await lockIngestScope(params.baseId, params.sourceId, tx);
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`pulse.ingest:${params.baseId}`},0))`;
         let acceptedAt = new Date(Math.max(now.getTime(), base.lastAcceptedAt ? base.lastAcceptedAt.getTime() + 1 : now.getTime()));
+        let plannedStates: PlannedStates | null = null;
         if (key) {
           await tx`DELETE FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} AND expires_at<=${now}`;
           await tx`INSERT INTO pulse.ingest_idempotency(source_id,idempotency_key,request_hash,state,accepted_at,created_at,expires_at)
@@ -220,6 +229,7 @@ export const createIngestWriter = ({
           if (existing.state === "done" && existing.response)
             return { response: existing.response, acceptedAt: existing.accepted_at, base };
           acceptedAt = existing.accepted_at;
+          plannedStates = existing.planned_states;
         }
         const [limits] =
           await tx`SELECT values_per_minute,bytes_per_minute,storage_bytes,usage_bytes FROM pulse.base_stores WHERE base_id=${params.baseId}::uuid`;
@@ -258,25 +268,32 @@ export const createIngestWriter = ({
           store: connectedStore,
           now,
         });
+        if (plannedStates === null) {
+          plannedStates = await planIngestStates(params.baseId, params.sourceId, prepared, tx);
+          if (key)
+            await tx`UPDATE pulse.ingest_idempotency SET planned_states=(${JSON.stringify(plannedStates)}::jsonb #>> '{}')::jsonb
+              WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key}`;
+        }
         await tx`UPDATE pulse.sources SET last_accepted_at=greatest(last_accepted_at,${acceptedAt}) WHERE id=${params.sourceId}::uuid`;
-        return { response: null, acceptedAt, base };
+        return { response: null, acceptedAt, base, prepared, plannedStates };
       });
       if (preflight.response) return ok(preflight.response);
       reserved = Boolean(key);
-      const prepared = prepareIngestBatch(params.batch, params.sourceId, preflight.acceptedAt, key);
+      const { prepared, plannedStates } = preflight;
       const counts = { metrics: prepared.metrics.length, events: prepared.events.length, states: prepared.states.length };
       return await database.begin(async (tx) => {
         await tx`SET LOCAL statement_timeout='30s'`.simple();
         await tx`SET LOCAL lock_timeout='30s'`.simple();
         const base = await lockIngestScope(params.baseId, params.sourceId, tx);
-        // Source and state-variant locks serialize their own identities; lifecycle SHARE locks protect all inserts.
+        // Source locks serialize this source; lifecycle SHARE locks protect all inserts.
         if (base.reset_generation !== preflight.base.reset_generation)
           throw new IngestTransactionFailure({ code: "CONFLICT", status: 409, message: "Base data was reset during ingest" });
         if (key) {
           const [existing] = await tx<
             KeyRow[]
           >`SELECT * FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} FOR UPDATE`;
-          if (!existing || existing.request_hash !== hash) throw new Error("Idempotency reservation changed during ingest");
+          if (!existing || existing.request_hash !== hash || existing.accepted_at.getTime() !== preflight.acceptedAt.getTime())
+            throw new Error("Idempotency reservation changed during ingest");
           if (existing.state === "done" && existing.response) return ok(existing.response);
         }
         // Every HTTP insert has a 30-second timeout; five collections fit comfortably inside the durable 10-minute lease.
@@ -287,6 +304,7 @@ export const createIngestWriter = ({
           sourceId: params.sourceId,
           database: base.database_name,
           batch: prepared,
+          plannedStates,
           db: tx,
           // Leave the full request timeout before T1's lease expires, even if SQL locks delayed T2.
           store: {

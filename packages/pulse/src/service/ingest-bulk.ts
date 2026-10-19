@@ -22,6 +22,8 @@ export const ingestVersion = (acceptedAt: Date, ordinal: number): string =>
   (BigInt(acceptedAt.getTime()) * 100_000n + BigInt(ordinal)).toString();
 
 export const prepareIngestBatch = (batch: PulseIngestBatch, sourceId: string, acceptedAt: Date, key?: string | null) => {
+  // Reused keys start a new namespace; retries reuse the reservation's acceptance time.
+  const reservationKey = key ? valueHash([key, acceptedAt.toISOString()]) : null;
   let ordinal = 0;
   const common = (
     collection: string,
@@ -34,7 +36,7 @@ export const prepareIngestBatch = (batch: PulseIngestBatch, sourceId: string, ac
     const current = ordinal++;
     return {
       ordinal: current,
-      id: key ? deterministicRowId(sourceId, key, collection, current) : randomUUID(),
+      id: reservationKey ? deterministicRowId(sourceId, reservationKey, collection, current) : randomUUID(),
       version: ingestVersion(acceptedAt, current),
       ts: ts ? new Date(ts).toISOString() : acceptedAt.toISOString(),
       dimensions,
@@ -199,17 +201,26 @@ export const insertStoreRows = async (store: IngestStore, database: string, tabl
 };
 export const clickhouseTime = (iso: string) => iso.replace("T", " ").replace("Z", "");
 
-/** T2 holds lifecycle/source locks and the sorted state variant locks through all inserts. */
-export const writePreparedIngestBatchInTransaction = async (params: {
-  baseId: string;
-  sourceId: string;
-  database: string;
-  batch: PreparedIngestBatch;
-  db: PulseSqlClient;
-  store: IngestStore;
-  now: Date;
-}) => {
-  const { baseId, sourceId, batch, db, store, now, database } = params;
+// One entry per accepted input state; bounded by the external/internal batch limits.
+export type PlannedStates = {
+  state_key: string;
+  variant_key: string;
+  value: string;
+  dimensions: string;
+  resource_key: string;
+  source_id: string;
+  version: string;
+  updated_at: string;
+  change_id: string | null;
+}[];
+
+/** T1 commits the exact state decisions and registry before any external insert. */
+export const planIngestStates = async (
+  baseId: string,
+  sourceId: string,
+  batch: PreparedIngestBatch,
+  db: PulseSqlClient,
+): Promise<PlannedStates> => {
   await lockStateIdentities(
     baseId,
     batch.states.map((s) => ({ key: s.key, variantKey: s.variantKey })),
@@ -227,8 +238,7 @@ export const writePreparedIngestBatchInTransaction = async (params: {
       { ts: s.updated_at.toISOString(), hash: s.value_hash, version: s.version },
     ]),
   );
-  const states: Record<string, unknown>[] = [],
-    changes: Record<string, unknown>[] = [];
+  const planned: PlannedStates = [];
   const updates = new Map<string, { key: string; variantKey: string; ts: string; hash: string; version: string }>();
   for (const s of batch.states) {
     const key = JSON.stringify([s.key, s.variantKey]),
@@ -244,11 +254,29 @@ export const writePreparedIngestBatchInTransaction = async (params: {
       source_id: sourceId,
       version: s.version,
     };
-    states.push({ ...row, updated_at: clickhouseTime(s.ts) });
-    if (!prev || prev.hash !== hash) changes.push({ ...row, id: s.id, changed_at: clickhouseTime(s.ts) });
+    planned.push({ ...row, updated_at: clickhouseTime(s.ts), change_id: !prev || prev.hash !== hash ? s.id : null });
     current.set(key, { ts: s.ts, hash, version: s.version });
     updates.set(key, { key: s.key, variantKey: s.variantKey, ts: s.ts, hash, version: s.version });
   }
+  if (updates.size)
+    await db`INSERT INTO pulse.state_variants(base_id,state_key,variant_key,updated_at,value_hash,version)
+    SELECT ${baseId}::uuid,key,"variantKey",ts,hash,version FROM jsonb_to_recordset((${JSON.stringify([...updates.values()])}::jsonb #>> '{}')::jsonb) AS i(key text,"variantKey" text,ts timestamptz,hash text,version bigint)
+    ON CONFLICT(base_id,state_key,variant_key) DO UPDATE SET updated_at=EXCLUDED.updated_at,value_hash=EXCLUDED.value_hash,version=EXCLUDED.version`;
+  return planned;
+};
+
+/** T2 holds lifecycle/source locks through all inserts and replays the committed state plan. */
+export const writePreparedIngestBatchInTransaction = async (params: {
+  baseId: string;
+  sourceId: string;
+  database: string;
+  batch: PreparedIngestBatch;
+  plannedStates: PlannedStates;
+  db: PulseSqlClient;
+  store: IngestStore;
+  now: Date;
+}) => {
+  const { baseId, sourceId, batch, plannedStates, db, store, now, database } = params;
   const series = await loadBatchSeries(baseId, batch, db),
     byKey = new Map(series.map((s) => [JSON.stringify([s.name, s.series_key]), s]));
   await insertStoreRows(
@@ -303,12 +331,18 @@ export const writePreparedIngestBatchInTransaction = async (params: {
       version: e.version,
     })),
   );
-  await insertStoreRows(store, database, "_states_current", states);
-  await insertStoreRows(store, database, "_state_changes", changes);
-  if (updates.size)
-    await db`INSERT INTO pulse.state_variants(base_id,state_key,variant_key,updated_at,value_hash,version)
-    SELECT ${baseId}::uuid,key,"variantKey",ts,hash,version FROM jsonb_to_recordset((${JSON.stringify([...updates.values()])}::jsonb #>> '{}')::jsonb) AS i(key text,"variantKey" text,ts timestamptz,hash text,version bigint)
-    ON CONFLICT(base_id,state_key,variant_key) DO UPDATE SET updated_at=EXCLUDED.updated_at,value_hash=EXCLUDED.value_hash,version=EXCLUDED.version`;
+  await insertStoreRows(
+    store,
+    database,
+    "_states_current",
+    plannedStates.map(({ change_id, ...row }) => row),
+  );
+  await insertStoreRows(
+    store,
+    database,
+    "_state_changes",
+    plannedStates.flatMap(({ change_id, updated_at, ...row }) => (change_id ? [{ ...row, id: change_id, changed_at: updated_at }] : [])),
+  );
   if (batch.metrics.length)
     await db`UPDATE pulse.metric_series s SET mirrored=true,last_seen_at=greatest(s.last_seen_at,${now}::timestamptz)
     FROM (SELECT DISTINCT name,"seriesKey" FROM jsonb_to_recordset((${JSON.stringify(batch.metrics)}::jsonb #>> '{}')::jsonb) AS i(name text,"seriesKey" text)) i,pulse.metric_defs d

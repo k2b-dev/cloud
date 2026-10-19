@@ -6,7 +6,7 @@ import { installFixtureStore } from "../store/base-store.test-fixture";
 import { adminBaseAction } from "./base-admin";
 import * as lifecycle from "./base-lifecycle";
 import { clearBaseData } from "./base-management";
-import { deterministicRowId } from "./ingest-bulk";
+import { deterministicRowId, type PlannedStates, valueHash } from "./ingest-bulk";
 import { createIngestWriter } from "./ingest-writer";
 import { assertWrite, writeFixture } from "./write.test-fixture";
 
@@ -16,6 +16,90 @@ suiteFor(
   "clickhouse",
 )("Pulse ClickHouse write identity", () => {
   beforeAll(installFixtureStore, 30000);
+  test("a pending state plan replays its history after a newer batch advances the variant", async () => {
+    const f = await writeFixture("state-plan-retry");
+    try {
+      await f.stopMerges();
+      const batchA = { states: [{ key: "door", value: "A", ts: "2026-10-17T10:00:00Z" }] };
+      f.failInsert(2); // _states_current succeeds; _state_changes fails.
+      expect(await f.write(batchA, "A")).toMatchObject({ ok: false, error: { status: 503 } });
+      expect(await f.read("states", "value")).toEqual([{ value: '"A"' }]);
+      expect(await f.read("_state_changes", "count() AS n")).toEqual([{ n: 0 }]);
+      const [pending] = await sql<{ state: string; planned_states: PlannedStates }[]>`
+        SELECT state,planned_states FROM pulse.ingest_idempotency WHERE source_id=${f.sourceId}::uuid AND idempotency_key='A'`;
+      if (!pending) throw new Error("Missing pending state plan");
+      expect(pending.state).toBe("pending");
+      expect(pending.planned_states).toHaveLength(batchA.states.length);
+      f.recover();
+      f.setTime("2026-10-17T12:01:00Z");
+      assertWrite(await f.writeB({ states: [{ key: "door", value: "B", ts: "2026-10-17T10:01:00Z" }] }, "B"));
+      assertWrite(await f.write(batchA, "A"));
+      assertWrite(await f.write(batchA, "A")); // A is done; no further effects.
+      expect(await f.read("_state_changes", "value", "FINAL ORDER BY changed_at")).toEqual([{ value: '"A"' }, { value: '"B"' }]);
+      expect(await f.read("states", "value")).toEqual([{ value: '"B"' }]);
+      const [done] =
+        await sql`SELECT state,planned_states FROM pulse.ingest_idempotency WHERE source_id=${f.sourceId}::uuid AND idempotency_key='A'`;
+      expect(done?.state).toBe("done");
+      expect(done?.planned_states).toEqual(pending.planned_states);
+      expect(await f.read("_state_changes", "id,toString(version) AS version", "FINAL WHERE value='\"A\"'")).toEqual(
+        pending.planned_states.map((s) => ({ id: s.change_id, version: s.version })),
+      );
+      expect((await sql`SELECT value_hash FROM pulse.state_variants WHERE base_id=${f.base.id}::uuid`)[0]?.value_hash).toBe(valueHash("B"));
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
+  for (const keyed of [true, false])
+    test(`state registry commits before the first ${keyed ? "keyed" : "unkeyed"} insert`, async () => {
+      const f = await writeFixture(`state-plan-before-insert-${keyed}`);
+      const query = f.store.query;
+      let observed = false;
+      try {
+        f.store.query = async (statement, params) => {
+          if (statement.startsWith("INSERT INTO") && statement.includes("._states_current")) {
+            const [variant] = await sql`SELECT value_hash FROM pulse.state_variants WHERE base_id=${f.base.id}::uuid`;
+            expect(variant?.value_hash).toBe(valueHash("planned"));
+            if (keyed) {
+              const [reservation] = await sql`SELECT state,jsonb_array_length(planned_states) AS n
+                FROM pulse.ingest_idempotency WHERE source_id=${f.sourceId}::uuid AND idempotency_key='planned'`;
+              expect(reservation).toEqual({ state: "pending", n: 1 });
+            }
+            observed = true;
+          }
+          return query(statement, params);
+        };
+        f.failInsert(2); // Leave the current snapshot stored but fail its history.
+        expect(await f.write({ states: [{ key: "door", value: "planned" }] }, keyed ? "planned" : undefined)).toMatchObject({
+          ok: false,
+          error: { status: 503 },
+        });
+        expect(observed).toBe(true);
+        expect((await sql`SELECT value_hash FROM pulse.state_variants WHERE base_id=${f.base.id}::uuid`)[0]?.value_hash).toBe(
+          valueHash("planned"),
+        );
+      } finally {
+        await f.cleanup();
+      }
+    }, 60000);
+  test("an expired key reused for another batch preserves both same-kind, same-timestamp events", async () => {
+    const f = await writeFixture("expired-key-identity");
+    try {
+      await f.stopMerges();
+      const event = { kind: "opened", ts: "2026-10-17T10:00:00Z" };
+      assertWrite(await f.write({ events: [{ ...event, value: 1 }] }, "reused"));
+      const [first] = await sql`SELECT accepted_at FROM pulse.ingest_idempotency WHERE source_id=${f.sourceId}::uuid`;
+      f.setTime("2026-10-18T12:00:00Z"); // Exactly the first reservation's expiry.
+      const batch = { events: [{ ...event, value: 2 }] };
+      assertWrite(await f.writeB(batch, "reused"));
+      const [second] = await sql`SELECT accepted_at FROM pulse.ingest_idempotency WHERE source_id=${f.sourceId}::uuid`;
+      expect(second?.accepted_at.getTime()).toBeGreaterThan(first?.accepted_at.getTime());
+      assertWrite(await f.write(batch, "reused"));
+      expect(await f.read("events", "value", "ORDER BY value")).toEqual([{ value: 1 }, { value: 2 }]);
+      expect(await f.read("events", "uniqExact(id) AS n")).toEqual([{ n: 2 }]);
+    } finally {
+      await f.cleanup();
+    }
+  }, 60000);
   test("#1 abort between inserts leaves pending; retry is one clean run, conflicting body is 409", async () => {
     const f = await writeFixture("retry"),
       clean = await writeFixture("retry-clean");

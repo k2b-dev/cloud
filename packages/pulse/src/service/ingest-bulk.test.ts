@@ -3,6 +3,14 @@ import { deterministicRowId, ingestVersion, prepareIngestBatch } from "./ingest-
 
 const source = "11111111-1111-4111-8111-111111111111";
 const now = new Date("2026-10-17T12:00:00.123Z");
+test("a reused key gets new row identities in a later reservation while retries retain them", () => {
+  const batch = { events: [{ kind: "opened", ts: now.toISOString(), value: 1 }] };
+  const first = prepareIngestBatch(batch, source, now, "key");
+  const later = new Date(now.getTime() + 86_400_000);
+  const reused = prepareIngestBatch({ events: [{ ...batch.events[0]!, value: 2 }] }, source, later, "key");
+  expect(reused.events[0]?.id).not.toBe(first.events[0]?.id);
+  expect(prepareIngestBatch(batch, source, now, "key").events[0]?.id).toBe(first.events[0]?.id);
+});
 test("idempotent rows keep identity, acceptance time, and a batch-wide UInt64 ordinal", () => {
   const batch = { metrics: [{ name: "load", value: 1 }], events: [{ kind: "opened" }], states: [{ key: "door", value: true }] };
   const first = prepareIngestBatch(batch, source, now, "key"),

@@ -106,6 +106,8 @@ acceptance time before writing measurements. For its 24-hour lifetime:
 - An interrupted batch stays pending. Retrying the same batch with the same
   key writes the same row identities with the original acceptance time.
 
+After expiry, reusing a key starts a new batch and keeps earlier events.
+
 Keep the body and key until delivery completes. Without a key, a failed batch
 can already be partly stored. The error says **The batch may be partly
 stored, and sending it again can store those parts twice**. Adding a key
@@ -135,6 +137,9 @@ wins. At equal timestamps, later acceptance wins; input order breaks ties in
 one batch. Older states change nothing. Pulse stores history for the initial
 value and subsequent value changes, while equal values update the current
 snapshot without adding history.
+
+A keyed retry completes its original state history even if newer batches have
+arrived. Their newer current states remain current.
 
 Hourly metric values keep count, sum, minimum, maximum, last value and its
 timestamp, and counter increase. A counter reset contributes its new value;
